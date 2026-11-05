@@ -12662,8 +12662,7 @@ impl BasicAi {
             return None;
         }
         let cover = Self::builder_charge_cover(g, pid);
-        if production.is_none() && f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER
-        {
+        if production.is_none() && f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER {
             return None;
         }
         if production.is_some() && f64::from(cover) >= wanted {

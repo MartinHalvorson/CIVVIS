@@ -51,8 +51,9 @@ const WORK_RADIUS: i32 = 3;
 /// Builder's charge.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ProductionTileBacklog {
-    /// Unimproved (or pillaged) tiles a city works that a production
-    /// improvement fits.
+    /// Unimproved tiles a city works that a production improvement fits. A
+    /// pillaged improvement is not counted: a Builder repairs it without
+    /// spending a charge.
     pub(crate) worked: usize,
     /// Owned, unworked, unimproved tiles within the work radius that a
     /// production improvement fits and that already yield Food.
@@ -63,10 +64,12 @@ impl BasicAi {
     /// Whether a Builder improvement that adds Production fits `pos` for
     /// `pid` now.
     pub(crate) fn production_improvement_fits(g: &Game, pid: usize, pos: Pos) -> bool {
-        g.valid_improvements(pid, pos).into_iter().any(|improvement| {
-            g.rules.improvements[&improvement].builder_buildable
-                && g.improvement_yield_change(pid, pos, improvement).production > 0.0
-        })
+        g.valid_improvements(pid, pos)
+            .into_iter()
+            .any(|improvement| {
+                g.rules.improvements[&improvement].builder_buildable
+                    && g.improvement_yield_change(pid, pos, improvement).production > 0.0
+            })
     }
 
     /// See [`ProductionTileBacklog`].
@@ -86,12 +89,12 @@ impl BasicAi {
                 if tile.district.is_some()
                     || tile.district_foundation.is_some()
                     || tile.wonder.is_some()
-                    || (tile.improvement.is_some() && !tile.pillaged)
+                    || tile.improvement.is_some()
                 {
                     continue;
                 }
                 let is_worked = worked.contains(pos);
-                if !is_worked && (tile.pillaged || g.workable_tile_yields(*pos).food < 1.0) {
+                if !is_worked && g.workable_tile_yields(*pos).food < 1.0 {
                     continue;
                 }
                 if !Self::production_improvement_fits(g, pid, *pos) {

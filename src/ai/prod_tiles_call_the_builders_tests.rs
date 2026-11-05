@@ -85,14 +85,25 @@ fn the_backlog_counts_worked_production_ground_and_good_idle_ground() {
     set_worked(
         &mut game,
         cid,
-        &[worked_hills, worked_desert_hills, worked_forest, worked_flat],
+        &[
+            worked_hills,
+            worked_desert_hills,
+            worked_forest,
+            worked_flat,
+        ],
     );
     assert!(
         game.workable_tile_yields(idle_desert_hills).food < 1.0,
         "Desert Hills pay no Food"
     );
     assert!(game.workable_tile_yields(idle_hills).food >= 1.0);
-    for pos in [worked_hills, worked_desert_hills, worked_forest, idle_hills, idle_desert_hills] {
+    for pos in [
+        worked_hills,
+        worked_desert_hills,
+        worked_forest,
+        idle_hills,
+        idle_desert_hills,
+    ] {
         assert!(
             BasicAi::production_improvement_fits(&game, 0, pos),
             "a Mine or Lumber Mill fits {pos:?}"
@@ -114,12 +125,12 @@ fn the_backlog_counts_worked_production_ground_and_good_idle_ground() {
         BasicAi::production_tile_backlog(&game, 0),
         ProductionTileBacklog { worked: 2, idle: 0 }
     );
-    // A pillaged worked Mine is backlog again; a pillaged idle one waits.
+    // A pillaged Mine is repaired without a charge, so it asks for none.
     game.map.tiles.get_mut(&worked_hills).unwrap().pillaged = true;
     game.map.tiles.get_mut(&idle_hills).unwrap().pillaged = true;
     assert_eq!(
         BasicAi::production_tile_backlog(&game, 0),
-        ProductionTileBacklog { worked: 3, idle: 0 }
+        ProductionTileBacklog { worked: 2, idle: 0 }
     );
     // Without Construction a worked forest takes no Lumber Mill.
     game.players[0].techs.remove(&crate::name!("construction"));
@@ -147,9 +158,15 @@ fn the_quota_asks_a_charge_per_worked_production_tile() {
     let mut gene = BasicAi::new();
     gene.prod_tiles_call_the_builders = true;
     let (wanted, production) = gene.worked_backlog_charges_wanted(&game, 0, backlog);
-    assert_eq!(production, Some(ProductionTileBacklog { worked: 3, idle: 1 }));
+    assert_eq!(
+        production,
+        Some(ProductionTileBacklog { worked: 3, idle: 1 })
+    );
     let expected = 3.0 + BasicAi::WORKED_BACKLOG_COVER + IDLE_PRODUCTION_TILE_CHARGE;
-    assert!((wanted - expected).abs() < 1e-9, "{wanted} against {expected}");
+    assert!(
+        (wanted - expected).abs() < 1e-9,
+        "{wanted} against {expected}"
+    );
     assert!(gene.production_tile_quota_note(&game, 0).is_some());
     assert!(stock.production_tile_quota_note(&game, 0).is_none());
 }
