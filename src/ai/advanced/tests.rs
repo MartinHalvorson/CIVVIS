@@ -41532,9 +41532,18 @@ fn a_science_seat_values_writing_above_the_sailing_goal() {
     let off = ai.tech_value(&game, 0, "writing", GrandStrategy::Science);
     ai.enable_science_writes_before_it_sails();
     let on = ai.tech_value(&game, 0, "writing", GrandStrategy::Science);
+    // `tech_value` divides the raw value by the square root of the price
+    // (and scales a boost in hand), so the constant arrives divided too.
+    // Sailing shares Writing's price, so 220 still beats its 190.
+    let divisor = game.rules.techs["writing"].cost.max(10.0).sqrt();
+    let scale = ai.boost_in_hand_scale(&game, 0, "writing", true);
     assert!(
-        (on - off - super::research::WRITING_BEFORE_SAILING_VALUE).abs() < 1e-9,
-        "the bonus is exactly the constant: {off} -> {on}"
+        (on - off - super::research::WRITING_BEFORE_SAILING_VALUE / divisor * scale).abs() < 1e-9,
+        "the bonus is the constant over the price divisor: {off} -> {on}"
+    );
+    assert_eq!(
+        game.rules.techs["writing"].cost, game.rules.techs["sailing"].cost,
+        "the comparison with the Sailing goal assumes one price"
     );
     // Another lane gets nothing.
     let mut plain = AdvancedAi::new();
