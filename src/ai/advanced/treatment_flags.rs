@@ -1935,6 +1935,9 @@ impl AdvancedAi {
         /// Let a Spy in the space racer's city disrupt before it trains on Gain
         /// Sources. See [`Self::disrupt_before_the_sources`].
         disrupt_before_the_sources => enable_disrupt_before_the_sources, disable_disrupt_before_the_sources;
+        /// Opt-in gene `disrupt-waits-for-the-match-point`; see
+        /// `advanced/disrupt_waits_for_the_match_point.rs`.
+        disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
         /// Opt-in gene `siege-moves-under-the-wing`; see
         /// [`Self::siege_moves_under_the_wing`].
         siege_moves_under_the_wing => enable_siege_moves_under_the_wing, disable_siege_moves_under_the_wing;
@@ -2175,9 +2178,15 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `hint-runs-the-claims`; see
+        /// [`Self::hint_runs_the_claims`].
+        hint_runs_the_claims => enable_hint_runs_the_claims, disable_hint_runs_the_claims;
         /// Opt-in gene `luxury-asks-pay-in-strategics`; see
         /// `advanced/luxury_asks_pay_in_strategics.rs`.
         luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
+        /// Opt-in gene `luxury-asks-pay-in-strategics-2`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics_2 => enable_luxury_asks_pay_in_strategics_2, disable_luxury_asks_pay_in_strategics_2;
         /// Opt-in gene `military-alliance-shield`; see
         /// `advanced/military_alliance_shield.rs`.
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
@@ -5155,6 +5164,19 @@ impl AdvancedAi {
     /// The twin of `enable_ranged_kills_are_free`.
     pub fn disable_ranged_kills_are_free(&mut self) {
         self.ranged_kills_are_free = false;
+    }
+
+    /// Opt-in gene `bankruptcy-exits-the-drain-2`, version two of
+    /// `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. A seat plays
+    /// one version, so this turns version one off.
+    pub fn enable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = true;
+        self.bankruptcy_exits_the_drain = false;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain_2`.
+    pub fn disable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

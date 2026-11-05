@@ -4344,6 +4344,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "bankruptcy-exits-the-drain": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "bankruptcy-exits-the-drain": null,
+          "bankruptcy-exits-the-drain-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner"
@@ -4946,6 +4955,15 @@
         "versions": {
           "lane-delegates-production": null,
           "lane-delegates-production-2": null
+        }
+      },
+      "luxury-asks-pay-in-strategics": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-asks-pay-in-strategics": null,
+          "luxury-asks-pay-in-strategics-2": null
         }
       },
       "luxury-swap-asks": {

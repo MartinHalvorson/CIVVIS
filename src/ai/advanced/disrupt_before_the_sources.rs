@@ -66,7 +66,8 @@ impl AdvancedAi {
             return false;
         };
         (racers.contains(&owner) || threats.contains(&owner))
-            && Self::science_denial_stages(g, owner) >= DISRUPT_FROM_STAGES
+            // `disrupt-waits-for-the-match-point` raises the floor.
+            && Self::science_denial_stages(g, owner) >= self.disrupt_from_stages()
             && Self::racer_spy_disrupt_offered(g, spy, legal)
     }
 
