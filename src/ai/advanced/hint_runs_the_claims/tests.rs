@@ -112,3 +112,33 @@ fn off_or_inside_the_book_the_hint_is_unchanged() {
     ai.disable_hint_runs_the_claims();
     assert_eq!(ai.preview_live_production(&game, 0, capital), shipped);
 }
+
+#[test]
+fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
+    let (mut game, capital, monument) = board();
+    let barb = game.barb_pid.expect("fixture: a barbarian seat");
+    let home = game.cities[&capital].pos;
+    let near = game
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && game.city_at(tile.pos).is_none()
+                && game.wdist(home, tile.pos) == 2
+        })
+        .map(|tile| tile.pos)
+        .min()
+        .expect("fixture: a land tile two out");
+    game.spawn_test_unit("warrior", barb, near);
+    let on = seat(true, true);
+    assert!(on.hint_city_in_reach_of_war(&game, 0, capital));
+    let hint = on.preview_live_production(&game, 0, capital);
+    assert_eq!(
+        hint,
+        seat(false, true).preview_live_production(&game, 0, capital),
+        "a city with a hostile in reach keeps the governor's own hint"
+    );
+    assert_ne!(hint, Some(monument), "the Monument claim stands aside");
+}

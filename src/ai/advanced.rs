@@ -22704,7 +22704,12 @@ impl AdvancedAi {
         // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
         // first, as they do on the main path. See
         // `advanced/hint_runs_the_claims.rs`.
-        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        // A city the war can reach keeps the governor's own choice (its Walls
+        // or defender): -78's 523-board census found 10 of 12 lost Walls hints
+        // in cities with a hostile within six.
+        let claims_and_writers = self.hint_runs_the_claims
+            && self.base.book_pos >= 4
+            && !self.hint_city_in_reach_of_war(g, pid, city);
         if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
         }
