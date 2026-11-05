@@ -5103,6 +5103,15 @@ pub const GENES: &[Gene] = &[
     // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
     // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
+    // about two thirds of live production prompts (480 vs 230 direct orders
+    // in 072215Z), and each hint came from `advanced_production` alone. The
+    // idle-queue claims (Settler floors, Granary, Builder, Aqueduct,
+    // Industrial Zone, Campus...) never saw those queues, so the sim seat
+    // reached 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
+    // t80 against 0.5. Under the gene the hint's preview runs the same
+    // claim chain first. See `advanced/hint_runs_the_claims.rs`.
+    Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

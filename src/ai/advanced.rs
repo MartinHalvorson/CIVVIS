@@ -7618,6 +7618,10 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `hint-runs-the-claims`: the live production hint runs the idle-queue
+    /// claim chain before the strategic governor, as the main path does. See
+    /// `advanced/hint_runs_the_claims.rs`. Off by default.
+    hint_runs_the_claims: bool,
     // ---- append: l-o ------------------------------------------------
     /// `medina-yields-to-the-amenities`: the housing card is not wanted while
     /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
@@ -10778,6 +10782,11 @@ mod camp_buyout;
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
 mod camps_close_the_age;
 
+/// `hint-runs-the-claims`: the idle-queue claim chain, shared by the main
+/// production path and the live production hint. One opt-in gene; see
+/// `advanced/hint_runs_the_claims.rs`.
+mod hint_runs_the_claims;
+
 /// `early-cities-keep-their-distance`: the second and third cities are sited
 /// away from charted rival cities. One opt-in gene; see
 /// `advanced/early_city_distance.rs`.
@@ -12098,6 +12107,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            hint_runs_the_claims: false,
             // ---- append: l-o ----------------------------------------
             medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
@@ -22584,6 +22594,12 @@ impl AdvancedAi {
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
+        // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
+        // first, as they do on the main path. See
+        // `advanced/hint_runs_the_claims.rs`.
+        if self.hint_runs_the_claims && self.base.book_pos >= 4 {
+            preview.run_idle_queue_claims(&mut board, pid, &plan);
+        }
         preview.advanced_production(&mut board, pid, &plan, false);
         board.cities.get(&city)?.queue.first().cloned()
     }
@@ -29897,106 +29913,10 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
-            // `forward-airfield-project`: a project already in flight takes
-            // its producer's idle queue for the next stage before the routine
-            // claims below refill it. Exact no-op while the gene is off or no
-            // project is in flight. See `claim_forward_airfield_stage_in_flight`.
-            self.claim_forward_airfield_stage_in_flight(g, pid, &plan);
-            // `early-settler-floor`: a Settler for the opening's band floor
-            // goes first, ahead of the Prophet race and the routine claims
-            // below. Exact no-op while the gene is off. See
-            // `advanced/early_settler_floor.rs`.
-            self.claim_early_settler_floor(g, pid, &plan);
-            // `holdable-land-keeps-settling`: past the opening floor, a
-            // Settler for a holdable seat, ahead of the routine claims below.
-            // Exact no-op while the gene is off. See
-            // `advanced/holdable_land_keeps_settling.rs`.
-            self.claim_holdable_land_settler(g, pid, &plan);
-            // `capital-monument-after-the-second-city`: the capital's Monument,
-            // once the second city stands, after the floor's Settler and ahead
-            // of the routine claims. Exact no-op while the gene is off. See
-            // `advanced/capital_monument.rs`.
-            self.claim_capital_monument(g, pid, &plan);
-            // `granary-claims-the-bound-queue`: a housing-bound city's Granary
-            // ahead of the deterrent and the routine claims below; a due
-            // Settler and the faith defence above keep their order. See
-            // `advanced/granary_claims_the_bound_queue.rs`.
-            self.claim_bound_granaries(g, pid, &plan);
-            // `near-rival-deterrence`: a land unit while a neighbour at peace
-            // out-guns us, after the floor's Settler and ahead of the Prophet
-            // race and the routine claims. Exact no-op while the gene is off.
-            // See `advanced/near_rival_deterrence.rs`.
-            self.claim_deterrence_unit(g, pid, &plan);
-            // `trader-fills-the-idle-route`: an empty trade route slot's
-            // Trader, after the floor's Settler, the Granary and the deterrent
-            // and ahead of the Prophet race and the routine claims. Exact
-            // no-op while the gene is off. See
-            // `advanced/trader_fills_the_idle_route.rs`.
-            self.claim_trader_for_idle_route(g, pid, &plan);
-            // `backlog-builder-takes-the-queue`: the worked backlog's Builder,
-            // after the Trader and ahead of the Prophet race and the routine
-            // claims. Exact no-op while the gene is off. See
-            // `advanced/backlog_builder_takes_the_queue.rs`.
-            self.claim_backlog_builder(g, pid, &plan);
-            // `aqueduct-claims-the-capped-queue`: the most capped city's legal
-            // Aqueduct, after the backlog Builder and ahead of the Prophet race
-            // and the routine claims. Exact no-op while the gene is off. See
-            // `advanced/aqueduct_claims_the_capped_queue.rs`.
-            self.claim_capped_aqueduct(g, pid, &plan);
-            // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
-            // most capped city's Neighborhood. Exact no-op while the gene is
-            // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
-            self.claim_capped_neighborhood(g, pid, &plan);
-            // `industrial-zone-claims-the-producer-queue`: the producer step's
-            // Industrial Zone or Workshop, after the Aqueduct and ahead of the
-            // Prophet race and the routine claims. Exact no-op while the gene
-            // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
-            self.claim_producer_zone(g, pid, &plan);
-            // `industrial-zone-claims-the-factory`: the Factory that reaches
-            // the most new cities, or the plant that powers the most Factories,
-            // after the Industrial Zone and ahead of the Campus building claim.
-            // Exact no-op while the gene is off. See
-            // `advanced/industrial_zone_claims_the_factory.rs`.
-            self.claim_factory(g, pid, &plan);
-            // `campus-building-claims-the-queue`: a standing Campus's next
-            // building, after the Industrial Zone and ahead of the Prophet race
-            // and the routine claims. Exact no-op while the gene is off. See
-            // `advanced/campus_building_claims_the_queue.rs`.
-            self.claim_campus_building(g, pid, &plan);
-            // `campus-claims-the-free-slot`: a free district slot's first
-            // Campus, after the Campus building claim and ahead of the Prophet
-            // race and the routine claims. Exact no-op while the gene is off.
-            // See `advanced/campus_claims_the_free_slot.rs`.
-            self.claim_free_slot_campus(g, pid, &plan);
-            // `culture-seat-theater-first`: a Culture seat's first Theater
-            // Squares, after the Campus claims (which yield those cities) and
-            // ahead of the Prophet race and the routine claims. Exact no-op
-            // while the gene is off. See `advanced/culture_theater_first.rs`.
-            self.claim_culture_theaters(g, pid, &plan);
-            // `culture-seat-monuments`: a Culture seat's Monuments, after the
-            // Theater claim (whose heads they leave alone). Exact no-op while
-            // the gene is off. See `advanced/culture_monuments.rs`.
-            self.claim_culture_monuments(g, pid, &plan);
-            // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
-            // Diplomacy seat. Exact no-op while the gene is off. See
-            // `advanced/diplo_statue_harbor.rs`.
-            self.claim_statue_harbor(g, pid, &plan);
-            // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
-            // strongest city of a Diplomatic seat, after the Culture claims
-            // and ahead of the Prophet race and the routine claims. Exact
-            // no-op while the gene is off. See `advanced/diplo_wonder_claim.rs`.
-            self.claim_diplo_wonder(g, pid, &plan);
-            // `prophet-builds-its-site`: the Holy Site a Prophet founds on
-            // goes first. Exact no-op while the gene is off.
-            self.reserve_prophet_site(g, pid, &plan);
-            // `prophet-race-earns-its-points`: the race's Holy Site city
-            // starts its Shrine. Exact no-op while the gene is off.
-            self.reserve_race_shrine(g, pid, &plan);
-            // `pillaged-districts-repair-first`: a pillaged district's repair,
-            // after every claim above so none of them takes the queue back.
-            // Exact no-op while the gene is off. See
-            // `advanced/pillaged_repairs_first.rs`.
-            self.claim_pillaged_repairs(g, pid);
+            // The idle-queue claims, in their fixed order. Moved verbatim into
+            // `advanced/hint_runs_the_claims.rs` so the live production hint
+            // can run the same chain (`hint-runs-the-claims`).
+            self.run_idle_queue_claims(g, pid, &plan);
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
