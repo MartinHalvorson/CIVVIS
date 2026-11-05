@@ -1150,6 +1150,27 @@ class Civ6PlayTest(unittest.TestCase):
         )
         sleep.assert_called_once_with(1.0)
 
+    def test_a_game_that_died_in_its_load_ends_the_probe_at_once(self) -> None:
+        """Live 2026-11-05 003645Z: Civ VI segfaulted ~2 s after Start and the
+        probe took 120 screenshots of the desktop (~4.3 min) before relaunching."""
+        bounds = (864, 33, 864, 542)
+        alive = iter([True, False])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False), \
+             patch.object(civ6_play.time, "sleep"), patch("sys.stdout"):
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=120,
+                board_ready=lambda: False, alive=lambda: next(alive)))
+        screenshot.assert_called_once()
+
+    def test_both_live_probes_watch_the_game_process(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count("alive=lambda: bool(env.game_pids()))"), 2)
+        normal = source.split("intro_retries = max(8, min(120, int(verify_s)))")[1]
+        self.assertLess(normal.index('if not env.game_pids():\n            print("the game exited while loading"'),
+                        normal.index("if started(verify_s, still_loading="))
+
     def test_a_deferred_probe_takes_no_capture_when_the_board_arrives(self) -> None:
         """G102: a 22.6 s capture ran inside a 28 s load, and the agent had
         already dismissed the load screen (0 card clicks in 92 logs)."""
@@ -1194,7 +1215,7 @@ class Civ6PlayTest(unittest.TestCase):
             self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["leader-intro-defer"])
             self.assertEqual(args.leader_intro_defer, 45.0)
         source = Path(civ6_play.__file__).read_text(encoding="utf-8")
-        self.assertIn('defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))', source)
+        self.assertIn('defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0),', source)
         self.assertIn('ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,\n'
                       '                    default=0.0,', source)
 
