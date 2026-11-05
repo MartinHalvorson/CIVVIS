@@ -2678,6 +2678,10 @@ impl BasicAi {
     /// buys land units). A Plaza with another tier-one building goes straight
     /// to the Chapel; one with both, or a tier the host has not unlocked,
     /// offers nothing.
+    ///
+    /// The stock tier list's entry point, kept for the tests that pin it; the
+    /// decider calls [`Self::plaza_building_item_for`].
+    #[cfg(test)]
     pub(crate) fn plaza_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         Self::plaza_building_item_for(g, pid, cid, false)
     }
