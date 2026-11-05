@@ -1,0 +1,29 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "parity-upgrades-before-it-buys-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Eighteen live Lv 8 Deity Korea Online war turns (runs carrying version one) where the live seat bought a Heavy Chariot (Ancient) with Gold into a city while the world era was Atomic: civvis-20261105T095229Z t142-170 (13 turns), 20261105T092403Z t144 and t167, 20261105T114422Z t162, t166, t170. Each is the run's events.jsonl through the turn's first state frame and nothing after it, queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live purchase (city and UNIT_HEAVY_CHARIOT). Seventeen on arms buy no Heavy Chariot: the Gold goes to a Water Mill, a Monument or a Trader, or stays in the treasury (095229Z t163-170, 114422Z all three). 092403Z t167's on arm still buys one (another purchase path). Three registered cases (095229Z t156, t172, t174) are archived but not members: their off arm did not reproduce the live purchase. 17 of 18 members change.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-parity-upgrades-before-it-buys-2.native-queries.tar.xz",
+    "sha256": "93ff38d2617945d884813f2560aefd6b7609d23de19bf13eeb0a6058403d19ac"
+  },
+  "members": [
+    "native-queries-02/0000/result.json",
+    "native-queries-02/0001/result.json",
+    "native-queries-02/0002/result.json",
+    "native-queries-02/0003/result.json",
+    "native-queries-02/0004/result.json",
+    "native-queries-02/0005/result.json",
+    "native-queries-02/0006/result.json",
+    "native-queries-02/0008/result.json",
+    "native-queries-02/0009/result.json",
+    "native-queries-02/0010/result.json",
+    "native-queries-02/0011/result.json",
+    "native-queries-02/0012/result.json",
+    "native-queries-02/0013/result.json",
+    "native-queries-02/0016/result.json",
+    "native-queries-02/0017/result.json",
+    "native-queries-02/0018/result.json",
+    "native-queries-02/0019/result.json",
+    "native-queries-02/0020/result.json"
+  ]
+}

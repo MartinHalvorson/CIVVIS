@@ -107,3 +107,9 @@ A later actual registry conflict arose when older PR #4550 landed. Integration
 retains all 838 positions of main `facacccce457c61171127cb90e26688b19461de7`,
 then appends Pingala v2. This is a required conflict/dependency integration, not
 a routine refresh. The launch-research policy and both registrations remain.
+
+CI later tested synthetic merge `808f41d4ca6a4b3c27335f62e923e2784e689774`
+with newer main. Two generated genome-coverage counters lost one increment
+when both branches added a gene. The branch manifest was current; the merged
+manifest was stale. Regeneration after integration of main `4a9748b2ec246a385efadb6cd62482b38530d7a9`
+retains all 839 published positions and the same deployed genome.
