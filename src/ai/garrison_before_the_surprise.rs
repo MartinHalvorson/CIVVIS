@@ -73,14 +73,11 @@ impl BasicAi {
             .collect()
     }
 
-    /// Our cities a stronger major's visible soldier stands near this turn.
-    /// Cached per turn: the reading is the turn-start frame.
-    pub(crate) fn garrison_called_cities(&mut self, g: &Game, pid: usize) -> Vec<Pos> {
-        if let Some((turn, cities)) = &self.garrison_call_cache {
-            if *turn == g.turn {
-                return cities.clone();
-            }
-        }
+    /// The visible land soldiers (by id) of every met major whose military
+    /// power is at least [`GARRISON_CALL_RATIO`] times ours: the garrison
+    /// call's threat, shared with `capital-keeps-its-defender-3`, which
+    /// reads them near our first cities at peace.
+    pub(crate) fn stronger_major_soldiers(g: &Game, pid: usize) -> Vec<u32> {
         let ours = g.military_power(pid).max(1.0);
         let strong: BTreeSet<usize> = g
             .players
@@ -96,20 +93,36 @@ impl BasicAi {
             })
             .map(|player| player.id)
             .collect();
+        if strong.is_empty() {
+            return Vec::new();
+        }
+        let visible = g.player_vision_frame(pid);
+        g.units
+            .values()
+            .filter(|unit| {
+                strong.contains(&unit.owner)
+                    && Self::garrison_call_soldier(g, unit)
+                    && g.sees(&visible, unit.pos)
+                    && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| unit.id)
+            .collect()
+    }
+
+    /// Our cities a stronger major's visible soldier stands near this turn.
+    /// Cached per turn: the reading is the turn-start frame.
+    pub(crate) fn garrison_called_cities(&mut self, g: &Game, pid: usize) -> Vec<Pos> {
+        if let Some((turn, cities)) = &self.garrison_call_cache {
+            if *turn == g.turn {
+                return cities.clone();
+            }
+        }
+        let soldiers: Vec<Pos> = Self::stronger_major_soldiers(g, pid)
+            .into_iter()
+            .map(|uid| g.units[&uid].pos)
+            .collect();
         let mut cities = Vec::new();
-        if !strong.is_empty() {
-            let visible = g.player_vision_frame(pid);
-            let soldiers: Vec<Pos> = g
-                .units
-                .values()
-                .filter(|unit| {
-                    strong.contains(&unit.owner)
-                        && Self::garrison_call_soldier(g, unit)
-                        && g.sees(&visible, unit.pos)
-                        && g.unit_visible_to(unit.id, pid)
-                })
-                .map(|unit| unit.pos)
-                .collect();
+        if !soldiers.is_empty() {
             cities = g
                 .player_city_ids(pid)
                 .into_iter()

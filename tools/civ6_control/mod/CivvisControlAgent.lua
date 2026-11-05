@@ -12628,8 +12628,46 @@ CivvisLedger.preview = function(unit, verb, x, y)
 		defender_wall_damage = read("DEFENDER", "DEFENSE_DAMAGE_TO"),
 		attacker_strength = read("ATTACKER", "COMBAT_STRENGTH"),
 		defender_strength = read("DEFENDER", "COMBAT_STRENGTH"),
+		attacker_strength_modifier = read("ATTACKER", "STRENGTH_MODIFIER"),
+		defender_strength_modifier = read("DEFENDER", "STRENGTH_MODIFIER"),
 	};
+	-- UnitPanel.lua:1748-1767 adds STRENGTH_MODIFIER to COMBAT_STRENGTH
+	-- and clamps the displayed total at zero. Keep the legacy base readings;
+	-- an unavailable modifier leaves the new total unknown, not base + zero.
+	if out.attacker_strength ~= nil and out.attacker_strength_modifier ~= nil then
+		out.attacker_total_strength = math.max(0, out.attacker_strength + out.attacker_strength_modifier);
+	end
+	if out.defender_strength ~= nil and out.defender_strength_modifier ~= nil then
+		out.defender_total_strength = math.max(0, out.defender_strength + out.defender_strength_modifier);
+	end
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	-- UnitPanel.lua:1965-1974 reads these ten preview-text groups from the
+	-- same simulation. Preserve their native strings for component audits;
+	-- do not infer bonuses from the aggregate modifier or issue another query.
+	local textKeys = {
+		"PREVIEW_TEXT_INTERCEPTOR", "PREVIEW_TEXT_ANTI_AIR", "PREVIEW_TEXT_HEALTH",
+		"PREVIEW_TEXT_TERRAIN", "PREVIEW_TEXT_OPPONENT", "PREVIEW_TEXT_MODIFIER",
+		"PREVIEW_TEXT_ASSIST", "PREVIEW_TEXT_PROMOTION", "PREVIEW_TEXT_DEFENSES",
+		"PREVIEW_TEXT_RESOURCES",
+	};
+	local function modifierText(side)
+		local groups, any = {}, false;
+		for _, key in ipairs(textKeys) do
+			local raw = try(function()
+				return results[CombatResultParameters[side]][CombatResultParameters[key]];
+			end, nil);
+			if type(raw) == "table" then
+				local items = {};
+				for _, item in ipairs(raw) do
+					if type(item) == "string" then items[#items + 1] = item; end
+				end
+				if #items > 0 then groups[key] = items; any = true; end
+			end
+		end
+		return any and groups or nil;
+	end
+	out.attacker_modifier_text = modifierText("ATTACKER");
+	out.defender_modifier_text = modifierText("DEFENDER");
 	return out;
 end;
 
