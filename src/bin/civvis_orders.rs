@@ -3079,6 +3079,10 @@ const LUXURY_SWAP_2_MIN_DEFICIT: f64 = 1.0;
 const LUXURY_SWAP_SECOND_COPY_SPARES: f64 = 4.0;
 const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 
+/// The swap's fit test: whether the seller's seat holds none of a luxury
+/// (`None` when the board cannot read it). `luxury-swap-asks-2` only.
+type LuxuryLacks<'a> = Option<&'a dyn Fn(i64, &str) -> Option<bool>>;
+
 /// `lacks` (`luxury-swap-asks-2`, `None` for version one): whether the rival
 /// with this host player id holds no copy of the luxury, as the host names
 /// it, on its mirrored board; `None` when the board cannot say.
@@ -3086,7 +3090,7 @@ const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 fn append_luxury_swap_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
-    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    lacks: LuxuryLacks<'_>,
 ) -> Option<&'static str> {
     luxury_swap_order(state, orders, lacks, &|_| false)
 }
@@ -3100,7 +3104,7 @@ fn append_luxury_swap_order(
 fn append_luxury_swap_order_2(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
-    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    lacks: LuxuryLacks<'_>,
     stale: &std::collections::BTreeSet<String>,
 ) -> Option<&'static str> {
     luxury_swap_order(state, orders, lacks, &|name| stale.contains(name))
@@ -3110,7 +3114,7 @@ fn append_luxury_swap_order_2(
 fn luxury_swap_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
-    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    lacks: LuxuryLacks<'_>,
     stale: &dyn Fn(&str) -> bool,
 ) -> Option<&'static str> {
     let min_deficit = if lacks.is_some() {
