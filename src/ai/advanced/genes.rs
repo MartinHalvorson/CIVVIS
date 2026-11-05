@@ -5141,6 +5141,15 @@ pub const GENES: &[Gene] = &[
     // `builders-cover-the-worked-backlog`. See
     // `ai/prod_tiles_call_the_builders.rs`.
     Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // The strategic scorer prices a land unit at power x 4 + 58 per missing
+    // body, and only the one named threatened city adds a war term. So in
+    // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
+    // chose a Stock Exchange at 104 over any defender at about 52, and the
+    // seat was eliminated at t203. Under the gene, a missing land unit gains
+    // 350 x the enemy-to-our power ratio (1.5 to 3) while that major is at war
+    // with us and a home city is threatened. See
+    // `outmatched_war_prices_the_army.rs`.
+    Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

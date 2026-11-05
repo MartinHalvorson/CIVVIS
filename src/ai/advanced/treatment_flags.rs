@@ -2213,6 +2213,9 @@ impl AdvancedAi {
         /// `builders-cover-the-worked-backlog`'s step. See
         /// `ai/prod_tiles_call_the_builders.rs`.
         base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `outmatched-war-prices-the-army`; see
+        /// `advanced/outmatched_war_prices_the_army.rs`.
+        outmatched_war_prices_the_army => enable_outmatched_war_prices_the_army, disable_outmatched_war_prices_the_army;
     }
 }
 
