@@ -8651,6 +8651,11 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
+    /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
+    /// left to steal), and the turn it last did. See
+    /// `AdvancedAi::racer_spy_post_for`.
+    steal_dry_cities: BTreeMap<u32, u32>,
     /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
     /// major's soldier is within six tiles (a non-friend's within two at
     /// peace) goes to the nearest city of ours, and one inside a city stays. See
@@ -12248,6 +12253,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
