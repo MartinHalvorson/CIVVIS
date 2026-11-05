@@ -2834,3 +2834,17 @@ of 99.6 % and a doubled exchange ratio. For such a gene the arena is the gate
 on the curriculum and on a captured engagement file, healing off and on — and
 this screen is the no-harm check afterwards. `docs/DOCTRINE_ARENA.md` ("The
 gate for a tactical gene") states the reading.
+
+#### ⭐ Wars at the live rate: `--rival-war-pace PCT` (2026-11-04)
+
+At Standard speed the calibrated field was nearly peaceful: 0.00-0.06 cities
+taken per measured seat by turn 220-250, against 0.69 for the live Gran
+Colombia seat (a war declared on it in 96% of live games by turn 250). With
+`--rival-war-pace PCT` the rival chairs roll the live-fitted declaration hazard
+(-5f's 10-turn logistic: proximity, soldiers near our cities, denouncement,
+friendship, power ratio) once a turn against each measured seat, with its odds
+at PCT percent. The draws come from a keyed hash rather than the game's RNG.
+The rows gain `war_starts`, `rival_war_turns`, `cities_lost_100` and
+`cities_taken_100` (also with `--trace`). See
+[gene_screens/rival_war_pace.md](gene_screens/rival_war_pace.md).
+
