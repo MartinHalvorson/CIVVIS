@@ -5074,6 +5074,14 @@ pub const GENES: &[Gene] = &[
     // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
     // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
     Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // capital-keeps-its-defender-2's paired read at Deity with wars on lost
+    // 1.3 cities and 104 military (z -2.3, -2.0); it carries two parts, an
+    // early-city Defend ranking and a hold for a Defend force below half the
+    // local hostile strength. Live 074444Z without it: a Defend force of 4
+    // engaged at 0.48 and its Warriors and Archers died to Crossbowmen in
+    // the open. This plays the hold alone so the parts can be measured
+    // apart. See `advanced/objective_board.rs`.
+    Gene { tag: "outclassed-defenders-hold-the-city", field: "outclassed_defenders_hold_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_defenders_hold_the_city, disable: AdvancedAi::disable_outclassed_defenders_hold_the_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

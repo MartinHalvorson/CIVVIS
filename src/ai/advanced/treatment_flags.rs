@@ -5100,6 +5100,17 @@ impl AdvancedAi {
         self.walls_release_the_one_blow = false;
     }
 
+    /// Opt-in gene `outclassed-defenders-hold-the-city`; see
+    /// [`Self::outclassed_defenders_hold_the_city`].
+    pub fn enable_outclassed_defenders_hold_the_city(&mut self) {
+        self.outclassed_defenders_hold_the_city = true;
+    }
+
+    /// The twin of `enable_outclassed_defenders_hold_the_city`.
+    pub fn disable_outclassed_defenders_hold_the_city(&mut self) {
+        self.outclassed_defenders_hold_the_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

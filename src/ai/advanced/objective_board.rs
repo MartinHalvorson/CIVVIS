@@ -1886,13 +1886,19 @@ impl AdvancedAi {
     /// early-city losses; 210549Z sent Yangsan's only unit five tiles out at
     /// 0.15 and 0.06, and the empty city fell at turn 27. A Relieve force
     /// still marches. Off on an arena (nothing stands still there).
+    ///
+    /// `outclassed-defenders-hold-the-city` plays this hold alone, without
+    /// the early-city ranking, so the two halves of version two can be
+    /// measured apart (its paired read lost 1.3 cities and 104 military).
     pub(super) fn defend_holds_when_outclassed(
         &self,
         arena: bool,
         kind: Option<ObjectiveKind>,
         local_strength_ratio: f64,
     ) -> bool {
-        (self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3)
+        (self.capital_keeps_its_defender_2
+            || self.capital_keeps_its_defender_3
+            || self.outclassed_defenders_hold_the_city)
             && !arena
             && kind == Some(ObjectiveKind::Defend)
             && local_strength_ratio < DEFEND_HOLD_RATIO

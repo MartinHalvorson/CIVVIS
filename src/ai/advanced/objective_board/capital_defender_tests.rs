@@ -299,3 +299,31 @@ fn a_stronger_major_parked_at_peace_raises_the_early_citys_row() {
     v2.enable_capital_keeps_its_defender_2();
     assert!(!row_for(&mut v2, &g), "version two counts only a war");
 }
+
+/// `outclassed-defenders-hold-the-city` plays version two's hold alone: the
+/// same posture, and no early-city ranking.
+#[test]
+fn the_hold_plays_alone_without_the_early_city_ranking() {
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.outclassed_defenders_hold_the_city,
+        "an opt-in ships off"
+    );
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "outclassed_defenders_hold_the_city"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "outclassed-defenders-hold-the-city",
+        |ai| ai.outclassed_defenders_hold_the_city,
+    );
+    let defend = Some(ObjectiveKind::Defend);
+    ai.enable_outclassed_defenders_hold_the_city();
+    assert!(!ai.capital_keeps_its_defender_2 && !ai.capital_keeps_its_defender_3);
+    assert!(ai.defend_holds_when_outclassed(false, defend, 0.48));
+    assert!(!ai.defend_holds_when_outclassed(false, defend, DEFEND_HOLD_RATIO));
+    assert!(!ai.defend_holds_when_outclassed(false, Some(ObjectiveKind::Relieve), 0.1));
+    assert!(
+        !ai.defend_holds_when_outclassed(true, defend, 0.1),
+        "an arena"
+    );
+}
