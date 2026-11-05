@@ -3200,7 +3200,7 @@ impl AdvancedAi {
         // culture racer). All empty with the gene off. See
         // `advanced/racer_keeps_the_spies.rs`.
         let racer_spy_racers = self.racer_spy_racers(g, pid);
-        let racer_spy_leader = Self::racer_spy_leader(g, &racer_spy_racers);
+        let racer_spy_leader = self.racer_spy_leader_of(g, &racer_spy_racers);
         let racer_spy_stays: BTreeSet<usize> = if racer_spy_racers.is_empty() {
             BTreeSet::new()
         } else {
