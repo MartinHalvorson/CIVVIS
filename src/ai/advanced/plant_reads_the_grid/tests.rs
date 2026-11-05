@@ -108,7 +108,10 @@ fn a_lab_and_factory_city_is_credited_where_the_stock_read_pays_nothing() {
     stock(&mut g, "oil", 40.0);
     let credited = credit(&ai, &g, first, "oil_power_plant");
     assert_eq!(credited.science, 5.0, "the Lab's powered half");
-    assert_eq!(credited.production, 3.0, "and the Factory's");
+    assert_eq!(
+        credited.production, 0.0,
+        "a Factory is regional, so its powered half is left out, as in the stock read"
+    );
 }
 
 /// Twenty-five banked is 1.25 a turn: one unit for the Lab alone, never the
@@ -119,11 +122,9 @@ fn the_fuel_feeds_every_city_in_reach_it_can_afford() {
     stock(&mut g, "oil", 60.0);
     assert_eq!(credit(&ai, &g, first, "oil_power_plant").science, 10.0);
     stock(&mut g, "oil", 40.0);
-    let two_units = credit(&ai, &g, first, "oil_power_plant");
-    assert_eq!((two_units.science, two_units.production), (5.0, 3.0));
+    assert_eq!(credit(&ai, &g, first, "oil_power_plant").science, 5.0);
     stock(&mut g, "oil", 25.0);
-    let one_unit = credit(&ai, &g, first, "oil_power_plant");
-    assert_eq!((one_unit.science, one_unit.production), (5.0, 0.0));
+    assert_eq!(credit(&ai, &g, first, "oil_power_plant").science, 5.0);
 }
 
 #[test]
