@@ -3,7 +3,10 @@
 //! [`OBSOLETE_ARMY_MIN_UNITS`] units) stands [`OBSOLETE_ERA_GAP`] or more
 //! eras behind the world, the peacetime upgrade pass spends down to the
 //! wartime floor ([`OBSOLETE_ARMY_FLOOR`]) instead of the peacetime 120. The
-//! upkeep reserve (`upgrade_treasury_floor`) still applies on top.
+//! upkeep reserve (`upgrade_treasury_floor`) still applies on top. While a
+//! stronger major's soldier stands near one of our cities (the
+//! `garrison-before-the-surprise` threat), the floor is an emergency
+//! defender's price instead, so the surprise-war buys keep their Gold.
 //!
 //! **Why (live Deity Online Korea, 2026-11-05).**
 //! - At turn 145, across 19 Deity runs, a median 8 of our 17 military units
@@ -65,15 +68,40 @@ impl AdvancedAi {
             && obsolete as f64 >= military as f64 * OBSOLETE_ARMY_SHARE
     }
 
-    /// The peacetime upgrade floor under the gene: the wartime floor while
-    /// the army is obsolete, `peace` otherwise. Always `peace` with the gene
-    /// off.
+    /// Whether a stronger major's visible soldier stands within
+    /// `GARRISON_CALL_TILES` of one of our cities: `garrison-before-the-
+    /// surprise`'s own threat test, the shape of a Deity surprise war.
+    fn obsolete_army_surprise_threat(g: &Game, pid: usize) -> bool {
+        let reach = crate::ai::garrison_before_the_surprise::GARRISON_CALL_TILES;
+        let cities: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        BasicAi::stronger_major_soldiers(g, pid)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .any(|unit| cities.iter().any(|city| g.wdist(unit.pos, *city) <= reach))
+    }
+
+    /// The peacetime upgrade floor under the gene. While the army is
+    /// obsolete: [`OBSOLETE_ARMY_FLOOR`], or, with a stronger major's
+    /// soldier near one of our cities, an emergency defender's price (-af:
+    /// a near-empty treasury is exactly when a Deity surprise war lands and
+    /// the emergency buys need their Gold). Never above `peace`, and always
+    /// `peace` with the gene off or a current army.
     pub(super) fn obsolete_army_upgrade_floor(&self, g: &Game, pid: usize, peace: f64) -> f64 {
-        if self.obsolete_army_spends_the_floor && Self::army_is_obsolete(g, pid) {
-            OBSOLETE_ARMY_FLOOR.min(peace)
-        } else {
-            peace
+        if !self.obsolete_army_spends_the_floor || !Self::army_is_obsolete(g, pid) {
+            return peace;
         }
+        let floor = if Self::obsolete_army_surprise_threat(g, pid) {
+            self.emergency_defender_price(g, pid)
+                .unwrap_or(peace)
+                .max(OBSOLETE_ARMY_FLOOR)
+        } else {
+            OBSOLETE_ARMY_FLOOR
+        };
+        floor.min(peace)
     }
 }
 
