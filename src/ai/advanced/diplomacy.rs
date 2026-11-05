@@ -3249,7 +3249,9 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let legal = g.legal_spy_actions(pid, spy_id);
+            // `disrupt-waits-for-the-match-point`: no Disrupt Rocketry before
+            // the racer's last projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
+            let legal = self.withhold_early_disrupts(g, spy_id, g.legal_spy_actions(pid, spy_id));
             if legal.is_empty() {
                 continue;
             }
@@ -3572,7 +3574,12 @@ impl AdvancedAi {
                 // `science-denial-every-pad`: in a decisive science threat's
                 // city, Disrupt Rocketry whenever it is offered. `None` with
                 // the gene off (`every_pad_threats` empty).
-                if let Some(action) = Self::every_pad_disrupt(g, pid, spy_id, &every_pad_threats) {
+                let every_pad = if self.disrupt_held_for_the_match_point(g, spy_id) {
+                    None
+                } else {
+                    Self::every_pad_disrupt(g, pid, spy_id, &every_pad_threats)
+                };
+                if let Some(action) = every_pad {
                     if g.apply(pid, &action).is_ok() {
                         *g.players[pid]
                             .counters
