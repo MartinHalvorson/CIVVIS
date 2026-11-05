@@ -7350,6 +7350,9 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `fresh-water-prices-the-site`: a fresh-water seat outbids a coast-only
+    /// one. See `advanced/fresh_water_site.rs`. Off by default.
+    fresh_water_prices_the_site: bool,
     /// `early-cities-keep-their-distance`: while the empire holds fewer
     /// than three cities, a site loses value for every tile it stands inside
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
@@ -10829,6 +10832,8 @@ mod first_launch_research;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod free_slot_campus_clock;
+/// `fresh-water-prices-the-site`: see `advanced/fresh_water_site.rs`.
+mod fresh_water_site;
 /// `generals-lead-the-army`: the live bridge keeps a General with each front
 /// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
 mod generals_lead_the_army;
@@ -12265,6 +12270,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
@@ -26259,6 +26265,9 @@ impl AdvancedAi {
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
+        // `fresh-water-prices-the-site`: zero with the gene off. See
+        // `advanced/fresh_water_site.rs`.
+        value += self.fresh_water_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);
