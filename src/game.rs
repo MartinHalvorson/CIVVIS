@@ -504,9 +504,15 @@ mod route_avoidance;
 /// Barbarians: camps, raids, scouts, and clearing a camp. See
 /// `game/barbarians.rs`.
 mod barbarians;
+/// Eras: historic moments, era score, dedications and golden ages. See
+/// `game/eras.rs`.
+mod eras;
 /// Housing: a city's housing, its sources, and its effect on growth. See
 /// `game/housing.rs`.
 mod housing;
+/// Loyalty: city loyalty, its pressures and effects, and Free Cities. See
+/// `game/loyalty.rs`.
+mod loyalty;
 /// City power: demand, supply, renewables, and powered yields. See
 /// `game/power.rs`.
 mod power;
@@ -8969,131 +8975,6 @@ impl Game {
         }
     }
 
-    /// Civilization VI's Advanced Start: a game set to open past the first age
-    /// begins with the earlier ages already behind it.
-    ///
-    /// This is where the start era stops being a label and becomes a rule.
-    /// `new_with` has already clamped it to an era the rules have a tree for,
-    /// so every value reaching here can actually be cut at.
-    ///
-    /// Every civilization on the board is handed it: majors and city-states
-    /// alike get every technology and civic of an earlier era, and each of
-    /// their starting units is walked as far up its own upgrade chain as that
-    /// knowledge reaches. A world where the majors have rifles and the minors
-    /// have slings is not the setting anybody asked for, and neither is a
-    /// Modern-era start defended by Warriors. Barbarians are left alone
-    /// deliberately: their camps spawn against the world era, which this
-    /// moves, so they arrive era-appropriate without being handed a start.
-    ///
-    /// What this does not do is grant the extra Settlers, gold and finished
-    /// districts a shipped Advanced Start also hands out. Those are balance
-    /// dials; an era's worth of research is the part that decides what the
-    /// game *is*.
-    fn open_in_start_era(&mut self) {
-        if self.start_era == 0 {
-            return;
-        }
-        let era = self.start_era;
-        let techs: Vec<Name> = self
-            .rules
-            .techs
-            .iter()
-            .filter(|(_, spec)| spec.era < era)
-            .map(|(name, _)| *name)
-            .collect();
-        let civics: Vec<Name> = self
-            .rules
-            .civics
-            .iter()
-            .filter(|(_, spec)| spec.era < era)
-            .map(|(name, _)| *name)
-            .collect();
-        for pid in 0..self.players.len() {
-            if self.players[pid].is_barbarian {
-                continue;
-            }
-            self.players[pid].techs.extend(techs.iter().cloned());
-            self.players[pid].civics.extend(civics.iter().cloned());
-            // Nothing may be left researching something it already knows.
-            if self.players[pid]
-                .research
-                .as_deref()
-                .is_some_and(|tech| techs.iter().any(|known| known == tech))
-            {
-                self.players[pid].research = None;
-                self.players[pid].research_progress = 0.0;
-            }
-            if self.players[pid]
-                .civic
-                .as_deref()
-                .is_some_and(|civic| civics.iter().any(|known| known == civic))
-            {
-                self.players[pid].civic = None;
-                self.players[pid].civic_progress = 0.0;
-            }
-        }
-        self.world_era = era;
-
-        // Re-spawn rather than rewrite: `spawn_unit` owns charges, religion
-        // and the strongest-built counters, so a Musketman that arrives this
-        // way is the same unit as one that was trained.
-        let starting: Vec<(u32, usize, Pos, Name)> = self
-            .units
-            .values()
-            .filter(|unit| !self.players[unit.owner].is_barbarian)
-            .map(|unit| (unit.id, unit.owner, unit.pos, unit.kind))
-            .collect();
-        // A custom arena with an era pool is dealt *across* the pool rather
-        // than walked to the top: each side's Nth unit is capped at the
-        // pool's Nth era, cycling, so both sides carry the identical mix and
-        // every pooled era puts something real on the field. The count is
-        // kept per side because the two armies are dealt one after the other
-        // and must come out the same. Everywhere else the pool is empty and
-        // nothing is capped.
-        let pool = if self.map_script.is_battlefield() && !self.map_script.is_scenario() {
-            self.tactics.era.pool_eras()
-        } else {
-            Vec::new()
-        };
-        let mut dealt: BTreeMap<usize, usize> = BTreeMap::new();
-        for (uid, owner, pos, kind) in starting {
-            let cap = (!pool.is_empty()).then(|| {
-                let index = dealt.entry(owner).or_insert(0);
-                let era = pool[*index % pool.len()];
-                *index += 1;
-                era
-            });
-            let mut upgraded = kind;
-            // The chain is acyclic and every rung is checked against what the
-            // owner now knows, so this walks to the newest unit the start era
-            // — or this unit's slice of the era pool — reaches and stops.
-            while let Some(next) = self.unit_upgrade_target(owner, upgraded) {
-                if cap.is_some_and(|era| !self.unit_within_era(next, era)) {
-                    break;
-                }
-                upgraded = next;
-            }
-            if upgraded == kind {
-                continue;
-            }
-            self.remove_unit(uid);
-            self.spawn_unit(&upgraded, owner, pos);
-        }
-    }
-
-    fn ensure_free_city_player(&mut self) -> usize {
-        if let Some(player) = self.players.iter().find(|player| player.is_free_city) {
-            return player.id;
-        }
-        let pid = self.players.len();
-        let mut player = Player::new(pid, "Free Cities", true);
-        player.alive = false;
-        player.is_barbarian = true;
-        player.is_free_city = true;
-        self.players.push(player);
-        pid
-    }
-
     /// Where a city-state assigned to `preferred` should actually settle.
     /// That tile is used when it clears every major start and existing city by
     /// the stock four-tile minimum; otherwise the roomiest legal tile on the
@@ -9374,30 +9255,6 @@ impl Game {
             }
         }
     }
-
-    fn place_city_state_starting_unit(&mut self, kind: &str, owner: usize, center: Pos) {
-        if self.place_new_unit(kind, owner, center).is_some() {
-            return;
-        }
-        let want_sea = self.rules.units[kind].domain.as_deref() == Some("sea");
-        let mut candidates = self.wdisk(center, 6);
-        candidates.sort_by_key(|position| (self.wdist(center, *position), *position));
-        let position = candidates.into_iter().find(|position| {
-            self.map.get(*position).is_some_and(|tile| {
-                self.rules.is_passable(tile)
-                    && self.rules.is_water(tile) == want_sea
-                    && self.unit_ids_at(*position).is_empty()
-                    && tile
-                        .owner_city
-                        .is_none_or(|city| self.cities[&city].owner == owner)
-            })
-        });
-        if let Some(position) = position {
-            self.spawn_unit(kind, owner, position);
-        }
-    }
-
-    // -------------------------------------------------- difficulty and speed
 
     pub fn difficulty_spec(&self) -> &DifficultySpec {
         &self.rules.difficulties[&self.difficulty]
@@ -9811,31 +9668,6 @@ impl Game {
             return 0.0;
         }
         (contested / courted).min(1.0)
-    }
-
-    /// Gilgamesh: standing beside him, and beside the people he stands with.
-    fn loyalty_to_friends(&self, observer: usize, subject: usize) -> f64 {
-        let mut score: f64 = 0.0;
-        if self.are_allied(observer, subject) {
-            score += 1.0;
-        } else if self.are_friends(observer, subject) {
-            score += 0.6;
-        }
-        if self.is_at_war(observer, subject) {
-            score -= 1.0;
-        }
-        // Attacking his friends is the same offence as attacking him.
-        for player in &self.players {
-            if player.id == observer || player.id == subject || player.is_barbarian {
-                continue;
-            }
-            let befriended =
-                self.are_friends(observer, player.id) || self.are_allied(observer, player.id);
-            if befriended && self.is_at_war(subject, player.id) {
-                score -= 0.5;
-            }
-        }
-        score.clamp(-1.0, 1.0)
     }
 
     /// Montezuma: he approves of luxuries he already enjoys, and covets the
@@ -11871,20 +11703,6 @@ impl Game {
                 self.religion_belief_effect(religion, &effect)
             })
             > 0.0
-    }
-
-    /// The era a unit belongs to, taken from the node that unlocks it. Unit
-    /// Production policy cards are gated on it: Agoge boosts Ancient and
-    /// Classical infantry, not every Infantry ever built.
-    pub(crate) fn unit_era(&self, unit: &str) -> usize {
-        let spec = &self.rules.units[unit];
-        if let Some(tech) = spec.tech.as_deref() {
-            return self.rules.techs.get(tech).map(|t| t.era).unwrap_or(0);
-        }
-        if let Some(civic) = spec.civic.as_deref() {
-            return self.rules.civics.get(civic).map(|c| c.era).unwrap_or(0);
-        }
-        0
     }
 
     /// Sums a policy effect over the cards whose era window admits `era`.
@@ -14371,41 +14189,6 @@ impl Game {
         }
         self.award_conversion_era_score(&before);
         self.check_religious_victory();
-    }
-
-    /// Pay Exodus of the Evangelists for every city that has just taken its
-    /// founder's religion for the first time. The founder is credited, not the
-    /// city's owner: converting somebody else's city is the historic moment.
-    fn award_conversion_era_score(&mut self, before: &[(u32, Option<String>)]) {
-        for (cid, was) in before {
-            let Some(now) = self
-                .cities
-                .get(cid)
-                .and_then(|city| self.city_religion(city))
-                .map(str::to_string)
-            else {
-                continue;
-            };
-            if was.as_deref() == Some(now.as_str()) {
-                continue;
-            }
-            let Some(founder) = self.religion_founder(&now) else {
-                continue;
-            };
-            if self.players[founder].converted_cities.insert(*cid) {
-                self.dedication_trigger(founder, "city_converted", 1);
-            }
-            let owner = self.cities[cid].owner;
-            if owner != founder && self.is_at_war(founder, owner) {
-                self.add_historic_moment(
-                    founder,
-                    "MOMENT_CITY_CHANGED_RELIGION_ENEMY_CITY_DURING_WAR",
-                );
-            }
-            if owner != founder && self.players[owner].holy_city == Some(*cid) {
-                self.add_historic_moment(founder, "MOMENT_CITY_CHANGED_RELIGION_OTHER_HOLY_CITY");
-            }
-        }
     }
 
     /// Religious victory: "make your Religion the predominant Religion for
@@ -17054,93 +16837,6 @@ impl Game {
         value
     }
 
-    #[cfg(test)]
-    /// `MOMENT_BARBARIAN_CAMP_DESTROYED` is available from Ancient through
-    /// Medieval. Keep this compatibility accessor for clients while deriving
-    /// its value and window from the same catalogue as every other Moment.
-    pub(crate) fn barbarian_camp_era_score(&self) -> i64 {
-        self.historic_moment_spec("MOMENT_BARBARIAN_CAMP_DESTROYED")
-            .map_or(0, |spec| spec.era_score)
-    }
-
-    fn historic_moment_spec(&self, moment: &str) -> Option<&crate::rules::HistoricMomentSpec> {
-        let spec = self.rules.historic_moments.get(moment)?;
-        (spec.era_score > 0
-            && spec
-                .minimum_game_era
-                .is_none_or(|minimum| self.world_era >= minimum)
-            && spec
-                .maximum_game_era
-                .is_none_or(|maximum| self.world_era <= maximum)
-            && spec
-                .obsolete_era
-                .is_none_or(|obsolete| self.world_era < obsolete))
-        .then_some(spec)
-    }
-
-    /// Award a named Historic Moment and record the concrete catalogue row.
-    /// Taj Mahal adds one Era Score to Moments whose base value is at least
-    /// two. No call site supplies a score or reimplements an era window.
-    fn add_historic_moment(&mut self, pid: usize, moment: &str) -> bool {
-        if pid >= self.players.len()
-            || self.players[pid].is_minor
-            || self.players[pid].is_barbarian
-            || self.players[pid].is_free_city
-        {
-            return false;
-        }
-        let Some(amount) = self.historic_moment_spec(moment).map(|spec| spec.era_score) else {
-            return false;
-        };
-        let bonus = if amount >= 2 {
-            self.empire_wonder_effect(pid, "historic_moment_bonus") as i64
-        } else {
-            0
-        };
-        self.players[pid].era_score += amount + bonus;
-        *self.players[pid]
-            .counters
-            .entry(format!("historic_moment_awards:{moment}"))
-            .or_insert(0) += 1;
-        true
-    }
-
-    fn first_historic_moment(
-        &mut self,
-        pid: usize,
-        key: &str,
-        ordinary_moment: Option<&str>,
-        world_first_moment: Option<&str>,
-    ) -> bool {
-        if pid >= self.players.len()
-            || self.players[pid].is_minor
-            || self.players[pid].is_barbarian
-            || self.players[pid].is_free_city
-        {
-            return false;
-        }
-        let counter = format!("historic_moment:{key}");
-        if self.players[pid].counters.contains_key(&counter) {
-            return false;
-        }
-        let first_in_world = !self.players.iter().any(|other| {
-            other.id != pid
-                && !other.is_minor
-                && !other.is_barbarian
-                && !other.is_free_city
-                && other.counters.contains_key(&counter)
-        });
-        self.players[pid].counters.insert(counter, 1);
-        let preferred = first_in_world
-            .then_some(world_first_moment)
-            .flatten()
-            .filter(|moment| self.historic_moment_spec(moment).is_some());
-        if let Some(moment) = preferred.or(ordinary_moment) {
-            self.add_historic_moment(pid, moment);
-        }
-        first_in_world
-    }
-
     fn repeatable_world_first_moment(
         &mut self,
         pid: usize,
@@ -17331,14 +17027,6 @@ impl Game {
         }
     }
 
-    fn district_historic_moment_threshold(family: &str) -> Option<f64> {
-        match family {
-            "campus" | "holy_site" | "theater_square" => Some(3.0),
-            "commercial_hub" | "harbor" | "industrial_zone" => Some(4.0),
-            _ => None,
-        }
-    }
-
     fn note_building_completed_moments(&mut self, pid: usize, building: &str) {
         let spec = self.rules.buildings[building].clone();
         if self.grants_city_state_unique_bonus(pid, "Ayutthaya") && !spec.wonder {
@@ -17381,14 +17069,6 @@ impl Game {
                     None,
                 );
             }
-        }
-    }
-
-    fn wonder_historic_moment(&self, wonder: &str) -> &'static str {
-        if self.wonder_era(wonder) >= self.world_era {
-            "MOMENT_BUILDING_CONSTRUCTED_GAME_ERA_WONDER"
-        } else {
-            "MOMENT_BUILDING_CONSTRUCTED_PAST_ERA_WONDER"
         }
     }
 
@@ -19143,71 +18823,6 @@ impl Game {
             0.70
         } else {
             0.0
-        }
-    }
-
-    /// Happiness is a direct Loyalty source in Rise & Fall / Gathering
-    /// Storm: Happy/Ecstatic add +3/+6; Displeased and every worse state
-    /// subtract -3/-6 respectively.
-    fn happiness_loyalty_delta(surplus: i64) -> f64 {
-        if surplus >= 5 {
-            6.0
-        } else if surplus >= 3 {
-            3.0
-        } else if surplus >= 0 {
-            0.0
-        } else if surplus >= -2 {
-            -3.0
-        } else {
-            -6.0
-        }
-    }
-
-    /// Rise & Fall / Gathering Storm loyalty yield band, taken from the
-    /// shipped `LoyaltyLevels` table (`YieldChange` per level, one step per
-    /// display band): Loyal 76-100 pays 0, Wavering 51-75 pays -0.25,
-    /// Disloyal 26-50 pays -0.5, and Unrest 0-25 pays -1.0 — a city in
-    /// Unrest really does produce nothing.
-    ///
-    /// The Civilopedia prose ("below 75 … penalized 25%; below 25 … 50%
-    /// yields and 75% growth") describes two steps and disagrees with the
-    /// table the game actually runs on. The table wins; do not "fix" this
-    /// back from the prose.
-    fn loyalty_yield_mult(loyalty: f64) -> f64 {
-        if loyalty > 75.0 {
-            1.0
-        } else if loyalty > 50.0 {
-            0.75
-        } else if loyalty > 25.0 {
-            0.50
-        } else {
-            0.0
-        }
-    }
-
-    /// `LoyaltyLevels.GrowthChange` is the multiplier outright: Loyal 1.0,
-    /// Wavering 0.75, Disloyal 0.25, Unrest 0.0.
-    fn loyalty_growth_mult(loyalty: f64) -> f64 {
-        if loyalty > 75.0 {
-            1.0
-        } else if loyalty > 50.0 {
-            0.75
-        } else if loyalty > 25.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
-    pub fn loyalty_state(loyalty: f64) -> &'static str {
-        if loyalty > 75.0 {
-            "loyal"
-        } else if loyalty > 50.0 {
-            "wavering"
-        } else if loyalty > 25.0 {
-            "disloyal"
-        } else {
-            "unrest"
         }
     }
 
@@ -26375,428 +25990,6 @@ impl Game {
         self.do_appoint_governor(pid, governor.as_str(), cid)
     }
 
-    /// Calculate one city's complete per-turn Loyalty change. Keeping this
-    /// read-only makes the exact value available to clients and AI without
-    /// duplicating (and eventually drifting from) the turn processor.
-    fn loyalty_change_for_city(&self, pid: usize, cid: u32) -> LoyaltyChange {
-        self.loyalty_change_for_city_with_pressure(pid, cid, None)
-    }
-
-    fn loyalty_change_for_city_with_pressure(
-        &self,
-        pid: usize,
-        cid: u32,
-        population_pressure: Option<f64>,
-    ) -> LoyaltyChange {
-        // Loyalty weighs this city against every other within range, and asks
-        // several of them the same empire-wide questions.
-        let _memo = self.query_memo();
-        let city = &self.cities[&cid];
-        let cpos = city.pos;
-        let protected = self
-            .cities
-            .values()
-            .filter(|source| source.owner == pid)
-            .flat_map(|source| source.wonders.iter())
-            .any(|(wonder, position)| {
-                self.rules.wonders[wonder]
-                    .effects
-                    .get("regional_full_loyalty_range")
-                    .is_some_and(|range| self.wdist(*position, cpos) <= *range as i32)
-            });
-        if protected {
-            return LoyaltyChange {
-                delta: 100.0 - city.loyalty,
-                locked: true,
-                ..LoyaltyChange::default()
-            };
-        }
-
-        let age_factor = |owner: usize| match self.players[owner].age.as_str() {
-            "golden" | "heroic" => 1.5,
-            "dark" => 0.5,
-            _ => 1.0,
-        };
-        let mut domestic_pressure = 0.0;
-        let mut foreign_pressure = 0.0;
-        let mut pressure_by_civ: BTreeMap<usize, f64> = BTreeMap::new();
-        for source in self.cities.values() {
-            let owner = &self.players[source.owner];
-            // A true barbarian speaks for nobody. The Free Cities seat carries
-            // the same hostile flag so that everyone is at war with it, so it
-            // has to be named apart from them here.
-            if owner.is_barbarian && !owner.is_free_city {
-                continue;
-            }
-            // A minor civilization projects no pressure onto its neighbours:
-            // the shipped population tooltip drops the "also applies to other
-            // cities within 9 tiles" clause for minors. Its own Citizens still
-            // speak for the city they live in, and that is the whole domestic
-            // side of a city-state's or Free City's own balance. Skipping them
-            // outright left every city-state comparing 0 against its
-            // neighbours and reading a permanent -20.
-            if (owner.is_minor || owner.is_free_city) && source.id != cid {
-                continue;
-            }
-            let distance = self.wdist(source.pos, cpos);
-            if distance > 9 {
-                continue;
-            }
-            // "Each Citizen exerts a base pressure of 1, but it can be
-            // modified. For example, Citizens in a Capital city exert an
-            // additional 1 pressure." Every per-citizen modifier stacks onto
-            // that base before the distance falloff is applied to the total.
-            let mut pressure_per_citizen = age_factor(source.owner)
-                + self.city_active_project_effect(source, "citizen_loyalty_pressure");
-            if self
-                .observed_city_palaces
-                .get(&source.id)
-                .copied()
-                .unwrap_or(source.is_capital && source.original_owner == source.owner)
-            {
-                pressure_per_citizen += 1.0;
-            }
-            let pressure = source.pop as f64 * (10.0 - distance as f64) * pressure_per_citizen;
-            if source.owner == pid {
-                domestic_pressure += pressure;
-            } else if self.same_team(pid, source.owner) {
-                // Team cities are neutral rather than one population-pressure
-                // empire, matching their permanent-alliance semantics.
-                continue;
-            } else if !self
-                .alliance_with(pid, source.owner)
-                .is_some_and(|alliance| alliance.kind == "cultural")
-            {
-                foreign_pressure += pressure;
-                *pressure_by_civ.entry(source.owner).or_insert(0.0) += pressure;
-            }
-        }
-
-        let mut delta = population_pressure.unwrap_or(
-            (10.0 * (domestic_pressure - foreign_pressure)
-                / (domestic_pressure.min(foreign_pressure) + 0.5))
-                .clamp(-20.0, 20.0),
-        );
-        // `IDENTITY_PER_TURN_FROM_FREE_CITIES` 10 and
-        // `IDENTITY_PER_TURN_FROM_CITY_STATES` 20 — a Free City's desire for
-        // independence and a city-state's base strength as itself. The Free
-        // Cities seat is also a minor, so it answers first.
-        if self.players[pid].is_free_city {
-            delta += 10.0;
-        } else if self.players[pid].is_minor {
-            delta += 20.0;
-        }
-        delta += Self::happiness_loyalty_delta(self.city_amenity_surplus(city));
-        if self.city_yields(cid).food + f64::EPSILON < 2.0 * city.pop as f64 {
-            delta -= 4.0;
-        }
-        if self.city_governor_active(pid, cid) {
-            delta += 8.0 + self.policy_effect(pid, "governor_loyalty");
-        } else {
-            delta += self
-                .cities
-                .values()
-                .filter(|source| source.owner == pid)
-                .map(|source| self.city_building_effect(source, "no_governor_loyalty"))
-                .sum::<f64>();
-        }
-        if let Some(victor_city) = self.established_governor_city(pid, "victor") {
-            if self.wdist(self.cities[&victor_city].pos, cpos) <= 9 {
-                // Gathering Storm applies the aura to Victor's own city too,
-                // despite the Civilopedia saying "other cities."
-                delta += self.governor_effect(pid, victor_city, "nearby_city_loyalty");
-            }
-        }
-        let garrison_formation = self
-            .unit_ids_at(cpos)
-            .iter()
-            .filter(|uid| {
-                self.units[uid].owner == pid
-                    && self.rules.units[self.units[uid].kind].class == "military"
-            })
-            .map(|uid| self.units[uid].formation)
-            .max();
-        let garrisoned = garrison_formation.is_some();
-        if let Some(formation) = garrison_formation {
-            delta += self.policy_effect(pid, "garrison_loyalty");
-            delta += if formation > 0 {
-                self.civ_effect(pid, "formation_garrison_loyalty")
-            } else {
-                self.civ_effect(pid, "garrison_loyalty")
-            };
-        }
-        // Occupation. Rise & Fall charged a flat -1 to -5; Gathering Storm
-        // rescaled it to "Loyalty penalties based on the conqueror's
-        // Grievances caused against the city's original owner" —
-        // `IDENTITY_PER_TURN_FROM_OCCUPATION_MULTIPLIER` 25 percent of those
-        // Grievances, held between `_MIN` 0 and `_MAX` 10. The penalty is
-        // charged whether or not a garrison stands there; what a garrison buys
-        // is `IDENTITY_PER_TURN_FROM_MARTIAL_LAW` +8, which is why holding a
-        // fresh conquest down with troops raises its Loyalty rather than
-        // merely stopping the bleed.
-        let occupier = city
-            .occupied_from
-            .filter(|former| self.players.get(*former).is_some_and(|player| player.alive));
-        if let Some(former) = occupier {
-            let grievances = self.players[former]
-                .grievances
-                .get(&pid)
-                .copied()
-                .unwrap_or(0.0);
-            delta -= (0.25 * grievances).clamp(0.0, 10.0);
-            if garrisoned {
-                delta += 8.0;
-            }
-        }
-        if let Some(founded_religion) = self.players[pid].religion.as_deref() {
-            if let Some(city_religion) = self.city_religion(city) {
-                delta += if city_religion == founded_religion {
-                    3.0
-                } else {
-                    -3.0
-                };
-            }
-        }
-        // Amani's Emissary pressure applies to every city in range that is
-        // not owned by her civilization, including from a city-state post.
-        delta += (0..self.players.len())
-            .filter(|diplomat| *diplomat != pid)
-            .filter_map(|diplomat| {
-                let source = self.established_governor_city(diplomat, "amani")?;
-                (self.wdist(self.cities.get(&source)?.pos, cpos) <= 9)
-                    .then(|| self.governor_effect(diplomat, source, "foreign_city_loyalty"))
-            })
-            .sum::<f64>();
-        delta += city
-            .districts
-            .iter()
-            .filter(|(district, position)| self.district_is_active(city, district, **position))
-            .map(|(district, position)| {
-                let spec = &self.rules.districts[district];
-                spec.loyalty
-                    + if self.on_foreign_continent(pid, *position) {
-                        spec.effects
-                            .get("foreign_continent_loyalty")
-                            .copied()
-                            .unwrap_or(0.0)
-                    } else {
-                        0.0
-                    }
-            })
-            .sum::<f64>();
-        delta += self.city_building_effect(city, "loyalty_per_turn");
-        // Improvement loyalty is city-scoped even when the tile is not being
-        // worked: Sweden's Open-Air Museum stabilizes its host city, and a
-        // Spanish Mission beside an overseas City Center anchors that colony.
-        delta += city
-            .owned_tiles
-            .iter()
-            .filter(|position| !self.map.tiles[position].pillaged)
-            .filter_map(|position| self.map.tiles[position].improvement)
-            .map(|improvement| {
-                self.rules.improvements[improvement]
-                    .effects
-                    .get("city_loyalty")
-                    .copied()
-                    .unwrap_or(0.0)
-            })
-            .sum::<f64>();
-        if self.on_foreign_continent(pid, cpos) {
-            delta += self
-                .nbrs(cpos)
-                .iter()
-                .filter(|position| {
-                    let tile = &self.map.tiles[position];
-                    tile.owner_city == Some(cid)
-                        && !tile.pillaged
-                        && tile.improvement.as_deref() == Some("mission")
-                })
-                .map(|_| {
-                    self.rules.improvements["mission"]
-                        .effects
-                        .get("foreign_continent_city_loyalty")
-                        .copied()
-                        .unwrap_or(0.0)
-                })
-                .sum::<f64>();
-        }
-        if self.on_foreign_continent(pid, cpos) {
-            delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
-        }
-        // Automated Workforce's ADJUST_IDENTITY_PER_TURN (-5), every city.
-        delta += self.policy_effect(pid, "city_loyalty");
-        delta += self
-            .cities
-            .values()
-            .filter(|source| source.owner == pid)
-            .flat_map(|source| source.wonders.keys().map(move |wonder| (source, wonder)))
-            .map(|(source, wonder)| {
-                let spec = &self.rules.wonders[wonder];
-                if spec.regional_loyalty > 0.0
-                    && spec.regional_range > 0
-                    && self.wdist(source.pos, cpos) <= spec.regional_range
-                {
-                    spec.regional_loyalty
-                } else {
-                    0.0
-                }
-            })
-            .sum::<f64>();
-        if self.congress_effect_active("migration_treaty", "A", &pid.to_string()) {
-            delta -= 5.0;
-        } else if self.congress_effect_active("migration_treaty", "B", &pid.to_string()) {
-            delta += 5.0;
-        }
-        if self.active_emergencies.iter().any(|emergency| {
-            emergency.ends > self.turn && emergency.target == pid && emergency.city == cid
-        }) {
-            delta += 20.0;
-        }
-
-        LoyaltyChange {
-            delta,
-            foreign_pressure: pressure_by_civ,
-            locked: false,
-        }
-    }
-
-    pub fn city_loyalty_per_turn(&self, city: &City) -> f64 {
-        if let Some(delta) = self.observed_city_loyalty_per_turn.get(&city.id) {
-            return *delta;
-        }
-        self.loyalty_change_for_city(city.owner, city.id).delta
-    }
-
-    /// Free Cities immediately field two current, generic melee defenders.
-    /// Their shared seat inherits technology before this is called, so later
-    /// revolts naturally upgrade from Warriors through the melee line.
-    fn free_city_defender(&self, free_cities: usize) -> Option<Name> {
-        self.rules
-            .units
-            .iter()
-            .filter(|(unit, spec)| {
-                spec.class == "military"
-                    && spec.buildable
-                    && spec.unique_to.is_none()
-                    && spec.promotion_class == "melee"
-                    && self.unlocked(free_cities, &spec.tech, &spec.civic)
-                    && !self.unit_is_obsolete(free_cities, unit)
-            })
-            .max_by(|(left_name, left), (right_name, right)| {
-                left.strength
-                    .total_cmp(&right.strength)
-                    .then_with(|| left.cost.total_cmp(&right.cost))
-                    .then_with(|| right_name.cmp(left_name))
-            })
-            .map(|(unit, _)| *unit)
-    }
-
-    /// Apply population pressure and every local Loyalty source. A major city
-    /// first revolts into the hostile Free Cities seat at 100 Loyalty. A Free
-    /// City at zero then joins the living major that accumulated the greatest
-    /// population pressure during its independence.
-    ///
-    /// A city-state runs the same rules as anybody else. It is not exempt —
-    /// what keeps it in place is the +20 base strength it carries and the fact
-    /// that its own Citizens are the whole domestic side of its balance. An
-    /// overwhelmed city-state revolts into a Free City like a major's city
-    /// does. Barbarians hold no Loyalty at all — but the Free Cities seat is
-    /// flagged as one so that everybody is at war with it, so it is named
-    /// apart from them.
-    fn process_loyalty(&mut self, pid: usize) {
-        let player = &self.players[pid];
-        if player.is_barbarian && !player.is_free_city {
-            return;
-        }
-
-        enum Flip {
-            Revolt(u32),
-            Join(u32, usize),
-        }
-
-        let mut flips = Vec::new();
-        for cid in self.player_city_ids(pid) {
-            let change = self.loyalty_change_for_city(pid, cid);
-            if change.locked {
-                self.cities.get_mut(&cid).unwrap().loyalty = 100.0;
-                continue;
-            }
-            if self.players[pid].is_free_city {
-                let city = self.cities.get_mut(&cid).unwrap();
-                for (civilization, pressure) in change.foreign_pressure {
-                    *city.free_city_pressure.entry(civilization).or_insert(0.0) += pressure;
-                }
-            }
-            let city = self.cities.get_mut(&cid).unwrap();
-            city.loyalty = (city.loyalty + change.delta).clamp(0.0, 100.0);
-            if city.loyalty > 0.0 {
-                continue;
-            }
-            if self.players[pid].is_free_city {
-                let new_owner = city
-                    .free_city_pressure
-                    .iter()
-                    .filter(|(owner, _)| {
-                        self.players.get(**owner).is_some_and(|player| {
-                            player.alive && !player.is_minor && !player.is_barbarian
-                        })
-                    })
-                    .max_by(|(left_owner, left), (right_owner, right)| {
-                        left.total_cmp(right)
-                            .then_with(|| right_owner.cmp(left_owner))
-                    })
-                    .map(|(owner, _)| *owner);
-                if let Some(new_owner) = new_owner {
-                    flips.push(Flip::Join(cid, new_owner));
-                }
-            } else {
-                flips.push(Flip::Revolt(cid));
-            }
-        }
-
-        for flip in flips {
-            match flip {
-                Flip::Revolt(cid) => {
-                    let old_owner = self.cities[&cid].owner;
-                    let free_cities = self.ensure_free_city_player();
-                    // A Free City inherits enough civic/technical knowledge
-                    // to retain the infrastructure present when it revolts.
-                    let techs = self.players[old_owner].techs.clone();
-                    let civics = self.players[old_owner].civics.clone();
-                    self.players[free_cities].techs.extend(techs);
-                    self.players[free_cities].civics.extend(civics);
-                    let position = self.cities[&cid].pos;
-                    self.transfer_city(cid, free_cities, false);
-                    let city = self.cities.get_mut(&cid).unwrap();
-                    city.loyalty = 100.0;
-                    city.captured_from = None;
-                    city.occupied_from = None;
-                    city.free_city_pressure.clear();
-                    self.reveal(free_cities, position, 3);
-                    if let Some(defender) = self.free_city_defender(free_cities) {
-                        for _ in 0..2 {
-                            self.place_city_state_starting_unit(&defender, free_cities, position);
-                        }
-                    }
-                }
-                Flip::Join(cid, new_owner) => {
-                    self.transfer_city(cid, new_owner, false);
-                    self.add_historic_moment(
-                        new_owner,
-                        "MOMENT_CITY_TRANSFERRED_DISLOYAL_FREE_CITY",
-                    );
-                    let city = self.cities.get_mut(&cid).unwrap();
-                    city.loyalty = 100.0;
-                    city.captured_from = None;
-                    city.occupied_from = None;
-                    city.free_city_pressure.clear();
-                }
-            }
-        }
-    }
-
-    // -------------------------------------------------- world congress
-
     pub(crate) fn emergency_war_pair(&self, first: usize, second: usize) -> bool {
         self.active_emergencies.iter().any(|emergency| {
             emergency.ends > self.turn
@@ -27068,62 +26261,6 @@ impl Game {
 
     // -------------------------------------------------- eras & tourism
 
-    /// World era from the most advanced researched technology or civic.
-    ///
-    /// Era metadata lives on the tree nodes, so late-game progress cannot be
-    /// capped by a hard-coded count table when the ruleset grows.
-    fn player_era(&self, pid: usize) -> usize {
-        self.players[pid]
-            .techs
-            .iter()
-            .filter_map(|name| self.rules.techs.get(name).map(|spec| spec.era))
-            .chain(
-                self.players[pid]
-                    .civics
-                    .iter()
-                    .filter_map(|name| self.rules.civics.get(name).map(|spec| spec.era)),
-            )
-            .max()
-            .unwrap_or(0)
-            // Nothing is ever before the era the world was set up to open in.
-            // An Advanced Start hands out every tech of the eras *below* the
-            // chosen one, so the most advanced thing known is one era short of
-            // it until the first new tech lands; without this floor a Medieval
-            // game would call itself Classical on its opening turn.
-            .max(self.start_era)
-    }
-
-    fn era_from_progress(&self) -> usize {
-        let mut eras: Vec<usize> = self
-            .players
-            .iter()
-            .filter(|player| {
-                player.alive && !player.is_minor && !player.is_barbarian && !player.is_free_city
-            })
-            .map(|player| self.player_era(player.id))
-            .collect();
-        if eras.is_empty() {
-            return self.start_era;
-        }
-        eras.sort_unstable();
-        eras[eras.len() / 2]
-    }
-
-    pub fn available_dedications(&self, pid: usize) -> Vec<Name> {
-        if pid >= self.players.len() || self.players[pid].dedication_choices == 0 {
-            return Vec::new();
-        }
-        let era = self.world_era;
-        self.rules
-            .dedications
-            .iter()
-            .filter(|(name, spec)| {
-                spec.available_in(era) && !self.players[pid].dedications.contains(name.as_str())
-            })
-            .map(|(name, _)| *name)
-            .collect()
-    }
-
     /// The `MOMENT_CITY_SIZE_*_FIRST` ladder: the first time any city of this
     /// civilization reaches 10, 15, 20 and 25 Population, +1 each, or +2 as the
     /// `_FIRST_IN_WORLD` variant. The four thresholds are the ones the shipped
@@ -27263,38 +26400,6 @@ impl Game {
         self.first_historic_moment(pid, &key, Some(ordinary), Some(world_first));
     }
 
-    /// What a Dedication would have paid over the era that just ended, in Era
-    /// Score, given what this civilization actually did in it.
-    ///
-    /// This is a *measured* projection, not a prior: the count of every trigger
-    /// firing is kept whether or not the trigger was dedicated, so the answer
-    /// to "which Dedication should I take" is the same shape as "which one
-    /// would have paid me most last era". A civilization's behaviour is the
-    /// most autocorrelated thing about it, which is why last era's tally beats
-    /// any static ranking — a warmonger has been killing Corps, a builder has
-    /// been laying Districts, and the tally already says which one you are.
-    pub fn projected_dedication_score(&self, pid: usize, dedication: &str) -> i64 {
-        let Some(spec) = self.rules.dedications.get(dedication) else {
-            return 0;
-        };
-        let Some(player) = self.players.get(pid) else {
-            return 0;
-        };
-        spec.triggers
-            .iter()
-            .map(|(trigger, amount)| {
-                amount * player.last_era_triggers.get(trigger).copied().unwrap_or(0)
-            })
-            .sum()
-    }
-
-    /// A Dedication's Golden-Age half, which only a Golden or Heroic Age turns
-    /// on.
-    fn dedication_active(&self, pid: usize, dedication: &str) -> bool {
-        matches!(self.players[pid].age.as_str(), "golden" | "heroic")
-            && self.players[pid].dedications.contains(dedication)
-    }
-
     /// Which Normal-Age Dedication triggers a finished building pays out.
     /// Civ VI names three building shapes, and the first two are named the
     /// same way as each other: PER_CULTURE_BUILDING_CONSTRUCTED and
@@ -27328,63 +26433,6 @@ impl Game {
         let _ = building;
     }
 
-    /// A Dedication's Normal-Age half: Era Score for the behaviour it names,
-    /// which is the whole point of dedicating a Normal or Dark Age, since that
-    /// score is what buys the next Golden one.
-    ///
-    /// **A Golden Age normally pays no Era Score.** Every quest modifier hangs off
-    /// `PLAYER_ELIGIBLE_FOR_COMMEMORATION_QUEST`, a `TEST_ANY` set whose only
-    /// two members are an inverted `REQUIREMENT_PLAYER_HAS_GOLDEN_AGE` and a
-    /// `REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST` that nothing in
-    /// the shipped data grants. So the two halves are exclusive, and that is
-    /// what normally stops a Golden Age from financing its own successor: it
-    /// hands out its bonus and banks nothing, while a Dark or Normal Age banks
-    /// the score that buys the next one. Georgia's Strength in Unity is the
-    /// explicit exception in the civilization data for Golden and Heroic Ages.
-    ///
-    /// `count` is how many times the trigger just happened, so a kill that
-    /// resolves several units at once pays for all of them.
-    fn dedication_trigger(&mut self, pid: usize, trigger: &str, count: i64) {
-        if count <= 0 || pid >= self.players.len() {
-            return;
-        }
-        // Counted before either gate, so the tally is the behaviour itself and
-        // not the subset a past choice happened to be paid for.
-        *self.players[pid]
-            .era_triggers
-            .entry(trigger.to_string())
-            .or_insert(0) += count;
-        if matches!(self.players[pid].age.as_str(), "golden" | "heroic")
-            && self.civ_effect(pid, "golden_dedication_era_score") <= 0.0
-        {
-            return;
-        }
-        let earned: i64 = self.players[pid]
-            .dedications
-            .iter()
-            .filter_map(|dedication| self.rules.dedications.get(dedication.as_str()))
-            .filter_map(|spec| spec.triggers.get(trigger))
-            .sum();
-        if earned > 0 {
-            // Dedications are not Historic Moments, so Taj Mahal does not
-            // increase their score.
-            self.players[pid].era_score += earned * count;
-        }
-    }
-
-    fn do_choose_dedication(&mut self, pid: usize, dedication: &str) -> Result<(), String> {
-        if !self
-            .available_dedications(pid)
-            .iter()
-            .any(|available| available == dedication)
-        {
-            return Err("dedication is unavailable".into());
-        }
-        self.players[pid].dedications.insert(dedication.to_string());
-        self.players[pid].dedication_choices -= 1;
-        Ok(())
-    }
-
     /// On a world-era transition, each civilization receives dynamic Normal
     /// and Golden thresholds based on era and empire size. Climbing directly
     /// from a Dark Age to the Golden threshold produces a Heroic Age and
@@ -27401,10 +26449,6 @@ impl Game {
     /// for them.
     fn normal_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
         14 + if era == 0 { -3 } else { 0 } + cities - 5 * past_dark + 5 * past_golden
-    }
-
-    fn golden_age_threshold(era: usize, cities: i64, past_dark: i64, past_golden: i64) -> i64 {
-        28 + if era == 0 { -3 } else { 0 } + cities - 5 * past_dark + 5 * past_golden
     }
 
     fn process_eras(&mut self) {
@@ -29673,20 +28717,6 @@ impl Game {
             victim.formation,
             victim.pos,
         );
-    }
-
-    /// The era a wonder belongs to: the era of its unlocking node.
-    fn wonder_era(&self, wonder: &str) -> usize {
-        let spec = &self.rules.wonders[wonder];
-        spec.tech
-            .as_deref()
-            .and_then(|t| self.rules.techs.get(t).map(|node| node.era))
-            .or_else(|| {
-                spec.civic
-                    .as_deref()
-                    .and_then(|c| self.rules.civics.get(c).map(|node| node.era))
-            })
-            .unwrap_or(0)
     }
 
     pub(crate) fn boost_met(&self, pid: usize, b: &crate::rules::BoostSpec) -> bool {
