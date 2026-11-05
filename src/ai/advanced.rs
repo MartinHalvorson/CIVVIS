@@ -9322,6 +9322,10 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs` (`slot_cost`, `position_end_tile`).
     /// Off by default.
     slots_survive_the_roll: bool,
+    /// `spies-steal-the-lead`: a Science seat's Spies steal Eurekas from the
+    /// rivals ahead instead of idling on Listening Posts. See
+    /// `advanced/spies_steal_the_lead.rs`. Off by default.
+    spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10647,6 +10651,8 @@ mod siege_tier_before_the_beeline;
 mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+/// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
+mod spies_steal_the_lead;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -12296,6 +12302,7 @@ impl AdvancedAi {
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
+            spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

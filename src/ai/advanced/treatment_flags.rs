@@ -2177,6 +2177,9 @@ impl AdvancedAi {
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
         /// Price the Science lost when a new district crowds an owned Seowon.
         districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `spies-steal-the-lead`; see
+        /// `advanced/spies_steal_the_lead.rs`.
+        spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
     }
 }
 
