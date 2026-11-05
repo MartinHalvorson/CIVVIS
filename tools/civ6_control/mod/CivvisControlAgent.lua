@@ -24436,6 +24436,7 @@ local function tick()
 							option, selection, votes = 2, wrIdx, wrVotes;
 							favor = favor - wrPrice;
 							spent = spent + wrPrice;
+							racerSlowed = true;
 						else
 							-- See `CivvisWorldReligionTarget`: A, never on the leader.
 							selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
