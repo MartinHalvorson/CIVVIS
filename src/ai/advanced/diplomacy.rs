@@ -3159,6 +3159,11 @@ impl AdvancedAi {
         // `spies-steal-the-lead`: see `Game::spy_targets_read_the_host`.
         g.spy_targets_read_the_host = self.spies_steal_the_lead_on(plan);
         self.spy_orders_until.retain(|_, until| *until > g.turn);
+        // The host's report outranks the blind mirror's window: a Spy idle
+        // on a later turn than its order has finished or lost that order.
+        // See `advanced/spy_patience_reads_the_host.rs`.
+        self.release_spent_spy_patience(g);
+        let patience_before = self.spy_orders_until.clone();
         // `science-threat-denial`: the threat model walks every rival's
         // cities, so it is read once for the whole pass rather than per
         // candidate city or per candidate mission. Both are empty when the
@@ -3858,5 +3863,6 @@ impl AdvancedAi {
                 );
             }
         }
+        self.note_spy_order_turns(g, &patience_before);
     }
 }

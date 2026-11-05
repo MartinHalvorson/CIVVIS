@@ -5239,6 +5239,13 @@ pub const GENES: &[Gene] = &[
     // building, the Ancestral Hall then the Intelligence Agency, ahead of
     // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
+    // From t40 to t120 the backlog Builder claim put a Builder ahead of a
+    // Library, University or Seowon 288 times in 87 live Deity Korea games
+    // (27% of its claims, 3.3 a game), in a seat that loses on rival
+    // Technology. Under the gene science in progress keeps its queue, and the
+    // claim goes to the next-fastest city or waits a turn. See
+    // `advanced/science_heads_keep_their_queue.rs`.
+    Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
