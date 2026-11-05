@@ -2177,6 +2177,12 @@ impl AdvancedAi {
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
         /// Price the Science lost when a new district crowds an owned Seowon.
         districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `early-cities-keep-their-distance`; see
+        /// [`Self::early_cities_keep_their_distance`].
+        early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `denial-spies-count-their-losses`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
         /// Opt-in gene `prod-tiles-call-the-builders`; acts through
         /// `builders-cover-the-worked-backlog`'s step. See
         /// `ai/prod_tiles_call_the_builders.rs`.

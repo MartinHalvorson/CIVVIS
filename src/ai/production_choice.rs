@@ -1009,7 +1009,9 @@ impl BasicAi {
             let spy = Item::Unit {
                 unit: crate::name!("spy"),
             };
-            if g.can_produce(pid, cid, &spy) {
+            // `denial-spies-count-their-losses`: no Spy while recent ones keep
+            // dying. See `ai/advanced/denial_spies_count_their_losses.rs`.
+            if !self.spy_training_paused && g.can_produce(pid, cid, &spy) {
                 return Some(spy);
             }
             if let Some(product) = g

@@ -5016,6 +5016,23 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // Operator rule 11-04 (#4435): losing the capital or either of the next
+    // two cities restarts the game. Of 173 live second and third cities
+    // (Immortal and Deity, 11-03/04), those founded 5-6 tiles from a charted
+    // rival city were lost 56% of the time, 7-8 tiles 40%, 9-11 23%, 12 or
+    // more 8%; the site value priced only a border within three tiles. Under
+    // the gene, while the empire holds fewer than three cities, a site loses
+    // 8 a tile inside ten of the nearest charted rival city. See
+    // `advanced/early_city_distance.rs`.
+    Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
     // Live Deity games work bare hills and forests through the mid-game (20%
     // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
     // empire's Production lost at t60/80/100) while the backlog step trains
