@@ -48,7 +48,19 @@ use super::*;
 impl AdvancedAi {
     /// Whether `captives-come-home` is on, for the live bridge.
     pub fn captives_come_home_enabled(&self) -> bool {
-        self.captives_come_home
+        self.captives_come_home || self.captives_come_home_2
+    }
+
+    /// `captives-come-home-2`: whether the ransom offers Diplomatic Favor
+    /// beside Gold. The AI took 38 Favor for 9 Gold a turn (225 on the book)
+    /// in live sales, about 6 Gold a point, and named 474 Gold for one
+    /// captive (civvis-20261105T154934Z turn 158), which the 200-Gold cap of
+    /// version 1 never meets: Gold over 600 stood on 1% of the denial phase's
+    /// turns, while the seat held 117-240 Favor all through that game. The
+    /// bridge offers the bank over a reserve, capped, unless it is held for
+    /// Congress (`favor_banked_for_votes`) or the seat races Diplomacy.
+    pub fn captives_come_home_pays_favor(&self) -> bool {
+        self.captives_come_home_2
     }
 
     /// Whether the network wants its captured agents back this turn: the gene
@@ -62,7 +74,7 @@ impl AdvancedAi {
         held: usize,
         capacity: usize,
     ) -> bool {
-        self.captives_come_home
+        (self.captives_come_home || self.captives_come_home_2)
             && held < capacity
             && (held * 2 < capacity || !self.denial_spy_racers(g, pid).is_empty())
     }

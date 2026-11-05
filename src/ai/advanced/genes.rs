@@ -5246,6 +5246,10 @@ pub const GENES: &[Gene] = &[
     // claim goes to the next-fastest city or waits a turn. See
     // `advanced/science_heads_keep_their_queue.rs`.
     Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // `captives-come-home-2`: version 2 of `captives-come-home` (which it
+    // carries). The ransom of our captured Spies pays in Diplomatic Favor
+    // beside Gold. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

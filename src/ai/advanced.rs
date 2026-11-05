@@ -6617,6 +6617,10 @@ pub struct AdvancedAi {
     /// when the network needs their slots. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
+    /// `captives-come-home-2`: version 2 of the family, carrying version 1.
+    /// The ransom pays in Diplomatic Favor beside Gold. See
+    /// `advanced/captives_come_home.rs`. Off by default.
+    captives_come_home_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -12071,6 +12075,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
+            captives_come_home_2: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,

@@ -2039,6 +2039,14 @@ const RANSOM_CEILING_MIN: i32 = 40;
 /// One ask per captor every this many turns, staggered by the captor's seat,
 /// so an unanswered deal session cannot stand the trade lane down.
 const RANSOM_CADENCE: u32 = 5;
+/// `captives-come-home-2`: Favor the seat keeps through a ransom.
+const RANSOM_FAVOR_RESERVE: i64 = 30;
+/// The most Favor one captive is offered. The AI took 38 Favor for 9 Gold a
+/// turn (225 on the book) in live sales, about 6 Gold a point, and named 474
+/// Gold for a captive: some 80 points.
+const RANSOM_FAVOR_CAP: i64 = 150;
+/// Below this no Favor is offered (the ask falls back to Gold alone).
+const RANSOM_FAVOR_MIN: i64 = 20;
 
 /// `captives-come-home`: ask one captor at peace with us for one of our
 /// captured Spies (`buy CAPTIVE`), Gold up to the ceiling. The captor is the
@@ -2048,9 +2056,15 @@ const RANSOM_CADENCE: u32 = 5;
 /// pushed, else the hold. The caller decides whether the network wants its
 /// slots (`AdvancedAi::captives_come_home_wanted`). See
 /// `advanced/captives_come_home.rs`.
+///
+/// `captives-come-home-2`: `favor` puts that much Diplomatic Favor on our side
+/// too (`CAPTIVE;FAVOR=n`), so the price can be met where the Gold alone
+/// cannot; with Favor offered, a treasury under the Gold floor asks anyway
+/// at whatever Gold it can add.
 fn append_captive_ransom_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    favor: Option<u32>,
 ) -> Option<&'static str> {
     let held = |rival: &civvis::mirror::StateRival| rival.captives_of_ours.unwrap_or(0);
     let captor = state
@@ -2062,8 +2076,10 @@ fn append_captive_ransom_order(
     let Some(captor) = captor else {
         return Some("ransom_hold:no_captor");
     };
-    let ceiling = (state.gold - RANSOM_GOLD_RESERVE).min(RANSOM_CEILING_MAX as i64) as i32;
-    if ceiling < RANSOM_CEILING_MIN {
+    let ceiling = (state.gold - RANSOM_GOLD_RESERVE)
+        .min(RANSOM_CEILING_MAX as i64)
+        .max(0) as i32;
+    if ceiling < RANSOM_CEILING_MIN && favor.is_none() {
         return Some("ransom_hold:treasury");
     }
     // One working deal per rival at a time is the mod's rule.
@@ -2075,7 +2091,10 @@ fn append_captive_ransom_order(
     orders.push(Order {
         kind: "buy",
         subject: Some(captor.player as i64),
-        verb: Some("CAPTIVE".to_string()),
+        verb: Some(match favor {
+            Some(points) => format!("CAPTIVE;FAVOR={points}"),
+            None => "CAPTIVE".to_string(),
+        }),
         pos: Some((ceiling, 0)),
     });
     None
@@ -4981,7 +5000,16 @@ fn decide(
             .count();
         let capacity = state.spy_capacity.unwrap_or(0).max(0) as usize;
         if ai.captives_come_home_wanted(&mirror_state.game, 0, held, capacity) {
-            match append_captive_ransom_order(state, &mut orders) {
+            // `captives-come-home-2`: Favor beside the Gold, unless the bank is
+            // held for Congress against a diplomatic racer or the seat races
+            // Diplomacy itself.
+            let favor = (ai.captives_come_home_pays_favor()
+                && !favor_banked_for_votes(state)
+                && !plan_races_diplomacy(plan_facts))
+            .then(|| state.favor.unwrap_or(0.0).floor() as i64 - RANSOM_FAVOR_RESERVE)
+            .filter(|points| *points >= RANSOM_FAVOR_MIN)
+            .map(|points| points.min(RANSOM_FAVOR_CAP) as u32);
+            match append_captive_ransom_order(state, &mut orders, favor) {
                 None => note_bits.push("captive_ransom=1".to_string()),
                 Some(why) if why != "ransom_hold:no_captor" => note_bits.push(why.to_string()),
                 Some(_) => {}
