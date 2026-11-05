@@ -4568,6 +4568,12 @@ pub const GENES: &[Gene] = &[
     // leading science rival or a space racer. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // Version two of `science-seat-allies`: before Diplomatic Service the
+    // Science seat asks for a Military Alliance instead of waiting for a legal
+    // Research Alliance. Any alliance boosts Diplomatic Service 40%, the first
+    // civic Spy slot; in 35 live Deity games (2026-11-05) it was never boosted
+    // and no alliance stood before it. See `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies-2", field: "science_seat_allies_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies_2, disable: AdvancedAi::disable_science_seat_allies_2 },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live

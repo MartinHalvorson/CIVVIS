@@ -8748,6 +8748,9 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-seat-allies-2`: version one, and a Military Alliance asked
+    /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
+    science_seat_allies_2: bool,
     /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
     /// sooner. See `advanced/spy_civics_come_first.rs`.
     spy_civics_come_first: bool,
@@ -12441,6 +12444,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
+            science_seat_allies_2: false,
             spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
