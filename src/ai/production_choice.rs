@@ -2517,6 +2517,10 @@ impl BasicAi {
                "{backlog} worked tiles stand unimproved against {cover} Builder charges in hand \
                 and queued, under {:.0}% cover; about {turns:.0} turns",
                Self::WORKED_BACKLOG_COVER * 100.0);
+        if let Some(note) = self.production_tile_quota_note(g, pid) {
+            think!(self.journal, Cities, Detail,
+                   "{}'s Builder answers the production ground", g.cities[&cid].name; "{note}");
+        }
         Some(Item::Unit {
             unit: crate::name!("builder"),
         })

@@ -50,6 +50,13 @@ fn opening() -> (Game, AdvancedAi, StrategicPlan) {
     (g, ai, plan)
 }
 
+fn first_city_opening() -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut g, ai, plan) = opening();
+    let second = g.player_city_ids(0)[1];
+    g.cities.get_mut(&second).unwrap().owner = 1;
+    (g, ai, plan)
+}
+
 #[test]
 fn science_finishes_writing_before_an_owned_luxury_connection() {
     let pick = |on: bool| {
@@ -67,7 +74,7 @@ fn science_finishes_writing_before_an_owned_luxury_connection() {
 }
 
 #[test]
-fn the_goal_is_bounded_to_an_enabled_science_seat_with_two_cities_and_writing_debt() {
+fn the_goal_respects_its_flag_scope_and_missing_writing() {
     let (mut g, mut ai, _) = opening();
     assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
     ai.enable_science_writing_before_the_luxury();
@@ -77,13 +84,65 @@ fn the_goal_is_bounded_to_an_enabled_science_seat_with_two_cities_and_writing_de
     );
     let second = g.player_city_ids(0)[1];
     g.cities.get_mut(&second).unwrap().owner = 1;
+    assert_eq!(
+        ai.science_writing_before_the_luxury_goal(&g, 0),
+        Some("writing")
+    );
+    g.players[0].techs.remove(&crate::name!("pottery"));
     assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+    g.players[0].techs.insert(crate::name!("pottery"));
+    g.players[0].civ = "Rome".to_string();
+    assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+    g.players[0].civ = "Korea".to_string();
+    let capital = g.player_city_ids(0)[0];
+    g.cities.get_mut(&capital).unwrap().owner = 1;
+    assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+    g.cities.get_mut(&capital).unwrap().owner = 0;
     g.cities.get_mut(&second).unwrap().owner = 0;
     g.players[0].techs.insert(crate::name!("writing"));
     assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
     g.players[0].techs.remove(&crate::name!("writing"));
     g.victory_conditions.science = false;
     assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+}
+
+#[test]
+fn koreas_first_city_opens_writing_after_pottery() {
+    let (mut g, mut ai, plan) = first_city_opening();
+    assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+    ai.enable_science_writing_before_the_luxury();
+    ai.advanced_research(&mut g, 0, &plan);
+    assert_eq!(g.players[0].research.as_deref(), Some("writing"));
+}
+
+#[test]
+fn other_civilizations_first_cities_keep_their_research_choices() {
+    let pick = |on: bool| {
+        let (mut g, mut ai, plan) = first_city_opening();
+        g.players[0].civ = "Rome".to_string();
+        if on {
+            ai.enable_science_writing_before_the_luxury();
+        }
+        assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+        ai.advanced_research(&mut g, 0, &plan);
+        g.players[0].research.clone()
+    };
+    assert_eq!(pick(false), pick(true));
+}
+
+#[test]
+fn koreas_first_city_keeps_its_initial_prerequisite_path() {
+    let pick = |on: bool| {
+        let (mut g, mut ai, plan) = first_city_opening();
+        g.players[0].techs.remove(&crate::name!("pottery"));
+        if on {
+            ai.enable_science_writing_before_the_luxury();
+        }
+        assert_eq!(ai.science_writing_before_the_luxury_goal(&g, 0), None);
+        ai.advanced_research(&mut g, 0, &plan);
+        g.players[0].research.clone()
+    };
+    assert_eq!(pick(false), pick(true));
 }
 
 #[test]
@@ -119,41 +178,59 @@ fn a_missing_pottery_prerequisite_is_researched_before_writing() {
 
 #[test]
 fn the_first_ranged_defender_keeps_priority() {
-    let (mut g, mut ai, plan) = opening();
-    ai.enable_science_writing_before_the_luxury();
-    g.players[0].techs.remove(&crate::name!("archery"));
-    for uid in g
-        .units
-        .values()
-        .filter(|u| u.owner == 0 && u.kind == "archer")
-        .map(|u| u.id)
-        .collect::<Vec<_>>()
-    {
-        g.remove_unit(uid);
+    for first_city in [false, true] {
+        let (mut g, mut ai, plan) = if first_city {
+            first_city_opening()
+        } else {
+            opening()
+        };
+        ai.enable_science_writing_before_the_luxury();
+        g.players[0].techs.remove(&crate::name!("archery"));
+        for uid in g
+            .units
+            .values()
+            .filter(|u| u.owner == 0 && u.kind == "archer")
+            .map(|u| u.id)
+            .collect::<Vec<_>>()
+        {
+            g.remove_unit(uid);
+        }
+        g.spawn_test_unit("slinger", 0, (6, 12));
+        ai.base.garrison_under_fire = true;
+        assert_eq!(ai.opening_archery_goal(&g, 0).as_deref(), Some("archery"));
+        ai.advanced_research(&mut g, 0, &plan);
+        assert_eq!(g.players[0].research.as_deref(), Some("archery"));
     }
-    g.spawn_test_unit("slinger", 0, (6, 12));
-    ai.base.garrison_under_fire = true;
-    assert_eq!(ai.opening_archery_goal(&g, 0).as_deref(), Some("archery"));
-    ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research.as_deref(), Some("archery"));
 }
 
 #[test]
 fn a_rush_keeps_its_military_unlock_first() {
-    let (mut g, mut ai, mut plan) = opening();
-    ai.enable_science_writing_before_the_luxury();
-    plan.rush = true;
-    ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research.as_deref(), Some("horseback_riding"));
+    for first_city in [false, true] {
+        let (mut g, mut ai, mut plan) = if first_city {
+            first_city_opening()
+        } else {
+            opening()
+        };
+        ai.enable_science_writing_before_the_luxury();
+        plan.rush = true;
+        ai.advanced_research(&mut g, 0, &plan);
+        assert_eq!(g.players[0].research.as_deref(), Some("horseback_riding"));
+    }
 }
 
 #[test]
 fn ongoing_research_is_not_cancelled() {
-    let (mut g, mut ai, plan) = opening();
-    ai.enable_science_writing_before_the_luxury();
-    g.players[0].research = Some("bronze_working".to_string());
-    ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research.as_deref(), Some("bronze_working"));
+    for first_city in [false, true] {
+        let (mut g, mut ai, plan) = if first_city {
+            first_city_opening()
+        } else {
+            opening()
+        };
+        ai.enable_science_writing_before_the_luxury();
+        g.players[0].research = Some("bronze_working".to_string());
+        ai.advanced_research(&mut g, 0, &plan);
+        assert_eq!(g.players[0].research.as_deref(), Some("bronze_working"));
+    }
 }
 
 #[test]

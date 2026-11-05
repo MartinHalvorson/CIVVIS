@@ -510,6 +510,24 @@ CivvisTradeableLuxuries = function(player, pid, otherId)
 end;
 
 
+-- Our Spies a rival holds captive: the CAPTIVE items the shipped deal screen
+-- puts on the captor's side (DiplomacyDealView.lua `PopulateAvailableCaptives`:
+-- `DealManager.GetPossibleDealItems(captor, other, DealItemTypes.CAPTIVE,
+-- deal)`). A captured Spy keeps its slot in our capacity until it comes home,
+-- and the unit export drops it, so this count is the only witness: on the
+-- Deity Korea lane of 2026-11-05 the host refused a Spy in every city on 374
+-- of 733 turns past t100 while the network was below capacity. Read only:
+-- the working deal is neither cleared nor changed. A bare global: the main
+-- chunk is at its local ceiling. nil when the ruleset or deal is unreadable.
+CivvisCaptivesHeld = function(pid, captor)
+	if DealItemTypes == nil or DealItemTypes.CAPTIVE == nil then return nil; end
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, captor);
+	if deal == nil then return nil; end
+	local possible = DealManager.GetPossibleDealItems(captor, pid, DealItemTypes.CAPTIVE, deal);
+	if type(possible) ~= "table" then return 0; end
+	return #possible;
+end;
+
 -- Quantities displayed in the met rival's strategic-resource trade column.
 -- Read their existing deal only: never clear, add to, price or submit it.
 -- DiplomacyDealView.lua:1715,1722-1724 reads and displays this same MaxAmount.
@@ -1438,8 +1456,13 @@ function CivvisRockBandConcertPlots(unit, name)
 end
 
 -- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+-- A Spy's too: its promotion is the same PROMOTE command, and the host offers
+-- a levelled Spy a few of its tree, not all of it. Without the menu the
+-- mirror could not tell a levelled Spy from a fresh one (both host level 1
+-- until the choice is made), and no live Spy was ever promoted: 99 of 99 on
+-- 2026-11-05 ended level 1, 81 of them holding the 15 XP of a pending choice.
 function CivvisRockBandPromotionChoices(unit, name)
-    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    if name ~= "UNIT_ROCK_BAND" and name ~= "UNIT_SPY" then return nil; end
     return try(function()
         local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
         if command == nil then return nil; end
@@ -8843,6 +8866,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 				tradeable_strategics = try(function()
 					return CivvisTradeableStrategics(player, pid, otherId);
 				end, nil),
+				-- Our Spies this rival holds captive (`CivvisCaptivesHeld`).
+				captives_of_ours = try(function()
+					return CivvisCaptivesHeld(pid, otherId);
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -12358,6 +12385,10 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 					-- registered.
 					return "GREATWORK:" .. tostring(item:GetValueType()), 1;
 				end
+				if DealItemTypes.CAPTIVE ~= nil and kind == DealItemTypes.CAPTIVE then
+					-- A captive is one Spy: its presence is its quantity.
+					return "CAPTIVE:" .. tostring(item:GetValueType()), 1;
+				end
 				if kind == DealItemTypes.AGREEMENTS and DealAgreementTypes ~= nil
 						and try(function() return item:GetSubType(); end, nil)
 							== DealAgreementTypes.OPEN_BORDERS then
@@ -14499,7 +14530,10 @@ local function applyOrder(player, pid, row, turn)
 			or (strategicAsk == nil and string.find(verb, "^RESOURCE_") ~= nil);
 		local favorAsk = tonumber(string.match(verb, "^FAVOR=(%d+)$"));
 		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
-		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil then
+		-- `CAPTIVE`: one of our captured Spies back from its captor, for Gold.
+		local captive = verb == "CAPTIVE" and DealItemTypes.CAPTIVE ~= nil;
+		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil
+				and not captive then
 			return false, "buy_unknown_item";
 		end
 		if luxury and verb ~= "LUXURY_ANY"
@@ -14571,6 +14605,26 @@ local function applyOrder(player, pid, row, turn)
 					if barter == nil then return false, gaveText; end
 					name = name .. ";" .. gaveText;
 				end
+			elseif captive then
+				-- The captor's side of the table, the column the shipped
+				-- screen fills with our captured Spies; the first it would
+				-- let go.
+				local possible = try(function()
+					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.CAPTIVE, deal);
+				end, nil) or {};
+				local forType = nil;
+				for _, entry in ipairs(possible) do
+					if forType == nil and entry.IsValid ~= false then forType = entry.ForType; end
+				end
+				if forType == nil then return false, "buy_no_captive"; end
+				local item = deal:AddItemOfType(DealItemTypes.CAPTIVE, subject);
+				if item == nil then return false, "no_captive_item"; end
+				item:SetValueType(forType);
+				if not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "captive_invalid";
+				end
+				want, name = "CAPTIVE:" .. tostring(forType), "CAPTIVE";
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
