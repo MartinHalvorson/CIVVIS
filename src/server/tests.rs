@@ -39,6 +39,25 @@ fn served_index_tags_the_app_script_with_its_server_instance() {
 }
 
 #[test]
+fn a_study_plan_starts_its_next_step_as_each_turn_opens() {
+    // The engine studies one thing at a time, so a plan is the page's to carry
+    // out: it has to start the next step without being asked.
+    let open_turn = EMBEDDED_APP_JS
+        .split_once("function openTurnIfNew() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("openTurnIfNew is a top-level function")
+        .0;
+    assert!(open_turn.contains("setTimeout(followStudyPlan);"));
+    // A plan never outlives its world, and an agent holding the seat is not
+    // overruled by a plan the player made before handing it over.
+    assert!(EMBEDDED_APP_JS.contains("if (held && held.seed === seed) studyPlans = held;"));
+    assert!(EMBEDDED_APP_JS
+        .contains("if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;"));
+    // Every node in the tree is a click, because any node can be planned to.
+    assert!(EMBEDDED_APP_JS.contains("(n === current ? \"\" : ` onclick='pickTree"));
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
