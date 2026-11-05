@@ -2364,6 +2364,43 @@ fn a_spy_on_a_host_operation_is_not_retasked_and_the_hosts_menu_bounds_the_board
         vec!["listening_post".to_string()]
     );
 
+    // Beside the menu, the host's targets and odds cross as plots (axial)
+    // and fractions; odds outside [0, 1] are no reading.
+    let mut aimed = spy(78, 5, 5);
+    aimed.spy_missions_available = Some(vec![
+        "UNITOPERATION_SPY_LISTENING_POST".to_string(),
+        "UNITOPERATION_SPY_STEAL_TECH_BOOST".to_string(),
+    ]);
+    aimed.spy_mission_targets = Some(vec![
+        StateSpyTarget {
+            op: "UNITOPERATION_SPY_LISTENING_POST".to_string(),
+            x: 5,
+            y: 5,
+            success: Some(1.5),
+            fail: None,
+        },
+        StateSpyTarget {
+            op: "UNITOPERATION_SPY_STEAL_TECH_BOOST".to_string(),
+            x: 6,
+            y: 5,
+            success: Some(0.62),
+            fail: Some(0.2),
+        },
+    ]);
+    mirror.sync(&snapshot, &state(121, vec![aimed]), 0);
+    let uid = mirror.uid_of[&78];
+    let targets = mirror.game.host_unit_facts[&uid]
+        .spy_targets
+        .clone()
+        .expect("the targets cross");
+    assert_eq!(
+        targets["steal_tech_boost"].pos,
+        crate::hex::offset_to_axial(6, 5)
+    );
+    assert_eq!(targets["steal_tech_boost"].success, Some(0.62));
+    assert_eq!(targets["steal_tech_boost"].fail, Some(0.2));
+    assert_eq!(targets["listening_post"].success, None, "1.5 is no reading");
+
     // On an operation: the mission is seated and nothing is offered, on
     // both paths.
     let mut busy = spy(78, 5, 5);
@@ -3700,6 +3737,129 @@ fn a_fresh_live_spy_owes_no_promotion_and_a_travelled_one_seats_abroad() {
             .iter()
             .any(|action| matches!(action, crate::game::Action::PromoteSpy { .. })),
         "the promotion a mission actually earned is still offered"
+    );
+}
+
+/// ★★★ A LEVELLED LIVE SPY IS OWED ITS PROMOTION, FROM THE HOST'S MENU.
+/// The host keeps a Spy at level 1 until its promotion is chosen, so the
+/// `level − 1` seat above owed none to the Spy that had earned one: 99 of 99
+/// live Spies on 2026-11-05 ended level 1 without a promotion, 81 holding the
+/// 15 XP of a pending choice. The stock promotion popup's menu is the
+/// witness: a Spy it offers a choice owes one, picked only from what it
+/// offers; an empty menu owes none; and a menu whose only pick the host
+/// refused leaves the Spy its missions instead of a promotion it cannot take.
+#[test]
+fn a_levelled_live_spy_promotes_from_the_host_menu() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: vec![
+            plot(3, 3, "TERRAIN_GRASS"),
+            plot(4, 4, "TERRAIN_GRASS"),
+            plot(5, 5, "TERRAIN_GRASS"),
+        ],
+    }]);
+    let mut state = StateSnapshot {
+        turn: 120,
+        spy_capacity: Some(3),
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 1,
+        name: "Roma".to_string(),
+        x: 4,
+        y: 4,
+        pop: 4,
+        ..StateCity::default()
+    });
+    state.rivals.push(StateRival {
+        player: 1,
+        cities: vec![StateCity {
+            id: 9,
+            name: "Aduatuca".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            ..StateCity::default()
+        }],
+        ..StateRival::default()
+    });
+    let menu = |names: &[&str]| Some(names.iter().map(|name| name.to_string()).collect());
+    for (id, offered) in [
+        (
+            77,
+            menu(&["PROMOTION_SPY_TECHNOLOGIST", "PROMOTION_SPY_DISGUISE"]),
+        ),
+        (78, menu(&[])),
+        (79, menu(&["PROMOTION_SPY_TECHNOLOGIST"])),
+    ] {
+        state.units.push(StateUnit {
+            id,
+            kind: "UNIT_SPY".to_string(),
+            x: 5,
+            y: 5,
+            level: Some(1),
+            offered_promotions: offered,
+            ..StateUnit::default()
+        });
+    }
+    state
+        .refused_promotions
+        .entry(79)
+        .or_default()
+        .insert("PROMOTION_SPY_TECHNOLOGIST".to_string());
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+    let uid = |civ6: i64| {
+        *rebuilt
+            .unit_ids
+            .iter()
+            .find(|(_, mapped)| **mapped == civ6)
+            .map(|(uid, _)| uid)
+            .expect("the spy is mirrored")
+    };
+    let promotions = |civ6: i64| {
+        rebuilt
+            .game
+            .legal_spy_actions(0, uid(civ6))
+            .into_iter()
+            .filter_map(|action| match action {
+                crate::game::Action::PromoteSpy { promotion, .. } => {
+                    Some(promotion.as_str().to_string())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        rebuilt.game.spies[&uid(77)].level,
+        1,
+        "the host's menu owes one pick"
+    );
+    assert_eq!(
+        promotions(77),
+        vec!["disguise".to_string(), "technologist".to_string()],
+        "the pick comes from the host's own offer, not the board's draw"
+    );
+    assert_eq!(
+        rebuilt.game.spies[&uid(78)].level,
+        0,
+        "an empty menu owes nothing"
+    );
+    assert!(promotions(78).is_empty());
+    assert!(
+        rebuilt.game.blocked_promotions[&uid(79)].contains(&crate::name::Name::new("technologist")),
+        "a refused Spy promotion is blocked under its CIVVIS name"
+    );
+    assert!(
+        promotions(79).is_empty(),
+        "a menu whose only pick was refused gates nothing"
+    );
+    assert!(
+        !rebuilt.game.legal_spy_actions(0, uid(79)).is_empty(),
+        "and the Spy keeps its missions"
     );
 }
 
@@ -14595,6 +14755,22 @@ fn strategic_trade_catalogue_preserves_public_quantities_and_unknowns() {
         assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
         assert_eq!(state.rivals[0].tradeable_strategics, expected);
         assert_eq!(state.turn, 162);
+    }
+}
+
+/// Our Spies a rival holds captive cross as a plain count, absent from an
+/// older mod, and a captor holding none reads zero, not unknown.
+#[test]
+fn captives_of_ours_cross_as_a_count() {
+    for (raw, expected) in [
+        (r#"{}"#, None),
+        (r#"{"captives_of_ours":null}"#, None),
+        (r#"{"captives_of_ours":0}"#, Some(0)),
+        (r#"{"captives_of_ours":2}"#, Some(2)),
+    ] {
+        let state = state_from_json(&format!(r#"{{"turn":150,"rivals":[{raw}]}}"#)).unwrap();
+        assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+        assert_eq!(state.rivals[0].captives_of_ours, expected);
     }
 }
 

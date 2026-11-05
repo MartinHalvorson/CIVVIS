@@ -15,6 +15,7 @@
 --      and the treasury; another player's does not;
 --   5a. a Great Person consumed by activation keeps that witness but is marked
 --       with its non-loss cause;
+--   5c. so is a Spy lifted off the map by our own travel request;
 --   5b. our unit TAKEN emits `unit_captured` naming the captor and whether it
 --      is the barbarians (`UnitCaptured.lua:8`); a unit we capture does not;
 --   6. a city changing hands emits `city_occupation`.
@@ -218,6 +219,25 @@ local activated = lastEvent("unit_lost")
 check("activated Great Person keeps the removal witness", activated ~= nil, true)
 check("activated Great Person names its cause",
 	has(activated, '"cause":"great_person_activation"'), true)
+
+-- 5c. A Spy that starts travelling leaves the map and returns under a new id:
+--     the removal right after our own travel request is not a loss; a Spy
+--     removed with no request (caught, killed) still is.
+ledger.kinds["11"] = "UNIT_SPY"
+ledger.expected_spy_travel["11"] = 41
+ledger.onUnitRemoved(0, 11)
+local travelled = lastEvent("unit_lost")
+check("a travelling Spy keeps the removal witness", has(travelled, '"unit":11'), true)
+check("a travelling Spy names its cause", has(travelled, '"cause":"spy_travel"'), true)
+check("the travel mark is spent", ledger.expected_spy_travel["11"], nil)
+ledger.onUnitRemoved(0, 11)
+check("a second removal of the same id is a loss again",
+	has(lastEvent("unit_lost"), '"cause"'), false)
+ledger.kinds["12"] = "UNIT_SPY"
+ledger.expected_spy_travel["12"] = 30
+ledger.onUnitRemoved(0, 12)
+check("a stale travel mark does not excuse a later loss",
+	has(lastEvent("unit_lost"), '"cause"'), false)
 
 -- 5b. Our settler is TAKEN by the barbarians: the game's own word, ours only.
 ledger.kinds["8"] = "UNIT_SETTLER"

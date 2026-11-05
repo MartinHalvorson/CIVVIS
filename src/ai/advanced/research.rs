@@ -12,6 +12,12 @@
 
 use super::*;
 
+/// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
+/// gains on a Science aim under the gene, Guilds (its prerequisite) half: the
+/// scale of the lanes' own civic bonuses below (Diplomacy +60 for Political
+/// Philosophy, Civil Service and Guilds).
+pub(crate) const STEAL_CIVIC_VALUE: f64 = 60.0;
+
 impl AdvancedAi {
     /// The technology behind the best Campus building this empire is already
     /// equipped to use and cannot research its way to on merit.
@@ -276,6 +282,7 @@ impl AdvancedAi {
             let science_lane_active = self.victory_target == Some(VictoryTarget::Science)
                 || self.phase_specialization_active(g)
                 || self.science_drive_active();
+            let foundation_goal = self.science_foundation_research_goal(g, pid, plan);
             let first_launch_goal = self.first_launch_research_goal(g, pid);
             let science_victory_goal = first_launch_goal.or_else(|| {
                 if science_lane_active {
@@ -519,6 +526,15 @@ impl AdvancedAi {
                         .copied()
                         .flatten()
                         .map(|pick| self.siege_tier_pick(&pick))
+                }
+                // Open labs and the first pad before advanced backlog or air
+                // research, retaining emergencies, fuel and named production.
+                _ if foundation_goal.is_some()
+                    && barbarian_military_goal.is_none()
+                    && standing_army_fuel_goal.is_none()
+                    && production_technology_goal.is_none() =>
+                {
+                    foundation_goal
                 }
                 // `old-techs-before-the-beeline`: behind the siege tier and
                 // ahead of the air surge and every lane beeline, the
@@ -775,6 +791,13 @@ impl AdvancedAi {
                     }
                 }
             }
+            if let Some(goal) = foundation_goal.filter(|goal| forced_goal == Some(*goal)) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             let production_step_pick = production_technology_goal
                 .filter(|goal| forced_goal == Some(goal.as_str()))
                 .and_then(|goal| self.named_production_technology_step(g, pid, goal));
@@ -859,7 +882,9 @@ impl AdvancedAi {
                     };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            if opening_archery_goal.as_deref() == Some(goal) {
+                            if foundation_goal == Some(goal) {
+                                format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
+                            } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
                                 if let Some((city, rival, ratio)) =
@@ -1956,6 +1981,20 @@ impl AdvancedAi {
         if strategy == GrandStrategy::Religion && civic == "theology" {
             value += 120.0;
         }
+        // `spies-steal-the-lead`: Spy capacity opens at Diplomatic Service
+        // (through Guilds). Live Deity Korea carriers took it at t108-151 and
+        // a stealing Spy is worth ~+50 Science a turn, so a Science aim that
+        // steals wants the civic sooner. Zero with the gene off.
+        if self.spies_steal_the_lead
+            && (strategy == GrandStrategy::Science
+                || self.victory_target == Some(VictoryTarget::Science))
+        {
+            value += match civic {
+                "diplomatic_service" => STEAL_CIVIC_VALUE,
+                "guilds" => STEAL_CIVIC_VALUE / 2.0,
+                _ => 0.0,
+            };
+        }
         value += match civic {
             "foreign_trade" | "craftsmanship" => 25.0,
             "early_empire" | "state_workforce" => 38.0,
@@ -1969,3 +2008,6 @@ impl AdvancedAi {
         (value + 32.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, civic, false)
     }
 }
+
+#[cfg(test)]
+mod steal_civic_tests;

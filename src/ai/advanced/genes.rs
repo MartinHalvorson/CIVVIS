@@ -5081,6 +5081,76 @@ pub const GENES: &[Gene] = &[
     // Amenities line reaching 10-15% of Science. The housing card is not
     // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
     Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
+    // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
+    // Production in its city, a free Builder per new city) and the
+    // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
+    // the Warlord's Throne (pays only on captures) and the Grand Master's
+    // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
+    // Agency. See `BasicAi::plaza_building_item_for`.
+    Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
+    // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
+    // played out: three eliminations since 11-05 02:01Z, all obsolete armies
+    // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
+    // 50) while border parity bought 80-Gold Warriors at t36-66 for an
+    // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
+    // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
     // Three Kingdoms pays +1 Science per Mine and +1 Food per Farm beside a
     // Seowon (the live host's rule). The engine's data carries a flat
     // per-city placeholder, so the Builder priced a Seowon-side Mine at its

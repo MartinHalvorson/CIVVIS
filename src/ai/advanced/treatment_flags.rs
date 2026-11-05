@@ -2125,6 +2125,8 @@ impl AdvancedAi {
         stalled_conquest_takes_science => enable_stalled_conquest_takes_science, disable_stalled_conquest_takes_science;
         /// Keep a committed first Science launch on its research path.
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
+        /// Prioritize usable labs and nearby Rocketry during a Science posture.
+        science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
         /// Ask the native market for Coal serving ready research power.
         science_power_buys_fuel => enable_science_power_buys_fuel, disable_science_power_buys_fuel;
         /// Prefer a legal non-lowland site when starting a native Spaceport.
@@ -2194,6 +2196,28 @@ impl AdvancedAi {
         /// Opt-in gene `medina-yields-to-the-amenities`; see
         /// `advanced/medina_quarter.rs`.
         medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
+        /// Opt-in gene `war-defense-spends-the-runway`; see
+        /// `advanced/war_defense_spends_the_runway.rs`.
+        war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
+        /// Opt-in gene `plaza-serves-the-scientist`; see
+        /// `BasicAi::plaza_building_item_for`.
+        plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
+        /// Opt-in gene `parity-upgrades-before-it-buys`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `settler-shelters-from-the-war`; see
+        /// `advanced/settler_shelters_from_the_war.rs`.
+        settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
+        /// Opt-in gene `threatened-lane-lends-the-army`; see
+        /// `advanced/threatened_lane_lends_the_army.rs`.
+        threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
+        /// Opt-in gene `prod-tiles-call-the-builders`; acts through
+        /// `builders-cover-the-worked-backlog`'s step. See
+        /// `ai/prod_tiles_call_the_builders.rs`.
+        base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `threatened-war-holds-the-claims`; see
+        /// `advanced/threatened_war_holds_the_claims.rs`.
+        threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
         /// Opt-in gene `korea-mines-beside-the-seowon`; see
         /// `advanced/korea_mines_beside_the_seowon.rs`.
         korea_mines_beside_the_seowon => enable_korea_mines_beside_the_seowon, disable_korea_mines_beside_the_seowon;
@@ -5104,6 +5128,17 @@ impl AdvancedAi {
     /// The twin of `enable_walls_release_the_one_blow`.
     pub fn disable_walls_release_the_one_blow(&mut self) {
         self.walls_release_the_one_blow = false;
+    }
+
+    /// Opt-in gene `anvil-spares-the-one-blow`; see
+    /// [`Self::anvil_spares_the_one_blow`].
+    pub fn enable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = true;
+    }
+
+    /// The twin of `enable_anvil_spares_the_one_blow`.
+    pub fn disable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = false;
     }
 
     // ---- append: a-b ------------------------------------------------
