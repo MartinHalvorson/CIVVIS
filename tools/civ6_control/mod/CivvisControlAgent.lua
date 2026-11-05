@@ -528,6 +528,32 @@ CivvisCaptivesHeld = function(pid, captor)
 	return #possible;
 end;
 
+-- What a rival thinks of us, reason by reason: the rows the shipped Intel
+-- tab lists under the relationship bar (DiplomacyActionView.lua:895
+-- `selectedPlayerDiplomaticAI:GetDiplomaticModifiers(ms_LocalPlayerID)`,
+-- each `{Text, Score}`; :904 skips a zero score, :914 treats Text as a LOC
+-- key). The diplomatic STATE says whether a neighbour is Unfriendly; only
+-- this says why -- an agenda, a denouncement (-9, Leaders.xml
+-- STANDARD_DIPLOMATIC_DENOUNCED), a delegation (+3), a one-sided trade
+-- (STANDARD_DIPLOMATIC_ONE_SIDED_TRADES, up to +20) -- and so which lever
+-- could move it. Read only. Rows keep the LOC key (language-independent)
+-- and the score; zero rows are dropped as the screen drops them. A bare
+-- global: the main chunk is at its local ceiling. nil when unreadable.
+CivvisOpinionModifiers = function(other, pid)
+	local ai = other:GetDiplomaticAI();
+	if ai == nil then return nil; end
+	local tips = ai:GetDiplomaticModifiers(pid);
+	if type(tips) ~= "table" then return nil; end
+	local out = {};
+	for _, tip in ipairs(tips) do
+		local score = tonumber(tip.Score);
+		if score ~= nil and score ~= 0 then
+			out[#out + 1] = { text = tostring(tip.Text or ""), score = score };
+		end
+	end
+	return out;
+end;
+
 -- Quantities displayed in the met rival's strategic-resource trade column.
 -- Read their existing deal only: never clear, add to, price or submit it.
 -- DiplomacyDealView.lua:1715,1722-1724 reads and displays this same MaxAmount.
@@ -8869,6 +8895,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- Our Spies this rival holds captive (`CivvisCaptivesHeld`).
 				captives_of_ours = try(function()
 					return CivvisCaptivesHeld(pid, otherId);
+				end, nil),
+				-- Its opinion of us, reason by reason (`CivvisOpinionModifiers`).
+				opinion_modifiers = try(function()
+					return CivvisOpinionModifiers(other, pid);
 				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how

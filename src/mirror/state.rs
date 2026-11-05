@@ -1272,6 +1272,17 @@ pub struct StateWarDeclaration {
     pub allowed: Option<bool>,
 }
 
+/// One row of a rival's opinion of us (`StateRival::opinion_modifiers`).
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct StateOpinionModifier {
+    /// The LOC key the shipped screen looks up, e.g.
+    /// `LOC_DIPLO_MODIFIER_DENOUNCED`.
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub score: f64,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
@@ -1498,6 +1509,14 @@ pub struct StateRival {
     /// `None` from an older mod or an unreadable deal.
     #[serde(default)]
     pub captives_of_ours: Option<u32>,
+    /// The rival's opinion of us, reason by reason: the non-zero rows the
+    /// shipped Intel tab lists under the relationship bar
+    /// (`DiplomacyActionView.lua:895`, `GetDiplomaticModifiers`), each a LOC
+    /// key and its score. The diplomatic state says a neighbour is
+    /// Unfriendly; this says why. `None` from an older mod or an unreadable
+    /// AI; `Some([])` is a rival with no reasons either way.
+    #[serde(default)]
+    pub opinion_modifiers: Option<Vec<StateOpinionModifier>>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call

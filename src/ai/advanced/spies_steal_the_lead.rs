@@ -266,7 +266,7 @@ impl AdvancedAi {
     /// Whether `item`, at the head of a queue, is routine work a Spy may
     /// displace: the denial claim's rule (no defensive building, military
     /// unit, Settler, Spy, Wonder, project or repair).
-    fn steal_spy_displaces(g: &Game, item: &Item) -> bool {
+    pub(super) fn steal_spy_displaces(g: &Game, item: &Item) -> bool {
         match item {
             Item::Building { building } => g
                 .rules
