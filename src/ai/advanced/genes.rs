@@ -5025,6 +5025,13 @@ pub const GENES: &[Gene] = &[
     // 8 a tile inside ten of the nearest charted rival city. See
     // `advanced/early_city_distance.rs`.
     Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -290,6 +290,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
 | `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | 1 \| 1 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
+| `medina-yields-to-the-amenities` | off (unmeasured) | Opt-in gene `medina-yields-to-the-amenities`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
 | `merchant-confederation-earns-its-slot-2` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot-2`; version one plus the seat it may take. | — \| 2 |
 | `military-alliance-shield` | off (unmeasured) | Opt-in gene `military-alliance-shield`; see `advanced/military_alliance_shield.rs`. | 1 \| 1 |

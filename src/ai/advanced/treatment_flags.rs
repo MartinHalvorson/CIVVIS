@@ -2180,6 +2180,9 @@ impl AdvancedAi {
         /// Opt-in gene `early-cities-keep-their-distance`; see
         /// [`Self::early_cities_keep_their_distance`].
         early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `medina-yields-to-the-amenities`; see
+        /// `advanced/medina_quarter.rs`.
+        medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
     }
 }
 
