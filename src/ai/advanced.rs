@@ -22704,6 +22704,9 @@ impl AdvancedAi {
         let plan = self.plan.clone()?;
         let mut preview = self.clone();
         let mut board = g.clone();
+        // `nusantara-reads-the-coast`: the hint plans on a fresh board, so it
+        // names its own planner, as `take_turn_inner` does.
+        preview.seat_nusantara_site_planner(&mut board, pid);
         let queue = &mut board.cities.get_mut(&city)?.queue;
         let incoming_settler =
             matches!(queue.first(), Some(Item::Unit { unit }) if unit == "settler");
