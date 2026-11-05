@@ -5074,6 +5074,13 @@ pub const GENES: &[Gene] = &[
     // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
     // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
     Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
     // The insolvency guard gave every queue to Commercial Hubs, Stock
     // Exchanges and district projects whenever Gold per turn was negative and
     // the treasury was under 100 + 25 per city. That held even with 100 turns

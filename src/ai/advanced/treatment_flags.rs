@@ -2191,6 +2191,9 @@ impl AdvancedAi {
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
+        /// Opt-in gene `medina-yields-to-the-amenities`; see
+        /// `advanced/medina_quarter.rs`.
+        medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
         /// Opt-in gene `war-defense-spends-the-runway`; see
         /// `advanced/war_defense_spends_the_runway.rs`.
         war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
