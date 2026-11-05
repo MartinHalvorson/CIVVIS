@@ -261,6 +261,53 @@ class NextHeadPrebuildTest(unittest.TestCase):
         self.assertEqual((dest / "civvis_orders").read_text(), "old")
         self.assertFalse((dest / ".civvis-built-revision").exists())
 
+    # -- while another harness holds the seat -----------------------------------
+
+    def _waiting(self, *, pin: str | None, stamp: str | None, live_loop: bool) -> list[str]:
+        block = _between("# >>> prebuild while waiting\n", "# <<< prebuild while waiting\n")
+        call = Path(tempfile.mkdtemp(dir=self.root))
+        head = call / "head"
+        (head / "target/release").mkdir(parents=True)
+        if stamp is not None:
+            (head / "target/release/.civvis-built-revision").write_text(stamp + " aa bb\n")
+        pinfile = call / "pin"
+        if pin is not None:
+            pinfile.write_text(pin + "\n")
+        script = "\n".join([
+            "set -u",
+            f"PINFILE={pinfile}", f"HEAD_REPO={head}", "BUILD_STAMP_NAME=.civvis-built-revision",
+            # a live loop is this very shell; a dead one is a pid that cannot exist
+            f"PREBUILD_PID={'$$' if live_loop else '999999'}",
+            'prebuild_start() { print -r -- "start $1 repo=$REPO" }',
+            block,
+            "prebuild_while_waiting",
+        ])
+        done = subprocess.run(["zsh", "-c", script], capture_output=True, text=True, check=True)
+        return done.stdout.splitlines()
+
+    def test_a_held_seat_keeps_the_next_head_compiling_from_what_is_built(self) -> None:
+        out = self._waiting(pin="head", stamp="a" * 40, live_loop=False)
+        self.assertEqual(len(out), 1)
+        self.assertTrue(out[0].startswith(f"start {'a' * 40} repo=") and out[0].endswith("/head"),
+                        out)
+
+    def test_an_absent_pin_file_means_head(self) -> None:
+        self.assertEqual(len(self._waiting(pin=None, stamp="b" * 40, live_loop=False)), 1)
+
+    def test_a_running_loop_is_never_restarted_per_poll(self) -> None:
+        self.assertEqual(self._waiting(pin="head", stamp="a" * 40, live_loop=True), [])
+
+    def test_a_pinned_tree_or_an_unstamped_head_starts_nothing(self) -> None:
+        self.assertEqual(self._waiting(pin="/some/tree", stamp="a" * 40, live_loop=False), [])
+        self.assertEqual(self._waiting(pin="head", stamp=None, live_loop=False), [])
+        self.assertEqual(self._waiting(pin="head", stamp="not-a-sha", live_loop=False), [])
+
+    def test_both_seat_waits_keep_the_build_going(self) -> None:
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        for line in ('leaving it alone and retrying in 60s"\n        prebuild_while_waiting\n        sleep 60',
+                     'leaving it alone and retrying in 60s"\n    prebuild_while_waiting\n    sleep 60'):
+            self.assertIn(line, source)
+
     # -- the boundary build ------------------------------------------------------
 
     def _head_build(self, pin: str, stamp: bool, adopt: bool, cargo_ok: bool = True) -> list[str]:

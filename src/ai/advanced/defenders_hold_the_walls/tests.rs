@@ -76,3 +76,69 @@ fn the_wounded_and_the_distant_do_not_hold() {
     game.units.get_mut(&archer).unwrap().hp = super::ROTATE_HP - 1;
     assert!(!ai.holds_the_walls(&game, 0, archer), "wounded");
 }
+
+#[test]
+fn walls_release_the_one_blow_ships_off_and_is_registered() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.walls_release_the_one_blow, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "walls_release_the_one_blow"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "walls-release-the-one-blow",
+        |ai| ai.walls_release_the_one_blow,
+    );
+}
+
+/// An Archer beside the walls, wounded to a health the adjacent Swordsman's
+/// blow removes at the top of its roll: under the gene it is listed one-blow
+/// lethal and no longer holds the walls; without it, it holds; a garrison on
+/// the City Center is never listed.
+#[test]
+fn a_ring_defender_one_blow_removes_is_released() {
+    let (mut game, archer, capital) = walls();
+    let archer_pos = game.units[&archer].pos;
+    let raider_pos = game
+        .nbrs(archer_pos)
+        .into_iter()
+        .find(|pos| {
+            *pos != capital
+                && game.unit_ids_at(*pos).is_empty()
+                && game.wdist(*pos, capital) <= super::WALL_THREAT_REACH
+        })
+        .expect("a tile beside the archer within the threat reach");
+    game.spawn_test_unit("swordsman", 1, raider_pos);
+    let garrison = game.spawn_test_unit("warrior", 0, capital);
+    // Find a health the swordsman's top blow removes but which still counts
+    // as healthy for the walls (at or over ROTATE_HP).
+    let mut ai = AdvancedAi::new();
+    ai.enable_defenders_hold_the_walls();
+    ai.enable_walls_release_the_one_blow();
+    let mut released = None;
+    for hp in (super::ROTATE_HP..=100).rev() {
+        game.units.get_mut(&archer).unwrap().hp = hp;
+        let mut field = super::super::battle_planner::DangerField::new(&game, 0);
+        let doomed = ai.walls_one_blow_units(&game, 0, &mut field);
+        if doomed.contains(&archer) {
+            released = Some((hp, doomed));
+            break;
+        }
+    }
+    let (hp, doomed) = released.expect("some healthy hp the swordsman's top blow removes");
+    assert!(
+        !doomed.contains(&garrison),
+        "the City Center takes the blow"
+    );
+    game.units.get_mut(&archer).unwrap().hp = hp;
+    let mut keeper = AdvancedAi::new();
+    keeper.enable_defenders_hold_the_walls();
+    assert!(
+        keeper.holds_the_walls(&game, 0, archer),
+        "without the gene it holds"
+    );
+    ai.walls_one_blow = doomed;
+    assert!(
+        !ai.holds_the_walls(&game, 0, archer),
+        "under the gene it is released"
+    );
+}

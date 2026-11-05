@@ -3535,6 +3535,19 @@ impl AdvancedAi {
                     self.journal_training_yields(g, spy_id);
                 }
                 if g.spies[&spy_id].level < 2 && !training_yields {
+                    // `spies-steal-the-lead`: a Science seat's green Spy
+                    // steals a Eureka instead of training. `None` with the
+                    // gene off.
+                    if let Some(action) = self.steal_the_lead_action(g, plan, spy_id, &legal) {
+                        if g.apply(pid, &action).is_ok() {
+                            self.steal_the_lead_note(g, pid, spy_id, "the Gain Sources training");
+                        }
+                        self.spy_orders_until.insert(
+                            spy_id,
+                            g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                        );
+                        continue;
+                    }
                     if let Some(action) = legal.iter().find(|action| {
                         matches!(action, Action::SpyMission { mission, .. } if mission == "gain_sources")
                     }) {
@@ -3586,6 +3599,19 @@ impl AdvancedAi {
                 // Rocketry when offered, else only a safe operation, and the
                 // Spy keeps its slot. Never taken with the gene off.
                 if Self::racer_spy_city_is_a_racers(g, &racer_spy_racers, current_city) {
+                    // `spies-steal-the-lead`: no Disrupt Rocketry here, so a
+                    // Science seat steals a Eureka rather than wait on a
+                    // Listening Post. `None` with the gene off.
+                    if let Some(action) = self.steal_the_lead_action(g, plan, spy_id, &legal) {
+                        if g.apply(pid, &action).is_ok() {
+                            self.steal_the_lead_note(g, pid, spy_id, "a Listening Post");
+                        }
+                        self.spy_orders_until.insert(
+                            spy_id,
+                            g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                        );
+                        continue;
+                    }
                     if let Some(action) = Self::racer_spy_operation(&legal).cloned() {
                         let _ = g.apply(pid, &action);
                         self.spy_orders_until.insert(
@@ -3624,9 +3650,11 @@ impl AdvancedAi {
                         // `racer-keeps-the-spies`: no capture-risk operation
                         // outside every racer's cities while a racer exists.
                         // Never taken with the gene off.
+                        // `spies-steal-the-lead`: …except Steal Tech Boost on
+                        // a Science aim. Unchanged with that gene off.
                         if !racer_spy_racers.is_empty()
                             && !racer_spy_stays.contains(&defender)
-                            && Self::racer_spy_risky(mission)
+                            && self.racer_spy_withholds(plan, mission)
                         {
                             return None;
                         }
