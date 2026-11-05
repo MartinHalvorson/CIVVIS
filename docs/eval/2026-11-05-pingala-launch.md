@@ -102,3 +102,8 @@ an incumbent. The native adapter already implements that operation.
 to launch production modifiers. No new native operation or global setting is
 introduced. The operator's independent-version rule is in
 `docs/GENE_SCREEN.md`, "Versioning a gene".
+
+A later actual registry conflict arose when older PR #4550 landed. Integration
+retains all 838 positions of main `facacccce457c61171127cb90e26688b19461de7`,
+then appends Pingala v2. This is a required conflict/dependency integration, not
+a routine refresh. The launch-research policy and both registrations remain.
