@@ -51,6 +51,8 @@ use verification::*;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/campus_above_sea.rs"]
+mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
 #[path = "civvis_orders/formation_refusals.rs"]
@@ -2108,6 +2110,111 @@ fn append_captive_ransom_order(
     None
 }
 
+/// `tribute-buys-the-friendship`: Gold the treasury keeps through a tribute.
+const TRIBUTE_GOLD_RESERVE: i64 = 100;
+/// Below this a tribute moves the rival's opinion too little to send.
+const TRIBUTE_MIN_GOLD: i32 = 30;
+/// The visible opinion a tribute aims for: the median total of a rival the
+/// host reads as Friendly on the live Deity lane (+4), plus a point.
+const TRIBUTE_TARGET_OPINION: f64 = 5.0;
+/// Gold per point of a favorable deal (`TradeValuePerModifierPoint`, shipped
+/// `Leaders.xml` `STANDARD_DIPLOMATIC_ONE_SIDED_TRADES`).
+const TRIBUTE_GOLD_PER_POINT: f64 = 10.0;
+/// The most a favorable deal is worth to the AI (`MaxValue`, same row).
+const TRIBUTE_MODIFIER_CAP: f64 = 20.0;
+/// One tribute per rival every this many turns, staggered by its seat.
+const TRIBUTE_CADENCE: u32 = 5;
+/// The Intel tab's row for that modifier, as the English host reports it.
+/// Another language reads 0 here and may ask past the cap, which wastes Gold
+/// but changes nothing else.
+const TRIBUTE_FAVORABLE_TRADE_ROW: &str = "Favorable trade deals";
+
+/// `tribute-buys-the-friendship`: a one-way Gold gift (`aid_gift` verb
+/// `TRIBUTE`) to the strongest met major at peace with us, the rival
+/// `befriend-the-strongest` courts, while it is stronger than us and reads
+/// Unfriendly or Neutral. The amount is the opinion gap to
+/// [`TRIBUTE_TARGET_OPINION`] at [`TRIBUTE_GOLD_PER_POINT`], inside what the
+/// favorable-deal modifier still has room for and the treasury over
+/// [`TRIBUTE_GOLD_RESERVE`]. `None` when a gift was pushed, else the hold.
+/// See `advanced/tribute_buys_the_friendship.rs`.
+fn append_tribute_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let Some(rival) = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .max_by(|a, b| {
+            a.military
+                .total_cmp(&b.military)
+                .then(b.player.cmp(&a.player))
+        })
+    else {
+        return Some("tribute_hold:no_rival");
+    };
+    let mood = rival.diplomatic_state.as_deref().unwrap_or("");
+    if !matches!(mood, "DIPLO_STATE_UNFRIENDLY" | "DIPLO_STATE_NEUTRAL") {
+        return Some(if mood == "DIPLO_STATE_DENOUNCED" {
+            "tribute_hold:denounced"
+        } else {
+            "tribute_hold:courted"
+        });
+    }
+    if rival.military <= state.military {
+        return Some("tribute_hold:not_stronger");
+    }
+    if state.turn % TRIBUTE_CADENCE != rival.player as u32 % TRIBUTE_CADENCE {
+        return Some("tribute_hold:cadence");
+    }
+    let Some(reasons) = rival.opinion_modifiers.as_ref() else {
+        return Some("tribute_hold:opinion_unknown");
+    };
+    let total: f64 = reasons.iter().map(|reason| reason.score).sum();
+    let favorable: f64 = reasons
+        .iter()
+        .filter(|reason| reason.text.starts_with(TRIBUTE_FAVORABLE_TRADE_ROW))
+        .map(|reason| reason.score.max(0.0))
+        .sum();
+    let points = (TRIBUTE_TARGET_OPINION - total).min(TRIBUTE_MODIFIER_CAP - favorable);
+    if points <= 0.0 {
+        return Some("tribute_hold:no_gap");
+    }
+    let wanted = (points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64;
+    let amount = wanted.min(state.gold - TRIBUTE_GOLD_RESERVE);
+    if amount < i64::from(TRIBUTE_MIN_GOLD) {
+        return Some("tribute_hold:treasury");
+    }
+    // One working deal per rival, and a tribute beside a war, peace,
+    // denunciation, friendship or alliance order to the same rival would be
+    // read against the wrong diplomatic state.
+    let subject = rival.player as i64;
+    if orders.iter().any(|order| {
+        order.subject == Some(subject)
+            && matches!(
+                order.kind,
+                "sell"
+                    | "buy"
+                    | "aid_gift"
+                    | "war"
+                    | "peace"
+                    | "delegation"
+                    | "denounce"
+                    | "friendship"
+                    | "alliance"
+            )
+    }) {
+        return Some("tribute_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "aid_gift",
+        subject: Some(subject),
+        verb: Some("TRIBUTE".to_string()),
+        pos: Some((amount as i32, 0)),
+    });
+    None
+}
+
 fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
     state
         .cities
@@ -3549,8 +3656,8 @@ use civvis::ai::player::aid::FINISH_WINDOW as AID_GIFT_FINISH_WINDOW;
 /// Gold in all) because the control mod put three quarters of the treasury
 /// on every retried offer, whatever the planner's reason for offering — a
 /// second front, war fatigue, a religious lane and an envoy reclaim all
-/// paid like a rout. Civilization VI's own database carries no diplomatic
-/// modifier for a gift, so Gold that does not buy the peace buys nothing.
+/// paid like a rout. Beyond the peace itself such Gold buys only the capped
+/// favorable-deal modifier, far less than those offers paid.
 /// Now the planner's `peace_routed` says whether the front is lost; only
 /// then does the order carry a cap (`x`), and the mod offers at most that.
 /// A white offer carries `x = 0`.
@@ -5044,6 +5151,17 @@ fn decide(
             }
         }
     }
+    // `tribute-buys-the-friendship`: Gold to the strongest neighbour at peace
+    // while it is too cold for the friendship ask. See `append_tribute_order`.
+    if ai.tribute_buys_the_friendship_enabled() {
+        match append_tribute_order(state, &mut orders) {
+            None => note_bits.push("tribute=1".to_string()),
+            Some(why @ ("tribute_hold:treasury" | "tribute_hold:deal_in_flight")) => {
+                note_bits.push(why.to_string())
+            }
+            Some(_) => {}
+        }
+    }
     // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better
     // siege gun waits on, bought from a met major's trade screen. See
     // `append_gun_resource_buy_order`.
@@ -5557,6 +5675,10 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let safer_campuses = campus_above_sea::retarget(ai, mirror_state, &mut orders);
+    if safer_campuses > 0 {
+        note_bits.push(format!("campus_above_the_sea={safer_campuses}"));
+    }
     let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
     if safer_pads > 0 {
         note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));

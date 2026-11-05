@@ -236,6 +236,22 @@ check("gift cooldown does not resubmit", submitted, false)
 check("gift cooldown is named", reason, "aid_gift_cooldown")
 check("gift cooldown does not clear", retry.clearArgs, nil)
 
+-- `tribute-buys-the-friendship`: a TRIBUTE is the same exact one-way Gold
+-- offer; any other verb is still refused before the host is touched.
+local tribute, tributePlayer = fixture()
+submitted, reason = aidOrder(7, 41, tributePlayer, 50, 130, "TRIBUTE")
+check("tribute submits", submitted, true)
+check("tribute says submitted", reason, "aid_gift_submitted")
+check("tribute item is Gold", tribute.itemKind, "gold")
+check("tribute keeps exact amount", tribute.amount, 130)
+check("tribute uses direct proposal", tribute.sendArgs and tribute.sendArgs[1], "proposed")
+check("tribute opens no UI session", tribute.openedSession, nil)
+local stray, strayPlayer = fixture()
+submitted, reason = aidOrder(7, 42, strayPlayer, 50, 130, "BRIBE")
+check("unknown gift verb does not submit", submitted, false)
+check("unknown gift verb is named", reason, "aid_gift_unknown_emergency")
+check("unknown gift verb does not clear", stray.clearArgs, nil)
+
 -- Keep the tested arm wired to the real order handler and prevent a future
 -- regression to a price negotiation or UI path that would cease to be a gift.
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")

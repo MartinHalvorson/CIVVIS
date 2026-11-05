@@ -384,8 +384,14 @@ impl AdvancedAi {
         let research_lane = self.research_alliance_lane(g, pid);
         // `culture-seat-allies`: a Culture seat does not wait for Scientific
         // Theory; it asks for the stock kind meanwhile.
+        // `science-seat-allies-2`: before Diplomatic Service a Science seat
+        // does not wait either; it asks for a Military Alliance. See
+        // `advanced/culture_seat_allies.rs`.
+        let early_military = research_lane == research_alliance::ResearchAllianceLane::Wait
+            && self.science_seat_allies_early(g, pid);
         if research_lane == research_alliance::ResearchAllianceLane::Wait
             && !self.culture_seat_allies_on()
+            && !early_military
         {
             return;
         }
@@ -399,6 +405,8 @@ impl AdvancedAi {
         }
         let kind = if research_first {
             research_alliance::ALLY_RESEARCH_KIND
+        } else if early_military {
+            "military"
         } else {
             match plan.strategy {
                 GrandStrategy::Science => "research",
