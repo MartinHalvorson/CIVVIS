@@ -2260,6 +2260,9 @@ impl AdvancedAi {
         /// Opt-in gene `capture-scar-reads-the-new-city`; see
         /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
         capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
+        /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
+        /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
+        plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
     }
 }
 
