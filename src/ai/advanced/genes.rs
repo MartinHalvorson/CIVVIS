@@ -5014,6 +5014,8 @@ pub const GENES: &[Gene] = &[
     // and the alliance's Defensive Pact against anyone else). See
     // `military_alliance_shield.rs`.
     Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
+    // A new district pays for the Science lost at neighboring owned Seowons.
+    Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
     // Operator rule 11-04 (#4435): losing the capital or either of the next
     // two cities restarts the game. Of 173 live second and third cities
     // (Immortal and Deity, 11-03/04), those founded 5-6 tiles from a charted
