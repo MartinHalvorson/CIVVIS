@@ -5007,6 +5007,15 @@ pub const GENES: &[Gene] = &[
     // early city with a hostile in relief range its row before the pressure
     // gate. See `objective_board.rs` (`early_cities_defend_first`).
     Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
+    // Live alliances were only ever of the lane's own kind, and never off the
+    // Diplomatic/Culture/Science lanes. Under the gene the seat holds a
+    // Military Alliance with the empire fighting our enemy (+5 combat strength
+    // against it) or the strongest neighbour at our border (no war with it,
+    // and the alliance's Defensive Pact against anyone else). See
+    // `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
+    // A new district pays for the Science lost at neighboring owned Seowons.
+    Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
     // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
     // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
     // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a

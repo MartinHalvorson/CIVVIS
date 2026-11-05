@@ -1403,6 +1403,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # `science-seat-allies`: the same for a Science seat.
         "ScienceAllies": bool(args.civvis_decides
                               and "science-seat-allies" in (getattr(args, "civvis_with", []) or [])),
+        # `military-alliance-shield` (src/ai/advanced/military_alliance_shield.rs):
+        # its Military Alliance ask reaches the host on every lane. The live
+        # binary keeps only that desk's own ask while the tag is armed.
+        "MilitaryAllies": bool(args.civvis_decides
+                               and "military-alliance-shield" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,

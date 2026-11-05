@@ -156,6 +156,7 @@ impl AdvancedAi {
             }
             return;
         }
+        let item = self.seowon_protection_reserved_site(g, pid, cid, item, plan);
         if g.apply(
             pid,
             &Action::Produce {

@@ -5565,6 +5565,8 @@ pub struct AdvancedAi {
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
+    /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
+    districts_protect_seowon_science: bool,
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
@@ -7605,6 +7607,13 @@ pub struct AdvancedAi {
     /// luxury slot asks a partner for a type we lack and pays in strategics
     /// the army does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
     luxury_asks_pay_in_strategics: bool,
+    /// `military-alliance-shield`: a Military Alliance with the empire
+    /// fighting our enemy or the strongest neighbour at our border. See
+    /// `advanced/military_alliance_shield.rs`. Off by default.
+    military_alliance_shield: bool,
+    /// `military-alliance-shield`: the partner asked on the last decided
+    /// turn, for the live orders layer. `None` with the gene off.
+    military_alliance_shield_ask: Option<usize>,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -10263,6 +10272,7 @@ mod site_lookahead;
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
+mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
 /// its city-states and joint-war invitations before the declaration. Opt-in
@@ -10295,6 +10305,10 @@ mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
+/// A Military Alliance with the empire fighting our enemy or the neighbour
+/// at our border. Opt-in gene `military-alliance-shield`; see
+/// `advanced/military_alliance_shield.rs`.
+mod military_alliance_shield;
 mod missionary_field;
 /// One war at a time: one campaign front, peace on every other front, and
 /// peace on the front once the tide has run against us for long enough
@@ -11643,6 +11657,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
+            districts_protect_seowon_science: false,
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -12004,6 +12019,8 @@ impl AdvancedAi {
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
             luxury_asks_pay_in_strategics: false,
+            military_alliance_shield: false,
+            military_alliance_shield_ask: None,
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
@@ -24933,6 +24950,7 @@ impl AdvancedAi {
                             })
                         })
                         .collect::<Vec<_>>();
+                self.seowon_protection_expand_menu(g, pid, cid, &mut items);
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
@@ -27759,6 +27777,7 @@ impl AdvancedAi {
                 ) * 42.0
                     * Self::campus_payback_horizon(g);
                 self.yield_value(g.district_yields(district, *pos), pricing_lane) * 60.0
+                    - self.seowon_site_loss_value(g, pid, *district, *pos, pricing_lane) * 60.0
                     + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, pricing_lane) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
