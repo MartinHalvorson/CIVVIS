@@ -357,7 +357,7 @@ impl AdvancedAi {
         if let Some(coalition) = self.coalition.as_mut() {
             coalition.alliance_asked.insert(partner, turn);
         }
-        self.alliance_note_asked(g, partner);
+        self.alliance_note_asked(g, pid, partner);
         *g.players[pid]
             .counters
             .entry("coalition:alliances_proposed".to_string())
@@ -469,7 +469,7 @@ impl AdvancedAi {
         if let Some(coalition) = self.coalition.as_mut() {
             coalition.alliance_asked.insert(partner, turn);
         }
-        self.alliance_note_asked(g, partner);
+        self.alliance_note_asked(g, pid, partner);
         *g.players[pid]
             .counters
             .entry("coalition:alliances_proposed".to_string())

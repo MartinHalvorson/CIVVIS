@@ -1325,14 +1325,6 @@ pub enum StartEraChoice {
 }
 
 impl StartEraChoice {
-    /// The era this choice opens the game with `seed` in.
-    pub fn for_seed(self, seed: u64) -> usize {
-        match self {
-            Self::Fixed(era) => era,
-            Self::RandomPerGame => random_start_era(seed),
-        }
-    }
-
     /// How the rating profile names this choice.
     pub fn profile_id(self) -> String {
         match self {

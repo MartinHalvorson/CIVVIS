@@ -289,7 +289,7 @@ impl AdvancedAi {
             return false;
         }
         self.military_alliance_shield_ask = Some(partner);
-        self.alliance_note_asked(g, partner);
+        self.alliance_note_asked(g, pid, partner);
         let arm = if common > 0 {
             "military_alliance_shield:asked_common_enemy"
         } else {

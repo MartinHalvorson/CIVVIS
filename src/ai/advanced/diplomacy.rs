@@ -589,7 +589,7 @@ impl AdvancedAi {
             }
             if proposed {
                 self.research_alliance_note_asked(g, pid, partner, kind);
-                self.alliance_note_asked(g, partner);
+                self.alliance_note_asked(g, pid, partner);
                 if research_first {
                     think!(self.journal(), Diplomacy, Decision,
                            "Proposing a Research Alliance to {}", g.players[partner].civ;
