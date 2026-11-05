@@ -5935,6 +5935,7 @@ impl AdvancedAi {
             let heals = !g.is_arena() || g.tactics.heal;
             self.anvil_orders = anvil_orders_for(g, pid, &city, &group.units, &hostiles, heals);
             self.anvil_garrisons_melee(g, pid, cid, &group.units, &hostiles);
+            self.anvil_spares_the_one_blow_step(g, pid, cid, &group.units);
             self.anvil_orders_turn = Some((g.turn, cid));
             self.anvil_rotate(g, pid, &city);
             if self.journal().wants(crate::reasoning::Level::Decision) {

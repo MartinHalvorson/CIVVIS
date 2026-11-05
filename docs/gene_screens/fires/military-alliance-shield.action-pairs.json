@@ -1,0 +1,41 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "military-alliance-shield",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. All 30 cases are border-cadence turns (t63-t105 and t108-t150, every 3rd) of live Deity Korea Science civvis-20261104T213449Z (Online), read from that run's own events.jsonl (sha256 in each read), queried with the run's own requested genome on a ci-profile civvis_orders built from the branch (d46b3bec2). t84-t105: the off arm asks nothing (Research is not yet legal) and the on arm asks player 3 for ALLIANCE_MILITARY. t108-t141: both arms ask player 3 for ALLIANCE_RESEARCH, the lane's own alliance (the border arm waits for it). The native screen cannot show this gene: its observed-player view hides rival civics, so no alliance is legal from it.",
+  "archive": {
+    "path": "docs/eval/2026-11-04-military-alliance-shield.native-queries.tar.xz",
+    "sha256": "df7959c3ce55e14ab2f0b9b3881f2bd1f84c580c5a05b42c17e34ac2ed15bf7d"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json",
+    "native-queries-01/0016/result.json",
+    "native-queries-01/0017/result.json",
+    "native-queries-01/0018/result.json",
+    "native-queries-01/0019/result.json",
+    "native-queries-01/0020/result.json",
+    "native-queries-01/0021/result.json",
+    "native-queries-01/0022/result.json",
+    "native-queries-01/0023/result.json",
+    "native-queries-01/0024/result.json",
+    "native-queries-01/0025/result.json",
+    "native-queries-01/0026/result.json",
+    "native-queries-01/0027/result.json",
+    "native-queries-01/0028/result.json",
+    "native-queries-01/0029/result.json"
+  ]
+}

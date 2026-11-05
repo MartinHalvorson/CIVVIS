@@ -4344,6 +4344,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "bankruptcy-exits-the-drain": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "bankruptcy-exits-the-drain": null,
+          "bankruptcy-exits-the-drain-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner"
@@ -4432,7 +4441,8 @@
         "ships": null,
         "versions": {
           "camps-close-the-age": null,
-          "camps-close-the-age-2": null
+          "camps-close-the-age-2": null,
+          "camps-close-the-age-3": null
         }
       },
       "campus-adjacency-threshold": {
@@ -4474,6 +4484,16 @@
         "versions": {
           "campus-claims-the-free-slot": null,
           "campus-claims-the-free-slot-2": null
+        }
+      },
+      "capital-keeps-its-defender": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-keeps-its-defender": null,
+          "capital-keeps-its-defender-2": null,
+          "capital-keeps-its-defender-3": null
         }
       },
       "capital-prey-opens-a-front": {
@@ -4937,6 +4957,15 @@
           "lane-delegates-production-2": null
         }
       },
+      "luxury-asks-pay-in-strategics": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-asks-pay-in-strategics": null,
+          "luxury-asks-pay-in-strategics-2": null
+        }
+      },
       "luxury-swap-asks": {
         "rule_on": [],
         "head": null,
@@ -5133,6 +5162,15 @@
         "versions": {
           "settler-guard-holds": 0.080401,
           "settler-guard-holds-2": null
+        }
+      },
+      "settler-shelters-from-the-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "settler-shelters-from-the-war": null,
+          "settler-shelters-from-the-war-2": null
         }
       },
       "settler-target-hysteresis": {

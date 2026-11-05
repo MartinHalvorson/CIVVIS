@@ -146,6 +146,35 @@ pub const SIEGE_RANGED_FLOOR: usize = 3;
 /// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
 /// and a melee taker with a spare.
 pub const SIEGE_BODY_FLOOR: usize = 5;
+/// `capital-keeps-its-defender-3`: a stronger major's soldier this close to
+/// an early city at peace is a threat to it (the surprise armies of 11-05
+/// parked one to four tiles out before declaring).
+pub const SURPRISE_TILES: i32 = 4;
+
+/// `capital-keeps-its-defender-2`: a Defend force below this share of the
+/// local hostile strength holds its city instead of engaging in the field.
+pub const DEFEND_HOLD_RATIO: f64 = 0.5;
+
+/// `capital-keeps-its-defender-2`: the first this many cities we founded —
+/// the operator's early_city_lost restart reads the same three.
+pub const EARLY_CITIES: usize = 3;
+
+/// `capital-keeps-its-defender-2`: the first [`EARLY_CITIES`] cities `pid`
+/// founded and still holds — its own cities never captured, lowest id first
+/// (ids grow with founding).
+pub(super) fn early_cities(g: &Game, pid: usize) -> Vec<u32> {
+    let mut founded: Vec<u32> = g
+        .cities
+        .values()
+        .filter(|city| city.original_owner == pid && city.captured_from.is_none())
+        .map(|city| city.id)
+        .collect();
+    founded.sort_unstable();
+    founded.truncate(EARLY_CITIES);
+    founded.retain(|cid| g.cities[cid].owner == pid);
+    founded
+}
+
 /// A camp's requirement is its guard's strength times this.
 pub const CAMP_MARGIN: f64 = 1.5;
 /// A Destroy row's requirement is the hostile force's strength times this.
@@ -1115,13 +1144,30 @@ impl AdvancedAi {
             // hostile beside it keeps its row through the pressure gate. Off,
             // `under_fire` reads false.
             let under_fire = self.city_under_fire(g, pid, *cid, visible);
-            if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire {
+            // `capital-keeps-its-defender-2`: an early city with a hostile
+            // soldier in relief range has its row before the pressure gate.
+            let early_defence =
+                self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3;
+            let early = early_defence && early_cities(g, pid).contains(cid);
+            let early_threat = early
+                && self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible) > 0.0;
+            // `capital-keeps-its-defender-3`: a stronger major's soldier
+            // parked within SURPRISE_TILES of an early city at peace.
+            let surprise = if early && self.capital_keeps_its_defender_3 {
+                self.surprise_strength_near(g, pid, *pos)
+            } else {
+                (0.0, 0.0)
+            };
+            let early_threat = early_threat || surprise.0 > 0.0;
+            if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire && !early_threat {
                 continue;
             }
             let capital_under_attack =
                 city.is_capital && contact && (damaged || danger >= BASTION_PRESSURE);
             defended.insert(*cid);
-            let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
+            // `capital-keeps-its-defender-3`: the parked strength counts.
+            let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible)
+                + surprise.1;
             // `capital-defense-holds`: a damaged city answers for only the
             // share of its strength its hit points still hold. Bogota at 20
             // of 200 subtracted its full strength and asked for 24, two
@@ -1397,7 +1443,8 @@ impl AdvancedAi {
             let camp_age = self.camp_age_short(g, pid).is_some();
             // `camps-close-the-age-2`: the party brings a shooter and a wider
             // margin.
-            let camp_age_armed = camp_age && self.camps_close_the_age_2;
+            let camp_age_armed =
+                camp_age && (self.camps_close_the_age_2 || self.camps_close_the_age_3);
             let camp_age_deadline = camp_age.then(|| self.camp_age_deadline(g)).flatten();
             for camp in g.barb_camps.keys() {
                 let home = our_cities
@@ -1439,6 +1486,11 @@ impl AdvancedAi {
                     guard_strength
                 };
                 let bodies = if near { CAMP_NEAR_BODIES } else { 0 };
+                // `camps-close-the-age-3`: a near camp is raised and armed in
+                // any era, while its guard is small.
+                let near_clear = self.camps_close_the_age_3 && near;
+                let camp_age = camp_age || near_clear;
+                let camp_age_armed = camp_age_armed || near_clear;
                 rows.push(Objective {
                     kind: ObjectiveKind::ClearCamp,
                     key: ObjectiveKey::Camp(*camp),
@@ -1708,6 +1760,177 @@ impl AdvancedAi {
         }
     }
 
+    /// `capital-keeps-its-defender`: our capital's Defend row, when the board
+    /// has one, becomes urgent and ranks first. Live Lv 7 Immortal Standard
+    /// 11-04: in 4 of the 5 capitals lost before turn 100 the capital held no
+    /// soldier of ours within a tile for the 1-4 turns before it fell, while
+    /// its Defend row stood on the board unserved behind a secondary city
+    /// under fire, a settler's Escort and a Recon (190341Z t44: "Defend
+    /// Bogota, value 60, need 76, no force"). Urgency alone holds back only
+    /// offensive rows, and the allocation serves rows in rank order, so the
+    /// row must lead. Its Relieve follows it as before (a dependency). With
+    /// the gene off nothing is read.
+    pub(super) fn capital_defend_first(&mut self, g: &Game, pid: usize, rows: &mut Vec<Objective>) {
+        let Some(index) = rows.iter().position(|row| match row.key {
+            ObjectiveKey::Defend(cid) => g
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner == pid && city.is_capital),
+            _ => false,
+        }) else {
+            return;
+        };
+        rows[index].urgent = true;
+        if index == 0 {
+            return;
+        }
+        let passed: Vec<String> = rows[..index]
+            .iter()
+            .map(|row| format!("{} {}", row.kind.as_str(), row.label))
+            .collect();
+        let row = rows.remove(index);
+        let label = row.label.clone();
+        rows.insert(0, row);
+        think!(self.journal(), Military, Decision,
+            "{} keeps its defender: the capital's defense ranks first", label;
+            "capital-keeps-its-defender: ahead of {}", passed.join(", "));
+    }
+
+    /// `capital-keeps-its-defender-2`: the Defend rows of the first
+    /// [`EARLY_CITIES`] cities we founded go ahead of every other row,
+    /// urgent, ordered among themselves by risk — the visible hostile
+    /// strength in relief range over the city's own strength at its health,
+    /// highest first. Version one put the capital first and, at Deity under
+    /// the early_city_lost restart, stripped the second and third cities
+    /// that then fell while the capital never did.
+    pub(super) fn early_cities_defend_first(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+        rows: &mut Vec<Objective>,
+    ) {
+        let early = early_cities(g, pid);
+        let mut lead: Vec<(f64, Objective)> = Vec::new();
+        let mut rest: Vec<Objective> = Vec::new();
+        for row in std::mem::take(rows) {
+            match row.key {
+                ObjectiveKey::Defend(cid) if early.contains(&cid) => {
+                    let city = &g.cities[&cid];
+                    let health = f64::from(city.hp.max(1)) / f64::from(super::CITY_MAX_HP);
+                    let own = (g.city_strength(cid) * health).max(1.0);
+                    let surprise = if self.capital_keeps_its_defender_3 {
+                        self.surprise_strength_near(g, pid, city.pos).1
+                    } else {
+                        0.0
+                    };
+                    let hostile =
+                        self.hostile_strength_near(g, pid, city.pos, THREAT_RELIEF_RADIUS, visible)
+                            + surprise;
+                    lead.push((hostile / own, row));
+                }
+                _ => rest.push(row),
+            }
+        }
+        if lead.is_empty() {
+            *rows = rest;
+            return;
+        }
+        lead.sort_by(|(a, row_a), (b, row_b)| {
+            b.total_cmp(a).then_with(|| row_a.key.cmp(&row_b.key))
+        });
+        let order: Vec<String> = lead
+            .iter()
+            .map(|(risk, row)| format!("{} {risk:.2}", row.label))
+            .collect();
+        for (_, row) in &mut lead {
+            row.urgent = true;
+        }
+        *rows = lead.into_iter().map(|(_, row)| row).chain(rest).collect();
+        think!(self.journal(), Military, Decision,
+            "The early cities' defense ranks first: {}", order.join(", ");
+            "capital-keeps-its-defender-2: risk = hostile strength in relief range over the city's own at its health; losing any of the first {EARLY_CITIES} cities ends the game");
+    }
+
+    /// `capital-keeps-its-defender-3`: the visible soldiers of stronger
+    /// majors we are at peace with near `at` — `(within SURPRISE_TILES,
+    /// within THREAT_RELIEF_RADIUS)`, each as its effective strength. The
+    /// first reading gates an early city's Defend row; the second enters the
+    /// row's need and the early cities' risk. A major already at war with
+    /// us is the at-war reading's, not this one's.
+    pub(super) fn surprise_strength_near(&self, g: &Game, pid: usize, at: Pos) -> (f64, f64) {
+        let mut close = 0.0;
+        let mut relief = 0.0;
+        for uid in crate::ai::BasicAi::stronger_major_soldiers(g, pid) {
+            let unit = &g.units[&uid];
+            if g.is_at_war(pid, unit.owner) {
+                continue;
+            }
+            let distance = g.wdist(unit.pos, at);
+            let strength = effective_strength(g.unit_strength(unit, false), unit.hp);
+            if distance <= SURPRISE_TILES {
+                close += strength;
+            }
+            if distance <= THREAT_RELIEF_RADIUS {
+                relief += strength;
+            }
+        }
+        (close, relief)
+    }
+
+    /// `capital-keeps-its-defender-2`: a Defend force below
+    /// [`DEFEND_HOLD_RATIO`] of the local hostile strength holds its city —
+    /// city strength, walls and the city's strike — instead of engaging the
+    /// threat in the field. Live Lv 8 Deity Korea (-af's trace): Defend
+    /// forces engaged at local strength 0.06-0.25 outside the city in four
+    /// early-city losses; 210549Z sent Yangsan's only unit five tiles out at
+    /// 0.15 and 0.06, and the empty city fell at turn 27. A Relieve force
+    /// still marches. Off on an arena (nothing stands still there).
+    pub(super) fn defend_holds_when_outclassed(
+        &self,
+        arena: bool,
+        kind: Option<ObjectiveKind>,
+        local_strength_ratio: f64,
+    ) -> bool {
+        (self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3)
+            && !arena
+            && kind == Some(ObjectiveKind::Defend)
+            && local_strength_ratio < DEFEND_HOLD_RATIO
+    }
+
+    /// Keep the last local melee body of an early city's existing Defend
+    /// force under version three. Urgency may move its surplus to another
+    /// city, but not erase the melee floor of a lower-ranked defense.
+    fn early_city_keeps_last_melee(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        force: &TaskForce,
+        facts: &BTreeMap<u32, UnitFacts>,
+    ) -> bool {
+        if !self.capital_keeps_its_defender_3 || g.is_arena() || force.domain != ForceDomain::Land {
+            return false;
+        }
+        let ObjectiveKey::Defend(cid) = force.objective_key else {
+            return false;
+        };
+        if !early_cities(g, pid).contains(&cid) {
+            return false;
+        }
+        let city = &g.cities[&cid];
+        let local_melee = |id: &u32| {
+            facts
+                .get(id)
+                .is_some_and(|unit| unit.melee && !unit.recon && g.wdist(unit.pos, city.pos) <= 1)
+        };
+        local_melee(&uid)
+            && !force
+                .units
+                .iter()
+                .any(|other| *other != uid && local_melee(other))
+    }
+
     /// Move the rows keyed in `first` ahead of the rest, each group in its
     /// existing order.
     fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
@@ -1795,6 +2018,15 @@ impl AdvancedAi {
         Self::rank_rows(g, &mut rows, &pool, &facts);
         if self.city_under_fire_ranks_first {
             self.city_under_fire_first(g, pid, &visible, &mut rows);
+        }
+        // `capital-keeps-its-defender`: after every other reordering, so a
+        // secondary city under fire ranks behind the capital.
+        if self.capital_keeps_its_defender {
+            self.capital_defend_first(g, pid, &mut rows);
+        }
+        // `capital-keeps-its-defender-2`: the early cities first, by risk.
+        if self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3 {
+            self.early_cities_defend_first(g, pid, &visible, &mut rows);
         }
 
         // Last turn's forces, less the dead and the departed.
@@ -2019,6 +2251,12 @@ impl AdvancedAi {
                             }
                             let there = &forces[current];
                             if there.objective_key != ObjectiveKey::Reserve {
+                                // Native Korea 20261105T062514Z t33: urgent
+                                // Jinju took the capital's last Warrior; its
+                                // Defend row became "no force" and it fell t41.
+                                if self.early_city_keeps_last_melee(g, pid, *uid, there, &facts) {
+                                    continue;
+                                }
                                 // What the unit is worth where it stands: its
                                 // contribution to what its row would lack
                                 // without it.
@@ -2954,6 +3192,13 @@ impl AdvancedAi {
                 (ForcePosture::Recover, force_medoid)
             } else {
                 match kind {
+                    Some(ObjectiveKind::Defend | ObjectiveKind::Relieve)
+                        if self.defend_holds_when_outclassed(arena, kind, local_strength_ratio) =>
+                    {
+                        // `capital-keeps-its-defender-2`: an outclassed
+                        // defence holds the city instead of sallying.
+                        (ForcePosture::Hold, objective)
+                    }
                     Some(ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
                         // On an arena nothing stands still (the shipped
                         // ladder's own exception): the defence engages the
@@ -3988,3 +4233,9 @@ mod breaker_match_tests;
 
 #[cfg(test)]
 mod camp_age_tests;
+
+#[cfg(test)]
+mod capital_defender_tests;
+
+#[cfg(test)]
+mod early_city_last_melee_tests;

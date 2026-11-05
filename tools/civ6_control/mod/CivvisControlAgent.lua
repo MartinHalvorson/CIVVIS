@@ -510,6 +510,24 @@ CivvisTradeableLuxuries = function(player, pid, otherId)
 end;
 
 
+-- Our Spies a rival holds captive: the CAPTIVE items the shipped deal screen
+-- puts on the captor's side (DiplomacyDealView.lua `PopulateAvailableCaptives`:
+-- `DealManager.GetPossibleDealItems(captor, other, DealItemTypes.CAPTIVE,
+-- deal)`). A captured Spy keeps its slot in our capacity until it comes home,
+-- and the unit export drops it, so this count is the only witness: on the
+-- Deity Korea lane of 2026-11-05 the host refused a Spy in every city on 374
+-- of 733 turns past t100 while the network was below capacity. Read only:
+-- the working deal is neither cleared nor changed. A bare global: the main
+-- chunk is at its local ceiling. nil when the ruleset or deal is unreadable.
+CivvisCaptivesHeld = function(pid, captor)
+	if DealItemTypes == nil or DealItemTypes.CAPTIVE == nil then return nil; end
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, captor);
+	if deal == nil then return nil; end
+	local possible = DealManager.GetPossibleDealItems(captor, pid, DealItemTypes.CAPTIVE, deal);
+	if type(possible) ~= "table" then return 0; end
+	return #possible;
+end;
+
 -- Quantities displayed in the met rival's strategic-resource trade column.
 -- Read their existing deal only: never clear, add to, price or submit it.
 -- DiplomacyDealView.lua:1715,1722-1724 reads and displays this same MaxAmount.
@@ -1438,8 +1456,13 @@ function CivvisRockBandConcertPlots(unit, name)
 end
 
 -- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+-- A Spy's too: its promotion is the same PROMOTE command, and the host offers
+-- a levelled Spy a few of its tree, not all of it. Without the menu the
+-- mirror could not tell a levelled Spy from a fresh one (both host level 1
+-- until the choice is made), and no live Spy was ever promoted: 99 of 99 on
+-- 2026-11-05 ended level 1, 81 of them holding the 15 XP of a pending choice.
 function CivvisRockBandPromotionChoices(unit, name)
-    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    if name ~= "UNIT_ROCK_BAND" and name ~= "UNIT_SPY" then return nil; end
     return try(function()
         local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
         if command == nil then return nil; end
@@ -6380,6 +6403,42 @@ CivvisMenus.research_quote = function(techs, row)
 	return quote;
 end
 
+-- CivilopediaPage_Technology.lua:15/49 reads the live graph, whose future-era
+-- prerequisites can differ from the database. Observe only revealed nodes and
+-- revealed prerequisites. This diagnostic does not choose or queue research.
+CivvisMenus.research_tree = function(techs)
+	if techs == nil then return nil; end
+	return try(function()
+		local nodes = Game.GetTechs():GetActiveTechNodes();
+		if type(nodes) ~= "table" then return nil; end
+		local out = {};
+		for _, node in ipairs(nodes) do
+			local row = GameInfo.Technologies[node.TechType];
+			if row ~= nil and techs:IsTechRevealed(row.Index) == true
+				and type(node.PrereqTechTypes) == "table" then
+				local prereqs, complete = {}, true;
+				for _, index in ipairs(node.PrereqTechTypes) do
+					local prereq = GameInfo.Technologies[index];
+					if prereq == nil or techs:IsTechRevealed(prereq.Index) ~= true then
+						complete = false;
+						break;
+					end
+					prereqs[#prereqs + 1] = prereq.TechnologyType;
+				end
+				if complete then
+					table.sort(prereqs);
+					local can = try(function() return techs:CanResearch(row.Index); end);
+					local record = { t = row.TechnologyType, requires = prereqs };
+					if type(can) == "boolean" then record.can_research = can; end
+					out[#out + 1] = record;
+				end
+			end
+		end
+		table.sort(out, function(a, b) return a.t < b.t; end);
+		return out;
+	end);
+end
+
 -- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
 -- district. Returns the count and up to sixteen of the plots.
 CivvisMenus.plots = function(city, param, hash)
@@ -7051,6 +7110,68 @@ CivvisSettlementLoyalty = function(pid, turn, frame, units)
 	end);
 	return result;
 end
+
+-- ★ THE SPY MENU WITH ITS TARGETS AND ODDS. The missions an IDLE Spy may start
+-- from the city it stands in are the EspionageChooser.lua:190-238 loop:
+-- counterspy in our own city, `CategoryInUI == "OFFENSIVESPY"` anywhere else,
+-- each asked `UnitManager.CanStartOperation(spy, op, cityPlot, false, true)`.
+-- The same call's results name the district plots a mission aims at
+-- (`results[UnitOperationResults.PLOTS]`, EspionageChooser.lua:218-223), and
+-- EspionagePopup.lua:280-287 prices it with
+-- `UnitManager.GetResultProbability(op.Index, spy, targetPlot)`: success is
+-- ESPIONAGE_SUCCESS_UNDETECTED + ESPIONAGE_SUCCESS_MUST_ESCAPE, failure the two
+-- ESPIONAGE_FAIL_* rows, the rest capture or death. The board only knows a
+-- rival's Campus once it has seen the tile, and never the host's odds: live
+-- 080206Z lost both of its late Steal Tech Boosts (t159, t164) in the leader's
+-- cities. `names` keeps the old shape (sorted OperationType strings); each
+-- `targets` row is { op, x, y, success?, fail? } for the first target plot (the
+-- city plot when the host names none). nil when nothing is offered. A global
+-- table, not a top-level local: the main chunk is near Lua's register ceiling.
+CivvisSpyMenu = {
+	read = function(unit, pid)
+		local here = Map.GetPlot(unit:GetX(), unit:GetY());
+		local city = Cities.GetPlotPurchaseCity(here);
+		if city == nil then return nil; end
+		local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
+		local ours = city:GetOwner() == pid;
+		local names, targets = {}, {};
+		for operation in GameInfo.UnitOperations() do
+			local wanted = (ours
+				and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
+				or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
+			if wanted then
+				-- The menu read, not a refusal probe: one line, as
+				-- EspionageChooser.lua:213 asks it.
+				local ok, results = UnitManager.CanStartOperation(unit, operation.Hash, cityPlot, false, true);
+				if ok == true then
+					names[#names + 1] = operation.OperationType;
+					local target = cityPlot;
+					local plots = type(results) == "table" and UnitOperationResults ~= nil
+						and results[UnitOperationResults.PLOTS] or nil;
+					if type(plots) == "table" and type(plots[1]) == "number" then
+						target = Map.GetPlotByIndex(plots[1]) or cityPlot;
+					end
+					local row = { op = operation.OperationType, x = target:GetX(), y = target:GetY() };
+					local odds = try(function()
+						return UnitManager.GetResultProbability(operation.Index, unit, target);
+					end, nil);
+					if type(odds) == "table" then
+						row.success = (tonumber(odds["ESPIONAGE_SUCCESS_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_SUCCESS_MUST_ESCAPE"]) or 0);
+						row.fail = (tonumber(odds["ESPIONAGE_FAIL_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_FAIL_MUST_ESCAPE"]) or 0);
+					end
+					targets[#targets + 1] = row;
+				end
+			end
+		end
+		if #names == 0 then return nil; end
+		table.sort(names);
+		table.sort(targets, function(a, b) return a.op < b.op; end);
+		return { names = names, targets = targets };
+	end,
+};
+-- END CivvisSpyMenu.read
 
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
@@ -8136,26 +8257,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 				spyEnds = unit:GetSpyOperationEndTurn();
 			end);
 			if spyOperation == nil then
-				spyMissions = try(function()
-					local here = Map.GetPlot(unit:GetX(), unit:GetY());
-					local city = Cities.GetPlotPurchaseCity(here);
-					if city == nil then return nil; end
-					local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
-					local ours = city:GetOwner() == pid;
-					local names = {};
-					for operation in GameInfo.UnitOperations() do
-						local wanted = (ours
-							and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
-							or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
-						if wanted and UnitManager.CanStartOperation(
-								unit, operation.Hash, cityPlot, false, true) == true then
-							names[#names + 1] = operation.OperationType;
-						end
-					end
-					if #names == 0 then return nil; end
-					table.sort(names);
-					return names;
-				end, nil);
+				-- See `CivvisSpyMenu.read`: the names and, beside them, each
+				-- offered mission's target plot and host odds.
+				spyMissions = try(function() return CivvisSpyMenu.read(unit, pid); end, nil);
 			end
 		end
 		local unitId = try(function() return unit:GetID(); end, -1);
@@ -8267,7 +8371,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			activity = activity,
 			spy_operation = spyOperation,
 			spy_operation_end_turn = spyEnds,
-			spy_missions_available = spyMissions,
+			spy_missions_available = spyMissions and spyMissions.names or nil,
+			spy_mission_targets = spyMissions and spyMissions.targets or nil,
 			spy_city = CivvisSpyCity(unit, name, pid),
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
@@ -8434,6 +8539,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 					return Game.GetEras():HasHeroicGoldenAge(otherId);
 				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				-- The other majors THEY are fighting, among those we have met
+				-- (`CivvisRivalWars`): an ally already at war with our enemy
+				-- is the Military Alliance's +5.
+				at_war_with = CivvisRivalWars(pid, otherId),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -8756,6 +8865,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 				end, nil),
 				tradeable_strategics = try(function()
 					return CivvisTradeableStrategics(player, pid, otherId);
+				end, nil),
+				-- Our Spies this rival holds captive (`CivvisCaptivesHeld`).
+				captives_of_ours = try(function()
+					return CivvisCaptivesHeld(pid, otherId);
 				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
@@ -9643,6 +9756,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		research = research,
 		research_progress = research_progress,
 		research_quotes = research_quotes,
+		research_tree = CivvisMenus.research_tree(ptechs),
 		civic = civic,
 		civic_progress = civic_progress,
 		government = government,
@@ -11855,6 +11969,31 @@ CivvisTrade.abandon = function(subject, why)
 	return true;
 end;
 
+-- The majors `otherId` is at war with, among those the seat `pid` has met,
+-- by player id: the diplomacy ribbon shows a met leader's wars, and the
+-- seat's own war with them crosses as `at_war`, so it is left out. A Military
+-- Alliance's +5 holds against "units of players at war with you and your
+-- ally" (LOC_ALLIANCE_LV1_MILITARY_EFFECT_1, Expansion1_Alliances.xml:146),
+-- so a rival already fighting our enemy is the ally that pays at once; until
+-- this export the mirror read every rival as at peace with every other.
+-- nil when either diplomacy is unreadable; an empty table (`[]`) when they
+-- fight nobody else. Bare global for rival_wars_test.lua.
+CivvisRivalWars = function(pid, otherId)
+	local mine = try(function() return Players[pid]:GetDiplomacy(); end);
+	local theirs = try(function() return Players[otherId]:GetDiplomacy(); end);
+	if mine == nil or theirs == nil then return nil; end
+	local wars = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local third = tonumber(id);
+		if third ~= nil and third ~= pid and third ~= otherId
+				and try(function() return mine:HasMet(third); end, false)
+				and try(function() return theirs:IsAtWarWith(third); end, false) then
+			wars[#wars + 1] = third;
+		end
+	end
+	return wars;
+end;
+
 -- ★★ THE PLANNER'S ALLIANCE, ASKED IN THE ORDER THE HOST ALLOWS IT.
 --
 -- CIVVIS's `propose_strategic_alliance` proposes friendship and an alliance
@@ -11905,10 +12044,16 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	-- tag is armed): a Culture seat asks as well; `ScienceAllies`
 	-- (`science-seat-allies`) the same for a Science seat. Its planner never names
 	-- the science racer or the rival setting our culture bar, and the
-	-- culture-racer refusal below still applies.
+	-- culture-racer refusal below still applies. `MilitaryAllies`
+	-- (`military-alliance-shield`): a Military Alliance on any lane -- the
+	-- binary lets through only that desk's own ask, which prices the
+	-- Domination target itself (+5 combat strength against a common enemy,
+	-- Expansion1_Alliances.xml:146; and the alliance's automatic Defensive
+	-- Pact).
 	if (config.VictoryLane ~= "diplomatic"
 			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
-			and not (config.VictoryLane == "science" and config.ScienceAllies == true))
+			and not (config.VictoryLane == "science" and config.ScienceAllies == true)
+			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
@@ -12240,6 +12385,10 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 					-- registered.
 					return "GREATWORK:" .. tostring(item:GetValueType()), 1;
 				end
+				if DealItemTypes.CAPTIVE ~= nil and kind == DealItemTypes.CAPTIVE then
+					-- A captive is one Spy: its presence is its quantity.
+					return "CAPTIVE:" .. tostring(item:GetValueType()), 1;
+				end
 				if kind == DealItemTypes.AGREEMENTS and DealAgreementTypes ~= nil
 						and try(function() return item:GetSubType(); end, nil)
 							== DealAgreementTypes.OPEN_BORDERS then
@@ -12401,7 +12550,7 @@ end
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
 CivvisLedger = {
 	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {},
-	expected_condemn = {}
+	expected_condemn = {}, expected_spy_travel = {}
 };
 
 -- UnitCommands.xml:47 gives Condemn Heretic no target parameters. Record the
@@ -12556,8 +12705,46 @@ CivvisLedger.preview = function(unit, verb, x, y)
 		defender_wall_damage = read("DEFENDER", "DEFENSE_DAMAGE_TO"),
 		attacker_strength = read("ATTACKER", "COMBAT_STRENGTH"),
 		defender_strength = read("DEFENDER", "COMBAT_STRENGTH"),
+		attacker_strength_modifier = read("ATTACKER", "STRENGTH_MODIFIER"),
+		defender_strength_modifier = read("DEFENDER", "STRENGTH_MODIFIER"),
 	};
+	-- UnitPanel.lua:1748-1767 adds STRENGTH_MODIFIER to COMBAT_STRENGTH
+	-- and clamps the displayed total at zero. Keep the legacy base readings;
+	-- an unavailable modifier leaves the new total unknown, not base + zero.
+	if out.attacker_strength ~= nil and out.attacker_strength_modifier ~= nil then
+		out.attacker_total_strength = math.max(0, out.attacker_strength + out.attacker_strength_modifier);
+	end
+	if out.defender_strength ~= nil and out.defender_strength_modifier ~= nil then
+		out.defender_total_strength = math.max(0, out.defender_strength + out.defender_strength_modifier);
+	end
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	-- UnitPanel.lua:1965-1974 reads these ten preview-text groups from the
+	-- same simulation. Preserve their native strings for component audits;
+	-- do not infer bonuses from the aggregate modifier or issue another query.
+	local textKeys = {
+		"PREVIEW_TEXT_INTERCEPTOR", "PREVIEW_TEXT_ANTI_AIR", "PREVIEW_TEXT_HEALTH",
+		"PREVIEW_TEXT_TERRAIN", "PREVIEW_TEXT_OPPONENT", "PREVIEW_TEXT_MODIFIER",
+		"PREVIEW_TEXT_ASSIST", "PREVIEW_TEXT_PROMOTION", "PREVIEW_TEXT_DEFENSES",
+		"PREVIEW_TEXT_RESOURCES",
+	};
+	local function modifierText(side)
+		local groups, any = {}, false;
+		for _, key in ipairs(textKeys) do
+			local raw = try(function()
+				return results[CombatResultParameters[side]][CombatResultParameters[key]];
+			end, nil);
+			if type(raw) == "table" then
+				local items = {};
+				for _, item in ipairs(raw) do
+					if type(item) == "string" then items[#items + 1] = item; end
+				end
+				if #items > 0 then groups[key] = items; any = true; end
+			end
+		end
+		return any and groups or nil;
+	end
+	out.attacker_modifier_text = modifierText("ATTACKER");
+	out.defender_modifier_text = modifierText("DEFENDER");
 	return out;
 end;
 
@@ -12884,6 +13071,13 @@ end;
 -- are one field apart. Activation consumes the physical Great Person unit;
 -- keep the historical `unit_lost` witness, but mark that non-loss disposition
 -- so a ledger cannot mistake a successful science/culture action for a kill.
+--
+-- A Spy that starts `SPY_TRAVEL_NEW_CITY` is the same kind of non-loss: the
+-- host lifts it off the map that turn and re-creates it at the destination
+-- under a NEW unit id (civvis-20261105T093803Z: Spy 2883607 ordered from
+-- (12,27) to Agra t89, removed t89, Spy 3080195 standing in Agra t92). Read
+-- as losses, 163 of the 253 Deity Spy `unit_lost` lines of 11-04/05 were
+-- journeys. `applyOrder` marks the request; the removal names it.
 CivvisLedger.onUnitRemoved = function(player, unitId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
@@ -12892,10 +13086,14 @@ CivvisLedger.onUnitRemoved = function(player, unitId)
 	local key = tostring(unitId);
 	local activationTurn = CivvisLedger.expected_gp_activation[key];
 	CivvisLedger.expected_gp_activation[key] = nil;
+	local travelTurn = CivvisLedger.expected_spy_travel[key];
+	CivvisLedger.expected_spy_travel[key] = nil;
 	CivvisLedger.positions[key] = nil;
 	emit("unit_lost", {
 		turn = turn, unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[key],
-		cause = activationTurn == turn and "great_person_activation" or nil,
+		cause = activationTurn == turn and "great_person_activation"
+			or (travelTurn ~= nil and turn >= travelTurn and turn - travelTurn <= 1 and "spy_travel")
+			or nil,
 		gold = tonumber(try(function()
 			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
 		end, nil)),
@@ -14332,7 +14530,10 @@ local function applyOrder(player, pid, row, turn)
 			or (strategicAsk == nil and string.find(verb, "^RESOURCE_") ~= nil);
 		local favorAsk = tonumber(string.match(verb, "^FAVOR=(%d+)$"));
 		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
-		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil then
+		-- `CAPTIVE`: one of our captured Spies back from its captor, for Gold.
+		local captive = verb == "CAPTIVE" and DealItemTypes.CAPTIVE ~= nil;
+		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil
+				and not captive then
 			return false, "buy_unknown_item";
 		end
 		if luxury and verb ~= "LUXURY_ANY"
@@ -14404,6 +14605,26 @@ local function applyOrder(player, pid, row, turn)
 					if barter == nil then return false, gaveText; end
 					name = name .. ";" .. gaveText;
 				end
+			elseif captive then
+				-- The captor's side of the table, the column the shipped
+				-- screen fills with our captured Spies; the first it would
+				-- let go.
+				local possible = try(function()
+					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.CAPTIVE, deal);
+				end, nil) or {};
+				local forType = nil;
+				for _, entry in ipairs(possible) do
+					if forType == nil and entry.IsValid ~= false then forType = entry.ForType; end
+				end
+				if forType == nil then return false, "buy_no_captive"; end
+				local item = deal:AddItemOfType(DealItemTypes.CAPTIVE, subject);
+				if item == nil then return false, "no_captive_item"; end
+				item:SetValueType(forType);
+				if not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "captive_invalid";
+				end
+				want, name = "CAPTIVE:" .. tostring(forType), "CAPTIVE";
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
@@ -16825,7 +17046,13 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			return operate(unit, hash, params), verb;
+			-- A journey lifts the Spy off the map, possibly inside the request:
+			-- mark it first so `CivvisLedger.onUnitRemoved` names the removal.
+			local travelKey = verb == "SPY_TRAVEL_NEW_CITY" and tostring(unit:GetID()) or nil;
+			if travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = turn; end
+			local sent = operate(unit, hash, params);
+			if not sent and travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = nil; end
+			return sent, verb;
 		end
 		-- Condemning a heretic is a COMMAND, not an operation, and it is
 		-- parameterless: `UnitCommands` gives the row no `InterfaceMode`, so
@@ -23169,7 +23396,7 @@ function CivvisBoard.restartPoll()
 	restart.issued = true;
 	local before = CivvisBoard.seeds();
 	local regenerated = false;
-	if mode ~= 3 then
+	if mode ~= 3 and mode ~= 6 then
 		regenerated = pcall(function() GameConfiguration.RegenerateSeeds(); end);
 	end
 	local after = CivvisBoard.seeds();
@@ -23202,9 +23429,15 @@ function CivvisBoard.restartPoll()
 end
 
 -- Modes 2 and 5 host the configuration again; the others are the stock Restart.
+-- Mode 6 leaves for the main menu (`Events.ExitToMainMenu()`, as the shipped
+-- Base/Assets/UI/Menus/InGameTopOptionsMenu.lua:461 and EndGame/EndGameMenu.lua:345
+-- do) and the next run starts its game through the ordinary Create Game menus,
+-- in the same process: no relaunch, no boot.
 function CivvisBoard.restartCall(mode)
 	local called = false;
-	if mode == 2 or mode == 5 then
+	if mode == 6 then
+		called = pcall(function() Events.ExitToMainMenu(); end);
+	elseif mode == 2 or mode == 5 then
 		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
 		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	else

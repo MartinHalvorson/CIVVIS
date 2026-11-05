@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-writing-before-the-luxury",
+  "scope": "Two fixed turn18 fresh-board proposal pairs using identical native captured bytes and the original observed genome; only the named tag differs. Not original private-state replay, host execution, survival, strength or win evidence.",
+  "archive": {
+    "path": "docs/gene_screens/fires/science-writing-before-the-luxury.native-action-pairs.tar.gz",
+    "sha256": "8ec9214a83a4975ecfcea73d23333d1ae4fa0271c3b423427fff0f724b57c106"
+  },
+  "members": [
+    "repeat-1/pair.json",
+    "repeat-2/pair.json"
+  ],
+  "binary_commit": "5f48fb96fa5e06e44c6d6f6d47dedfc8a08448c0",
+  "binary_sha256": "6faba15b396add4c56600a10c0dc0012bc7a775391f9873819204d4f1d3a2757"
+}

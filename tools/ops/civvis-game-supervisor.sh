@@ -17,6 +17,9 @@
 # `civ6_launch.py --stop/--restart` is the documented clean path and it cleared
 # it in ten seconds. See civvis-civ6-the-game-core-wedges-after-hard-kills.
 set -u
+# zsh nices every `&` job +5 by default; the next-head prebuild sets its own
+# priority explicitly (tools/test_ops_background_priority.py).
+unsetopt BG_NICE
 export PATH="$HOME/.cargo/bin:$PATH"
 # ⚠ PINNED to a known-good revision while `main`'s mod is broken. HEAD reaches
 # the in-game map and the agent context NEVER loads (22 autoclose events, zero
@@ -492,7 +495,7 @@ if (( lock_status != 0 )); then
     *) exit 70 ;;
   esac
 fi
-trap release_supervisor_lock EXIT
+trap '(( $+functions[prebuild_stop] )) && prebuild_stop; release_supervisor_lock' EXIT
 trap 'exit 0' HUP INT TERM
 
 consecutive_failures=0
@@ -642,6 +645,213 @@ wait_for_mirror_listener() {
 }
 # <<< mirror refresh waits
 
+# >>> next-head prebuild
+# ★ A MERGE TO MAIN COST THE NEXT GAME A MINUTE OF BLACK SCREEN. Every cycle
+# checks out origin/main and runs `cargo build --release` here before Civ VI
+# is even launched. When main had moved -- 24 of the 93 boundaries on
+# 2026-11-04, every one 46-83 s (median ~57 s) even with
+# CIVVIS_BUILD_MODE=fast -- the lane sat idle for that build, ~4% of all lane
+# time on a busy merge day while games were ~6.5 minutes long. Nothing about
+# that build needs the game to be over: it only needs the source.
+#
+# So while a game plays, a background loop builds any newer origin/main tip
+# in a sibling worktree ($PREBUILD_TREE) with the supervisor's own command
+# and environment, and stamps the result with the revision and the SHA-256 of
+# both binaries. At the boundary the supervisor adopts that build for the
+# exact head it just checked out (stamp revision == HEAD, bytes re-hashed),
+# copying both binaries into $REPO/target/release and stamping them there; a
+# prebuild of that head still compiling is waited on (bounded) rather than
+# raced. Anything else -- no prebuild, another revision, a stamp that does not
+# match the bytes -- falls through to the ordinary build in $REPO, exactly as
+# before. The game itself never plays a binary the stamp cannot vouch for, and
+# a stamp that already vouches for $REPO's binaries skips the no-op cargo run.
+#
+# The prebuild fetches with an empty refmap, so it never moves the shared
+# `origin/main` ref the boundary's freshness check reads; it only reads the
+# tip into its own worktree's FETCH_HEAD. The decider binary does not depend
+# on the tree it was built in: its revision stamp comes from the launch
+# environment (`CIVVIS_COMMIT`) and every CARGO_MANIFEST_DIR read is a test.
+PREBUILD_TREE=${CIVVIS_PREBUILD_TREE:-$HOME/civvis-verification-prebuild}
+PREBUILD_POLL_S=${CIVVIS_PREBUILD_POLL_S:-20}
+# ★ A STARVED PREBUILD IS NOT WORTH WAITING OUT. At nice 10 on a host at load
+# ~90 a build can crawl: 3428a40 (a 28-line change) started 10:48:25Z on
+# 2026-11-05 and was still compiling seven minutes later, so the boundary at
+# 10:52:20 waited the whole 180 s, gave up, and then built anyway (87 s). Every
+# other in-flight wait so far ended in 4-49 s, and past ~90 s a fresh boundary
+# build at nice 0 (~85 s) is never slower, so cap the wait there.
+PREBUILD_WAIT_S=${CIVVIS_PREBUILD_WAIT_S:-90}
+PREBUILD_NICE=${CIVVIS_PREBUILD_NICE:-10}
+PREBUILD_LOG=${CIVVIS_PREBUILD_LOG:-$LOGS/prebuild.log}
+BUILD_STAMP_NAME=.civvis-built-revision
+PREBUILD_PID=""
+
+# "<sha256 civvis_orders> <sha256 civvis>" for a release directory.
+release_digests() {
+  local dir=$1 orders="" mirror=""
+  [[ -f "$dir/civvis_orders" && -f "$dir/civvis" ]] || return 1
+  orders=$(shasum -a 256 "$dir/civvis_orders" 2>/dev/null) || return 1
+  mirror=$(shasum -a 256 "$dir/civvis" 2>/dev/null) || return 1
+  print -r -- "${orders%% *} ${mirror%% *}"
+}
+
+write_build_stamp() {
+  local dir=$1 revision=$2 digests=""
+  digests=$(release_digests "$dir") || return 1
+  print -r -- "$revision $digests" > "$dir/$BUILD_STAMP_NAME.$$.tmp" || return 1
+  mv -f "$dir/$BUILD_STAMP_NAME.$$.tmp" "$dir/$BUILD_STAMP_NAME"
+}
+
+# True only when the stamp names this revision AND both binaries are still
+# the bytes it hashed.
+build_stamp_matches() {
+  local dir=$1 revision=$2 stamp="" digests=""
+  [[ -f "$dir/$BUILD_STAMP_NAME" ]] || return 1
+  stamp=$(<"$dir/$BUILD_STAMP_NAME")
+  digests=$(release_digests "$dir") || return 1
+  [[ "$stamp" == "$revision $digests" ]]
+}
+
+# The revision an in-flight prebuild is compiling, when its loop is alive.
+prebuild_building() {
+  [[ -n "$PREBUILD_PID" ]] && kill -0 "$PREBUILD_PID" 2>/dev/null || return 1
+  [[ -f "$PREBUILD_TREE/target/.civvis-prebuilding" ]] || return 1
+  print -r -- "$(<"$PREBUILD_TREE/target/.civvis-prebuilding")"
+}
+
+prebuild_stop() {
+  [[ -n "$PREBUILD_PID" ]] || return 0
+  if kill -0 "$PREBUILD_PID" 2>/dev/null; then
+    kill -TERM "$PREBUILD_PID" 2>/dev/null || true
+    wait_for_pid_exit "$PREBUILD_PID" 5
+  fi
+  PREBUILD_PID=""
+}
+
+# One pass: fetch the tip into this worktree's FETCH_HEAD and, when it is
+# neither the revision being played nor already built, build it.
+prebuild_once() {
+  local playing=$1 tip="" rc=0 started=$SECONDS
+  git -C "$PREBUILD_TREE" -c gc.auto=0 fetch --quiet --no-tags --refmap= \
+      origin main >>"$PREBUILD_LOG" 2>&1 || return 1
+  tip=$(git -C "$PREBUILD_TREE" rev-parse FETCH_HEAD 2>/dev/null) || return 1
+  [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ "$tip" == "$playing" ]] && return 0
+  build_stamp_matches "$PREBUILD_TREE/target/release" "$tip" && return 0
+  if [[ -n "$(git -C "$PREBUILD_TREE" status --porcelain 2>/dev/null)" ]]; then
+    print -r -- "[$(date -u +%FT%TZ)] $PREBUILD_TREE is dirty; not building ${tip:0:7}" >>"$PREBUILD_LOG"
+    return 1
+  fi
+  git -C "$PREBUILD_TREE" checkout --quiet --detach "$tip" >>"$PREBUILD_LOG" 2>&1 || return 1
+  [[ "$(git -C "$PREBUILD_TREE" rev-parse HEAD 2>/dev/null)" == "$tip" ]] || return 1
+  mkdir -p "$PREBUILD_TREE/target/release"
+  rm -f -- "$PREBUILD_TREE/target/release/$BUILD_STAMP_NAME"
+  print -r -- "$tip" > "$PREBUILD_TREE/target/.civvis-prebuilding"
+  print -r -- "[$(date -u +%FT%TZ)] building ${tip:0:7} (playing ${playing:0:7})" >>"$PREBUILD_LOG"
+  ( cd "$PREBUILD_TREE" && exec nice -n "$PREBUILD_NICE" \
+      cargo build --release --bin civvis_orders --bin civvis ) >>"$PREBUILD_LOG" 2>&1 &
+  PREBUILD_CHILD=$!
+  wait "$PREBUILD_CHILD"; rc=$?
+  PREBUILD_CHILD=""
+  if (( rc == 0 )) && [[ "$(git -C "$PREBUILD_TREE" rev-parse HEAD 2>/dev/null)" == "$tip" ]] \
+      && write_build_stamp "$PREBUILD_TREE/target/release" "$tip"; then
+    print -r -- "[$(date -u +%FT%TZ)] built ${tip:0:7} in $(( SECONDS - started ))s" >>"$PREBUILD_LOG"
+    PREBUILD_BUILT=1
+  else
+    print -r -- "[$(date -u +%FT%TZ)] build of ${tip:0:7} FAILED (rc=$rc)" >>"$PREBUILD_LOG"
+  fi
+  rm -f -- "$PREBUILD_TREE/target/.civvis-prebuilding"
+  (( rc == 0 ))
+}
+
+prebuild_loop() {
+  local playing=$1
+  PREBUILD_CHILD=""
+  PREBUILD_BUILT=0
+  trap - EXIT
+  trap '[[ -n "$PREBUILD_CHILD" ]] && { pkill -TERM -P "$PREBUILD_CHILD" 2>/dev/null; kill -TERM "$PREBUILD_CHILD" 2>/dev/null }; rm -f -- "$PREBUILD_TREE/target/.civvis-prebuilding"; exit 0' HUP INT TERM
+  # Created detached on first use; a tree that cannot be made is a skipped
+  # optimisation, never a refused cycle.
+  if [[ ! -e "$PREBUILD_TREE/.git" ]] \
+      && ! git -C "$REPO" worktree add --detach "$PREBUILD_TREE" "$playing" >>"$PREBUILD_LOG" 2>&1; then
+    print -r -- "[$(date -u +%FT%TZ)] could not create $PREBUILD_TREE; no prebuild this game" >>"$PREBUILD_LOG"
+    return 0
+  fi
+  while true; do
+    PREBUILD_BUILT=0
+    prebuild_once "$playing" || true
+    # ★ A MERGE THAT LANDS DURING A BUILD WAITED OUT A WHOLE POLL. Live
+    # 2026-11-05: 8eb9e7b merged at 02:00:00 while 166ec18 compiled; that
+    # build ended 02:01:08, the loop slept, saw 8eb9e7b at 02:01:53, and the
+    # boundary at 02:02:03 waited 47 s for it. After a successful build, look
+    # again at once; a failed one still waits, so it cannot spin.
+    (( PREBUILD_BUILT )) && continue
+    # `wait` on a background sleep lets TERM end the loop at once.
+    sleep "$PREBUILD_POLL_S" &
+    PREBUILD_CHILD=$!
+    wait "$PREBUILD_CHILD"
+    PREBUILD_CHILD=""
+  done
+}
+
+# Start the background loop for the game about to play `$1`.
+prebuild_start() {
+  local playing=$1
+  prebuild_stop
+  prebuild_loop "$playing" &!
+  PREBUILD_PID=$!
+}
+
+# Put the prebuilt binaries for `$1` into `$2`, or fail without touching it.
+adopt_prebuilt() {
+  local revision=$1 dest=$2 src=$PREBUILD_TREE/target/release bin="" building=""
+  local -F deadline
+  building=$(prebuild_building || true)
+  if [[ "$building" == "$revision" ]]; then
+    say "waiting up to ${PREBUILD_WAIT_S}s for the prebuild of ${revision:0:7} already compiling"
+    zmodload zsh/datetime 2>/dev/null
+    deadline=$(( EPOCHREALTIME + PREBUILD_WAIT_S ))
+    while [[ "$(prebuild_building || true)" == "$revision" ]] && (( EPOCHREALTIME < deadline )); do
+      sleep 0.5
+    done
+  fi
+  prebuild_stop
+  build_stamp_matches "$src" "$revision" || return 1
+  mkdir -p "$dest" || return 1
+  for bin in civvis_orders civvis; do
+    cp -c "$src/$bin" "$dest/.$bin.$$.tmp" 2>/dev/null \
+      || cp "$src/$bin" "$dest/.$bin.$$.tmp" || return 1
+    mv -f "$dest/.$bin.$$.tmp" "$dest/$bin" || return 1
+  done
+  cp "$src/$BUILD_STAMP_NAME" "$dest/$BUILD_STAMP_NAME.$$.tmp" || return 1
+  mv -f "$dest/$BUILD_STAMP_NAME.$$.tmp" "$dest/$BUILD_STAMP_NAME" || return 1
+  build_stamp_matches "$dest" "$revision"
+}
+# <<< next-head prebuild
+
+# >>> prebuild while waiting
+# ★ THE SEAT WAS SOMEONE ELSE'S FOR A FIFTH OF THE NIGHT, AND THE LANE CAME BACK
+# TO A COLD BUILD. Between 00:00 and 06:04Z on 2026-11-05 this loop waited 72
+# minutes (20%) on another harness's Civ VI (the tactics save-bank
+# calibrations), and the loop above runs only while a lane game plays -- so
+# every merge during a wait was compiled at the boundary after it. While the
+# seat is held, keep the loop going against what $HEAD_REPO has already built
+# (its stamp), started once, never restarted per poll so a build in flight is
+# not killed. The cycle that follows adopts it exactly as after a lane game.
+prebuild_while_waiting() {
+  local pin="" built=""
+  pin=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
+  [[ "$pin" == head ]] || return 0
+  if [[ -n "$PREBUILD_PID" ]] && kill -0 "$PREBUILD_PID" 2>/dev/null; then
+    return 0
+  fi
+  [[ -f "$HEAD_REPO/target/release/$BUILD_STAMP_NAME" ]] || return 0
+  built=$(cut -d' ' -f1 "$HEAD_REPO/target/release/$BUILD_STAMP_NAME" 2>/dev/null)
+  [[ "$built" =~ ^[0-9a-f]{40}$ ]] || return 0
+  REPO=${REPO:-$HEAD_REPO}
+  prebuild_start "$built"
+}
+# <<< prebuild while waiting
+
 # ★★★★★ A REFUSAL REPEATED FOR AN HOUR IS AN OUTAGE, AND IT READ AS ROUTINE.
 #
 # Every reason this loop declines to start a batch -- a dirty head tree, a fetch
@@ -691,6 +901,7 @@ while true; do
       UNOWNED_PID=$(unowned_harness_pid || true)
       if [[ -n "$UNOWNED_PID" ]]; then
         say "an unowned Civ VI harness is present (pid $UNOWNED_PID); leaving it alone and retrying in 60s"
+        prebuild_while_waiting
         sleep 60
         continue
       fi
@@ -867,11 +1078,27 @@ while true; do
   # After the arm: a screen defers to a forced/withheld gene of the same name.
   resolve_screen_gene
   HEAD_SHA=${HEAD_REVISION:0:7}
-  if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
-    say "build FAILED at $HEAD_SHA; retrying in 120s"
-    sleep 120
-    continue
+  # >>> head build
+  # A head cycle's binaries are vouched for by the build stamp (see "next-head
+  # prebuild"): already here, adopted from the prebuild, or built right now.
+  CLIMB_BUILD_ARGS=()
+  if [[ "$PIN" == "head" ]] && build_stamp_matches "$REPO/target/release" "$HEAD_REVISION"; then
+    CLIMB_BUILD_ARGS=(--no-build)
+  elif [[ "$PIN" == "head" ]] && adopt_prebuilt "$HEAD_REVISION" "$REPO/target/release"; then
+    say "adopted the $HEAD_SHA build made while the last game played (no boundary build)"
+    CLIMB_BUILD_ARGS=(--no-build)
+  else
+    prebuild_stop
+    if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
+      say "build FAILED at $HEAD_SHA; retrying in 120s"
+      sleep 120
+      continue
+    fi
+    if [[ "$PIN" == "head" ]] && write_build_stamp "$REPO/target/release" "$HEAD_REVISION"; then
+      CLIMB_BUILD_ARGS=(--no-build)
+    fi
   fi
+  # <<< head build
   # A clean release build can take minutes.  Main may advance while it runs,
   # so the checkout that was fresh before the build is not necessarily fresh
   # when the UI begins a new game.  Re-fetch at this boundary: when it moved,
@@ -992,6 +1219,7 @@ while true; do
   LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)
   if [[ -n "$LAUNCH_UNOWNED_PID" ]]; then
     say "an unowned Civ VI harness appeared during preflight (pid $LAUNCH_UNOWNED_PID); leaving it alone and retrying in 60s"
+    prebuild_while_waiting
     sleep 60
     continue
   fi
@@ -1010,6 +1238,8 @@ while true; do
   # play log written after the mark can vouch for this cycle.
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
+  # The next head compiles beside this game (see "next-head prebuild").
+  [[ "$PIN" == "head" ]] && prebuild_start "$HEAD_REVISION"
   # The climb retires the follower above and starts its own fresh one before
   # the attempt.  Carry the exact selected revision under mirror-only names;
   # the climb promotes them only into that replacement follower, so the game
@@ -1066,6 +1296,7 @@ while true; do
         "${WITHOUT_ARGS[@]}" \
         "${WITH_ARGS[@]}" \
         "${SCREEN_ARGS[@]}" \
+        "${CLIMB_BUILD_ARGS[@]}" \
         "${TIMEOUT_ARGS[@]}" \
         "${DECIDER_CAPTURE_ARGS[@]}" \
         ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \

@@ -206,5 +206,75 @@ class OwnedFailedStartupTest(unittest.TestCase):
             self.assertFalse(launcher.stop_owned_failed_startup(process))
 
 
+class HallOfFameRotationTest(unittest.TestCase):
+    """An oversized Hall of Fame is moved aside before a launch, never deleted."""
+
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.hof = self.dir / "HallofFame.sqlite"
+        self.hof.write_bytes(b"x" * 2048)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def rotate(self, **kwargs):
+        options = dict(limit=1024, running=False, stamp="20261104T234200Z")
+        options.update(kwargs)
+        return launcher.rotate_hall_of_fame(self.hof, **options)
+
+    def test_a_big_file_with_no_game_running_is_archived_beside_itself(self) -> None:
+        archive = self.rotate()
+        self.assertEqual(archive, self.dir / "HallofFame-archive-20261104T234200Z.sqlite")
+        self.assertFalse(self.hof.exists())
+        self.assertEqual(archive.read_bytes(), b"x" * 2048)
+
+    def test_a_file_under_the_cap_is_left_alone(self) -> None:
+        self.assertIsNone(self.rotate(limit=4096))
+        self.assertTrue(self.hof.exists())
+
+    def test_a_running_game_holds_the_file(self) -> None:
+        self.assertIsNone(self.rotate(running=True))
+        self.assertTrue(self.hof.exists())
+
+    def test_the_running_check_asks_for_game_pids_by_default(self) -> None:
+        with mock.patch.object(launcher.env, "game_pids", return_value=[4242]) as pids:
+            self.assertIsNone(launcher.rotate_hall_of_fame(self.hof, limit=1024))
+        pids.assert_called_once()
+        self.assertTrue(self.hof.exists())
+
+    def test_a_leftover_journal_keeps_its_database_in_place(self) -> None:
+        for suffix in ("-journal", "-wal", "-shm"):
+            with self.subTest(suffix=suffix):
+                journal = self.dir / f"HallofFame.sqlite{suffix}"
+                journal.write_bytes(b"j")
+                self.assertIsNone(self.rotate())
+                self.assertTrue(self.hof.exists())
+                journal.unlink()
+
+    def test_an_existing_archive_is_never_overwritten(self) -> None:
+        taken = self.dir / "HallofFame-archive-20261104T234200Z.sqlite"
+        taken.write_bytes(b"older")
+        self.assertIsNone(self.rotate())
+        self.assertEqual(taken.read_bytes(), b"older")
+        self.assertTrue(self.hof.exists())
+
+    def test_a_missing_file_or_a_zero_cap_does_nothing(self) -> None:
+        self.assertIsNone(self.rotate(limit=0))
+        self.hof.unlink()
+        self.assertIsNone(self.rotate())
+
+    def test_the_default_path_is_the_legacy_user_directory(self) -> None:
+        self.assertEqual(launcher.hall_of_fame_path(),
+                         launcher.env.LEGACY_USER_DIR / "Sid Meier's Civilization VI"
+                         / "HallofFame.sqlite")
+
+    def test_the_play_harness_rotates_before_it_launches(self) -> None:
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        body = source[source.index("    def launch_to_menu() -> bool:"):]
+        self.assertLess(body.index("launcher.rotate_hall_of_fame()"),
+                        body.index("launcher.launch("))
+
+
 if __name__ == "__main__":
     unittest.main()

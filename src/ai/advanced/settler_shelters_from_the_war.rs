@@ -1,0 +1,143 @@
+//! `settler-shelters-from-the-war`: a Settler in the open while an enemy
+//! major's soldier is near goes to the nearest city of ours, and a Settler
+//! already inside one stays there.
+//!
+//! **The finding (live Deity Korea, 2026-11-04/05).** 35 Settlers were
+//! captured in the Deity games since 11-04 21Z, and 23 of them were taken by
+//! major empires, not barbarians. 13 of those came during a war that was
+//! already running. On the turn before the capture, the captor had a soldier
+//! within 6 tiles of the Settler in all but two of those 13. In
+//! `civvis-20261105T044106Z`, Greece (power 1253 against our 547) took three
+//! Settlers on t98, t99 and t100. The journal shows them stepping between open
+//! tiles of lower risk ("Settler retreats from (41, 18) | its tile is
+//! threatened (risk 212); stepping to (40, 19) (risk 178)"). None was sent
+//! into one of our cities, the one tile a soldier cannot capture it from
+//! while the city stands.
+//!
+//! **The gene.** While a living major at war with us has a visible land or
+//! sea soldier within [`WAR_SHELTER_RADIUS`] of the Settler:
+//! - a Settler standing in one of our cities holds there;
+//! - a Settler in the open steps toward the nearest city of ours through the
+//!   same capture-aware step the early Settler's way home uses;
+//! - a Settler standing on its own target, which it can found this turn, is
+//!   left to found: a city is the shelter.
+//!
+//! The same holds at peace for a soldier of a major that is neither a
+//! declared friend nor an ally, within [`SURPRISE_SHELTER_RADIUS`]. Deity
+//! rivals walk a soldier next to a Settler and declare on the turn they take
+//! it. Of the declaration-turn captures, 3 of 5 had the captor within 2 tiles
+//! the turn before. In `civvis-20261105T074444Z` the first Settler was taken
+//! at t31 from beside a soldier that had stood adjacent at peace. That empire
+//! never founded a second city and was eliminated at t65.
+//!
+//! **Version two** (`settler-shelters-from-the-war-2`) drops the peace
+//! clause. In the first five live carriers, it fired in the opening in three
+//! of them, from roaming Deity Warriors and Slingers at peace:
+//! `civvis-20261105T132817Z` t16-23 and `civvis-20261105T133505Z` t13-18.
+//! Each time the second Settler walked back and forth for up to ten turns,
+//! and both games were later eliminated. Persia declared some 50 turns after
+//! its Warrior stood beside the Settler, so the proximity was no warning. The
+//! clause bought about 3 captures in 44 games at that price. Version two
+//! shelters only from a major at war with us.
+//!
+//! Its target is kept, so the walk resumes once the soldier is gone.
+//! Barbarians are left to the existing capture rules. With the gene off,
+//! nothing changes.
+
+use super::*;
+
+/// Tiles from the Settler inside which an enemy major's visible soldier sends
+/// it to shelter. Six covered the captor on the turn before 11 of the 13
+/// wartime captures. Cavalry-class units move four or five tiles, and the
+/// capture is the step after the move.
+pub(super) const WAR_SHELTER_RADIUS: i32 = 6;
+
+/// Tiles inside which a soldier of a major at peace with us, but neither a
+/// declared friend nor an ally, sends the Settler to shelter: one step and a
+/// capture away.
+pub(super) const SURPRISE_SHELTER_RADIUS: i32 = 2;
+
+impl AdvancedAi {
+    /// The nearest visible soldier of a living major that threatens a Settler
+    /// at `at`: within [`WAR_SHELTER_RADIUS`] for a major at war with `pid`,
+    /// within [`SURPRISE_SHELTER_RADIUS`] for one at peace that is neither a
+    /// declared friend nor an ally. `(owner, distance)`.
+    pub(super) fn war_shelter_threat(&self, g: &Game, pid: usize, at: Pos) -> Option<(usize, i32)> {
+        g.units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && g.players
+                        .get(unit.owner)
+                        .is_some_and(|owner| owner.alive && !owner.is_minor && !owner.is_barbarian)
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                    && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| (unit.owner, g.wdist(unit.pos, at)))
+            .filter(|(owner, distance)| {
+                if g.is_at_war(pid, *owner) {
+                    *distance <= WAR_SHELTER_RADIUS
+                } else {
+                    // Version two shelters only from a war.
+                    !self.settler_shelters_from_the_war_2
+                        && *distance <= SURPRISE_SHELTER_RADIUS
+                        && !g.are_friends(pid, *owner)
+                        && g.alliance_with(pid, *owner).is_none()
+                }
+            })
+            .min_by_key(|(owner, distance)| (*distance, *owner))
+    }
+
+    /// `settler-shelters-from-the-war`: `Some(acted)` when the gene takes this
+    /// Settler's turn, `None` to leave it to the ordinary routine.
+    pub(super) fn settler_shelters_from_the_war_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.settler_shelters_from_the_war && !self.settler_shelters_from_the_war_2 {
+            return None;
+        }
+        let current = g.units.get(&uid)?.pos;
+        let (enemy, distance) = self.war_shelter_threat(g, pid, current)?;
+        // Standing on its own site with the city legal: founding is shelter.
+        if self.settler_targets.get(&uid) == Some(&current) && g.can_found_city(uid) {
+            return None;
+        }
+        if let Some(city) = g
+            .city_at(current)
+            .filter(|city| g.cities[city].owner == pid)
+        {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler shelters in {}", g.cities[&city].name;
+                   "settler-shelters-from-the-war: a soldier of player {enemy} stands \
+                    {distance} tiles away; the city is the one tile it cannot be taken \
+                    from"; current);
+            return Some(true);
+        }
+        let shelter = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .min_by_key(|pos| (g.wdist(current, *pos), *pos))?;
+        think!(self.journal(), Expansion, Detail,
+               "Settler heads for shelter at {shelter:?}";
+               "settler-shelters-from-the-war: a soldier of player {enemy} stands \
+                {distance} tiles away; the nearest city of ours is {} tiles off",
+               g.wdist(current, shelter); shelter);
+        if self.formationless_settler_escort() && self.settlement_safety {
+            self.settler_step_out_of_reach(g, pid, uid, shelter);
+        } else {
+            self.settler_step_toward_safe(g, pid, uid, shelter);
+        }
+        // Holding on safe ground when no step is safe is still this gene's
+        // decision for the turn: the march toward the target is what it
+        // exists to stop.
+        Some(true)
+    }
+}
+
+#[cfg(test)]
+mod tests;

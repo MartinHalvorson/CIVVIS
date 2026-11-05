@@ -1935,6 +1935,9 @@ impl AdvancedAi {
         /// Let a Spy in the space racer's city disrupt before it trains on Gain
         /// Sources. See [`Self::disrupt_before_the_sources`].
         disrupt_before_the_sources => enable_disrupt_before_the_sources, disable_disrupt_before_the_sources;
+        /// Opt-in gene `disrupt-waits-for-the-match-point`; see
+        /// `advanced/disrupt_waits_for_the_match_point.rs`.
+        disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
         /// Opt-in gene `siege-moves-under-the-wing`; see
         /// [`Self::siege_moves_under_the_wing`].
         siege_moves_under_the_wing => enable_siege_moves_under_the_wing, disable_siege_moves_under_the_wing;
@@ -2125,6 +2128,10 @@ impl AdvancedAi {
         stalled_conquest_takes_science => enable_stalled_conquest_takes_science, disable_stalled_conquest_takes_science;
         /// Keep a committed first Science launch on its research path.
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
+        /// Prioritize usable labs and nearby Rocketry during a Science posture.
+        science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
+        /// Replace an obsolete native research path with a revealed launch milestone.
+        revealed_launch_tech_takes_the_slot => enable_revealed_launch_tech_takes_the_slot, disable_revealed_launch_tech_takes_the_slot;
         /// Ask the native market for Coal serving ready research power.
         science_power_buys_fuel => enable_science_power_buys_fuel, disable_science_power_buys_fuel;
         /// Prefer a legal non-lowland site when starting a native Spaceport.
@@ -2140,6 +2147,8 @@ impl AdvancedAi {
         /// Opt-in gene `science-specializes-earlier`; see
         /// [`Self::science_specializes_earlier`].
         science_specializes_earlier => enable_science_specializes_earlier, disable_science_specializes_earlier;
+        /// Opt-in Science Writing priority before optional research detours.
+        science_writing_before_the_luxury => enable_science_writing_before_the_luxury, disable_science_writing_before_the_luxury;
         /// Opt-in gene `near-done-work-finishes`; see
         /// `advanced/near_done_work_finishes.rs`.
         near_done_work_finishes => enable_near_done_work_finishes, disable_near_done_work_finishes;
@@ -2169,6 +2178,66 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `hint-runs-the-claims`; see
+        /// [`Self::hint_runs_the_claims`].
+        hint_runs_the_claims => enable_hint_runs_the_claims, disable_hint_runs_the_claims;
+        /// Opt-in gene `luxury-asks-pay-in-strategics`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
+        /// Opt-in gene `luxury-asks-pay-in-strategics-2`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics_2 => enable_luxury_asks_pay_in_strategics_2, disable_luxury_asks_pay_in_strategics_2;
+        /// Opt-in gene `military-alliance-shield`; see
+        /// `advanced/military_alliance_shield.rs`.
+        military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
+        /// Price the Science lost when a new district crowds an owned Seowon.
+        districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `early-cities-keep-their-distance`; see
+        /// [`Self::early_cities_keep_their_distance`].
+        early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `denial-spies-count-their-losses`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `spies-steal-the-lead`; see
+        /// `advanced/spies_steal_the_lead.rs`.
+        spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `holdable-land-keeps-settling`; see
+        /// `advanced/holdable_land_keeps_settling.rs`.
+        holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
+        /// Opt-in gene `medina-yields-to-the-amenities`; see
+        /// `advanced/medina_quarter.rs`.
+        medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
+        /// Opt-in gene `war-defense-spends-the-runway`; see
+        /// `advanced/war_defense_spends_the_runway.rs`.
+        war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
+        /// Opt-in gene `plaza-serves-the-scientist`; see
+        /// `BasicAi::plaza_building_item_for`.
+        plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
+        /// Opt-in gene `parity-upgrades-before-it-buys`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `settler-shelters-from-the-war`; see
+        /// `advanced/settler_shelters_from_the_war.rs`.
+        settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
+        /// Opt-in gene `threatened-lane-lends-the-army`; see
+        /// `advanced/threatened_lane_lends_the_army.rs`.
+        threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
+        /// Opt-in gene `prod-tiles-call-the-builders`; acts through
+        /// `builders-cover-the-worked-backlog`'s step. See
+        /// `ai/prod_tiles_call_the_builders.rs`.
+        base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `outmatched-war-prices-the-army`; see
+        /// `advanced/outmatched_war_prices_the_army.rs`.
+        outmatched_war_prices_the_army => enable_outmatched_war_prices_the_army, disable_outmatched_war_prices_the_army;
+        /// Opt-in gene `threatened-war-holds-the-claims`; see
+        /// `advanced/threatened_war_holds_the_claims.rs`.
+        threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
+        /// Opt-in gene `korea-mines-beside-the-seowon`; see
+        /// `advanced/korea_mines_beside_the_seowon.rs`.
+        korea_mines_beside_the_seowon => enable_korea_mines_beside_the_seowon, disable_korea_mines_beside_the_seowon;
+        /// Opt-in gene `captives-come-home`; see
+        /// `advanced/captives_come_home.rs`.
+        captives_come_home => enable_captives_come_home, disable_captives_come_home;
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
@@ -2769,33 +2838,6 @@ impl AdvancedAi {
     /// tournament genome. See `enable_live_bridge_universe`.
     pub fn enable_engine_repairs_universe(&mut self) {
         self.enable_live_bridge_universe();
-    }
-
-    /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
-    /// assembly, marching, siege, threat reading, and the war/peace decision.
-    ///
-    /// Split out so the composite's *interaction* is measurable rather than
-    /// assumed. If the whole bundle beats `advanced` by more than the war and
-    /// economy halves do separately, the repairs compound; if it does not, the
-    /// bundle is a sum and should be argued for one term at a time.
-    pub fn enable_engine_repairs_war(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::War))
-        {
-            (gene.enable)(self);
-        }
-    }
-
-    /// The economic half of [`AdvancedAi::enable_engine_repairs`]: settlement,
-    /// growth, districts, and the policy deck.
-    pub fn enable_engine_repairs_economy(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::Economy))
-        {
-            (gene.enable)(self);
-        }
     }
 
     /// Let a stalled settler found where it stands. Evaluator arm
@@ -5021,6 +5063,140 @@ impl AdvancedAi {
     /// The twin of `enable_camps_close_the_age_2`.
     pub fn disable_camps_close_the_age_2(&mut self) {
         self.camps_close_the_age_2 = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender`; see
+    /// [`Self::capital_keeps_its_defender`].
+    pub fn enable_capital_keeps_its_defender(&mut self) {
+        self.capital_keeps_its_defender = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender`.
+    pub fn disable_capital_keeps_its_defender(&mut self) {
+        self.capital_keeps_its_defender = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender-2`; see
+    /// [`Self::capital_keeps_its_defender_2`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_2(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_2`.
+    pub fn disable_capital_keeps_its_defender_2(&mut self) {
+        self.capital_keeps_its_defender_2 = false;
+    }
+
+    /// Keep a Governor whose departure would leave our original capital losing Loyalty.
+    pub fn enable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = true;
+        self.base.capital_keeps_its_governor = true;
+    }
+
+    /// Withhold the independently screenable capital Governor guard.
+    pub fn disable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = false;
+        self.base.capital_keeps_its_governor = false;
+    }
+
+    /// Opt-in gene `breaker-spares-the-backlog-builder`; see
+    /// [`Self::breaker_spares_the_backlog_builder`].
+    pub fn enable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_breaker_spares_the_backlog_builder`.
+    pub fn disable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = false;
+    }
+
+    /// Opt-in gene `camps-close-the-age-3`; see
+    /// [`Self::camps_close_the_age_3`]. One version of the family plays.
+    pub fn enable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age = false;
+        self.camps_close_the_age_2 = false;
+        self.camps_close_the_age_3 = true;
+    }
+
+    /// The twin of `enable_camps_close_the_age_3`.
+    pub fn disable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age_3 = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender-3`; see
+    /// [`Self::capital_keeps_its_defender_3`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = false;
+        self.capital_keeps_its_defender_3 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_3`.
+    pub fn disable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender_3 = false;
+    }
+
+    /// Opt-in gene `walls-release-the-one-blow`; see
+    /// [`Self::walls_release_the_one_blow`].
+    pub fn enable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = true;
+    }
+
+    /// The twin of `enable_walls_release_the_one_blow`.
+    pub fn disable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = false;
+    }
+
+    /// Opt-in gene `anvil-spares-the-one-blow`; see
+    /// [`Self::anvil_spares_the_one_blow`].
+    pub fn enable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = true;
+    }
+
+    /// The twin of `enable_anvil_spares_the_one_blow`.
+    pub fn disable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = false;
+    }
+
+    /// Opt-in gene `ranged-kills-are-free`; see
+    /// [`Self::ranged_kills_are_free`].
+    pub fn enable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = true;
+    }
+
+    /// The twin of `enable_ranged_kills_are_free`.
+    pub fn disable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = false;
+    }
+
+    /// Opt-in gene `bankruptcy-exits-the-drain-2`, version two of
+    /// `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. A seat plays
+    /// one version, so this turns version one off.
+    pub fn enable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = true;
+        self.bankruptcy_exits_the_drain = false;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain_2`.
+    pub fn disable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = false;
+    }
+
+    /// Opt-in gene `settler-shelters-from-the-war-2`, version two of
+    /// `settler-shelters-from-the-war`; see
+    /// `advanced/settler_shelters_from_the_war.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_settler_shelters_from_the_war_2(&mut self) {
+        self.settler_shelters_from_the_war_2 = true;
+        self.settler_shelters_from_the_war = false;
+    }
+
+    /// The twin of `enable_settler_shelters_from_the_war_2`.
+    pub fn disable_settler_shelters_from_the_war_2(&mut self) {
+        self.settler_shelters_from_the_war_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

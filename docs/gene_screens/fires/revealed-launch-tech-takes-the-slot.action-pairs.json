@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "revealed-launch-tech-takes-the-slot",
+  "scope": "Sixteen completed queries in fixed OFF/ON/ON/OFF order, four exact captured requests, private state reinitialized per query. All 272 actual reads independently verified against sealed native input bytes; sequences match candidate arms. Repeated complete control payloads reproduce in each arm. Turns 179/0 and 180/0 add TECH_SMART_MATERIALS only with treatment; 176/0 hidden and 183/1 already-selected cases retain their orders. Source 83ec03f819bc3f7d76a2079a2c093a00022eaa3a, candidate SHA256 b41f477ad5665da5f3f2e761eff0bd4ac20b478b6488e99715346897b63f8d62. Initial failed original-read-count assertion retained separately. No original-game replay/read-count parity, native host execution, saved-turn or strength claim. Explicit current host CanResearch approval is required by this candidate.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-revealed-launch-research.native-action-pairs.tar.xz",
+    "sha256": "cf02ac28552b13d26ff0db71a51932dea2584dc84f38b5374247935f2c97487c"
+  },
+  "members": [
+    "pairs/176-0-repeat-1.json",
+    "pairs/176-0-repeat-2.json",
+    "pairs/179-0-repeat-1.json",
+    "pairs/179-0-repeat-2.json",
+    "pairs/180-0-repeat-1.json",
+    "pairs/180-0-repeat-2.json",
+    "pairs/183-1-repeat-1.json",
+    "pairs/183-1-repeat-2.json"
+  ]
+}

@@ -34,14 +34,30 @@
 //! Deal, so the deck's successor retirement can never drop Medina Quarter as
 //! someone's predecessor; a slotted Insulae is an Economic card outside the
 //! spares and is the first to make way for it.
+//!
+//! `medina-yields-to-the-amenities` (opt-in): live Lv 8 Deity Korea Online
+//! (11-04/05), the card held a slot on 243 late turns (t100+) of the long
+//! games, 159 of them with two or more cities short of Amenities and 170
+//! without Rationalism; in `civvis-20261105T041217Z` it displaced Liberalism
+//! ("the Economic card the science plan wants least") and the civics
+//! Amenities fell 11 -> 0 with every city short, the host's Amenities line
+//! costing 10-15% of all Science by t185. With the gene on, while
+//! [`MEDINA_YIELDS_SHORT_CITIES`] or more of our cities are short of
+//! Amenities, the card is not wanted, so a held one makes way and the slot
+//! goes back to the plan's own cards.
 
 use super::AdvancedAi;
 use crate::game::Game;
 use crate::name::Name;
+use crate::think;
 
 /// Housing-limited cities with three specialty districts that bring the card
 /// onto the deck.
 pub(super) const MEDINA_QUARTER_ENTER_CITIES: usize = 2;
+
+/// `medina-yields-to-the-amenities`: this many cities of ours short of
+/// Amenities (surplus below zero) and the housing card is not wanted.
+pub(super) const MEDINA_YIELDS_SHORT_CITIES: usize = 2;
 
 /// A slotted card stays wanted while at least this many cities qualify.
 pub(super) const MEDINA_QUARTER_STAY_CITIES: usize = 1;
@@ -89,9 +105,34 @@ impl AdvancedAi {
     }
 
     /// `Some(qualifying cities)` when the gene wants the card this review.
+    /// `medina-yields-to-the-amenities`: how many of our cities are short of
+    /// Amenities (surplus below zero).
+    pub(super) fn medina_amenity_short_cities(g: &Game, pid: usize) -> usize {
+        // Luxury allocation is empire-wide: one memo scope for the sweep.
+        let _memo = g.query_memo();
+        g.player_city_ids(pid)
+            .iter()
+            .filter(|cid| g.city_amenity_surplus(&g.cities[*cid]) < 0)
+            .count()
+    }
+
     pub(super) fn medina_quarter_wanted(&self, g: &Game, pid: usize) -> Option<usize> {
         if !self.medina_quarter_houses_the_districts {
             return None;
+        }
+        // `medina-yields-to-the-amenities`: Housing grows cities the empire
+        // cannot keep content, and the card's slot is the one Liberalism or
+        // Rationalism would take. While two or more cities are short of
+        // Amenities, the housing card is not wanted (held, it makes way).
+        if self.medina_yields_to_the_amenities {
+            let short = Self::medina_amenity_short_cities(g, pid);
+            if short >= MEDINA_YIELDS_SHORT_CITIES {
+                think!(self.journal(), Policies, Detail,
+                       "Medina Quarter yields to the Amenities";
+                       "medina-yields-to-the-amenities: {short} cities are short of Amenities; \
+                        the slot goes back to the plan's own cards");
+                return None;
+            }
         }
         let card = crate::name!("medina_quarter");
         let held = g.players[pid].policies.contains(&card);

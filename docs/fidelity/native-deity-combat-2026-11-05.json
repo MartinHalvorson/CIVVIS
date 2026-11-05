@@ -1,0 +1,157 @@
+{
+  "schema": 1,
+  "observed_utc": "2026-11-05T09:37:42.222497+00:00",
+  "run": "civvis-20261105T092403Z",
+  "native_seat": {
+    "action_transitions": false,
+    "city_states": 9,
+    "civ": "CIVILIZATION_KOREA",
+    "ctx": "agent",
+    "difficulty": "DIFFICULTY_DEITY",
+    "game_seed": 2036818432,
+    "is_human": true,
+    "isolated_action_probes": false,
+    "kind": "seat",
+    "leader": "LEADER_SEONDEOK",
+    "local_player": 0,
+    "map": "Continents.lua",
+    "map_seed": 2036818433,
+    "max_turns": 250,
+    "modes": [],
+    "moves_at_turn_start": true,
+    "order_queue": true,
+    "players": 6,
+    "replan_frame_limit": 2,
+    "replan_frames": true,
+    "ruleset": "RULESET_EXPANSION_2",
+    "run": "civvis-20261105T092403Z",
+    "settler_escort_sync": true,
+    "setup": "(absent)",
+    "size": "MAPSIZE_SMALL",
+    "speed": "GAMESPEED_ONLINE",
+    "t": 1793870694,
+    "tile_delta": true,
+    "utc": "2026-11-05T09:24:55.413Z",
+    "victories": {
+      "conquest": true,
+      "culture": true,
+      "diplomatic": true,
+      "religious": true,
+      "score": true,
+      "technology": true
+    },
+    "victory_types": [
+      {
+        "index": 0,
+        "type": "VICTORY_SCORE"
+      },
+      {
+        "index": 1,
+        "type": "VICTORY_DEFAULT"
+      },
+      {
+        "index": 2,
+        "type": "VICTORY_CONQUEST"
+      },
+      {
+        "index": 3,
+        "type": "VICTORY_CULTURE"
+      },
+      {
+        "index": 4,
+        "type": "VICTORY_RELIGIOUS"
+      },
+      {
+        "index": 5,
+        "type": "VICTORY_TECHNOLOGY"
+      },
+      {
+        "index": 6,
+        "type": "VICTORY_DIPLOMATIC"
+      }
+    ]
+  },
+  "binary_sha256": "46451b6aa57c87b55f95b89ba1ad9db70fef3d5b6bca7804080b258d942d77b1",
+  "provenance": {
+    "kind": "frozen_attempt_decider",
+    "revision": "1b4537e50c356975e202d9d9d986a54abf6a3fee",
+    "schema": 1,
+    "sha256": "46451b6aa57c87b55f95b89ba1ad9db70fef3d5b6bca7804080b258d942d77b1",
+    "source_kind": "binary-checkout",
+    "source_path": "/Users/martbot-mbp-m5-max-128/civvis-verification-clean-runtime/target/release/civvis_orders"
+  },
+  "readback_valid": true,
+  "observation_count": 37,
+  "observed_bonus": 4,
+  "observations": [
+    {
+      "event_line": 2402,
+      "turn": 42,
+      "side": "defender",
+      "actor": {
+        "hp": 100,
+        "id": 1114125,
+        "kind": "UNIT_SLINGER",
+        "player": 4,
+        "type": "unit",
+        "x": 23,
+        "y": 30
+      },
+      "preview": {
+        "attacker_strength": 15,
+        "attacker_strength_modifier": 0,
+        "attacker_total_strength": 15,
+        "damage_to_attacker": 0,
+        "damage_to_defender": 41,
+        "defender_modifier_text": {
+          "PREVIEW_TEXT_MODIFIER": [
+            "+4 [ICON_Strength] Combat Strength bonus due to difficulty."
+          ],
+          "PREVIEW_TEXT_TERRAIN": [
+            "[COLOR_RED]-2 Unfavorable Terrain[ENDCOLOR]"
+          ]
+        },
+        "defender_strength": 5,
+        "defender_strength_modifier": 2,
+        "defender_total_strength": 7,
+        "defender_wall_damage": 0
+      },
+      "actual_damage_to_attacker": 0,
+      "actual_damage_to_defender": 33
+    },
+    {
+      "event_line": 2407,
+      "turn": 42,
+      "side": "defender",
+      "actor": {
+        "hp": 100,
+        "id": 983047,
+        "kind": "UNIT_WARRIOR",
+        "player": 4,
+        "type": "unit",
+        "x": 25,
+        "y": 32
+      },
+      "preview": {
+        "attacker_strength": 25,
+        "attacker_strength_modifier": 0,
+        "attacker_total_strength": 25,
+        "damage_to_attacker": 0,
+        "damage_to_defender": 31,
+        "defender_modifier_text": {
+          "PREVIEW_TEXT_MODIFIER": [
+            "+4 [ICON_Strength] Combat Strength bonus due to difficulty."
+          ]
+        },
+        "defender_strength": 20,
+        "defender_strength_modifier": 4,
+        "defender_total_strength": 24,
+        "defender_wall_damage": 0
+      },
+      "actual_damage_to_attacker": 0,
+      "actual_damage_to_defender": 36
+    }
+  ],
+  "source_basis": "Base/Assets/Gameplay/Data/Leaders.xml1463-1465,3558-3562,5326; raw scaled argument does not itself prove final runtime value. Native preview modifier text resolves actual Deity +4.",
+  "scope": "Only Deity runtime sealed here; do not infer lower-rung numeric values or change forced runtime settings. A model fidelity correction is not itself native win-rate evidence."
+}
