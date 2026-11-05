@@ -87,9 +87,20 @@ VERIFICATION_OPTIONS = {
         # Recovery's deepest stride needs 36 older saves plus the parked one.
         # The native ten-save default clamped retries back to newer boards in
         # civvis-20260921T095426Z. Options.lua offers 50 as the next size after
-        # 10; retain that supported rotation, with a boundary every turn.
+        # 10; retain that supported rotation.
         "AutoSaveKeepCount": 50,
-        "AutoSaveFrequency": 1,
+        # ★ EVERY OTHER TURN, NOT EVERY TURN: THE SAVE IS ON THE CRITICAL PATH.
+        # Civ VI writes the autosave on the game core between the last AI turn
+        # and ours, and our board follows it: on civvis-20261105T004454Z each
+        # AutoSave_NNNN finished 0.10-0.17 s (t50-56, 5 of 7 turns) before
+        # that turn's board reached the brain. A 10 s `sample` at t43-46 had
+        # zlib (deflate/adler32) at ~11 % of the game-core thread -- ~0.4 s
+        # of compression a turn on 3.5-5.4 s turns. Every second turn halves
+        # it and plays nothing differently. Recovery keeps working in saves,
+        # newest first by mtime (`recent_autosaves`): one save back is now two
+        # turns, the deepest stride 72, and wider first steps are what break
+        # deterministic parks (`RESUME_STEPS`). Options.lua:1274 offers 1-10.
+        "AutoSaveFrequency": 2,
     },
     "GraphicsOptions.txt": {
         "EnableShadows": 0,
