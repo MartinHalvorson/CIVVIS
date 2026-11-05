@@ -7604,6 +7604,10 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `korea-mines-beside-the-seowon`: Korea's Builders price a Mine +1
+    /// Science and a Farm +1 Food per adjacent own Seowon (Three Kingdoms).
+    /// See `advanced/korea_mines_beside_the_seowon.rs`. Off by default.
+    korea_mines_beside_the_seowon: bool,
     // ---- append: l-o ------------------------------------------------
     /// `luxury-asks-pay-in-strategics`: with no spare copy that fits, the
     /// luxury slot asks a partner for a type we lack and pays in strategics
@@ -10763,6 +10767,8 @@ mod threatened_city_purchase;
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
+/// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
+mod korea_mines_beside_the_seowon;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -12030,6 +12036,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            korea_mines_beside_the_seowon: false,
             // ---- append: l-o ----------------------------------------
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,

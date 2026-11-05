@@ -2183,6 +2183,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `korea-mines-beside-the-seowon`; see
+        /// `advanced/korea_mines_beside_the_seowon.rs`.
+        korea_mines_beside_the_seowon => enable_korea_mines_beside_the_seowon, disable_korea_mines_beside_the_seowon;
     }
 }
 

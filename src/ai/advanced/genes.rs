@@ -5033,6 +5033,13 @@ pub const GENES: &[Gene] = &[
     // Spies (stock valuation and denial claim) until they age out.
     // See `advanced/denial_spies_count_their_losses.rs`.
     Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Three Kingdoms pays +1 Science per Mine and +1 Food per Farm beside a
+    // Seowon (the live host's rule). The engine's data carries a flat
+    // per-city placeholder, so the Builder priced a Seowon-side Mine at its
+    // Production alone. Under the gene Korea's Builders price the adjacency,
+    // matching `korea-reads-three-kingdoms` on the district side. See
+    // `advanced/korea_mines_beside_the_seowon.rs`.
+    Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
