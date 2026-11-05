@@ -58,34 +58,37 @@ fn war_defense_spends_the_runway_is_opt_in() {
 }
 
 /// civvis-20261105T033244Z t161: 168 Gold at -1.7/turn (about 99 turns of
-/// runway), power 561 against the Aztecs' 2409. Off, the guard takes the
-/// queue (the Stock Exchange); on, the war keeps it.
+/// runway) under its six-city reserve of 250, power 561 against the Aztecs'
+/// 2409. The board holds one city (reserve 125), so the same runway reads
+/// 120 Gold at -1.2/turn. Off, the guard takes the queue (the Stock
+/// Exchange); on, the war keeps it.
 #[test]
 fn a_losing_war_with_a_long_runway_keeps_its_queues() {
-    let game = board(168.0, -1.7, 561.0, 2409.0, true);
+    let game = board(120.0, -1.2, 561.0, 2409.0, true);
     assert!(science(false).live_war_economy_requires_recovery(&game, 0, &garrisoned()));
     assert!(!science(true).live_war_economy_requires_recovery(&game, 0, &garrisoned()));
 }
 
 /// The Rome run the guard was written for: 160 Gold at -24.39/turn is under
-/// seven turns of runway, so recovery still comes first.
+/// seven turns of runway (here 120 Gold, five turns), so recovery still comes
+/// first.
 #[test]
 fn a_short_runway_still_recovers() {
-    let game = board(160.0, -24.39, 561.0, 2409.0, true);
+    let game = board(120.0, -24.39, 561.0, 2409.0, true);
     assert!(science(true).live_war_economy_requires_recovery(&game, 0, &garrisoned()));
 }
 
 /// A rival at parity is not a war we are losing.
 #[test]
 fn a_war_at_parity_still_recovers() {
-    let game = board(168.0, -1.7, 1000.0, 1200.0, true);
+    let game = board(120.0, -1.2, 1000.0, 1200.0, true);
     assert!(science(true).live_war_economy_requires_recovery(&game, 0, &garrisoned()));
 }
 
 /// A stronger rival we are not at war with does not move the guard.
 #[test]
 fn peace_still_recovers() {
-    let game = board(168.0, -1.7, 561.0, 2409.0, false);
+    let game = board(120.0, -1.2, 561.0, 2409.0, false);
     assert!(science(true).live_war_economy_requires_recovery(&game, 0, &garrisoned()));
 }
 
