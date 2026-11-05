@@ -5103,6 +5103,16 @@ pub const GENES: &[Gene] = &[
     // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
     // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
     // Live Deity games work bare hills and forests through the mid-game (20%
     // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
     // empire's Production lost at t60/80/100) while the backlog step trains
