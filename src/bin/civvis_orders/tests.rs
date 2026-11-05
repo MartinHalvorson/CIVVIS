@@ -10080,3 +10080,254 @@ fn spy_loss_ledger_reads_the_log_as_it_grows() {
     assert_eq!(ledger.through(200), vec![5]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `luxury-asks-pay-in-strategics-2`: a partner that answered
+/// `barter_short` is skipped, and Horses stay home while Niter is spare;
+/// with no other partner and only Horses, version two still asks.
+#[test]
+fn luxury_strategic_ask_2_skips_the_shorted_partner_and_keeps_the_horses() {
+    let short = |needed: f64, have: f64| StateCity {
+        amenities: have,
+        amenities_needed: needed,
+        ..StateCity::default()
+    };
+    let offering = |player, luxuries: &[&str]| StateRival {
+        player,
+        tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+        ..StateRival::default()
+    };
+    let spare = |resource: &str, id: &str, amount: u32| civvis::ai::BarterSpare {
+        resource: resource.to_string(),
+        resource_id: id.to_string(),
+        amount,
+        luxury: false,
+    };
+    let state = StateSnapshot {
+        turn: 94, // the luxury slot; week 15
+        gold: 200,
+        gold_per_turn: Some(12.0),
+        cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+        luxury_counts: Some([("RESOURCE_AMBER".to_string(), 1.0)].into_iter().collect()),
+        rivals: vec![
+            offering(4, &["RESOURCE_SILK"]),
+            offering(6, &["RESOURCE_WINE"]),
+        ],
+        ..StateSnapshot::default()
+    };
+    let book = |_seller: i64, resource: &str, amount: u32| match resource {
+        "niter" => 20.0 * f64::from(amount),
+        "horses" => 40.0 * f64::from(amount),
+        _ => 0.0,
+    };
+    let spares = vec![
+        spare("RESOURCE_HORSES", "horses", 20),
+        spare("RESOURCE_NITER", "niter", 12),
+    ];
+    let none = std::collections::BTreeSet::new();
+
+    // Version one: seat 6 (15 % 2 == 1), Horses, the lot that covers the
+    // copy most cheaply by the book.
+    let mut v1 = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask(&state, &mut v1, &spares, &book),
+        None
+    );
+    assert_eq!(v1[0].subject, Some(6));
+    assert_eq!(v1[0].verb.as_deref(), Some("LUXURY_ANY;RESOURCE_HORSES=5"));
+
+    // Version two: Niter, not Horses.
+    let mut v2 = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut v2, &spares, &book, &none),
+        None
+    );
+    assert_eq!(v2[0].subject, Some(6));
+    assert_eq!(v2[0].verb.as_deref(), Some("LUXURY_ANY;RESOURCE_NITER=9"));
+
+    // Seat 6 shorted: seat 4 is asked instead.
+    let shorted: std::collections::BTreeSet<i64> = [6].into_iter().collect();
+    let mut skip = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut skip, &spares, &book, &shorted),
+        None
+    );
+    assert_eq!(skip[0].subject, Some(4));
+
+    // Both shorted: nobody is asked.
+    let both: std::collections::BTreeSet<i64> = [4, 6].into_iter().collect();
+    let mut held = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut held, &spares, &book, &both),
+        Some("luxury_strategic_hold:no_partner")
+    );
+
+    // Only Horses spare: version two still offers them.
+    let horses = vec![spare("RESOURCE_HORSES", "horses", 20)];
+    let mut only = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut only, &horses, &book, &none),
+        None
+    );
+    assert_eq!(
+        only[0].verb.as_deref(),
+        Some("LUXURY_ANY;RESOURCE_HORSES=5")
+    );
+}
+
+/// `luxury-asks-pay-in-strategics-2`: the ledger keeps the `barter_short`
+/// answers of our buy arm, by turn and partner, each with the items the same
+/// turn's luxury ask to that partner put up, and nothing else.
+#[test]
+fn barter_short_ledger_reads_the_shorts_and_what_they_offered() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-barter-ledger-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        concat!(
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 3, \"turn\": 88, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"order_failed\", \"order_kind\": \"buy\", \"subject\": 3, \"turn\": 88, \"verb\": \"LUXURY_ANY;RESOURCE_HORSES=3\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"asked\", \"target\": 4, \"turn\": 94, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"order_verified\", \"order_kind\": \"buy\", \"subject\": 4, \"turn\": 94, \"verb\": \"LUXURY_ANY;RESOURCE_SALT=1\"}\n",
+            "{\"kind\": \"order_failed\", \"order_kind\": \"buy\", \"subject\": 1, \"turn\": 100, \"verb\": \"LUXURY_ANY;RESOURCE_MARBLE=1,RESOURCE_WINE=1\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 1, \"turn\": 100, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 5, \"turn\": 106, \"verb\": \"LUXURY_ANY\"}\n",
+        ),
+    )
+    .unwrap();
+    let mut ledger = BarterShortLedger::default();
+    ledger.refresh(&path);
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        ledger.through(200),
+        vec![
+            (88, 3, names(&["RESOURCE_HORSES"])),
+            (100, 1, names(&["RESOURCE_MARBLE", "RESOURCE_WINE"])),
+            (106, 5, Vec::new()),
+        ]
+    );
+    assert_eq!(
+        ledger.through(95),
+        vec![(88, 3, names(&["RESOURCE_HORSES"]))]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `luxury-asks-pay-in-strategics-2`: a luxury whose swap shorted stays off
+/// our side; with no other spare the swap holds `no_spare`, the hold the
+/// strategic ask runs on.
+#[test]
+fn luxury_swap_2_keeps_the_stale_copy_home() {
+    let short = |needed: f64, have: f64| StateCity {
+        amenities: have,
+        amenities_needed: needed,
+        ..StateCity::default()
+    };
+    let state = StateSnapshot {
+        turn: 94,
+        gold: 200,
+        cities: vec![short(5.0, 3.0), short(6.0, 4.0), short(3.0, 4.0)],
+        luxury_counts: Some([("RESOURCE_MARBLE".to_string(), 2.0)].into_iter().collect()),
+        rivals: vec![StateRival {
+            player: 4,
+            tradeable_luxuries: Some(vec!["RESOURCE_SILK".to_string()]),
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let none = std::collections::BTreeSet::new();
+    let mut fresh = Vec::new();
+    assert_eq!(
+        append_luxury_swap_order_2(&state, &mut fresh, None, &none),
+        None
+    );
+    assert_eq!(
+        fresh[0].verb.as_deref(),
+        Some("LUXURY_ANY;RESOURCE_MARBLE=1")
+    );
+    let stale: std::collections::BTreeSet<String> =
+        ["RESOURCE_MARBLE".to_string()].into_iter().collect();
+    let mut held = Vec::new();
+    assert_eq!(
+        append_luxury_swap_order_2(&state, &mut held, None, &stale),
+        Some("luxury_swap_hold:no_spare")
+    );
+    assert!(held.is_empty());
+}
+
+/// `captives-come-home`: the captor holding most of our Spies is asked on its
+/// own cadence turn, at peace only, for Gold over the reserve up to the cap;
+/// a short treasury or a deal already in flight to it holds the ask.
+#[test]
+fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
+    let rival = |player: usize, captives: Option<u32>, at_war: bool| StateRival {
+        player,
+        captives_of_ours: captives,
+        at_war,
+        ..StateRival::default()
+    };
+    // Turn 12: player 2's cadence turn (12 % 5 == 2 % 5); player 7 shares it.
+    let mut state = StateSnapshot {
+        turn: 12,
+        gold: 420,
+        rivals: vec![
+            rival(1, Some(3), false),
+            rival(2, Some(1), false),
+            rival(7, Some(2), false),
+            rival(12, Some(4), true),
+        ],
+        ..StateSnapshot::default()
+    };
+    let mut orders = Vec::new();
+    assert_eq!(append_captive_ransom_order(&state, &mut orders), None);
+    assert_eq!(orders.len(), 1);
+    let ask = &orders[0];
+    assert_eq!(ask.kind, "buy");
+    assert_eq!(
+        ask.subject,
+        Some(7),
+        "the most-held captor whose turn it is; never one at war with us"
+    );
+    assert_eq!(ask.verb.as_deref(), Some("CAPTIVE"));
+    assert_eq!(ask.pos, Some((RANSOM_CEILING_MAX, 0)), "capped");
+
+    // A deal already heading to that captor holds the ask.
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:deal_in_flight")
+    );
+    assert_eq!(orders.len(), 1);
+
+    // The ceiling is the treasury over the reserve, and too little asks nothing.
+    state.gold = RANSOM_GOLD_RESERVE + 90;
+    let mut orders = Vec::new();
+    append_captive_ransom_order(&state, &mut orders);
+    assert_eq!(orders[0].pos, Some((90, 0)));
+    state.gold = RANSOM_GOLD_RESERVE + i64::from(RANSOM_CEILING_MIN) - 1;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:treasury")
+    );
+    assert!(orders.is_empty());
+
+    // Off its cadence turn, or holding none of ours, a rival is not asked.
+    state.gold = 420;
+    state.turn = 13;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:no_captor")
+    );
+    state.turn = 12;
+    state.rivals = vec![rival(2, Some(0), false), rival(7, None, false)];
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:no_captor")
+    );
+    assert!(orders.is_empty());
+}

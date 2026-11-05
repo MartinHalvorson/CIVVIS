@@ -4344,6 +4344,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "bankruptcy-exits-the-drain": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "bankruptcy-exits-the-drain": null,
+          "bankruptcy-exits-the-drain-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner"
@@ -4948,6 +4957,15 @@
           "lane-delegates-production-2": null
         }
       },
+      "luxury-asks-pay-in-strategics": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-asks-pay-in-strategics": null,
+          "luxury-asks-pay-in-strategics-2": null
+        }
+      },
       "luxury-swap-asks": {
         "rule_on": [],
         "head": null,
@@ -5021,6 +5039,15 @@
           "opportunistic-war-2": null
         }
       },
+      "parity-upgrades-before-it-buys": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "parity-upgrades-before-it-buys": null,
+          "parity-upgrades-before-it-buys-2": null
+        }
+      },
       "pass-picket": {
         "rule_on": [
           "pass-picket"
@@ -5030,6 +5057,17 @@
         "versions": {
           "pass-picket": null,
           "pass-picket-2": null
+        }
+      },
+      "pingala-follows-research": {
+        "rule_on": [
+          "pingala-follows-research"
+        ],
+        "head": null,
+        "ships": "pingala-follows-research",
+        "versions": {
+          "pingala-follows-research": null,
+          "pingala-follows-research-2": null
         }
       },
       "policy-deck-hysteresis": {
@@ -5144,6 +5182,15 @@
         "versions": {
           "settler-guard-holds": 0.080401,
           "settler-guard-holds-2": null
+        }
+      },
+      "settler-shelters-from-the-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "settler-shelters-from-the-war": null,
+          "settler-shelters-from-the-war-2": null
         }
       },
       "settler-target-hysteresis": {

@@ -270,7 +270,8 @@ impl AdvancedAi {
         } else {
             plan.strategy
         };
-        if g.players[pid].research.is_none() {
+        let revealed_launch_switch = self.revealed_launch_research_switch(g, pid);
+        if g.players[pid].research.is_none() || revealed_launch_switch.is_some() {
             // Every candidate's value reads the empire's science rate, and a
             // comparator asks for two values per comparison: under one memo
             // each city's yields are derived once for the whole choice.
@@ -871,6 +872,13 @@ impl AdvancedAi {
                         .unwrap_or(ordinary)
                 })
             };
+            // Reconsider an in-flight path only for the observed milestone,
+            // and only when the ordinary priority ladder also gives it the slot.
+            let pick = pick.filter(|tech| {
+                g.players[pid].research.is_none()
+                    || (revealed_launch_switch == Some(tech.as_str())
+                        && forced_goal == Some(tech.as_str()))
+            });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     // `beeline-orders-by-value` takes the best-valued step,

@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "outmatched-war-prices-the-army",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Korea civvis-20261105T033244Z t161 and t168 (Aztecs at war, 2409/3377 power against our 561/577; the seat was eliminated at t203), each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from main fa163831fb plus #4534 and #4545. Both arms carry the run's requested genome plus war-defense-spends-the-runway, threatened-lane-lends-the-army and threatened-war-holds-the-claims, so neither arm can reproduce the live game (no live control is claimed); the on arm adds the gene. Off, t161 starts a Stock Exchange (Gyeongju), a Lighthouse (Jeonju) and a Hwacha (Sangju), and t168 a Stock Exchange and an AT Crew. On, every queue is a unit: an AT Crew and two Hwachas at t161, and a Hwacha and an AT Crew at t168.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-outmatched-war-prices-the-army.native-queries.tar.xz",
+    "sha256": "f49e7ff3bff0ee7bea2648bfbb489e1e20df814e85e59d30b46cde036aeebacf"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}

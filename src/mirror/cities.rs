@@ -847,3 +847,92 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
         }
     }
 }
+
+/// Tell the seat which cities it has seen, so fog does not erase them.
+///
+/// ★★★★★ **THE SAME DEFECT AS `apply_tile_memory`, ONE FIELD OVER, AND I ONLY FIXED
+/// THE TILES.** The operator's report was *"civvis sometimes only shows current
+/// visibility"*; that was true of ground and it is equally true of cities.
+///
+/// `obs.rs` includes a city in a seated observation when it is currently visible, or
+/// when the seat REMEMBERS it:
+///
+/// ```ignore
+/// for memory in g.players[*viewer].remembered_cities.values() {
+///     if explored.contains(&memory.pos) && !vis.contains(&memory.pos) { … }
+/// ```
+///
+/// `grep -c remembered_cities src/mirror.rs` answered **0**, so every enemy city
+/// outside the seat's current sight vanished from the board it is shown and reasons
+/// over.
+///
+/// Measured on live run `civvis-20260801T045406Z` at turn 198, at war and losing:
+///
+/// | | |
+/// |---|---|
+/// | enemy cities in the export | **7** |
+/// | …revealed, on land, unoccupied | **7** |
+/// | placed on the reconstruction | **7** (`follow.log`: "7 rival cities") |
+/// | **visible in the seated observation** | **1** |
+///
+/// ⚠ That last row is the one that matters strategically: `findWarTarget` needs a
+/// revealed rival city, and this project has already recorded "no enemy city is ever
+/// revealed … domination is arithmetically impossible" as a standing blocker. The
+/// cities were on the board the whole time; the seat could not remember them.
+///
+/// Built through `Game::remember_city` rather than assembled here, so the bridge's
+/// memory has exactly the shape the engine's own fog bookkeeping produces and the two
+/// cannot drift.
+///
+/// ⚠ Replaces rather than extends, for the same reason [`apply_explored`] does:
+/// `Game::new` generates a world with cities of its own, and a memory of THOSE is a
+/// memory of somewhere the real seat has never been.
+pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
+    let turn = game.turn.max(1);
+    let seen: Vec<(u32, crate::game::RememberedCity)> = game
+        .cities
+        .values()
+        .map(|city| {
+            let mut memory = game.remember_city(city);
+            memory.seen_turn = turn;
+            (city.id, memory)
+        })
+        .collect();
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.remembered_cities.clear();
+    for (id, memory) in seen {
+        seat.remembered_cities.insert(id, memory);
+    }
+}
+
+/// ★★★ THE CAPTURE DECISION REACHES THE BOARD. `captured_from` is assigned
+/// from every export — the host names the loser only while its own
+/// keep/raze/liberate decision is open for this city (`GetNextCapturedCity()`,
+/// `Popups/RazeCity.lua:71`), so an export without it CLEARS the flag and the
+/// board stops asking. `original_owner` moves only when the founder sits on a
+/// mirrored seat; an unmapped founder (never met, or no seat left) keeps the
+/// board's default, under which `city_can_be_razed_by` and the liberate
+/// clause both say no and only Keep is offered. A loser that maps to no seat
+/// leaves the flag clear: the engine's `do_keep_city` pays the capture
+/// rewards to `players[defeated]`, and a seat that is not there is a panic,
+/// not a decision.
+pub(super) fn apply_city_capture(
+    live: &mut crate::game::City,
+    state: &StateCity,
+    seat_of: &std::collections::BTreeMap<i64, usize>,
+) {
+    if let Some(founder) = state
+        .original_owner
+        .filter(|player| *player >= 0)
+        .and_then(|player| seat_of.get(&player))
+    {
+        live.original_owner = *founder;
+    }
+    live.captured_from = state
+        .captured_from
+        .filter(|player| *player >= 0)
+        .and_then(|player| seat_of.get(&player).copied())
+        .filter(|seat| *seat != live.owner);
+}
