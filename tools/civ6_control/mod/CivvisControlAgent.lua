@@ -637,6 +637,29 @@ CivvisBarterGive = function(deal, pid, subject, list, player)
 	end, nil) or {};
 	local gave, text, short = {}, {}, false;
 	for name, want in string.gmatch(list, "([%w_]+)=(%d+)") do
+		if name == "FAVOR" then
+			-- Diplomatic Favor from our side, a lump (`captives-come-home-2`
+			-- pays a captive's price in it): keyed `FAVOR`, as `keyOf` names
+			-- the answer's item, so `CivvisWithinGave` holds it to this amount.
+			local amount = tonumber(want) or 0;
+			local item = nil;
+			if amount > 0 and DealItemTypes.FAVOR ~= nil then
+				item = deal:AddItemOfType(DealItemTypes.FAVOR, pid);
+			end
+			if item ~= nil then
+				item:SetDuration(0);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+				if pcall(function() item:SetAmount(amount); end)
+						and try(function() return item:IsValid(); end, true) then
+					gave["FAVOR"] = amount;
+					text[#text + 1] = "FAVOR=" .. tostring(amount);
+				else
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+				end
+			end
+			if gave["FAVOR"] == nil then short = true; end
+		else
 		local row = try(function() return GameInfo.Resources[name]; end, nil);
 		local forType = nil;
 		for _, entry in ipairs(possible) do
@@ -676,6 +699,7 @@ CivvisBarterGive = function(deal, pid, subject, list, player)
 			end
 		end
 		if gave[key] == nil then short = true; end
+		end
 	end
 	if short then return nil, "barter_short"; end
 	if next(gave) == nil then return nil, "barter_nothing"; end
@@ -3581,18 +3605,18 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
-	local wanted = nil;
+	local wanted, wantedPlot = nil, nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
 		if cityId ~= nil then
-			-- A direct choice owns the current queue.  If that queue was already
-			-- finishing when the board was exported, the Rust decider also sent a
-			-- deferred next-build lease under a string key in this same table (the
-			-- Lua 5.1 main chunk is at its 200-local ceiling). Consume that lease
-			-- only after the host raises the production blocker, never while the old
-			-- item is still running.
-			wanted = civvisBuild[cityId]
-				or civvisBuild[tostring(cityId) .. ":next"];
+			-- Called only for an empty queue: the next lease supersedes the
+			-- remembered choice that just completed. Keep its selected plot until
+			-- the host placement query revalidates it at consumption time.
+			wanted = civvisBuild[tostring(cityId) .. ":next"]
+				or civvisBuild[cityId];
+			if civvisBuild[tostring(cityId) .. ":next"] == wanted then
+				wantedPlot = civvisBuild[tostring(cityId) .. ":next-plot"];
+			end
 		end
 	end
 	local function playable(name)
@@ -3643,7 +3667,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if wanted ~= nil then
 		local alreadyRefused = refused[wanted];
 		local row, reasons = playable(wanted);
-		if row ~= nil then return wanted, row, "civvis"; end
+		if row ~= nil then return wanted, row, "civvis", wantedPlot; end
 		-- Preserve the host refusal so the next exported board can explain it.
 		if not alreadyRefused and reasons ~= nil and #reasons > 0 then
 			emit("civvis_build_unplayable", {
@@ -4647,12 +4671,12 @@ local function driveProduction(player, turn, force)
 			end
 			local searching = true;
 			while searching do
-				local name, row, why = chooseProduction(
+				local name, row, why, plot = chooseProduction(
 					city, counts, #cities, turn, rejected);
 				if row == nil then
 					searching = false;
 				else
-					local params = buildParams(row, city);
+					local params = buildParams(row, city, plot and plot.x, plot and plot.y);
 					if params == nil then
 						-- CanProduce allows a district whose placement query has no
 						-- legal plot. Reject it for this sweep and ask the ladder for
@@ -4667,6 +4691,8 @@ local function driveProduction(player, turn, force)
 							CivvisK.lastBuild[cityId] = { turn = turn, item = name };
 							if civvisBuild[tostring(cityId) .. ":next"] == name then
 								civvisBuild[tostring(cityId) .. ":next"] = nil;
+								civvisBuild[tostring(cityId) .. ":next-plot"] = nil;
+								civvisBuild[cityId] = nil;
 							end
 							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
 							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
@@ -12932,9 +12958,75 @@ CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row
 	return "lethal_host_preview";
 end;
 
+-- Observe the UI movement path, not a promise that a melee attack will land.
+-- WorldInput.lua:961 reads GetMoveToPathEx(unit, destination); :963-966 read
+-- its plots and :1052-1080 read and display its turn numbers. A MOVE_TO with ATTACK
+-- may still approach without striking, so keep these facts beside the preview.
+-- No operation or combat simulation is requested here. Malformed/unavailable
+-- path data stays unknown, with no invented destination or turn count.
+CivvisLedger.annotateMeleePath = function(unit, x, y, modifiers, payload)
+	payload.native_move_path_known = false;
+	payload.native_move_modifiers_known = type(modifiers) == "number"
+		and modifiers == modifiers and math.abs(modifiers) < math.huge
+		and modifiers % 1 == 0;
+	if payload.native_move_modifiers_known then payload.native_move_modifiers = modifiers; end
+	local function observedNumber(callback)
+		local value = tonumber(try(callback, nil));
+		if value ~= nil and value == value and math.abs(value) < math.huge then return value; end
+		return nil;
+	end
+	payload.unit_x = observedNumber(function() return unit:GetX(); end);
+	payload.unit_y = observedNumber(function() return unit:GetY(); end);
+	payload.moves = observedNumber(function() return unit:GetMovesRemaining(); end);
+	payload.attacks = observedNumber(function() return unit:GetAttacksRemaining(); end);
+	local observation = try(function()
+		local destination = Map.GetPlotIndex(x, y);
+		if type(destination) ~= "number" or destination < 0
+				or destination >= math.huge or destination % 1 ~= 0 then return nil; end
+		local path = UnitManager.GetMoveToPathEx(unit, destination);
+		if type(path) ~= "table" or type(path.plots) ~= "table"
+				or type(path.turns) ~= "table" then return nil; end
+		local n = #path.plots;
+		if n > 256 then return nil; end
+		for _, rows in ipairs({ path.plots, path.turns }) do
+			for key in pairs(rows) do
+				if type(key) ~= "number" or key % 1 ~= 0
+						or key < 1 or key > n then return nil; end
+			end
+		end
+		local positions = {};
+		for i = 1, n do
+			local plotId, turns = path.plots[i], path.turns[i];
+			if type(plotId) ~= "number" or plotId < 0 or plotId >= math.huge
+					or plotId % 1 ~= 0 or type(turns) ~= "number"
+					or turns < 0 or turns >= math.huge or turns % 1 ~= 0 then return nil; end
+			if i > 1 and turns < path.turns[i - 1] then return nil; end
+			local plot = Map.GetPlotByIndex(plotId);
+			local px, py = plot:GetX(), plot:GetY();
+			if type(px) ~= "number" or type(py) ~= "number"
+					or px < 0 or py < 0 or px >= math.huge or py >= math.huge
+					or px % 1 ~= 0 or py % 1 ~= 0 then return nil; end
+			positions[i] = { x = px, y = py, turn = turns };
+		end
+		local result = { native_move_path_known = true, native_move_path_length = n };
+		if n > 0 then
+			result.native_move_path_destination = positions[n];
+			result.native_move_path_destination_matches_order = path.plots[n] == destination;
+			if n > 1 then result.native_move_path_first_step = positions[2]; end
+			for i = 1, n do
+				if path.turns[i] <= 1 then result.native_move_path_this_turn_end = positions[i]; end
+			end
+		end
+		return result;
+	end, nil);
+	if observation ~= nil then
+		for key, value in pairs(observation) do payload[key] = value; end
+	end
+end;
+
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
-CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
+CivvisLedger.strike = function(unit, subject, verb, x, y, turn, moveModifiers)
 	if CivvisFrames ~= nil then CivvisFrames.noteStrike(); end
 	-- `StrikePreview = false` keeps the host's combat simulation out of the
 	-- turn entirely; the strike is still recorded, without a prediction.
@@ -12945,8 +13037,10 @@ CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
 	CivvisLedger.pending[tostring(subject)] = {
 		turn = turn, verb = verb, x = x, y = y, preview = preview, hp = hp, kind = kind,
 	};
-	emit("strike", { turn = turn, unit = subject, unit_kind = kind, verb = verb,
-	                 x = x, y = y, hp = hp, preview = preview });
+	local payload = { turn = turn, unit = subject, unit_kind = kind, verb = verb,
+	                  x = x, y = y, hp = hp, preview = preview };
+	if verb == "ATTACK" then CivvisLedger.annotateMeleePath(unit, x, y, moveModifiers, payload); end
+	emit("strike", payload);
 end;
 
 -- WorldInput.lua:2004-2015 and :2091-2097 read PLOTS and MODIFIERS in
@@ -14236,7 +14330,14 @@ local function applyOrder(player, pid, row, turn)
 	-- specific one-way gift the emergency listener scores. `aid_gift_request`
 	-- records a submission, never an imagined acceptance or victory point.
 	if kind == "aid_gift" then
-		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID" then
+		-- `TRIBUTE` (`tribute-buys-the-friendship`) is the same one-way Gold
+		-- offer to a major at peace, sent to warm a rival too cold for the
+		-- friendship ask: the AI scores a deal in its favour at one opinion
+		-- point per 10 value, capped at 20 (Leaders.xml
+		-- STANDARD_DIPLOMATIC_ONE_SIDED_TRADES), shown on its Intel tab as
+		-- "Favorable trade deals to them".
+		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID"
+				and verb ~= "TRIBUTE" then
 			return false, "aid_gift_unknown_emergency";
 		end
 		if subject < 0 or subject == pid then return false, "aid_gift_target_unmapped"; end
@@ -14554,6 +14655,11 @@ local function applyOrder(player, pid, row, turn)
 			barter = string.match(verb, "^LUXURY_ANY;(.+)$");
 			if barter ~= nil then verb = "LUXURY_ANY"; end
 		end
+		-- `captives-come-home-2`: `CAPTIVE;FAVOR=n` pays with Favor beside Gold.
+		if strategicName == nil and barter == nil then
+			barter = string.match(verb, "^CAPTIVE;(.+)$");
+			if barter ~= nil then verb = "CAPTIVE"; end
+		end
 		strategicAsk = tonumber(strategicAsk);
 		if strategicAsk ~= nil and (strategicAsk <= 0
 				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
@@ -14658,6 +14764,12 @@ local function applyOrder(player, pid, row, turn)
 					return false, "captive_invalid";
 				end
 				want, name = "CAPTIVE:" .. tostring(forType), "CAPTIVE";
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
@@ -15424,6 +15536,8 @@ local function applyOrder(player, pid, row, turn)
 		if row2 == nil then return false, "unknown_" .. verb; end
 		local cityId = tonumber(subject) or -1;
 		civvisBuild[tostring(cityId) .. ":next"] = resolved;
+		civvisBuild[tostring(cityId) .. ":next-plot"] =
+			(x ~= nil or y ~= nil) and { x = x, y = y } or nil;
 		-- This is a durable handoff, not a build request.  The queue remains
 		-- untouched until `driveProduction` sees the matching end-turn blocker.
 		emit("build_hint", {
@@ -15608,6 +15722,9 @@ local function applyOrder(player, pid, row, turn)
 			return true, "finishing_defender_preserved";
 		end
 		civvisBuild[cityId] = resolved;
+		-- A newer direct choice replaces any older deferred instruction.
+		civvisBuild[tostring(cityId) .. ":next"] = nil;
+		civvisBuild[tostring(cityId) .. ":next-plot"] = nil;
 		local emergencyWall = false;
 		if not cfg.CivvisDecides and resolved ~= "BUILDING_WALLS"
 				and immediateThreat then
@@ -16302,7 +16419,7 @@ local function applyOrder(player, pid, row, turn)
 				if verb == "ATTACK" then
 					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
 					if survivalRefusal ~= nil then return false, survivalRefusal; end
-					CivvisLedger.strike(unit, subject, verb, x, y, turn);
+					CivvisLedger.strike(unit, subject, verb, x, y, turn, modifiers);
 				end
 			else
 				-- Civ6Common.lua:151-152 permits movement toward an unexplored
@@ -17797,6 +17914,82 @@ CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
 		end
 	end
 	return mine or low;
+end
+
+-- ★★ PUBLIC WORKS SLOWS THE LEADING RACER.
+--
+-- WC_RES_PUBLIC_WORKS targets a project (Expansion2_Congress.xml, ERA_ATOMIC
+-- to ERA_INFORMATION): option A is +100% Production toward it, option B -50%,
+-- for every civilization. It is the only resolution that touches a space
+-- project, and it reaches the ballot at turns 132-175, while the eventual
+-- winner lands Moon (median t150), Mars (t164) and the Exoplanet (t173).
+-- In all 27 recorded sessions (151 Immortal and Deity runs, 11-01 to 11-05)
+-- the default ballot spent its free vote A on the first target, Earth
+-- Satellite, with 120-334 Favor in hand, and rivals carried A on the Moon
+-- Landing three times and the Exoplanet once while they raced for it.
+--
+-- So: when we lead the race, A on our next project, which no rival can build
+-- yet. Otherwise B on the next project of the leading racer. Past the
+-- Exoplanet the next project is a laser. The ballot spends at most half of
+-- what the Diplomatic Victory ballot left, `PublicWorksMaxVotes` (9) at most.
+-- Replayed over the 16 sessions with a per-turn panel, the racer's next
+-- project already took B in 3, half the bank would have carried it in 5 more
+-- (3, 6, 6, 9 and 9 votes) and 8 stayed out of reach. A Diplomatic racer
+-- keeps its own vote: the participation point is its race. Rivals we have
+-- not met are not read. `nil` leaves the ballot as it was. Off with
+-- `PublicWorksDenial = false`. Bare globals: the chunk is at the register cap.
+CivvisSpaceStage = function(id)
+	return tonumber(try(function()
+		local stats = Players[id]:GetStats();
+		local stage = 0;
+		for _, name in ipairs({ "PROJECT_LAUNCH_EARTH_SATELLITE",
+			"PROJECT_LAUNCH_MOON_LANDING", "PROJECT_LAUNCH_MARS_BASE",
+			"PROJECT_LAUNCH_EXOPLANET_EXPEDITION" }) do
+			local project = GameInfo.Projects[name];
+			if project ~= nil and (stats:GetNumProjectsAdvanced(project.Index) or 0) > 0 then
+				stage = stage + 1;
+			end
+		end
+		return stage;
+	end, 0)) or 0;
+end
+
+CivvisPublicWorksVote = function(rtype, targets, candidates, pid, favor, costs, config, stageOf)
+	config = type(config) == "table" and config or {};
+	if config.PublicWorksDenial == false or rtype ~= "WC_RES_PUBLIC_WORKS"
+		or type(targets) ~= "table" or type(costs) ~= "table"
+		or CivvisDiploRacer(config) then
+		return nil;
+	end
+	stageOf = stageOf or CivvisSpaceStage;
+	local ours, racer = tonumber(stageOf(pid)) or 0, 0;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) then
+			local stage = tonumber(stageOf(tonumber(c.id))) or 0;
+			if stage > racer then racer = stage; end
+		end
+	end
+	local option, stage = 2, racer;
+	if ours > racer then option, stage = 1, ours; end
+	local chain = { "PROJECT_LAUNCH_EARTH_SATELLITE", "PROJECT_LAUNCH_MOON_LANDING",
+		"PROJECT_LAUNCH_MARS_BASE", "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+		"PROJECT_ORBITAL_LASER", "PROJECT_TERRESTRIAL_LASER" };
+	local idx = nil;
+	for step = stage + 1, #chain do
+		for i, t in pairs(targets) do
+			if type(i) == "number" and string.find(tostring(t), chain[step], 1, true) then
+				idx = i;
+			end
+		end
+		if idx ~= nil then break; end
+	end
+	if idx == nil then return nil; end
+	local bank = (tonumber(favor) or 0) / 2;
+	local want = math.min(tonumber(config.PublicWorksMaxVotes) or 9, tonumber(costs.MaxVotes) or 1);
+	while want > 1 and (tonumber(costs[want - 1]) or bank + 1) > bank do
+		want = want - 1;
+	end
+	return idx, option, want, (want > 1) and (tonumber(costs[want - 1]) or 0) or 0;
 end
 
 CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, lastA, config, tourismOf)
@@ -22153,8 +22346,10 @@ local function beginTurn(player, pid, turn)
 	CivvisBoard.reset();
 	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
 	CivvisNameRockBands(player, pid, turn);
-	exportState(player, pid, turn);
+	-- The worker wakes on state. Finish the terrain export before that
+	-- trigger so its captured board cannot contain the previous turn's map.
 	exportTiles(player, pid, turn);
+	exportState(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
 	--
 	-- Seven Settler games of 2026-08-16 ended early on a rival's DIPLOMATIC
@@ -22664,8 +22859,10 @@ local function playTurn(player, pid, turn)
 	-- this path still has to do them itself or the mirror goes dark.
 	if not cfg.CivvisDecides then
 		warTarget = findWarTarget(player, pid);
-		exportState(player, pid, turn);
+		-- The worker wakes on state. Finish the terrain export before that
+		-- trigger so its captured board cannot contain the previous turn's map.
 		exportTiles(player, pid, turn);
+		exportState(player, pid, turn);
 	end
 	local war = declareWar(player, pid, countUnits(player), turn);
 	local builds = driveProduction(player, turn);
@@ -23940,6 +24137,9 @@ local function tick()
 				local r, info, rtype = entry.r, entry.info, entry.rtype;
 				do
 					local option, selection, votes = 1, 1, 1;
+					-- `CivvisPublicWorksVote` chose: the free-vote denial below
+					-- would otherwise flip its B into an A on the racer's project.
+					local racerSlowed = false;
 					local targets = r.PossibleTargets or {};
 					if rtype == "WC_RES_DIPLOVICTORY" then
 						-- See `CivvisCongressDenialTarget`: never the default, us.
@@ -24191,6 +24391,16 @@ local function tick()
 								rtype, targets, candidates, pid, favor, costs,
 								envoyTally.wc_last_a, cfg, option, selection, votes, spent);
 						end
+					elseif rtype == "WC_RES_PUBLIC_WORKS" then
+						-- See `CivvisPublicWorksVote`.
+						local pwIdx, pwOption, pwVotes, pwPrice = CivvisPublicWorksVote(rtype,
+							targets, candidates, pid, favor, costs, cfg);
+						if pwIdx ~= nil then
+							option, selection, votes = pwOption, pwIdx, pwVotes;
+							favor = favor - pwPrice;
+							spent = spent + pwPrice;
+							racerSlowed = true;
+						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
 					end
@@ -24200,7 +24410,8 @@ local function tick()
 					-- player-target resolution option B names the leader.
 					-- A racer's own participation point is worth more than the
 					-- leader's predicted one: it buys the outcome instead.
-					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
+					local deny = (not racerSlowed and not CivvisDiploRacer(cfg))
+						and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
 					-- See `CivvisCongressTargetIndex`: no option B naming a leader
 					-- the ballot does not offer.

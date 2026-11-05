@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "tribute-buys-the-friendship",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 boards of live Deity (Online) games 2026-11-05 17:25Z-19:17Z (after #4587's opinion breakdown crossed), each the run's events.jsonl cut at frame 0 of a turn where the strongest met major at peace was stronger than us, read Unfriendly or Neutral, sat below the Friendly median opinion, it was that rival's cadence turn and the treasury stood over the reserve. Both arms run one frozen ci-profile civvis_orders built from the branch at 20ed92a843 with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with tribute-buys-the-friendship. Off arms holding no TRIBUTE: 8/8. On arms gifting that rival (aid_gift TRIBUTE, 48-140 Gold, each the predicted gap at 10 Gold a point): 6/8; the other two held tribute_hold:deal_in_flight (an Open Borders buy + delegation, and a Niter sale, to the same rival that frame).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-tribute-buys-the-friendship.native-queries.tar.xz",
+    "sha256": "c4709c4ea97ba1c1130a532cea322f5fccf2af7c05560fc512f946ed0ebd4c6d"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}

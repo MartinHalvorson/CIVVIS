@@ -4568,6 +4568,12 @@ pub const GENES: &[Gene] = &[
     // leading science rival or a space racer. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // Version two of `science-seat-allies`: before Diplomatic Service the
+    // Science seat asks for a Military Alliance instead of waiting for a legal
+    // Research Alliance. Any alliance boosts Diplomatic Service 40%, the first
+    // civic Spy slot; in 35 live Deity games (2026-11-05) it was never boosted
+    // and no alliance stood before it. See `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies-2", field: "science_seat_allies_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies_2, disable: AdvancedAi::disable_science_seat_allies_2 },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live
@@ -5283,6 +5289,47 @@ pub const GENES: &[Gene] = &[
     // at t102. Under the gene only a city new since the last resolve counts
     // as the founding. See `advanced/civilian_safety.rs`.
     Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
+    // `districts-price-the-improvement` (2026-11-04): 372 of 773 districts
+    // the live seat placed (42 games, 11-04) went onto an improved tile — 120
+    // on Farms, 61 on an improved Wheat/Rice/Maize/Cattle — because the
+    // planner charges a site only the edge of a tile a citizen works THIS
+    // turn. Under the gene any improved or bonus-resource site pays its tile
+    // as if worked. See `advanced/district_planning.rs`.
+    Gene { tag: "districts-price-the-improvement", field: "districts_price_the_improvement", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_price_the_improvement, disable: AdvancedAi::disable_districts_price_the_improvement },
+    // Live Lv 8 Deity Korea 11-05: of 90 full-health units killed in an
+    // enemy phase across the anvil-spares-the-one-blow carriers, 50 had moved
+    // that turn in the field and 52 have no journal line naming the move (the
+    // group step's signature); their killers (Line Infantry, Modern Armor, Jet
+    // Fighters, Machine Guns) out-reach the group step's one-approach-step
+    // forecast. Under the gene its danger checks read the larger of that
+    // forecast and the danger field. See
+    // `advanced/group_steps_read_the_field.rs`.
+    Gene { tag: "group-steps-read-the-field", field: "group_steps_read_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_group_steps_read_the_field, disable: AdvancedAi::disable_group_steps_read_the_field },
+    // `captives-come-home-2`: version 2 of `captives-come-home` (which it
+    // carries). The ransom of our captured Spies pays in Diplomatic Favor
+    // beside Gold. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
+    // The operator moved the live seat to Indonesia (Gitarja), Science only,
+    // on 11-05. Great Nusantara (shipped TRAIT_CIVILIZATION_INDONESIA_NUSANTARA)
+    // gives a Campus, Holy Site, Industrial Zone and Theater Square +1 yield
+    // per two adjacent Coast tiles; data/civs.json carries a flat placeholder,
+    // so every district site picker ranks the Coast at nothing. Under the gene
+    // the seat's pickers rank by district_site_yields, which adds the Coast
+    // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
+    Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    // strongest neighbour at peace while it reads Unfriendly or Neutral, up
+    // to the opinion a Friendly rival holds, so the friendship ask (sent only
+    // to a Friendly rival, accepted 30 of 50 on Deity 11-04/05) can land. A
+    // favorable deal is worth +1 per 10 Gold to the AI, capped at +20
+    // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
+    // `advanced/tribute_buys_the_friendship.rs`.
+    Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
+    // (carrying 1 and 2). The Science seat's Government Plaza district claims
+    // the capital's queue once its Campus stands. See
+    // `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
     // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion

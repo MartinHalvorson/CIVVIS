@@ -16,6 +16,54 @@ except ImportError:  # unittest discovery adds tools/ directly to sys.path
 REPO = Path(__file__).resolve().parent.parent
 
 
+class RunningCountTests(unittest.TestCase):
+    """Two gene PRs off one base both write the same count, and git merges
+    the identical edits cleanly, so `main` trails by one with nobody at fault.
+    That must not turn every PR red; a forgotten regeneration still must.
+    """
+
+    JSON = '{\n  "capability_toggles": 838,\n  "derived": 73\n}\n'
+    STATUS = "- Capability toggles on the controller: **838**\n- Other: **73**\n"
+
+    def test_a_merge_race_of_one_is_current(self):
+        self.assertTrue(eval_manifest.is_current(
+            self.JSON.replace("838", "837"), self.JSON))
+        self.assertTrue(eval_manifest.is_current(
+            self.STATUS.replace("838", "837"), self.STATUS))
+
+    def test_the_slack_is_a_limit(self):
+        slack = eval_manifest.RUNNING_COUNT_SLACK
+        at_limit = self.JSON.replace("838", str(838 - slack))
+        past_limit = self.JSON.replace("838", str(838 - slack - 1))
+        self.assertTrue(eval_manifest.is_current(at_limit, self.JSON))
+        self.assertFalse(eval_manifest.is_current(past_limit, self.JSON))
+
+    def test_anything_else_must_still_match_exactly(self):
+        self.assertFalse(eval_manifest.is_current(
+            self.JSON.replace("73", "74"), self.JSON))
+        self.assertFalse(eval_manifest.is_current(
+            self.STATUS.replace("Other", "Another"), self.STATUS))
+
+    def test_a_missing_output_is_stale(self):
+        self.assertFalse(eval_manifest.is_current(None, self.JSON))
+
+    def test_a_dropped_count_is_stale(self):
+        self.assertFalse(eval_manifest.is_current(
+            '{\n  "derived": 73\n}\n', self.JSON))
+
+    def test_every_count_the_status_prints_is_covered(self):
+        rendered = eval_manifest.render_status(
+            eval_manifest.build_manifest(REPO))
+        for label in ("Capability toggles on the controller",
+                      "Reachable as a gene", "Measured by at least one screen",
+                      "Resolved by the ledger"):
+            line = next(l for l in rendered.splitlines() if label in l)
+            self.assertTrue(
+                any(count.search(line) for count in eval_manifest.RUNNING_COUNTS),
+                line,
+            )
+
+
 class EvalManifestTests(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = eval_manifest.build_manifest(REPO)
@@ -35,14 +83,7 @@ class EvalManifestTests(unittest.TestCase):
         self.assertEqual(derived["withholdable_live_count"], len(live - firaxis))
 
     def test_committed_json_and_status_are_current(self):
-        self.assertEqual(
-            json.loads((REPO / "docs" / "eval_manifest.json").read_text()),
-            self.manifest,
-        )
-        self.assertEqual(
-            (REPO / "docs" / "EVAL_STATUS.md").read_text(),
-            eval_manifest.render_status(self.manifest),
-        )
+        self.assertEqual(eval_manifest.stale_outputs(REPO, self.manifest), [])
 
     def test_evidence_and_roadmap_link_to_the_current_snapshot(self):
         for path in (REPO / "docs" / "EVAL.md", REPO / "docs" / "ROADMAP.md"):

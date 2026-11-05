@@ -2041,6 +2041,20 @@ const RANSOM_CEILING_MIN: i32 = 40;
 /// One ask per captor every this many turns, staggered by the captor's seat,
 /// so an unanswered deal session cannot stand the trade lane down.
 const RANSOM_CADENCE: u32 = 5;
+/// `captives-come-home-2`: Favor the seat keeps through a ransom.
+const RANSOM_FAVOR_RESERVE: i64 = 30;
+/// The most Favor one captive is offered. The AI took 38 Favor for 9 Gold a
+/// turn (225 on the book) in live sales, about 6 Gold a point, and named 474
+/// Gold for a captive: some 80 points.
+const RANSOM_FAVOR_CAP: i64 = 150;
+/// Below this no Favor is offered (the ask falls back to Gold alone).
+const RANSOM_FAVOR_MIN: i64 = 20;
+/// While the bank is held for Congress (`favor_banked_for_votes`: a rival at
+/// [`FAVOR_HOLD_DVP`] or more, which on the live Deity lane is every turn
+/// past 100), this much Favor stays for the votes.
+const RANSOM_FAVOR_VOTE_RESERVE: i64 = 120;
+/// A rival this near a Diplomatic Victory keeps the whole bank for Congress.
+const RANSOM_FAVOR_DVP_CEILING: i64 = 15;
 
 /// `captives-come-home`: ask one captor at peace with us for one of our
 /// captured Spies (`buy CAPTIVE`), Gold up to the ceiling. The captor is the
@@ -2050,9 +2064,15 @@ const RANSOM_CADENCE: u32 = 5;
 /// pushed, else the hold. The caller decides whether the network wants its
 /// slots (`AdvancedAi::captives_come_home_wanted`). See
 /// `advanced/captives_come_home.rs`.
+///
+/// `captives-come-home-2`: `favor` puts that much Diplomatic Favor on our side
+/// too (`CAPTIVE;FAVOR=n`), so the price can be met where the Gold alone
+/// cannot; with Favor offered, a treasury under the Gold floor asks anyway
+/// at whatever Gold it can add.
 fn append_captive_ransom_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    favor: Option<u32>,
 ) -> Option<&'static str> {
     let held = |rival: &civvis::mirror::StateRival| rival.captives_of_ours.unwrap_or(0);
     let captor = state
@@ -2064,8 +2084,10 @@ fn append_captive_ransom_order(
     let Some(captor) = captor else {
         return Some("ransom_hold:no_captor");
     };
-    let ceiling = (state.gold - RANSOM_GOLD_RESERVE).min(RANSOM_CEILING_MAX as i64) as i32;
-    if ceiling < RANSOM_CEILING_MIN {
+    let ceiling = (state.gold - RANSOM_GOLD_RESERVE)
+        .min(RANSOM_CEILING_MAX as i64)
+        .max(0) as i32;
+    if ceiling < RANSOM_CEILING_MIN && favor.is_none() {
         return Some("ransom_hold:treasury");
     }
     // One working deal per rival at a time is the mod's rule.
@@ -2077,8 +2099,116 @@ fn append_captive_ransom_order(
     orders.push(Order {
         kind: "buy",
         subject: Some(captor.player as i64),
-        verb: Some("CAPTIVE".to_string()),
+        verb: Some(match favor {
+            Some(points) => format!("CAPTIVE;FAVOR={points}"),
+            None => "CAPTIVE".to_string(),
+        }),
         pos: Some((ceiling, 0)),
+    });
+    None
+}
+
+/// `tribute-buys-the-friendship`: Gold the treasury keeps through a tribute.
+const TRIBUTE_GOLD_RESERVE: i64 = 100;
+/// Below this a tribute moves the rival's opinion too little to send.
+const TRIBUTE_MIN_GOLD: i32 = 30;
+/// The visible opinion a tribute aims for: the median total of a rival the
+/// host reads as Friendly on the live Deity lane (+4), plus a point.
+const TRIBUTE_TARGET_OPINION: f64 = 5.0;
+/// Gold per point of a favorable deal (`TradeValuePerModifierPoint`, shipped
+/// `Leaders.xml` `STANDARD_DIPLOMATIC_ONE_SIDED_TRADES`).
+const TRIBUTE_GOLD_PER_POINT: f64 = 10.0;
+/// The most a favorable deal is worth to the AI (`MaxValue`, same row).
+const TRIBUTE_MODIFIER_CAP: f64 = 20.0;
+/// One tribute per rival every this many turns, staggered by its seat.
+const TRIBUTE_CADENCE: u32 = 5;
+/// The Intel tab's row for that modifier, as the English host reports it.
+/// Another language reads 0 here and may ask past the cap, which wastes Gold
+/// but changes nothing else.
+const TRIBUTE_FAVORABLE_TRADE_ROW: &str = "Favorable trade deals";
+
+/// `tribute-buys-the-friendship`: a one-way Gold gift (`aid_gift` verb
+/// `TRIBUTE`) to the strongest met major at peace with us, the rival
+/// `befriend-the-strongest` courts, while it is stronger than us and reads
+/// Unfriendly or Neutral. The amount is the opinion gap to
+/// [`TRIBUTE_TARGET_OPINION`] at [`TRIBUTE_GOLD_PER_POINT`], inside what the
+/// favorable-deal modifier still has room for and the treasury over
+/// [`TRIBUTE_GOLD_RESERVE`]. `None` when a gift was pushed, else the hold.
+/// See `advanced/tribute_buys_the_friendship.rs`.
+fn append_tribute_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let Some(rival) = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .max_by(|a, b| {
+            a.military
+                .total_cmp(&b.military)
+                .then(b.player.cmp(&a.player))
+        })
+    else {
+        return Some("tribute_hold:no_rival");
+    };
+    let mood = rival.diplomatic_state.as_deref().unwrap_or("");
+    if !matches!(mood, "DIPLO_STATE_UNFRIENDLY" | "DIPLO_STATE_NEUTRAL") {
+        return Some(if mood == "DIPLO_STATE_DENOUNCED" {
+            "tribute_hold:denounced"
+        } else {
+            "tribute_hold:courted"
+        });
+    }
+    if rival.military <= state.military {
+        return Some("tribute_hold:not_stronger");
+    }
+    if state.turn % TRIBUTE_CADENCE != rival.player as u32 % TRIBUTE_CADENCE {
+        return Some("tribute_hold:cadence");
+    }
+    let Some(reasons) = rival.opinion_modifiers.as_ref() else {
+        return Some("tribute_hold:opinion_unknown");
+    };
+    let total: f64 = reasons.iter().map(|reason| reason.score).sum();
+    let favorable: f64 = reasons
+        .iter()
+        .filter(|reason| reason.text.starts_with(TRIBUTE_FAVORABLE_TRADE_ROW))
+        .map(|reason| reason.score.max(0.0))
+        .sum();
+    let points = (TRIBUTE_TARGET_OPINION - total).min(TRIBUTE_MODIFIER_CAP - favorable);
+    if points <= 0.0 {
+        return Some("tribute_hold:no_gap");
+    }
+    let wanted = (points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64;
+    let amount = wanted.min(state.gold - TRIBUTE_GOLD_RESERVE);
+    if amount < i64::from(TRIBUTE_MIN_GOLD) {
+        return Some("tribute_hold:treasury");
+    }
+    // One working deal per rival, and a tribute beside a war, peace,
+    // denunciation, friendship or alliance order to the same rival would be
+    // read against the wrong diplomatic state.
+    let subject = rival.player as i64;
+    if orders.iter().any(|order| {
+        order.subject == Some(subject)
+            && matches!(
+                order.kind,
+                "sell"
+                    | "buy"
+                    | "aid_gift"
+                    | "war"
+                    | "peace"
+                    | "delegation"
+                    | "denounce"
+                    | "friendship"
+                    | "alliance"
+            )
+    }) {
+        return Some("tribute_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "aid_gift",
+        subject: Some(subject),
+        verb: Some("TRIBUTE".to_string()),
+        pos: Some((amount as i32, 0)),
     });
     None
 }
@@ -4992,11 +5122,42 @@ fn decide(
             .count();
         let capacity = state.spy_capacity.unwrap_or(0).max(0) as usize;
         if ai.captives_come_home_wanted(&mirror_state.game, 0, held, capacity) {
-            match append_captive_ransom_order(state, &mut orders) {
+            // `captives-come-home-2`: Favor beside the Gold. A bank held for
+            // Congress keeps a vote reserve; a rival near a Diplomatic Victory,
+            // or a seat racing Diplomacy itself, keeps all of it.
+            let top_dvp = state
+                .rivals
+                .iter()
+                .map(|rival| rival.dvp.unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+            let reserve = if favor_banked_for_votes(state) {
+                RANSOM_FAVOR_VOTE_RESERVE
+            } else {
+                RANSOM_FAVOR_RESERVE
+            };
+            let favor = (ai.captives_come_home_pays_favor()
+                && top_dvp < RANSOM_FAVOR_DVP_CEILING
+                && !plan_races_diplomacy(plan_facts))
+            .then(|| state.favor.unwrap_or(0.0).floor() as i64 - reserve)
+            .filter(|points| *points >= RANSOM_FAVOR_MIN)
+            .map(|points| points.min(RANSOM_FAVOR_CAP) as u32);
+            match append_captive_ransom_order(state, &mut orders, favor) {
                 None => note_bits.push("captive_ransom=1".to_string()),
                 Some(why) if why != "ransom_hold:no_captor" => note_bits.push(why.to_string()),
                 Some(_) => {}
             }
+        }
+    }
+    // `tribute-buys-the-friendship`: Gold to the strongest neighbour at peace
+    // while it is too cold for the friendship ask. See `append_tribute_order`.
+    if ai.tribute_buys_the_friendship_enabled() {
+        match append_tribute_order(state, &mut orders) {
+            None => note_bits.push("tribute=1".to_string()),
+            Some(why @ ("tribute_hold:treasury" | "tribute_hold:deal_in_flight")) => {
+                note_bits.push(why.to_string())
+            }
+            Some(_) => {}
         }
     }
     // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better

@@ -41505,3 +41505,227 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
 }
 
 mod recovery_before_amenities;
+
+// `districts-price-the-improvement`. See `advanced/district_planning.rs`.
+
+/// A planning capital with Writing and Currency and a Farm in its first ring.
+/// The AI snapshots the bulldozable ground first (as `take_turn_inner` does),
+/// then `district` is placed on the Farm with nothing invested.
+fn district_on_a_farm(ai: &mut AdvancedAi, district: &str) -> (Game, u32, Pos) {
+    let (mut game, city, center) = planning_capital();
+    planning_claim_disk(&mut game, city, 3);
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].techs.insert(crate::name!("currency"));
+    let farm = game.nbrs(center)[0];
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+    ai.snapshot_bulldoze_sites(&game, 0);
+    let item = Item::District {
+        district: Name::new(district),
+        pos: farm,
+    };
+    assert!(
+        game.can_produce(0, city, &item),
+        "the Farm is a legal Campus site"
+    );
+    game.apply(0, &crate::game::Action::Produce { city, item })
+        .unwrap();
+    assert_eq!(
+        game.map.tiles[&farm].improvement, None,
+        "placement bulldozes the Farm"
+    );
+    game.cities.get_mut(&city).unwrap().production = 0.0;
+    (game, city, farm)
+}
+
+fn queued_district_site(game: &Game, city: u32) -> Option<Pos> {
+    match game.cities[&city].queue.first() {
+        Some(Item::District { pos, .. }) => Some(*pos),
+        _ => None,
+    }
+}
+
+#[test]
+fn districts_price_the_improvement_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "districts_price_the_improvement"
+        && gene.tag == "districts-price-the-improvement"));
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.districts_price_the_improvement,
+        "production ships it off"
+    );
+    ai.enable_districts_price_the_improvement();
+    assert!(ai.districts_price_the_improvement);
+    ai.disable_districts_price_the_improvement();
+    assert!(!ai.districts_price_the_improvement);
+}
+
+#[test]
+fn a_fresh_hub_on_a_farm_moves_to_clean_ground_under_the_gene() {
+    // Off: no snapshot, nothing moves, the Farm stays bulldozed.
+    let mut ai = AdvancedAi::new();
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
+    ai.resite_bulldozing_districts(&mut game, 0);
+    assert_eq!(
+        queued_district_site(&game, city),
+        Some(farm),
+        "off, nothing moves"
+    );
+
+    // On: the Campus moves to clean ground and the Farm comes back.
+    let mut ai = AdvancedAi::new();
+    ai.enable_districts_price_the_improvement();
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
+    ai.resite_bulldozing_districts(&mut game, 0);
+    let moved = queued_district_site(&game, city).expect("still a Commercial Hub");
+    assert_ne!(moved, farm, "the Hub leaves the Farm");
+    let tile = &game.map.tiles[&moved];
+    assert!(
+        tile.improvement.is_none() && tile.resource.is_none(),
+        "onto clean ground"
+    );
+    let farm_tile = &game.map.tiles[&farm];
+    assert_eq!(
+        farm_tile.improvement,
+        Some(crate::name!("farm")),
+        "the Farm stands"
+    );
+    assert!(
+        farm_tile.district_foundation.is_none(),
+        "no stray foundation"
+    );
+}
+
+#[test]
+fn an_invested_hub_or_one_without_clean_ground_stays_put() {
+    // Production already sunk into the site: the gene does not move it.
+    let mut ai = AdvancedAi::new();
+    ai.enable_districts_price_the_improvement();
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
+    game.cities.get_mut(&city).unwrap().production = 12.0;
+    ai.resite_bulldozing_districts(&mut game, 0);
+    assert_eq!(queued_district_site(&game, city), Some(farm));
+
+    // With no clean ground left — every other owned plot is improved — the
+    // placement stands as it was.
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
+    let center = game.cities[&city].pos;
+    let owned = game.cities[&city].owned_tiles.clone();
+    for pos in owned {
+        if pos != farm && pos != center {
+            game.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("farm"));
+        }
+    }
+    ai.resite_bulldozing_districts(&mut game, 0);
+    assert_eq!(
+        queued_district_site(&game, city),
+        Some(farm),
+        "no clean ground, no move"
+    );
+    assert!(
+        game.map.tiles[&farm].district_foundation.is_some(),
+        "the placement stands"
+    );
+}
+
+#[test]
+fn a_campus_or_industrial_zone_keeps_its_farm_site_under_the_gene() {
+    // Their adjacency compounds with every building: the gene leaves them be.
+    let mut ai = AdvancedAi::new();
+    ai.enable_districts_price_the_improvement();
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "campus");
+    ai.resite_bulldozing_districts(&mut game, 0);
+    assert_eq!(
+        queued_district_site(&game, city),
+        Some(farm),
+        "the Campus stays"
+    );
+}
+
+// `districts-price-the-improvement`: the interim Great Nusantara guard. See
+// `advanced/district_planning.rs` (`keeps_the_coast_credit`).
+
+#[test]
+fn an_indonesian_holy_site_never_trades_its_coast_pairs_in_a_resite() {
+    let place = |civ: &str| {
+        let mut ai = AdvancedAi::new();
+        ai.enable_districts_price_the_improvement();
+        let (mut game, city, center) = planning_capital();
+        game.players[0].civ = civ.to_string();
+        planning_claim_disk(&mut game, city, 3);
+        game.players[0].techs.insert(crate::name!("astrology"));
+        let farm = game.nbrs(center)[0];
+        // Two Coast tiles on opposite sides of the Farm: one Nusantara pair
+        // here, and no other plot touches both.
+        let sides: Vec<Pos> = game
+            .nbrs(farm)
+            .into_iter()
+            .filter(|p| *p != center)
+            .collect();
+        let (a, b) = (sides[0], sides[2]);
+        for p in [a, b] {
+            let tile = game.map.tiles.get_mut(&p).unwrap();
+            tile.terrain = crate::name!("coast");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+        }
+        game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+        ai.snapshot_bulldoze_sites(&game, 0);
+        let item = Item::District {
+            district: crate::name!("holy_site"),
+            pos: farm,
+        };
+        assert!(game.can_produce(0, city, &item), "the Farm is a legal site");
+        game.apply(0, &crate::game::Action::Produce { city, item })
+            .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 0.0;
+        ai.resite_bulldozing_districts(&mut game, 0);
+        let site = queued_district_site(&game, city).expect("still a Holy Site");
+        (game, farm, site)
+    };
+    let (game, farm, site) = place("Indonesia");
+    assert!(
+        AdvancedAi::coast_pairs(&game, farm) >= 1,
+        "the fixture's Farm holds a pair"
+    );
+    assert!(
+        AdvancedAi::coast_pairs(&game, site) >= AdvancedAi::coast_pairs(&game, farm),
+        "Indonesia never leaves its Coast pair behind: {farm:?} -> {site:?}"
+    );
+    // Any other civilization takes the clean plot as before.
+    let (_, farm, site) = place("America");
+    assert_ne!(
+        site, farm,
+        "off Indonesia the Holy Site moves to clean ground"
+    );
+}
+
+#[test]
+fn coast_pairs_count_coast_and_lake_neighbours_in_twos() {
+    let (mut game, _city, center) = planning_capital();
+    let around = game.nbrs(center);
+    for p in around.iter() {
+        game.map.tiles.get_mut(p).unwrap().terrain = crate::name!("grassland");
+    }
+    assert_eq!(AdvancedAi::coast_pairs(&game, center), 0);
+    game.map.tiles.get_mut(&around[0]).unwrap().terrain = crate::name!("coast");
+    assert_eq!(
+        AdvancedAi::coast_pairs(&game, center),
+        0,
+        "one tile is half a pair"
+    );
+    game.map.tiles.get_mut(&around[1]).unwrap().terrain = crate::name!("lake");
+    game.map.tiles.get_mut(&around[2]).unwrap().terrain = crate::name!("coast");
+    assert_eq!(AdvancedAi::coast_pairs(&game, center), 1);
+    assert!(
+        AdvancedAi::keeps_the_coast_credit(
+            &game,
+            0,
+            crate::name!("commercial_hub"),
+            center,
+            around[3]
+        ),
+        "a district outside Great Nusantara always passes"
+    );
+}

@@ -578,17 +578,15 @@ pub fn snapshot_from_events_at(
     let raw = read_events(path)?;
     let selected = latest_state_range(&raw, turn);
     let state_start = selected.map(|((start, _), _)| start);
-    // ★★★★ THE MOD WRITES THE TURN'S STATE FIRST AND ITS TILES SECOND.
+    // Historical native logs publish state before its terrain. Current opening
+    // exports publish terrain first so the Python worker cannot wake on a
+    // half-published board. Keep support for both layouts: pre-state chunks
+    // belong to the selected prefix; post-state chunks belong only when they
+    // match its turn and do not exceed its frame.
     //
-    // `beginTurn` in the mod is `exportState` then `exportTiles`, so in
-    // `events.jsonl` every turn's sweep and delta sit BELOW the state line
-    // they describe. Stopping at the state line therefore answered every
-    // board on the PREVIOUS turn's map — and turn 1 on no map at all: every
-    // live run of 2026-09-01 opened with "no revealed terrain or no state
-    // yet", 0 orders, and the first Settler skipped its first turn
-    // (`civvis-20260901T212354Z` … `T210954Z`, six of six). A tiles line
-    // below the selected state still belongs to it when it is the same turn
-    // and no later frame than the state's; a later frame's delta stays out
+    // The post-state rule fixed old logs whose turn-1 terrain otherwise vanished
+    // (six native runs on 2026-09-01 opened with no map and zero orders). It is
+    // still needed for historical replay, while a later frame's delta stays out
     // (`snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta`).
     let board = selected.map(|(_, board)| board);
     // In stream order, so a later chunk's plot wins whichever kind it is;
@@ -2885,6 +2883,91 @@ const PUBLIC_STATS_KEYS: &[&str] = &[
     "thermonuclear_devices",
 ];
 
+/// Every key a met rival's export may carry. `state_schema_gaps` reports
+/// anything else as `schema:rival.<key>`, and
+/// `the_schema_allowlists_cover_every_declared_field` fails if a
+/// `StateRival` field is missing here.
+const RIVAL_KEYS: &[&str] = &[
+    "player",
+    "civ",
+    "leader",
+    "government",
+    "dark_age",
+    "golden_age",
+    "heroic_golden_age",
+    "can_declare",
+    "war_declarations",
+    // The host's own relationship, ledger, alliance, missions, promises
+    // and visibility for this rival — see `StateRival::diplomatic_state`.
+    "diplomatic_state",
+    "our_grievances_against_them",
+    "grievances_against_us",
+    "grievance_change_per_turn",
+    "alliance_type",
+    "alliance_level",
+    "alliance_turns_left",
+    "our_denounce_turn",
+    "their_denounce_turn",
+    "friendship_turn",
+    "denounce_time_limit",
+    "visibility",
+    "their_visibility_on_us",
+    "open_borders_granted",
+    "delegation_at",
+    "embassy_at",
+    "their_delegation",
+    "their_embassy",
+    "promises_made",
+    "promises_received",
+    "score",
+    "dvp",
+    "military",
+    "at_war",
+    // Its wars with other majors (#4452), read as `Game::observed_rival_wars`.
+    "at_war_with",
+    "techs",
+    "civics",
+    "cities",
+    "units",
+    "science",
+    "culture",
+    "tourism",
+    "gold",
+    "gold_per_turn",
+    "faith",
+    "faith_per_turn",
+    "public_stats",
+    // The rival's tree by name, the World Rankings lane numbers, its
+    // majority religion, the per-rival tourists, Era Score and routes.
+    "tech_names",
+    "civic_names",
+    "techs_researched",
+    "military_no_treasury",
+    "cities_following_religion",
+    "religion",
+    "tourists_visiting_us",
+    "era_score",
+    "trade_routes",
+    "tradeable_luxuries",
+    "tradeable_strategics",
+    "captives_of_ours",
+    "opinion_modifiers",
+    // Rival victory progress as the shipped World Rankings screen shows it.
+    // `the_schema_allowlists_cover_every_declared_field` fails if a new
+    // StateRival field is missing here.
+    "science_projects",
+    "science_victory_points",
+    "science_victory_points_per_turn",
+    "science_victory_points_needed",
+    "foreign_tourists",
+    "domestic_tourists",
+    "culture_turns_to_victory",
+    // Both border fields: `open_borders` had crossed since the buy lane
+    // shipped and filed `schema:rival.open_borders` on every live turn.
+    "open_borders",
+    "enforces_borders",
+];
+
 /// The field names `state_schema_gaps` will accept for one struct, extracted from
 /// the source of this file and of `mirror/state.rs`, where the snapshot types
 /// live.
@@ -3040,84 +3123,6 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "neutralized_turns",
         "promotions",
     ];
-    const RIVAL: &[&str] = &[
-        "player",
-        "civ",
-        "leader",
-        "government",
-        "dark_age",
-        "golden_age",
-        "heroic_golden_age",
-        "can_declare",
-        "war_declarations",
-        // The host's own relationship, ledger, alliance, missions, promises
-        // and visibility for this rival — see `StateRival::diplomatic_state`.
-        "diplomatic_state",
-        "our_grievances_against_them",
-        "grievances_against_us",
-        "grievance_change_per_turn",
-        "alliance_type",
-        "alliance_level",
-        "alliance_turns_left",
-        "our_denounce_turn",
-        "their_denounce_turn",
-        "friendship_turn",
-        "denounce_time_limit",
-        "visibility",
-        "their_visibility_on_us",
-        "open_borders_granted",
-        "delegation_at",
-        "embassy_at",
-        "their_delegation",
-        "their_embassy",
-        "promises_made",
-        "promises_received",
-        "score",
-        "dvp",
-        "military",
-        "at_war",
-        "techs",
-        "civics",
-        "cities",
-        "units",
-        "science",
-        "culture",
-        "tourism",
-        "gold",
-        "gold_per_turn",
-        "faith",
-        "faith_per_turn",
-        "public_stats",
-        // The rival's tree by name, the World Rankings lane numbers, its
-        // majority religion, the per-rival tourists, Era Score and routes.
-        "tech_names",
-        "civic_names",
-        "techs_researched",
-        "military_no_treasury",
-        "cities_following_religion",
-        "religion",
-        "tourists_visiting_us",
-        "era_score",
-        "trade_routes",
-        "tradeable_luxuries",
-        "tradeable_strategics",
-        "captives_of_ours",
-        "opinion_modifiers",
-        // Rival victory progress as the shipped World Rankings screen shows it.
-        // `the_schema_allowlists_cover_every_declared_field` fails if a new
-        // StateRival field is missing here.
-        "science_projects",
-        "science_victory_points",
-        "science_victory_points_per_turn",
-        "science_victory_points_needed",
-        "foreign_tourists",
-        "domestic_tourists",
-        "culture_turns_to_victory",
-        // Both border fields: `open_borders` had crossed since the buy lane
-        // shipped and filed `schema:rival.open_borders` on every live turn.
-        "open_borders",
-        "enforces_borders",
-    ];
     const RIVAL_ROUTE: &[&str] = &[
         "origin_x",
         "origin_y",
@@ -3250,7 +3255,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         .into_iter()
         .flatten()
     {
-        keys(rival, RIVAL, "rival", &mut gaps);
+        keys(rival, RIVAL_KEYS, "rival", &mut gaps);
         for declaration in rival
             .get("war_declarations")
             .and_then(|v| v.as_array())

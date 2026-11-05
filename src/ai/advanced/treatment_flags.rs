@@ -2061,6 +2061,9 @@ impl AdvancedAi {
         land_grab_outlasts_the_opening => enable_land_grab_outlasts_the_opening, disable_land_grab_outlasts_the_opening;
         /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
         science_seat_allies => enable_science_seat_allies, disable_science_seat_allies;
+        /// Opt-in gene `science-seat-allies-2`; see
+        /// `advanced/culture_seat_allies.rs`.
+        science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;
@@ -2247,6 +2250,9 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `captives-come-home-2` (version 2, carrying version
+        /// 1); see `advanced/captives_come_home.rs`.
+        captives_come_home_2 => enable_captives_come_home_2, disable_captives_come_home_2;
         /// Opt-in gene `plaza-serves-the-scientist-2` (version 2 of
         /// `plaza-serves-the-scientist`, which it carries); see
         /// `advanced/plaza_serves_the_scientist_2.rs`.
@@ -2260,6 +2266,15 @@ impl AdvancedAi {
         /// Opt-in gene `capture-scar-reads-the-new-city`; see
         /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
         capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
+        /// Opt-in gene `districts-price-the-improvement`; see
+        /// [`Self::districts_price_the_improvement`].
+        districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `tribute-buys-the-friendship`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
+        /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
+        plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
     }
 }
 
@@ -5243,6 +5258,28 @@ impl AdvancedAi {
     /// The twin of `enable_military_alliance_shield_2`.
     pub fn disable_military_alliance_shield_2(&mut self) {
         self.military_alliance_shield_2 = false;
+    }
+
+    /// Opt-in gene `group-steps-read-the-field`; see
+    /// [`Self::group_steps_read_the_field`].
+    pub fn enable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = true;
+    }
+
+    /// The twin of `enable_group_steps_read_the_field`.
+    pub fn disable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = false;
+    }
+
+    /// Opt-in gene `nusantara-reads-the-coast`; see
+    /// [`Self::nusantara_reads_the_coast`].
+    pub fn enable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = true;
+    }
+
+    /// The twin of `enable_nusantara_reads_the_coast`.
+    pub fn disable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = false;
     }
 
     /// Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see
