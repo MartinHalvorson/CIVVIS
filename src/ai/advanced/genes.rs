@@ -5122,6 +5122,14 @@ pub const GENES: &[Gene] = &[
     // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
     // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // Version two of `parity-upgrades-before-it-buys`: the base controller's
+    // wartime and declaration-window defender purchases bought Ancient
+    // bodies late (46 Heavy Chariots in 33 live Deity games, 34 after turn
+    // 100; 095229Z bought 16 from turn 142 to 174 against an Industrial
+    // army), each into a city with no military unit on its tile. No unit two
+    // or more eras behind the world is bought there. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
     // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
     // taken by major empires, 13 of them in a war already running, with the
     // captor's soldier within six tiles the turn before in all but two.
@@ -5222,6 +5230,8 @@ pub const GENES: &[Gene] = &[
     // eliminated). Version two shelters only from a major at war with us. See
     // `settler_shelters_from_the_war.rs`.
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
+    // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
+    Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // `denounce-only-to-declare`: the Science seat's threat rung no longer
     // denounces the space racer; the war opening denounces when a war
     // follows. Live Deity 11-04/05: a rival we denounced declared war on us

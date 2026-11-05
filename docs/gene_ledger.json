@@ -5039,6 +5039,15 @@
           "opportunistic-war-2": null
         }
       },
+      "parity-upgrades-before-it-buys": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "parity-upgrades-before-it-buys": null,
+          "parity-upgrades-before-it-buys-2": null
+        }
+      },
       "pass-picket": {
         "rule_on": [
           "pass-picket"

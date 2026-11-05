@@ -3807,7 +3807,7 @@ impl Game {
             return Err("an arena researches on its own".into());
         }
         if self.players[pid].research.is_some() {
-            return Err("already researching".into());
+            return self.switch_host_research(pid, tech);
         }
         if !self.available_techs(pid).iter().any(|t| t == tech) {
             return Err("tech unavailable".into());
