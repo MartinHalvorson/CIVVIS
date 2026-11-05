@@ -5040,6 +5040,19 @@ impl AdvancedAi {
         self.breaker_spares_the_backlog_builder = false;
     }
 
+    /// Opt-in gene `camps-close-the-age-3`; see
+    /// [`Self::camps_close_the_age_3`]. One version of the family plays.
+    pub fn enable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age = false;
+        self.camps_close_the_age_2 = false;
+        self.camps_close_the_age_3 = true;
+    }
+
+    /// The twin of `enable_camps_close_the_age_3`.
+    pub fn disable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age_3 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

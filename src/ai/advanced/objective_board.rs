@@ -1426,7 +1426,8 @@ impl AdvancedAi {
             let camp_age = self.camp_age_short(g, pid).is_some();
             // `camps-close-the-age-2`: the party brings a shooter and a wider
             // margin.
-            let camp_age_armed = camp_age && self.camps_close_the_age_2;
+            let camp_age_armed =
+                camp_age && (self.camps_close_the_age_2 || self.camps_close_the_age_3);
             let camp_age_deadline = camp_age.then(|| self.camp_age_deadline(g)).flatten();
             for camp in g.barb_camps.keys() {
                 let home = our_cities
@@ -1468,6 +1469,11 @@ impl AdvancedAi {
                     guard_strength
                 };
                 let bodies = if near { CAMP_NEAR_BODIES } else { 0 };
+                // `camps-close-the-age-3`: a near camp is raised and armed in
+                // any era, while its guard is small.
+                let near_clear = self.camps_close_the_age_3 && near;
+                let camp_age = camp_age || near_clear;
+                let camp_age_armed = camp_age_armed || near_clear;
                 rows.push(Objective {
                     kind: ObjectiveKind::ClearCamp,
                     key: ObjectiveKey::Camp(*camp),
