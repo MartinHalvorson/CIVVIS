@@ -8,7 +8,8 @@ use super::{
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
     EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
     EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-    EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+    EMBEDDED_INDEX, EMBEDDED_INDEX_HTML, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL,
+    VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -14342,4 +14343,33 @@ fn a_post_to_a_live_control_names_its_sender() {
         bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"),
         "{bare}"
     );
+}
+
+#[test]
+fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
+    // The city screen is the heart of a 4X and nothing on the map led to it:
+    // the click only updated the sidebar, which is hidden during play.
+    let click = EMBEDDED_APP_JS
+        .split_once("const ours = city && city.owner === 0 ? city : null;")
+        .and_then(|(_, rest)| rest.split_once("readUnitIntel(pos, \"move\");"))
+        .expect("the map click keeps its city branch")
+        .0;
+    assert_eq!(click.matches("openCityScreen(ours.id);").count(), 2);
+    // Units first, then the city, and a tile with no city still wraps round.
+    assert!(click.contains("held === here.length - 1"));
+    assert!(click.contains("sel = here[(held + 1) % here.length];"));
+}
+
+#[test]
+fn css_font_shorthands_name_a_family() {
+    // `font: 800 12px/1 inherit` is invalid CSS, so the whole declaration is
+    // dropped: the label under the research turn count kept the 15px serif at
+    // line-height 1 and overprinted the number.
+    let invalid = EMBEDDED_INDEX_HTML
+        .split("font:")
+        .skip(1)
+        .map(|rest| rest.split(';').next().unwrap_or("").trim())
+        .filter(|value| *value != "inherit" && value.ends_with(" inherit"))
+        .count();
+    assert_eq!(invalid, 0);
 }

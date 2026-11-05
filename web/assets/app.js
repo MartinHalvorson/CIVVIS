@@ -32059,14 +32059,22 @@ cv.addEventListener("click", ev => {
   }
   const here = state.units.filter(u => u.owner === 0 && key(u.pos) === k);
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
-  if (here.length) {
-    const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
-    sel = here[idx];
-    if (city && city.owner === 0) selCity = city;
+  const ours = city && city.owner === 0 ? city : null;
+  // Clicking your city opens it. A garrison does not get in the way: the click
+  // takes each unit on the tile in turn, and the one after the last is the city.
+  const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
+  if (ours && here.length && held === here.length - 1) {
+    selCity = ours; sel = null;
     clearUnitIntel();
-  } else if (city && city.owner === 0) {
-    selCity = city; sel = null;
+    openCityScreen(ours.id);
+  } else if (here.length) {
+    sel = here[(held + 1) % here.length];
+    if (ours) selCity = ours;
     clearUnitIntel();
+  } else if (ours) {
+    selCity = ours; sel = null;
+    clearUnitIntel();
+    openCityScreen(ours.id);
   } else {
     sel = null; selCity = null;
     // Nothing of yours here. If somebody else's unit is, this press is the

@@ -2173,6 +2173,10 @@
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
+  /* Provenance is for whoever is checking a build. In a game it is a commit
+     hash sat on top of the End Turn panel, so it stands down (the text stays
+     in the document for the build checks that read it). */
+  body.civ6-frame #buildmark { visibility: hidden; }
   #buildmark-commit {
     color: #c6d9d1; cursor: pointer; pointer-events: auto; text-decoration-color: transparent;
     text-underline-offset: 2px;
@@ -4724,7 +4728,7 @@
     color: var(--wt-color); font: 800 15px/1 Georgia, serif; font-variant-numeric: tabular-nums;
   }
   .wt-turns small {
-    color: var(--muted); font: 800 var(--type-label)/1.4 inherit;
+    color: var(--muted); font: 800 var(--type-label)/1.4 var(--font-ui);
     letter-spacing: .08em; text-transform: uppercase;
   }
   /* Nothing being studied is a blocker, and Civ 6 says so on the panel itself
@@ -4836,7 +4840,7 @@
     flex: none; display: inline-flex; align-items: baseline; gap: 5px;
     color: var(--gold-bright); font: 600 17px/1.1 Georgia, serif;
   }
-  .ubar-level { color: var(--gold); font: 800 11px/1 inherit; font-style: normal; }
+  .ubar-level { color: var(--gold); font: 800 11px/1 var(--font-ui); font-style: normal; }
   .ubar-stats { display: flex; align-items: center; gap: 7px; min-width: 0; flex-wrap: wrap; }
   .ubar-stat {
     display: inline-flex; align-items: baseline; gap: 3px; color: var(--muted);
