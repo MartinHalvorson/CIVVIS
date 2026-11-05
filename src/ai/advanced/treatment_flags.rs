@@ -1935,6 +1935,9 @@ impl AdvancedAi {
         /// Let a Spy in the space racer's city disrupt before it trains on Gain
         /// Sources. See [`Self::disrupt_before_the_sources`].
         disrupt_before_the_sources => enable_disrupt_before_the_sources, disable_disrupt_before_the_sources;
+        /// Opt-in gene `disrupt-waits-for-the-match-point`; see
+        /// `advanced/disrupt_waits_for_the_match_point.rs`.
+        disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
         /// Opt-in gene `siege-moves-under-the-wing`; see
         /// [`Self::siege_moves_under_the_wing`].
         siege_moves_under_the_wing => enable_siege_moves_under_the_wing, disable_siege_moves_under_the_wing;
@@ -2221,9 +2224,6 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-war-holds-the-claims`; see
         /// `advanced/threatened_war_holds_the_claims.rs`.
         threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
-        /// Opt-in gene `disrupt-waits-for-the-match-point`; see
-        /// `advanced/disrupt_waits_for_the_match_point.rs`.
-        disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
     }
 }
 

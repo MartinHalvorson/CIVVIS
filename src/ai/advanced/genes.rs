@@ -4208,6 +4208,15 @@ pub const GENES: &[Gene] = &[
     // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
     // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
     Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
+    // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
+    // against 6-7% for Gain Sources / Listening Post, and no disruption
+    // visibly delayed a winner, whose 3rd -> 4th project took 5-10
+    // turns (Spain t168 -> t178, Zulu t157 -> t162, Phoenicia t155 -> t164).
+    // Disrupt only once the racer has landed three projects; before that the
+    // Spy steals, gains sources or listens. See
+    // `advanced/disrupt_waits_for_the_match_point.rs`.
+    Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
     // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
     // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
     // objective beyond the wing's reach, 120 of them with another city of
@@ -5170,15 +5179,6 @@ pub const GENES: &[Gene] = &[
     // with us and a home city is threatened. See
     // `outmatched_war_prices_the_army.rs`.
     Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
-    // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
-    // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
-    // against 6-7% for Gain Sources / Listening Post, and no disruption
-    // visibly delayed a winner, whose 3rd -> 4th project took 5-10
-    // turns (Spain t168 -> t178, Zulu t157 -> t162, Phoenicia t155 -> t164).
-    // Disrupt only once the racer has landed three projects; before that the
-    // Spy steals, gains sources or listens. See
-    // `advanced/disrupt_waits_for_the_match_point.rs`.
-    Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
