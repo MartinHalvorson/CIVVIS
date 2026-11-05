@@ -46,6 +46,8 @@ mod policy_windows;
 pub use policy_windows::StatePolicyChange;
 pub mod input_capture;
 mod religion_state;
+mod research_tree;
+pub use research_tree::StateResearchTreeRow;
 mod settlement_loyalty;
 mod spy_posting;
 mod strategic_income;
@@ -4378,6 +4380,10 @@ pub struct StateSnapshot {
     /// only the active selection. An older exporter leaves the list empty.
     #[serde(default)]
     pub research_quotes: Vec<StateResearchQuote>,
+    /// Complete revealed prerequisite lists from the host's active tech graph.
+    /// Missing on older exporters; hidden future nodes are never inferred here.
+    #[serde(default)]
+    pub research_tree: Option<Vec<StateResearchTreeRow>>,
     /// The active Civilization VI civic and its accumulated culture.
     #[serde(default)]
     pub civic: Option<String>,
@@ -6989,7 +6995,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "kind", "event", "run", "ctx", "turn", "frame", "t", "utc", "techs", "civics", "research",
         "science_projects", "science_victory_points", "science_victory_points_per_turn",
         "science_victory_points_needed", "boosted_techs", "boosted_civics",
-        "research_progress", "research_quotes", "civic", "civic_progress", "government", "used_governments",
+        "research_progress", "research_quotes", "research_tree", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "holy_city", "inquisition_launched",
@@ -13469,6 +13475,7 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     // sightings were removed with them.
     strategic_income::apply(ctx.game, ctx.state, ctx.unmapped);
     apply_research_quotes(ctx.game, ctx.state, ctx.unmapped);
+    research_tree::apply(ctx.game, ctx.state, ctx.unmapped);
     record_host_observed(ctx.game, ctx.snapshot);
     air_fog_targets::apply(ctx.game, ctx.snapshot);
 }
@@ -16161,6 +16168,7 @@ impl LiveMirror {
             apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
             strategic_income::apply(&mut self.game, state, &mut self.unmapped);
             apply_research_quotes(&mut self.game, state, &mut self.unmapped);
+            research_tree::apply(&mut self.game, state, &mut self.unmapped);
             return;
         }
         self.foreign_uid_of.clear();
