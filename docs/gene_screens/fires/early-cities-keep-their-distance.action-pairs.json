@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "early-cities-keep-their-distance",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Both cases are live Deity Korea Online runs cut right after the first state row of the turn the Settler chose its second-city site (frame 0): civvis-20261105T001143Z t13 (site six tiles from a Gran Colombian city charted at t10; the city fell at t47 and the early_city_lost rule restarted the game) and civvis-20261104T210549Z t16 (five tiles from a Sumerian city charted at t16; lost t27). Each is queried with the run's own requested genome on a ci-profile civvis_orders built from the branch. Each off arm reproduces the live target (45, 31) and (2, 20); each on arm marches elsewhere, (40, 36) and (3, 20).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-early-cities-keep-their-distance.native-queries.tar.xz",
+    "sha256": "4062f546e374eaa1b2c63e3c4562047dff2d4036ad58a7c51940565e6ab187df"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}
