@@ -9675,6 +9675,16 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `walls-release-the-one-blow`: a ring defender that one visible
+    /// hostile blow at the top of its roll removes is not held on the walls
+    /// by `defenders-hold-the-walls`; the rotation and the doomed-blow veto
+    /// take it as they take any other unit. A unit on a City Center or
+    /// defending district keeps its post. See
+    /// `advanced/defenders_hold_the_walls.rs`. Off by default.
+    walls_release_the_one_blow: bool,
+    /// `walls-release-the-one-blow`: this frame's units of ours whose own
+    /// tile is one-blow lethal (filled by `plan_battle`).
+    walls_one_blow: BTreeSet<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12367,6 +12377,8 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            walls_release_the_one_blow: false,
+            walls_one_blow: BTreeSet::new(),
         }
     }
 
