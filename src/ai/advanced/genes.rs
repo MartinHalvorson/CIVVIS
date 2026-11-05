@@ -5216,6 +5216,11 @@ pub const GENES: &[Gene] = &[
     // their captors while the network is short of its capacity, so their
     // slots fill again. See `advanced/captives_come_home.rs`.
     Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
+    // `plaza-serves-the-scientist-2`: version 2 of `plaza-serves-the-scientist`
+    // (which it carries). A Science seat's Plaza city takes its next tier
+    // building, the Ancestral Hall then the Intelligence Agency, ahead of
+    // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

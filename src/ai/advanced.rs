@@ -8705,6 +8705,11 @@ pub struct AdvancedAi {
     /// without the stand's danger charged to it. See
     /// `advanced/battle_planner.rs`. Off by default.
     ranged_kills_are_free: bool,
+    /// `plaza-serves-the-scientist-2`: version 2 of the family. A Science
+    /// seat's Plaza city takes its next tier building ahead of routine work.
+    /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
@@ -10820,6 +10825,9 @@ mod parity_upgrades_before_it_buys;
 mod paused_district_finish;
 /// `pillaged-districts-repair-first`: see `advanced/pillaged_repairs_first.rs`.
 mod pillaged_repairs_first;
+/// `plaza-serves-the-scientist-2`: the Science Plaza's tier buildings claim
+/// its city's queue. See `advanced/plaza_serves_the_scientist_2.rs`.
+mod plaza_serves_the_scientist_2;
 mod prophet_race_points;
 /// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
 /// and the race stops paying once the host has no Prophet left. See
@@ -12360,6 +12368,7 @@ impl AdvancedAi {
             ranged_finish_on_the_mean: false,
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
+            plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
@@ -29465,9 +29474,9 @@ impl AdvancedAi {
         // `denial-spies-count-their-losses`: the base production fallback
         // reads this. See `advanced/denial_spies_count_their_losses.rs`.
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
-        // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
-        self.base.plaza_serves_science =
-            self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);
+        // `plaza-serves-the-scientist` (and version 2, which carries it): the
+        // Plaza's tier list reads this.
+        self.base.plaza_serves_science = self.plaza_serves_science_on();
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -30071,6 +30080,10 @@ impl AdvancedAi {
             // displacement rule. Exact no-op while the gene is off. See
             // `advanced/spies_steal_the_lead.rs`.
             self.claim_queues_for_steal_spies(g, pid, &plan);
+            // `plaza-serves-the-scientist-2`: the Science Plaza's next tier
+            // building (the Intelligence Agency's Spy slot and level) under
+            // the same displacement rule. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_tier(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
