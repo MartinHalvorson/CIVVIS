@@ -146,6 +146,11 @@ pub const SIEGE_RANGED_FLOOR: usize = 3;
 /// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
 /// and a melee taker with a spare.
 pub const SIEGE_BODY_FLOOR: usize = 5;
+/// `capital-keeps-its-defender-3`: a stronger major's soldier this close to
+/// an early city at peace is a threat to it (the surprise armies of 11-05
+/// parked one to four tiles out before declaring).
+pub const SURPRISE_TILES: i32 = 4;
+
 /// `capital-keeps-its-defender-2`: a Defend force below this share of the
 /// local hostile strength holds its city instead of engaging in the field.
 pub const DEFEND_HOLD_RATIO: f64 = 0.5;
@@ -1141,16 +1146,28 @@ impl AdvancedAi {
             let under_fire = self.city_under_fire(g, pid, *cid, visible);
             // `capital-keeps-its-defender-2`: an early city with a hostile
             // soldier in relief range has its row before the pressure gate.
-            let early_threat = self.capital_keeps_its_defender_2
-                && early_cities(g, pid).contains(cid)
+            let early_defence =
+                self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3;
+            let early = early_defence && early_cities(g, pid).contains(cid);
+            let early_threat = early
                 && self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible) > 0.0;
+            // `capital-keeps-its-defender-3`: a stronger major's soldier
+            // parked within SURPRISE_TILES of an early city at peace.
+            let surprise = if early && self.capital_keeps_its_defender_3 {
+                self.surprise_strength_near(g, pid, *pos)
+            } else {
+                (0.0, 0.0)
+            };
+            let early_threat = early_threat || surprise.0 > 0.0;
             if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire && !early_threat {
                 continue;
             }
             let capital_under_attack =
                 city.is_capital && contact && (damaged || danger >= BASTION_PRESSURE);
             defended.insert(*cid);
-            let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
+            // `capital-keeps-its-defender-3`: the parked strength counts.
+            let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible)
+                + surprise.1;
             // `capital-defense-holds`: a damaged city answers for only the
             // share of its strength its hit points still hold. Bogota at 20
             // of 200 subtracted its full strength and asked for 24, two
@@ -1802,8 +1819,14 @@ impl AdvancedAi {
                     let city = &g.cities[&cid];
                     let health = f64::from(city.hp.max(1)) / f64::from(super::CITY_MAX_HP);
                     let own = (g.city_strength(cid) * health).max(1.0);
+                    let surprise = if self.capital_keeps_its_defender_3 {
+                        self.surprise_strength_near(g, pid, city.pos).1
+                    } else {
+                        0.0
+                    };
                     let hostile =
-                        self.hostile_strength_near(g, pid, city.pos, THREAT_RELIEF_RADIUS, visible);
+                        self.hostile_strength_near(g, pid, city.pos, THREAT_RELIEF_RADIUS, visible)
+                            + surprise;
                     lead.push((hostile / own, row));
                 }
                 _ => rest.push(row),
@@ -1829,6 +1852,32 @@ impl AdvancedAi {
             "capital-keeps-its-defender-2: risk = hostile strength in relief range over the city's own at its health; losing any of the first {EARLY_CITIES} cities ends the game");
     }
 
+    /// `capital-keeps-its-defender-3`: the visible soldiers of stronger
+    /// majors we are at peace with near `at` — `(within SURPRISE_TILES,
+    /// within THREAT_RELIEF_RADIUS)`, each as its effective strength. The
+    /// first reading gates an early city's Defend row; the second enters the
+    /// row's need and the early cities' risk. A major already at war with
+    /// us is the at-war reading's, not this one's.
+    pub(super) fn surprise_strength_near(&self, g: &Game, pid: usize, at: Pos) -> (f64, f64) {
+        let mut close = 0.0;
+        let mut relief = 0.0;
+        for uid in crate::ai::BasicAi::stronger_major_soldiers(g, pid) {
+            let unit = &g.units[&uid];
+            if g.is_at_war(pid, unit.owner) {
+                continue;
+            }
+            let distance = g.wdist(unit.pos, at);
+            let strength = effective_strength(g.unit_strength(unit, false), unit.hp);
+            if distance <= SURPRISE_TILES {
+                close += strength;
+            }
+            if distance <= THREAT_RELIEF_RADIUS {
+                relief += strength;
+            }
+        }
+        (close, relief)
+    }
+
     /// `capital-keeps-its-defender-2`: a Defend force below
     /// [`DEFEND_HOLD_RATIO`] of the local hostile strength holds its city —
     /// city strength, walls and the city's strike — instead of engaging the
@@ -1843,7 +1892,7 @@ impl AdvancedAi {
         kind: Option<ObjectiveKind>,
         local_strength_ratio: f64,
     ) -> bool {
-        self.capital_keeps_its_defender_2
+        (self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3)
             && !arena
             && kind == Some(ObjectiveKind::Defend)
             && local_strength_ratio < DEFEND_HOLD_RATIO
@@ -1943,7 +1992,7 @@ impl AdvancedAi {
             self.capital_defend_first(g, pid, &mut rows);
         }
         // `capital-keeps-its-defender-2`: the early cities first, by risk.
-        if self.capital_keeps_its_defender_2 {
+        if self.capital_keeps_its_defender_2 || self.capital_keeps_its_defender_3 {
             self.early_cities_defend_first(g, pid, &visible, &mut rows);
         }
 

@@ -2172,6 +2172,17 @@ impl AdvancedAi {
         /// Opt-in gene `luxury-asks-pay-in-strategics`; see
         /// `advanced/luxury_asks_pay_in_strategics.rs`.
         luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
+        /// Opt-in gene `military-alliance-shield`; see
+        /// `advanced/military_alliance_shield.rs`.
+        military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
+        /// Price the Science lost when a new district crowds an owned Seowon.
+        districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `early-cities-keep-their-distance`; see
+        /// [`Self::early_cities_keep_their_distance`].
+        early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `denial-spies-count-their-losses`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
@@ -5057,6 +5068,20 @@ impl AdvancedAi {
     /// The twin of `enable_camps_close_the_age_3`.
     pub fn disable_camps_close_the_age_3(&mut self) {
         self.camps_close_the_age_3 = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender-3`; see
+    /// [`Self::capital_keeps_its_defender_3`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = false;
+        self.capital_keeps_its_defender_3 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_3`.
+    pub fn disable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender_3 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
