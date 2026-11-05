@@ -2275,6 +2275,8 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Prefer a safe legal site for a new native Science Campus.
+        campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
         /// Opt-in gene `fresh-water-prices-the-site`; see
         /// `advanced/fresh_water_site.rs`.
         fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;

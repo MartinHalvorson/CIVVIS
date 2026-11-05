@@ -5330,6 +5330,8 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // A fresh native Science Campus chooses safe legal land before coastal lowland.
+    Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
     // The site score paid fresh water +12 and a coast-only seat +10 (housing
     // +4, Harbor base +6), though live non-capital cities on fresh water held
     // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
