@@ -1067,7 +1067,10 @@ impl Game {
             let Some(spec) = self.rules.techs.get(&node) else {
                 return Err(format!("unknown node {node}"));
             };
-            if parents.iter().any(|parent| !self.rules.techs.contains_key(parent)) {
+            if parents
+                .iter()
+                .any(|parent| !self.rules.techs.contains_key(parent))
+            {
                 return Err(format!("unknown prerequisite for {node}"));
             }
             parents.sort();
@@ -1095,14 +1098,22 @@ impl Game {
             }
             marks.insert(node, 1);
             let parents = changes.get(&node).unwrap_or(&rules.techs[node].requires);
-            if parents.iter().any(|parent| !visit(*parent, rules, changes, marks)) {
+            if parents
+                .iter()
+                .any(|parent| !visit(*parent, rules, changes, marks))
+            {
                 return false;
             }
             marks.insert(node, 2);
             true
         }
         let mut marks = BTreeMap::new();
-        if self.rules.techs.keys().any(|node| !visit(*node, &self.rules, &changes, &mut marks)) {
+        if self
+            .rules
+            .techs
+            .keys()
+            .any(|node| !visit(*node, &self.rules, &changes, &mut marks))
+        {
             return Err("cyclic prerequisites".into());
         }
         let base = self.rules.clone();
@@ -1126,7 +1137,6 @@ impl Game {
             .map(|(node, spec)| (*node, spec.requires.clone()))
             .collect()
     }
-
     pub fn tech_cost(&self, technology: &str) -> f64 {
         self.game_speed.scale(self.rules.techs[technology].cost)
     }
