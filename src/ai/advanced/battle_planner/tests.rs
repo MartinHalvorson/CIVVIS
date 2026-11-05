@@ -1693,3 +1693,71 @@ fn a_safe_alternative_does_not_license_a_more_valuable_fatal_strike() {
         "version two must select the survivable alternative"
     );
 }
+
+/// Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp embarked Heavy
+/// Chariot one tile, reading "danger 69 where it stood, -0 where it
+/// stands"; a visible barbarian Galley three tiles off stepped into the tile
+/// it left and killed it (four embarked Chariots fell to Galleys t85-98).
+/// An embarked land unit within a visible Galley's reach reads its blow.
+#[test]
+fn an_embarked_unit_in_a_galley_reach_reads_its_blow() {
+    let mut g = open_field();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("coast");
+    }
+    let galley = g.spawn_test_unit("galley", 1, at(10, 4));
+    for (col, row) in [(10, 6), (10, 7)] {
+        let ours = g.spawn_test_unit("heavy_chariot", 0, at(col, row));
+        wound(&mut g, ours, 40);
+        assert!(
+            g.is_embarked(&g.units[&ours]),
+            "a land unit on coast is embarked"
+        );
+        let distance = g.wdist(at(col, row), g.units[&galley].pos);
+        let mut field = DangerField::new(&g, 0);
+        assert!(
+            field.reaches_tile(at(col, row)),
+            "the galley's reach holds a tile {distance} away"
+        );
+        assert!(
+            field.danger(at(col, row), ours) > 0.0,
+            "the blow on an embarked unit {distance} from the galley is priced"
+        );
+        g.remove_unit(ours);
+    }
+}
+
+/// The same case's geometry: the only water beside the tile the unit moves
+/// to is the tile it leaves. The field is built with the unit still on that
+/// tile; the reach reads through units, so the blow is priced.
+#[test]
+fn the_tile_an_embarked_unit_leaves_is_a_stand_for_the_galley() {
+    let mut g = open_field();
+    let corridor = [at(10, 4), at(10, 5), at(10, 6), at(10, 7)];
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = if corridor.contains(&tile.pos) {
+            crate::name!("coast")
+        } else {
+            crate::name!("plains")
+        };
+    }
+    g.spawn_test_unit("galley", 1, at(10, 4));
+    let ours = g.spawn_test_unit("heavy_chariot", 0, at(10, 6));
+    wound(&mut g, ours, 40);
+    let beside_water: Vec<Pos> = g
+        .nbrs(at(10, 7))
+        .into_iter()
+        .filter(|pos| corridor.contains(pos))
+        .collect();
+    assert_eq!(
+        beside_water,
+        vec![at(10, 6)],
+        "the left tile is the only approach"
+    );
+    let mut field = DangerField::new(&g, 0);
+    assert!(
+        field.reaches_tile(at(10, 7)),
+        "the reach reads through the unit that leaves"
+    );
+    assert!(field.danger(at(10, 7), ours) > 0.0);
+}
