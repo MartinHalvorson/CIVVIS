@@ -68,7 +68,7 @@ fn give_district(g: &mut Game, cid: u32, kind: &str) -> Pos {
     site
 }
 
-/// A Spy of seat 0 at `level` standing in `city`, free to act. `sourced`:
+/// A promoted Spy of seat 0 at `level` standing in `city`, free to act. `sourced`:
 /// its Gain Sources there already ran (so the pass does not offer it).
 fn idle_spy(g: &mut Game, city: u32, level: i64, sourced: bool) -> u32 {
     let id = g.next_id;
@@ -79,7 +79,13 @@ fn idle_spy(g: &mut Game, city: u32, level: i64, sourced: bool) -> u32 {
             id,
             owner: 0,
             level,
-            promotions: BTreeSet::new(),
+            // One promotion per level, so the pass does not spend the turn on
+            // a promotion; neither touches Steal Tech Boost or Disrupt Rocketry.
+            promotions: ["linguist", "quartermaster", "surveillance"]
+                .into_iter()
+                .take(level.max(0) as usize)
+                .map(String::from)
+                .collect(),
             city: Some(city),
             ready_turn: g.turn,
             mission: None,
