@@ -1121,6 +1121,9 @@ impl Game {
         for (node, parents) in changes {
             observed.techs.get_mut(&node).unwrap().requires = parents;
         }
+        // AdvancedAi routes research through this compiled transitive index,
+        // not the direct lists alone. Keep every descendant's index coherent.
+        observed.tech_ancestors = crate::rules::ancestry(&observed.techs);
         self.host_research_base_rules = Some(base);
         self.rules = Arc::new(observed);
         Ok(())

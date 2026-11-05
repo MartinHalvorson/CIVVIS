@@ -207,3 +207,42 @@ fn speculative_clone_can_clear_observations_without_changing_the_observed_board(
         g.rules.techs["smart_materials"].requires
     );
 }
+
+#[test]
+fn actual_planner_uses_the_observed_ancestor_instead_of_the_generated_branch() {
+    let mut legacy = game();
+    for tile in legacy.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    legacy.found_city_for(0, (2, 2), None);
+    legacy.turn = 163;
+    legacy.world_era = 7;
+    legacy.players[0].techs = legacy
+        .rules
+        .techs
+        .iter()
+        .filter(|(tech, spec)| spec.era < 8 && **tech != "nuclear_fusion")
+        .map(|(tech, _)| *tech)
+        .collect();
+    legacy.players[0].science_projects.extend([
+        "launch_earth_satellite".to_string(),
+        "launch_moon_landing".to_string(),
+    ]);
+    legacy.players[0].research = None;
+    let mut observed_board = legacy.clone();
+    apply(&mut observed_board, &observed(), &mut Vec::new());
+    assert!(observed_board.rules.tech_ancestors["smart_materials"].contains("nuclear_fusion"));
+    assert!(!observed_board.rules.tech_ancestors["smart_materials"].contains("advanced_ai"));
+    assert!(!legacy.rules.tech_ancestors["smart_materials"].contains("nuclear_fusion"));
+    let mut old_ai = crate::ai::AdvancedAi::targeting(crate::ai::VictoryTarget::Science);
+    let mut observed_ai = crate::ai::AdvancedAi::targeting(crate::ai::VictoryTarget::Science);
+    old_ai.plan_observed_turn(&mut legacy, 0);
+    observed_ai.plan_observed_turn(&mut observed_board, 0);
+    assert_eq!(legacy.players[0].research.as_deref(), Some("advanced_ai"));
+    assert_eq!(
+        observed_board.players[0].research.as_deref(),
+        Some("nuclear_fusion")
+    );
+}
