@@ -108,3 +108,106 @@ fn the_gene_is_off_in_both_controllers_and_other_lanes_keep_their_sites() {
         None
     );
 }
+
+/// Like the native callback, this calls the public retargeter on a fresh
+/// mirror world: no AI turn has primed its district-ranking context.
+fn fresh_indonesia() -> (Game, AdvancedAi, u32, Pos, Pos, Pos) {
+    let mut g = Game::new_full(1, 24, 16, 91_989, 250, 0, false);
+    g.players[0].civ = "Indonesia".to_string();
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    let cid = g.found_city_for(0, g.units[&settler].pos, None);
+    g.remove_unit(settler);
+    g.cities.get_mut(&cid).unwrap().pop = 9;
+    g.players[0].techs = g.rules.techs.keys().copied().collect();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.coastal_lowland = 1;
+    }
+    let mut sites: Vec<_> = g
+        .producible_items(0, cid)
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::District { district, pos } if district == "campus" => Some(pos),
+            _ => None,
+        })
+        .collect();
+    sites.sort();
+    let center = g.cities[&cid].pos;
+    for &coastal in &sites {
+        for &plain in &sites {
+            if coastal >= plain || g.nbrs(coastal).contains(&plain) {
+                continue;
+            }
+            for &low in &sites {
+                if low == coastal || low == plain {
+                    continue;
+                }
+                let plain_neighbors = g.nbrs(plain);
+                let coast: Vec<_> = g
+                    .nbrs(coastal)
+                    .into_iter()
+                    .filter(|p| *p != center && *p != low && !plain_neighbors.contains(p))
+                    .take(2)
+                    .collect();
+                if coast.len() != 2 {
+                    continue;
+                }
+                let mut candidate = g.clone();
+                for pos in coast {
+                    candidate.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+                }
+                for pos in [coastal, plain] {
+                    candidate.map.tiles.get_mut(&pos).unwrap().coastal_lowland = 0;
+                    assert!(candidate.can_produce(
+                        0,
+                        cid,
+                        &Item::District {
+                            district: crate::name!("campus"),
+                            pos,
+                        }
+                    ));
+                }
+                if candidate
+                    .district_yields(crate::name!("campus"), coastal)
+                    .total()
+                    != candidate
+                        .district_yields(crate::name!("campus"), plain)
+                        .total()
+                {
+                    continue;
+                }
+                let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+                ai.enable_campus_above_the_sea();
+                return (candidate, ai, cid, low, coastal, plain);
+            }
+        }
+    }
+    panic!("fixture needs two equally ranked legal safe sites with distinct Coast adjacency");
+}
+
+#[test]
+fn fresh_mirror_safe_campus_honors_nusantara_when_both_genes_are_on() {
+    let (g, mut ai, cid, low, coastal, plain) = fresh_indonesia();
+    assert_eq!(
+        ai.native_campus_above_sea_position(&g, 0, cid, low),
+        Some(plain),
+        "with Nusantara off, retain the ordinary positional tie-break"
+    );
+    ai.enable_nusantara_reads_the_coast();
+    assert_eq!(
+        ai.native_campus_above_sea_position(&g, 0, cid, low),
+        Some(coastal),
+        "the fresh native mirror must price two adjacent Coast tiles among safe offers"
+    );
+    ai.disable_nusantara_reads_the_coast();
+    assert_eq!(
+        ai.native_campus_above_sea_position(&g, 0, cid, low),
+        Some(plain)
+    );
+}

@@ -62,6 +62,19 @@ impl AdvancedAi {
         // The host-constrained menu supplies legality and unique replacements.
         // Among safe offers retain the ordinary Campus picker's yield ranking
         // and positional tie-break, rather than choosing an arbitrary safe tile.
+        // A fresh native mirror has not gone through AI turn setup. Seed the
+        // optional Indonesia ranking context on a private copy, without
+        // changing the caller's board or the ordinary gene-off ranking.
+        let nusantara_board = (self.nusantara_reads_the_coast && g.players[pid].civ == "Indonesia")
+            .then(|| {
+                let mut board = g.clone();
+                self.seat_nusantara_site_planner(&mut board, pid);
+                board
+            });
+        let site_yields = |pos| match &nusantara_board {
+            Some(board) => board.district_site_yields(district, pos),
+            None => g.district_yields(district, pos),
+        };
         g.producible_items(pid, cid)
             .into_iter()
             .filter_map(|item| match item {
@@ -76,9 +89,9 @@ impl AdvancedAi {
                 _ => None,
             })
             .max_by(|a, b| {
-                g.district_yields(district, *a)
+                site_yields(*a)
                     .total()
-                    .total_cmp(&g.district_yields(district, *b).total())
+                    .total_cmp(&site_yields(*b).total())
                     .then(a.cmp(b))
             })
     }
