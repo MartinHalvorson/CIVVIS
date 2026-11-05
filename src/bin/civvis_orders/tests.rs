@@ -10066,6 +10066,14 @@ fn spy_loss_ledger_reads_the_log_as_it_grows() {
     // A replay reads only the losses up to its turn.
     assert_eq!(ledger.through(129), vec![119, 129]);
 
+    // A Spy lifted off the map by our own travel request is no loss.
+    file.write_all(
+        b"{\"kind\": \"unit_lost\", \"turn\": 133, \"unit\": 9, \"unit_kind\": \"UNIT_SPY\", \"cause\": \"spy_travel\"}\n",
+    )
+    .unwrap();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![119, 129, 131]);
+
     // A new run's shorter log starts the ledger over.
     std::fs::write(&path, lost(5, "UNIT_SPY")).unwrap();
     ledger.refresh(&path);

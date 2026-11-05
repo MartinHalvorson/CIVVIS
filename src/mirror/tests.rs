@@ -14635,6 +14635,22 @@ fn strategic_trade_catalogue_preserves_public_quantities_and_unknowns() {
     }
 }
 
+/// Our Spies a rival holds captive cross as a plain count, absent from an
+/// older mod, and a captor holding none reads zero, not unknown.
+#[test]
+fn captives_of_ours_cross_as_a_count() {
+    for (raw, expected) in [
+        (r#"{}"#, None),
+        (r#"{"captives_of_ours":null}"#, None),
+        (r#"{"captives_of_ours":0}"#, Some(0)),
+        (r#"{"captives_of_ours":2}"#, Some(2)),
+    ] {
+        let state = state_from_json(&format!(r#"{{"turn":150,"rivals":[{raw}]}}"#)).unwrap();
+        assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+        assert_eq!(state.rivals[0].captives_of_ours, expected);
+    }
+}
+
 // Minimized controls from native civvis-20261006T061051Z turn107.
 // The actual 28 MB history and two component contradictions are separately
 // hashed in this research receipt; these fixtures preserve their relative
