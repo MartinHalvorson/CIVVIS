@@ -11,14 +11,7 @@ fn board() -> (Game, AdvancedAi, u32, Pos, Pos) {
     g.remove_unit(settler);
     g.cities.get_mut(&cid).unwrap().pop = 9;
     g.players[0].techs = g.rules.techs.keys().copied().collect();
-    let sites: Vec<_> = g
-        .producible_items(0, cid)
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::District { district, pos } if district == "campus" => Some(pos),
-            _ => None,
-        })
-        .collect();
+    let sites = g.district_sites(cid, crate::name!("campus"));
     assert!(sites.len() >= 2);
     for pos in &sites {
         g.map.tiles.get_mut(pos).unwrap().coastal_lowland = 1;
@@ -126,17 +119,11 @@ fn fresh_indonesia() -> (Game, AdvancedAi, u32, Pos, Pos, Pos) {
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");
         tile.feature = None;
+        tile.resource = None;
         tile.hills = false;
         tile.coastal_lowland = 1;
     }
-    let mut sites: Vec<_> = g
-        .producible_items(0, cid)
-        .into_iter()
-        .filter_map(|item| match item {
-            Item::District { district, pos } if district == "campus" => Some(pos),
-            _ => None,
-        })
-        .collect();
+    let mut sites = g.district_sites(cid, crate::name!("campus"));
     sites.sort();
     let center = g.cities[&cid].pos;
     for &coastal in &sites {
@@ -193,7 +180,8 @@ fn fresh_indonesia() -> (Game, AdvancedAi, u32, Pos, Pos, Pos) {
 
 #[test]
 fn fresh_mirror_safe_campus_honors_nusantara_when_both_genes_are_on() {
-    let (g, mut ai, cid, low, coastal, plain) = fresh_indonesia();
+    let (mut g, mut ai, cid, low, coastal, plain) = fresh_indonesia();
+    assert_eq!(g.nusantara_site_planner, None);
     assert_eq!(
         ai.native_campus_above_sea_position(&g, 0, cid, low),
         Some(plain),
@@ -205,9 +193,51 @@ fn fresh_mirror_safe_campus_honors_nusantara_when_both_genes_are_on() {
         Some(coastal),
         "the fresh native mirror must price two adjacent Coast tiles among safe offers"
     );
+    assert_eq!(
+        g.nusantara_site_planner, None,
+        "the caller's board stays unchanged"
+    );
     ai.disable_nusantara_reads_the_coast();
+    g.nusantara_site_planner = Some(0);
     assert_eq!(
         ai.native_campus_above_sea_position(&g, 0, cid, low),
-        Some(plain)
+        Some(plain),
+        "with the gene off, ignore stale planner context on the caller's board"
+    );
+}
+
+#[test]
+fn a_safe_legal_site_outside_the_two_site_production_shortlist_is_considered() {
+    let (mut g, ai, cid, _, _, _) = fresh_indonesia();
+    let district = crate::name!("campus");
+    let sites = g.district_sites(cid, district);
+    for pos in &sites {
+        g.map.tiles.get_mut(pos).unwrap().coastal_lowland = 1;
+    }
+    let shortlisted: Vec<_> = g
+        .producible_items(0, cid)
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::District {
+                district: offered,
+                pos,
+            } if offered == district => Some(pos),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shortlisted.len(), 2);
+    let safe = *sites.iter().find(|pos| !shortlisted.contains(pos)).unwrap();
+    g.map.tiles.get_mut(&safe).unwrap().coastal_lowland = 0;
+    assert!(g.can_produce(
+        0,
+        cid,
+        &Item::District {
+            district,
+            pos: safe
+        }
+    ));
+    assert_eq!(
+        ai.native_campus_above_sea_position(&g, 0, cid, shortlisted[0]),
+        Some(safe)
     );
 }

@@ -59,7 +59,9 @@ impl AdvancedAi {
         {
             return None;
         }
-        // The host-constrained menu supplies legality and unique replacements.
+        // Host-offered district sites supply legality and unique replacements.
+        // The ordinary production menu keeps only two fresh sites: filtering
+        // that shortlist could hide every safe alternative behind lowlands.
         // Among safe offers retain the ordinary Campus picker's yield ranking
         // and positional tie-break, rather than choosing an arbitrary safe tile.
         // A fresh native mirror has not gone through AI turn setup. Seed the
@@ -75,18 +77,19 @@ impl AdvancedAi {
             Some(board) => board.district_site_yields(district, pos),
             None => g.district_yields(district, pos),
         };
-        g.producible_items(pid, cid)
+        g.district_sites(cid, district)
             .into_iter()
-            .filter_map(|item| match item {
-                Item::District {
-                    district: offered,
-                    pos,
-                } if offered == district => g
-                    .map
-                    .get(pos)
-                    .filter(|tile| tile.coastal_lowland == 0 && !tile.flooded && !tile.submerged)
-                    .map(|_| pos),
-                _ => None,
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    tile.coastal_lowland == 0 && !tile.flooded && !tile.submerged
+                }) && g.can_produce(
+                    pid,
+                    cid,
+                    &Item::District {
+                        district,
+                        pos: *pos,
+                    },
+                )
             })
             .max_by(|a, b| {
                 site_yields(*a)
