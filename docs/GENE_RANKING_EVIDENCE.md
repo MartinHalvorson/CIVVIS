@@ -214,7 +214,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-monument-after-the-second-city` | off (unmeasured) | Opt-in gene `capital-monument-after-the-second-city`; see `Self::capital_monument_after_the_second_city`. | 1 \| 1 |
 | `capital-walls-at-any-ratio` | off (unmeasured) | Opt-in gene `capital-walls-at-any-ratio`; see `Self::capital_walls_at_any_ratio`. | 1 \| 1 |
 | `capital-watch-arms-the-slinger` | off (unmeasured) | Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`. | 1 \| 1 |
-| `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | 1 \| 1 |
+| `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | — \| 2 |
+| `captives-come-home-2` | off (unmeasured) | Opt-in gene `captives-come-home-2` (version 2, carrying version 1); see `advanced/captives_come_home.rs`. | — \| 2 |
 | `capture-scar-reads-the-new-city` | off (unmeasured) | Opt-in gene `capture-scar-reads-the-new-city`; see `advanced/civilian_safety.rs` (`resolve_vanished_settlers`). | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
 | `city-state-war-is-no-front` | off (unmeasured) | Keep a city-state war from becoming the Domination front. | 1 \| 1 |
@@ -314,6 +315,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
+| `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |

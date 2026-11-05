@@ -8155,6 +8155,10 @@ fn the_schema_allowlists_cover_every_declared_field() {
         ("StateCity", CITY_KEYS),
         ("StateUnit", UNIT_KEYS),
         ("StatePublicEmpireStats", PUBLIC_STATS_KEYS),
+        // `at_war_with` (#4452) reached `StateRival` without its key, and
+        // every live turn filed `schema:rival.at_war_with` while the mirror
+        // read it.
+        ("StateRival", RIVAL_KEYS),
     ] {
         let declared = declared_fields(struct_name);
         assert!(
@@ -14772,6 +14776,15 @@ fn captives_of_ours_cross_as_a_count() {
         assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
         assert_eq!(state.rivals[0].captives_of_ours, expected);
     }
+}
+
+/// A rival's wars with other majors (#4452) cross without a schema gap.
+#[test]
+fn rival_wars_cross_without_a_schema_gap() {
+    let state =
+        state_from_json(r#"{"turn":90,"rivals":[{"player":3,"at_war_with":[5]}]}"#).unwrap();
+    assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+    assert_eq!(state.rivals[0].at_war_with, Some(vec![5]));
 }
 
 /// A rival's opinion of us crosses reason by reason, without a schema gap:

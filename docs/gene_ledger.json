@@ -4507,6 +4507,15 @@
           "capital-prey-opens-a-front-2": null
         }
       },
+      "captives-come-home": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "captives-come-home": null,
+          "captives-come-home-2": null
+        }
+      },
       "capture-go-or-stand-down": {
         "rule_on": [
           "capture-go-or-stand-down"

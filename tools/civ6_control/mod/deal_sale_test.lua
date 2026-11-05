@@ -1549,6 +1549,39 @@ resourceRows.RESOURCE_SILK.ResourceClassType = nil
 	local none, nonePlayer = fixture({ captives = {} })
 	ok, why = applyOrder(nonePlayer, 7, { kind = "buy", subject = "3", verb = "CAPTIVE", x = 150, y = 0 }, 170)
 	check("no captive to ask for is named", why, "buy_no_captive")
+
+	-- `captives-come-home-2`: `CAPTIVE;FAVOR=n` puts our Favor on the table
+	-- beside the captive; the answer may take no more Favor than offered.
+	reset()
+	local favored, favoredPlayer = fixture({ captives = { 902 } })
+	ok, why = applyOrder(favoredPlayer, 7, {
+		kind = "buy", subject = "3", verb = "CAPTIVE;FAVOR=80", x = 120, y = 0,
+	}, 180)
+	check("the Favor ransom is submitted", ok, true)
+	local favorItem = itemOfKind(favored, DealItemTypes.FAVOR)
+	check("the Favor is OURS to give", favorItem and favorItem.owner, 7)
+	check("the Favor offered", favorItem and favorItem.amount, 80)
+	check("the Favor is a lump", favorItem and favorItem.duration, 0)
+	check("the pending ransom remembers the Favor", trade.pending[3] and trade.pending[3].gave
+		and trade.pending[3].gave.FAVOR, 80)
+	local takesLess = fixture({ incoming = {
+		{ kind = DealItemTypes.CAPTIVE, from = 3, duration = 0, valueType = 902 },
+		{ kind = DealItemTypes.FAVOR, from = 7, duration = 0, amount = 70 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 40 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("an answer within the Favor and the ceiling is accepted",
+		takesLess.sends and takesLess.sends[1][1], "accepted")
+
+	reset()
+	local greedyAsk, greedyAskPlayer = fixture({ captives = { 902 } })
+	applyOrder(greedyAskPlayer, 7, { kind = "buy", subject = "3", verb = "CAPTIVE;FAVOR=80", x = 120, y = 0 }, 185)
+	local greedy = fixture({ incoming = {
+		{ kind = DealItemTypes.CAPTIVE, from = 3, duration = 0, valueType = 902 },
+		{ kind = DealItemTypes.FAVOR, from = 7, duration = 0, amount = 120 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("more Favor than offered is declined", greedy.sends, nil)
 end)()
 
 realPrint("\nall surplus-sale checks passed")
