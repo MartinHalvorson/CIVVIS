@@ -10583,7 +10583,6 @@ mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
 mod first_launch_research;
-mod science_foundation_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -10633,6 +10632,7 @@ mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_foundation_research;
 mod science_power_fuel;
 mod science_suppression_pads;
 mod science_threat_denial;
