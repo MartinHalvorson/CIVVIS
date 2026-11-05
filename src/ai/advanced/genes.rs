@@ -5317,7 +5317,8 @@ pub const GENES: &[Gene] = &[
     // Power for its own city and paid nothing against a Lab-and-Factory
     // demand of 5, though the host burns as much fuel as each city in six
     // tiles needs. Under the gene a plant is worth every city it can fuel in
-    // reach. See `advanced/plant_reads_the_grid.rs`.
+    // reach, and the Factory claim, which named Coal alone, takes the plant
+    // the fuel can run. See `advanced/plant_reads_the_grid.rs`.
     Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

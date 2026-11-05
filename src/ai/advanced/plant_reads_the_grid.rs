@@ -27,7 +27,19 @@
 //!
 //! "Already served" reads plants and fuel, not `city_is_powered`: the live
 //! mirror does not import the host's powered flag, so that test reads every
-//! fuel-powered city as dark. With the gene off, nothing changes.
+//! fuel-powered city as dark.
+//!
+//! **Why the claim too.** Replays of the live turns changed no orders with the
+//! credit alone: the scorer already hinted the plant (034948Z six turns from
+//! t156, 105753Z five from t156), and none of those hints landed. A hint is
+//! used only if the host's production blocker fires first; a finished city is
+//! idle at the next export, the direct order answers it, and the Lua clears the
+//! hint. Only 16% of 1,900 hints landed in the last 14 games. The direct pick
+//! on an idle queue is the delegated governor (Shipyards, a Market, an Art
+//! Museum), and the one claim that names a plant, `factory_claim_item`, names
+//! Coal alone. So under the gene that claim takes the plant our fuel can run
+//! ([`AdvancedAi::grid_plant_claim`]), and keeps it at the queue's head. With
+//! the gene off, nothing changes.
 
 use super::*;
 use crate::game::City;
@@ -91,21 +103,51 @@ impl AdvancedAi {
     /// reach of `city`'s Industrial Zone. Zero for anything else, or with no
     /// fuel to burn. See the module note.
     pub(super) fn plant_grid_yields(&self, g: &Game, city: &City, spec: &BuildingSpec) -> Yields {
+        self.plant_grid_reach(g, city, spec).0
+    }
+
+    /// The plant `cid` would claim under `plant-reads-the-grid` and the cities
+    /// it would switch on: of the plants legal here, the one worth the most
+    /// on the fuel we hold. `None` with the gene off, with no fuel, or with
+    /// nothing to switch on, which leaves `factory_claim_item`'s Coal path.
+    pub(super) fn grid_plant_claim(&self, g: &Game, pid: usize, cid: u32) -> Option<(Item, usize)> {
+        if !self.plant_reads_the_grid {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        FUELLED_PLANTS
+            .iter()
+            .filter_map(|(_, _, plant)| {
+                let item = BasicAi::civ_building(g, pid, cid, plant)?;
+                let spec = match &item {
+                    Item::Building { building } => g.rules.buildings.get(building)?,
+                    _ => return None,
+                };
+                let (yields, reach) = self.plant_grid_reach(g, city, spec);
+                (reach > 0).then_some((item, reach, yields.total()))
+            })
+            .max_by(|a, b| a.2.total_cmp(&b.2))
+            .map(|(item, reach, _)| (item, reach))
+    }
+
+    /// What `spec` would switch on, and in how many cities.
+    fn plant_grid_reach(&self, g: &Game, city: &City, spec: &BuildingSpec) -> (Yields, usize) {
+        let nothing = (Yields::default(), 0);
         let per_unit = spec.effects.get("power_generated").copied().unwrap_or(0.0);
         if per_unit <= 0.0 {
-            return Yields::default();
+            return nothing;
         }
         let Some(&(fuel, _, plant)) = FUELLED_PLANTS
             .iter()
             .find(|(_, key, _)| spec.effects.get(*key).copied().unwrap_or(0.0) > 0.0)
         else {
-            return Yields::default();
+            return nothing;
         };
         if self.diplomatic_lane_refuses_fossil_power(plant) {
-            return Yields::default();
+            return nothing;
         }
         let Some(origin) = zone_site(g, city) else {
-            return Yields::default();
+            return nothing;
         };
         let pid = city.owner;
         let mut ours: Vec<&City> = g.cities.values().filter(|c| c.owner == pid).collect();
@@ -137,6 +179,7 @@ impl AdvancedAi {
             }
         }
         let mut switched = Yields::default();
+        let mut reach = 0;
         for other in ours.iter().copied() {
             if !serves(origin, other) || burning.iter().any(|(site, _)| serves(*site, other)) {
                 continue;
@@ -148,8 +191,9 @@ impl AdvancedAi {
             }
             budget -= need;
             switched.add(yields);
+            reach += 1;
         }
-        switched
+        (switched, reach)
     }
 }
 

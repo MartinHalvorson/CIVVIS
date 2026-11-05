@@ -188,6 +188,42 @@ fn a_city_beyond_reach_earns_nothing_and_a_building_is_not_a_plant() {
     assert_eq!(credit(&ai, &g, first, "research_lab"), Yields::default());
 }
 
+/// The one claim that names a plant named Coal alone, so an Oil empire's
+/// plant hung on hints that do not land. Under the gene it names the plant
+/// the fuel can run; with no fuel, or with the gene off, it names nothing.
+#[test]
+fn the_claim_takes_the_plant_the_fuel_can_run() {
+    let (mut g, mut ai, first, _) = board();
+    assert!(ai.grid_plant_claim(&g, 0, first).is_none(), "no fuel");
+    stock(&mut g, "oil", 40.0);
+    let (item, reach) = ai.grid_plant_claim(&g, 0, first).expect("Oil runs a plant");
+    assert!(
+        item == Item::Building {
+            building: crate::name!("oil_power_plant")
+        }
+    );
+    assert_eq!(reach, 1, "two units feed the Lab-and-Factory city alone");
+    stock(&mut g, "oil", 60.0);
+    assert_eq!(ai.grid_plant_claim(&g, 0, first).unwrap().1, 2);
+    ai.disable_plant_reads_the_grid();
+    assert!(ai.grid_plant_claim(&g, 0, first).is_none(), "off");
+}
+
+/// A claimed plant stays at the head: the review and the deterrent leave what
+/// `factory_claim_holds` keeps alone. Off, an Oil plant is not held.
+#[test]
+fn the_claimed_oil_plant_keeps_the_queue() {
+    let (g, mut ai, first, _) = board();
+    ai.enable_industrial_zone_claims_the_factory();
+    let plan = ai.assess(&g, 0);
+    let oil = Item::Building {
+        building: crate::name!("oil_power_plant"),
+    };
+    assert!(ai.factory_claim_holds(&g, 0, first, &plan, &oil));
+    ai.disable_plant_reads_the_grid();
+    assert!(!ai.factory_claim_holds(&g, 0, first, &plan, &oil));
+}
+
 #[test]
 fn a_diplomacy_seat_keeps_its_refusal_of_fossil_power() {
     let (mut g, mut ai, first, _) = board();
