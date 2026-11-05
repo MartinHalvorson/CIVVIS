@@ -1,0 +1,20 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "luxury-asks-pay-in-strategics-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Nine live Lv 8 Deity Korea Online turns (carrying version one) on the luxury slot where the live seat put up an ask the Lua buy arm had answered barter_short fewer than 20 turns before (30 standard): strategic-paid asks to the same partner at civvis-20261105T033244Z t184 (Iron to seat 5) and 20261105T113105Z t124 and t130 (Horses to seat 4); luxury swaps of the same refused copy at 20261105T040135Z t106, t118, t124 (Truffles), 20261105T085437Z t100 (Marble) and t160 (Diamonds), 20261105T102328Z t106 (Sugar). Each is the run's events.jsonl through the turn's first state frame and nothing after it (neither arm sees the answer being replayed), queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live ask, partner and verb. Every on arm changes it: the two strategic re-asks to a shorted partner hold (033244Z t184, 113105Z t124); 113105Z t130 asks seat 1 for Coal=5 instead; the stale swap copies stay home, the slot holding (040135Z t106, t118; 085437Z t100) or falling through to a strategic ask (040135Z t124 Niter=1 to seat 2; 085437Z t160 Coal=4 to seat 5) or to the next spare (102328Z t106 Diamonds=1 to seat 1). Three more registered cases (033244Z t190, 085437Z t112 and t136) are kept in the archive but not members: their off arm did not reproduce the live ask.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-luxury-asks-pay-in-strategics-2.native-queries.tar.xz",
+    "sha256": "fc3879caaef50a72534f45061e2fe172674a694dce0f5c77631ec6ba6a3ac896"
+  },
+  "members": [
+    "native-queries-02/0000/result.json",
+    "native-queries-02/0002/result.json",
+    "native-queries-02/0003/result.json",
+    "native-queries-02/0004/result.json",
+    "native-queries-02/0005/result.json",
+    "native-queries-02/0006/result.json",
+    "native-queries-02/0007/result.json",
+    "native-queries-02/0010/result.json",
+    "native-queries-02/0011/result.json"
+  ]
+}

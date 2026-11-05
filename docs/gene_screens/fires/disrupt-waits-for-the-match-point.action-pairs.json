@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "disrupt-waits-for-the-match-point",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Six live Deity/Immortal turns on which the live seat ordered a Spy to Disrupt Rocketry while no rival had landed three space projects, each run's events.jsonl cut at the turn's first state frame and queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live SPY_DISRUPT_ROCKETRY; every on arm withholds it: the same Spy runs SPY_LISTENING_POST (4) or SPY_GAIN_SOURCES (1), or (213449Z t149) no Disrupt is ordered. The binary predates the branch's last edit, which only makes spies-steal-the-lead's steal stand aside where the Disrupt is withheld; that gene is off in every replayed genome, so the edited branch is unreachable in these queries.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-disrupt-waits-for-the-match-point.native-queries.tar.xz",
+    "sha256": "2a4fa35a43c9a0aceb3e9ba748ce19c28c37c1933462f0a9ab7ea55f004682e9"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json"
+  ]
+}

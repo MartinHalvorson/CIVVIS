@@ -241,6 +241,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `diplo-seat-wonder-claim` | off (unmeasured) | `diplo-seat-wonder-claim`. | 1 \| 1 |
 | `diplomat-saves-for-the-apostle` | off (unmeasured) | `diplomat-saves-for-the-apostle`. | 1 \| 1 |
 | `disrupt-before-the-sources` | off (unmeasured) | Let a Spy in the space racer's city disrupt before it trains on Gain Sources. | 1 \| 1 |
+| `disrupt-waits-for-the-match-point` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-match-point`; see `advanced/disrupt_waits_for_the_match_point.rs`. | 1 \| 1 |
 | `districts-protect-seowon-science` | off (unmeasured) | Price the Science lost when a new district crowds an owned Seowon. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
@@ -280,11 +281,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
+| `hint-runs-the-claims` | off (unmeasured) | Opt-in gene `hint-runs-the-claims`; see `Self::hint_runs_the_claims`. | 1 \| 1 |
 | `holdable-land-keeps-settling` | off (unmeasured) | Opt-in gene `holdable-land-keeps-settling`; see `advanced/holdable_land_keeps_settling.rs`. | 1 \| 1 |
 | `holdout-keeps-the-faith-war-2` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war-2`; see `advanced/holdout_faith_war.rs`. | 1 \| 2 |
 | `immortal-skips-the-prophet-race` | off (unmeasured) | Opt-in gene `immortal-skips-the-prophet-race`; see `Self::immortal_skips_the_prophet_race`. | 1 \| 1 |
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
+| `korea-mines-beside-the-seowon` | off (unmeasured) | Opt-in gene `korea-mines-beside-the-seowon`; see `advanced/korea_mines_beside_the_seowon.rs`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |
 | `launch-pad-holds-its-queue` | off (unmeasured) | Opt-in gene `launch-pad-holds-its-queue`; see `Self::launch_pad_holds_its_queue`. | 1 \| 1 |
@@ -292,7 +295,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
-| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | 1 \| 1 |
+| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
+| `luxury-asks-pay-in-strategics-2` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics-2`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `medina-yields-to-the-amenities` | off (unmeasured) | Opt-in gene `medina-yields-to-the-amenities`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
@@ -306,6 +310,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `outclassed-siege-stands-down` | off (unmeasured) | Opt-in gene `outclassed-siege-stands-down`; see `Self::outclassed_siege_stands_down`. | 1 \| 1 |
+| `outmatched-war-prices-the-army` | off (unmeasured) | Opt-in gene `outmatched-war-prices-the-army`; see `advanced/outmatched_war_prices_the_army.rs`. | 1 \| 1 |
 | `parity-upgrades-before-it-buys` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys`; see `advanced/parity_upgrades_before_it_buys.rs`. | 1 \| 1 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | 1 \| 1 |
@@ -318,6 +323,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
 | `ranged-finish-on-the-mean` | off (unmeasured) | Opt-in gene `ranged-finish-on-the-mean`; see `Self::ranged_finish_on_the_mean`. | 1 \| 1 |
+| `ranged-kills-are-free` | off (unmeasured) | Opt-in gene `ranged-kills-are-free`; see `Self::ranged_kills_are_free`. | 1 \| 1 |
 | `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
