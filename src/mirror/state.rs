@@ -1491,6 +1491,13 @@ pub struct StateRival {
     /// Lua emits an empty table as `[]`, which must remain a known empty map.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub tradeable_strategics: Option<BTreeMap<String, i64>>,
+    /// Our Spies this rival holds captive: the CAPTIVE items the shipped deal
+    /// screen lists on its side of the table (`CivvisCaptivesHeld`). A
+    /// captured Spy keeps its slot in our capacity until it comes home, and
+    /// the unit export drops it, so this is the only witness of those slots.
+    /// `None` from an older mod or an unreadable deal.
+    #[serde(default)]
+    pub captives_of_ours: Option<u32>,
     /// The rival's economy as the host reports it — per-turn Science and
     /// Culture, Tourism, treasury and Faith balances and their per-turn rates —
     /// every one an accessor the shipped World Rankings and Deal screens call
