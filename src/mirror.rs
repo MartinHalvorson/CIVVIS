@@ -4097,7 +4097,7 @@ pub fn modeled_major_player_count(game: &crate::game::Game) -> usize {
 /// (`None`) contribute nothing. Our own seat is skipped: `at_war` carries
 /// those wars.
 pub fn apply_rival_wars(
-    game: &mut Game,
+    game: &mut crate::game::Game,
     state: &StateSnapshot,
     seat_of_host: &BTreeMap<usize, usize>,
 ) {

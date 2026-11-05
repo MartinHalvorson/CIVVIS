@@ -15224,7 +15224,7 @@ fn anti_air_mapping_refresh_restores_the_host_type_after_a_modeled_upgrade() {
 /// pair on the next export.
 #[test]
 fn rival_wars_cross_into_their_own_observed_set() {
-    let mut game = Game::new_full(4, 24, 16, 7_923, 300, 0, false);
+    let mut game = crate::game::Game::new_full(4, 24, 16, 7_923, 300, 0, false);
     // Host ids 10, 11, 12 are seats 1, 2, 3; our host id 9 is seat 0.
     let seat_of_host: BTreeMap<usize, usize> =
         [(9, 0), (10, 1), (11, 2), (12, 3)].into_iter().collect();
