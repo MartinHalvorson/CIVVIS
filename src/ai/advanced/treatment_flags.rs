@@ -2260,6 +2260,9 @@ impl AdvancedAi {
         /// Opt-in gene `capture-scar-reads-the-new-city`; see
         /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
         capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
+        /// Opt-in gene `districts-price-the-improvement`; see
+        /// [`Self::districts_price_the_improvement`].
+        districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
     }
 }
 
