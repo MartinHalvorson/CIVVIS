@@ -48,7 +48,7 @@ current-head protection features therefore do not promise to cover that case.
 
 ## Qualification status
 
-- Ten focused regression cases are implemented; execution is pending.
+- Twelve focused regression cases are implemented; execution is pending.
 - Generated evaluation snapshots pass their21 focused Python tests.
 - Full candidate CI, exact-source hosted Mac tests, both native binaries/smokes,
   source-file verification and new-flag OFF/ON/ON/OFF captured-input proposals

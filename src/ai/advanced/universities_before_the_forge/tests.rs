@@ -173,3 +173,26 @@ fn host_quote_controls_the_limit_and_game_speed_scales_it() {
         );
     }
 }
+
+#[test]
+fn campus_selector_uses_released_city_and_industry_can_move_elsewhere() {
+    let (mut game, city, mut ai, plan) = fixture();
+    ai.enable_campus_building_claims_the_queue();
+    ai.claim_producer_zone(&mut game, 0, &plan);
+    assert!(game.cities[&city].queue.is_empty());
+    ai.claim_campus_building(&mut game, 0, &plan);
+    assert_eq!(
+        game.cities[&city].queue.first(),
+        Some(&building("university"))
+    );
+}
+
+#[test]
+fn a_civilization_university_replacement_uses_the_same_rule() {
+    let (mut game, city, ai, plan) = fixture();
+    game.players[0].civ = "Arabia".to_string();
+    game.players[0].civics.insert(crate::name!("theology"));
+    let school = BasicAi::civ_building(&game, 0, city, "university").unwrap();
+    assert_eq!(school, building("madrasa"));
+    assert!(ai.university_precedes_industry(&game, 0, city, &plan));
+}
