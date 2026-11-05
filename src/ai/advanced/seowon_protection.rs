@@ -195,9 +195,9 @@ mod tests {
             .insert(crate::name!("natural_philosophy"));
         let quoted = loss(&ai, &g, site, "theater_square");
         assert!((quoted - 2.0 * one).abs() < 1e-9);
-        let before = g.district_yields("seowon", seowon).science;
+        let before = g.district_yields(crate::name!("seowon"), seowon).science;
         g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("theater_square"));
-        let after = g.district_yields("seowon", seowon).science;
+        let after = g.district_yields(crate::name!("seowon"), seowon).science;
         assert_eq!(
             before - after,
             2.0,
@@ -288,7 +288,13 @@ mod tests {
             control.production_value(&g, 0, cid, &clean, &plan, &counts),
             ai.production_value(&g, 0, cid, &clean, &plan, &counts)
         );
-        let mut menu = vec![crowded];
+        assert!(
+            ai.production_value(&g, 0, cid, &clean, &plan, &counts) > b,
+            "the clean district site must beat the crowded site in the Science lane"
+        );
+        let mut menu = vec![crowded.clone()];
+        control.seowon_protection_expand_menu(&g, 0, cid, &mut menu);
+        assert_eq!(menu, vec![crowded], "the control retains its exact menu");
         ai.seowon_protection_expand_menu(&g, 0, cid, &mut menu);
         assert!(
             menu.contains(&clean),

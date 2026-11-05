@@ -519,7 +519,11 @@ impl AdvancedAi {
                     let score =
                         requested.weight * (lane - lost) + support_value + industrial_foundation
                             - self.seowon_site_loss_value(
-                                &planned_game, pid, variant, pos, plan.strategy,
+                                &planned_game,
+                                pid,
+                                variant,
+                                pos,
+                                plan.strategy,
                             )
                             - price.unwrap_or(0.0) * PLAN_PURCHASE_WEIGHT;
                     let replace =
