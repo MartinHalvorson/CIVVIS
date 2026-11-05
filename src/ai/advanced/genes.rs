@@ -5212,6 +5212,12 @@ pub const GENES: &[Gene] = &[
     // turns and never disbands a unit within six tiles of an enemy soldier.
     // See `solvency.rs`.
     Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
+    // Version one's peace clause fired in the opening of 3 of the first 5
+    // live carriers, on roaming Warriors at peace, and held the second
+    // Settler up to ten turns (132817Z t16-23, 133505Z t13-18; both
+    // eliminated). Version two shelters only from a major at war with us. See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
