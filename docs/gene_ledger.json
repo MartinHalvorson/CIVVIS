@@ -4432,7 +4432,8 @@
         "ships": null,
         "versions": {
           "camps-close-the-age": null,
-          "camps-close-the-age-2": null
+          "camps-close-the-age-2": null,
+          "camps-close-the-age-3": null
         }
       },
       "campus-adjacency-threshold": {
@@ -4474,6 +4475,15 @@
         "versions": {
           "campus-claims-the-free-slot": null,
           "campus-claims-the-free-slot-2": null
+        }
+      },
+      "capital-keeps-its-defender": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-keeps-its-defender": null,
+          "capital-keeps-its-defender-2": null
         }
       },
       "capital-prey-opens-a-front": {

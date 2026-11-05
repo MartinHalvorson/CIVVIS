@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "luxury-asks-pay-in-strategics",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Five live Lv 8 Deity Korea Online turns on the luxury slot where the live bridge held its swap (luxury_swap_hold:no_spare or :no_fit) with a city short of Amenities: civvis-20261104T213449Z t82 and t88, 20261104T215303Z t82, 20261104T220040Z-cont1 t94, 20261104T221505Z t64, each the run's events.jsonl cut at the end of the turn and queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live hold (no luxury ask). Three on arms instead ask a partner at peace for a luxury we lack paying in strategics: LUXURY_ANY;RESOURCE_NITER=4 (Gold to 215), RESOURCE_NITER=3 (to 185), RESOURCE_HORSES=2 (to 79); the other two hold luxury_strategic_hold:no_strategic (the stockpile is reserved for our units and upgrades).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-luxury-asks-pay-in-strategics.native-queries.tar.xz",
+    "sha256": "90dede5785525f39bc66f2778d1cf5a6acddf739ba54b8d4f3168499632d77e9"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json"
+  ]
+}
