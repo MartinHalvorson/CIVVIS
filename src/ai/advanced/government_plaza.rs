@@ -59,7 +59,10 @@ impl AdvancedAi {
             .iter()
             .copied()
             .filter(|cid| free(g, *cid))
-            .find_map(|cid| BasicAi::plaza_building_item(g, pid, cid).map(|item| (cid, item)))
+            .find_map(|cid| {
+                BasicAi::plaza_building_item_for(g, pid, cid, self.base.plaza_serves_science)
+                    .map(|item| (cid, item))
+            })
             .or_else(|| {
                 if !BasicAi::plaza_absent(g, pid) || self.base.plaza_prophet_race_open(g, pid) {
                     return None;

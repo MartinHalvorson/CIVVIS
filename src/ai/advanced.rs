@@ -8212,6 +8212,10 @@ pub struct AdvancedAi {
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
+    /// hold before it buys, never buys an obsolete unit, and stops buying when
+    /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -8650,12 +8654,22 @@ pub struct AdvancedAi {
     /// whose every attacker is ranged on its centre-roll damage. See
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
+    /// `plaza-serves-the-scientist`: a Science seat's Government Plaza takes
+    /// the Ancestral Hall and the Intelligence Agency. Read by
+    /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
+    /// set each turn in `take_turn_inner`. Off by default.
+    plaza_serves_the_scientist: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
     /// `AdvancedAi::racer_spy_post_for`.
     steal_dry_cities: BTreeMap<u32, u32>,
+    /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
+    /// major's soldier is within six tiles (a non-friend's within two at
+    /// peace) goes to the nearest city of ours, and one inside a city stays. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -9367,6 +9381,11 @@ pub struct AdvancedAi {
     /// turns, the insolvency guard leaves the city queues to the war. See
     /// `advanced/war_defense_spends_the_runway.rs`. Off by default.
     war_defense_spends_the_runway: bool,
+    /// `threatened-lane-lends-the-army`: a seat whose victory target is not
+    /// Domination lends its delegated governor the war army target while at
+    /// war with a major and a home city is threatened. See
+    /// `advanced/threatened_lane_lends_the_army.rs`. Off by default.
+    threatened_lane_lends_the_army: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -10136,6 +10155,7 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 mod native_air_assault;
+mod native_production_contract;
 pub use air_city_assault::AirCityAssault;
 
 /// Policies and governors: the policy deck, the card checks, and governor
@@ -10728,6 +10748,8 @@ mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
 mod launch_pad_holds_its_queue;
+/// `parity-upgrades-before-it-buys`: see `advanced/parity_upgrades_before_it_buys.rs`.
+mod parity_upgrades_before_it_buys;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -10793,6 +10815,9 @@ mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
+/// `settler-shelters-from-the-war`: see
+/// `advanced/settler_shelters_from_the_war.rs`.
+mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -10813,6 +10838,9 @@ mod stalled_settler_site;
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
 mod threatened_city_purchase;
+/// `threatened-lane-lends-the-army`: see
+/// `advanced/threatened_lane_lends_the_army.rs`.
+mod threatened_lane_lends_the_army;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -12166,6 +12194,7 @@ impl AdvancedAi {
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
+            parity_upgrades_before_it_buys: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
@@ -12244,8 +12273,10 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
+            plaza_serves_the_scientist: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
+            settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
@@ -12380,6 +12411,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
             war_defense_spends_the_runway: false,
+            threatened_lane_lends_the_army: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -15362,9 +15394,6 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<f64> {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return None;
-        }
         let at_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -15372,6 +15401,14 @@ impl AdvancedAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
+        // `threatened-lane-lends-the-army`: every other lane borrows the same
+        // target while a home city is threatened. See
+        // `advanced/threatened_lane_lends_the_army.rs`.
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            && !self.threatened_lane_lends_the_army_applies(g, pid, plan, at_war)
+        {
+            return None;
+        }
         if !at_war
             && !matches!(
                 plan.strategy,
@@ -17646,6 +17683,11 @@ impl AdvancedAi {
         let Some((ours, theirs, rival, contact)) = self.border_parity_target(g, pid) else {
             return false;
         };
+        // `parity-upgrades-before-it-buys`: the army we hold is modernised
+        // first; see `advanced/parity_upgrades_before_it_buys.rs`.
+        if self.parity_upgrades_first(g, pid, rival, ours, theirs) > 0 {
+            return true;
+        }
         // The best ranged unit first, then the best melee one — and the first
         // of them the treasury can pay for. Run civvis-20260829T094737Z read
         // 0.16 of Scotland at t100–t111 with 152–277 Gold, and the host's own
@@ -17661,8 +17703,9 @@ impl AdvancedAi {
             }
         }
         let Some(unit) = candidates.into_iter().find(|unit| {
-            g.unit_purchase_cost(pid, contact, unit, "gold")
-                .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
+            self.parity_buy_barred(g, unit, ours, theirs).is_none()
+                && g.unit_purchase_cost(pid, contact, unit, "gold")
+                    .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
         }) else {
             return false;
         };
@@ -29317,6 +29360,9 @@ impl AdvancedAi {
         // `denial-spies-count-their-losses`: the base production fallback
         // reads this. See `advanced/denial_spies_count_their_losses.rs`.
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
+        // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
+        self.base.plaza_serves_science =
+            self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
