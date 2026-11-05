@@ -242,6 +242,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `districts-protect-seowon-science` | off (unmeasured) | Price the Science lost when a new district crowds an owned Seowon. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
+| `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
