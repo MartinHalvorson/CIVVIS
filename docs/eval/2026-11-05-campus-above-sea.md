@@ -66,5 +66,6 @@ Rust tests, documentation checks and isolated live-action regressions passed
 in CI on that source. The treatment append-point suite passed fourteen tests.
 The initial registry suite found three stale-report failures; after refresh,
 those three tests passed and `tools/genes.py check` passed. All 279 deployed
-genes remain exactly unchanged. Native foundation and outcome verification
-remain pending.
+genes remain exactly unchanged. Native foundation, completion and all four bounded outcomes are now documented in
+`2026-11-05-campus-above-sea.native-outcomes.md`. All four games lost; one treatment
+retargeted and completed its Campus. No strength gain is established.
