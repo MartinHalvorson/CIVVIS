@@ -543,12 +543,17 @@ mod modifiers;
 /// Monopolies and Corporations: resource counts, industries, corporations,
 /// products and monopoly bonuses. See `game/monopolies.rs`.
 mod monopolies;
+/// The Moon: deposits, ores and mass drivers. See `game/moon.rs`.
+mod moon;
 /// Movement: step costs, movement points, traversal, entering and stopping,
 /// and borders. See `game/movement.rs`.
 mod movement;
 /// Pathfinding: unit routes, route steps, movement relaxation, reach and
 /// flow fields. See `game/pathfinding.rs`.
 mod pathfinding;
+/// Policy cards: government slots, fitting and pruning a deck, and the cards
+/// available. See `game/policy_cards.rs`.
+mod policy_cards;
 /// City power: demand, supply, renewables, and powered yields. See
 /// `game/power.rs`.
 mod power;
@@ -11284,129 +11289,6 @@ impl Game {
         1.0 + bonus
     }
 
-    pub fn gov_slots(&self, pid: usize) -> crate::rules::PolicySlots {
-        // Anarchy has no slots of its own, and none a wonder can lend it.
-        if self.in_anarchy(pid) {
-            return Default::default();
-        }
-        let mut slots = match &self.players[pid].government {
-            Some(g) => self
-                .rules
-                .governments
-                .get(g)
-                .map(|s| s.slots)
-                .unwrap_or_default(),
-            None => Default::default(),
-        };
-        let any = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
-        if any > 0 && self.has_ability(pid, "platos_republic") {
-            slots.wildcard += 1; // Greece: Plato's Republic
-        }
-        slots.military += self.empire_wonder_effect(pid, "military_policy_slots") as i64;
-        slots.economic += self.empire_wonder_effect(pid, "economic_policy_slots") as i64;
-        slots.diplomatic += self.empire_wonder_effect(pid, "diplomatic_policy_slots") as i64;
-        slots.wildcard += self.empire_wonder_effect(pid, "wildcard_policy_slots") as i64;
-        if let Some(government) = self.players[pid].government.as_deref() {
-            if self.congress_effect_active("world_ideology", "A", government) {
-                slots.wildcard += 1;
-            } else if self.congress_effect_active("world_ideology", "B", government) {
-                slots.wildcard = slots.wildcard.saturating_sub(1);
-            }
-        }
-        slots
-    }
-
-    /// Can this set of cards be seated in the player's slots? Typed cards
-    /// fill their own slot type first; overflow and wildcard cards need
-    /// wildcard slots (Civ 6 rule).
-    /// Drop slotted cards until the deck fits `pid`'s CURRENT government.
-    ///
-    /// ⚠⚠ A GOVERNMENT CHANGE INVALIDATES A DECK AND NOTHING RE-CHECKED IT.
-    /// `policies_fit` is enforced when a card is SLOTTED and never again, so a
-    /// deck legal under the old constitution survived into the new one. On the
-    /// live bridge the mirror sets the government from the host export, and
-    /// CIVVIS then re-sent that stale deck EVERY TURN and the host refused it
-    /// every turn: run `civvis-20260805T192809Z` switched Theocracy ->
-    /// Merchant Republic on t155 and was still asking for the Theocracy shape
-    /// (ECONOMIC x3, MILITARY x2, DIPLOMATIC x1) at t160-163, while the host sat
-    /// at FIVE cards in SIX slots.
-    ///
-    /// Cards are dropped in reverse slot order so the deterministic `BTreeSet`
-    /// iteration cannot depend on insertion history.
-    pub(crate) fn prune_policies_to_government(&mut self, pid: usize) -> usize {
-        let mut dropped = 0;
-        loop {
-            let cards = self.players[pid].policies.clone();
-            if cards.is_empty() || self.policies_fit(pid, &cards) {
-                return dropped;
-            }
-            let Some(victim) = cards.iter().next_back().copied() else {
-                return dropped;
-            };
-            self.players[pid].policies.remove(&victim);
-            dropped += 1;
-        }
-    }
-
-    fn policies_fit(&self, pid: usize, cards: &BTreeSet<Name>) -> bool {
-        let slots = self.gov_slots(pid);
-        let (mut m, mut e, mut d, mut w) = (0i64, 0i64, 0i64, 0i64);
-        for c in cards {
-            match self.rules.policies.get(c).map(|p| p.slot.as_str()) {
-                Some("military") => m += 1,
-                Some("economic") => e += 1,
-                Some("diplomatic") => d += 1,
-                _ => w += 1,
-            }
-        }
-        let overflow = (m - slots.military).max(0)
-            + (e - slots.economic).max(0)
-            + (d - slots.diplomatic).max(0);
-        overflow + w <= slots.wildcard
-    }
-
-    /// Cards the player has unlocked and may slot (not yet slotted, civic
-    /// met, not obsoleted by an unlocked successor card).
-    pub fn available_policies(&self, pid: usize) -> Vec<Name> {
-        let p = &self.players[pid];
-        if p.is_minor {
-            return vec![];
-        }
-        // A card is retired by ANY unlocked successor, and one successor can retire
-        // several — Public Works kills both Bastions and Serfdom — so this flattens
-        // rather than taking one name per card.
-        let obsolete: BTreeSet<Name> = self
-            .rules
-            .policies
-            .values()
-            .filter(|s| {
-                s.civic
-                    .as_ref()
-                    .map(|c| p.civics.contains(c))
-                    .unwrap_or(true)
-            })
-            .flat_map(|s| s.replaces.iter().copied())
-            .collect();
-        self.rules
-            .policies
-            .iter()
-            .filter(|(name, s)| {
-                !p.policies.contains(*name)
-                    && !obsolete.contains(*name)
-                    // A card the HOST ruleset has retired, learned from its own
-                    // refusals. Empty in an ordinary game; see `blocked_policies`.
-                    && !self.blocked_policies.contains(*name)
-                    && self.host_policy_choices.get(&pid).is_none_or(|choices| choices.contains(*name))
-                    && s.offered(&p.age, self.world_era)
-                    && s.civic
-                        .as_ref()
-                        .map(|c| p.civics.contains(c))
-                        .unwrap_or(true)
-            })
-            .map(|(name, _)| *name)
-            .collect()
-    }
-
     pub fn unit_strength(&self, u: &Unit, defending: bool) -> f64 {
         if self.is_embarked(u) {
             // Embarked strength climbs the shipped era ladder: 10 in the
@@ -11801,52 +11683,6 @@ impl Game {
         true
     }
 
-    // ------------------------------------------------------------- the Moon
-
-    /// Roll what the Moon is made of.
-    ///
-    /// There is one Moon, so this runs once at setup rather than once per
-    /// civilization, and what a mass driver takes out of a pile is gone for
-    /// everybody. A ruleset that puts nothing up there — every classic game —
-    /// rolls nothing and consumes no randomness at all, so a seed still makes
-    /// exactly the world it always made.
-    fn roll_moon_deposits(rules: &Rules, rng: &mut Rng) -> BTreeMap<Name, f64> {
-        rules
-            .resources
-            .iter()
-            .filter_map(|(ore, spec)| spec.lunar.map(|lunar| (*ore, lunar)))
-            .map(|(ore, lunar)| {
-                let low = lunar.min.min(lunar.max).max(0.0);
-                let high = lunar.max.max(lunar.min).max(low);
-                (ore, rng.uniform(low, high).round())
-            })
-            .collect()
-    }
-
-    /// What is left of one of the Moon's piles. Zero for an ore the Moon was
-    /// never rolled with, which is all of them in a classic game.
-    pub fn moon_deposit(&self, ore: impl AsName) -> f64 {
-        self.moon_deposits
-            .get(&ore.as_name())
-            .copied()
-            .unwrap_or(0.0)
-    }
-
-    /// The ores this world's Moon was rolled with, in ruleset order, whether
-    /// or not any of each is left.
-    pub fn moon_ores(&self) -> Vec<Name> {
-        self.moon_deposits.keys().copied().collect()
-    }
-
-    /// How many mass drivers this civilization has standing on the Moon.
-    pub fn mass_drivers(&self, pid: usize) -> i64 {
-        self.players[pid]
-            .counters
-            .get("project_effect:mass_drivers")
-            .copied()
-            .unwrap_or(0)
-    }
-
     /// Whose borders a tile is inside, if anybody's.
     fn tile_owner(&self, position: Pos) -> Option<usize> {
         self.map
@@ -11854,85 +11690,6 @@ impl Game {
             .owner_city
             .and_then(|city| self.cities.get(&city))
             .map(|city| city.owner)
-    }
-
-    /// Take up to `wanted` units out of one lunar pile and report what the
-    /// Moon actually had. The piles are shared, so this is the single place
-    /// they are drawn down.
-    fn draw_from_moon(&mut self, ore: Name, wanted: f64) -> f64 {
-        let Some(pile) = self.moon_deposits.get_mut(&ore) else {
-            return 0.0;
-        };
-        let drawn = pile.min(wanted).max(0.0).floor();
-        *pile -= drawn;
-        drawn
-    }
-
-    /// Land this turn's cargo.
-    ///
-    /// Every driver throws one unit of the aimed ore down onto the aimed site
-    /// and the Moon is one unit lighter for it — the whole of the mechanic is
-    /// that a pile somewhere else pays for a stockpile here. Nothing is drawn
-    /// that the stockpile has no room to hold: the ore is finite and shared,
-    /// and spilling a rival's share onto a full warehouse is not worth
-    /// modelling.
-    ///
-    /// A driver that fired at something during the previous turn still
-    /// delivers now. Firing already cost a unit of the same ore out of the
-    /// stockpile — the slug *is* the metal — so a strike is a turn's cargo
-    /// spent on a target rather than a separate magazine.
-    fn process_mass_drivers(&mut self, pid: usize) {
-        self.players[pid].mass_driver_shots = 0;
-        let drivers = self.mass_drivers(pid);
-        if drivers <= 0 || self.players[pid].is_barbarian {
-            return;
-        }
-        let (Some(ore), Some(site)) = (
-            self.players[pid].mass_driver_ore,
-            self.players[pid].mass_driver_site,
-        ) else {
-            return;
-        };
-        // Ground that has been taken, or lost with the city that held it,
-        // catches nothing until the drivers are aimed somewhere else.
-        if self.tile_owner(site) != Some(pid) {
-            return;
-        }
-        let room =
-            (self.strategic_stockpile_capacity(pid) - self.strategic_stockpile(pid, ore)).max(0.0);
-        let landed = self.draw_from_moon(ore, (drivers as f64).min(room.floor()));
-        if landed <= 0.0 {
-            return;
-        }
-        let stock = self.strategic_stockpile(pid, ore) + landed;
-        self.players[pid].strategic_resources.insert(ore, stock);
-        *self.players[pid]
-            .counters
-            .entry("mass_driver_landings".to_string())
-            .or_insert(0) += landed as i64;
-    }
-
-    /// Aim every mass driver at one ore and one landing site.
-    ///
-    /// A standing order rather than a shot: it holds until it is given again,
-    /// which is what makes the drivers infrastructure instead of an action to
-    /// repeat every turn. Until one is given, nothing falls.
-    fn do_aim_mass_driver(&mut self, pid: usize, site: Pos, ore: Name) -> Result<(), String> {
-        if self.mass_drivers(pid) <= 0 {
-            return Err("no mass driver on the Moon".into());
-        }
-        if self.moon_deposit(ore) <= 0.0 {
-            return Err("the Moon has none of that ore left".into());
-        }
-        if !self.resource_visible_to(pid, ore.as_str()) {
-            return Err("that resource is not known to this civilization".into());
-        }
-        if self.tile_owner(site) != Some(pid) {
-            return Err("the landing site must be inside your own borders".into());
-        }
-        self.players[pid].mass_driver_site = Some(site);
-        self.players[pid].mass_driver_ore = Some(ore);
-        Ok(())
     }
 
     /// The city-states this player is suzerain of. Suzerainty does not depend

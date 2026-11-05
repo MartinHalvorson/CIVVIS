@@ -5084,6 +5084,12 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `spy-civics-come-first`: a Science aim researches Nationalism,
+    // Ideology and Cold War (each a Spy slot) sooner, their prerequisites at
+    // half the weight. The Deity win 122513Z reached slots 3 and 4 at t119
+    // and t152; the losses 125414Z at 158/174, 105753Z at 131/173. See
+    // `advanced/spy_civics_come_first.rs`.
+    Gene { tag: "spy-civics-come-first", field: "spy_civics_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_spy_civics_come_first, disable: AdvancedAi::disable_spy_civics_come_first },
     // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
     // the soonest unthreatened city queues one Settler while the plan wants
     // more cities and a seat we can very likely hold lies in reach: the
@@ -5239,6 +5245,28 @@ pub const GENES: &[Gene] = &[
     // building, the Ancestral Hall then the Intelligence Agency, ahead of
     // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
+    // From t40 to t120 the backlog Builder claim put a Builder ahead of a
+    // Library, University or Seowon 288 times in 87 live Deity Korea games
+    // (27% of its claims, 3.3 a game), in a seat that loses on rival
+    // Technology. Under the gene science in progress keeps its queue, and the
+    // claim goes to the next-fastest city or waits a turn. See
+    // `advanced/science_heads_keep_their_queue.rs`.
+    Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // `denounce-only-to-declare`: the Science seat's threat rung no longer
+    // denounces the space racer; the war opening denounces when a war
+    // follows. Live Deity 11-04/05: a rival we denounced declared war on us
+    // 2.3x as often (stratified), and those wars cost 2.5 cities against
+    // 1.35. See `advanced/denounce_only_to_declare.rs`.
+    Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
+    // Version two (live Lv 8 Deity Korea Online, 11-05, first armed games):
+    // three Military asks to declared friends, three refusals (152431Z t96,
+    // 154934Z t108, 155735Z t108), and asks to Neutral/Unfriendly rivals
+    // the agent never sent were remembered as refused (t87, t102, t105),
+    // barring those rivals from every desk for thirty turns. Version two asks
+    // only Friendly rivals and lets a taken or refused Military kind fall
+    // through to Economic, Cultural or Religious, under its own per-kind
+    // memory. See `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
     // Live Lv 8 Deity Korea 11-05: of 90 full-health units killed in an
     // enemy phase across the anvil-spares-the-one-blow carriers, 50 had moved
     // that turn in the field and 52 have no journal line naming the move (the
