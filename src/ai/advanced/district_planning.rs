@@ -159,17 +159,52 @@ impl AdvancedAi {
     /// 773 districts on improved tiles (42 games, 11-04): the planner only
     /// priced the tile a citizen happened to work that turn, so an idle Farm
     /// read as free ground. Off, nothing is priced beyond the worked tile.
-    /// `districts-price-the-improvement`, the catch-all: just before the
-    /// turn ends, a District at the head of a queue with nothing invested
-    /// that would bulldoze an improvement or bonus resource moves to the best
-    /// clean site within [`RESITE_ADJACENCY_SLACK`] of its raw district
-    /// yield. The planner's charge reaches only the plans it makes; the
-    /// Aqueduct (`ai.rs`, the lowest legal position) and the BasicAi
-    /// fallback (`max_by` yield total) never look at the tile, and they put
-    /// 24 Aqueducts on Farms in 40 live games. The bridge sends each city's
-    /// last Produce of the turn, so the host only ever sees the moved site.
-    pub(super) fn resite_bulldozing_districts(&self, g: &mut Game, pid: usize) {
+    /// `districts-price-the-improvement`: record, at the start of the turn,
+    /// every owned tile a District could bulldoze — an improvement or a bonus
+    /// resource on ground with no district or foundation yet — so a placement
+    /// made on one this turn can be undone. A foundation already standing at
+    /// the start of the turn was placed on an earlier turn and is never
+    /// touched.
+    /// Whether `districts-price-the-improvement` is on, for the observed
+    /// seat's frame executor (`ai/player.rs`).
+    pub(crate) fn districts_price_the_improvement_on(&self) -> bool {
+        self.districts_price_the_improvement
+    }
+
+    pub(super) fn snapshot_bulldoze_sites(&mut self, g: &Game, pid: usize) {
+        self.bulldoze_snapshot.clear();
         if !self.districts_price_the_improvement {
+            return;
+        }
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if let Some(tile) = g.map.get(*pos) {
+                    if tile.district.is_none()
+                        && tile.district_foundation.is_none()
+                        && (tile.improvement.is_some() || tile.resource.is_some())
+                    {
+                        self.bulldoze_snapshot
+                            .insert(*pos, (tile.improvement, tile.feature, tile.pillaged));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `districts-price-the-improvement`, the catch-all: just before the
+    /// turn ends, a District placed THIS turn on a tile it bulldozed (one in
+    /// the turn's snapshot), with nothing invested, moves to the best clean
+    /// site within [`RESITE_ADJACENCY_SLACK`] of its raw district yield, and
+    /// the bulldozed tile gets its improvement and feature back. The
+    /// planner's charge reaches only the plans it makes; the Aqueduct
+    /// (`ai.rs`, the lowest legal position) and the BasicAi fallback (`max_by`
+    /// yield total) never look at the tile, and they put 24 Aqueducts on Farms
+    /// in 40 live games. The live bridge sends the host only each city's last
+    /// Produce of a batch, so the host never places the first site; the
+    /// observed seat's executor does the same under the gene
+    /// (`ai/player.rs`).
+    pub(super) fn resite_bulldozing_districts(&self, g: &mut Game, pid: usize) {
+        if !self.districts_price_the_improvement || self.bulldoze_snapshot.is_empty() {
             return;
         }
         for cid in g.player_city_ids(pid) {
@@ -179,14 +214,32 @@ impl AdvancedAi {
             let Some(Item::District { district, pos }) = city.queue.first().cloned() else {
                 continue;
             };
-            if city.production >= 1.0 || !self.site_bulldozes_a_tile(g, pos) {
+            let Some(&(improvement, feature, pillaged)) = self.bulldoze_snapshot.get(&pos) else {
+                continue;
+            };
+            if city.production >= 1.0 {
                 continue;
             }
             let here = Self::projected_district_yields(g, district, pos).total();
+            // Undo the placement on the board, then read the clean sites
+            // with the foundation gone.
+            let restore = |g: &mut Game, improvement, feature, pillaged| {
+                if let Some(tile) = g.map.tiles.get_mut(&pos) {
+                    tile.district_foundation = None;
+                    tile.improvement = improvement;
+                    tile.feature = feature;
+                    tile.pillaged = pillaged;
+                }
+            };
+            restore(g, improvement, feature, pillaged);
             let clean = g
                 .district_sites(cid, district)
                 .into_iter()
-                .filter(|site| *site != pos && !self.site_bulldozes_a_tile(g, *site))
+                .filter(|site| {
+                    *site != pos
+                        && !self.bulldoze_snapshot.contains_key(site)
+                        && !self.site_bulldozes_a_tile(g, *site)
+                })
                 .map(|site| {
                     (
                         site,
@@ -199,14 +252,20 @@ impl AdvancedAi {
                         .total_cmp(&right.1)
                         .then_with(|| right.0.cmp(&left.0))
                 });
-            if let Some((site, _)) = clean {
+            let moved = clean.is_some_and(|(site, _)| {
                 let item = Item::District {
                     district,
                     pos: site,
                 };
-                if g.can_produce(pid, cid, &item) {
-                    let _ = g.apply(pid, &crate::game::Action::Produce { city: cid, item });
-                }
+                g.can_produce(pid, cid, &item)
+                    && g.apply(pid, &crate::game::Action::Produce { city: cid, item })
+                        .is_ok()
+            });
+            if !moved {
+                // No better ground: the original placement stands, exactly
+                // as it was.
+                let item = Item::District { district, pos };
+                let _ = g.apply(pid, &crate::game::Action::Produce { city: cid, item });
             }
         }
     }

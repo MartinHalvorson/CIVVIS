@@ -5548,6 +5548,11 @@ pub struct AdvancedAi {
     /// Partners asked for an alliance, by the turn asked. Written only while
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
+    /// `districts-price-the-improvement`: the owned tiles a District could
+    /// bulldoze at the start of this turn (improvement, feature, pillaged),
+    /// so a fresh placement on one can be undone before the turn ends.
+    /// Empty while the gene is off.
+    bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
     /// the Campus unlock (Writing) once it holds two cities, in the slot the
@@ -11580,6 +11585,7 @@ impl AdvancedAi {
             apostle_transit_keeps_the_cover: false,
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
+            bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -50417,6 +50423,8 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        // `districts-price-the-improvement`: what a District could bulldoze.
+        self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
         // `builders-route-around-mountains`: see

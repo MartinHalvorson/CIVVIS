@@ -1,5 +1,5 @@
 //! One production player, with observation and execution owned by adapters.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::{finishing::begin_player_turn, AdvancedAi};
@@ -134,11 +134,21 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
         let mut executed_movement = Vec::new();
+        // `districts-price-the-improvement`: like the live bridge, which sends
+        // the host only each city's last Produce of a batch, a city's earlier
+        // Produce orders this frame are dropped — so a District the planner
+        // re-sited before ending its turn never lands on (and bulldozes) the
+        // first site. Off, every logged action executes as before.
+        let ordinary: Vec<&(usize, Action)> = if ai.districts_price_the_improvement_on() {
+            final_production_only(view.log.since(ordinary_begin))
+        } else {
+            view.log.since(ordinary_begin).collect()
+        };
         let changed = execute_frame_recorded(
             game,
             pid,
             &finishing,
-            view.log.since(ordinary_begin),
+            ordinary.into_iter(),
             &mut executed_movement,
             &mut refused,
             &mut ai.refused_city_sites,
@@ -222,6 +232,30 @@ fn execute_frame<'a>(
         &mut Vec::new(),
         &mut BTreeSet::new(),
     )
+}
+
+/// Keep only each city's last `Produce` among a frame's actions, as the
+/// live bridge does before it sends a batch (`civvis_orders.rs`, "Only its
+/// final choice should acquire the host-turn lease").
+fn final_production_only<'a>(
+    actions: impl Iterator<Item = &'a (usize, Action)>,
+) -> Vec<&'a (usize, Action)> {
+    let actions: Vec<&(usize, Action)> = actions.collect();
+    let mut last: BTreeMap<u32, usize> = BTreeMap::new();
+    for (index, (_, action)) in actions.iter().enumerate() {
+        if let Action::Produce { city, .. } = action {
+            last.insert(*city, index);
+        }
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .filter(|(index, (_, action))| match action {
+            Action::Produce { city, .. } => last.get(city) == Some(index),
+            _ => true,
+        })
+        .map(|(_, action)| action)
+        .collect()
 }
 
 fn execute_frame_recorded<'a>(
