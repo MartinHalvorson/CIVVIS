@@ -1898,6 +1898,39 @@ impl AdvancedAi {
             && local_strength_ratio < DEFEND_HOLD_RATIO
     }
 
+    /// Keep the last local melee body of an early city's existing Defend
+    /// force under version three. Urgency may move its surplus to another
+    /// city, but not erase the melee floor of a lower-ranked defense.
+    fn early_city_keeps_last_melee(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        force: &TaskForce,
+        facts: &BTreeMap<u32, UnitFacts>,
+    ) -> bool {
+        if !self.capital_keeps_its_defender_3 || g.is_arena() || force.domain != ForceDomain::Land {
+            return false;
+        }
+        let ObjectiveKey::Defend(cid) = force.objective_key else {
+            return false;
+        };
+        if !early_cities(g, pid).contains(&cid) {
+            return false;
+        }
+        let city = &g.cities[&cid];
+        let local_melee = |id: &u32| {
+            facts
+                .get(id)
+                .is_some_and(|unit| unit.melee && !unit.recon && g.wdist(unit.pos, city.pos) <= 1)
+        };
+        local_melee(&uid)
+            && !force
+                .units
+                .iter()
+                .any(|other| *other != uid && local_melee(other))
+    }
+
     /// Move the rows keyed in `first` ahead of the rest, each group in its
     /// existing order.
     fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
@@ -2218,6 +2251,12 @@ impl AdvancedAi {
                             }
                             let there = &forces[current];
                             if there.objective_key != ObjectiveKey::Reserve {
+                                // Native Korea 20261105T062514Z t33: urgent
+                                // Jinju took the capital's last Warrior; its
+                                // Defend row became "no force" and it fell t41.
+                                if self.early_city_keeps_last_melee(g, pid, *uid, there, &facts) {
+                                    continue;
+                                }
                                 // What the unit is worth where it stands: its
                                 // contribution to what its row would lack
                                 // without it.
@@ -4197,3 +4236,6 @@ mod camp_age_tests;
 
 #[cfg(test)]
 mod capital_defender_tests;
+
+#[cfg(test)]
+mod early_city_last_melee_tests;
