@@ -12524,7 +12524,7 @@ end
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
 CivvisLedger = {
 	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {},
-	expected_condemn = {}
+	expected_condemn = {}, expected_spy_travel = {}
 };
 
 -- UnitCommands.xml:47 gives Condemn Heretic no target parameters. Record the
@@ -13045,6 +13045,13 @@ end;
 -- are one field apart. Activation consumes the physical Great Person unit;
 -- keep the historical `unit_lost` witness, but mark that non-loss disposition
 -- so a ledger cannot mistake a successful science/culture action for a kill.
+--
+-- A Spy that starts `SPY_TRAVEL_NEW_CITY` is the same kind of non-loss: the
+-- host lifts it off the map that turn and re-creates it at the destination
+-- under a NEW unit id (civvis-20261105T093803Z: Spy 2883607 ordered from
+-- (12,27) to Agra t89, removed t89, Spy 3080195 standing in Agra t92). Read
+-- as losses, 163 of the 253 Deity Spy `unit_lost` lines of 11-04/05 were
+-- journeys. `applyOrder` marks the request; the removal names it.
 CivvisLedger.onUnitRemoved = function(player, unitId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
@@ -13053,10 +13060,14 @@ CivvisLedger.onUnitRemoved = function(player, unitId)
 	local key = tostring(unitId);
 	local activationTurn = CivvisLedger.expected_gp_activation[key];
 	CivvisLedger.expected_gp_activation[key] = nil;
+	local travelTurn = CivvisLedger.expected_spy_travel[key];
+	CivvisLedger.expected_spy_travel[key] = nil;
 	CivvisLedger.positions[key] = nil;
 	emit("unit_lost", {
 		turn = turn, unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[key],
-		cause = activationTurn == turn and "great_person_activation" or nil,
+		cause = activationTurn == turn and "great_person_activation"
+			or (travelTurn ~= nil and turn >= travelTurn and turn - travelTurn <= 1 and "spy_travel")
+			or nil,
 		gold = tonumber(try(function()
 			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
 		end, nil)),
@@ -16986,7 +16997,13 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			return operate(unit, hash, params), verb;
+			-- A journey lifts the Spy off the map, possibly inside the request:
+			-- mark it first so `CivvisLedger.onUnitRemoved` names the removal.
+			local travelKey = verb == "SPY_TRAVEL_NEW_CITY" and tostring(unit:GetID()) or nil;
+			if travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = turn; end
+			local sent = operate(unit, hash, params);
+			if not sent and travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = nil; end
+			return sent, verb;
 		end
 		-- Condemning a heretic is a COMMAND, not an operation, and it is
 		-- parameterless: `UnitCommands` gives the row no `InterfaceMode`, so
