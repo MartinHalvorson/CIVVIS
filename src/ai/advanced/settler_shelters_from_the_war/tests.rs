@@ -61,7 +61,9 @@ fn tile_at(game: &Game, at: Pos, distance: i32, avoid: Pos) -> Pos {
         .keys()
         .copied()
         .filter(|p| {
-            game.wdist(*p, at) == distance && game.city_at(*p).is_none() && game.wdist(*p, avoid) > 1
+            game.wdist(*p, at) == distance
+                && game.city_at(*p).is_none()
+                && game.wdist(*p, avoid) > 1
         })
         .collect();
     tiles.sort_unstable();
@@ -95,11 +97,17 @@ fn a_settler_in_the_open_near_an_enemy_soldier_heads_home() {
 
     let mut off = AdvancedAi::new();
     off.settler_targets.insert(settler, site);
-    assert_eq!(off.settler_shelters_from_the_war_step(&mut game.clone(), 0, settler), None);
+    assert_eq!(
+        off.settler_shelters_from_the_war_step(&mut game.clone(), 0, settler),
+        None
+    );
 
     let mut on = sheltering();
     on.settler_targets.insert(settler, site);
-    assert_eq!(on.settler_shelters_from_the_war_step(&mut game, 0, settler), Some(true));
+    assert_eq!(
+        on.settler_shelters_from_the_war_step(&mut game, 0, settler),
+        Some(true)
+    );
     assert!(game.wdist(game.units[&settler].pos, home) <= 3);
     assert_eq!(on.settler_targets.get(&settler), Some(&site));
 }
@@ -112,7 +120,10 @@ fn a_settler_in_a_city_stays() {
     let settler = game.spawn_test_unit("settler", 0, home);
     game.spawn_test_unit("warrior", 1, tile_at(&game, home, 3, home));
     let mut on = sheltering();
-    assert_eq!(on.settler_shelters_from_the_war_step(&mut game, 0, settler), Some(true));
+    assert_eq!(
+        on.settler_shelters_from_the_war_step(&mut game, 0, settler),
+        Some(true)
+    );
     assert_eq!(game.units[&settler].pos, home);
 }
 
@@ -126,7 +137,10 @@ fn peace_distance_and_barbarians_leave_the_routine_alone() {
     let mut peace = base.clone();
     let settler = peace.spawn_test_unit("settler", 0, here);
     peace.spawn_test_unit("warrior", 1, tile_at(&peace, here, 3, home));
-    assert_eq!(sheltering().settler_shelters_from_the_war_step(&mut peace, 0, settler), None);
+    assert_eq!(
+        sheltering().settler_shelters_from_the_war_step(&mut peace, 0, settler),
+        None
+    );
 
     let mut far = base.clone();
     far.at_war.insert((0, 1));
@@ -136,7 +150,10 @@ fn peace_distance_and_barbarians_leave_the_routine_alone() {
         1,
         tile_at(&far, here, WAR_SHELTER_RADIUS + 1, home),
     );
-    assert_eq!(sheltering().settler_shelters_from_the_war_step(&mut far, 0, settler), None);
+    assert_eq!(
+        sheltering().settler_shelters_from_the_war_step(&mut far, 0, settler),
+        None
+    );
 
     let mut barbarian = base.clone();
     let barb = barbarian
@@ -161,8 +178,14 @@ fn a_settler_on_its_foundable_site_is_left_to_found() {
     let here = open_tile(&game, home, rival, 5);
     let settler = game.spawn_test_unit("settler", 0, here);
     game.spawn_test_unit("warrior", 1, tile_at(&game, here, 3, home));
-    assert!(game.can_found_city(settler), "the test site must be foundable");
+    assert!(
+        game.can_found_city(settler),
+        "the test site must be foundable"
+    );
     let mut on = sheltering();
     on.settler_targets.insert(settler, here);
-    assert_eq!(on.settler_shelters_from_the_war_step(&mut game, 0, settler), None);
+    assert_eq!(
+        on.settler_shelters_from_the_war_step(&mut game, 0, settler),
+        None
+    );
 }

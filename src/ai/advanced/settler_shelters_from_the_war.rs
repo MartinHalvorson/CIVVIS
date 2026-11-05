@@ -42,9 +42,9 @@ impl AdvancedAi {
             .values()
             .filter(|unit| {
                 unit.owner != pid
-                    && g.players.get(unit.owner).is_some_and(|owner| {
-                        owner.alive && !owner.is_minor && !owner.is_barbarian
-                    })
+                    && g.players
+                        .get(unit.owner)
+                        .is_some_and(|owner| owner.alive && !owner.is_minor && !owner.is_barbarian)
                     && g.is_at_war(pid, unit.owner)
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() != Some("air")
