@@ -5567,6 +5567,11 @@ pub struct AdvancedAi {
     /// wants it (`backlog_builder_holds`), as it already spares the housing
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
+    /// `anvil-spares-the-one-blow`: the Anvil never leaves the City Center
+    /// empty while it has a land soldier, and never posts one off the city
+    /// where one blow at the top of its roll removes it. See
+    /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
+    anvil_spares_the_one_blow: bool,
     // ---- append: c-d ------------------------------------------------
     /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
     /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
@@ -10639,6 +10644,10 @@ mod amphibious_siege_train;
 /// `anvil-garrisons-its-melee`: an unwalled city's Anvil garrisons its
 /// strongest melee soldier. See `advanced/anvil_garrisons_its_melee.rs`.
 mod anvil_garrisons_its_melee;
+/// `anvil-spares-the-one-blow`: the Anvil keeps the city tile and spares its
+/// soldiers posts where one blow removes them. See
+/// `advanced/anvil_spares_the_one_blow.rs`.
+mod anvil_spares_the_one_blow;
 mod aqueduct_claims_the_capped_queue;
 /// `astrology-before-the-second-city`: the Prophet race's Astrology before
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
@@ -11756,6 +11765,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
+            anvil_spares_the_one_blow: false,
             // ---- append: c-d ----------------------------------------
             disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
