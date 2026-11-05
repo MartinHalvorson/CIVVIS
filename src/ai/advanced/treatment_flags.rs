@@ -2257,6 +2257,9 @@ impl AdvancedAi {
         /// Opt-in gene `denounce-only-to-declare`; see
         /// `advanced/denounce_only_to_declare.rs`.
         denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
+        /// Opt-in gene `capture-scar-reads-the-new-city`; see
+        /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
+        capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
     }
 }
 
