@@ -5246,6 +5246,12 @@ pub const GENES: &[Gene] = &[
     // claim goes to the next-fastest city or waits a turn. See
     // `advanced/science_heads_keep_their_queue.rs`.
     Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // `denounce-only-to-declare`: the Science seat's threat rung no longer
+    // denounces the space racer; the war opening denounces when a war
+    // follows. Live Deity 11-04/05: a rival we denounced declared war on us
+    // 2.3x as often (stratified), and those wars cost 2.5 cities against
+    // 1.35. See `advanced/denounce_only_to_declare.rs`.
+    Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2248,6 +2248,9 @@ impl AdvancedAi {
         /// Opt-in gene `science-heads-keep-their-queue`; see
         /// `advanced/science_heads_keep_their_queue.rs`.
         science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
+        /// Opt-in gene `denounce-only-to-declare`; see
+        /// `advanced/denounce_only_to_declare.rs`.
+        denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
     }
 }
 
