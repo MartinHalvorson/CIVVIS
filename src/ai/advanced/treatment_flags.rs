@@ -2206,6 +2206,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
+        /// Opt-in gene `science-writes-before-it-sails`; see
+        /// [`Self::science_writes_before_it_sails`].
+        science_writes_before_it_sails => enable_science_writes_before_it_sails, disable_science_writes_before_it_sails;
     }
 }
 

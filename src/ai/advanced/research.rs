@@ -1788,6 +1788,18 @@ impl AdvancedAi {
                 };
             }
         }
+        // `science-writes-before-it-sails`: a Science seat researches Writing
+        // (the Campus/Seowon unlock) ahead of the coastal Sailing goal above.
+        // Live Deity Korea took Sailing ~t20 and Writing only at a median t31
+        // (40 games), the first Seowon at t45, while Writing needs only
+        // Pottery and the whole empire made 6-16 Science at t40.
+        if self.science_writes_before_it_sails
+            && tech == "writing"
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && !g.players[pid].techs.contains(&crate::name!("writing"))
+        {
+            value += WRITING_BEFORE_SAILING_VALUE;
+        }
         if (strategy == GrandStrategy::Science && self.phase_specialization_active(g))
             || self.science_drive_active()
         {
@@ -1992,3 +2004,7 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod steal_civic_tests;
+
+/// `science-writes-before-it-sails`: the research value Writing gains for a
+/// Science seat, above the coastal Sailing goal's 190.
+pub(super) const WRITING_BEFORE_SAILING_VALUE: f64 = 220.0;

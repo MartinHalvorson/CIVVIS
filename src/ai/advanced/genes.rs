@@ -5113,6 +5113,11 @@ pub const GENES: &[Gene] = &[
     // too (074444Z lost its first Settler that way at t31). See
     // `settler_shelters_from_the_war.rs`.
     Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // `science-writes-before-it-sails` (2026-11-05): live Deity Korea took
+    // the coastal Sailing goal (+190 research value) ~t20 and Writing only at
+    // a median t31, the first Seowon at t45; Writing needs only Pottery. A
+    // Science seat now values Writing above it. See `advanced/research.rs`.
+    Gene { tag: "science-writes-before-it-sails", field: "science_writes_before_it_sails", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writes_before_it_sails, disable: AdvancedAi::disable_science_writes_before_it_sails },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
