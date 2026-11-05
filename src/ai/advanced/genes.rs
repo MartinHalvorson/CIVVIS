@@ -5325,6 +5325,11 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
+    // (carrying 1 and 2). The Science seat's Government Plaza district claims
+    // the capital's queue once its Campus stands. See
+    // `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // The site score paid fresh water +12 and a coast-only seat +10 (housing
     // +4, Harbor base +6), though live non-capital cities on fresh water held
     // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
