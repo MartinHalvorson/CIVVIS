@@ -493,10 +493,10 @@ pub(crate) mod defending_district_tests;
 /// Espionage: spies, missions, promotions and counterspies. See
 /// `game/espionage.rs`.
 mod espionage;
-mod growth;
 /// Great People: points, offers, activation, patronage and effects. See
 /// `game/great_people.rs`.
 mod great_people;
+mod growth;
 mod policy_ledger;
 mod research_quotes;
 mod route_avoidance;
@@ -507,12 +507,21 @@ mod amenities;
 /// Barbarians: camps, raids, scouts, and clearing a camp. See
 /// `game/barbarians.rs`.
 mod barbarians;
+/// Combat: attack range and reach, strength and bonuses, city strikes, XP.
+/// See `game/combat.rs`.
+mod combat;
+/// Disasters: damage from natural disasters and storms. See
+/// `game/disasters.rs`.
+mod disasters;
 /// Embarkation: embarked units and their strength. See
 /// `game/embarkation.rs`.
 mod embarkation;
 /// Eras: historic moments, era score, dedications and golden ages. See
 /// `game/eras.rs`.
 mod eras;
+/// Healing: heal rates, healing locations and Holy Waters. See
+/// `game/healing.rs`.
+mod healing;
 /// Housing: a city's housing, its sources, and its effect on growth. See
 /// `game/housing.rs`.
 mod housing;
@@ -10949,282 +10958,11 @@ impl Game {
         self.record_war_moment(taker, loser, kind, Some(city.to_string()), Some(at));
     }
 
-    /// Classify a tile from a unit owner's perspective for passive healing.
-    /// Districts use the district rate, while any foreign civilization's
-    /// territory is rival territory even when Open Borders or peace applies.
-    pub fn healing_location(&self, owner: usize, pos: Pos) -> HealingLocation {
-        let tile = self.map.get(pos);
-        let territory_owner = tile
-            .and_then(|tile| tile.owner_city)
-            .and_then(|cid| self.cities.get(&cid))
-            .map(|city| city.owner);
-        if self.city_at(pos).is_some() || tile.and_then(|tile| tile.district.as_ref()).is_some() {
-            return HealingLocation::District;
-        }
-        match territory_owner {
-            Some(tile_owner) if tile_owner == owner => HealingLocation::FriendlyTerritory,
-            Some(tile_owner) if self.suzerain_of(tile_owner) == Some(owner) => {
-                HealingLocation::FriendlyTerritory
-            }
-            Some(_) => HealingLocation::EnemyTerritory,
-            None => HealingLocation::NeutralTerritory,
-        }
-    }
-
-    /// Generations for every mutable input to the cached safe-healing target
-    /// scan, plus the small diplomacy state that has no mutation wrapper.
-    ///
-    /// The caller keeps the three direct generations separate, avoiding a
-    /// needless hash collision across them. `at_war`, the arena mode, and the
-    /// barbarian seat all affect `is_at_war`; the latter two are static for a
-    /// game, but retaining them makes the cache's complete input explicit.
-    pub(crate) fn healing_target_stamp(&self) -> (u64, u64, u64, u64) {
-        let mut wars = vision_key(&[self.at_war.len() as u64]);
-        for &(a, b) in &self.at_war {
-            wars = vision_key(&[wars, a as u64, b as u64]);
-        }
-        (
-            self.map.tiles.epoch(),
-            self.cities.generation(),
-            self.players.epoch(),
-            vision_key(&[
-                wars,
-                self.barb_pid.map_or(u64::MAX, |pid| pid as u64),
-                self.is_arena() as u64,
-            ]),
-        )
-    }
-
-    /// What a unit standing in nuclear fallout loses at the start of its turn.
-    ///
-    /// The shipped WMDs table carries the blast radius, the ICBM range and how
-    /// long the fallout lasts, but not what standing in it costs — the same gap
-    /// the per-ring blast damage has. This is the one number here: enough that
-    /// holding irradiated ground is a decision rather than an oversight, and
-    /// slow enough that a full-health unit can still cross a contaminated
-    /// corridor and live.
-    pub const FALLOUT_UNIT_DAMAGE: i32 = 20;
-
     /// Is this tile contaminated right now?
     pub fn fallout_at(&self, pos: Pos) -> bool {
         self.map
             .get(pos)
             .is_some_and(|tile| tile.fallout_until > self.turn)
-    }
-
-    /// Holy Waters: `HOLY_WATERS_HEALING` attaches a +10 healing modifier to
-    /// every Holy Site in a city following the religion, and
-    /// `MODIFIER_ALL_UNITS_ADJUST_HEAL_RELIGION_PER_TURN` applies it to that
-    /// religion's units on the district's own plot or its adjacent ring.
-    fn holy_waters_heal(&self, unit: &Unit) -> i32 {
-        if self.rules.units[unit.kind].class != "religious" {
-            return 0;
-        }
-        let Some(religion) = unit.religion.as_deref() else {
-            return 0;
-        };
-        let amount = self.religion_belief_effect(religion, "holy_waters_heal");
-        if amount == 0.0 {
-            return 0;
-        }
-        let beside_a_qualifying_holy_site = self.wdisk(unit.pos, 1).into_iter().any(|position| {
-            self.map.get(position).is_some_and(|tile| {
-                tile.district.is_some_and(|district| {
-                    self.district_is_family(district, crate::name!("holy_site"))
-                }) && tile
-                    .owner_city
-                    .and_then(|city_id| self.cities.get(&city_id))
-                    .is_some_and(|city| self.city_religion(city) == Some(religion))
-            })
-        });
-        if beside_a_qualifying_holy_site {
-            amount.round() as i32
-        } else {
-            0
-        }
-    }
-
-    pub fn unit_heal_rate(&self, uid: u32) -> i32 {
-        self.unit_heal_rate_for(&self.units[&uid])
-    }
-
-    /// Evaluate a recovery destination without moving the live unit. The
-    /// projected position controls embarkation, territory and nearby support.
-    pub(crate) fn unit_heal_rate_at(&self, uid: u32, pos: Pos) -> i32 {
-        let mut unit = self.units[&uid].clone();
-        unit.pos = pos;
-        self.unit_heal_rate_for(&unit)
-    }
-
-    fn unit_heal_rate_for(&self, unit: &Unit) -> i32 {
-        let spec = &self.rules.units[unit.kind];
-        // Barbarian units never recover passively in Civ VI. They can still
-        // receive an immediate healing plunder reward, such as from a Farm.
-        if self.players[unit.owner].is_barbarian {
-            return 0;
-        }
-        // Nothing recovers on an arena. A Tactics game is one engagement, not
-        // a campaign: there is no friendly territory to fall back into and no
-        // city to garrison, so every hex heals at the same neutral rate and
-        // both sides can always afford to break contact. Measured with
-        // healing on, two even armies ground each other down to about half
-        // and then stalled for four hundred turns — each side pulling a
-        // damaged unit out, standing it still until it was whole again, and
-        // walking it back — so the mode's own victory condition, last army
-        // standing, was never reached. Permanent damage is also what makes
-        // the tactics matter: a trade you win stays won, and focusing fire on
-        // one defender is worth doing. A board that asks for a campaign
-        // (`TacticsRules::heal`) gets the neutral rate everywhere instead.
-        if self.is_arena() && !self.tactics.heal {
-            return 0;
-        }
-        // Nothing recovers in fallout. A blast that only cost yields would make
-        // ground zero the safest place on the map to park a wounded army.
-        if self.fallout_at(unit.pos) {
-            return 0;
-        }
-        if spec.domain.as_deref() == Some("air") && self.air_capacity_at(unit.owner, unit.pos) <= 0
-        {
-            return 0;
-        }
-        // Bound once, below the guards that mean "cannot recover at all" — a
-        // barbarian, an arena, fallout, a grounded aircraft — because a
-        // healing modifier lifts a rate, it does not create one.
-        let holy_site_heal = self.pantheon_holy_site_heal(unit);
-        let holy_waters_heal = self.holy_waters_heal(unit);
-        if self
-            .map
-            .get(unit.pos)
-            .and_then(|tile| tile.owner_city)
-            .and_then(|city_id| self.cities.get(&city_id))
-            .is_some_and(|city| {
-                city.owner == unit.owner
-                    && self.governor_effect(unit.owner, city.id, "unit_heal_full") > 0.0
-            })
-        {
-            return 100;
-        }
-        if spec.class == "religious" {
-            let mut best: f64 = 0.0;
-            if self.map.get(unit.pos).is_some_and(|tile| {
-                tile.improvement.as_deref() == Some("monastery") && !tile.pillaged
-            }) {
-                best = best.max(
-                    self.rules.improvements["monastery"]
-                        .effects
-                        .get("religious_unit_heal_rate")
-                        .copied()
-                        .unwrap_or(0.0),
-                );
-            }
-            for position in self.wdisk(unit.pos, 1) {
-                let Some(tile) = self.map.get(position) else {
-                    continue;
-                };
-                let Some(district) = tile.district else {
-                    continue;
-                };
-                if !self.district_is_family(district, crate::name!("holy_site")) {
-                    continue;
-                }
-                let Some(city) = tile.owner_city.and_then(|cid| self.cities.get(&cid)) else {
-                    continue;
-                };
-                if city.owner != unit.owner {
-                    continue;
-                }
-                let mut faith = self
-                    .district_yields(Name::new(district.as_str()), position)
-                    .faith;
-                faith += city
-                    .buildings
-                    .iter()
-                    .filter_map(|name| {
-                        let building = &self.rules.buildings[name];
-                        building
-                            .district
-                            .is_some_and(|district| {
-                                self.district_is_family(district, crate::name!("holy_site"))
-                            })
-                            .then_some(building.yields.faith)
-                    })
-                    .sum::<f64>();
-                best = best.max(3.0 * faith);
-            }
-            let chaplain = self
-                .wdisk(unit.pos, 1)
-                .into_iter()
-                .flat_map(|position| self.unit_ids_at(position).iter().copied())
-                .filter(|other| self.units[other].owner == unit.owner)
-                .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
-                .fold(0.0, f64::max);
-            best = best.max(chaplain);
-            return best.round() as i32 + holy_site_heal + holy_waters_heal;
-        }
-        if spec.domain.as_deref() == Some("sea")
-            && self
-                .map
-                .get(unit.pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|city_id| self.cities.get(&city_id))
-                .is_some_and(|city| {
-                    city.owner == unit.owner
-                        && self.city_district_effect(city, "naval_heal_full") > 0.0
-                })
-        {
-            return 100;
-        }
-        let emergency_heal = if spec.class == "military" {
-            self.map
-                .get(unit.pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|city| self.cities.get(&city))
-                .and_then(|city| {
-                    self.players[unit.owner]
-                        .counters
-                        .get(&format!("emergency_heal_in:{}", city.owner))
-                })
-                .copied()
-                .unwrap_or(0) as i32
-        } else {
-            0
-        };
-        let location = self.healing_location(unit.owner, unit.pos);
-        let naval_or_embarked = spec.domain.as_deref() == Some("sea") || self.is_embarked(unit);
-        let support_heal = if spec.class == "military" {
-            self.adjacent_support_effect(unit, "adjacent_heal").round() as i32
-        } else {
-            0
-        };
-        if naval_or_embarked {
-            let friendly = self
-                .map
-                .get(unit.pos)
-                .and_then(|tile| tile.owner_city)
-                .and_then(|cid| self.cities.get(&cid))
-                .is_some_and(|city| {
-                    city.owner == unit.owner || self.suzerain_of(city.owner) == Some(unit.owner)
-                });
-            if friendly {
-                20 + emergency_heal + support_heal + holy_site_heal
-            } else {
-                // Auxiliary Ships, Supply Fleet and Supercarrier do not heal a
-                // ship as if it were home: they pay 5 in enemy territory and
-                // 10 in neutral.
-                let promoted = match location {
-                    HealingLocation::EnemyTerritory => {
-                        self.promotion_effect(unit, "heal_enemy_territory")
-                    }
-                    HealingLocation::NeutralTerritory => {
-                        self.promotion_effect(unit, "heal_neutral_territory")
-                    }
-                    _ => 0.0,
-                } as i32;
-                promoted + emergency_heal + support_heal + holy_site_heal
-            }
-        } else {
-            location.rate() + emergency_heal + support_heal + holy_site_heal
-        }
     }
 
     pub fn gov_effects(&self, pid: usize) -> crate::rules::GovEffects {
@@ -12081,29 +11819,6 @@ impl Game {
             Some(pos),
         );
         Ok(())
-    }
-
-    /// Charge one bout of fighting. `WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS`
-    /// is 2 and `_IN_ALLIED_LANDS` is 1; fighting on your own soil is the
-    /// cheapest case. Policy and government reductions apply here, which is
-    /// what makes `war_weariness_multiplier` mean anything.
-    fn accrue_combat_weariness(&mut self, pid: usize, at: Pos) {
-        if !self.at_war_with_any_civilization(pid) {
-            return;
-        }
-        let owner = self
-            .map
-            .get(at)
-            .and_then(|tile| tile.owner_city)
-            .and_then(|cid| self.cities.get(&cid))
-            .map(|city| city.owner);
-        let home = owner == Some(pid);
-        let points = match owner {
-            Some(other) if other == pid => 1.0,
-            Some(other) if self.are_allied(pid, other) || self.same_team(pid, other) => 1.0,
-            _ => 2.0,
-        };
-        self.add_war_weariness(pid, points * self.war_weariness_multiplier(pid, home));
     }
 
     fn add_war_weariness(&mut self, pid: usize, points: f64) {
@@ -13760,26 +13475,6 @@ impl Game {
             .sum()
     }
 
-    /// Whether a siege unit may still attack after moving this turn.
-    /// Civilization VI's data gives every siege unit "Cannot move and attack
-    /// in the same turn" (`ABILITY_NO_MOVE_AND_SHOOT`, lifted by Expert
-    /// Crew), and a native board keeps that rule. The live host does not hold
-    /// our seat to it: across the live runs of 2026-09-30 to 10-03, 94 of the
-    /// 104 Range Attacks a siege unit of ours was ordered to make after a Move
-    /// To earlier in the same turn resolved, the same nine in ten an unmoved
-    /// gun's shot resolves, and none of those guns had Expert Crew. Live King
-    /// civvis-20261003T135713Z, turn 101: a fresh Trebuchet stepped from
-    /// (16,16) to (15,15) and struck Kwadukuza's walls for 23. The mirror
-    /// clears `moved` at every frame, so before this the shot happened only
-    /// when a re-plan frame came after the step; the planned turn left the gun
-    /// standing in the city's reach unfired. So a siege unit of the mirrored
-    /// seat fires after moving, as the host lets it, and a hostile one keeps
-    /// the rule.
-    pub(crate) fn siege_may_attack_after_moving(&self, unit: &Unit) -> bool {
-        self.promotion_effect(unit, "attack_after_move") > 0.0
-            || (unit.owner == MIRRORED_SEAT && !self.host_observed.is_empty())
-    }
-
     /// Numeric abilities inherent to the unit type plus earned promotions.
     fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
         self.rules.units[unit.kind]
@@ -13917,13 +13612,6 @@ impl Game {
         }
     }
 
-    fn unit_max_attacks(&self, uid: u32) -> i32 {
-        self.units
-            .get(&uid)
-            .map(|unit| 1 + self.promotion_effect(unit, "extra_attacks") as i32)
-            .unwrap_or(1)
-    }
-
     fn award_xp(&mut self, uid: u32, amt: f64) {
         if self
             .units
@@ -13939,63 +13627,6 @@ impl Game {
         if let Some(unit) = self.units.get_mut(&uid) {
             unit.xp += gained;
         }
-    }
-
-    /// Kabul doubles experience from every battle the unit initiates,
-    /// including attacks on City Centers and Encampments. Unit-vs-unit
-    /// combat applies its strength-sensitive award separately below.
-    fn award_initiated_combat_xp(&mut self, uid: u32, amount: f64) {
-        let multiplier = if self
-            .units
-            .get(&uid)
-            .is_some_and(|unit| self.grants_city_state_unique_bonus(unit.owner, "Kabul"))
-        {
-            2.0
-        } else {
-            1.0
-        };
-        self.award_xp(uid, amount * multiplier);
-    }
-
-    /// Unit-vs-unit XP is based on relative base Combat Strength. Kills
-    /// double that component. The final, modified award is capped at 8 XP.
-    fn award_unit_combat_xp(
-        &mut self,
-        uid: u32,
-        opponent: &Unit,
-        ranged: bool,
-        attacking: bool,
-        killed_opponent: bool,
-    ) {
-        let Some(unit) = self.units.get(&uid) else {
-            return;
-        };
-        if !self.rules.units[unit.kind].earns_xp {
-            return;
-        }
-        if self.promotion_pending(uid) {
-            return;
-        }
-        if self.players[opponent.owner].is_barbarian && unit.level >= 2 {
-            // Once a unit has its first promotion, combat with Barbarians and
-            // Free Cities grants exactly 1 XP regardless of other modifiers.
-            self.units.get_mut(&uid).unwrap().xp += 1;
-            return;
-        }
-        let own = self.rules.units[unit.kind].strength.max(1.0);
-        let other = self.rules.units[opponent.kind].strength.max(1.0);
-        let mut relative = other / own;
-        if killed_opponent {
-            relative *= 2.0;
-        }
-        let mut amount =
-            relative + if ranged { 1.0 } else { 2.0 } + if attacking { 1.0 } else { 0.0 };
-        if attacking && self.grants_city_state_unique_bonus(unit.owner, "Kabul") {
-            amount *= 2.0;
-        }
-        // The shipped cap on experience from one combat (8 since Rise and Fall).
-        let gained = self.modified_xp(uid, amount).min(8);
-        self.units.get_mut(&uid).unwrap().xp += gained;
     }
 
     /// Discipline: +5 combat strength when fighting barbarians.
@@ -14765,60 +14396,6 @@ impl Game {
         }
     }
 
-    /// Whether this unit's domain lets it melee that tile at all -- the check
-    /// `do_attack` applies before anything else about the fight. A land unit
-    /// proposing a shot at a ship never gets past here.
-    pub(crate) fn unit_can_melee_target_domain(&self, uid: u32, target: Pos) -> bool {
-        let Some(unit) = self.units.get(&uid) else {
-            return false;
-        };
-        let Some(tile) = self.map.get(target) else {
-            return false;
-        };
-        let sea_unit = self.rules.units[unit.kind].domain.as_deref() == Some("sea");
-        if sea_unit || unit.kind == "giant_death_robot" {
-            self.unit_can_traverse(uid, target)
-        } else {
-            // Land units may disembark into a melee attack, but may never
-            // initiate one into a water tile.
-            !self.rules.is_water(tile)
-        }
-    }
-
-    fn oligarchy_applies(spec: &crate::rules::UnitSpec) -> bool {
-        matches!(
-            spec.promotion_class.as_str(),
-            "melee" | "anti_cavalry" | "naval_melee"
-        )
-    }
-
-    /// The government's Combat Strength, with the two conditions the shipped
-    /// abilities carry. Oligarchy's +4 reaches melee, anti-cavalry and naval
-    /// melee only. Fascism's is `FASCISM_ATTACK_BUFF`, whose
-    /// `FASCISM_REQUIREMENTS` is a single `REQUIREMENT_PLAYER_IS_ATTACKING` —
-    /// it is an attacking bonus, and paying it on defence made the domination
-    /// government strictly stronger than the one Civ VI ships.
-    fn government_combat_bonus(&self, u: &Unit, attacking: bool) -> f64 {
-        let bonus = self.gov_effects(u.owner).combat_strength;
-        match self.players[u.owner].government.as_deref() {
-            Some("oligarchy") if !Self::oligarchy_applies(&self.rules.units[u.kind]) => 0.0,
-            Some("fascism") if !attacking => 0.0,
-            _ => bonus,
-        }
-    }
-
-    fn governor_unit_defense_bonus(&self, unit: &Unit) -> f64 {
-        self.map.tiles[&unit.pos]
-            .owner_city
-            .filter(|city_id| {
-                self.cities
-                    .get(city_id)
-                    .is_some_and(|city| city.owner == unit.owner)
-            })
-            .map(|city_id| self.governor_effect(unit.owner, city_id, "city_unit_defense"))
-            .unwrap_or(0.0)
-    }
-
     pub fn unit_strength(&self, u: &Unit, defending: bool) -> f64 {
         if self.is_embarked(u) {
             // Embarked strength climbs the shipped era ladder: 10 in the
@@ -14864,15 +14441,6 @@ impl Game {
         s
     }
 
-    fn ranged_defense_bonus(&self, unit: &Unit, city_attack: bool) -> f64 {
-        self.unit_effect(unit, "defend_ranged")
-            + if city_attack {
-                self.unit_effect(unit, "defend_city_attack")
-            } else {
-                0.0
-            }
-    }
-
     /// Whether `Action::Fortify` will be accepted for `u`. `pub(crate)` so the
     /// controllers can ask the engine instead of guessing: `fortify_or_stop`
     /// is the fleet's universal "nothing better to do" ending and used to
@@ -14882,58 +14450,6 @@ impl Game {
     pub(crate) fn unit_can_fortify(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         spec.class == "military" && spec.domain.as_deref() != Some("sea") && !self.is_embarked(u)
-    }
-
-    pub fn unit_ranged_strength(&self, u: &Unit) -> f64 {
-        let rs = self.rules.units[u.kind].ranged_strength;
-        if rs <= 0.0 {
-            return 0.0;
-        }
-        // Ranged Strength is what a unit attacks with.
-        rs + self.government_combat_bonus(u, true)
-            + self.unit_formation_bonus(u)
-            + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u)
-            + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
-                * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
-                / 100.0
-            + if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
-                self.empire_luxuries(u.owner) as f64
-            } else {
-                0.0
-            }
-    }
-
-    pub fn unit_bombard_strength(&self, u: &Unit) -> f64 {
-        let bs = self.rules.units[u.kind].bombard_strength;
-        if bs <= 0.0 {
-            return 0.0;
-        }
-        // Gathering Storm's CLASS_TARGETTING_ASSIST includes only these two
-        // units (Expansion1_Units.xml:37-38), not every Bombard-stat attacker.
-        bs + if matches!(u.kind.as_str(), "artillery" | "rocket_artillery") {
-            self.adjacent_support_effect(u, "adjacent_siege_bombard")
-        } else {
-            0.0
-        }
-            // Bombarding a city is an attack.
-            + self.government_combat_bonus(u, true)
-            + self.unit_formation_bonus(u)
-            + self.congress_military_strength_bonus(u)
-            + self.religious_combat_belief_bonus(u)
-            + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
-                * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
-                / 100.0
-            + if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
-                self.empire_luxuries(u.owner) as f64
-            } else {
-                0.0
-            }
-    }
-
-    pub fn unit_ranged_attack_strength(&self, u: &Unit) -> f64 {
-        self.unit_ranged_strength(u)
-            .max(self.unit_bombard_strength(u))
     }
 
     /// The model-side Gold quote for buying a Granary in a newly founded city.
@@ -15436,88 +14952,6 @@ impl Game {
             || self.city_district_effect(city, district_effect) > 0.0
     }
 
-    fn damage_disaster_tile(&mut self, position: Pos, unit_damage: i32) {
-        self.damage_tile_area(position, unit_damage, None);
-    }
-
-    /// Hurt every unit standing on a tile without touching the tile itself. A
-    /// storm that spares a city's infrastructure still catches whoever is out
-    /// in it.
-    fn damage_disaster_units(&mut self, position: Pos, unit_damage: i32) {
-        for unit_id in self.units_at(position) {
-            let hp = self.units[&unit_id].hp - unit_damage;
-            if hp <= 0 {
-                self.remove_unit(unit_id);
-            } else {
-                self.units.get_mut(&unit_id).unwrap().hp = hp;
-            }
-        }
-    }
-
-    /// Blast damage over one tile. `culprit` is the civilization that caused
-    /// it where somebody did — a nuclear strike kills through the same path a
-    /// volcano does, and those casualties belong in its war's ledger.
-    fn damage_tile_area(&mut self, position: Pos, unit_damage: i32, culprit: Option<usize>) {
-        let Some(tile) = self.map.get(position) else {
-            return;
-        };
-        let owner_city = tile.owner_city;
-        let district = tile.district;
-        let damageable = tile.improvement.is_some() || district.is_some();
-        if damageable {
-            self.map.tiles.get_mut(&position).unwrap().pillaged = true;
-        }
-        if let (Some(city_id), Some(district)) = (owner_city, district) {
-            let buildings: Vec<Name> = self.cities[&city_id]
-                .buildings
-                .iter()
-                .filter(|building| {
-                    let spec = &self.rules.buildings[building];
-                    spec.district
-                        .is_some_and(|family| self.district_is_family(district, family))
-                        && spec
-                            .effects
-                            .get("immune_to_disasters")
-                            .copied()
-                            .unwrap_or(0.0)
-                            <= 0.0
-                })
-                .cloned()
-                .collect();
-            self.cities
-                .get_mut(&city_id)
-                .unwrap()
-                .pillaged_buildings
-                .extend(buildings);
-        }
-        let units = self.units_at(position);
-        for unit_id in units {
-            // Removing an Aircraft Carrier removes the aircraft it carries,
-            // which stand on this tile and are later in `units`: one lethal
-            // strike on a loaded carrier used to index a unit it had already
-            // removed and panic ("unit N is not present").
-            let Some(unit) = self.units.get(&unit_id) else {
-                continue;
-            };
-            let hp = unit.hp - unit_damage;
-            if hp <= 0 {
-                let (owner, kind, formation) = {
-                    let unit = &self.units[&unit_id];
-                    (unit.owner, unit.kind, unit.formation)
-                };
-                if let Some(killer) = culprit {
-                    self.record_war_unit_loss(killer, owner, &kind, formation, position);
-                }
-                self.remove_unit(unit_id);
-            } else {
-                self.units.get_mut(&unit_id).unwrap().hp = hp;
-            }
-        }
-        if damageable {
-            self.scatter_aircraft_from(position);
-        }
-    }
-
     /// Resolve a flood over the supplied river floodplain tiles. Dams and
     /// Great Bath prevent damage; every Great Bath-mitigated flood permanently
     /// adds its data-defined Faith to each affected floodplain tile.
@@ -15710,67 +15144,6 @@ impl Game {
             return true;
         }
         district_effect.is_some_and(|effect| self.city_district_effect(city, effect) > 0.0)
-    }
-
-    /// Apply one disaster class to one tile: damage whoever is standing there,
-    /// maybe pillage what is built there, and maybe leave the ground better
-    /// than it was.
-    ///
-    /// Returns whether the ground came out of it richer, which is what decides
-    /// an eruption's Volcanic Soil: `RandomEvent_Yields` carries
-    /// `ReplaceFeature="true"` on the volcano's own yield rows, so the ash
-    /// settles exactly where the fertility did.
-    fn strike_disaster_tile(
-        &mut self,
-        position: Pos,
-        spec: &DisasterSpec,
-        severity: u8,
-        protection: Option<&str>,
-        rng: &mut Rng,
-    ) -> bool {
-        if self.disaster_immune(position, protection) {
-            return false;
-        }
-        let damage = spec.unit_damage.round() as i32;
-        if rng.chance(spec.pillage_chance(severity)) {
-            self.damage_disaster_tile(position, damage);
-        } else if damage > 0 {
-            self.damage_disaster_units(position, damage);
-        }
-        // ⚠ TWO ROLLS, NOT ONE. `RandomEvent_Yields` rates each yield type
-        // apart — a Catastrophic eruption leaves Food half the time and
-        // Production a quarter of the time, independently — and this used to
-        // roll once and grant Food only.
-        let mut fertilized = rng.chance(spec.fertility_chance(severity));
-        if fertilized {
-            self.fertilize_tile(position, Fertility::Food);
-        }
-        if rng.chance(spec.fertility_production_chance(severity)) {
-            self.fertilize_tile(position, Fertility::Production);
-            fertilized = true;
-        }
-        fertilized
-    }
-
-    /// Permanent fertility left behind by a disaster. Land keeps what a storm's
-    /// silt leaves; the sea keeps nothing.
-    fn fertilize_tile(&mut self, position: Pos, kind: Fertility) {
-        if self
-            .map
-            .get(position)
-            .is_none_or(|tile| self.rules.is_water(tile))
-        {
-            return;
-        }
-        let tile = self.map.tiles.get_mut(&position).unwrap();
-        let held = match kind {
-            Fertility::Food => &mut tile.disaster_food,
-            Fertility::Production => &mut tile.disaster_production,
-        };
-        if *held >= DISASTER_FERTILITY_CAP {
-            return;
-        }
-        *held += 1.0;
     }
 
     /// Kill citizens in a city a disaster reached, never below one.
@@ -16029,18 +15402,6 @@ impl Game {
         self.note_disaster(storm.pos, format!("{} formed", pretty(class)));
         self.strike_storm(&storm, &spec);
         self.storms.push(storm);
-    }
-
-    /// Damage everything under a storm's footprint and leave the marker the
-    /// clients draw.
-    fn strike_storm(&mut self, storm: &Storm, spec: &DisasterSpec) {
-        let mut rng =
-            self.disaster_rng(&storm.kind, storm.pos.0 as u64 ^ (storm.pos.1 as u64) << 8);
-        for position in self.wdisk(storm.pos, spec.radius(storm.severity)) {
-            self.map.tiles.get_mut(&position).unwrap().storm = Some(storm.kind.clone());
-            self.strike_disaster_tile(position, spec, storm.severity, None, &mut rng);
-            self.disaster_population_loss(position, spec.population_loss(storm.severity));
-        }
     }
 
     /// Move every live storm one tile along its heading and dissipate the ones
@@ -16431,14 +15792,6 @@ impl Game {
         }
     }
 
-    pub fn city_can_strike(&self, city: &City) -> bool {
-        city.wall_hp > 0
-            && (!city.struck
-                || city.extra_strikes_used
-                    < self.governor_effect(city.owner, city.id, "city_extra_strike") as i32)
-        // Ranged strikes require standing walls; Embrasure supplies one more.
-    }
-
     pub(crate) fn encampment_can_strike(&self, city: &City) -> bool {
         city.encampment_hp > 0
             && city.encampment_wall_hp > 0
@@ -16446,61 +15799,6 @@ impl Game {
             && (!city.encampment_struck
                 || city.encampment_extra_strikes_used
                     < self.governor_effect(city.owner, city.id, "city_extra_strike") as i32)
-    }
-
-    /// Route an attack roll into a walled city: walls absorb it (melee does
-    /// 15%, ranged 50%, siege 100% of the roll to walls), while the city
-    /// itself takes 1 damage behind healthy walls (>=80%), half through
-    /// damaged walls, and full damage once breached (<20%) or bare (Civ 6).
-    fn city_take_damage(
-        &mut self,
-        attacker: usize,
-        cid: u32,
-        dmg: i32,
-        wall_mult: f64,
-        bypass_walls: bool,
-    ) {
-        let (wall, max) = {
-            let c = &self.cities[&cid];
-            (c.wall_hp, self.city_max_wall_hp(c))
-        };
-        let c = self.cities.get_mut(&cid).unwrap();
-        c.last_attacked = self.turn;
-        let before_hp = c.hp;
-        if wall > 0 && max > 0 {
-            let frac = wall as f64 / max as f64;
-            let through = if bypass_walls {
-                dmg // siege tower: attackers pour past the walls (Civ 6)
-            } else if frac >= 0.8 {
-                1
-            } else if frac >= 0.2 {
-                dmg / 2
-            } else {
-                dmg
-            };
-            c.wall_hp = (wall - ((dmg as f64 * wall_mult).round() as i32).max(1)).max(0);
-            c.hp -= through.max(1);
-        } else {
-            c.hp -= dmg;
-        }
-        let (after_hp, after_wall) = (c.hp, c.wall_hp);
-        self.siege.blows += 1;
-        self.siege.damage += i64::from(before_hp - after_hp);
-        if wall > 0 && after_wall == 0 {
-            self.siege.walls_breached += 1;
-        }
-        if before_hp > 0 && after_hp <= 0 {
-            self.siege.cities_reduced += 1;
-            let city_pos = self.cities[&cid].pos;
-            let melee_on_the_doorstep = self.units.values().any(|unit| {
-                unit.owner == attacker
-                    && self.wdist(unit.pos, city_pos) <= 1
-                    && self.rules.units[unit.kind].is_melee_capable()
-            });
-            if melee_on_the_doorstep {
-                self.siege.reduced_with_melee_adjacent += 1;
-            }
-        }
     }
 
     pub fn available_techs(&self, pid: usize) -> Vec<Name> {
@@ -17004,127 +16302,6 @@ impl Game {
         }
         self.players[pid].mass_driver_site = Some(site);
         self.players[pid].mass_driver_ore = Some(ore);
-        Ok(())
-    }
-
-    /// Throw a slug at a tile instead of landing it as cargo.
-    ///
-    /// A mass driver on the Moon needs no launcher on the ground and no range
-    /// to speak of — a rock leaving lunar orbit reaches anywhere on the world
-    /// this civilization can see. What bounds it is the number of drivers and
-    /// the ore: one shot per driver per turn, one unit of the aimed ore out of
-    /// the stockpile per shot. It leaves no fallout and it is not a device, so
-    /// unlike a detonation it earns a war's ordinary grievances rather than
-    /// the world's lasting horror.
-    fn do_mass_driver_strike(&mut self, pid: usize, target: Pos) -> Result<(), String> {
-        let drivers = self.mass_drivers(pid);
-        if drivers <= 0 {
-            return Err("no mass driver on the Moon".into());
-        }
-        if self.players[pid].mass_driver_shots >= drivers {
-            return Err("every mass driver has already fired this turn".into());
-        }
-        let ore = self.players[pid]
-            .mass_driver_ore
-            .ok_or_else(|| "the mass drivers are not aimed at an ore".to_string())?;
-        if self.strategic_stockpile(pid, ore) < 1.0 {
-            return Err("no slug in the stockpile to throw".into());
-        }
-        if !self.map.tiles.contains_key(&target) {
-            return Err("no such tile".into());
-        }
-        if !self.players[pid].explored.contains(&target) {
-            return Err("target tile is unrevealed".into());
-        }
-        // Same rule a detonation is held to: whatever is standing under it
-        // decides whether the order is legal, and dropping a rock on somebody
-        // you are at peace with is not.
-        let mut aggrieved = BTreeSet::new();
-        let owners = self
-            .unit_ids_at(target)
-            .iter()
-            .map(|uid| self.units[uid].owner)
-            .chain(self.city_at(target).map(|city| self.cities[&city].owner))
-            .chain(
-                self.defending_district_at(target)
-                    .map(|city| self.cities[&city].owner),
-            )
-            .chain(self.tile_owner(target));
-        for owner in owners {
-            if owner == pid || self.players[owner].is_barbarian {
-                continue;
-            }
-            if !self.is_at_war(pid, owner) {
-                return Err("cannot strike a civilization you are at peace with".into());
-            }
-            aggrieved.insert(owner);
-        }
-        let struck_city = self
-            .city_at(target)
-            .filter(|city| self.cities[city].owner != pid);
-        let exposed: Vec<u32> = self.units_at(target);
-        for defender in exposed
-            .iter()
-            .filter_map(|uid| self.units.get(uid))
-            .filter(|unit| unit.owner != pid)
-            .cloned()
-            .collect::<Vec<_>>()
-        {
-            self.record_war_unit_participation(&defender, pid);
-        }
-        let spent = self.strategic_stockpile(pid, ore) - 1.0;
-        self.players[pid].strategic_resources.insert(ore, spent);
-        self.players[pid].mass_driver_shots += 1;
-        bump(&mut self.players[pid], "mass_driver_strikes");
-        // One tile, no blast radius: a slug is aimed, not detonated. It hits
-        // as hard as a nuclear ground zero because it arrives with the whole
-        // of a gravity well behind it, and it does it to exactly one hexagon.
-        self.damage_tile_area(target, 100, Some(pid));
-        if let Some(city) = struck_city {
-            let city = self.cities.get_mut(&city).unwrap();
-            city.wall_hp = 0;
-            city.pop = (city.pop - 1).max(1);
-        }
-        let name = struck_city.map(|city| self.cities[&city].name.clone());
-        for owner in aggrieved.iter().copied() {
-            self.add_grievances(owner, pid, 50.0);
-            self.record_war_moment(pid, owner, "mass_driver_strike", name.clone(), Some(target));
-        }
-        let destroyed = exposed
-            .into_iter()
-            .filter(|uid| !self.units.contains_key(uid))
-            .count();
-        let toll = match destroyed {
-            0 => String::new(),
-            1 => " · 1 unit lost".to_string(),
-            count => format!(" · {count} units lost"),
-        };
-        let place = name
-            .clone()
-            .or_else(|| {
-                aggrieved
-                    .iter()
-                    .next()
-                    .map(|owner| format!("{} territory", self.civ_name(*owner)))
-            })
-            .unwrap_or_else(|| "open ground".to_string());
-        self.note_important(
-            pid,
-            "War",
-            format!("dropped a mass driver slug on {place}{toll}"),
-            Some(target),
-        );
-        for owner in aggrieved {
-            self.note_important(
-                owner,
-                "War",
-                format!("{} dropped a slug from the Moon", self.civ_name(pid)),
-                Some(target),
-            );
-        }
-        // Throwing rocks at people from orbit is not free at home either,
-        // though it is nothing like the price of a detonation.
-        self.add_war_weariness(pid, 2.0);
         Ok(())
     }
 
@@ -18241,21 +17418,6 @@ impl Game {
         converted * self.civ_effect(pid, "holy_city_combat_strength")
     }
 
-    pub fn unit_attack_range(&self, uid: u32) -> i32 {
-        let unit = &self.units[&uid];
-        let spec = &self.rules.units[unit.kind];
-        spec.range.max(1)
-            + self.promotion_effect(unit, "range") as i32
-            // CLASS_FORWARD_OBSERVER belongs to ground siege. `siege` also
-            // marks Bombers for city-targeting, but they receive no Balloon
-            // or Drone range bonus (Base Units.xml:611-623).
-            + if spec.promotion_class == "siege" {
-                self.adjacent_support_effect(unit, "adjacent_siege_range") as i32
-            } else {
-                0
-            }
-    }
-
     /// Aircraft rebase up to twice their printed Movement. This deliberately
     /// differs from operational attack range (and from range promotions).
     pub fn air_rebase_range(&self, uid: u32) -> i32 {
@@ -18264,11 +17426,6 @@ impl Game {
             .filter(|unit| self.rules.units[unit.kind].domain.as_deref() == Some("air"))
             .map(|unit| (self.rules.units[unit.kind].moves * 2.0).floor() as i32)
             .unwrap_or(0)
-    }
-
-    pub(crate) fn air_operation_origin(&self, uid: u32) -> Pos {
-        let unit = &self.units[&uid];
-        unit.air_patrol_pos.unwrap_or(unit.pos)
     }
 
     fn can_air_patrol_at(&self, pid: usize, pos: Pos) -> bool {
@@ -19640,158 +18797,6 @@ impl Game {
         best.into_keys().filter(|p| *p != start).collect()
     }
 
-    /// Every tile this unit could attack on a fresh turn.
-    ///
-    /// This is the combat counterpart to [`Game::threat_reach`]. It follows
-    /// the same terrain, border, cliff, movement-cost, and zone-of-control
-    /// rules, then reserves the Movement an actual melee attack needs or the
-    /// remaining point a ranged attack needs. Occupying units are deliberately
-    /// read through: callers use this as an enemy threat envelope, where a
-    /// blocker may move away before the threatened unit's next turn.
-    ///
-    /// The result is a potential envelope rather than a permission: it does
-    /// not require a current target, visibility, or a declaration of war.
-    /// Those facts belong to the controller deciding which visible enemies
-    /// matter. The returned order is stable for explainers and tests.
-    pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
-        self.attack_reach_from_flood(uid).0
-    }
-
-    /// The cached form of [`Self::attack_reach_from_flood`] for an AI envelope
-    /// query. `key` is the caller's full board fingerprint; on a mismatch the
-    /// old snapshot is discarded before this unit's reach can be read.
-    ///
-    /// The answer deliberately remains viewer-independent. Sharing an
-    /// already-filtered hostile table would be wrong because different seats
-    /// see and fight different units; sharing this raw flood is exact because
-    /// `attack_reach_from_flood` receives only `self` and `uid`.
-    pub(crate) fn cached_attack_reach_from_flood(
-        &self,
-        key: (u32, u64),
-        uid: u32,
-    ) -> Arc<AttackReachFromFlood> {
-        let mut cache = self
-            .attack_reach_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if cache.key != Some(key) {
-            cache.key = Some(key);
-            cache.reaches.clear();
-        }
-        if let Some(reach) = cache.reaches.get(&uid) {
-            return Arc::clone(reach);
-        }
-        let (targets, flood) = self.attack_reach_from_flood(uid);
-        let reach = Arc::new(AttackReachFromFlood {
-            targets: Arc::from(targets),
-            flood,
-        });
-        #[cfg(test)]
-        {
-            cache.computations += 1;
-        }
-        cache.reaches.insert(uid, Arc::clone(&reach));
-        reach
-    }
-
-    #[cfg(test)]
-    pub(crate) fn attack_reach_cache_computations(&self) -> u64 {
-        self.attack_reach_cache
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .computations
-    }
-
-    /// `attack_reach`, and the tiles the unit walked to get there.
-    pub(crate) fn attack_reach_from_flood(&self, uid: u32) -> (Vec<Pos>, Vec<Pos>) {
-        let Some(unit) = self.units.get(&uid) else {
-            return (vec![], vec![]);
-        };
-        let spec = &self.rules.units[unit.kind];
-        if spec.class != "military" || (!spec.is_melee_capable() && !spec.has_ranged_attack()) {
-            return (vec![], vec![]);
-        }
-
-        let attack_range = self.unit_attack_range(uid);
-        if spec.domain.as_deref() == Some("air") {
-            let origin = self.air_operation_origin(uid);
-            let mut targets = Vec::new();
-            self.map.for_each_disk(origin, attack_range, |target| {
-                if target != origin {
-                    targets.push(target);
-                }
-            });
-            targets.sort_unstable();
-            targets.dedup();
-            return (targets, vec![]);
-        }
-
-        let start = unit.pos;
-        let max_moves = self.unit_max_moves(uid);
-        // `targets` is sorted below and the sensitivity cache turns `flood`
-        // into a set, so neither consumer observes the ordered-map contract of
-        // `flow_past`. Keep this one flood in its already-dense discovery order
-        // rather than allocating an intermediate `BTreeMap<Pos, f64>` merely to
-        // immediately walk it again.
-        let positions = self.flow_past_unordered(uid, start, max_moves, true);
-        let flood: Vec<Pos> = positions.iter().map(|(position, _)| *position).collect();
-        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
-        // A ranged unit offers the same tile from every stride it can shoot
-        // from, so the set spent most of its work absorbing duplicates a node
-        // at a time, and its caller then re-collected the result into a
-        // second set. A `Vec` sorted once produces the identical ascending,
-        // distinct sequence this function's contract promises, from one
-        // buffer, and `BasicAi`'s envelope adopts it without copying.
-        let radius = attack_range.max(0) as usize;
-        let disk_capacity = 1usize
-            .saturating_add(
-                3usize
-                    .saturating_mul(radius)
-                    .saturating_mul(radius.saturating_add(1)),
-            )
-            .min(64);
-        let per_position = if spec.has_ranged_attack() {
-            disk_capacity
-        } else {
-            6
-        };
-        let mut targets: Vec<Pos> =
-            Vec::with_capacity(positions.len().saturating_mul(per_position));
-        for (from, remaining) in positions {
-            if remaining <= 0.0 {
-                continue;
-            }
-
-            if spec.has_ranged_attack()
-                && !self.unit_is_embarked_at(unit, from)
-                && (!spec.siege || from == start || self.siege_may_attack_after_moving(unit))
-            {
-                self.map.for_each_disk(from, attack_range, |target| {
-                    if target != from && self.unit_has_line_of_sight_from(uid, from, target) {
-                        targets.push(target);
-                    }
-                });
-            }
-
-            if spec.is_melee_capable() {
-                for target in self.nbrs(from) {
-                    if !self.unit_can_melee_target_domain(uid, target)
-                        || !self.unit_can_cross_cliff(uid, from, target)
-                    {
-                        continue;
-                    }
-                    let fresh = from == start && remaining >= max_moves;
-                    if fresh || remaining >= self.unit_step_cost(uid, from, target) {
-                        targets.push(target);
-                    }
-                }
-            }
-        }
-        targets.sort_unstable();
-        targets.dedup();
-        (targets, flood)
-    }
-
     /// Every legal single step inside this turn's remaining movement, as
     /// ordered `(from, to)` pairs: a step is listed when some legal move
     /// sequence this turn arrives at `from` with enough movement left to
@@ -20168,22 +19173,6 @@ impl Game {
         let mut best = BTreeMap::new();
         self.flow_past_into(uid, start, moves, through_units, &mut best);
         best
-    }
-
-    /// The movement flood in traversal-discovery order. This is private to the
-    /// attack-envelope path, whose two consumers either sort later or use set
-    /// membership and therefore do not observe `flow_past`'s ordered-map
-    /// contract.
-    fn flow_past_unordered(
-        &self,
-        uid: u32,
-        start: Pos,
-        moves: f64,
-        through_units: bool,
-    ) -> Vec<(Pos, f64)> {
-        let mut positions = Vec::new();
-        self.flow_past_into(uid, start, moves, through_units, &mut positions);
-        positions
     }
 
     /// Exchange two adjacent units of one player.
@@ -20771,21 +19760,6 @@ impl Game {
                     .find(|emergency| emergency.id == id)
                     .unwrap();
                 *emergency.contributions.entry(member).or_insert(0) += points;
-            }
-        }
-    }
-
-    /// Combat is a stock Emergency contribution even when the attacker never
-    /// finishes a turn inside the target's territory. One point records the
-    /// attack and a second records a kill; rewards only require a positive
-    /// contribution, while the score remains useful for observation/replays.
-    fn record_emergency_combat(&mut self, member: usize, target: usize, killed: bool) {
-        for emergency in &mut self.active_emergencies {
-            if emergency.ends > self.turn
-                && emergency.target == target
-                && emergency.members.contains(&member)
-            {
-                *emergency.contributions.entry(member).or_insert(0) += 1 + i64::from(killed);
             }
         }
     }
