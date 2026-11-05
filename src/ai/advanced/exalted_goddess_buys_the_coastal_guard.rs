@@ -3,8 +3,8 @@
 //! [`COASTAL_GUARD_REACH`] tiles buys the strongest naval military unit its
 //! menu sells for Faith, ranged first, before the turn's Gold defender
 //! purchase. At most one ship per city every [`COASTAL_GUARD_COOLDOWN`]
-//! standard turns, and never a ship [`crate::ai::OBSOLETE_BUY_ERAS_BEHIND`]
-//! or more eras behind the world (-af's parity-v2 bar).
+//! standard turns, and never a ship [`COASTAL_GUARD_ERAS_BEHIND`] or more
+//! eras behind the world.
 //!
 //! **Why (live Deity Online Indonesia, 2026-11-05).** Gitarja's Exalted
 //! Goddess of the Three Worlds lets Indonesia buy naval units with Faith,
@@ -24,6 +24,15 @@ pub(super) const COASTAL_GUARD_REACH: i32 = 3;
 
 /// Standard turns between two ships bought for one city.
 pub(super) const COASTAL_GUARD_COOLDOWN: u32 = 4;
+
+/// Eras behind the world that bar a ship. One looser than
+/// `OBSOLETE_BUY_ERAS_BEHIND` (-af's Gold bar, two): Faith has no competing
+/// use here, and the world era is already Medieval by turn 60 at Deity
+/// Online, so the Gold bar refused the only ship on offer when an early war
+/// came. Live 224142Z: three coastal cities, 188 Faith at turn 60, a Galley
+/// at 60 Faith and no Shipbuilding; all three fell by turn 66. Turn 140's
+/// obsolete fleet (world era 6) stays barred.
+pub(super) const COASTAL_GUARD_ERAS_BEHIND: usize = 3;
 
 /// Faith kept back after the purchase.
 pub(super) const COASTAL_GUARD_FAITH_RESERVE: f64 = 50.0;
@@ -96,7 +105,7 @@ impl AdvancedAi {
                     let spec = g.rules.units.get(unit)?;
                     if spec.class != "military"
                         || !matches!(spec.domain.as_deref(), Some("sea"))
-                        || BasicAi::obsolete_buy(g, unit.as_str())
+                        || g.unit_era(unit.as_str()) + COASTAL_GUARD_ERAS_BEHIND <= g.world_era
                     {
                         return None;
                     }
