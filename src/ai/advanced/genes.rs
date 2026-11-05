@@ -5122,6 +5122,13 @@ pub const GENES: &[Gene] = &[
     // while at war with a major and a home city is threatened. See
     // `threatened_lane_lends_the_army.rs`.
     Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
