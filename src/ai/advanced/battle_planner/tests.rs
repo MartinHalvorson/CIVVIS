@@ -1707,9 +1707,10 @@ fn ranged_kills_are_free_ships_off_and_is_registered() {
     });
 }
 
-/// Two shooters whose shots each deal 20 to a 38-hp target, both kill-only
-/// (recovering or doomed) and in danger where they stand: together they are
-/// a plan, alone a shot is not, and the danger at their stand is not charged.
+/// Two shooters whose shots each deal 25 to a 38-hp target (a kill needs
+/// 38 x KILL_MARGIN), both kill-only (recovering or doomed) and in danger
+/// where they stand: together they are a plan, alone a shot is not, and the
+/// danger at their stand is not charged.
 #[test]
 fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
     let mut g = open_field();
@@ -1746,9 +1747,10 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
         ranged: true,
         att: 25.0,
         def_base: 35.0,
-        host: Some((20.0, 0.0)),
+        host: Some((25.0, 0.0)),
         kill_only: true,
     };
+    assert!(50.0 >= 38.0 * KILL_MARGIN && 25.0 < 38.0 * KILL_MARGIN);
     let mut field = DangerField::new(&g, 0);
     let both = vec![shot(0, a), shot(1, b)];
     let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
