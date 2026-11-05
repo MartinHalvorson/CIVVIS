@@ -75,3 +75,10 @@ The tested siege-classification helper and its complete regression module are
 byte-identical to the qualified candidate after integration. Upstream changes
 remain outside this native proposal qualification; the final integrated-head
 CI gate is still required. No combined native strength is inferred.
+
+A second main integration was required after GitHub marked repaired head
+`2b66a8e0af1057a9e7ed588de14313a4ea4d6cc7` conflicting. Both conflict paths
+were generated evaluation snapshots; the repository generator rebuilt them
+from merged sources. The21 focused manifest tests passed, and the tested
+helper and full regression module remain byte-identical to23ae5f4e7d.
+This is a real-conflict repair, not an additional policy change.

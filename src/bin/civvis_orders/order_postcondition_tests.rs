@@ -738,7 +738,7 @@ fn the_shields_military_alliance_crosses_on_every_lane() {
             alliance(4, "ALLIANCE_MILITARY"),
         ];
         assert_eq!(
-            drop_off_lane_alliances(plan, false, Some(3), &mut orders),
+            drop_off_lane_alliances(plan, false, Some((3, "ALLIANCE_MILITARY")), &mut orders),
             2,
             "{plan:?}"
         );
@@ -748,6 +748,16 @@ fn the_shields_military_alliance_crosses_on_every_lane() {
         // No shield ask this turn: every alliance order is held.
         let mut orders = vec![alliance(3, "ALLIANCE_MILITARY")];
         assert_eq!(drop_off_lane_alliances(plan, false, None, &mut orders), 1);
+        // `military-alliance-shield-2`: its Economic ask crosses, and only it.
+        let mut orders = vec![
+            alliance(3, "ALLIANCE_ECONOMIC"),
+            alliance(3, "ALLIANCE_MILITARY"),
+        ];
+        assert_eq!(
+            drop_off_lane_alliances(plan, false, Some((3, "ALLIANCE_ECONOMIC")), &mut orders),
+            1
+        );
+        assert_eq!(orders[0].verb.as_deref(), Some("ALLIANCE_ECONOMIC"));
     }
 }
 
