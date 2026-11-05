@@ -8470,6 +8470,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 					return Game.GetEras():HasHeroicGoldenAge(otherId);
 				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				-- The other majors THEY are fighting, among those we have met
+				-- (`CivvisRivalWars`): an ally already at war with our enemy
+				-- is the Military Alliance's +5.
+				at_war_with = CivvisRivalWars(pid, otherId),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -11890,6 +11894,31 @@ CivvisTrade.abandon = function(subject, why)
 		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
 	end
 	return true;
+end;
+
+-- The majors `otherId` is at war with, among those the seat `pid` has met,
+-- by player id: the diplomacy ribbon shows a met leader's wars, and the
+-- seat's own war with them crosses as `at_war`, so it is left out. A Military
+-- Alliance's +5 holds against "units of players at war with you and your
+-- ally" (LOC_ALLIANCE_LV1_MILITARY_EFFECT_1, Expansion1_Alliances.xml:146),
+-- so a rival already fighting our enemy is the ally that pays at once; until
+-- this export the mirror read every rival as at peace with every other.
+-- nil when either diplomacy is unreadable; an empty table (`[]`) when they
+-- fight nobody else. Bare global for rival_wars_test.lua.
+CivvisRivalWars = function(pid, otherId)
+	local mine = try(function() return Players[pid]:GetDiplomacy(); end);
+	local theirs = try(function() return Players[otherId]:GetDiplomacy(); end);
+	if mine == nil or theirs == nil then return nil; end
+	local wars = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local third = tonumber(id);
+		if third ~= nil and third ~= pid and third ~= otherId
+				and try(function() return mine:HasMet(third); end, false)
+				and try(function() return theirs:IsAtWarWith(third); end, false) then
+			wars[#wars + 1] = third;
+		end
+	end
+	return wars;
 end;
 
 -- ★★ THE PLANNER'S ALLIANCE, ASKED IN THE ORDER THE HOST ALLOWS IT.
@@ -23206,7 +23235,7 @@ function CivvisBoard.restartPoll()
 	restart.issued = true;
 	local before = CivvisBoard.seeds();
 	local regenerated = false;
-	if mode ~= 3 then
+	if mode ~= 3 and mode ~= 6 then
 		regenerated = pcall(function() GameConfiguration.RegenerateSeeds(); end);
 	end
 	local after = CivvisBoard.seeds();
@@ -23239,9 +23268,15 @@ function CivvisBoard.restartPoll()
 end
 
 -- Modes 2 and 5 host the configuration again; the others are the stock Restart.
+-- Mode 6 leaves for the main menu (`Events.ExitToMainMenu()`, as the shipped
+-- Base/Assets/UI/Menus/InGameTopOptionsMenu.lua:461 and EndGame/EndGameMenu.lua:345
+-- do) and the next run starts its game through the ordinary Create Game menus,
+-- in the same process: no relaunch, no boot.
 function CivvisBoard.restartCall(mode)
 	local called = false;
-	if mode == 2 or mode == 5 then
+	if mode == 6 then
+		called = pcall(function() Events.ExitToMainMenu(); end);
+	elseif mode == 2 or mode == 5 then
 		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
 		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	else

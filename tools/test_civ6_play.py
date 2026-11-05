@@ -1150,6 +1150,27 @@ class Civ6PlayTest(unittest.TestCase):
         )
         sleep.assert_called_once_with(1.0)
 
+    def test_a_game_that_died_in_its_load_ends_the_probe_at_once(self) -> None:
+        """Live 2026-11-05 003645Z: Civ VI segfaulted ~2 s after Start and the
+        probe took 120 screenshots of the desktop (~4.3 min) before relaunching."""
+        bounds = (864, 33, 864, 542)
+        alive = iter([True, False])
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=False), \
+             patch.object(civ6_play.time, "sleep"), patch("sys.stdout"):
+            self.assertFalse(civ6_play.advance_leader_intro(
+                bounds, "LEADER_TRAJAN", Path(temporary), 1, retries=120,
+                board_ready=lambda: False, alive=lambda: next(alive)))
+        screenshot.assert_called_once()
+
+    def test_both_live_probes_watch_the_game_process(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count("alive=lambda: bool(env.game_pids()))"), 2)
+        normal = source.split("intro_retries = max(8, min(120, int(verify_s)))")[1]
+        self.assertLess(normal.index('if not env.game_pids():\n            print("the game exited while loading"'),
+                        normal.index("if started(verify_s, still_loading="))
+
     def test_a_deferred_probe_takes_no_capture_when_the_board_arrives(self) -> None:
         """G102: a 22.6 s capture ran inside a 28 s load, and the agent had
         already dismissed the load screen (0 card clicks in 92 logs)."""
@@ -1194,7 +1215,7 @@ class Civ6PlayTest(unittest.TestCase):
             self.assertEqual(civ6_play.apply_tree_mod_arms(args, path), ["leader-intro-defer"])
             self.assertEqual(args.leader_intro_defer, 45.0)
         source = Path(civ6_play.__file__).read_text(encoding="utf-8")
-        self.assertIn('defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))', source)
+        self.assertIn('defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0),', source)
         self.assertIn('ap.add_argument("--leader-intro-defer", dest="leader_intro_defer", type=float,\n'
                       '                    default=0.0,', source)
 
@@ -5154,7 +5175,7 @@ class RestartInPlaceTests(unittest.TestCase):
             self.runs_seen.append(self.run)
             return self.batches.pop(0) if self.batches else []
 
-    def restart(self, batches, *, written=True, **kwargs):
+    def restart(self, batches, *, written=True, mode=4, bootstrap=None, **kwargs):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -5172,7 +5193,9 @@ class RestartInPlaceTests(unittest.TestCase):
              patch.object(civ6_play.env, "game_pids", return_value=[4242]), \
              patch.object(civ6_play, "game_window", return_value=None), \
              patch.object(civ6_play, "maintain_game_focus") as focus, \
-             patch.object(civ6_play.restart_handoff, "restart_mode", return_value=4), \
+             patch.object(civ6_play.restart_handoff, "restart_mode", return_value=mode), \
+             patch.object(civ6_play, "bootstrap_game",
+                          side_effect=bootstrap or AssertionError("no menus here")), \
              patch.object(civ6_play.time, "sleep"), \
              patch("sys.stdout"), patch("sys.stderr"):
             started = civ6_play.restart_in_place(tail, relayed.append, run_dir, args,
@@ -5208,6 +5231,40 @@ class RestartInPlaceTests(unittest.TestCase):
         self.assertEqual(record["result"], "started")
         self.assertEqual((record["map_seed_before"], record["map_seed"]), (11, 111))
         self.assertIs(record["same_map"], False)
+
+    def test_mode_six_leaves_for_the_menu_and_starts_from_the_create_game_menus(self):
+        old = {"run": "civvis-old", "ctx": "agent"}
+        seen = {}
+
+        def bootstrap(tail, on_event, run_dir, args, verify_s=None):
+            seen.update(run=tail.run, tag=args.tag, verify_s=verify_s)
+            return True
+
+        started, record, relayed, tail, ask, parked = self.restart([
+            [dict(old, kind="restart_issued", map_seed_before=11, map_seed=11),
+             dict(old, kind="restart_called", called=True, mode=6)],
+            [dict(old, kind="restart_called_flush", mode=6)],
+        ], mode=6, bootstrap=bootstrap)
+        self.assertTrue(started)
+        self.assertEqual(ask.call_args.args[1:], ("civvis-old", 6))
+        self.assertEqual(seen, {"run": "civvis-new", "tag": "civvis-new", "verify_s": 0.05},
+                         "the menus run on this run's tag, like a launched game")
+        self.assertEqual(record["result"], "menu")
+        self.assertEqual(parked, ["restart_issued", "restart_called"])
+        self.assertEqual(relayed, [])
+
+    def test_mode_six_menu_start_that_fails_is_a_refusal_for_the_relaunch(self):
+        old = {"run": "civvis-old", "ctx": "agent"}
+        started, record, *_ = self.restart([
+            [dict(old, kind="restart_called", called=True, mode=6)],
+        ], mode=6, bootstrap=lambda *a, **k: False)
+        self.assertFalse(started)
+        self.assertEqual(record["result"], "menu")
+        started, record, *_ = self.restart([
+            [dict(old, kind="restart_called", called=False, mode=6)],
+        ], mode=6)
+        self.assertFalse(started)
+        self.assertIn("could not call the restart", record["why"])
 
     def test_the_old_scripts_coming_back_is_a_refusal(self):
         old = {"run": "civvis-old", "ctx": "agent"}
