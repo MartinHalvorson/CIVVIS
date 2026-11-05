@@ -2033,4 +2033,25 @@ impl Game {
             .ok_or_else(|| "city has no Encampment".to_string())?;
         self.do_defending_district_strike(pid, cid, position, target)
     }
+
+    /// City melee strengths shared by the resolver and capture estimates.
+    /// Embarked units attack with their land strength and a landing penalty;
+    /// their embarked defensive strength is not an attack strength.
+    pub(crate) fn city_melee_exchange_strengths(&self, uid: u32, cid: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let city = self.cities.get(&cid)?;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut attack =
+            self.unit_unembarked_strength(attacker) + self.vs_bonus(attacker.owner, city.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            attack -= 10.0;
+        }
+        let defense = self.city_strength(cid)
+            + if self.crosses_river(attacker.pos, city.pos) && unamphibious {
+                5.0
+            } else {
+                0.0
+            };
+        Some((effective_strength(attack, attacker.hp), defense))
+    }
 }
