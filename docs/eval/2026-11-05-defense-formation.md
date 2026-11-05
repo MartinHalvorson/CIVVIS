@@ -24,4 +24,13 @@ Shots from the current stand remain available. The wounded-member recovery searc
 
 Four focused formation/recovery tests passed for the initial implementation. Two successive twelve-query controlled captured-input matrices (204 registered reads each) changed formation targets but left all emitted orders identical, including the turn-29 scout pursuit. Both nonfiring attempts are preserved. They exposed the earlier joint combat planner's firing-position choice; changing later passes alone cannot correct an already-spent move.
 
-The current candidate adds the firing-position restriction before the joint planner moves the shooter, and keeps the later handoffs consistent. Its nine focused regressions and current-candidate captured-input comparison are pending. No deployment genome, city-survival, native actuation or win-rate claim is made.
+The current candidate adds the firing-position restriction before the joint planner moves the shooter, and keeps the later handoffs consistent. All nine focused regressions passed locally, including joint firing-position selection, an available shot at a besieger, current-radius fire while arriving, and consistent later handoffs. The current-candidate captured-input comparison remains pending. No deployment genome, city-survival, native actuation or win-rate claim is made.
+
+The two nonfiring matrices are retained in [negative v1](2026-11-05-defense-formation.negative-v1.tar.xz) and [negative v2](2026-11-05-defense-formation.negative-v2.tar.xz). Verify their raw registered reads, repeated payloads, effective one-bit genomes and pair records with:
+
+```sh
+python3 docs/eval/2026-11-05-defense-formation.verify.py docs/eval/2026-11-05-defense-formation.negative-v1.tar.xz
+python3 docs/eval/2026-11-05-defense-formation.verify.py docs/eval/2026-11-05-defense-formation.negative-v2.tar.xz
+```
+
+Both report 12 queries, 204 verified registered reads and no changed orders in any case. These are negative results, not firing evidence.
