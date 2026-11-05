@@ -5151,6 +5151,16 @@ pub const GENES: &[Gene] = &[
     // the gene those claims stand aside while a war with a major threatens a
     // home city. See `threatened_war_holds_the_claims.rs`.
     Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range and never fired:
+    // one was the Settler's reserved guard (the kill search skips reserved
+    // guards) and the other was ruled doomed (three Spearmen near every
+    // stand). Their two shots, about 20 each on 38 hp, fell it at the centre
+    // but not at KILL_MARGIN. Under the gene a recovering, guarding or doomed
+    // shooter's ranged blow from its own tile joins the plan as kill-only.
+    // See `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
     // Version one of the drain fires below one turn of runway. Live Deity
     // 111305Z t194 fell from +11.8 to -76.6 Gold a turn with 243 Gold (3.2
     // turns), started a Bank, went bankrupt at t199, and lost science 352 to
