@@ -18,8 +18,8 @@ Independent opt-in `defenders-keep-the-city-in-reach`, off in both controllers. 
 - retain formation contacts within the existing two-tile wall-threat radius;
 - keep healthy combat slots inside the existing two-tile wall-defender radius.
 
-The wounded-member recovery search retains its ordinary safe retreat range. Relieve, Siege, Reserve, missing assignments, unthreatened cities and arena formations retain their ordinary planning. The change is in formation placement; it does not replace the kill search or change combat rules.
+A later tactical movement pass must also respect the assignment: a healthy engaging member cannot open a shot farther from the city than its present distance or the two-tile defender radius. Shots from the current stand remain available. The wounded-member recovery search retains its ordinary safe retreat range. Relieve, Siege, Reserve, missing assignments, unthreatened cities and arena formations retain their ordinary planning. The change is in formation placement; it does not replace the kill search or change combat rules.
 
 ## Validation status
 
-Focused tests and current-candidate captured-input comparisons are pending. The earlier defender diagnostic concerns another gene and is not evidence that this candidate fires or improves outcomes. No deployment genome or win-rate claim is made.
+Four focused formation/recovery tests passed for the initial implementation. Its twelve controlled captured-input queries (204 registered reads) changed the formation journal but left all emitted orders identical, including the turn-29 scout pursuit. That nonfiring attempt is preserved; it is not a positive result. The current candidate adds the missing later movement guard and a regression for that handoff. Its build and captured-input validation are pending. The earlier defender-retention diagnostic concerns another gene and is not evidence that this candidate fires or improves outcomes. No deployment genome or win-rate claim is made.

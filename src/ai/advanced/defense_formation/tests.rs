@@ -162,3 +162,50 @@ fn the_independent_gene_is_off_in_both_controllers() {
         |ai| ai.defenders_keep_the_city_in_reach,
     );
 }
+
+#[test]
+fn the_later_strike_opening_cannot_send_a_healthy_defender_farther_away() {
+    let (mut g, mut ai, group, cid, far) = board();
+    let center = g.cities[&cid].pos;
+    let uid = group.units[0];
+    let outward = g
+        .wring(center, 4)
+        .into_iter()
+        .filter(|pos| g.map.get(*pos).is_some())
+        .min_by_key(|pos| g.wdist(*pos, far))
+        .unwrap();
+    assert_eq!(g.wdist(g.units[&uid].pos, center), 3);
+    ai.strike_opening = false;
+    let score = |g: &Game, ai: &AdvancedAi, tile| {
+        ai.strike_opening_value(super::super::StrikeOpening {
+            g,
+            pid: 0,
+            uid,
+            tile,
+            group: &group,
+            enemies: &[1],
+            visible: None,
+        })
+    };
+    assert_eq!(score(&g, &ai, outward), 0.0);
+    ai.enable_defenders_keep_the_city_in_reach();
+    assert_eq!(
+        score(&g, &ai, outward),
+        f64::NEG_INFINITY,
+        "the movement gate applies even when the independent strike-opening premium is off"
+    );
+    assert_eq!(
+        score(&g, &ai, g.units[&uid].pos),
+        0.0,
+        "a shot from the current stand remains available"
+    );
+    g.units.get_mut(&uid).unwrap().hp = 30;
+    assert_eq!(
+        score(&g, &ai, outward),
+        0.0,
+        "wounded recovery keeps its range"
+    );
+    ai.objective_board_state.forces[0].objective_key = ObjectiveKey::Relieve(cid);
+    g.units.get_mut(&uid).unwrap().hp = 100;
+    assert_eq!(score(&g, &ai, outward), 0.0, "Relieve still marches");
+}
