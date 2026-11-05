@@ -52,13 +52,22 @@ current-head protection features therefore do not promise to cover that case.
   12/13 Online-turn boundary: calendar durations use 66% Online scaling, while
   the intended construction budget uses the 50% production-cost scale. The
   helper now uses cost scaling; the same boundary regression remains in place.
-  Corrected-source execution is pending.
+  The corrected PR-head run42122350818 passes all12 new cases within7128
+  passing Rust tests (53 skipped). Its developer-tool suites pass80,21 and24
+  tests; documentation examples report0 run/4 ignored. The complete job still
+  fails its final firing-proof gate, so this is not a green CI qualification.
 - Generated evaluation snapshots pass their21 focused Python tests.
 - The generated ranking-evidence page now includes the new unmeasured,
   default-OFF row. Both targeted table-consistency tests pass. Initial policy
   CI also correctly reports that new-gene firing evidence is still missing;
   no waiver has been added.
-- Full candidate CI, exact-source hosted Mac tests, both native binaries/smokes,
+- The declaration and false default initializer were moved from the Industrial
+  Zone field group to their required `t-z` append range. All14 append-point
+  tests pass; removing only those moved declaration/default lines leaves the
+  rest of the source byte-identical. Helper, registration, flags and default
+  value are unchanged. This placement fix follows the requested native build
+  source; it does not establish identical binary bytes or final-head execution.
+- Final green CI, exact-source hosted Mac tests, both native binaries/smokes,
   source-file verification and new-flag OFF/ON/ON/OFF captured-input proposals
   are pending. Results must be bound to their actual source, not this draft.
 - No new native game or waiting harness may be started without operator
