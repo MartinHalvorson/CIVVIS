@@ -2169,6 +2169,9 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `denial-spies-count-their-losses`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
     }
 }
 

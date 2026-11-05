@@ -5562,6 +5562,9 @@ pub struct AdvancedAi {
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
+    /// dying. See `advanced/denial_spies_count_their_losses.rs`.
+    denial_spies_count_their_losses: bool,
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
@@ -8596,6 +8599,9 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
+    /// by the live bridge each turn (`observe_spy_losses`).
+    spy_loss_turns: Vec<u32>,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10121,6 +10127,8 @@ mod upkeep_waits_for_the_income;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
+mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -11608,6 +11616,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
+            denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -12118,6 +12127,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
@@ -29751,7 +29761,11 @@ impl AdvancedAi {
                     GrandStrategy::Recovery => 650.0,
                     _ => 500.0,
                 };
-                if active < g.spy_capacity(pid).max(0) as usize {
+                // `denial-spies-count-their-losses`: no new Spy while recent
+                // ones keep dying. See `advanced/denial_spies_count_their_losses.rs`.
+                if active < g.spy_capacity(pid).max(0) as usize
+                    && !self.spy_losses_pause_training(g)
+                {
                     1_500.0 + strategic + active as f64 * 90.0
                 } else {
                     -10_000.0
@@ -38314,6 +38328,9 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
+        // `denial-spies-count-their-losses`: the base production fallback
+        // reads this. See `advanced/denial_spies_count_their_losses.rs`.
+        self.base.spy_training_paused = self.spy_losses_pause_training(g);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

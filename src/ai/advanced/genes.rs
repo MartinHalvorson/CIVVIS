@@ -4981,6 +4981,14 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
