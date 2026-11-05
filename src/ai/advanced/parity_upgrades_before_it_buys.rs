@@ -29,6 +29,22 @@
 //! 3. a unit [`PARITY_BUY_ERAS_BEHIND`] or more eras behind the world era is
 //!    never bought.
 //! `Kind::OptIn`; off, the purchase is exactly the old one.
+//!
+//! ## Version three
+//!
+//! `parity-upgrades-before-it-buys-3`: versions one and two read a unit's age
+//! against `g.world_era`, which at Online speed is a clock (live 2026-11-05:
+//! era 2 at turn 51, 3 at 71, 4 at 91, 5 at 111, 6 at 131, 7 at 151, whatever
+//! anyone had researched). So the `obsolete` bar refused every Ancient unit
+//! from turn 51 and every Renaissance unit from 111: the parity path never
+//! bought (0 parity purchases live) and version two refused nearly every gold
+//! military purchase, early-war defenders included (10+ war turns before turn
+//! 100: median 0 buys and 2.5 cities at turn 100 against 1 and 5 without it,
+//! n=4 vs 6; disarmed 2026-11-05). Version three carries version one and
+//! measures a unit against the newest technology we know
+//! (`BasicAi::obsolete_by_our_techs`, three eras: a Science beeline reaches one
+//! high-era technology long before the rest of the tree), on the parity path
+//! and in `BasicAi::buy_gold_military`.
 
 use super::*;
 
@@ -49,7 +65,7 @@ impl AdvancedAi {
         ours: f64,
         theirs: f64,
     ) -> usize {
-        if !self.parity_upgrades_before_it_buys && !self.parity_upgrades_before_it_buys_2 {
+        if !self.parity_upgrades_on() {
             return 0;
         }
         let bank = g.players[pid].gold;
@@ -70,20 +86,32 @@ impl AdvancedAi {
     pub(super) fn parity_buy_barred(
         &self,
         g: &Game,
+        pid: usize,
         unit: &str,
         ours: f64,
         theirs: f64,
     ) -> Option<&'static str> {
-        if !self.parity_upgrades_before_it_buys && !self.parity_upgrades_before_it_buys_2 {
+        if !self.parity_upgrades_on() {
             return None;
         }
         if theirs >= PARITY_HOPELESS_RATIO * ours.max(1.0) {
             return Some("out_of_reach");
         }
-        if g.unit_era(unit) + PARITY_BUY_ERAS_BEHIND <= g.world_era {
-            return Some("obsolete");
-        }
-        None
+        // `parity-upgrades-before-it-buys-3` reads our own technology; the
+        // world era versions one and two read is a clock at Online speed.
+        let obsolete = if self.parity_upgrades_before_it_buys_3 {
+            crate::ai::BasicAi::obsolete_by_our_techs(g, pid, unit)
+        } else {
+            g.unit_era(unit) + PARITY_BUY_ERAS_BEHIND <= g.world_era
+        };
+        obsolete.then_some("obsolete")
+    }
+
+    /// Whether any version of the gene is on.
+    fn parity_upgrades_on(&self) -> bool {
+        self.parity_upgrades_before_it_buys
+            || self.parity_upgrades_before_it_buys_2
+            || self.parity_upgrades_before_it_buys_3
     }
 }
 
@@ -93,6 +121,13 @@ impl AdvancedAi {
     /// take the same `obsolete` bar. Set each turn before the base turn runs.
     pub(super) fn obsolete_military_buys_barred(&self) -> bool {
         self.parity_upgrades_before_it_buys_2
+    }
+
+    /// `parity-upgrades-before-it-buys-3`: the same two purchase paths, with
+    /// a unit obsolete by our own technology rather than the world era's
+    /// clock. Set each turn before the base turn runs.
+    pub(super) fn obsolete_buys_read_our_techs(&self) -> bool {
+        self.parity_upgrades_before_it_buys_3
     }
 }
 

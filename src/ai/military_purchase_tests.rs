@@ -219,3 +219,32 @@ fn a_current_defender_is_bought_with_the_flag_on() {
     assert!(ai.buy_gold_military(&mut g, 0, &[city], 110.0, false));
     assert_eq!(bought(&g), vec![(city, crate::name!("spearman"))]);
 }
+
+/// `parity-upgrades-before-it-buys-3`: the world era is a clock, so it does
+/// not decide; our own newest technology does. A Spearman is bought with the
+/// world far ahead while our tree is young, and refused once we hold a
+/// technology three eras past it.
+#[test]
+fn an_obsolete_defender_is_measured_against_our_own_technology() {
+    let (mut g, mut ai, city) = fixture();
+    g.world_era = 6;
+    ai.obsolete_buys_read_our_techs = true;
+    assert!(!BasicAi::obsolete_by_our_techs(&g, 0, "spearman"));
+    let mut young = g.clone();
+    assert!(ai.buy_gold_military(&mut young, 0, &[city], 110.0, false));
+    assert_eq!(bought(&young), vec![(city, crate::name!("spearman"))]);
+
+    let spearman_era = g.unit_era("spearman");
+    let later = g
+        .rules
+        .techs
+        .iter()
+        .find(|(_, spec)| spec.era == spearman_era + crate::ai::OBSOLETE_BUY_TECH_ERAS_BEHIND)
+        .map(|(tech, _)| *tech)
+        .expect("the tree holds a technology three eras past the Spearman");
+    let mut aged = g.clone();
+    aged.players[0].techs.insert(later);
+    assert!(BasicAi::obsolete_by_our_techs(&aged, 0, "spearman"));
+    assert!(!ai.buy_gold_military(&mut aged, 0, &[city], 110.0, false));
+    assert!(bought(&aged).is_empty());
+}

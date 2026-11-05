@@ -93,6 +93,13 @@ impl BasicAi {
                     if self.obsolete_military_buys_barred && Self::obsolete_buy(g, name.as_str()) {
                         continue;
                     }
+                    // `parity-upgrades-before-it-buys-3`: obsolete by our own
+                    // technology, not by the world era's clock.
+                    if self.obsolete_buys_read_our_techs
+                        && Self::obsolete_by_our_techs(g, pid, name.as_str())
+                    {
+                        continue;
+                    }
                     // Current controllers budget the actual purchase quote.
                     // The historical anchor retains its original price and
                     // predicate order, together with its old recon eligibility.
@@ -154,6 +161,25 @@ impl BasicAi {
     /// city with no military unit on its tile.
     pub(crate) fn obsolete_buy(g: &Game, unit: &str) -> bool {
         g.unit_era(unit) + OBSOLETE_BUY_ERAS_BEHIND <= g.world_era
+    }
+
+    /// `parity-upgrades-before-it-buys-3`: whether `unit` is
+    /// [`OBSOLETE_BUY_TECH_ERAS_BEHIND`] or more eras behind the newest
+    /// technology `pid` knows. The world era is no measure of the army's age:
+    /// at Online speed it runs on a clock (live 2026-11-05: era 2 at turn 51,
+    /// 3 at 71, 4 at 91, 5 at 111, 6 at 131, whatever anyone had researched),
+    /// so [`Self::obsolete_buy`] refuses Ancient defenders from turn 51 and
+    /// Renaissance ones from 111. Measured against our own technology, the
+    /// Spearman of a turn-60 war is bought and the Heavy Chariot of turn 142
+    /// is not.
+    pub(crate) fn obsolete_by_our_techs(g: &Game, pid: usize, unit: &str) -> bool {
+        let newest = g.players[pid]
+            .techs
+            .iter()
+            .filter_map(|tech| g.rules.techs.get(tech).map(|spec| spec.era))
+            .max()
+            .unwrap_or(0);
+        g.unit_era(unit) + OBSOLETE_BUY_TECH_ERAS_BEHIND <= newest
     }
 
     pub(super) fn buy_gold_infrastructure(
