@@ -8771,6 +8771,11 @@ pub struct AdvancedAi {
     /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
+    /// `plaza-serves-the-scientist-3`: version 3, carrying 1 and 2. The
+    /// Science seat's Government Plaza district claims the capital's queue
+    /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_3: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
@@ -12487,6 +12492,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
+            plaza_serves_the_scientist_3: false,
             // ---- append: s-s ----------------------------------------
             science_seat_allies_2: false,
             spy_civics_come_first: false,
@@ -30248,6 +30254,9 @@ impl AdvancedAi {
             // building (the Intelligence Agency's Spy slot and level) under
             // the same displacement rule. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_tier(g, pid, &plan);
+            // `plaza-serves-the-scientist-3`: the Plaza district itself, once
+            // the capital's Campus stands. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_district(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
