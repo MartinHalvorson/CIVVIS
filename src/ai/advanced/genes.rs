@@ -5238,6 +5238,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // Independently price the first launch job without changing rated Pingala v1.
+    Gene { tag: "pingala-follows-research-2", field: "pingala_follows_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research_2, disable: AdvancedAi::disable_pingala_follows_research_2 },
+    // `plaza-serves-the-scientist-2`: version 2 of `plaza-serves-the-scientist`
+    // (which it carries). A Science seat's Plaza city takes its next tier
+    // building, the Ancestral Hall then the Intelligence Agency, ahead of
+    // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
