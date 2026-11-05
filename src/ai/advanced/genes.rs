@@ -5025,6 +5025,70 @@ pub const GENES: &[Gene] = &[
     // 8 a tile inside ten of the nearest charted rival city. See
     // `advanced/early_city_distance.rs`.
     Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
+    // Live Lv 8 Deity Korea Online, 11-05 (play-it-out policy): 3 of 11
+    // games since 02:01Z ended in our elimination. In 033244Z, from turn
+    // 150, 29 of our units died, all healthy and none inside a city, 21 of
+    // them to Machine Guns, most from two tiles: the Defend force held a
+    // nine-unit ring around Seoul, and defenders-hold-the-walls keeps a
+    // threatened city's healthy defenders off the rotation, so Ancient
+    // Warriors and Archers stood where one blow removed them. A ring
+    // defender whose own tile is one-blow lethal at the top of the roll is
+    // no longer held. See `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
+    // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
+    // ahead instead of idling on Listening Posts or Gain Sources: in a space
+    // racer's city with no Disrupt Rocketry offered, in place of the green
+    // Spy's Gain Sources training step, and no longer withheld outside the
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
+    Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
+    // the soonest unthreatened city queues one Settler while the plan wants
+    // more cities and a seat we can very likely hold lies in reach: the
+    // settler-site-gate verdict, nine tiles from charted rival cities, no
+    // stronger major's soldier within six, no raider within three, at peace
+    // with every major. Live Deity Korea Online: Settler starts fell from 70
+    // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
+    // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
+    Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
     // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
     // played out: three eliminations since 11-05 02:01Z, all obsolete armies
     // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
