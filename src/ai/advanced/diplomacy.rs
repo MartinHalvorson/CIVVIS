@@ -3229,6 +3229,9 @@ impl AdvancedAi {
                 })
             })
             .min();
+        // `senior-spy-takes-the-pad`: once a turn, before any Spy picks its
+        // own post. Never with the gene off.
+        self.senior_spy_swap_pass(g, pid, racer_spy_leader, &ids);
         for spy_id in ids {
             // A Spy whose last order is still running is left alone; the
             // rebuilt mirror cannot see the running operation, so without

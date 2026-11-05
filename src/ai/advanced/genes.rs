@@ -4217,6 +4217,13 @@ pub const GENES: &[Gene] = &[
     // Spy steals, gains sources or listens. See
     // `advanced/disrupt_waits_for_the_match_point.rs`.
     Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
+    // `senior-spy-takes-the-pad`: before the leading racer's stage floor
+    // (three under disrupt-waits-for-the-match-point, where the Disrupt is
+    // withheld anyway), our highest-level free Spy takes the post in its seen
+    // Spaceport city from a lower-level holder, which moves to another of its
+    // cities. Host odds against India (114422Z): Disrupt 0.371/0.363 at level
+    // 1, 0.625/0.277 at level 4. See `advanced/senior_spy_takes_the_pad.rs`.
+    Gene { tag: "senior-spy-takes-the-pad", field: "senior_spy_takes_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_senior_spy_takes_the_pad, disable: AdvancedAi::disable_senior_spy_takes_the_pad },
     // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
     // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
     // objective beyond the wing's reach, 120 of them with another city of

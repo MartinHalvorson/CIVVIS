@@ -8702,6 +8702,10 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs`. Off by default.
     ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `senior-spy-takes-the-pad`: before the leader's stage floor, our
+    /// highest-level free Spy takes the post in its seen-pad city from a
+    /// lower-level holder. See `advanced/senior_spy_takes_the_pad.rs`.
+    senior_spy_takes_the_pad: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
@@ -10245,6 +10249,9 @@ mod stalled_spreader;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
+/// `senior-spy-takes-the-pad`: the senior Spy takes the racer's pad city.
+/// See `advanced/senior_spy_takes_the_pad.rs`.
+mod senior_spy_takes_the_pad;
 mod wing_capital_spotting;
 
 /// Journal only: an urgent racer whose Conquest counter cannot be executed.
@@ -12353,6 +12360,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
+            senior_spy_takes_the_pad: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),

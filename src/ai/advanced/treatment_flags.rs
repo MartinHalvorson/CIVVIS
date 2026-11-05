@@ -1938,6 +1938,9 @@ impl AdvancedAi {
         /// Opt-in gene `disrupt-waits-for-the-match-point`; see
         /// `advanced/disrupt_waits_for_the_match_point.rs`.
         disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
+        /// Opt-in gene `senior-spy-takes-the-pad`; see
+        /// `advanced/senior_spy_takes_the_pad.rs`.
+        senior_spy_takes_the_pad => enable_senior_spy_takes_the_pad, disable_senior_spy_takes_the_pad;
         /// Opt-in gene `siege-moves-under-the-wing`; see
         /// [`Self::siege_moves_under_the_wing`].
         siege_moves_under_the_wing => enable_siege_moves_under_the_wing, disable_siege_moves_under_the_wing;

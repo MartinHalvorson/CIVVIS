@@ -469,7 +469,7 @@ impl AdvancedAi {
 
     /// Whether seat `pid` has seen a standing Spaceport within three tiles of
     /// `cid`.
-    fn racer_spy_seen_pad(g: &Game, pid: usize, cid: u32) -> bool {
+    pub(super) fn racer_spy_seen_pad(g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = g.cities.get(&cid) else {
             return false;
         };
