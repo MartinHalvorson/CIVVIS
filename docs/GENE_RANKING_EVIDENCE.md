@@ -293,6 +293,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
 | `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | 1 \| 1 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
+| `medina-yields-to-the-amenities` | off (unmeasured) | Opt-in gene `medina-yields-to-the-amenities`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
 | `merchant-confederation-earns-its-slot-2` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot-2`; version one plus the seat it may take. | — \| 2 |
 | `military-alliance-shield` | off (unmeasured) | Opt-in gene `military-alliance-shield`; see `advanced/military_alliance_shield.rs`. | 1 \| 1 |
@@ -355,6 +356,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |
+| `war-defense-spends-the-runway` | off (unmeasured) | Opt-in gene `war-defense-spends-the-runway`; see `advanced/war_defense_spends_the_runway.rs`. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
 

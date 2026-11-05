@@ -12641,6 +12641,33 @@ CivvisLedger.preview = function(unit, verb, x, y)
 		out.defender_total_strength = math.max(0, out.defender_strength + out.defender_strength_modifier);
 	end
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	-- UnitPanel.lua:1965-1974 reads these ten preview-text groups from the
+	-- same simulation. Preserve their native strings for component audits;
+	-- do not infer bonuses from the aggregate modifier or issue another query.
+	local textKeys = {
+		"PREVIEW_TEXT_INTERCEPTOR", "PREVIEW_TEXT_ANTI_AIR", "PREVIEW_TEXT_HEALTH",
+		"PREVIEW_TEXT_TERRAIN", "PREVIEW_TEXT_OPPONENT", "PREVIEW_TEXT_MODIFIER",
+		"PREVIEW_TEXT_ASSIST", "PREVIEW_TEXT_PROMOTION", "PREVIEW_TEXT_DEFENSES",
+		"PREVIEW_TEXT_RESOURCES",
+	};
+	local function modifierText(side)
+		local groups, any = {}, false;
+		for _, key in ipairs(textKeys) do
+			local raw = try(function()
+				return results[CombatResultParameters[side]][CombatResultParameters[key]];
+			end, nil);
+			if type(raw) == "table" then
+				local items = {};
+				for _, item in ipairs(raw) do
+					if type(item) == "string" then items[#items + 1] = item; end
+				end
+				if #items > 0 then groups[key] = items; any = true; end
+			end
+		end
+		return any and groups or nil;
+	end
+	out.attacker_modifier_text = modifierText("ATTACKER");
+	out.defender_modifier_text = modifierText("DEFENDER");
 	return out;
 end;
 

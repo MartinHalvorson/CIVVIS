@@ -13,7 +13,7 @@ local function fixture()
         result = { att = { strength = 25, modifier = 0, damage = 0 },
                    def = { strength = 65, modifier = 16, damage = 4, walls = 0 } } }
     local env = {
-        tonumber = tonumber, math = math,
+        tonumber = tonumber, math = math, type = type, ipairs = ipairs,
         try = function(callback, fallback)
             local ok, value = pcall(callback)
             if ok then return value end
