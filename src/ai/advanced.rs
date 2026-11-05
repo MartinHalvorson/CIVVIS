@@ -33035,6 +33035,11 @@ impl AdvancedAi {
             // the turn still win). Exact no-op while the gene is off. See
             // `advanced/science_denial_trains_spies.rs`.
             self.claim_queues_for_denial_spies(g, pid, &plan);
+            // `spies-steal-the-lead`: before a racer exists, a Science seat
+            // trains the Spies its steals need, one at a time, under the same
+            // displacement rule. Exact no-op while the gene is off. See
+            // `advanced/spies_steal_the_lead.rs`.
+            self.claim_queues_for_steal_spies(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

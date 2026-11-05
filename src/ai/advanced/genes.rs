@@ -5047,9 +5047,10 @@ pub const GENES: &[Gene] = &[
     // ahead instead of idling on Listening Posts or Gain Sources: in a space
     // racer's city with no Disrupt Rocketry offered, in place of the green
     // Spy's Gain Sources training step, and no longer withheld outside the
-    // racers' cities. Live Deity: 6 of 8 steals landed a Eureka (~270-430
-    // Science each) while 131 other orders bought none. See
-    // `spies_steal_the_lead.rs`.
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

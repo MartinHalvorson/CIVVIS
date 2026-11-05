@@ -249,3 +249,91 @@ fn outside_the_racers_cities_the_steal_is_not_withheld() {
     let domination = steals(VictoryTarget::Domination);
     assert!(domination.racer_spy_withholds(&conquest, STEAL_OPERATION));
 }
+
+/// The board with seat 0 holding Spy capacity, an empty queue in its city,
+/// and seat 2 knowing three more technologies than we do.
+fn claim_board() -> (Game, u32) {
+    let (mut g, _, _) = board();
+    for civic in ["diplomatic_service", "nationalism"] {
+        g.players[0].civics.insert(Name::new(civic));
+    }
+    for tech in ["astronomy", "mathematics"] {
+        g.players[2].techs.insert(Name::new(tech));
+    }
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().queue.clear();
+    (g, home)
+}
+
+fn spy_item() -> Item {
+    Item::Unit {
+        unit: crate::name!("spy"),
+    }
+}
+
+#[test]
+fn a_science_seat_trains_one_spy_to_steal_with() {
+    let (mut g, home) = claim_board();
+    assert!(g.spy_capacity(0) >= 1, "fixture capacity");
+    keeps(VictoryTarget::Science).claim_queues_for_steal_spies(
+        &mut g,
+        0,
+        &plan(GrandStrategy::Science),
+    );
+    assert!(g.cities[&home].queue.is_empty(), "off: no claim");
+    let ai = steals(VictoryTarget::Science);
+    ai.claim_queues_for_steal_spies(&mut g, 0, &plan(GrandStrategy::Science));
+    assert_eq!(g.cities[&home].queue.first(), Some(&spy_item()));
+    // One at a time: the Spy in training holds the claim.
+    let queued = g.cities[&home].queue.len();
+    ai.claim_queues_for_steal_spies(&mut g, 0, &plan(GrandStrategy::Science));
+    assert_eq!(g.cities[&home].queue.len(), queued);
+}
+
+#[test]
+fn no_spy_is_trained_at_capacity_paused_or_without_a_target() {
+    let run = |g: &mut Game, ai: &AdvancedAi, home: u32| {
+        ai.claim_queues_for_steal_spies(g, 0, &plan(GrandStrategy::Science));
+        g.cities[&home].queue.first() == Some(&spy_item())
+    };
+    // At capacity.
+    let (mut g, home) = claim_board();
+    for _ in 0..g.spy_capacity(0) {
+        idle_spy(&mut g, home, 0, false);
+    }
+    assert!(!run(&mut g, &steals(VictoryTarget::Science), home));
+    // Paused by `denial-spies-count-their-losses`.
+    let (mut g, home) = claim_board();
+    let mut paused = steals(VictoryTarget::Science);
+    paused.base.spy_training_paused = true;
+    assert!(!run(&mut g, &paused, home));
+    // No rival knows three technologies we lack.
+    let (mut g, home) = claim_board();
+    for pid in 1..3 {
+        let theirs: Vec<Name> = g.players[pid].techs.iter().copied().collect();
+        g.players[0].techs.extend(theirs);
+    }
+    assert!(!run(&mut g, &steals(VictoryTarget::Science), home));
+    // Off a Science aim.
+    let (mut g, home) = claim_board();
+    let ai = steals(VictoryTarget::Domination);
+    ai.claim_queues_for_steal_spies(&mut g, 0, &plan(GrandStrategy::Conquest));
+    assert!(g.cities[&home].queue.first() != Some(&spy_item()));
+}
+
+#[test]
+fn a_rival_with_three_technologies_we_lack_and_a_seen_campus_is_a_target() {
+    let (mut g, _) = claim_board();
+    assert!(AdvancedAi::steal_targets(&g, 0).contains(&2));
+    let campus = g.cities[&g.player_city_ids(2)[0]]
+        .districts
+        .iter()
+        .find_map(|(district, tile)| (g.district_family(*district) == "campus").then_some(*tile));
+    g.players[0]
+        .explored
+        .remove(&campus.expect("the fixture campus"));
+    assert!(
+        !AdvancedAi::steal_targets(&g, 0).contains(&2),
+        "an unseen Campus"
+    );
+}

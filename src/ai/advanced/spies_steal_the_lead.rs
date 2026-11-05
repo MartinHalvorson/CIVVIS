@@ -47,6 +47,19 @@
 //! Wherever Disrupt Rocketry is offered (by the board or the host) the pass
 //! keeps its pre-gene path, so the denial genes still decide there.
 //!
+//! 4. Spies to steal with. Spy capacity arrived at turns 99-146 and we held
+//!    about half of it (0 of 1 at turn 110, 1 of 3 at 150): before a space
+//!    racer exists only the stock valuation trains Spies, and
+//!    `science-denial-trains-spies` starts once one does. While a met rival
+//!    with a Campus we have seen knows [`STEAL_MIN_LACKED`] technologies we
+//!    lack, and no denial claim is training, one Spy at a time trains in the
+//!    top-Production city whose queue holds routine work (the denial claim's
+//!    displacement rule), until we hold our capacity. A pause from
+//!    `denial-spies-count-their-losses` holds it. At Online speed a stolen
+//!    Eureka was worth 250-431 Science, a steal took about four turns and 6
+//!    of 8 landed, so one Spy is worth roughly +50 Science a turn against our
+//!    130-200 at turns 120-150, for 150-260 Production.
+//!
 //! Postings are unchanged: the racer's cities are usually the richest in
 //! technologies we lack. A running steal is not a "safe" operation, so
 //! `racer-keeps-the-spies` lets it finish before moving the Spy on.
@@ -57,6 +70,14 @@ use super::*;
 
 /// The operation this gene runs.
 pub(crate) const STEAL_OPERATION: &str = "steal_tech_boost";
+
+/// Technologies a rival must know that we lack before a Spy is trained to
+/// steal from it.
+pub(crate) const STEAL_MIN_LACKED: usize = 3;
+
+/// Turns since a city was last attacked under which it keeps its queue (the
+/// denial claim's rule).
+const STEAL_CLAIM_ATTACK_MEMORY: u32 = 4;
 
 impl AdvancedAi {
     /// Whether the gene runs for this seat under `plan`: on, and aiming at
@@ -150,6 +171,139 @@ impl AdvancedAi {
                "A Spy steals a Eureka in {rival}'s {city_name}";
                "spies-steal-the-lead: {rival} knows {lacked} technologies we lack; \
                 Steal Tech Boost instead of {instead}");
+    }
+
+    /// The rivals worth a steal: met, living majors we are not allied with,
+    /// a Campus of theirs on a tile we have seen, and at least
+    /// [`STEAL_MIN_LACKED`] technologies we lack.
+    pub(super) fn steal_targets(g: &Game, pid: usize) -> Vec<usize> {
+        let ours = &g.players[pid].techs;
+        let explored = &g.players[pid].explored;
+        (0..g.players.len())
+            .filter(|other| *other != pid)
+            .filter(|other| {
+                let player = &g.players[*other];
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.has_met(pid, *other)
+                    && !g.are_allied(pid, *other)
+                    && player
+                        .techs
+                        .iter()
+                        .filter(|tech| !ours.contains(*tech))
+                        .count()
+                        >= STEAL_MIN_LACKED
+                    && g.player_city_ids(*other).iter().any(|cid| {
+                        g.cities[cid].districts.iter().any(|(district, tile)| {
+                            g.district_family(*district) == "campus" && explored.contains(tile)
+                        })
+                    })
+            })
+            .collect()
+    }
+
+    /// Whether `item`, at the head of a queue, is routine work a Spy may
+    /// displace: the denial claim's rule (no defensive building, military
+    /// unit, Settler, Spy, Wonder, project or repair).
+    fn steal_spy_displaces(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::Building { building } => g
+                .rules
+                .buildings
+                .get(building)
+                .is_some_and(|spec| spec.outer_defense <= 0),
+            Item::District { .. } => true,
+            Item::Unit { unit } => g.rules.units.get(unit).is_some_and(|spec| {
+                spec.class != "military" && *unit != "settler" && *unit != "spy"
+            }),
+            Item::Formation { .. }
+            | Item::Wonder { .. }
+            | Item::Repair { .. }
+            | Item::Project { .. }
+            | Item::Product { .. } => false,
+        }
+    }
+
+    /// See the module, point 4: train the Spies the steals need. Exact no-op
+    /// with the gene off or off a Science aim.
+    pub(super) fn claim_queues_for_steal_spies(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.spies_steal_the_lead_on(plan) || self.base.spy_training_paused {
+            return;
+        }
+        // Once a racer exists the denial claim trains to our capacity.
+        if self.science_denial_trains_spies && !self.denial_spy_racers(g, pid).is_empty() {
+            return;
+        }
+        let targets = Self::steal_targets(g, pid);
+        let Some(&target) = targets.first() else {
+            return;
+        };
+        let spy = Item::Unit {
+            unit: crate::name!("spy"),
+        };
+        let city_ids = g.player_city_ids(pid);
+        let queued = city_ids
+            .iter()
+            .filter(|cid| g.cities[cid].queue.contains(&spy))
+            .count();
+        let held = g.spy_agents(pid);
+        let capacity = g.spy_capacity(pid).max(0) as usize;
+        // One Spy in training at a time: the host trains them one by one.
+        if queued > 0 || held >= capacity {
+            return;
+        }
+        let mut candidates: Vec<(f64, u32)> = city_ids
+            .iter()
+            .copied()
+            .filter(|cid| {
+                let city = &g.cities[cid];
+                let attacked = city.last_attacked > 0
+                    && g.turn.saturating_sub(city.last_attacked) <= STEAL_CLAIM_ATTACK_MEMORY;
+                plan.threatened_city != Some(*cid)
+                    && !attacked
+                    && !self.launch_pad_holds_city(g, pid, *cid)
+                    && city
+                        .queue
+                        .first()
+                        .is_none_or(|head| Self::steal_spy_displaces(g, head))
+                    && g.can_produce(pid, *cid, &spy)
+            })
+            .map(|cid| (g.city_yields(cid).production, cid))
+            .collect();
+        candidates.sort_by(|(left, left_city), (right, right_city)| {
+            right.total_cmp(left).then(left_city.cmp(right_city))
+        });
+        let Some((production, city)) = candidates.first().copied() else {
+            return;
+        };
+        let city_name = g.cities[&city].name.clone();
+        let rival = g.players[target].civ.to_string();
+        let others = targets.len() - 1;
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: spy.clone(),
+            },
+        )
+        .is_ok()
+        {
+            *g.players[pid]
+                .counters
+                .entry("steal_spies_trained".to_string())
+                .or_insert(0) += 1;
+            think!(self.journal(), Military, Decision,
+                   "{city_name} trains a Spy to steal Eurekas";
+                   "spies-steal-the-lead: {held} held of {capacity}; {rival} and {others} \
+                    other rival(s) know technologies we lack; {production:.0} Production a \
+                    turn here");
+        }
     }
 }
 
