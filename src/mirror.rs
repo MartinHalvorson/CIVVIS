@@ -53,18 +53,18 @@ pub use policy_windows::StatePolicyChange;
 pub mod input_capture;
 mod religion_state;
 mod research_tree;
+pub use research_tree::StateResearchTreeRow;
 mod rivals;
 pub(crate) use rivals::*;
-pub use research_tree::StateResearchTreeRow;
 mod settlement_loyalty;
 mod spy_posting;
 mod state;
 pub use state::*;
 mod strategic_income;
-mod world;
-use world::*;
 pub use host_deaths::HostUnitDeath;
 pub use spy_posting::{StateSpyCity, StateSpyTarget};
+mod world;
+use world::*;
 
 use crate::{
     name::Name,
