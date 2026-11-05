@@ -3782,10 +3782,15 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
 /// `culture_allies` (`culture-seat-allies` armed on a seat aiming at
 /// Culture, or `science-seat-allies` on one aiming at Science) keeps them for
 /// that lane as well; the agent takes them under `CultureAllies` /
-/// `ScienceAllies`. Returns how many were dropped.
+/// `ScienceAllies`. `shield` is the host player `military-alliance-shield`
+/// asked this turn ([`AdvancedAi::military_alliance_shield_partner`]): its
+/// `ALLIANCE_MILITARY` crosses on every lane, since that desk prices the
+/// Domination target and prey itself, and the agent takes it under
+/// `MilitaryAllies`. Returns how many were dropped.
 fn drop_off_lane_alliances(
     plan: Option<(&str, Option<&str>)>,
     culture_allies: bool,
+    shield: Option<i64>,
     orders: &mut Vec<Order>,
 ) -> usize {
     if plan_races_diplomacy(plan)
@@ -3795,7 +3800,12 @@ fn drop_off_lane_alliances(
         return 0;
     }
     let before = orders.len();
-    orders.retain(|order| order.kind != "alliance");
+    orders.retain(|order| {
+        order.kind != "alliance"
+            || (shield.is_some()
+                && order.subject == shield
+                && order.verb.as_deref() == Some("ALLIANCE_MILITARY"))
+    });
     before - orders.len()
 }
 
@@ -5547,7 +5557,16 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_alliances = drop_off_lane_alliances(plan_facts, ai.seat_allies_armed(), &mut orders);
+    // `military-alliance-shield`: the host player its ask went to.
+    let shield_subject = ai
+        .military_alliance_shield_partner()
+        .and_then(|partner| host_player_target(mirror_state, state, partner));
+    let held_alliances = drop_off_lane_alliances(
+        plan_facts,
+        ai.seat_allies_armed(),
+        shield_subject,
+        &mut orders,
+    );
     if held_alliances > 0 {
         note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
     }
@@ -21989,7 +22008,12 @@ mod order_postcondition_tests {
         };
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), false, &mut kept),
+            drop_off_lane_alliances(
+                Some(("expansion", Some("diplomatic"))),
+                false,
+                None,
+                &mut kept
+            ),
             0
         );
         assert_eq!(kept.len(), 2);
@@ -21997,20 +22021,25 @@ mod order_postcondition_tests {
         // armed, and only a Culture seat.
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, &mut kept),
+            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, None, &mut kept),
             0
         );
         assert_eq!(kept.len(), 2);
         let mut orders = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("conquest", Some("domination"))), true, &mut orders),
+            drop_off_lane_alliances(
+                Some(("conquest", Some("domination"))),
+                true,
+                None,
+                &mut orders
+            ),
             1,
             "the seat genes open the Culture and Science lanes only"
         );
         // `science-seat-allies`: a Science seat keeps them while armed.
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("science", Some("science"))), true, &mut kept),
+            drop_off_lane_alliances(Some(("science", Some("science"))), true, None, &mut kept),
             0
         );
         assert_eq!(kept.len(), 2);
@@ -22022,12 +22051,48 @@ mod order_postcondition_tests {
         ] {
             let mut orders = batch();
             assert_eq!(
-                drop_off_lane_alliances(plan, false, &mut orders),
+                drop_off_lane_alliances(plan, false, None, &mut orders),
                 1,
                 "{plan:?}"
             );
             assert_eq!(orders.len(), 1);
             assert_eq!(orders[0].kind, "sell");
+        }
+    }
+
+    /// `military-alliance-shield`: the shield's own `ALLIANCE_MILITARY` ask
+    /// crosses on every lane; a stock ask beside it, another kind to the same
+    /// rival, or a military ask to another rival does not.
+    #[test]
+    fn the_shields_military_alliance_crosses_on_every_lane() {
+        let alliance = |subject: i64, verb: &str| Order {
+            kind: "alliance",
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        for plan in [
+            None,
+            Some(("conquest", Some("domination"))),
+            Some(("science", Some("science"))),
+            Some(("culture", Some("culture"))),
+        ] {
+            let mut orders = vec![
+                alliance(3, "ALLIANCE_MILITARY"),
+                alliance(3, "ALLIANCE_RESEARCH"),
+                alliance(4, "ALLIANCE_MILITARY"),
+            ];
+            assert_eq!(
+                drop_off_lane_alliances(plan, false, Some(3), &mut orders),
+                2,
+                "{plan:?}"
+            );
+            assert_eq!(orders.len(), 1);
+            assert_eq!(orders[0].subject, Some(3));
+            assert_eq!(orders[0].verb.as_deref(), Some("ALLIANCE_MILITARY"));
+            // No shield ask this turn: every alliance order is held.
+            let mut orders = vec![alliance(3, "ALLIANCE_MILITARY")];
+            assert_eq!(drop_off_lane_alliances(plan, false, None, &mut orders), 1);
         }
     }
 
