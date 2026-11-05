@@ -3339,6 +3339,10 @@ pub struct AdvancedAi {
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
+    /// Spy id → the turn its current `spy_orders_until` entry was set, so a
+    /// later turn that finds the Spy idle by the host's report spends it. See
+    /// `advanced/spy_patience_reads_the_host.rs`.
+    spy_order_turns: BTreeMap<u32, u32>,
 
     /// Whether a seat playing under an assigned victory target may still
     /// mount a denial against a rival at MATCH POINT. `victory_denial` has
@@ -9441,6 +9445,11 @@ pub struct AdvancedAi {
     /// rivals ahead instead of idling on Listening Posts. See
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
+    /// `science-heads-keep-their-queue`: a city building a Campus-family
+    /// district or one of its buildings keeps its queue against the backlog
+    /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
+    /// by default.
+    science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -10420,6 +10429,8 @@ mod site_lookahead;
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
+/// `science-heads-keep-their-queue`: see `advanced/science_heads_keep_their_queue.rs`.
+mod science_heads_keep_their_queue;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
@@ -10819,6 +10830,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// A Spy the host reports idle spends its order's patience. See
+/// `advanced/spy_patience_reads_the_host.rs`.
+mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11647,6 +11661,7 @@ impl AdvancedAi {
             spy_mission_patience: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
+            spy_order_turns: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
             projected_stock_denial: false,
@@ -12523,6 +12538,7 @@ impl AdvancedAi {
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
+            science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
@@ -22726,7 +22742,12 @@ impl AdvancedAi {
         // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
         // first, as they do on the main path. See
         // `advanced/hint_runs_the_claims.rs`.
-        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        // A city the war can reach keeps the governor's own choice (its Walls
+        // or defender): -78's 523-board census found 10 of 12 lost Walls hints
+        // in cities with a hostile within six.
+        let claims_and_writers = self.hint_runs_the_claims
+            && self.base.book_pos >= 4
+            && !self.hint_city_in_reach_of_war(g, pid, city);
         if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
         }

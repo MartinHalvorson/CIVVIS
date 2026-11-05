@@ -40,6 +40,10 @@
 
 use super::*;
 
+/// Turns after a hit on a city during which its hint keeps the governor's
+/// own choice. Matches the production scorer's four-turn `threatened` window.
+pub(crate) const HINT_ATTACK_MEMORY: u32 = 4;
+
 impl AdvancedAi {
     /// The idle-queue claims, in the order `take_turn_inner` has always run
     /// them. Each is an exact no-op while its own gene is off. Returns
@@ -203,6 +207,27 @@ impl AdvancedAi {
         self.claim_frontier_walls_before_the_surprise(g, pid);
         self.mobilize_surprise_defense_production(g, pid);
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
+    }
+
+    /// Whether the city a hint is for stands in the war's reach: hit within
+    /// [`HINT_ATTACK_MEMORY`] turns, or under visible or remembered pressure
+    /// from a hostile military unit inside the threat radius (six tiles,
+    /// barbarians included). Such a city keeps the governor's own choice, and
+    /// neither the claims nor the extra writers run for its hint.
+    ///
+    /// -78's census of 523 live boards (every third turn t60-150, 28 Deity
+    /// Korea games, ± the gene with #4565 in) found 10 of the 12 lost Walls
+    /// hints in cities with a hostile within six tiles.
+    pub(super) fn hint_city_in_reach_of_war(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        if city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= HINT_ATTACK_MEMORY
+        {
+            return true;
+        }
+        let visible = g.player_vision_frame(pid);
+        self.city_pressure_with_belief(g, pid, cid, &visible) > 0.0
     }
 }
 
