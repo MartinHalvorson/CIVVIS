@@ -4993,6 +4993,15 @@
           "merchant-confederation-earns-its-slot-2": null
         }
       },
+      "military-alliance-shield": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "military-alliance-shield": null,
+          "military-alliance-shield-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores"
@@ -5077,6 +5086,15 @@
         "versions": {
           "pingala-follows-research": null,
           "pingala-follows-research-2": null
+        }
+      },
+      "plaza-serves-the-scientist": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "plaza-serves-the-scientist": null,
+          "plaza-serves-the-scientist-2": null
         }
       },
       "policy-deck-hysteresis": {
