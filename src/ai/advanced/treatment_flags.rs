@@ -5248,6 +5248,17 @@ impl AdvancedAi {
         self.military_alliance_shield_2 = false;
     }
 
+    /// Opt-in gene `group-steps-read-the-field`; see
+    /// [`Self::group_steps_read_the_field`].
+    pub fn enable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = true;
+    }
+
+    /// The twin of `enable_group_steps_read_the_field`.
+    pub fn disable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
