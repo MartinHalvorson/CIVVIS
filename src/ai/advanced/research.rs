@@ -2003,6 +2003,10 @@ impl AdvancedAi {
                 _ => 0.0,
             };
         }
+        // `spy-civics-come-first`: Spy capacity past Diplomatic Service
+        // (which `spies-steal-the-lead` already brings forward). Zero with
+        // the gene off. See `advanced/spy_civics_come_first.rs`.
+        value += self.spy_civic_value(strategy, civic);
         value += match civic {
             "foreign_trade" | "craftsmanship" => 25.0,
             "early_empire" | "state_workforce" => 38.0,

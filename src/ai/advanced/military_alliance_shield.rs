@@ -91,7 +91,33 @@
 //! agent's `CivvisAllianceStep` takes it under `MilitaryAllies`, which
 //! civ6_play.py sets when the tag is armed.
 //!
-//! Counters: `military_alliance_shield:asked`,
+//! **Version two (`military-alliance-shield-2`, 2026-11-05).** The first armed
+//! live Deity Korea games read two faults. Three Military asks to declared
+//! friends were refused (152431Z t96 Byzantium, 154934Z t108 Poland, 155735Z
+//! t108), while Research and Economic asks are often accepted. And asks to
+//! rivals the host read as Neutral or Unfriendly (154934Z t87, 155735Z t102
+//! and t105) never left the agent, which declares a friendship only from
+//! Friendly, yet the shared refusal memory barred those rivals from every
+//! desk for thirty turns. Version two:
+//!
+//! - asks only a rival the host reads as Friendly or a declared friend
+//!   (`Player::observed_diplomatic_state`; absent on a native board);
+//! - asks the first of [`SHIELD_KINDS`] free on both sides and not refused
+//!   lately: Military first, then Economic, Cultural, Religious (never
+//!   Religious for a seat aiming at Religion). Any alliance forbids the
+//!   partner's war on us and carries the pact; the common enemy still asks
+//!   only for Military, the +5 being its point;
+//! - keeps its own memory per partner and kind (thirty turns, or the
+//!   five-turn friendship step) and waits [`SHIELD_RETRY_TURNS`] between asks
+//!   to one partner, leaving the shared memory to the stock desk, so a
+//!   refused Military ask bars neither the lane's own ask nor this desk's
+//!   next kind;
+//! - binds a further neighbour once our Military Alliance stands.
+//!
+//! On the live seat its non-Military asks cross under `ShieldAllies`.
+//!
+//! Counters: `military_alliance_shield:asked_other_kind` (version two) and
+//! `military_alliance_shield:asked`,
 //! `military_alliance_shield:asked_common_enemy`,
 //! `military_alliance_shield:asked_border`.
 
@@ -121,6 +147,17 @@ pub(super) const SHIELD_GRIEVANCE_CEILING: f64 = 50.0;
 /// The border arm asks every this many turns, staggered by seat. The common
 /// enemy is asked every turn of a war.
 pub(super) const SHIELD_CADENCE: u32 = 3;
+/// Version two: the kinds a partner is asked for, in order. Military first
+/// (the +5); then the kinds whose level-one yields are a few Gold, Culture or
+/// Faith on trade routes, so binding a neighbour with them costs no lane its
+/// own alliance. Research is the Science lane's own kind and is left to the
+/// stock desk.
+pub(super) const SHIELD_KINDS: [&str; 4] = ["military", "economic", "cultural", "religious"];
+/// Version two: turns after any ask before the same partner is asked again.
+/// The agent refuses a second ask to one rival inside its own retry floor
+/// (`AllianceRetryTurns`, 5) without reaching the rival.
+pub(super) const SHIELD_RETRY_TURNS: u32 =
+    super::alliance_remembers_the_refusal::ALLIANCE_FRIENDSHIP_STEP_TURNS;
 
 impl AdvancedAi {
     /// The partner `military-alliance-shield` asked on the last decided turn,
@@ -128,6 +165,49 @@ impl AdvancedAi {
     /// when nobody was asked.
     pub fn military_alliance_shield_partner(&self) -> Option<usize> {
         self.military_alliance_shield_ask
+            .map(|(partner, _)| partner)
+    }
+
+    /// The partner and the alliance kind the shield asked on the last decided
+    /// turn (always `military` under version one).
+    pub fn military_alliance_shield_ask(&self) -> Option<(usize, &'static str)> {
+        self.military_alliance_shield_ask
+    }
+
+    /// Version two's own refusal memory, per partner and kind: an ask that
+    /// did not ally waits [`super::alliance_remembers_the_refusal::ALLIANCE_REFUSAL_TURNS`],
+    /// or only [`SHIELD_RETRY_TURNS`] when it was the friendship step (the
+    /// partner was not a declared friend then and is one now). Kept apart from
+    /// the shared memory, so a refused Military ask does not bar the stock
+    /// desk's lane ask, nor this desk's next kind, to the same partner.
+    fn shield_kind_barred(&self, g: &Game, pid: usize, partner: usize, kind: &str) -> bool {
+        if g.alliance_with(pid, partner).is_some() {
+            return false;
+        }
+        let Some(&(asked, friend_when_asked)) = self
+            .military_alliance_shield_asks
+            .iter()
+            .find(|((who, asked_kind), _)| *who == partner && *asked_kind == kind)
+            .map(|(_, value)| value)
+        else {
+            return false;
+        };
+        let bar = if !friend_when_asked && g.are_friends(pid, partner) {
+            SHIELD_RETRY_TURNS
+        } else {
+            super::alliance_remembers_the_refusal::ALLIANCE_REFUSAL_TURNS
+        };
+        g.turn < asked.saturating_add(bar)
+    }
+
+    /// Version two: whether `partner` was asked for any kind inside the
+    /// agent's retry floor.
+    fn shield_asked_recently(&self, g: &Game, partner: usize) -> bool {
+        self.military_alliance_shield_asks
+            .iter()
+            .any(|((who, _), (asked, _))| {
+                *who == partner && g.turn < asked.saturating_add(SHIELD_RETRY_TURNS)
+            })
     }
 
     /// Whether the border arm waits for the lane's own alliance: the kind
@@ -220,7 +300,8 @@ impl AdvancedAi {
         denied_partner: Option<usize>,
     ) -> bool {
         self.military_alliance_shield_ask = None;
-        if !self.military_alliance_shield
+        let v2 = self.military_alliance_shield_2;
+        if !(self.military_alliance_shield || v2)
             || !g.players[pid]
                 .civics
                 .contains(&crate::name!("civil_service"))
@@ -228,16 +309,19 @@ impl AdvancedAi {
             return false;
         }
         let turn = g.turn;
-        let military_taken = |who: usize| {
+        let kind_taken = |who: usize, kind: &str| {
             g.players[who]
                 .alliances
                 .values()
-                .any(|alliance| alliance.ends > turn && alliance.kind == "military")
+                .any(|alliance| alliance.ends > turn && alliance.kind == kind)
         };
+        let military_taken = |who: usize| kind_taken(who, "military");
         // One alliance ask in flight at a time (the coalition's, say): the
         // live host would hold a second (`hold_deals_beside_an_alliance`),
         // yet the refusal memory would remember it as asked.
-        if military_taken(pid)
+        // Version two binds a second neighbour with another kind once our
+        // Military Alliance stands.
+        if (!v2 && military_taken(pid))
             || g.pending_deals
                 .iter()
                 .any(|deal| deal.from == pid && deal.alliance.is_some() && deal.expires >= turn)
@@ -272,6 +356,8 @@ impl AdvancedAi {
                 .get(&against)
                 .is_some_and(|until| *until > turn)
         };
+        let religion_lane = plan.strategy == GrandStrategy::Religion
+            || self.active_victory_target(g) == Some(VictoryTarget::Religion);
         let pending_with = |partner: usize| {
             g.pending_deals.iter().any(|deal| {
                 deal.expires >= turn
@@ -279,7 +365,7 @@ impl AdvancedAi {
                         || (deal.from == partner && deal.to == pid))
             })
         };
-        let mut best: Option<(f64, usize, usize)> = None;
+        let mut best: Option<(f64, usize, usize, &'static str)> = None;
         for other in g.players.iter() {
             let id = other.id;
             if id == pid
@@ -291,7 +377,7 @@ impl AdvancedAi {
                 || Some(id) == denied_partner
                 || !other.civics.contains(&crate::name!("civil_service"))
                 || g.alliance_with(pid, id).is_some()
-                || military_taken(id)
+                || (!v2 && military_taken(id))
                 || pending_with(id)
                 || denounced(pid, id)
                 || denounced(id, pid)
@@ -306,12 +392,52 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let common = enemies
-                .iter()
-                // `rivals_at_war`: on the live seat the host's report of a
-                // war between two rivals (`Game::observed_rival_wars`).
-                .filter(|enemy| **enemy != id && g.rivals_at_war(id, **enemy))
-                .count();
+            // Version two asks only a rival the host reads as Friendly or a
+            // declared friend: the agent asks nobody colder (it declares a
+            // friendship only from Friendly), yet the ask would still be
+            // remembered as refused. Absent on a native board.
+            if v2
+                && (other
+                    .observed_diplomatic_state
+                    .get(&pid)
+                    .is_some_and(|state| !matches!(state.as_str(), "FRIENDLY" | "DECLARED_FRIEND"))
+                    || self.shield_asked_recently(g, id))
+            {
+                continue;
+            }
+            // The kind: Military under version one; under version two the
+            // first of `SHIELD_KINDS` free on both sides and not refused
+            // lately (never Religious on a Religion lane: allies take no
+            // religious pressure from each other).
+            let kind_ok = |kind: &str| {
+                !kind_taken(pid, kind)
+                    && !kind_taken(id, kind)
+                    && !(v2 && self.shield_kind_barred(g, pid, id, kind))
+                    && !(kind == "religious" && religion_lane)
+            };
+            let military_ok = kind_ok("military");
+            let common = if !military_ok {
+                0
+            } else {
+                enemies
+                    .iter()
+                    // `rivals_at_war`: on the live seat the host's report of a
+                    // war between two rivals (`Game::observed_rival_wars`).
+                    .filter(|enemy| **enemy != id && g.rivals_at_war(id, **enemy))
+                    .count()
+            };
+            // The common enemy asks for Military; the border for the first
+            // free kind (Military only, under version one).
+            let kind = if common > 0 {
+                Some("military")
+            } else if v2 {
+                SHIELD_KINDS.iter().copied().find(|kind| kind_ok(kind))
+            } else {
+                military_ok.then_some("military")
+            };
+            let Some(kind) = kind else {
+                continue;
+            };
             let border = if border_turn {
                 Self::shield_border_score(g, pid, &ours, id)
             } else {
@@ -326,11 +452,11 @@ impl AdvancedAi {
                 0.0
             };
             let score = common as f64 * SHIELD_COMMON_ENEMY + border + friend - grievance(pid, id);
-            if best.is_none_or(|(top, _, _)| score > top) {
-                best = Some((score, id, common));
+            if best.is_none_or(|(top, _, _, _)| score > top) {
+                best = Some((score, id, common, kind));
             }
         }
-        let Some((_, partner, common)) = best else {
+        let Some((_, partner, common, kind)) = best else {
             return false;
         };
         let proposal = Action::ProposeDeal {
@@ -344,19 +470,32 @@ impl AdvancedAi {
                     .contains(&crate::name!("early_empire")),
             friendship: true,
             peace: false,
-            alliance: Some("military".to_string()),
+            alliance: Some(kind.to_string()),
         };
         if g.apply(pid, &proposal).is_err() {
             return false;
         }
-        self.military_alliance_shield_ask = Some(partner);
-        self.alliance_note_asked(g, pid, partner);
+        self.military_alliance_shield_ask = Some((partner, kind));
+        if v2 {
+            // Its own memory only: the shared one would bar the stock desk's
+            // lane ask to this partner, and this desk's next kind.
+            let friend = g.are_friends(pid, partner);
+            self.military_alliance_shield_asks
+                .insert((partner, kind), (turn, friend));
+        } else {
+            self.alliance_note_asked(g, pid, partner);
+        }
         let arm = if common > 0 {
             "military_alliance_shield:asked_common_enemy"
         } else {
             "military_alliance_shield:asked_border"
         };
-        for counter in ["military_alliance_shield:asked", arm] {
+        let other_kind =
+            (kind != "military").then_some("military_alliance_shield:asked_other_kind");
+        for counter in ["military_alliance_shield:asked", arm]
+            .into_iter()
+            .chain(other_kind)
+        {
             *g.players[pid]
                 .counters
                 .entry(counter.to_string())
@@ -369,11 +508,17 @@ impl AdvancedAi {
                        "they are at war with {common} empire{} we are fighting: allied, our units \
                         and theirs take +5 combat strength against that common enemy",
                        if common == 1 { "" } else { "s" });
-            } else {
+            } else if kind == "military" {
                 think!(self.journal(), Diplomacy, Decision,
                        "Asking {} for a Military Alliance", g.players[partner].civ;
                        "they are the strongest empire at our border: allied, they cannot declare \
                         on us, and their pact stands beside us against anyone who does");
+            } else {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Asking {} for a {kind} alliance", g.players[partner].civ;
+                       "they are the strongest empire at our border and the Military kind is \
+                        taken or was refused: any alliance forbids their war on us and carries \
+                        the pact");
             }
         }
         true
