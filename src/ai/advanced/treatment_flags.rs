@@ -2209,6 +2209,9 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-lane-lends-the-army`; see
         /// `advanced/threatened_lane_lends_the_army.rs`.
         threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
+        /// Opt-in gene `captives-come-home`; see
+        /// `advanced/captives_come_home.rs`.
+        captives_come_home => enable_captives_come_home, disable_captives_come_home;
     }
 }
 

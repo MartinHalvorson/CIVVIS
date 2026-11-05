@@ -5131,6 +5131,10 @@ pub const GENES: &[Gene] = &[
     // tile and moves a post where one blow at the top of the roll removes
     // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
     Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // `captives-come-home`: the live bridge buys our captured Spies back from
+    // their captors while the network is short of its capacity, so their
+    // slots fill again. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

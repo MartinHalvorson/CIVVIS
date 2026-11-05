@@ -10080,3 +10080,76 @@ fn spy_loss_ledger_reads_the_log_as_it_grows() {
     assert_eq!(ledger.through(200), vec![5]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `captives-come-home`: the captor holding most of our Spies is asked on its
+/// own cadence turn, at peace only, for Gold over the reserve up to the cap;
+/// a short treasury or a deal already in flight to it holds the ask.
+#[test]
+fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
+    let rival = |player: usize, captives: Option<u32>, at_war: bool| StateRival {
+        player,
+        captives_of_ours: captives,
+        at_war,
+        ..StateRival::default()
+    };
+    // Turn 12: player 2's cadence turn (12 % 5 == 2 % 5); player 7 shares it.
+    let mut state = StateSnapshot {
+        turn: 12,
+        gold: 420,
+        rivals: vec![
+            rival(1, Some(3), false),
+            rival(2, Some(1), false),
+            rival(7, Some(2), false),
+            rival(12, Some(4), true),
+        ],
+        ..StateSnapshot::default()
+    };
+    let mut orders = Vec::new();
+    assert_eq!(append_captive_ransom_order(&state, &mut orders), None);
+    assert_eq!(orders.len(), 1);
+    let ask = &orders[0];
+    assert_eq!(ask.kind, "buy");
+    assert_eq!(
+        ask.subject,
+        Some(7),
+        "the most-held captor whose turn it is; never one at war with us"
+    );
+    assert_eq!(ask.verb.as_deref(), Some("CAPTIVE"));
+    assert_eq!(ask.pos, Some((RANSOM_CEILING_MAX, 0)), "capped");
+
+    // A deal already heading to that captor holds the ask.
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:deal_in_flight")
+    );
+    assert_eq!(orders.len(), 1);
+
+    // The ceiling is the treasury over the reserve, and too little asks nothing.
+    state.gold = RANSOM_GOLD_RESERVE + 90;
+    let mut orders = Vec::new();
+    append_captive_ransom_order(&state, &mut orders);
+    assert_eq!(orders[0].pos, Some((90, 0)));
+    state.gold = RANSOM_GOLD_RESERVE + i64::from(RANSOM_CEILING_MIN) - 1;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:treasury")
+    );
+    assert!(orders.is_empty());
+
+    // Off its cadence turn, or holding none of ours, a rival is not asked.
+    state.gold = 420;
+    state.turn = 13;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:no_captor")
+    );
+    state.turn = 12;
+    state.rivals = vec![rival(2, Some(0), false), rival(7, None, false)];
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders),
+        Some("ransom_hold:no_captor")
+    );
+    assert!(orders.is_empty());
+}
