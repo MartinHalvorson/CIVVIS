@@ -5558,6 +5558,8 @@ pub struct AdvancedAi {
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
+    /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
+    districts_protect_seowon_science: bool,
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
@@ -10226,6 +10228,7 @@ mod site_lookahead;
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
+mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
 /// its city-states and joint-war invitations before the declaration. Opt-in
@@ -11604,6 +11607,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
+            districts_protect_seowon_science: false,
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -28113,6 +28117,7 @@ impl AdvancedAi {
                             })
                         })
                         .collect::<Vec<_>>();
+                self.seowon_protection_expand_menu(g, pid, cid, &mut items);
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
@@ -30939,6 +30944,7 @@ impl AdvancedAi {
                 ) * 42.0
                     * Self::campus_payback_horizon(g);
                 self.yield_value(g.district_yields(district, *pos), pricing_lane) * 60.0
+                    - self.seowon_site_loss_value(g, pid, *district, *pos, pricing_lane) * 60.0
                     + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, pricing_lane) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }

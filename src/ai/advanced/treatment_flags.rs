@@ -76,6 +76,8 @@ macro_rules! toggles {
 
 impl AdvancedAi {
     toggles! {
+        /// Price the Science lost when a new district crowds an owned Seowon.
+        districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
         /// Enable `victory-deadline-budget` for measurement.
         victory_deadline_budget => enable_victory_deadline_budget, disable_victory_deadline_budget;
         /// Enable `culture-tourism-payback` for measurement.
