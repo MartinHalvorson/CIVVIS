@@ -5016,6 +5016,9 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

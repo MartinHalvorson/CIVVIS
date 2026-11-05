@@ -8633,6 +8633,8 @@ pub struct AdvancedAi {
     /// development half at a third of the clock, as Culture already does.
     /// See `advanced/science_specializes_earlier.rs`. Off by default.
     science_specializes_earlier: bool,
+    /// Finish the missing Science-lane Campus unlock before optional detours.
+    science_writing_before_the_luxury: bool,
     /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
     spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
@@ -10535,6 +10537,7 @@ pub(crate) mod city_state_quests;
 
 /// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
 mod science_specializes_earlier;
+mod science_writing_before_the_luxury;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
@@ -12169,6 +12172,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
+            science_writing_before_the_luxury: false,
             spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
