@@ -2248,6 +2248,9 @@ impl AdvancedAi {
         /// Opt-in gene `science-heads-keep-their-queue`; see
         /// `advanced/science_heads_keep_their_queue.rs`.
         science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
+        /// Opt-in gene `capture-scar-reads-the-new-city`; see
+        /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
+        capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
     }
 }
 

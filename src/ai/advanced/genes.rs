@@ -5246,6 +5246,14 @@ pub const GENES: &[Gene] = &[
     // claim goes to the next-fastest city or waits a turn. See
     // `advanced/science_heads_keep_their_queue.rs`.
     Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // Live Deity Indonesia (11-05): 24 of 53 Settlers lost in 49 games
+    // vanished within two tiles of a city of ours, and the capture lessons
+    // read any such city as the founding, so 13 captures beside a standing
+    // city left no scar. 173830Z lost one at t96 one tile from its city; the
+    // next Settler walked to a site three tiles from that spot and was taken
+    // at t102. Under the gene only a city new since the last resolve counts
+    // as the founding. See `advanced/civilian_safety.rs`.
+    Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
