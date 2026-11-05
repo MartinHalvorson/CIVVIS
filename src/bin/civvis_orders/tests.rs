@@ -10343,3 +10343,128 @@ fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
     );
     assert!(orders.is_empty());
 }
+
+/// `tribute-buys-the-friendship`: the strongest neighbour at peace, stronger
+/// than us and too cold for the friendship ask, is sent the Gold that closes
+/// its opinion gap to the Friendly median, on its cadence turn, inside the
+/// favorable-deal cap and the treasury reserve.
+#[test]
+fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
+    let reason = |text: &str, score: f64| civvis::mirror::StateOpinionModifier {
+        text: text.to_string(),
+        score,
+    };
+    let rival = |player: usize, military: f64, mood: &str, total: f64| StateRival {
+        player,
+        military,
+        diplomatic_state: Some(format!("DIPLO_STATE_{mood}")),
+        opinion_modifiers: Some(vec![reason("Unknown Reason", total)]),
+        ..StateRival::default()
+    };
+    // Turn 13: player 3's cadence turn (13 % 5 == 3 % 5). Player 3 is the
+    // strongest at peace; player 4 is stronger but at war with us.
+    let mut at_war = rival(4, 900.0, "WAR", -30.0);
+    at_war.at_war = true;
+    let mut state = StateSnapshot {
+        turn: 13,
+        gold: 400,
+        military: 200.0,
+        rivals: vec![
+            rival(1, 300.0, "UNFRIENDLY", -20.0),
+            rival(3, 600.0, "UNFRIENDLY", -8.0),
+            at_war,
+        ],
+        ..StateSnapshot::default()
+    };
+    let mut orders = Vec::new();
+    assert_eq!(append_tribute_order(&state, &mut orders), None);
+    assert_eq!(orders.len(), 1);
+    let gift = &orders[0];
+    assert_eq!(gift.kind, "aid_gift");
+    assert_eq!(
+        gift.subject,
+        Some(3),
+        "the strongest at peace, never one at war"
+    );
+    assert_eq!(gift.verb.as_deref(), Some("TRIBUTE"));
+    assert_eq!(
+        gift.pos,
+        Some((130, 0)),
+        "13 points from -8 to +5, ten Gold a point"
+    );
+
+    // Any other order to that rival this frame holds the gift.
+    assert_eq!(
+        append_tribute_order(&state, &mut orders),
+        Some("tribute_hold:deal_in_flight")
+    );
+    assert_eq!(orders.len(), 1);
+
+    // The favorable-deal modifier holds at most +20: what is already held
+    // is room spent.
+    state.rivals[1].opinion_modifiers = Some(vec![
+        reason("Unknown Reason", -25.0),
+        reason("Favorable trade deals to them", 12.0),
+    ]);
+    let mut orders = Vec::new();
+    append_tribute_order(&state, &mut orders);
+    assert_eq!(
+        orders[0].pos,
+        Some((80, 0)),
+        "8 points of room left under the cap"
+    );
+
+    // The treasury keeps its reserve, and too small a gift is not sent.
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -8.0)]);
+    state.gold = TRIBUTE_GOLD_RESERVE + 70;
+    let mut orders = Vec::new();
+    append_tribute_order(&state, &mut orders);
+    assert_eq!(orders[0].pos, Some((70, 0)));
+    state.gold = TRIBUTE_GOLD_RESERVE + i64::from(TRIBUTE_MIN_GOLD) - 1;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_tribute_order(&state, &mut orders),
+        Some("tribute_hold:treasury")
+    );
+    assert!(orders.is_empty());
+    state.gold = 400;
+
+    // Off its cadence turn nothing goes out.
+    state.turn = 14;
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:cadence")
+    );
+    state.turn = 13;
+
+    // A rival already warm enough, Friendly, denounced, weaker than us, or
+    // with no breakdown is not sent tribute.
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Declared Friend", 6.0)]);
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:no_gap")
+    );
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -8.0)]);
+    state.rivals[1].diplomatic_state = Some("DIPLO_STATE_FRIENDLY".to_string());
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:courted")
+    );
+    state.rivals[1].diplomatic_state = Some("DIPLO_STATE_DENOUNCED".to_string());
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:denounced")
+    );
+    state.rivals[1].diplomatic_state = Some("DIPLO_STATE_NEUTRAL".to_string());
+    state.military = 700.0;
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:not_stronger")
+    );
+    state.military = 200.0;
+    state.rivals[1].opinion_modifiers = None;
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:opinion_unknown")
+    );
+}

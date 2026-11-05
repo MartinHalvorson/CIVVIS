@@ -5275,6 +5275,14 @@ pub const GENES: &[Gene] = &[
     // through to Economic, Cultural or Religious, under its own per-kind
     // memory. See `military_alliance_shield.rs`.
     Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
+    // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    // strongest neighbour at peace while it reads Unfriendly or Neutral, up
+    // to the opinion a Friendly rival holds, so the friendship ask (sent only
+    // to a Friendly rival, accepted 30 of 50 on Deity 11-04/05) can land. A
+    // favorable deal is worth +1 per 10 Gold to the AI, capped at +20
+    // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
+    // `advanced/tribute_buys_the_friendship.rs`.
+    Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

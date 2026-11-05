@@ -2257,6 +2257,9 @@ impl AdvancedAi {
         /// Opt-in gene `denounce-only-to-declare`; see
         /// `advanced/denounce_only_to_declare.rs`.
         denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
+        /// Opt-in gene `tribute-buys-the-friendship`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
     }
 }
 
