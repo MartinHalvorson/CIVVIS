@@ -5216,6 +5216,12 @@ pub const GENES: &[Gene] = &[
     // their captors while the network is short of its capacity, so their
     // slots fill again. See `advanced/captives_come_home.rs`.
     Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
+    // `denounce-only-to-declare`: the Science seat's threat rung no longer
+    // denounces the space racer; the war opening denounces when a war
+    // follows. Live Deity 11-04/05: a rival we denounced declared war on us
+    // 2.3x as often (stratified), and those wars cost 2.5 cities against
+    // 1.35. See `advanced/denounce_only_to_declare.rs`.
+    Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

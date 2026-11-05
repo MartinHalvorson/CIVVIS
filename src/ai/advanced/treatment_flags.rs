@@ -2236,6 +2236,9 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `denounce-only-to-declare`; see
+        /// `advanced/denounce_only_to_declare.rs`.
+        denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
     }
 }
 

@@ -6613,6 +6613,10 @@ pub struct AdvancedAi {
     /// when the network needs their slots. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
+    /// `denounce-only-to-declare`: the science-threat rung no longer
+    /// denounces; the war opening does, when a war follows. See
+    /// `advanced/denounce_only_to_declare.rs`. Off by default.
+    denounce_only_to_declare: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -10296,6 +10300,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
+mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;
@@ -12034,6 +12040,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
+            denounce_only_to_declare: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
