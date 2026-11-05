@@ -5141,6 +5141,9 @@ pub const GENES: &[Gene] = &[
     // `builders-cover-the-worked-backlog`. See
     // `ai/prod_tiles_call_the_builders.rs`.
     Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
     // The strategic scorer prices a land unit at power x 4 + 58 per missing
     // body, and only the one named threatened city adds a war term. So in
     // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
