@@ -37,6 +37,10 @@ STUB_CARGO = textwrap.dedent("""\
     # Stand-in for `cargo build --release --bin civvis_orders --bin civvis`.
     echo "$*" >> "$CARGO_CALLS"
     rev=$(git rev-parse HEAD)
+    # A merge that lands while this build runs (once): see the re-poll test.
+    if [ -n "${CARGO_HOOK:-}" ] && [ ! -e "$CARGO_CALLS.hooked" ]; then
+      touch "$CARGO_CALLS.hooked"; sh -c "$CARGO_HOOK"
+    fi
     mkdir -p target/release
     printf 'orders %s\\n' "$rev" > target/release/civvis_orders
     printf 'mirror %s\\n' "$rev" > target/release/civvis
@@ -98,6 +102,9 @@ class NextHeadPrebuildTest(unittest.TestCase):
             f"SUP={self.logs}/supervisor.log",
             'say() { print -r -- "say: $*" }',
             f"CIVVIS_PREBUILD_TREE={self.tree}",
+            # The stub builds in milliseconds; at the production nice 10 a
+            # loaded host (load ~90 on 2026-11-05) starved it past the waits.
+            "CIVVIS_PREBUILD_NICE=0",
             _prebuild_block(),
             body,
         ])
@@ -189,7 +196,7 @@ class NextHeadPrebuildTest(unittest.TestCase):
             CIVVIS_PREBUILD_POLL_S=30
             PREBUILD_POLL_S=30
             prebuild_start {self.first}
-            for _ in {{1..100}}; do
+            for _ in {{1..300}}; do
               [[ -f {self.tree}/target/release/.civvis-built-revision ]] && break
               sleep 0.1
             done
@@ -202,6 +209,30 @@ class NextHeadPrebuildTest(unittest.TestCase):
         self.assertEqual(_git(self.tree, "rev-parse", "HEAD"), newer)
         self.assertEqual(
             (self.tree / "target/release/.civvis-built-revision").read_text().split()[0], newer)
+
+    def test_a_merge_during_a_build_is_built_without_waiting_out_a_poll(self) -> None:
+        self._commit("second")
+        hook = self.root / "merge.sh"
+        hook.write_text(textwrap.dedent(f"""\
+            cd {self.repo} && echo third > file.txt && git add -A \\
+              && git commit -q -m third && git push -q origin HEAD:main
+            """), encoding="utf-8")
+        self.env["CARGO_HOOK"] = f"sh {hook}"
+        done = self._zsh(textwrap.dedent(f"""\
+            PREBUILD_POLL_S=30
+            prebuild_start {self.first}
+            for _ in {{1..300}}; do
+              [[ $(cut -d' ' -f1 {self.tree}/target/release/.civvis-built-revision 2>/dev/null) == \\
+                 $(git -C {self.repo} rev-parse HEAD) ]] && break
+              sleep 0.1
+            done
+            prebuild_stop
+            """))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        third = _git(self.repo, "rev-parse", "HEAD")
+        stamp = (self.tree / "target/release/.civvis-built-revision").read_text().split()[0]
+        self.assertEqual(stamp, third, "the merge that landed mid-build was built at once")
+        self.assertEqual(len(self._cargo_calls()), 2)
 
     # -- adoption at the boundary -----------------------------------------------
 
