@@ -1456,8 +1456,13 @@ function CivvisRockBandConcertPlots(unit, name)
 end
 
 -- Base/Assets/UI/Popups/UnitPromotionPopup.lua:81-82 reads this exact menu.
+-- A Spy's too: its promotion is the same PROMOTE command, and the host offers
+-- a levelled Spy a few of its tree, not all of it. Without the menu the
+-- mirror could not tell a levelled Spy from a fresh one (both host level 1
+-- until the choice is made), and no live Spy was ever promoted: 99 of 99 on
+-- 2026-11-05 ended level 1, 81 of them holding the 15 XP of a pending choice.
 function CivvisRockBandPromotionChoices(unit, name)
-    if name ~= "UNIT_ROCK_BAND" then return nil; end
+    if name ~= "UNIT_ROCK_BAND" and name ~= "UNIT_SPY" then return nil; end
     return try(function()
         local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
         if command == nil then return nil; end
