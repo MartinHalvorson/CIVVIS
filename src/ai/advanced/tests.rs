@@ -41505,3 +41505,63 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
 }
 
 mod recovery_before_amenities;
+
+// `korea-reads-three-kingdoms`. See `advanced/district_planning.rs`.
+
+#[test]
+fn korea_reads_three_kingdoms_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "korea_reads_three_kingdoms"
+        && gene.tag == "korea-reads-three-kingdoms"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.korea_reads_three_kingdoms, "production ships it off");
+    ai.enable_korea_reads_three_kingdoms();
+    assert!(ai.korea_reads_three_kingdoms);
+    ai.disable_korea_reads_three_kingdoms();
+    assert!(!ai.korea_reads_three_kingdoms);
+}
+
+#[test]
+fn a_seowon_site_is_priced_by_the_mines_and_farms_beside_it() {
+    let (mut game, _city, center) = planning_capital();
+    game.players[0].civ = "Korea".to_string();
+    let site = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, center) == 2)
+        .expect("a ring-two site");
+    let around: Vec<Pos> = game
+        .nbrs(site)
+        .into_iter()
+        .filter(|pos| *pos != center)
+        .collect();
+    assert!(around.len() >= 3);
+    game.map.tiles.get_mut(&around[0]).unwrap().improvement = Some(crate::name!("mine"));
+    game.map.tiles.get_mut(&around[1]).unwrap().improvement = Some(crate::name!("farm"));
+    game.map.tiles.get_mut(&around[2]).unwrap().hills = true;
+    let seowon = crate::name!("seowon");
+
+    let mut ai = AdvancedAi::new();
+    assert_eq!(
+        ai.three_kingdoms_site_yields(&game, 0, seowon, site)
+            .total(),
+        0.0,
+        "off: nothing"
+    );
+    ai.enable_korea_reads_three_kingdoms();
+    let yields = ai.three_kingdoms_site_yields(&game, 0, seowon, site);
+    assert_eq!(yields.science, 1.5, "a Mine +1, a bare Hills +0.5");
+    assert_eq!(yields.food, 1.0, "a Farm +1");
+    // Another district, or another civilization, is not priced.
+    assert_eq!(
+        ai.three_kingdoms_site_yields(&game, 0, crate::name!("campus"), site)
+            .total(),
+        0.0
+    );
+    game.players[0].civ = "America".to_string();
+    assert_eq!(
+        ai.three_kingdoms_site_yields(&game, 0, seowon, site)
+            .total(),
+        0.0
+    );
+}

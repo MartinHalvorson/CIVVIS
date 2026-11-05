@@ -4981,6 +4981,13 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // `korea-reads-three-kingdoms` (2026-11-05): the live seat is Korea, and
+    // the engine's Three Kingdoms is a flat +1 Science +1 Food per city, so
+    // the planner never priced the Mines and Farms a Seowon lifts (+1 Science
+    // per adjacent Mine, +1 Food per adjacent Farm; the host pays them). The
+    // planner now does, for Korea's Seowon only. See
+    // `advanced/district_planning.rs`.
+    Gene { tag: "korea-reads-three-kingdoms", field: "korea_reads_three_kingdoms", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_reads_three_kingdoms, disable: AdvancedAi::disable_korea_reads_three_kingdoms },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
