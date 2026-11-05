@@ -5065,6 +5065,13 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
+    // Production in its city, a free Builder per new city) and the
+    // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
+    // the Warlord's Throne (pays only on captures) and the Grand Master's
+    // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
+    // Agency. See `BasicAi::plaza_building_item_for`.
+    Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

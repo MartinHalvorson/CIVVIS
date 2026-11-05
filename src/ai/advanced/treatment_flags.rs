@@ -2188,6 +2188,9 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `plaza-serves-the-scientist`; see
+        /// `BasicAi::plaza_building_item_for`.
+        plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
     }
 }
 
