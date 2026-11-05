@@ -30,6 +30,16 @@
 //! at t31 from beside a soldier that had stood adjacent at peace. That empire
 //! never founded a second city and was eliminated at t65.
 //!
+//! **Version two** (`settler-shelters-from-the-war-2`) drops the peace
+//! clause. In the first five live carriers, it fired in the opening in three
+//! of them, from roaming Deity Warriors and Slingers at peace:
+//! `civvis-20261105T132817Z` t16-23 and `civvis-20261105T133505Z` t13-18.
+//! Each time the second Settler walked back and forth for up to ten turns,
+//! and both games were later eliminated. Persia declared some 50 turns after
+//! its Warrior stood beside the Settler, so the proximity was no warning. The
+//! clause bought about 3 captures in 44 games at that price. Version two
+//! shelters only from a major at war with us.
+//!
 //! Its target is kept, so the walk resumes once the soldier is gone.
 //! Barbarians are left to the existing capture rules. With the gene off,
 //! nothing changes.
@@ -69,7 +79,9 @@ impl AdvancedAi {
                 if g.is_at_war(pid, *owner) {
                     *distance <= WAR_SHELTER_RADIUS
                 } else {
-                    *distance <= SURPRISE_SHELTER_RADIUS
+                    // Version two shelters only from a war.
+                    !self.settler_shelters_from_the_war_2
+                        && *distance <= SURPRISE_SHELTER_RADIUS
                         && !g.are_friends(pid, *owner)
                         && g.alliance_with(pid, *owner).is_none()
                 }
@@ -85,7 +97,7 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
     ) -> Option<bool> {
-        if !self.settler_shelters_from_the_war {
+        if !self.settler_shelters_from_the_war && !self.settler_shelters_from_the_war_2 {
             return None;
         }
         let current = g.units.get(&uid)?.pos;
