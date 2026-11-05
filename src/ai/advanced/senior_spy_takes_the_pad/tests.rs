@@ -104,9 +104,17 @@ fn on() -> AdvancedAi {
     ai
 }
 
+/// The pad, pillaged by our last Disrupt: the host offers none until the
+/// racer repairs it, so the swap costs no attempt.
+fn pillage_the_pad(g: &mut Game, capital: u32) {
+    let pad = g.cities[&capital].districts[&crate::name!("spaceport")];
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+}
+
 #[test]
 fn the_senior_takes_the_pad_and_the_junior_moves_on() {
-    let (g, capital, second, junior, senior) = racer_with_a_pad();
+    let (mut g, capital, second, junior, senior) = racer_with_a_pad();
+    pillage_the_pad(&mut g, capital);
     let ai = on();
     let ids = [junior, senior];
     assert_eq!(
@@ -126,9 +134,19 @@ fn the_senior_takes_the_pad_and_the_junior_moves_on() {
 }
 
 #[test]
-fn no_swap_off_or_without_a_free_senior() {
-    let (g, _, _, junior, senior) = racer_with_a_pad();
+fn no_swap_off_while_the_pad_stands_or_without_a_free_senior() {
+    let (standing, capital, _, junior, senior) = racer_with_a_pad();
     let ids = [junior, senior];
+    // The pad stands: the holder is offered Disrupt Rocketry this turn and
+    // runs it, so no swap.
+    assert!(AdvancedAi::racer_spy_disrupt_offered(
+        &standing,
+        junior,
+        &standing.legal_spy_actions(0, junior)
+    ));
+    assert_eq!(on().senior_spy_swap(&standing, 0, &[1], &ids), None);
+    let mut g = standing.clone();
+    pillage_the_pad(&mut g, capital);
     // Off.
     let mut off = AdvancedAi::targeting(VictoryTarget::Science);
     assert!(!off.senior_spy_swap_pass(&mut g.clone(), 0, Some(1), &ids));

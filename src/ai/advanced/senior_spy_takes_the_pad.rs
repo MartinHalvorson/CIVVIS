@@ -15,7 +15,10 @@
 //!
 //! Under the gene, once a turn: the leader's seen-pad city that a Spy of
 //! ours holds, the holder free (no order of ours still running: a Disrupt in
-//! progress is never cut short) and a free Spy of a higher level outside
+//! progress is never cut short) and not offered Disrupt Rocketry this turn
+//! (a Disrupt it could start now is never traded for a later one: the swap
+//! falls while the pad stands pillaged by our last Disrupt, before its
+//! repair, and costs no attempt), and a free Spy of a higher level outside
 //! every seen pad city, not captured. The holder goes to a free leader city
 //! (a Campus we have seen first, then the most populous), and the senior goes
 //! to the pad city. At any stage: the one Deity win (122513Z) ran 14 of its
@@ -105,6 +108,21 @@ impl AdvancedAi {
         true
     }
 
+    /// Whether seat `pid` has seen a Spaceport within three tiles of `cid`,
+    /// pillaged or standing: a successful Disrupt pillages the pad, and the
+    /// turns until it is repaired are the swap's free window.
+    pub(super) fn senior_spy_seen_spaceport(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let explored = &g.players[pid].explored;
+        city.districts.iter().any(|(district, pad)| {
+            g.district_family(*district) == "spaceport"
+                && explored.contains(pad)
+                && g.wdist(city.pos, *pad) <= 3
+        })
+    }
+
     /// The swap to make, if any: `(holder, senior, pad city, holder's new
     /// post)`, over `owners`' seen-pad cities in order.
     pub(super) fn senior_spy_swap(
@@ -130,13 +148,21 @@ impl AdvancedAi {
                 .into_iter()
                 .map(move |pad| (*leader, pad))
         }) {
-            if !Self::racer_spy_seen_pad(g, pid, pad) {
+            if !Self::senior_spy_seen_spaceport(g, pid, pad) {
                 continue;
             }
             let Some(holder) = ours.iter().copied().find(|spy| spy.city == Some(pad)) else {
                 continue;
             };
             if !free(holder) {
+                continue;
+            }
+            // A holder the host offers Disrupt Rocketry now runs it: the swap
+            // never trades an attempt this turn for a better one later (live
+            // 122513Z t159: the level-2 holder was about to disrupt Mali's pad
+            // when the level-4 senior was free). Only a free swap is made:
+            // while the pad stands pillaged by the last Disrupt.
+            if Self::racer_spy_disrupt_offered(g, holder.id, &g.legal_spy_actions(pid, holder.id)) {
                 continue;
             }
             let Some(senior) = ours
