@@ -1,0 +1,429 @@
+//! `holdable-land-keeps-settling`: past the opening, while the plan still
+//! wants more cities and a seat we can very likely hold lies within reach,
+//! the unthreatened city that trains a Settler soonest keeps putting one at
+//! the head of its queue, ahead of the routine Granary, Builder, Aqueduct,
+//! Industrial Zone and Campus claims.
+//!
+//! ## Why (52 live Deity Korea Online games, 2026-11-04 21:03Z → 11-05 03:20Z)
+//!
+//! Operator, 11-05: *"we should be doing a better job of expanding into any
+//! territory we can very likely hold. more good cities is more good prod and
+//! science over the long run."*
+//!
+//! - **The Settler stops after the opening.** In 79-88% of turns from t20 to
+//!   t60 a Settler is walking or queued. That falls to 58% at t60-80 and 41%
+//!   at t80-100. Settler starts across about 39 games: 70 in t40-59, then 8 in
+//!   t60-79.
+//! - **The plan still wants the cities.** `desired_cities` reads 8.9-9.0 over
+//!   t60-100 while the empire holds 5.2-5.7. The target is not the limit, and
+//!   the recovery hold accounts for only ~13% of the Settler-free turns.
+//! - **The land is there.** Packing decent free sites (≥8 good tiles within
+//!   three, legal, ≤9 tiles from one of our cities) finds about 4.7 a game at
+//!   t60. Forty turns later 56% are still free, 19% went to a rival and 20% to
+//!   us.
+//! - **The field settles past us.** By the rivals' own public city counts, the
+//!   median rival holds 7.2 cities to our 6.0 at t100, and the leader holds 8.4.
+//!
+//! The mechanism: [`super::early_settler_floor`] queues the opening's Settlers
+//! but closes at standard turn 90, which is t60 Online (the 66% Online scale;
+//! the live line reads "before turn 60"). After that the only
+//! Settler path that reaches an idle queue early is the delegated governor's
+//! `capital-settler-after-completion`, and by then the routine claims have
+//! filled the capital's queue first. The `expansion-best-idle-city`
+//! reservation runs after every claim and fired 17 times in about 50 games.
+//!
+//! ## What the gene does
+//!
+//! From the turn the early floor closes until a city founded now would have
+//! fewer than [`HOLDABLE_LAND_PAYBACK_STANDARD_TURNS`] standard turns left,
+//! the gene queues one Settler, in the city that trains it soonest, when all
+//! of the following hold:
+//!
+//! - the empire's cities plus walking Settlers are short of the plan's
+//!   settlement target;
+//! - no city has a Settler queued and at most one Settler is walking;
+//! - the plan is not Recovery and names no threatened city, and we are at war
+//!   with no major;
+//! - the city has population [`HOLDABLE_LAND_MIN_POP`] or more, was not
+//!   attacked in the last four turns, has no barbarian raider in its home
+//!   ring, and can train the Settler within the early floor's build cap;
+//! - the city's queue head may give way, by the early floor's own test.
+//!
+//! **Holdable** is the existing `settler-site-gate` verdict (an unclaimed
+//! seat, outside every visible rival's Loyalty sphere, worth at least the
+//! gate floor), run on the city's site list after three more filters:
+//!
+//! - no charted city of a living rival major within
+//!   [`HOLDABLE_LAND_RIVAL_CITY_TILES`]. Peer census of 173 live second and
+//!   third cities lost 56% at 5-6 tiles, 40% at 7-8, 23% at 9-11 and 8% at
+//!   12+;
+//! - no visible land soldier of a major fielding [`HOLDABLE_LAND_STRONG_RATIO`]
+//!   times our military power within [`HOLDABLE_LAND_STRONG_SOLDIER_TILES`],
+//!   at peace or not. Deity rivals park armies beside our cities and then
+//!   declare (Austria 2 tiles from Gwangju at t44, declared t45);
+//! - no visible barbarian or Free City soldier within
+//!   [`HOLDABLE_LAND_RAIDER_TILES`].
+//!
+//! The Settler it queues is protected from the routine claims through
+//! `early_settler_floor_holds`, the same way the opening floor's Settler is.
+//!
+//! ⚠ The walker still chooses its own site once it exists. The gate decides
+//! only *when* a Settler is worth building: when a holdable seat exists. The
+//! walker's own sphere, threat and stranding rules still run.
+//!
+//! Off (the default) nothing here runs.
+
+use super::early_settler_floor::{EARLY_SETTLER_FLOOR_STANDARD_TURN, EARLY_SETTLER_MAX_BUILD};
+use super::settler_admission_journal::SETTLER_ADMISSION_JOURNAL_STRIDE;
+use super::*;
+
+/// Standard turns a new city must have left before the game ends for the
+/// floor to queue its Settler: 50 turns at Online. A city founded later rarely
+/// repays its Settler and the citizen it costs.
+pub(crate) const HOLDABLE_LAND_PAYBACK_STANDARD_TURNS: u32 = 100;
+
+/// The smallest city the floor trains a Settler in. The Settler costs one
+/// citizen, and a city at the host's floor of two would be left at one.
+pub(crate) const HOLDABLE_LAND_MIN_POP: i32 = 3;
+
+/// A charted rival major's city this near a seat makes it not holdable.
+pub(crate) const HOLDABLE_LAND_RIVAL_CITY_TILES: i32 = 9;
+
+/// A stronger major's visible soldier this near a seat makes it not holdable.
+pub(crate) const HOLDABLE_LAND_STRONG_SOLDIER_TILES: i32 = 6;
+
+/// How much stronger than us a major must be for its soldiers to count. The
+/// `garrison-before-the-surprise` bar.
+pub(crate) const HOLDABLE_LAND_STRONG_RATIO: f64 = 1.5;
+
+/// A visible barbarian or Free City soldier this near a seat makes it not
+/// holdable.
+pub(crate) const HOLDABLE_LAND_RAIDER_TILES: i32 = 3;
+
+/// A city attacked within this many turns keeps its queue.
+const HOLDABLE_LAND_ATTACK_MEMORY: u32 = 4;
+
+/// The site-list radius, the one `settler_site_gate` reads.
+const HOLDABLE_LAND_SITE_RADIUS: i32 = 11;
+
+/// See [`AdvancedAi::holdable_land_threats`].
+#[derive(Debug, Default, Clone)]
+pub(crate) struct HoldableLandThreats {
+    pub(crate) rival_cities: Vec<Pos>,
+    pub(crate) strong_soldiers: Vec<Pos>,
+    pub(crate) raiders: Vec<Pos>,
+}
+
+impl AdvancedAi {
+    /// Whether the floor's window is open this turn: on, past the opening
+    /// floor's window, and early enough for a new city to repay.
+    pub(super) fn holdable_land_window(&self, g: &Game) -> bool {
+        self.holdable_land_keeps_settling
+            && g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
+            && g.turn + g.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) < g.max_turns
+    }
+
+    /// Whether `cid`'s queued Settler is the floor's and should be kept: the
+    /// window is open, the queue head is a Settler and the empire is still
+    /// short of its target.
+    pub(super) fn holdable_land_settler_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if !self.holdable_land_window(g)
+            || !matches!(
+                g.cities[&cid].queue.first(),
+                Some(Item::Unit { unit }) if *unit == "settler"
+            )
+        {
+            return false;
+        }
+        let (walkers, _) = Self::early_settler_census(g, pid);
+        g.player_city_ids(pid).len() + walkers < self.settlement_target(plan)
+    }
+
+    /// The land soldier test shared by both soldier filters: a unit that can
+    /// fight on land and is not recon.
+    fn holdable_land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
+        let spec = &g.rules.units[unit.kind];
+        spec.class == "military"
+            && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+            && spec.promotion_class != "recon"
+            && (spec.is_melee_capable() || spec.has_ranged_attack())
+    }
+
+    /// What the seat can see that makes land unholdable: charted cities of
+    /// living rival majors, visible land soldiers of majors fielding
+    /// [`HOLDABLE_LAND_STRONG_RATIO`] times our power (at peace or not), and
+    /// visible barbarian and Free City soldiers. Read once per claim.
+    pub(super) fn holdable_land_threats(g: &Game, pid: usize) -> HoldableLandThreats {
+        let mut threats = HoldableLandThreats::default();
+        let Some(seat) = g.players.get(pid) else {
+            return threats;
+        };
+        let major = |owner: usize| {
+            g.players.get(owner).is_some_and(|player| {
+                player.alive && !player.is_minor && !player.is_barbarian && !player.is_free_city
+            })
+        };
+        threats.rival_cities = g
+            .cities
+            .values()
+            .filter(|city| {
+                city.owner != pid && seat.explored.contains(&city.pos) && major(city.owner)
+            })
+            .map(|city| city.pos)
+            .collect();
+        let ours = g.military_power(pid).max(1.0);
+        let strong: BTreeSet<usize> = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && major(player.id)
+                    && g.military_power(player.id) >= HOLDABLE_LAND_STRONG_RATIO * ours
+            })
+            .map(|player| player.id)
+            .collect();
+        // Only what the seat sees this turn: the mirror carries foreign units
+        // under current visibility, and the headless board must not read
+        // through the fog.
+        let visible = g.player_vision_frame(pid);
+        for unit in g.units.values() {
+            if unit.owner == pid
+                || !Self::holdable_land_soldier(g, unit)
+                || !g.sees(&visible, unit.pos)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                continue;
+            }
+            if strong.contains(&unit.owner) {
+                threats.strong_soldiers.push(unit.pos);
+            } else if Some(unit.owner) == g.barb_pid
+                || g.players
+                    .get(unit.owner)
+                    .is_some_and(|owner| owner.is_barbarian || owner.is_free_city)
+            {
+                threats.raiders.push(unit.pos);
+            }
+        }
+        threats
+    }
+
+    /// Why `site` is not holdable, or `None` when it is.
+    pub(super) fn holdable_land_refusal(
+        g: &Game,
+        threats: &HoldableLandThreats,
+        site: Pos,
+    ) -> Option<&'static str> {
+        let near =
+            |positions: &[Pos], tiles: i32| positions.iter().any(|at| g.wdist(*at, site) <= tiles);
+        if near(&threats.rival_cities, HOLDABLE_LAND_RIVAL_CITY_TILES - 1) {
+            Some("a rival city is near")
+        } else if near(&threats.strong_soldiers, HOLDABLE_LAND_STRONG_SOLDIER_TILES) {
+            Some("a stronger major's soldier is near")
+        } else if near(&threats.raiders, HOLDABLE_LAND_RAIDER_TILES) {
+            Some("a raider is near")
+        } else {
+            None
+        }
+    }
+
+    /// The best holdable seat for a Settler trained in a city at `from`: the
+    /// `settler-site-gate` verdict over the city's acceptable sites that pass
+    /// [`Self::holdable_land_refusal`]. `Err` says why there is none.
+    pub(super) fn holdable_land_seat(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        walkers: usize,
+        threats: &HoldableLandThreats,
+    ) -> Result<(Pos, f64), String> {
+        let mut sites = self.settle_sites(g, pid, from, HOLDABLE_LAND_SITE_RADIUS);
+        let found = sites.len();
+        sites.retain(|(site, _)| {
+            self.exhaustion_site_unpriceable(g, pid, *site).is_none()
+                && !Self::inside_rival_sphere(g, pid, *site)
+        });
+        let acceptable = sites.len();
+        let mut refused: BTreeMap<&'static str, usize> = BTreeMap::new();
+        sites.retain(
+            |(site, _)| match Self::holdable_land_refusal(g, threats, *site) {
+                Some(why) => {
+                    *refused.entry(why).or_default() += 1;
+                    false
+                }
+                None => true,
+            },
+        );
+        let claimed: Vec<Pos> = self
+            .settler_targets
+            .iter()
+            .filter(|(uid, _)| {
+                g.units
+                    .get(uid)
+                    .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
+            })
+            .map(|(_, target)| *target)
+            .collect();
+        let floor = Self::settler_site_gate_floor(g.player_city_ids(pid).len());
+        Self::settler_site_gate_verdict(g, &sites, &claimed, walkers, floor).map_err(|hold| {
+            let refused: Vec<String> = refused
+                .iter()
+                .map(|(why, n)| format!("{n} where {why}"))
+                .collect();
+            format!(
+                "{found} site(s), {acceptable} acceptable, {} holdable{}; {}",
+                sites.len(),
+                if refused.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (refused: {})", refused.join(", "))
+                },
+                hold.describe()
+            )
+        })
+    }
+
+    /// Journal why the floor queued nothing this turn, every
+    /// [`SETTLER_ADMISSION_JOURNAL_STRIDE`] turns. Reads only.
+    fn journal_holdable_land_decline(&self, g: &Game, why: &str) {
+        if g.turn.is_multiple_of(SETTLER_ADMISSION_JOURNAL_STRIDE)
+            && self.journal().wants(crate::reasoning::Level::Detail)
+        {
+            think!(self.journal(), Expansion, Detail,
+                "No Settler for holdable land"; "holdable-land-keeps-settling: {why}");
+        }
+    }
+
+    /// See the module: queue one Settler for holdable land in the
+    /// unthreatened city that trains it soonest. Exact no-op with the gene
+    /// off.
+    pub(super) fn claim_holdable_land_settler(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.holdable_land_window(g) || self.base.minor || self.base.barb {
+            return;
+        }
+        let city_ids = g.player_city_ids(pid);
+        let n_cities = city_ids.len();
+        let (walkers, queued) = Self::early_settler_census(g, pid);
+        let target = self.settlement_target(plan);
+        if n_cities == 0 || queued > 0 || walkers > 1 || n_cities + walkers >= target {
+            return;
+        }
+        if plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some() {
+            self.journal_holdable_land_decline(
+                g,
+                &format!("{n_cities} cities against {target}, but the plan defends a city"),
+            );
+            return;
+        }
+        let at_major_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        if at_major_war {
+            self.journal_holdable_land_decline(
+                g,
+                &format!("{n_cities} cities against {target}, but we are at war with a major"),
+            );
+            return;
+        }
+        let opening_capital = self
+            .conquest_reservation_open(g)
+            .then(|| {
+                city_ids
+                    .iter()
+                    .copied()
+                    .find(|cid| g.cities[cid].is_capital)
+            })
+            .flatten();
+        let threats = Self::holdable_land_threats(g, pid);
+        let item = Self::early_settler_item();
+        let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
+        let mut best: Option<(f64, u32, Pos, f64)> = None;
+        // Why each city was passed over, for the decline line.
+        let mut passed: BTreeMap<&'static str, usize> = BTreeMap::new();
+        let mut seat_miss: Option<String> = None;
+        for &cid in &city_ids {
+            let city = &g.cities[&cid];
+            let skip = if Some(cid) == opening_capital {
+                Some("reserved for the conquest opening")
+            } else if city.pop < HOLDABLE_LAND_MIN_POP {
+                Some("too small")
+            } else if city.last_attacked > 0
+                && g.turn.saturating_sub(city.last_attacked) <= HOLDABLE_LAND_ATTACK_MEMORY
+            {
+                Some("recently attacked")
+            } else if Self::early_settler_raider_near(g, city.pos) {
+                Some("a raider in its ring")
+            } else if !Self::early_settler_may_displace(g, pid, cid) {
+                Some("its queue keeps its item")
+            } else if !g.can_produce(pid, cid, &item) {
+                Some("cannot train a Settler")
+            } else {
+                None
+            };
+            if let Some(why) = skip {
+                *passed.entry(why).or_default() += 1;
+                continue;
+            }
+            let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
+            });
+            if turns > max_turns {
+                *passed.entry("too slow").or_default() += 1;
+                continue;
+            }
+            if best.as_ref().is_some_and(|(old, old_city, _, _)| {
+                turns > *old + 1e-9 || ((turns - old).abs() <= 1e-9 && cid > *old_city)
+            }) {
+                continue;
+            }
+            match self.holdable_land_seat(g, pid, city.pos, walkers, &threats) {
+                Ok((site, worth)) => best = Some((turns, cid, site, worth)),
+                Err(why) => {
+                    *passed.entry("no holdable seat").or_default() += 1;
+                    seat_miss.get_or_insert(format!("{}: {why}", city.name));
+                }
+            }
+        }
+        let Some((turns, cid, site, worth)) = best else {
+            let passed: Vec<String> = passed.iter().map(|(why, n)| format!("{n} {why}")).collect();
+            self.journal_holdable_land_decline(
+                g,
+                &format!(
+                    "{n_cities} cities and {walkers} walking against {target}; cities passed \
+                     over: {}{}",
+                    passed.join(", "),
+                    seat_miss.map_or(String::new(), |miss| format!("; {miss}"))
+                ),
+            );
+            return;
+        };
+        let displaced = g.cities[&cid].queue.first().cloned();
+        if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+            think!(self.journal(), Expansion, Decision,
+                "{} starts a Settler for holdable land", g.cities[&cid].name;
+                "holdable-land-keeps-settling: {n_cities} cities and {walkers} walking against a \
+                 target of {target}; the best holdable seat {site:?} is worth {worth:.1}, \
+                 {turns:.1} turns{}",
+                displaced.map_or(String::new(), |item| format!(
+                    "; {} keeps its progress", Self::plain_item(&item))); site);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
