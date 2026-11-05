@@ -2266,6 +2266,9 @@ impl AdvancedAi {
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `launched-racer-keeps-the-spies`; see
+        /// `advanced/launched_racer_keeps_the_spies.rs`.
+        launched_racer_keeps_the_spies => enable_launched_racer_keeps_the_spies, disable_launched_racer_keeps_the_spies;
     }
 }
 

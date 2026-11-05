@@ -7684,6 +7684,10 @@ pub struct AdvancedAi {
     /// step, rebuilt when the visible hostiles at war change.
     group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
+    /// `launched-racer-keeps-the-spies`: a rival that has launched the
+    /// Exoplanet Expedition leads the Spies over any that has not. See
+    /// `advanced/launched_racer_keeps_the_spies.rs`. Off by default.
+    launched_racer_keeps_the_spies: bool,
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
     /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
@@ -10343,6 +10347,9 @@ mod holdout_faith_war;
 mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
+/// `launched-racer-keeps-the-spies`: see
+/// `advanced/launched_racer_keeps_the_spies.rs`.
+mod launched_racer_keeps_the_spies;
 
 mod city_memory;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
@@ -12306,6 +12313,7 @@ impl AdvancedAi {
             group_steps_read_the_field: false,
             group_step_field: Default::default(),
             // ---- append: l-o ----------------------------------------
+            launched_racer_keeps_the_spies: false,
             outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
             luxury_barter_shorts: Vec::new(),

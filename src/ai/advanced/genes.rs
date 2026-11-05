@@ -5311,6 +5311,15 @@ pub const GENES: &[Gene] = &[
     // the seat's pickers rank by district_site_yields, which adds the Coast
     // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
     Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // Live Deity Indonesia (11-05): the Science edge of `racer_spy_leader`
+    // read a stage-three rival level with a rival in flight and skipped the
+    // finish comparison, so a launched racer could lose the Spies. 154934Z,
+    // our closest loss (19 of 25 to 23), sent 6 of 7 Disrupts to Byzantium
+    // and none to America in flight. Replay of 35 losses: the leader names
+    // the winner 25-31 of 35 at 8-2 turns out, launched-first 28-34. A
+    // flight cannot be recalled; a Disrupt only denies later lasers. See
+    // `advanced/launched_racer_keeps_the_spies.rs`.
+    Gene { tag: "launched-racer-keeps-the-spies", field: "launched_racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_launched_racer_keeps_the_spies, disable: AdvancedAi::disable_launched_racer_keeps_the_spies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

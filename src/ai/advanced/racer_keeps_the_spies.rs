@@ -171,7 +171,7 @@ impl AdvancedAi {
     /// contact-fleet's gate (a scout toward the racer's coast) and the pad
     /// search's journal.
     pub(crate) fn racer_spy_unseen_cities(&self, g: &Game, pid: usize) -> Option<(usize, usize)> {
-        let racer = Self::racer_spy_leader(g, &self.racer_spy_racers(g, pid))?;
+        let racer = self.racer_spy_leader_of(g, &self.racer_spy_racers(g, pid))?;
         Some((racer, Self::racer_unseen_cities(g, racer)))
     }
 
