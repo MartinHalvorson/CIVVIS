@@ -108,8 +108,11 @@ Works, and captured-Spy releases transfer immediately. Gold per turn, usable Lux
 allocation), and directional Open Borders last 30 Standard-speed turns. War terminates those
 ongoing agreements and restores exported Luxury access, but does not reverse
 an already completed strategic transfer. A gift — a deal that only gives — is
-legal and buys nothing, as in Civilization VI, whose own database carries no
-diplomatic modifier for one (`gifts_given` / `gifts_received` count them); a
+legal and, in this engine, buys nothing (`gifts_given` / `gifts_received` count
+them). That is a known gap: Civilization VI pays one opinion point per 10 value
+of a deal in the AI's favour, up to 20, fading a point every two turns
+(`Leaders.xml` `STANDARD_DIPLOMATIC_ONE_SIDED_TRADES`; live 222639Z t115, 80
+Gold, opinion −3 to +7), which `relationship_opinion` does not model. A
 deal that only takes is a demand and is refused as a trade; any exchange for
 which either side's modeled gain is not positive is refused. AI civilizations
 periodically choose at most one of those mutually favorable offers and never
