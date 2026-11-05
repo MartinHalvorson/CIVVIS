@@ -2180,6 +2180,9 @@ impl AdvancedAi {
         /// Opt-in gene `early-cities-keep-their-distance`; see
         /// [`Self::early_cities_keep_their_distance`].
         early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `parity-upgrades-before-it-buys`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
     }
 }
 

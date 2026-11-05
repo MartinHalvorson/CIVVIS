@@ -5025,6 +5025,13 @@ pub const GENES: &[Gene] = &[
     // 8 a tile inside ten of the nearest charted rival city. See
     // `advanced/early_city_distance.rs`.
     Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
+    // played out: three eliminations since 11-05 02:01Z, all obsolete armies
+    // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
+    // 50) while border parity bought 80-Gold Warriors at t36-66 for an
+    // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
+    // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
