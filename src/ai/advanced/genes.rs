@@ -4996,6 +4996,17 @@ pub const GENES: &[Gene] = &[
     // fits, the slot asks for a type we lack and pays in strategics the army
     // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
     Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
+    // Version two (live Lv 8 Deity Korea Online, 11-04 night, -af's trace,
+    // under the operator's early_city_lost restart: losing any of our first
+    // three cities ends the game). Version one moved the capital's Defend
+    // row above the early city that then fell in all three early-city
+    // losses (225111Z: Yangsan's row valued 726 against the capital's 445;
+    // the capital took 15-19 units and Yangsan fell at t93), while the
+    // capital itself fell in 0 of 19 Deity games. Version two ranks the
+    // early cities' rows first by risk, not the capital first, and gives an
+    // early city with a hostile in relief range its row before the pressure
+    // gate. See `objective_board.rs` (`early_cities_defend_first`).
+    Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
     // ---- append: a-b ------------------------------------------------
