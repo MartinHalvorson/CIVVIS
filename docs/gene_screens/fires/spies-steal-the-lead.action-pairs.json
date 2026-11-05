@@ -1,0 +1,22 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "spies-steal-the-lead",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 11 live Deity Korea Science (Online) boards, each the run's events.jsonl cut at frame 0 of a turn where a Spy of ours stood in a rival's city with UNITOPERATION_SPY_STEAL_TECH_BOOST on the host's menu and the live seat ordered SPY_LISTENING_POST or SPY_GAIN_SOURCES (orders.sqlite). Both arms run one frozen civvis_orders built from the branch at 90a9d47ae with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with spies-steal-the-lead. Off arms reproducing the live order: 7/11; on arms ordering SPY_STEAL_TECH_BOOST: 7/11.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-spies-steal-the-lead.native-queries.tar.xz",
+    "sha256": "d2f50461bc5bd8b5adf9d1c81ab7fc7f0d1a1eb7e622880dabf8cbcf5f12f6b8"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json"
+  ]
+}

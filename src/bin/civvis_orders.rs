@@ -10057,6 +10057,72 @@ fn audit_host_moves(events: &Path, fallback_players: usize, fallback_turns: u32,
         })
     );
 }
+/// `denial-spies-count-their-losses`: the turns our Spies were lost on, as
+/// the control mod logs them (`unit_lost` with `unit_kind` `UNIT_SPY`). The
+/// mirror keeps no unit history across turns, so the bridge reads the run's
+/// own `events.jsonl`, from where it stopped last time: the mod appends every
+/// turn, and only whole lines are consumed. A shorter file is a new run and
+/// starts the ledger over.
+#[derive(Default)]
+struct SpyLossLedger {
+    offset: u64,
+    turns: Vec<u32>,
+}
+
+impl SpyLossLedger {
+    fn refresh(&mut self, events: &Path) {
+        use std::io::{BufRead, Seek, SeekFrom};
+        let Ok(mut file) = std::fs::File::open(events) else {
+            return;
+        };
+        let length = file.metadata().map_or(0, |meta| meta.len());
+        if length < self.offset {
+            *self = Self::default();
+        }
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return;
+        }
+        let mut reader = std::io::BufReader::new(file);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let Ok(read) = reader.read_until(b'\n', &mut line) else {
+                return;
+            };
+            if read == 0 || line.last() != Some(&b'\n') {
+                return;
+            }
+            self.offset += read as u64;
+            if let Some(turn) = Self::spy_loss_turn(&line) {
+                self.turns.push(turn);
+            }
+        }
+    }
+
+    /// The turn of a `unit_lost` line for one of our Spies, else `None`.
+    fn spy_loss_turn(line: &[u8]) -> Option<u32> {
+        let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
+        if !has(b"unit_lost") || !has(b"UNIT_SPY") {
+            return None;
+        }
+        let event: serde_json::Value = serde_json::from_slice(line).ok()?;
+        (event.get("kind")?.as_str()? == "unit_lost"
+            && event.get("unit_kind")?.as_str()? == "UNIT_SPY")
+            .then(|| event.get("turn")?.as_u64())
+            .flatten()
+            .and_then(|turn| u32::try_from(turn).ok())
+    }
+
+    /// The losses on or before `turn` (a replay reads a log that runs on).
+    fn through(&self, turn: u32) -> Vec<u32> {
+        self.turns
+            .iter()
+            .copied()
+            .filter(|lost| *lost <= turn)
+            .collect()
+    }
+}
+
 /// `--strategy` named a league genome for this seat to play. The league is
 /// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
 /// with the gene ledger applied — and the gene screen prices everything else.
@@ -10947,10 +11013,28 @@ fn main() {
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
+        // `--resumed`: replay the turn the way the live bridge's agent plays
+        // a board it first sees past turn one (the `--serve` fresh-board
+        // branch): the opening book is already played and the host's current
+        // items are our plan. Without it a fresh one-shot agent has
+        // `book_pos = 0`, so every mid-game replay plays the opening book and
+        // never reaches the strategic production claims at all (no
+        // `early-settler-floor` Settler on a turn the live seat queued one).
+        if args.iter().any(|a| a == "--resumed") && state.turn > 1 {
+            ai.skip_opening_book();
+            adopt_host_production(&mut ours, &state);
+        }
         let mut host_peace_retries = HostPeaceRetries::default();
         let mut host_move_refusals = HostMoveRefusals::default();
         let mut host_order_refusals = HostOrderRefusals::default();
         let mut air_assault_continuation = air_assault_continuation::Continuation::default();
+        // `denial-spies-count-their-losses`: the one frame reads every loss the
+        // log holds up to its turn. See `SpyLossLedger`.
+        if ai.denial_spies_count_their_losses_enabled() {
+            let mut spy_losses = SpyLossLedger::default();
+            spy_losses.refresh(&events);
+            ai.observe_spy_losses(spy_losses.through(state.turn));
+        }
         let reply = decide(
             &mut live,
             &mut ai,
@@ -11015,6 +11099,9 @@ fn main() {
     let mut host_city_strikes = HostCityStrikes::default();
     let mut host_air_strikes = HostAirStrikes::default();
     let mut host_ranged_history = host_ranged_history::History::default();
+    // `denial-spies-count-their-losses`: our Spies the host reported lost,
+    // read from the run's own log as it grows. See `SpyLossLedger`.
+    let mut spy_losses = SpyLossLedger::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -11070,6 +11157,10 @@ fn main() {
                 // because ids are reassigned when the board is rebuilt. Bounded: it
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
+                if ai.denial_spies_count_their_losses_enabled() {
+                    spy_losses.refresh(&events);
+                    ai.observe_spy_losses(spy_losses.through(state.turn));
+                }
                 let reply = if fresh_board {
                     // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS
                     // NO OPENING TO PLAY. The bridge restarts this process whenever
