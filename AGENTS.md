@@ -135,7 +135,7 @@ green; something simply asserts a fact that nothing verifies.
   or database row it is modelled on: `Base/Assets/UI/DiplomacyActionView.lua:2545`
   (`MakeDeal_ApplyStatement`), `GameplayDB.BarbarianAttackForces`. That is
   how a working deal was found to be evaluated only inside a `MAKE_DEAL`
-  session, a gift to be legal and buy nothing, and the barbarian bands to
+  session, a gift to be legal, and the barbarian bands to
   break at Chieftain/Warlord and Emperor/Immortal — none of which the
   green rows in `docs/MECHANICS.md` knew. `tools/civ6_scripts.py grep
   <regex>` finds the line on a fleet Mac; `check-pr` posts a notice, never a
