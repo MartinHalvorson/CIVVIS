@@ -1090,9 +1090,9 @@ struct HostMoveRefusals {
     /// The first city production request emitted during the current turn,
     /// keyed by Civilization VI city id. Production is a replacement operation:
     /// a later same-turn request competes with the queue already sent to the
-    /// host, even when it asks for a different item. Keep the first request and
-    /// drop the rest until the next authoritative turn.
-    same_turn_production_orders: std::collections::BTreeMap<i64, String>,
+    /// host, even when it asks for a different item. Retain its item and frame
+    /// so only a refused queue or a fresh observed Wall handoff can replace it.
+    same_turn_production_orders: std::collections::BTreeMap<i64, HostProductionLease>,
     same_turn: Option<u32>,
 }
 
@@ -1114,6 +1114,44 @@ struct HostFrontierProbe {
     target: (i32, i32),
 }
 
+struct HostProductionLease {
+    verb: String,
+    frame: u32,
+}
+
+/// A later frame can discover a fortification need after the first queue
+/// request has already reached the host. Require its actual readback before
+/// handing the lease to Walls, then keep that fortified queue for the turn.
+/// Ordinary changes and repeated proposals retain the existing lease.
+fn same_turn_wall_handoff(
+    state: &civvis::mirror::StateSnapshot,
+    city: i64,
+    first: &HostProductionLease,
+    requested: &str,
+) -> bool {
+    if state.frame <= first.frame
+        || first.verb == requested
+        || !state.cities.iter().any(|observed| {
+            observed.id == city && observed.producing.as_deref() == Some(first.verb.as_str())
+        })
+    {
+        return false;
+    }
+    let rules = civvis::rules::Rules::shared();
+    let fortification = |host: &str| {
+        civvis::mirror::host_production_key(&rules, host, None).is_some_and(|key| {
+            key.strip_prefix("building:")
+                .and_then(|name| rules.buildings.get(name))
+                .is_some_and(|building| building.outer_defense > 0)
+        })
+    };
+    fortification(requested) && !fortification(&first.verb)
+}
+
+#[cfg(test)]
+#[path = "civvis_orders/same_turn_wall_handoff_tests.rs"]
+mod same_turn_wall_handoff_tests;
+
 impl HostMoveRefusals {
     /// Drop stale unit, deal, and city-production replays from one turn.
     ///
@@ -1127,7 +1165,9 @@ impl HostMoveRefusals {
     /// its pending/cooldown guards mean a repeated deal order can only be
     /// refused again. City production is also a single host queue: once the
     /// first `produce` request has left, a later same-turn request can only
-    /// replace or be refused against that queue. Attack orders are deliberately
+    /// replace or be refused against that queue. A fresh host readback may
+    /// hand a non-fortified queue to Walls once, without reopening routine
+    /// production churn. Attack orders are deliberately
     /// excluded: a fresh combat frame may legitimately finish the same target.
     ///
     /// `ours` is repaired when a later production choice is dropped. The map is
@@ -1149,7 +1189,8 @@ impl HostMoveRefusals {
         // A planner may revise a queue several times before this batch is
         // sent (for example, restoring a military build after an economic
         // pass). Only its final choice should acquire the host-turn lease.
-        // Later calls still cannot overwrite a choice already sent this turn.
+        // Later calls keep the sent choice except for a refused queue or
+        // an observed non-fortified queue handing off to Walls.
         let final_production: std::collections::BTreeMap<_, _> = orders
             .iter()
             .enumerate()
@@ -1175,7 +1216,10 @@ impl HostMoveRefusals {
                     let first = match self.same_turn_production_orders.entry(city) {
                         std::collections::btree_map::Entry::Vacant(entry) => {
                             let selected = verb.to_string();
-                            entry.insert(selected.clone());
+                            entry.insert(HostProductionLease {
+                                verb: selected.clone(),
+                                frame: state.frame,
+                            });
                             // Keep the helper self-contained as well as safe
                             // for the normal translation path, which records
                             // this before reaching the filter.
@@ -1184,22 +1228,25 @@ impl HostMoveRefusals {
                         }
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
                             let refused = state.refused_production.get(&city);
-                            if entry.get() != verb
-                                && refused.is_some_and(|items| {
-                                    items.contains(entry.get()) && !items.contains(verb)
-                                })
+                            if entry.get().verb != verb
+                                && (refused.is_some_and(|items| {
+                                    items.contains(&entry.get().verb) && !items.contains(verb)
+                                }) || same_turn_wall_handoff(state, city, entry.get(), verb))
                             {
-                                entry.insert(verb.to_string());
+                                entry.insert(HostProductionLease {
+                                    verb: verb.to_string(),
+                                    frame: state.frame,
+                                });
                                 ours.insert(city, verb.to_string());
                                 None
                             } else {
-                                Some(entry.get().clone())
+                                Some(entry.get().verb.clone())
                             }
                         }
                     };
                     if let Some(first) = first {
                         // A production order replaces the city's queue. The
-                        // first request remains authoritative for this host
+                        // retained request remains authoritative for this host
                         // turn, including when the replan is still frame 0.
                         ours.insert(city, first);
                         dropped += 1;
