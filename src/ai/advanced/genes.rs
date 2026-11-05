@@ -5325,6 +5325,11 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
+    // (carrying 1 and 2). The Science seat's Government Plaza district claims
+    // the capital's queue once its Campus stands. See
+    // `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // Live Deity (11-05): from t150 the median science seat met half its Power
     // demand; at t170, 9 of 32 such games held no plant and 7 of them could
     // build one, five banking Oil beside dark Labs. The plant credit read 4
