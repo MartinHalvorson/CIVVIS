@@ -2140,6 +2140,8 @@ impl AdvancedAi {
         /// Opt-in gene `science-specializes-earlier`; see
         /// [`Self::science_specializes_earlier`].
         science_specializes_earlier => enable_science_specializes_earlier, disable_science_specializes_earlier;
+        /// Opt-in Science Writing priority before optional research detours.
+        science_writing_before_the_luxury => enable_science_writing_before_the_luxury, disable_science_writing_before_the_luxury;
         /// Opt-in gene `near-done-work-finishes`; see
         /// `advanced/near_done_work_finishes.rs`.
         near_done_work_finishes => enable_near_done_work_finishes, disable_near_done_work_finishes;
