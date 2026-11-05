@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::*;
@@ -336,4 +336,161 @@ fn a_rival_with_three_technologies_we_lack_and_a_seen_campus_is_a_target() {
         !AdvancedAi::steal_targets(&g, 0).contains(&2),
         "an unseen Campus"
     );
+}
+
+/// The board with the racer's Campus moved off its capital onto a second
+/// city of the racer: (game, racer's capital, racer's Campus city, rival city).
+fn post_board() -> (Game, u32, u32, u32) {
+    let (mut g, racer, other) = board();
+    let campus = g.cities[&racer]
+        .districts
+        .iter()
+        .find_map(|(district, tile)| (g.district_family(*district) == "campus").then_some(*tile))
+        .expect("the fixture campus");
+    g.cities
+        .get_mut(&racer)
+        .unwrap()
+        .districts
+        .remove(Name::new("campus"));
+    g.map.tiles.get_mut(&campus).unwrap().district = None;
+    let centre = g.cities[&racer].pos;
+    let site = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            let tile = &g.map.tiles[pos];
+            tile.owner_city.is_none()
+                && !g.rules.is_water(tile)
+                && g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 5)
+        })
+        .min_by_key(|pos| (g.wdist(centre, *pos), *pos))
+        .expect("the fixture map has room for a second city");
+    let second = g.found_city_for(1, site, None);
+    g.players[0].explored.insert(g.cities[&second].pos);
+    give_district(&mut g, second, "campus");
+    (g, racer, second, other)
+}
+
+#[test]
+fn a_science_post_prefers_the_leaders_campus_city() {
+    let (mut g, capital, second, other) = post_board();
+    assert!(g.cities[&capital].is_capital);
+    let spy = idle_spy(&mut g, other, 2, true);
+    let legal = g.legal_spy_actions(0, spy);
+    let racers = BTreeSet::from([1]);
+    let none = BTreeSet::new();
+    let post = |prefer: bool| {
+        AdvancedAi::racer_spy_post_for(
+            &g,
+            spy,
+            Some(other),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            None,
+            prefer,
+            &BTreeMap::new(),
+        )
+    };
+    assert_eq!(post(false), Some(capital), "stock: the capital first");
+    assert_eq!(post(true), Some(second), "the Campus to steal from");
+}
+
+#[test]
+fn a_spy_in_a_campusless_leader_city_moves_to_its_campus() {
+    let (mut g, capital, second, _) = post_board();
+    let spy = idle_spy(&mut g, capital, 2, true);
+    let legal = g.legal_spy_actions(0, spy);
+    let racers = BTreeSet::from([1]);
+    let none = BTreeSet::new();
+    let post = |prefer: bool| {
+        AdvancedAi::racer_spy_post_for(
+            &g,
+            spy,
+            Some(capital),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            None,
+            prefer,
+            &BTreeMap::new(),
+        )
+    };
+    assert_eq!(
+        post(false),
+        None,
+        "stock: the Spy stays in the leader's city"
+    );
+    assert_eq!(
+        post(true),
+        Some(second),
+        "it can neither steal nor disrupt here"
+    );
+    // Through the pass: the Science seat posts it, a Domination seat keeps it.
+    let mut on = g.clone();
+    steals(VictoryTarget::Science).advanced_spies(&mut on, 0, &plan(GrandStrategy::Science));
+    assert_ne!(on.spies[&spy].city, Some(capital), "posted away");
+}
+
+fn host_menu(g: &mut Game, spy: u32, missions: &[&str]) {
+    Arc::make_mut(&mut g.host_unit_facts).insert(
+        spy,
+        HostUnitFacts {
+            spy_missions: Some(missions.iter().map(|m| m.to_string()).collect()),
+            ..HostUnitFacts::default()
+        },
+    );
+}
+
+#[test]
+fn the_host_menu_marks_a_city_dry_and_clears_it() {
+    let (mut g, capital, _, _) = post_board();
+    let spy = idle_spy(&mut g, capital, 2, true);
+    let mut ai = steals(VictoryTarget::Science);
+    host_menu(&mut g, spy, &["listening_post", "foment_unrest"]);
+    ai.steal_note_dry_city(&g, 0, spy, Some(capital));
+    assert_eq!(ai.steal_dry_cities.get(&capital), Some(&g.turn));
+    host_menu(&mut g, spy, &["listening_post", STEAL_OPERATION]);
+    ai.steal_note_dry_city(&g, 0, spy, Some(capital));
+    assert!(!ai.steal_dry_cities.contains_key(&capital));
+}
+
+#[test]
+fn a_spy_in_a_dry_leader_city_moves_on_when_no_campus_is_known() {
+    let (mut g, capital, second, _) = post_board();
+    // The board knows no Campus of the leader.
+    let tile = g.cities[&second]
+        .districts
+        .iter()
+        .find_map(|(district, tile)| (g.district_family(*district) == "campus").then_some(*tile))
+        .expect("the fixture campus");
+    g.players[0].explored.remove(&tile);
+    assert!(!AdvancedAi::racer_spy_seen_campus(&g, 0, second));
+    let spy = idle_spy(&mut g, capital, 2, true);
+    let legal = g.legal_spy_actions(0, spy);
+    let racers = BTreeSet::from([1]);
+    let none = BTreeSet::new();
+    let post = |dry: &BTreeMap<u32, u32>| {
+        AdvancedAi::racer_spy_post_for(
+            &g,
+            spy,
+            Some(capital),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            None,
+            true,
+            dry,
+        )
+    };
+    assert_eq!(post(&BTreeMap::new()), None, "not shown dry: it waits");
+    let dry = BTreeMap::from([(capital, g.turn)]);
+    assert_eq!(post(&dry), Some(second), "shown dry: the next city");
+    let both = BTreeMap::from([(capital, g.turn), (second, g.turn)]);
+    assert_eq!(post(&both), None, "every city dry: it stays");
 }

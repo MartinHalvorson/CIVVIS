@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "medina-yields-to-the-amenities",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live Lv 8 Deity Korea Online turns on which the live policy deck slotted Medina Quarter, the card not yet held and two or more cities short of Amenities in the turn's first state frame; each run's events.jsonl cut at that frame and queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every listed off arm reproduces the live slot (policy_deck with POLICY_MEDINA_QUARTER). Four on arms leave Medina out: 213449Z t101 (no deck change), 010830Z t100 and 040135Z t111 (Civil Prestige kept), 020911Z t130 (Natural Philosophy kept). 002152Z t99 is unchanged: the mirror read fewer than two cities short where the host reported eight, a known fidelity limit of the gene's Amenity count. 213449Z t147 is retained in the archive but not listed: its off arm did not reproduce the live slot.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-medina-yields-to-the-amenities.native-queries.tar.xz",
+    "sha256": "0990ad2cf00c333dee8cc49753a1145c4e50e53cc4531afbe69d01c2578292da"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json"
+  ]
+}
