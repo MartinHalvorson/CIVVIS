@@ -5234,6 +5234,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // Independently price the first launch job without changing rated Pingala v1.
     Gene { tag: "pingala-follows-research-2", field: "pingala_follows_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research_2, disable: AdvancedAi::disable_pingala_follows_research_2 },
+    // `plaza-serves-the-scientist-2`: version 2 of `plaza-serves-the-scientist`
+    // (which it carries). A Science seat's Plaza city takes its next tier
+    // building, the Ancestral Hall then the Intelligence Agency, ahead of
+    // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
     // `denounce-only-to-declare`: the Science seat's threat rung no longer
     // denounces the space racer; the war opening denounces when a war
     // follows. Live Deity 11-04/05: a rival we denounced declared war on us

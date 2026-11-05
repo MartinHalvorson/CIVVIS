@@ -3102,6 +3102,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "tradeable_luxuries",
         "tradeable_strategics",
         "captives_of_ours",
+        "opinion_modifiers",
         // Rival victory progress as the shipped World Rankings screen shows it.
         // `the_schema_allowlists_cover_every_declared_field` fails if a new
         // StateRival field is missing here.
@@ -3264,6 +3265,19 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
             );
         }
         public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
+        for reason in rival
+            .get("opinion_modifiers")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            keys(
+                reason,
+                &["text", "score"],
+                "rival.opinion_modifier",
+                &mut gaps,
+            );
+        }
         for route in rival
             .get("trade_routes")
             .and_then(|v| v.as_array())
