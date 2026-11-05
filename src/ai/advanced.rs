@@ -5586,6 +5586,8 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
     /// new since the last resolve, so a capture beside a standing city
@@ -8771,6 +8773,11 @@ pub struct AdvancedAi {
     /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
+    /// `plaza-serves-the-scientist-3`: version 3, carrying 1 and 2. The
+    /// Science seat's Government Plaza district claims the capital's queue
+    /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_3: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
@@ -10794,6 +10801,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -11946,6 +11954,7 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
@@ -12492,6 +12501,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
+            plaza_serves_the_scientist_3: false,
             // ---- append: s-s ----------------------------------------
             science_seat_allies_2: false,
             spy_civics_come_first: false,
@@ -30254,6 +30264,9 @@ impl AdvancedAi {
             // building (the Intelligence Agency's Spy slot and level) under
             // the same displacement rule. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_tier(g, pid, &plan);
+            // `plaza-serves-the-scientist-3`: the Plaza district itself, once
+            // the capital's Campus stands. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_district(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

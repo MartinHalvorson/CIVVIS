@@ -3,6 +3,8 @@
 
 POSIX only. FIFO delivery is the default; hybrid uses a regular file only when
 all recorded reads within a request are identical. Actual read traces still gate qualification.
+The explicit hybrid-tail mode serves a FIFO prefix and leaves the final snapshot
+as a regular file; its read count must be verified from the consumer's capture.
 This never publishes orders, runs a treatment, or estimates native strength.
 """
 from __future__ import annotations
@@ -51,22 +53,34 @@ def read_sha256(reads):
 class FifoReads:
     """Serve one immutable byte string per open, with a distinct next inode."""
 
-    def __init__(self, path, reads, timeout):
+    def __init__(self, path, reads, timeout, terminal_snapshot=None):
         if not reads or any(not data for data in reads):
             raise ValueError("FIFO delivery requires nonempty recorded reads")
+        if terminal_snapshot is not None and (
+                not isinstance(terminal_snapshot, bytes) or not terminal_snapshot):
+            raise ValueError("terminal snapshot must be nonempty immutable bytes")
+        self.terminal_snapshot = terminal_snapshot
+        if terminal_snapshot is not None:
+            self.mode = "fifo_prefix_regular_tail"
         self.path = Path(path)
         self.reads = reads
         self.deadline = time.monotonic() + timeout
         self.cancelled = threading.Event()
         self.done = threading.Event()
         self.error = None
-        self.served = 0
+        self.prefix_served = 0
         self.phase = "starting"
         self.read_number = None
         self.bytes_sent = 0
         os.mkfifo(self.path)
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
+
+    @property
+    def served(self):
+        # A regular tail acknowledges no reads. Only the recaptured full trace
+        # can prove its byte sequence and count, including extra/missing opens.
+        return self.prefix_served if self.terminal_snapshot is None else None
 
     def _check(self):
         if self.cancelled.is_set():
@@ -92,7 +106,10 @@ class FifoReads:
                             self.cancelled.wait(0.002)
                     observer = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
                     following = self.path.with_name(f".next-read-{number}")
-                    os.mkfifo(following)
+                    if self.terminal_snapshot is not None and number == len(self.reads) - 1:
+                        following.write_bytes(self.terminal_snapshot)
+                    else:
+                        os.mkfifo(following)
                     os.replace(following, self.path)
                     self.phase = "writing"
                     remaining = memoryview(data)
@@ -114,7 +131,7 @@ class FifoReads:
                         if queued[0] == 0:
                             break
                         self.cancelled.wait(0.001)
-                    self.served += 1
+                    self.prefix_served += 1
                     self.phase = "closing"
                 finally:
                     if observer is not None:
@@ -128,8 +145,8 @@ class FifoReads:
 
     def finish(self):
         self.done.wait(0.2)
-        complete = self.done.is_set() and self.error is None and self.served == len(self.reads)
-        error = self.error or f"consumer opened {self.served}/{len(self.reads)} recorded reads"
+        complete = self.done.is_set() and self.error is None and self.prefix_served == len(self.reads)
+        error = self.error or f"consumer opened {self.prefix_served}/{len(self.reads)} recorded FIFO reads"
         self.cancelled.set()
         self.thread.join(timeout=1)
         if self.thread.is_alive():
@@ -176,10 +193,18 @@ class IdenticalReads:
 
 
 def deliver_reads(path, reads, timeout, mode):
-    if mode not in {"fifo", "hybrid"}:
-        raise ValueError("delivery mode must be fifo or hybrid")
-    if mode == "hybrid" and reads and all(data == reads[0] for data in reads):
+    if mode not in {"fifo", "hybrid", "hybrid-tail"}:
+        raise ValueError("delivery mode must be fifo, hybrid or hybrid-tail")
+    if mode in {"hybrid", "hybrid-tail"} and reads and all(data == reads[0] for data in reads):
         return IdenticalReads(path, reads)
+    if mode == "hybrid-tail" and reads:
+        split = len(reads) - 1
+        while split > 0 and reads[split - 1] == reads[-1]:
+            split -= 1
+        # Publish the stable suffix before releasing the last prefix reader.
+        # finish() proves prefix delivery only; run_control still compares
+        # every recaptured read, its count, identity and complete payload.
+        return FifoReads(path, reads[:split], timeout, terminal_snapshot=reads[-1])
     return FifoReads(path, reads, timeout)
 
 
@@ -344,6 +369,7 @@ def run_control(context, records, mapping, directory, timeout, delivery="fifo"):
             return {"passed": False, "command": command, "cwd": cwd, "requests": results,
                     "failed_request": key,
                     "input_delivery": ({"mode": getattr(feeder, "mode", "fifo"), "served": feeder.served, "expected": len(feeder.reads),
+                                        "prefix_served": getattr(feeder, "prefix_served", None),
                                         "done": feeder.done.is_set(), "error": feeder.error,
                                         "phase": feeder.phase, "read_number": feeder.read_number,
                                         "bytes_sent": feeder.bytes_sent}
@@ -375,8 +401,8 @@ def main():
     parser.add_argument("--through-turn", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--request-timeout", type=float, default=30)
-    parser.add_argument("--delivery", choices=("fifo", "hybrid"), default="fifo",
-                        help="hybrid uses a regular file only for identical reads; all qualification gates remain required")
+    parser.add_argument("--delivery", choices=("fifo", "hybrid", "hybrid-tail"), default="fifo",
+                        help="hybrid uses regular files for identical reads; hybrid-tail also leaves a regular final snapshot; actual captured reads still gate qualification")
     args = parser.parse_args()
     if args.through_turn < 1 or args.request_timeout <= 0:
         parser.error("turn and timeout must be positive")
