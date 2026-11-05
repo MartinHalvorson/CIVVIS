@@ -1152,6 +1152,45 @@ fn same_turn_wall_handoff(
 #[path = "civvis_orders/same_turn_wall_handoff_tests.rs"]
 mod same_turn_wall_handoff_tests;
 
+#[cfg(test)]
+#[path = "civvis_orders/first_pad_observed_commitment_tests.rs"]
+mod first_pad_observed_commitment_tests;
+
+/// Apply the producer rule to the observed frame, before acquiring a native
+/// production lease. A discarded simulated district is not a placed native pad.
+fn keep_observed_first_pad_floor(
+    orders: &mut Vec<Order>,
+    allowed: &std::collections::BTreeSet<i64>,
+    previous_ours: &std::collections::BTreeMap<i64, String>,
+    ours: &mut std::collections::BTreeMap<i64, String>,
+) -> usize {
+    let before = orders.len();
+    let mut rejected = std::collections::BTreeSet::new();
+    orders.retain(|order| {
+        let held = order.kind == "produce"
+            && order.verb.as_deref() == Some("DISTRICT_SPACEPORT")
+            && order.pos.is_some()
+            && order.subject.is_some_and(|city| !allowed.contains(&city));
+        if held {
+            rejected.insert(order.subject.unwrap());
+        }
+        !held
+    });
+    for city in rejected {
+        if !orders
+            .iter()
+            .any(|order| order.kind == "produce" && order.subject == Some(city))
+        {
+            if let Some(previous) = previous_ours.get(&city) {
+                ours.insert(city, previous.clone());
+            } else {
+                ours.remove(&city);
+            }
+        }
+    }
+    before - orders.len()
+}
+
 impl HostMoveRefusals {
     /// Drop stale unit, deal, and city-production replays from one turn.
     ///
@@ -5280,6 +5319,16 @@ fn decide(
     let emergency_wall_adoptions = adopt_emergency_wall_production(ours, state);
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
+    let observed_first_pad = ai
+        .native_first_pad_allowed_cities(&mirror_state.game, 0)
+        .map(|allowed| {
+            let native_cities = mirror_state
+                .cid_of
+                .iter()
+                .filter_map(|(native, model)| allowed.contains(model).then_some(*native))
+                .collect::<std::collections::BTreeSet<_>>();
+            (native_cities, ours.clone())
+        });
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -6194,6 +6243,12 @@ fn decide(
     let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
     if safer_pads > 0 {
         note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));
+    }
+    if let Some((allowed, previous_ours)) = &observed_first_pad {
+        let held = keep_observed_first_pad_floor(&mut orders, allowed, previous_ours, ours);
+        if held > 0 {
+            note_bits.push(format!("observed_first_pad_held={held}"));
+        }
     }
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
