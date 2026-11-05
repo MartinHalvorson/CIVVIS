@@ -78,4 +78,30 @@ for name in manifest['pairs']:
   assert arm=={key:result[key] for key in ['arm','exit','argv','genome','payload','binary_sha256']}
 assert changed==manifest['changed_cases']
 assert total==manifest['registered_reads']
+if changed['29']:
+ assert changed=={'25':False,'27':False,'29':True}
+ states=[json.loads(line) for line in files['inputs/29-0.jsonl'].splitlines()]
+ state=next(row for row in reversed(states) if row.get('kind')=='state')
+ city=next(c for c in state['cities'] if c['id']==65536)
+ assert state['turn']==29 and city['capital'] and (city['x'],city['y'])==(18,15)
+ archer=next(u for u in state['units'] if u['id']==327683)
+ assert archer['kind']=='UNIT_ARCHER' and (archer['x'],archer['y'])==(18,12)
+ def distance(pos):
+  q,r=pos[0]-pos[1]//2,pos[1]
+  a,b=18-15//2,15
+  return max(abs(q-a),abs(r-b),abs(q-a+r-b))
+ assert distance((17,11))==4 and distance((17,13))==2
+ for repeat in [1,2]:
+  pair=j(f'pairs/29-0-repeat-{repeat}.json')['reads'][0]['arms']
+  before=next(a['payload']['orders'] for a in pair if a['arm']=='off')
+  after=next(a['payload']['orders'] for a in pair if a['arm']=='on')
+  ours=lambda os:[o for o in os if o['kind']=='unit' and o['subject']==327683]
+  assert [(o['verb'],o['x'],o['y']) for o in ours(before)]==[('MOVE_TO',17,11),('RANGE_ATTACK',16,10)]
+  assert [(o['verb'],o['x'],o['y']) for o in ours(after)]==[('MOVE_TO',17,13)]
+  from collections import Counter
+  other=lambda os:Counter(json.dumps(o,sort_keys=True) for o in os if o['subject']!=327683 and o.get('verb')!='DOOMED_BLOW_VETO')
+  assert other(before)==other(after)
+  assert any(o.get('verb')=='DOOMED_BLOW_VETO' for o in before)
+  assert not any(o.get('verb')=='DOOMED_BLOW_VETO' for o in after)
+
 print(json.dumps({'queries':len(results),'verified_registered_reads':total,'changed_cases':changed,'scope':'Same-input proposal firing only; no original private history, native actuation, city survival or strength claim.'}))

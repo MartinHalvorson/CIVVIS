@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "defenders-keep-the-city-in-reach",
+  "scope": "Twelve fixed-input OFF/ON/ON/OFF queries across native Indonesia25/0,27/0,29/0, fresh private controller per query. All204 registered reads checked, same-arm control payloads repeat, effective genomes and arguments differ only this flag. Turns25/27 orders unchanged; at29 archer327683 moves to native17,13, two tiles from its assigned capital18,15, instead of17,11/four tiles, and drops the distant scout shot16,10. Other units retain commands as a multiset, but their relative ordering and the emitted DOOMED_BLOW_VETO indication change. Both earlier nonfiring matrices are retained separately. Proposal firing only: no original private history/read timing reproduction, host execution, city-survival or strength claim. Source 7f6feedc8ae61b1bf21251473204a27c232a47e7, executable SHA256 61a9b56d134044a73084e168668f7fb6f483c27a7e2734f653d8e72c436de770.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-defense-formation.action-pairs.tar.xz",
+    "sha256": "5be7c2dd30e89336ca3682368eba487e12bf87521273626b85c0ef14eec73590"
+  },
+  "members": [
+    "pairs/25-0-repeat-1.json",
+    "pairs/25-0-repeat-2.json",
+    "pairs/27-0-repeat-1.json",
+    "pairs/27-0-repeat-2.json",
+    "pairs/29-0-repeat-1.json",
+    "pairs/29-0-repeat-2.json"
+  ]
+}
