@@ -115,6 +115,25 @@ impl AdvancedAi {
             return None;
         }
         let city = g.cities.get(&cid)?;
+        // The launch pad outranks a plant: replayed 034948Z t160 put the plant
+        // ahead of a Spaceport with no progress banked.
+        if let Some(Item::District { district, .. }) = city.queue.first() {
+            if g.district_family(*district) == crate::name!("spaceport") {
+                return None;
+            }
+        }
+        // One plant at a time: only a standing plant counts as serving a city,
+        // so a second city would claim the same grid while the first builds.
+        let queued = g.cities.values().any(|other| {
+            other.owner == pid
+                && other.queue.iter().any(|item| {
+                    matches!(item, Item::Building { building }
+                        if FUELLED_PLANTS.iter().any(|(_, _, plant)| building.as_str() == *plant))
+                })
+        });
+        if queued {
+            return None;
+        }
         FUELLED_PLANTS
             .iter()
             .filter_map(|(_, _, plant)| {

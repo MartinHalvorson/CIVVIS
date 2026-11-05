@@ -210,6 +210,40 @@ fn the_claim_takes_the_plant_the_fuel_can_run() {
     assert!(ai.grid_plant_claim(&g, 0, first).is_none(), "off");
 }
 
+/// Replayed 034948Z t160 put the plant ahead of a Spaceport with no progress
+/// banked; on a science seat the launch pad keeps its queue.
+#[test]
+fn the_claim_leaves_a_spaceport_at_the_head() {
+    let (mut g, ai, first, _) = board();
+    stock(&mut g, "oil", 40.0);
+    let pos = g.cities[&first].pos;
+    g.cities
+        .get_mut(&first)
+        .unwrap()
+        .queue
+        .push(Item::District {
+            district: crate::name!("spaceport"),
+            pos,
+        });
+    assert!(ai.grid_plant_claim(&g, 0, first).is_none());
+}
+
+/// Only a standing plant serves a city, so without this a second city would
+/// claim the same grid while the first plant is still being built.
+#[test]
+fn one_plant_is_claimed_at_a_time() {
+    let (mut g, ai, first, second) = board();
+    stock(&mut g, "oil", 60.0);
+    g.cities
+        .get_mut(&second)
+        .unwrap()
+        .queue
+        .push(Item::Building {
+            building: crate::name!("oil_power_plant"),
+        });
+    assert!(ai.grid_plant_claim(&g, 0, first).is_none());
+}
+
 /// A claimed plant stays at the head: the review and the deterrent leave what
 /// `factory_claim_holds` keeps alone. Off, an Oil plant is not held.
 #[test]
