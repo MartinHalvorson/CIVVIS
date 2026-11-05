@@ -60,6 +60,7 @@ impl Game {
         }
         let coast = self
             .nbrs(pos)
+            .into_iter()
             .filter(|neighbor| {
                 self.map.get(*neighbor).is_some_and(|tile| {
                     tile.terrain == crate::name!("coast") || tile.terrain == crate::name!("lake")

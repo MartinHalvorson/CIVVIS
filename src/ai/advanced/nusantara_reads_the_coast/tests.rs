@@ -15,13 +15,18 @@ fn indonesia(coast_neighbours: usize) -> (Game, Pos) {
     let center = game.cities[&cid].pos;
     let site = game
         .nbrs(center)
+        .into_iter()
         .find(|pos| {
             game.map
                 .get(*pos)
                 .is_some_and(|tile| tile.owner_city == Some(cid))
         })
         .expect("the capital owns a neighbour");
-    let neighbours: Vec<Pos> = game.nbrs(site).filter(|pos| *pos != center).collect();
+    let neighbours: Vec<Pos> = game
+        .nbrs(site)
+        .into_iter()
+        .filter(|pos| *pos != center)
+        .collect();
     for (index, pos) in neighbours.into_iter().enumerate() {
         let tile = game.map.tiles.get_mut(&pos).unwrap();
         tile.terrain = if index < coast_neighbours {
