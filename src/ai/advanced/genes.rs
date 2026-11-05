@@ -5131,6 +5131,36 @@ pub const GENES: &[Gene] = &[
     // tile and moves a post where one blow at the top of the roll removes
     // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
     Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range and never fired:
+    // one was the Settler's reserved guard (the kill search skips reserved
+    // guards) and the other was ruled doomed (three Spearmen near every
+    // stand). Their two shots, about 20 each on 38 hp, fell it at the centre
+    // but not at KILL_MARGIN. Under the gene a recovering, guarding or doomed
+    // shooter's ranged blow from its own tile joins the plan as kill-only.
+    // See `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
     // Version two of `luxury-asks-pay-in-strategics`: after version one's
     // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
     // the same partners every time (24 of 27), mostly on Horses (22 of 42;

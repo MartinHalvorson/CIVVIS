@@ -314,10 +314,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | — \| 2 |
 | `prey-waits-for-the-march-2` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march-2`; see `Self::prey_waits_for_the_march_2`. | — \| 2 |
 | `prey-war-is-kept` | off (unmeasured) | Opt-in gene `prey-war-is-kept`; see `Self::prey_war_is_kept`. | 1 \| 1 |
+| `prod-tiles-call-the-builders` | off (unmeasured) | Opt-in gene `prod-tiles-call-the-builders`; acts through `builders-cover-the-worked-backlog`'s step. | 1 \| 1 |
 | `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
 | `ranged-finish-on-the-mean` | off (unmeasured) | Opt-in gene `ranged-finish-on-the-mean`; see `Self::ranged_finish_on_the_mean`. | 1 \| 1 |
+| `ranged-kills-are-free` | off (unmeasured) | Opt-in gene `ranged-kills-are-free`; see `Self::ranged_kills_are_free`. | 1 \| 1 |
 | `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
@@ -331,6 +333,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-drive-answers-from-the-pad-2` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad-2`; see `Self::science_drive_answers_from_the_pad_2`. | — \| 2 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
 | `science-drive-leads-beside-the-lane` | off (unmeasured) | Opt-in gene `science-drive-leads-beside-the-lane`; see `Self::science_drive_leads_beside_the_lane`. | 1 \| 1 |
+| `science-foundation-before-backlog` | off (unmeasured) | Prioritize usable labs and nearby Rocketry during a Science posture. | 1 \| 1 |
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
@@ -357,6 +360,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | — \| 2 |
 | `threatened-city-buys-its-defender-2` | off (unmeasured) | Buy the threatened city a defender of its era, not the cheapest body. | — \| 2 |
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
+| `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |

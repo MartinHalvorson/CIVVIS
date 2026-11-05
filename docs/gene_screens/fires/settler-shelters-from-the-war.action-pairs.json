@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "settler-shelters-from-the-war",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Korea civvis-20261105T044106Z t98 and t99 (Greece at war; it took Settlers 1638408 and 1703938 at t98/t99), each cut at its turn's first state export, queried on a ci-profile civvis_orders built with the gene (base 85a232019 plus war-defense-spends-the-runway); both arms carry the run's requested genome and the on arm adds the gene. Each off arm reproduces the live MOVE_TOs of both Settlers; at t98 the on arm sends them toward the city at (39, 20) ('Settler heads for shelter ... a soldier of player 4, at war with us, stands 5 tiles away'), so Settler 1703938 no longer walks to (50, 17).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-settler-shelters-from-the-war.native-queries.tar.xz",
+    "sha256": "4619cd511d1c57568571f5e60a06c58c6e983964e6632fbeea90a2e824a9525b"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}
