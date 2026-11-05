@@ -7601,6 +7601,13 @@ pub struct AdvancedAi {
     /// luxury slot asks a partner for a type we lack and pays in strategics
     /// the army does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
     luxury_asks_pay_in_strategics: bool,
+    /// `military-alliance-shield`: a Military Alliance with the empire
+    /// fighting our enemy or the strongest neighbour at our border. See
+    /// `advanced/military_alliance_shield.rs`. Off by default.
+    military_alliance_shield: bool,
+    /// `military-alliance-shield`: the partner asked on the last decided
+    /// turn, for the live orders layer. `None` with the gene off.
+    military_alliance_shield_ask: Option<usize>,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -10292,6 +10299,10 @@ mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
+/// A Military Alliance with the empire fighting our enemy or the neighbour
+/// at our border. Opt-in gene `military-alliance-shield`; see
+/// `advanced/military_alliance_shield.rs`.
+mod military_alliance_shield;
 mod missionary_field;
 /// One war at a time: one campaign front, peace on every other front, and
 /// peace on the front once the tide has run against us for long enough
@@ -12001,6 +12012,8 @@ impl AdvancedAi {
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
             luxury_asks_pay_in_strategics: false,
+            military_alliance_shield: false,
+            military_alliance_shield_ask: None,
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,

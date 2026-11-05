@@ -1721,10 +1721,19 @@ impl AdvancedAi {
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
         self.coalition_alliance_step(g, pid);
+        // `military-alliance-shield`: a Military Alliance with the empire
+        // fighting our enemy or the neighbour at our border. On a turn it
+        // asks, the stock ask waits: the live host opens one alliance
+        // session a batch (`hold_deals_beside_an_alliance`), and a held ask
+        // would still be remembered as a refusal. See
+        // `advanced/military_alliance_shield.rs`.
+        let shield_asked = self.military_alliance_shield_step(g, pid, plan, denied_partner);
         // `research-alliance-first` runs inside `propose_strategic_alliance`:
         // the kind, the cadence, the ranking's science term and the partner
         // bar. See `advanced/research_alliance.rs`.
-        self.propose_strategic_alliance(g, pid, plan, denied_partner);
+        if !shield_asked {
+            self.propose_strategic_alliance(g, pid, plan, denied_partner);
+        }
         // `embassy-finds-the-capital`: an Embassy to a rival whose original
         // capital we have never seen, the plan's target first; the stock
         // cadence below opens no second session on a turn it sends one. See

@@ -1090,9 +1090,9 @@ struct HostMoveRefusals {
     /// The first city production request emitted during the current turn,
     /// keyed by Civilization VI city id. Production is a replacement operation:
     /// a later same-turn request competes with the queue already sent to the
-    /// host, even when it asks for a different item. Keep the first request and
-    /// drop the rest until the next authoritative turn.
-    same_turn_production_orders: std::collections::BTreeMap<i64, String>,
+    /// host, even when it asks for a different item. Retain its item and frame
+    /// so only a refused queue or a fresh observed Wall handoff can replace it.
+    same_turn_production_orders: std::collections::BTreeMap<i64, HostProductionLease>,
     same_turn: Option<u32>,
 }
 
@@ -1114,6 +1114,44 @@ struct HostFrontierProbe {
     target: (i32, i32),
 }
 
+struct HostProductionLease {
+    verb: String,
+    frame: u32,
+}
+
+/// A later frame can discover a fortification need after the first queue
+/// request has already reached the host. Require its actual readback before
+/// handing the lease to Walls, then keep that fortified queue for the turn.
+/// Ordinary changes and repeated proposals retain the existing lease.
+fn same_turn_wall_handoff(
+    state: &civvis::mirror::StateSnapshot,
+    city: i64,
+    first: &HostProductionLease,
+    requested: &str,
+) -> bool {
+    if state.frame <= first.frame
+        || first.verb == requested
+        || !state.cities.iter().any(|observed| {
+            observed.id == city && observed.producing.as_deref() == Some(first.verb.as_str())
+        })
+    {
+        return false;
+    }
+    let rules = civvis::rules::Rules::shared();
+    let fortification = |host: &str| {
+        civvis::mirror::host_production_key(&rules, host, None).is_some_and(|key| {
+            key.strip_prefix("building:")
+                .and_then(|name| rules.buildings.get(name))
+                .is_some_and(|building| building.outer_defense > 0)
+        })
+    };
+    fortification(requested) && !fortification(&first.verb)
+}
+
+#[cfg(test)]
+#[path = "civvis_orders/same_turn_wall_handoff_tests.rs"]
+mod same_turn_wall_handoff_tests;
+
 impl HostMoveRefusals {
     /// Drop stale unit, deal, and city-production replays from one turn.
     ///
@@ -1127,7 +1165,9 @@ impl HostMoveRefusals {
     /// its pending/cooldown guards mean a repeated deal order can only be
     /// refused again. City production is also a single host queue: once the
     /// first `produce` request has left, a later same-turn request can only
-    /// replace or be refused against that queue. Attack orders are deliberately
+    /// replace or be refused against that queue. A fresh host readback may
+    /// hand a non-fortified queue to Walls once, without reopening routine
+    /// production churn. Attack orders are deliberately
     /// excluded: a fresh combat frame may legitimately finish the same target.
     ///
     /// `ours` is repaired when a later production choice is dropped. The map is
@@ -1149,7 +1189,8 @@ impl HostMoveRefusals {
         // A planner may revise a queue several times before this batch is
         // sent (for example, restoring a military build after an economic
         // pass). Only its final choice should acquire the host-turn lease.
-        // Later calls still cannot overwrite a choice already sent this turn.
+        // Later calls keep the sent choice except for a refused queue or
+        // an observed non-fortified queue handing off to Walls.
         let final_production: std::collections::BTreeMap<_, _> = orders
             .iter()
             .enumerate()
@@ -1175,7 +1216,10 @@ impl HostMoveRefusals {
                     let first = match self.same_turn_production_orders.entry(city) {
                         std::collections::btree_map::Entry::Vacant(entry) => {
                             let selected = verb.to_string();
-                            entry.insert(selected.clone());
+                            entry.insert(HostProductionLease {
+                                verb: selected.clone(),
+                                frame: state.frame,
+                            });
                             // Keep the helper self-contained as well as safe
                             // for the normal translation path, which records
                             // this before reaching the filter.
@@ -1184,22 +1228,25 @@ impl HostMoveRefusals {
                         }
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
                             let refused = state.refused_production.get(&city);
-                            if entry.get() != verb
-                                && refused.is_some_and(|items| {
-                                    items.contains(entry.get()) && !items.contains(verb)
-                                })
+                            if entry.get().verb != verb
+                                && (refused.is_some_and(|items| {
+                                    items.contains(&entry.get().verb) && !items.contains(verb)
+                                }) || same_turn_wall_handoff(state, city, entry.get(), verb))
                             {
-                                entry.insert(verb.to_string());
+                                entry.insert(HostProductionLease {
+                                    verb: verb.to_string(),
+                                    frame: state.frame,
+                                });
                                 ours.insert(city, verb.to_string());
                                 None
                             } else {
-                                Some(entry.get().clone())
+                                Some(entry.get().verb.clone())
                             }
                         }
                     };
                     if let Some(first) = first {
                         // A production order replaces the city's queue. The
-                        // first request remains authoritative for this host
+                        // retained request remains authoritative for this host
                         // turn, including when the replan is still frame 0.
                         ours.insert(city, first);
                         dropped += 1;
@@ -3782,10 +3829,15 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
 /// `culture_allies` (`culture-seat-allies` armed on a seat aiming at
 /// Culture, or `science-seat-allies` on one aiming at Science) keeps them for
 /// that lane as well; the agent takes them under `CultureAllies` /
-/// `ScienceAllies`. Returns how many were dropped.
+/// `ScienceAllies`. `shield` is the host player `military-alliance-shield`
+/// asked this turn ([`AdvancedAi::military_alliance_shield_partner`]): its
+/// `ALLIANCE_MILITARY` crosses on every lane, since that desk prices the
+/// Domination target and prey itself, and the agent takes it under
+/// `MilitaryAllies`. Returns how many were dropped.
 fn drop_off_lane_alliances(
     plan: Option<(&str, Option<&str>)>,
     culture_allies: bool,
+    shield: Option<i64>,
     orders: &mut Vec<Order>,
 ) -> usize {
     if plan_races_diplomacy(plan)
@@ -3795,7 +3847,12 @@ fn drop_off_lane_alliances(
         return 0;
     }
     let before = orders.len();
-    orders.retain(|order| order.kind != "alliance");
+    orders.retain(|order| {
+        order.kind != "alliance"
+            || (shield.is_some()
+                && order.subject == shield
+                && order.verb.as_deref() == Some("ALLIANCE_MILITARY"))
+    });
     before - orders.len()
 }
 
@@ -5547,7 +5604,16 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_alliances = drop_off_lane_alliances(plan_facts, ai.seat_allies_armed(), &mut orders);
+    // `military-alliance-shield`: the host player its ask went to.
+    let shield_subject = ai
+        .military_alliance_shield_partner()
+        .and_then(|partner| host_player_target(mirror_state, state, partner));
+    let held_alliances = drop_off_lane_alliances(
+        plan_facts,
+        ai.seat_allies_armed(),
+        shield_subject,
+        &mut orders,
+    );
     if held_alliances > 0 {
         note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
     }
@@ -21989,7 +22055,12 @@ mod order_postcondition_tests {
         };
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), false, &mut kept),
+            drop_off_lane_alliances(
+                Some(("expansion", Some("diplomatic"))),
+                false,
+                None,
+                &mut kept
+            ),
             0
         );
         assert_eq!(kept.len(), 2);
@@ -21997,20 +22068,25 @@ mod order_postcondition_tests {
         // armed, and only a Culture seat.
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, &mut kept),
+            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, None, &mut kept),
             0
         );
         assert_eq!(kept.len(), 2);
         let mut orders = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("conquest", Some("domination"))), true, &mut orders),
+            drop_off_lane_alliances(
+                Some(("conquest", Some("domination"))),
+                true,
+                None,
+                &mut orders
+            ),
             1,
             "the seat genes open the Culture and Science lanes only"
         );
         // `science-seat-allies`: a Science seat keeps them while armed.
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("science", Some("science"))), true, &mut kept),
+            drop_off_lane_alliances(Some(("science", Some("science"))), true, None, &mut kept),
             0
         );
         assert_eq!(kept.len(), 2);
@@ -22022,12 +22098,48 @@ mod order_postcondition_tests {
         ] {
             let mut orders = batch();
             assert_eq!(
-                drop_off_lane_alliances(plan, false, &mut orders),
+                drop_off_lane_alliances(plan, false, None, &mut orders),
                 1,
                 "{plan:?}"
             );
             assert_eq!(orders.len(), 1);
             assert_eq!(orders[0].kind, "sell");
+        }
+    }
+
+    /// `military-alliance-shield`: the shield's own `ALLIANCE_MILITARY` ask
+    /// crosses on every lane; a stock ask beside it, another kind to the same
+    /// rival, or a military ask to another rival does not.
+    #[test]
+    fn the_shields_military_alliance_crosses_on_every_lane() {
+        let alliance = |subject: i64, verb: &str| Order {
+            kind: "alliance",
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        for plan in [
+            None,
+            Some(("conquest", Some("domination"))),
+            Some(("science", Some("science"))),
+            Some(("culture", Some("culture"))),
+        ] {
+            let mut orders = vec![
+                alliance(3, "ALLIANCE_MILITARY"),
+                alliance(3, "ALLIANCE_RESEARCH"),
+                alliance(4, "ALLIANCE_MILITARY"),
+            ];
+            assert_eq!(
+                drop_off_lane_alliances(plan, false, Some(3), &mut orders),
+                2,
+                "{plan:?}"
+            );
+            assert_eq!(orders.len(), 1);
+            assert_eq!(orders[0].subject, Some(3));
+            assert_eq!(orders[0].verb.as_deref(), Some("ALLIANCE_MILITARY"));
+            // No shield ask this turn: every alliance order is held.
+            let mut orders = vec![alliance(3, "ALLIANCE_MILITARY")];
+            assert_eq!(drop_off_lane_alliances(plan, false, None, &mut orders), 1);
         }
     }
 
