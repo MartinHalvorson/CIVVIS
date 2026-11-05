@@ -39,6 +39,9 @@ mod domination_governors;
 mod domination_land_first;
 mod domination_modernization;
 mod domination_siege_milestones;
+/// `exalted-goddess-buys-the-coastal-guard`: see
+/// `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+mod exalted_goddess_buys_the_coastal_guard;
 /// Production values: the values `production_value` reads, defensive items,
 /// and the queue redirects. See `advanced/production_values.rs`.
 mod production_values;
@@ -7337,6 +7340,13 @@ pub struct AdvancedAi {
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
     /// Off by default.
     early_cities_keep_their_distance: bool,
+    /// `exalted-goddess-buys-the-coastal-guard`: an Indonesian coastal city
+    /// under threat buys a naval guard with Faith. See
+    /// `advanced/exalted_goddess_buys_the_coastal_guard.rs`. Off by default.
+    exalted_goddess_buys_the_coastal_guard: bool,
+    /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
+    /// bought its guard. Empty with the gene off.
+    exalted_goddess_guard_bought: BTreeMap<u32, u32>,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
@@ -12208,6 +12218,8 @@ impl AdvancedAi {
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
             early_cities_keep_their_distance: false,
+            exalted_goddess_buys_the_coastal_guard: false,
+            exalted_goddess_guard_bought: BTreeMap::new(),
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
@@ -19605,6 +19617,12 @@ impl AdvancedAi {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            // A ship is Faith-purchasable only under Gitarja, and only
+            // `exalted-goddess-buys-the-coastal-guard` buys one: this scorer
+            // never could, and keeps it that way.
+            if matches!(g.rules.units[unit].domain.as_deref(), Some("sea")) {
                 continue;
             }
             // A native quote can fit above the reserve long before the
@@ -29780,6 +29798,9 @@ impl AdvancedAi {
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
             || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city)
+            // `exalted-goddess-buys-the-coastal-guard`: Faith before Gold.
+            // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+            || self.exalted_goddess_coastal_guard(g, pid)
             // `threatened-city-buys-its-defender`: see
             // `advanced/threatened_city_purchase.rs`.
             || self.threatened_city_defender_purchase(g, pid, plan.threatened_city);

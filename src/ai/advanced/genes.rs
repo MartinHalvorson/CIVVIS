@@ -5283,6 +5283,13 @@ pub const GENES: &[Gene] = &[
     // at t102. Under the gene only a city new since the last resolve counts
     // as the founding. See `advanced/civilian_safety.rs`.
     Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
+    // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
+    // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
+    // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion
+    // and made no Faith purchase in three games. A threatened coastal city
+    // buys the strongest ranged ship for Faith before the Gold defender buy.
+    // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+    Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
