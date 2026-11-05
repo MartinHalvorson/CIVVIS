@@ -281,6 +281,7 @@ fn the_production_decider_reserves_cash_after_earlier_purchases() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .unwrap();

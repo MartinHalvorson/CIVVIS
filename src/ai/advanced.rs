@@ -6617,6 +6617,10 @@ pub struct AdvancedAi {
     /// when the network needs their slots. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
+    /// `denounce-only-to-declare`: the science-threat rung no longer
+    /// denounces; the war opening does, when a war follows. See
+    /// `advanced/denounce_only_to_declare.rs`. Off by default.
+    denounce_only_to_declare: bool,
     /// `captives-come-home-2`: version 2 of the family, carrying version 1.
     /// The ransom pays in Diplomatic Favor beside Gold. See
     /// `advanced/captives_come_home.rs`. Off by default.
@@ -8728,6 +8732,9 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
+    /// sooner. See `advanced/spy_civics_come_first.rs`.
+    spy_civics_come_first: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
@@ -10327,6 +10334,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
+mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;
@@ -10834,6 +10843,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// `spy-civics-come-first`: the Spy-slot civics sooner. See
+/// `advanced/spy_civics_come_first.rs`.
+mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
@@ -12075,6 +12087,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
+            denounce_only_to_declare: false,
             captives_come_home_2: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
@@ -12407,6 +12420,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
+            spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             settler_shelters_from_the_war_2: false,

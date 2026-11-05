@@ -392,6 +392,12 @@ impl AdvancedAi {
         if self.science_denounce_names_the_leader {
             ranked.truncate(1);
         }
+        // `denounce-only-to-declare`: the war opening denounces when a war
+        // follows; this rung's word alone only invites one. See
+        // `advanced/denounce_only_to_declare.rs`.
+        if self.denunciation_waits_for_the_war(g, pid, &ranked) {
+            return None;
+        }
         let rival = Self::denounce_most_pressing(g, pid, &ranked)?;
         // The base tag's own record that it reached the board, beside the
         // war tag's `denial_wars`: rungs 1 and 2 leave no unit and no war a
