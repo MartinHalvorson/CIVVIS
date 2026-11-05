@@ -21011,10 +21011,10 @@ impl AdvancedAi {
     /// a chance to write another queue. Re-running the selector is not enough:
     /// a city can be healthy and undamaged after the first handoff while its
     /// original threat evidence has already been consumed by planning. Keep
-    /// the confirmed item authoritative for the rest of this turn. The
-    /// selector already reserves an existing defensive head as its claim;
-    /// accepting a different, later military writer here can erase the Walls
-    /// it selected, as native Gyeongju did before its turn-33 loss.
+    /// selected fortifications authoritative for the rest of this turn. A
+    /// later military writer must not erase the Walls selected for native
+    /// Gyeongju before its turn-33 loss. Unit and economic reservations retain
+    /// the existing allowance for a later local defender.
     fn reapply_confirmed_defense_queue(
         &self,
         g: &mut Game,
@@ -21025,7 +21025,12 @@ impl AdvancedAi {
             return;
         };
         let current = g.cities.get(city).and_then(|city| city.queue.first());
-        if current == Some(defence) {
+        let fortification = !matches!(defence, Item::Unit { .. } | Item::Formation { .. })
+            && Self::active_queue_answers_siege(g, defence);
+        if current == Some(defence)
+            || (!fortification
+                && current.is_some_and(|item| Self::active_queue_answers_siege(g, item)))
+        {
             return;
         }
         let city_name = g.cities[city].name.clone();
