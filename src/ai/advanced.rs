@@ -7574,6 +7574,10 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `luxury-asks-pay-in-strategics`: with no spare copy that fits, the
+    /// luxury slot asks a partner for a type we lack and pays in strategics
+    /// the army does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
+    luxury_asks_pay_in_strategics: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -10700,6 +10704,8 @@ mod threatened_city_purchase;
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
+/// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
+mod luxury_asks_pay_in_strategics;
 mod luxury_research;
 
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
@@ -11961,6 +11967,7 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            luxury_asks_pay_in_strategics: false,
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,

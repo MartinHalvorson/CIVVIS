@@ -4981,6 +4981,14 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // `luxury-asks-pay-in-strategics`: live Lv 8 Deity Korea Online, 28 games
+    // 11-04/05: Amenities cost 6.7% of production at t90-110 (the retire
+    // gate's margin); the luxury swap held 74 times with a city short, 51 for
+    // want of any spare copy; Gold alone closed 0 of 16 luxury asks, barter
+    // 22; 56 of the 74 holds stocked 10+ of a strategic. With no spare that
+    // fits, the slot asks for a type we lack and pays in strategics the army
+    // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
