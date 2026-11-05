@@ -8633,6 +8633,11 @@ pub struct AdvancedAi {
     /// whose every attacker is ranged on its centre-roll damage. See
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
+    /// `ranged-kills-are-free`: a recovering or doomed shooter's ranged blow
+    /// from its own tile joins the kill plan as kill-only — only in a
+    /// sequence that kills its target, and without the stand's danger
+    /// charged to it. See `advanced/battle_planner.rs`. Off by default.
+    ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
@@ -12186,6 +12191,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
+            ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,

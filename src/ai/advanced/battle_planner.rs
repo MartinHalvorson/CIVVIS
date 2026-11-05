@@ -904,6 +904,11 @@ struct Candidate {
     /// unit's tile, `(damage to the defender, damage to the attacker)`,
     /// when `Game::host_preview` holds one. Replaces the closed form.
     host: Option<(f64, f64)>,
+    /// `ranged-kills-are-free`: a ranged blow from the shooter's own tile by
+    /// a recovering or doomed shooter. It joins a sequence only where its
+    /// target dies in that sequence, and the danger at its stand is not
+    /// charged to it: the unit stands there whether or not it shoots.
+    kill_only: bool,
 }
 
 impl Candidate {
@@ -957,6 +962,9 @@ struct BeamState {
     reply_stands: Vec<(usize, Pos, f64)>,
     reply_cost: f64,
     survives: bool,
+    /// `ranged-kills-are-free`: targets a kill-only blow has landed on; the
+    /// sequence is worthless unless each of them dies in it.
+    kill_only_on: u32,
 }
 
 impl BeamState {
@@ -972,6 +980,7 @@ impl BeamState {
             reply_stands: Vec::new(),
             reply_cost: 0.0,
             survives: true,
+            kill_only_on: 0,
         }
     }
 
@@ -1062,7 +1071,7 @@ impl BeamState {
             candidate.from
         };
         let mut danger = 0.0;
-        if !dies && !survival_after_sequence {
+        if !dies && !survival_after_sequence && !candidate.kill_only {
             let dead = Self::dead_of(killed, targets);
             danger = field.danger_without(
                 end,
@@ -1079,6 +1088,7 @@ impl BeamState {
         // A wounded unit strikes only to finish, only from safety, and
         // never as a trade of itself.
         if shooter.hp < WOUNDED_STRIKER_HP
+            && !candidate.kill_only
             && (dies || !(kill && (survival_after_sequence || danger <= NO_DANGER)))
         {
             return None;
@@ -1091,6 +1101,9 @@ impl BeamState {
         }
         next.dealt[candidate.target] = dealt;
         next.killed = killed;
+        if candidate.kill_only {
+            next.kill_only_on |= target_bit;
+        }
         if !candidate.ranged {
             next.melee_on |= target_bit;
         }
@@ -1132,6 +1145,11 @@ impl BeamState {
     /// penalty for every target it left low with a finisher still to spare.
     fn terminal(&self, shooters: &[Shooter], targets: &[Target], candidates: &[Candidate]) -> f64 {
         if !self.survives {
+            return f64::NEG_INFINITY;
+        }
+        // `ranged-kills-are-free`: a kill-only blow on a target that lives
+        // is no part of a plan.
+        if self.kill_only_on & !self.killed != 0 {
             return f64::NEG_INFINITY;
         }
         let mut score = self.score;
@@ -1582,7 +1600,23 @@ impl AdvancedAi {
         // must therefore reach the search itself, before a profitable trade
         // can spend a unit whose every strike was judged unsurvivable.
         if self.doomed_blow_veto && !doomed.is_empty() {
-            candidates.retain(|candidate| !doomed.contains(&shooters[candidate.shooter].uid));
+            // `ranged-kills-are-free`: a doomed shooter's ranged blow from
+            // its own tile survives the veto as kill-only — it is in that
+            // danger whether or not it shoots, and a kill only lowers it.
+            if self.ranged_kills_are_free {
+                for candidate in candidates.iter_mut() {
+                    let shooter = &shooters[candidate.shooter];
+                    if doomed.contains(&shooter.uid)
+                        && candidate.ranged
+                        && candidate.from == shooter.pos
+                    {
+                        candidate.kill_only = true;
+                    }
+                }
+            }
+            candidates.retain(|candidate| {
+                candidate.kill_only || !doomed.contains(&shooters[candidate.shooter].uid)
+            });
         }
         let (sequence, score) = search_kill_sequence(
             &shooters,
@@ -1704,7 +1738,8 @@ impl AdvancedAi {
                 || unit.attacks_left <= 0
                 || unit.moves_left <= 0.0
                 || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || self.battle_planner_recovering.contains(&uid)
+                || (self.battle_planner_recovering.contains(&uid)
+                    && !(self.ranged_kills_are_free && spec.has_ranged_attack()))
                 || self.battle_planner_ordered.contains(&uid)
                 || self.guard_is_reserved_for_civilian(uid)
                 // `battle-planner-3`: the siege's taker is not the plan's.
@@ -1774,6 +1809,7 @@ impl AdvancedAi {
                                     att,
                                     def_base: def + wounded_penalty(target.hp),
                                     host: None,
+                                    kill_only: false,
                                 });
                             }
                         }
@@ -1791,6 +1827,7 @@ impl AdvancedAi {
                                     att,
                                     def_base: def + wounded_penalty(target.hp),
                                     host: None,
+                                    kill_only: false,
                                 });
                             }
                         }
@@ -1818,10 +1855,22 @@ impl AdvancedAi {
                 }
                 own.extend(found);
             }
+            // `ranged-kills-are-free`: a recovering shooter keeps only its
+            // ranged blows from its own tile, kill-only; it stays the
+            // rotation's otherwise and is not offered as armed.
+            let recovering = self.battle_planner_recovering.contains(&uid);
+            if recovering {
+                own.retain(|candidate| candidate.ranged && candidate.from == unit.pos);
+                for candidate in &mut own {
+                    candidate.kill_only = true;
+                }
+            }
             if own.is_empty() {
                 continue;
             }
-            armed.insert(uid);
+            if !recovering {
+                armed.insert(uid);
+            }
             // Per target keep the unit's own tile and the safest stands
             // after it, so the search is not spent choosing among tiles
             // that differ only in exposure.

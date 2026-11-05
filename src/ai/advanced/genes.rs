@@ -5033,6 +5033,16 @@ pub const GENES: &[Gene] = &[
     // Spies (stock valuation and denial claim) until they age out.
     // See `advanced/denial_spies_count_their_losses.rs`.
     Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range the whole time and
+    // never fired: one was recovering (the kill search skips recovering
+    // units) and the other was ruled doomed (three Spearmen near every
+    // stand), so the veto struck all its blows. Together the two shots
+    // killed it at t49. Under the gene a recovering or doomed shooter's
+    // ranged blow from its own tile joins the plan as kill-only. See
+    // `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
