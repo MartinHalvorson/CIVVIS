@@ -5184,6 +5184,20 @@ impl AdvancedAi {
         self.bankruptcy_exits_the_drain_2 = false;
     }
 
+    /// Opt-in gene `settler-shelters-from-the-war-2`, version two of
+    /// `settler-shelters-from-the-war`; see
+    /// `advanced/settler_shelters_from_the_war.rs`. A seat plays one version,
+    /// so this turns version one off.
+    pub fn enable_settler_shelters_from_the_war_2(&mut self) {
+        self.settler_shelters_from_the_war_2 = true;
+        self.settler_shelters_from_the_war = false;
+    }
+
+    /// The twin of `enable_settler_shelters_from_the_war_2`.
+    pub fn disable_settler_shelters_from_the_war_2(&mut self) {
+        self.settler_shelters_from_the_war_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

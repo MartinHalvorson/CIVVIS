@@ -5173,6 +5173,15 @@
           "settler-guard-holds-2": null
         }
       },
+      "settler-shelters-from-the-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "settler-shelters-from-the-war": null,
+          "settler-shelters-from-the-war-2": null
+        }
+      },
       "settler-target-hysteresis": {
         "rule_on": [
           "settler-target-hysteresis"

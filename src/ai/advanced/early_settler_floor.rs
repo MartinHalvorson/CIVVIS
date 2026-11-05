@@ -211,6 +211,7 @@ impl AdvancedAi {
                 || (city.last_attacked > 0
                     && g.turn.saturating_sub(city.last_attacked) <= EARLY_SETTLER_ATTACK_MEMORY)
                 || Self::early_settler_raider_near(g, city.pos)
+                || self.short_seowon_holds_settler_floor(g, pid, cid)
                 || !Self::early_settler_may_displace(g, pid, cid)
                 || !g.can_produce(pid, cid, &item)
             {
