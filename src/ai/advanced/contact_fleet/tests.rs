@@ -328,13 +328,24 @@ fn claimant() -> AdvancedAi {
     ai
 }
 
+/// The fixture's city with `head` queued and the Quadrireme all but paid, so
+/// that it can finish the hull inside the claim's window.
+fn city_working_on(head: Item) -> (Game, u32) {
+    let (mut game, city) = coastal_seat();
+    let hull = unit("quadrireme");
+    let cost = game.item_cost_for_city(0, city, &hull);
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue = vec![head];
+    held.production_progress
+        .insert(Game::item_progress_key(&hull), (cost - 1.0).max(0.0));
+    (game, city)
+}
+
 /// The fixture's city with a Library at the head of its queue.
 fn working_city() -> (Game, u32) {
-    let (mut game, city) = coastal_seat();
-    game.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
+    city_working_on(Item::Building {
         building: Name::new("library"),
-    }];
-    (game, city)
+    })
 }
 
 fn head_is_a_ship(game: &Game, city: u32) -> bool {
@@ -398,9 +409,19 @@ fn a_wonder_or_a_soldier_keeps_the_head() {
         },
         unit("warrior"),
     ] {
-        let (mut game, city) = coastal_seat();
-        game.cities.get_mut(&city).unwrap().queue = vec![head.clone()];
+        let (mut game, city) = city_working_on(head.clone());
         claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
         assert_eq!(game.cities[&city].queue.first(), Some(&head));
     }
+}
+
+#[test]
+fn a_city_too_slow_to_finish_the_hull_keeps_its_queue() {
+    let (mut game, city) = coastal_seat();
+    game.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
+        building: Name::new("library"),
+    }];
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(!head_is_a_ship(&game, city));
+    assert!(game.players[0].counters.get("sea_scout_claims").is_none());
 }
