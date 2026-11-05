@@ -5089,6 +5089,15 @@ pub const GENES: &[Gene] = &[
     // a major fielding 1.5x our power keeps its queues while the treasury
     // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
     Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
