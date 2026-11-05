@@ -5043,6 +5043,14 @@ pub const GENES: &[Gene] = &[
     // ratio) visible soldier within SURPRISE_TILES of an early city does.
     // See `objective_board.rs` (`surprise_strength_near`).
     Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. See `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -8640,6 +8640,11 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
+    /// major's soldier is within six tiles goes to the nearest city of ours,
+    /// and one inside a city stays. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -10744,6 +10749,9 @@ mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
+/// `settler-shelters-from-the-war`: see
+/// `advanced/settler_shelters_from_the_war.rs`.
+mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -12194,6 +12202,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,

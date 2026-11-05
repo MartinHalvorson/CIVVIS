@@ -2183,6 +2183,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `settler-shelters-from-the-war`; see
+        /// `advanced/settler_shelters_from_the_war.rs`.
+        settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
     }
 }
 
