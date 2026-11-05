@@ -5567,6 +5567,11 @@ pub struct AdvancedAi {
     /// wants it (`backlog_builder_holds`), as it already spares the housing
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
+    /// `anvil-spares-the-one-blow`: the Anvil never leaves the City Center
+    /// empty while it has a land soldier, and never posts one off the city
+    /// where one blow at the top of its roll removes it. See
+    /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
+    anvil_spares_the_one_blow: bool,
     // ---- append: c-d ------------------------------------------------
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
@@ -8669,6 +8674,11 @@ pub struct AdvancedAi {
     /// left to steal), and the turn it last did. See
     /// `AdvancedAi::racer_spy_post_for`.
     steal_dry_cities: BTreeMap<u32, u32>,
+    /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
+    /// major's soldier is within six tiles (a non-friend's within two at
+    /// peace) goes to the nearest city of ours, and one inside a city stays. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -9380,6 +9390,11 @@ pub struct AdvancedAi {
     /// turns, the insolvency guard leaves the city queues to the war. See
     /// `advanced/war_defense_spends_the_runway.rs`. Off by default.
     war_defense_spends_the_runway: bool,
+    /// `threatened-lane-lends-the-army`: a seat whose victory target is not
+    /// Domination lends its delegated governor the war army target while at
+    /// war with a major and a home city is threatened. See
+    /// `advanced/threatened_lane_lends_the_army.rs`. Off by default.
+    threatened_lane_lends_the_army: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -10149,6 +10164,7 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 mod native_air_assault;
+mod native_production_contract;
 pub use air_city_assault::AirCityAssault;
 
 /// Policies and governors: the policy deck, the card checks, and governor
@@ -10627,6 +10643,10 @@ mod amphibious_siege_train;
 /// `anvil-garrisons-its-melee`: an unwalled city's Anvil garrisons its
 /// strongest melee soldier. See `advanced/anvil_garrisons_its_melee.rs`.
 mod anvil_garrisons_its_melee;
+/// `anvil-spares-the-one-blow`: the Anvil keeps the city tile and spares its
+/// soldiers posts where one blow removes them. See
+/// `advanced/anvil_spares_the_one_blow.rs`.
+mod anvil_spares_the_one_blow;
 mod aqueduct_claims_the_capped_queue;
 /// `astrology-before-the-second-city`: the Prophet race's Astrology before
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
@@ -10813,6 +10833,9 @@ mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
+/// `settler-shelters-from-the-war`: see
+/// `advanced/settler_shelters_from_the_war.rs`.
+mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -10833,6 +10856,9 @@ mod stalled_settler_site;
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
 mod threatened_city_purchase;
+/// `threatened-lane-lends-the-army`: see
+/// `advanced/threatened_lane_lends_the_army.rs`.
+mod threatened_lane_lends_the_army;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -11743,6 +11769,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
+            anvil_spares_the_one_blow: false,
             // ---- append: c-d ----------------------------------------
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
@@ -12269,6 +12296,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
+            settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
@@ -12403,6 +12431,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
             war_defense_spends_the_runway: false,
+            threatened_lane_lends_the_army: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -15385,9 +15414,6 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<f64> {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return None;
-        }
         let at_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -15395,6 +15421,14 @@ impl AdvancedAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
+        // `threatened-lane-lends-the-army`: every other lane borrows the same
+        // target while a home city is threatened. See
+        // `advanced/threatened_lane_lends_the_army.rs`.
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            && !self.threatened_lane_lends_the_army_applies(g, pid, plan, at_war)
+        {
+            return None;
+        }
         if !at_war
             && !matches!(
                 plan.strategy,

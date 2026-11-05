@@ -5103,6 +5103,44 @@ pub const GENES: &[Gene] = &[
     // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
     // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
     // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
     // about two thirds of live production prompts (480 vs 230 direct orders
     // in 072215Z), and each hint came from `advanced_production` alone. The

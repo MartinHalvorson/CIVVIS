@@ -198,3 +198,47 @@ fn the_gene_is_registered_and_off_by_default() {
     assert!(!AdvancedAi::new().backlog_builder_takes_the_queue);
     assert!(armed().backlog_builder_takes_the_queue);
 }
+
+/// `prod-tiles-call-the-builders`: charges that meet the stock 60% cover
+/// stop the stock claim. Under the gene the bare worked hills still call a
+/// Builder, and the governor holds it under the same quota.
+#[test]
+fn production_ground_claims_and_holds_past_the_stock_cover() {
+    let (mut game, capital, _second) = backlogged_empire();
+    let backlog = BasicAi::unimproved_worked_tiles(&game, 0);
+    let stock_quota = (backlog as f64 * BasicAi::WORKED_BACKLOG_COVER).ceil() as i32;
+    assert!(
+        stock_quota < backlog as i32,
+        "the fixture's stock cover sits below the backlog: {stock_quota} of {backlog}"
+    );
+    let home = game.cities[&capital].pos;
+    let uid = game.spawn_unit("builder", 0, home);
+    game.units.get_mut(&uid).unwrap().charges = stock_quota;
+
+    let stock = armed();
+    let mut off = game.clone();
+    let plan = stock.assess(&off, 0);
+    stock.claim_backlog_builder(&mut off, 0, &plan);
+    assert_eq!(builders_at_head(&off), 0, "the stock cover is met");
+
+    let mut ai = armed();
+    ai.enable_prod_tiles_call_the_builders();
+    let mut on = game.clone();
+    let plan = ai.assess(&on, 0);
+    ai.claim_backlog_builder(&mut on, 0, &plan);
+    assert_eq!(builders_at_head(&on), 1, "the production ground calls one");
+    let claimed = on
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| on.cities[cid].queue.first() == Some(&unit("builder")))
+        .unwrap();
+    let plan = ai.assess(&on, 0);
+    assert!(
+        ai.backlog_builder_holds(&on, 0, claimed, &plan, &unit("builder")),
+        "the governor keeps the Builder the gene claimed"
+    );
+    assert!(
+        !stock.backlog_builder_holds(&on, 0, claimed, &plan, &unit("builder")),
+        "the stock quota alone would not hold it"
+    );
+}
