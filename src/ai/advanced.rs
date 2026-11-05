@@ -7619,6 +7619,9 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `medina-yields-to-the-amenities`: the housing card is not wanted while
+    /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
+    medina_yields_to_the_amenities: bool,
     /// `luxury-asks-pay-in-strategics`: with no spare copy that fits, the
     /// luxury slot asks a partner for a type we lack and pays in strategics
     /// the army does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
@@ -8647,7 +8650,17 @@ pub struct AdvancedAi {
     /// whose every attacker is ranged on its centre-roll damage. See
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
+    /// `plaza-serves-the-scientist`: a Science seat's Government Plaza takes
+    /// the Ancestral Hall and the Intelligence Agency. Read by
+    /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
+    /// set each turn in `take_turn_inner`. Off by default.
+    plaza_serves_the_scientist: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
+    /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
+    /// left to steal), and the turn it last did. See
+    /// `AdvancedAi::racer_spy_post_for`.
+    steal_dry_cities: BTreeMap<u32, u32>,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -9354,6 +9367,11 @@ pub struct AdvancedAi {
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-defense-spends-the-runway`: while a major at war with us fields
+    /// 1.5x our military power and the treasury covers the deficit for 15
+    /// turns, the insolvency guard leaves the city queues to the war. See
+    /// `advanced/war_defense_spends_the_runway.rs`. Off by default.
+    war_defense_spends_the_runway: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -10138,6 +10156,9 @@ mod tactics;
 /// The unit turn: the per-unit step, kill priorities, and the religious,
 /// Trader and explorer steps. See `advanced/units.rs`.
 mod units;
+/// `war-defense-spends-the-runway`: see
+/// `advanced/war_defense_spends_the_runway.rs`.
+mod war_defense_spends_the_runway;
 /// War plans: choosing and keeping a war, its cost, and nuclear targets. See
 /// `advanced/war_plans.rs`.
 mod war_plans;
@@ -12073,6 +12094,7 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
             military_alliance_shield_ask: None,
@@ -12228,7 +12250,9 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
+            plaza_serves_the_scientist: false,
             // ---- append: s-s ----------------------------------------
+            steal_dry_cities: BTreeMap::new(),
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
@@ -12362,6 +12386,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
+            war_defense_spends_the_runway: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -20391,7 +20416,12 @@ impl AdvancedAi {
         let economic_recovery =
             g.players[pid].gold_per_turn < -0.5 && g.players[pid].gold < recovery_reserve;
         let emergency_defense = at_major_war && counts.military < city_count.max(1);
-        economic_recovery && !emergency_defense
+        // `war-defense-spends-the-runway`: a losing war the treasury can
+        // still carry keeps its queues. See
+        // `advanced/war_defense_spends_the_runway.rs`.
+        economic_recovery
+            && !emergency_defense
+            && !(at_major_war && self.war_defense_spends_the_runway_holds(g, pid))
     }
 
     /// Science must stop adding recurring expenses before a bankrupt queue
@@ -29294,6 +29324,9 @@ impl AdvancedAi {
         // `denial-spies-count-their-losses`: the base production fallback
         // reads this. See `advanced/denial_spies_count_their_losses.rs`.
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
+        // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
+        self.base.plaza_serves_science =
+            self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

@@ -113,6 +113,10 @@ const RACER_SPY_SAFE_OPERATIONS: &[&str] = &["listening_post", "gain_sources"];
 /// its Science a turn is at least this many times the leader's.
 pub(crate) const RACER_SCIENCE_EDGE: f64 = 1.25;
 
+/// `spies-steal-the-lead`: standard turns a city whose host menu offered a
+/// Spy of ours no Steal Tech Boost is passed over by the posts.
+pub(crate) const STEAL_DRY_MEMORY_TURNS: u32 = 20;
+
 /// Standard turns between two journal notes of slots held by captured agents.
 const RACER_SPY_SLOT_NOTE_TURNS: u32 = 10;
 
@@ -299,6 +303,7 @@ impl AdvancedAi {
             legal,
             search,
             false,
+            &BTreeMap::new(),
         )
     }
 
@@ -311,6 +316,15 @@ impl AdvancedAi {
     /// capital, no Campus) at turn 152, where the host offered only Foment
     /// Unrest and Listening Post, and it ran Gain Sources and Listening Posts
     /// to the end of the game.
+    ///
+    /// `dry` (the Science aim's `steal_dry_cities`) names the cities where
+    /// the host's menu offered a Spy of ours no steal, within
+    /// [`STEAL_DRY_MEMORY_TURNS`]. A Spy standing in a dry leader city also
+    /// moves when no Campus of the leader has been seen: to the most
+    /// populous leader city not dry. Live 080206Z: a Spy stood in Zulu cities
+    /// whose host menu held no Steal Tech Boost from turn 127 to 147 while no
+    /// Zulu Campus was known to the board. Under the gene the post's order
+    /// after a seen pad is: a seen Campus, a city not dry, the most populous.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn racer_spy_post_for(
         g: &Game,
@@ -322,6 +336,7 @@ impl AdvancedAi {
         legal: &[Action],
         search: Option<RacerSpySearch<'_>>,
         prefer_campus: bool,
+        dry_cities: &BTreeMap<u32, u32>,
     ) -> Option<u32> {
         let leader = leader?;
         let pid = g.spies.get(&spy)?.owner;
@@ -333,14 +348,21 @@ impl AdvancedAi {
         });
         // `spies-steal-the-lead`: a Spy in a leader city where it can neither
         // steal nor disrupt leaves for a free leader city with a seen Campus.
+        let dry = |cid: u32| {
+            prefer_campus
+                && dry_cities
+                    .get(&cid)
+                    .is_some_and(|seen| g.turn < seen + g.standard_duration(STEAL_DRY_MEMORY_TURNS))
+        };
         let campus_move = prefer_campus
             && !searching
             && here == Some(leader)
             && current_city.is_some_and(|city| {
-                !Self::racer_spy_seen_campus(g, pid, city)
+                (dry(city) || !Self::racer_spy_seen_campus(g, pid, city))
                     && !Self::racer_spy_seen_pad(g, pid, city)
             })
             && !Self::racer_spy_disrupt_offered(g, spy, legal);
+        let standing_dry = campus_move && current_city.is_some_and(dry);
         if (here == Some(leader) && !searching && !campus_move)
             || here.is_some_and(|owner| culture_racers.contains(&owner))
             || (here.is_some_and(|owner| racers.contains(&owner))
@@ -371,13 +393,24 @@ impl AdvancedAi {
             .map(|city| city.pos);
         let fresh =
             |cid: u32| search.is_none_or(|search| !Self::racer_spy_searched_lately(g, search, cid));
+        let assignable = |cid: u32| {
+            legal
+                .iter()
+                .any(|action| matches!(action, Action::AssignSpy { city, .. } if *city == cid))
+        };
+        let campus = |cid: u32| Self::racer_spy_seen_campus(g, pid, cid) && !dry(cid);
+        let campus_free = cities.iter().any(|cid| {
+            Some(*cid) != current_city && !held(*cid) && campus(*cid) && assignable(*cid)
+        });
         cities
             .into_iter()
             .filter(|cid| {
                 !held(*cid)
                     && Some(*cid) != current_city
                     && (!searching || seen_pad(*cid) || fresh(*cid))
-                    && (!campus_move || Self::racer_spy_seen_campus(g, pid, *cid))
+                    && (!campus_move
+                        || campus(*cid)
+                        || (standing_dry && !campus_free && !dry(*cid)))
                     && legal.iter().any(
                         |action| matches!(action, Action::AssignSpy { city, .. } if city == cid),
                     )
@@ -399,18 +432,21 @@ impl AdvancedAi {
                 } else {
                     (
                         None,
-                        city.is_capital,
+                        city.is_capital && !prefer_campus,
                         capital.map_or(0, |capital| g.wdist(capital, city.pos)),
                     )
                 };
+                let stealing = prefer_campus && !searching;
                 (
                     std::cmp::Reverse(seen_pad(*cid)),
-                    // `spies-steal-the-lead`: a Campus to steal from next.
-                    std::cmp::Reverse(
-                        prefer_campus && !searching && Self::racer_spy_seen_campus(g, pid, *cid),
-                    ),
+                    // `spies-steal-the-lead`: a Campus to steal from next,
+                    // then a city the host has not shown dry, then the
+                    // most populous.
+                    std::cmp::Reverse(stealing && campus(*cid)),
+                    std::cmp::Reverse(stealing && !dry(*cid)),
                     searched_at,
                     std::cmp::Reverse(capital_first),
+                    std::cmp::Reverse(if stealing { city.pop } else { 0 }),
                     distance,
                     *cid,
                 )

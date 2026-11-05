@@ -5074,6 +5074,28 @@ pub const GENES: &[Gene] = &[
     // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
     // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
     Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
+    // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
+    // Production in its city, a free Builder per new city) and the
+    // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
+    // the Warlord's Throne (pays only on captures) and the Grand Master's
+    // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
+    // Agency. See `BasicAi::plaza_building_item_for`.
+    Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
