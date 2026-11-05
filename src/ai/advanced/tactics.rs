@@ -1754,9 +1754,15 @@ impl AdvancedAi {
             let routed = score(g, pos) + crate::ai::LIVELOCK_ESCAPE_VALUE;
             if self.base.move_beats_holding(g, uid, routed, stay) {
                 if self.base.unit_objective_memory {
-                    let danger = self
-                        .base
-                        .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                    // `group-steps-read-the-field`: see `group_step_danger`.
+                    let danger = self.group_step_danger(
+                        g,
+                        pid,
+                        uid,
+                        pos,
+                        self.base
+                            .projected_counter_damage(g, uid, pos, &danger_hostiles),
+                    );
                     if self.base.remember_dangerous_approach(g, uid, pos, danger) {
                         return self
                             .base
@@ -1802,9 +1808,14 @@ impl AdvancedAi {
             // battle with zero units in contact.
             if !arena && self.base.unit_objective_memory {
                 let advancing = g.wdist(pos, target) < g.wdist(upos, target);
-                let danger = self
-                    .base
-                    .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                let danger = self.group_step_danger(
+                    g,
+                    pid,
+                    uid,
+                    pos,
+                    self.base
+                        .projected_counter_damage(g, uid, pos, &danger_hostiles),
+                );
                 if advancing && self.base.remember_dangerous_approach(g, uid, pos, danger) {
                     return self
                         .base
@@ -1845,9 +1856,14 @@ impl AdvancedAi {
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
                     if self.base.unit_objective_memory {
-                        let danger =
+                        let danger = self.group_step_danger(
+                            g,
+                            pid,
+                            uid,
+                            pos,
                             self.base
-                                .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                                .projected_counter_damage(g, uid, pos, &danger_hostiles),
+                        );
                         if self.base.remember_dangerous_approach(g, uid, pos, danger) {
                             return self
                                 .base
