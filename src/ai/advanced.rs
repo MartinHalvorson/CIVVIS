@@ -3339,6 +3339,10 @@ pub struct AdvancedAi {
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
+    /// Spy id → the turn its current `spy_orders_until` entry was set, so a
+    /// later turn that finds the Spy idle by the host's report spends it. See
+    /// `advanced/spy_patience_reads_the_host.rs`.
+    spy_order_turns: BTreeMap<u32, u32>,
 
     /// Whether a seat playing under an assigned victory target may still
     /// mount a denial against a rival at MATCH POINT. `victory_denial` has
@@ -10819,6 +10823,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// A Spy the host reports idle spends its order's patience. See
+/// `advanced/spy_patience_reads_the_host.rs`.
+mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11647,6 +11654,7 @@ impl AdvancedAi {
             spy_mission_patience: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
+            spy_order_turns: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
             projected_stock_denial: false,
