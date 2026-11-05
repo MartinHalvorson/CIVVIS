@@ -250,6 +250,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
+| `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `faith-war-before-the-flip-2` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip-2`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |

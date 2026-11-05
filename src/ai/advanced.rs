@@ -6614,6 +6614,9 @@ pub struct AdvancedAi {
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
+    /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
+    embassy_finds_the_capital_2: bool,
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
     /// Give a threatened sole capital opening defence priority. Opt-in.
@@ -12049,6 +12052,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
             // ---- append: e-f ----------------------------------------
+            embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
             founding_voyage: false,

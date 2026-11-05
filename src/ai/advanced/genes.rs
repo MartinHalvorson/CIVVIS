@@ -3862,6 +3862,14 @@ pub const GENES: &[Gene] = &[
     // capitals would have been revealed and 16 a median 7 turns sooner. See
     // `advanced/embassy_capital.rs`.
     Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // Version two of `embassy-finds-the-capital`: a Science aim sends the
+    // capital-revealing Resident Embassy too, the rival knowing the most
+    // technologies first. A Spy travels only to a city we have seen; in 22 of
+    // 30 live Deity technology games (2026-11-05) the winner's capital was
+    // unknown at Diplomatic Service, and the losses had a median of ~6 idle
+    // Spy-turns with Disrupt Rocketry offered against the win's 33. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital-2", field: "embassy_finds_the_capital_2", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital_2, disable: AdvancedAi::disable_embassy_finds_the_capital_2 },
     // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
     // none, buy an unowned Aluminum tile a city can buy, above the reserve.
     // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of

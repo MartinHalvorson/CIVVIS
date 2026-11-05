@@ -4770,6 +4770,15 @@
           "elimination-yields-to-a-launch-2": null
         }
       },
+      "embassy-finds-the-capital": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "embassy-finds-the-capital": null,
+          "embassy-finds-the-capital-2": null
+        }
+      },
       "eureka-chasing-builder": {
         "rule_on": [
           "eureka-chasing-builder-2"
