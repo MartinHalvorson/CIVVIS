@@ -51,6 +51,8 @@ use verification::*;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/campus_above_sea.rs"]
+mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
 #[path = "civvis_orders/formation_refusals.rs"]
@@ -5501,6 +5503,10 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let safer_campuses = campus_above_sea::retarget(ai, mirror_state, &mut orders);
+    if safer_campuses > 0 {
+        note_bits.push(format!("campus_above_the_sea={safer_campuses}"));
+    }
     let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
     if safer_pads > 0 {
         note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));

@@ -2245,6 +2245,8 @@ impl AdvancedAi {
         /// `plaza-serves-the-scientist`, which it carries); see
         /// `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_2 => enable_plaza_serves_the_scientist_2, disable_plaza_serves_the_scientist_2;
+        /// Prefer a safe legal site for a new native Science Campus.
+        campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
     }
 }
 

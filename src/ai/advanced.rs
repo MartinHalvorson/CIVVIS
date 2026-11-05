@@ -5581,6 +5581,8 @@ pub struct AdvancedAi {
     /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
     anvil_spares_the_one_blow: bool,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
     /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
     disrupt_waits_for_the_match_point: bool,
@@ -10723,6 +10725,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -11859,6 +11862,7 @@ impl AdvancedAi {
             breaker_spares_the_backlog_builder: false,
             anvil_spares_the_one_blow: false,
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
