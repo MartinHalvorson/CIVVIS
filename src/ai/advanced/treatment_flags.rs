@@ -2272,6 +2272,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `sewer-claims-the-capped-queue`; see
+        /// [`Self::sewer_claims_the_capped_queue`].
+        sewer_claims_the_capped_queue => enable_sewer_claims_the_capped_queue, disable_sewer_claims_the_capped_queue;
     }
 }
 
