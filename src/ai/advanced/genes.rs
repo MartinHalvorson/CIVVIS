@@ -5330,6 +5330,10 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // `sea-scout-claims-the-queue`: the contact gap's sea scout claims a working
+    // coastal queue once a hull can cross Ocean, instead of waiting for an idle
+    // one. See `advanced/contact_fleet.rs`.
+    Gene { tag: "sea-scout-claims-the-queue", field: "sea_scout_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue, disable: AdvancedAi::disable_sea_scout_claims_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

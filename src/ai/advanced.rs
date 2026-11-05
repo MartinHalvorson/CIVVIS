@@ -8776,6 +8776,11 @@ pub struct AdvancedAi {
     /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
+    /// `sea-scout-claims-the-queue`: once a hull can cross Ocean and the
+    /// contact gap is open, the coastal city that finishes it soonest lays down
+    /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
+    /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
@@ -12493,6 +12498,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             plaza_serves_the_scientist_3: false,
+            sea_scout_claims_the_queue: false,
             // ---- append: s-s ----------------------------------------
             science_seat_allies_2: false,
             spy_civics_come_first: false,
@@ -30289,6 +30295,9 @@ impl AdvancedAi {
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
+            // `sea-scout-claims-the-queue`: the same eye, from a working queue
+            // once it can cross Ocean. Exact no-op while the gene is off.
+            self.claim_queue_for_the_sea_scout(g, pid, &plan);
             self.reserve_idle_naval_recon(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for

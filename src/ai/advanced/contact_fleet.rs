@@ -59,6 +59,22 @@
 //! seat needs the unlocated capitals found as much as a Diplomatic seat needs
 //! the city-states (`find-the-capital` is land-only and needs ground already
 //! seen). Off, nothing changes.
+//!
+//! **`sea-scout-claims-the-queue`.** The hold above keeps a hull that is
+//! already queued; nothing lays one down in a working empire, because
+//! `reserve_idle_naval_recon` reads only empty queues and a busy seat's are
+//! never empty. 30 live Deity games of 2026-11-05 knew Cartography at a median
+//! t91 and had revealed a median 17.5% of the map at t100, 32.5% at t150, and
+//! met 4 of 9 city-states by t100. Ten of them had no ship at Cartography and
+//! took a mean 28 turns to start one (215700Z: Cartography t93, started t104 in
+//! whichever city was idle, at 33.3 turns; afloat t118; Hong Kong met t127).
+//! Each Scientific city-state pays +1 per Library, +2 per University and +3
+//! per Research Lab at 1, 3 and 6 Envoys, which the same games show on every
+//! Campus building; a late one cost a mean 544 Science a game and up to 3,029.
+//! So once a hull can cross Ocean and the contact gap is open, the coastal city
+//! that finishes it soonest puts it at the head of its queue, if nothing there
+//! outranks it ([`AdvancedAi::claim_queue_for_the_sea_scout`]). Off, nothing
+//! changes.
 
 use super::*;
 
@@ -66,6 +82,11 @@ use super::*;
 /// turns. A Caravel's fourth move saves a few turns of a long voyage; it is
 /// not worth twice the build in a city that makes 2 Production.
 pub(crate) const CONTACT_FLEET_FAST_HULL_MAX_STANDARD: u32 = 12;
+
+/// The longest `sea-scout-claims-the-queue` lets the claiming city take, in
+/// standard turns. The soonest city is chosen, so this only stops a seat whose
+/// every coast makes a couple of Production from giving up a district for it.
+const SEA_SCOUT_CLAIM_MAX_STANDARD: u32 = 24;
 
 impl BasicAi {
     /// Whether `pid` knows a city of `rival`: one on the board on a tile it
@@ -184,6 +205,93 @@ impl AdvancedAi {
             && !(city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
             && Self::production_commitment_is_legal(g, pid, cid, item)
             && BasicAi::city_has_naval_recon_launch(g, pid, cid)
+    }
+
+    /// `sea-scout-claims-the-queue`: whether `cid` may give its queue head to
+    /// the sea scout: safe, and holding nothing a steal Spy would not displace
+    /// either (no Wonder, Project, walls, Settler, Spy or soldier).
+    fn sea_scout_may_claim(&self, g: &Game, plan: &StrategicPlan, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        let attacked = city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4;
+        plan.threatened_city != Some(cid)
+            && !attacked
+            && city
+                .queue
+                .first()
+                .is_none_or(|head| Self::steal_spy_displaces(g, head))
+    }
+
+    /// `sea-scout-claims-the-queue`: lay down the sea scout the contact gap is
+    /// waiting on, in the city that finishes it soonest, instead of waiting for
+    /// a queue to fall idle. Fires only once a hull can cross Ocean, with the
+    /// gap open and no ship afloat or queued (`naval_recon_is_the_missing_arm`
+    /// counts both), so one claim stands until that ship is lost. `naval_eye_holds`
+    /// keeps it from there, which is why `contact-fleet` is required. See the
+    /// module.
+    pub(super) fn claim_queue_for_the_sea_scout(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.sea_scout_claims_the_queue
+            || !self.base.contact_fleet
+            || !BasicAi::naval_recon_can_cross_ocean(g, pid)
+            || !BasicAi::contact_fleet_gap(g, pid)
+            || !self.base.naval_recon_is_the_missing_arm(g, pid)
+            || self.base.naval_recon_yields_to_land_recon(g, pid)
+            || self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
+        {
+            return;
+        }
+        let claim = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| self.sea_scout_may_claim(g, plan, *cid))
+            .filter_map(|cid| {
+                let unit = self.base.best_naval_recon(g, pid, cid)?;
+                let item = Item::Unit {
+                    unit: Name::new(&unit),
+                };
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_remaining_cost_for_city(pid, cid, &item)
+                        / g.city_yields(cid).production.max(0.5)
+                });
+                Some((turns, cid, item))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        let Some((turns, city, item)) = claim else {
+            return;
+        };
+        if turns > g.standard_duration(SEA_SCOUT_CLAIM_MAX_STANDARD) as f64 {
+            return;
+        }
+        let displaced = g.cities[&city]
+            .queue
+            .first()
+            .map(Self::plain_item)
+            .unwrap_or_else(|| "nothing".to_string());
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
+        {
+            *g.players[pid]
+                .counters
+                .entry("sea_scout_claims".to_string())
+                .or_insert(0) += 1;
+            let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);
+            think!(self.journal(), Economy, Decision,
+                   "{} starts {} for the contact fleet", g.cities[&city].name,
+                   Self::plain_item(&item);
+                   "sea-scout-claims-the-queue: it goes ahead of {displaced} ({turns:.1} turns): \
+                    our hulls can cross Ocean, no ship of ours is charting, and {unmet} major(s) \
+                    are unmet, {unlocated} unlocated, or a city-state is still out there");
+        }
     }
 
     /// `contact-fleet`'s hold: the sea scout at the head of `cid` finishes
