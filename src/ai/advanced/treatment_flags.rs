@@ -2188,6 +2188,9 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `disrupt-waits-for-the-match-point`; see
+        /// `advanced/disrupt_waits_for_the_match_point.rs`.
+        disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;
     }
 }
 

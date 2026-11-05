@@ -5565,6 +5565,9 @@ pub struct AdvancedAi {
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
+    /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
+    disrupt_waits_for_the_match_point: bool,
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
     /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
@@ -10181,6 +10184,8 @@ mod medina_quarter;
 
 /// `disrupt-before-the-sources`: see `advanced/disrupt_before_the_sources.rs`.
 mod disrupt_before_the_sources;
+/// `disrupt-waits-for-the-match-point`: see `advanced/disrupt_waits_for_the_match_point.rs`.
+mod disrupt_waits_for_the_match_point;
 
 /// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
 mod unchosen_war_peace;
@@ -11694,6 +11699,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
+            disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,

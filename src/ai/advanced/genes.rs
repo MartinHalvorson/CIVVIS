@@ -5065,6 +5065,15 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
+    // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
+    // against 6-7% for Gain Sources / Listening Post, and no disruption
+    // visibly delayed a winner, whose 3rd -> 4th project took 5-10
+    // turns (Spain t168 -> t178, Zulu t157 -> t162, Phoenicia t155 -> t164).
+    // Disrupt only once the racer has landed three projects; before that the
+    // Spy steals, gains sources or listens. See
+    // `advanced/disrupt_waits_for_the_match_point.rs`.
+    Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
