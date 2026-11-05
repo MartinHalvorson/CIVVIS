@@ -1797,9 +1797,12 @@ impl AdvancedAi {
                 spec.is_melee_capable(),
             );
             let mut own: Vec<Candidate> = Vec::new();
+            let firing_post = self.defensive_firing_radius(g, pid, uid);
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
             for stand in stands {
+                let ranged_stand_allowed =
+                    firing_post.is_none_or(|(city, radius)| g.wdist(stand, city) <= radius);
                 if !targets
                     .iter()
                     .any(|target| g.wdist(stand, target.pos) <= range)
@@ -1813,6 +1816,7 @@ impl AdvancedAi {
                             continue;
                         }
                         if spec.has_ranged_attack()
+                            && ranged_stand_allowed
                             && board.ranged_order_is_legal(
                                 pid,
                                 uid,

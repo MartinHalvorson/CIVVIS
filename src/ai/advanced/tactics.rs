@@ -739,9 +739,10 @@ impl AdvancedAi {
             enemies,
             visible,
         } = input;
-        // A later movement pass must not undo an assigned city's defense
-        // by opening a shot farther away. Off, this guard always admits it.
-        if !self.defensive_strike_stays_in_reach(g, pid, group, uid, tile) {
+        if self
+            .defensive_firing_radius(g, pid, uid)
+            .is_some_and(|(city, radius)| g.wdist(tile, city) > radius)
+        {
             return f64::NEG_INFINITY;
         }
         if !self.strike_opening || group.posture != ForcePosture::Engage {

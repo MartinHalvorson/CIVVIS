@@ -14,12 +14,14 @@ An offline OFF/ON/ON/OFF diagnostic of the existing `capital-keeps-its-defender-
 
 Independent opt-in `defenders-keep-the-city-in-reach`, off in both controllers. For an assigned land **Defend** force whose own city is under fire:
 
-- form around that city instead of a distant exchange focus;
-- retain formation contacts within the existing two-tile wall-threat radius;
-- keep healthy combat slots inside the existing two-tile wall-defender radius.
+- the joint combat planner admits a healthy ranged member's firing stands within two tiles of the city, or no farther than its current stand while arriving;
+- the later formation uses the city and its nearby attackers, with combat slots inside the two-tile wall-defender radius;
+- the later discretionary movement score cannot restore a denied outward ranged firing position.
 
-A later tactical movement pass must also respect the assignment: a healthy engaging member cannot open a shot farther from the city than its present distance or the two-tile defender radius. Shots from the current stand remain available. The wounded-member recovery search retains its ordinary safe retreat range. Relieve, Siege, Reserve, missing assignments, unthreatened cities and arena formations retain their ordinary planning. The change is in formation placement; it does not replace the kill search or change combat rules.
+Shots from the current stand remain available. The wounded-member recovery search retains its ordinary safe retreat range. Melee blows, Relieve, Siege, Reserve, missing assignments, unthreatened cities and arena play retain their ordinary behavior. No combat rule changes.
 
 ## Validation status
 
-Four focused formation/recovery tests passed for the initial implementation. Its twelve controlled captured-input queries (204 registered reads) changed the formation journal but left all emitted orders identical, including the turn-29 scout pursuit. That nonfiring attempt is preserved; it is not a positive result. The current candidate adds the missing later movement guard and a regression for that handoff. Its build and captured-input validation are pending. The earlier defender-retention diagnostic concerns another gene and is not evidence that this candidate fires or improves outcomes. No deployment genome or win-rate claim is made.
+Four focused formation/recovery tests passed for the initial implementation. Two successive twelve-query controlled captured-input matrices (204 registered reads each) changed formation targets but left all emitted orders identical, including the turn-29 scout pursuit. Both nonfiring attempts are preserved. They exposed the earlier joint combat planner's firing-position choice; changing later passes alone cannot correct an already-spent move.
+
+The current candidate adds the firing-position restriction before the joint planner moves the shooter, and keeps the later handoffs consistent. Its nine focused regressions and current-candidate captured-input comparison are pending. No deployment genome, city-survival, native actuation or win-rate claim is made.
