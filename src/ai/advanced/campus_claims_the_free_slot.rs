@@ -31,6 +31,11 @@
 //! delegated governor's step, which reads the idle queue the claims and the
 //! routine military floor take first.
 //!
+//! Korea pursuing Science can claim its first slot at one citizen when the
+//! host quotes a Seowon within the existing Campus budget. Native Jinju at
+//! 43/0 offered an eight-turn Seowon but used its only slot for a Plaza.
+//! The ordinary picker still checks the actual site, slot and safety holds.
+//!
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
 //!
@@ -40,11 +45,6 @@
 //! 80: across its first five Emperor games 23 of the t45-65 city samples with
 //! a free slot and a buildable Campus were held back by the three-citizen
 //! floor alone, and the one-a-turn pace left others on a routine unit.
-//!
-//! Korea pursuing Science can claim its first slot at one citizen when the
-//! host quotes a Seowon within the existing Campus budget. Native Jinju at
-//! 43/0 offered an eight-turn Seowon but used its only slot for a Plaza.
-//! The ordinary picker still checks the actual site, slot and safety holds.
 
 use super::*;
 
