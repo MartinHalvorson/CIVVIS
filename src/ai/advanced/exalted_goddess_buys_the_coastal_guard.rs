@@ -4,7 +4,7 @@
 //! menu sells for Faith, ranged first, before the turn's Gold defender
 //! purchase. At most one ship per city every [`COASTAL_GUARD_COOLDOWN`]
 //! standard turns, and never a ship [`COASTAL_GUARD_ERAS_BEHIND`] or more
-//! eras behind the world.
+//! eras behind our own technology.
 //!
 //! **Why (live Deity Online Indonesia, 2026-11-05).** Gitarja's Exalted
 //! Goddess of the Three Worlds lets Indonesia buy naval units with Faith,
@@ -25,13 +25,14 @@ pub(super) const COASTAL_GUARD_REACH: i32 = 3;
 /// Standard turns between two ships bought for one city.
 pub(super) const COASTAL_GUARD_COOLDOWN: u32 = 4;
 
-/// Eras behind the world that bar a ship. One looser than
-/// `OBSOLETE_BUY_ERAS_BEHIND` (-af's Gold bar, two): Faith has no competing
-/// use here, and the world era is already Medieval by turn 60 at Deity
-/// Online, so the Gold bar refused the only ship on offer when an early war
-/// came. Live 224142Z: three coastal cities, 188 Faith at turn 60, a Galley
-/// at 60 Faith and no Shipbuilding; all three fell by turn 66. Turn 140's
-/// obsolete fleet (world era 6) stays barred.
+/// Eras behind the newest technology we know that bar a ship. Measured
+/// against our own technology, not `Game::world_era`: the world era is a
+/// clock here, one era about every 20 turns whatever anyone has researched
+/// (2 by turn 51, 6 by turn 131), so it refused the only ship on offer when
+/// an early war came. Live 224142Z: three coastal cities, 188 Faith at turn
+/// 60, a Galley at 60 Faith and no Shipbuilding; all three fell by turn 66.
+/// Three, not two, because a science beeline reaches one high-era technology
+/// long before the rest of the tree.
 pub(super) const COASTAL_GUARD_ERAS_BEHIND: usize = 3;
 
 /// Faith kept back after the purchase.
@@ -84,6 +85,12 @@ impl AdvancedAi {
             .collect();
         threatened.sort_unstable();
         let budget = g.players[pid].faith - COASTAL_GUARD_FAITH_RESERVE;
+        let tech_era = g.players[pid]
+            .techs
+            .iter()
+            .filter_map(|tech| g.rules.techs.get(tech).map(|spec| spec.era))
+            .max()
+            .unwrap_or(0);
         for (reach, cid) in threatened {
             let candidate = g
                 .legal_purchase_actions_for_city(pid, cid)
@@ -105,7 +112,7 @@ impl AdvancedAi {
                     let spec = g.rules.units.get(unit)?;
                     if spec.class != "military"
                         || !matches!(spec.domain.as_deref(), Some("sea"))
-                        || g.unit_era(unit.as_str()) + COASTAL_GUARD_ERAS_BEHIND <= g.world_era
+                        || g.unit_era(unit.as_str()) + COASTAL_GUARD_ERAS_BEHIND <= tech_era
                     {
                         return None;
                     }
