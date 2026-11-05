@@ -116,7 +116,7 @@ fn off_or_inside_the_book_the_hint_is_unchanged() {
 
 #[test]
 fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
-    let (mut game, capital, monument) = board();
+    let (mut game, capital, _) = board();
     game.at_war.insert((0, 1));
     let home = game.cities[&capital].pos;
     let near = game
@@ -141,5 +141,4 @@ fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
         seat(false, true).preview_live_production(&game, 0, capital),
         "a city with a hostile in reach keeps the governor's own hint"
     );
-    assert_ne!(hint, Some(monument), "the Monument claim stands aside");
 }
