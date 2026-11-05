@@ -5586,6 +5586,16 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
+    /// tiles of one of our cities counts as founded only when that city is
+    /// new since the last resolve, so a capture beside a standing city
+    /// scars the ground too. See `advanced/civilian_safety.rs`
+    /// (`resolve_vanished_settlers`). Off by default.
+    capture_scar_reads_the_new_city: bool,
+    /// Our city sites at the last `resolve_vanished_settlers`, read by
+    /// `capture-scar-reads-the-new-city`. `None` until the first resolve
+    /// under the gene, when the old any-city rule still answers.
+    capture_scar_city_sites: Option<BTreeSet<Pos>>,
     /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
     /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
     disrupt_waits_for_the_match_point: bool,
@@ -11354,6 +11364,7 @@ impl AdvancedAi {
         self.early_settler_homes.clear();
         self.hostile_last_seen.clear();
         self.settler_vanished.clear();
+        self.capture_scar_city_sites = None;
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.culture_curves.clear();
@@ -11898,6 +11909,8 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            capture_scar_reads_the_new_city: false,
+            capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,

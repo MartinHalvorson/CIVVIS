@@ -5275,6 +5275,14 @@ pub const GENES: &[Gene] = &[
     // through to Economic, Cultural or Religious, under its own per-kind
     // memory. See `military_alliance_shield.rs`.
     Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
+    // Live Deity Indonesia (11-05): 24 of 53 Settlers lost in 49 games
+    // vanished within two tiles of a city of ours, and the capture lessons
+    // read any such city as the founding, so 13 captures beside a standing
+    // city left no scar. 173830Z lost one at t96 one tile from its city; the
+    // next Settler walked to a site three tiles from that spot and was taken
+    // at t102. Under the gene only a city new since the last resolve counts
+    // as the founding. See `advanced/civilian_safety.rs`.
+    Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
     // `districts-price-the-improvement` (2026-11-04): 372 of 773 districts
     // the live seat placed (42 games, 11-04) went onto an improved tile — 120
     // on Farms, 61 on an improved Wheat/Rice/Maize/Cattle — because the
