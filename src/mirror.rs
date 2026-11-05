@@ -578,17 +578,15 @@ pub fn snapshot_from_events_at(
     let raw = read_events(path)?;
     let selected = latest_state_range(&raw, turn);
     let state_start = selected.map(|((start, _), _)| start);
-    // ★★★★ THE MOD WRITES THE TURN'S STATE FIRST AND ITS TILES SECOND.
+    // Historical native logs publish state before its terrain. Current opening
+    // exports publish terrain first so the Python worker cannot wake on a
+    // half-published board. Keep support for both layouts: pre-state chunks
+    // belong to the selected prefix; post-state chunks belong only when they
+    // match its turn and do not exceed its frame.
     //
-    // `beginTurn` in the mod is `exportState` then `exportTiles`, so in
-    // `events.jsonl` every turn's sweep and delta sit BELOW the state line
-    // they describe. Stopping at the state line therefore answered every
-    // board on the PREVIOUS turn's map — and turn 1 on no map at all: every
-    // live run of 2026-09-01 opened with "no revealed terrain or no state
-    // yet", 0 orders, and the first Settler skipped its first turn
-    // (`civvis-20260901T212354Z` … `T210954Z`, six of six). A tiles line
-    // below the selected state still belongs to it when it is the same turn
-    // and no later frame than the state's; a later frame's delta stays out
+    // The post-state rule fixed old logs whose turn-1 terrain otherwise vanished
+    // (six native runs on 2026-09-01 opened with no map and zero orders). It is
+    // still needed for historical replay, while a later frame's delta stays out
     // (`snapshot_stops_at_the_selected_state_before_a_later_mid_turn_delta`).
     let board = selected.map(|(_, board)| board);
     // In stream order, so a later chunk's plot wins whichever kind it is;
