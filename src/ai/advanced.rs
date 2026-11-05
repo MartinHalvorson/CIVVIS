@@ -9341,6 +9341,10 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs` (`slot_cost`, `position_end_tile`).
     /// Off by default.
     slots_survive_the_roll: bool,
+    /// `spies-steal-the-lead`: a Science seat's Spies steal Eurekas from the
+    /// rivals ahead instead of idling on Listening Posts. See
+    /// `advanced/spies_steal_the_lead.rs`. Off by default.
+    spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9689,6 +9693,16 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `walls-release-the-one-blow`: a ring defender that one visible
+    /// hostile blow at the top of its roll removes is not held on the walls
+    /// by `defenders-hold-the-walls`; the rotation and the doomed-blow veto
+    /// take it as they take any other unit. A unit on a City Center or
+    /// defending district keeps its post. See
+    /// `advanced/defenders_hold_the_walls.rs`. Off by default.
+    walls_release_the_one_blow: bool,
+    /// `walls-release-the-one-blow`: this frame's units of ours whose own
+    /// tile is one-blow lethal (filled by `plan_battle`).
+    walls_one_blow: BTreeSet<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10669,6 +10683,8 @@ mod siege_tier_before_the_beeline;
 mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+/// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
+mod spies_steal_the_lead;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -12328,6 +12344,7 @@ impl AdvancedAi {
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
+            spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -12388,6 +12405,8 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            walls_release_the_one_blow: false,
+            walls_one_blow: BTreeSet::new(),
         }
     }
 
@@ -33032,6 +33051,11 @@ impl AdvancedAi {
             // the turn still win). Exact no-op while the gene is off. See
             // `advanced/science_denial_trains_spies.rs`.
             self.claim_queues_for_denial_spies(g, pid, &plan);
+            // `spies-steal-the-lead`: before a racer exists, a Science seat
+            // trains the Spies its steals need, one at a time, under the same
+            // displacement rule. Exact no-op while the gene is off. See
+            // `advanced/spies_steal_the_lead.rs`.
+            self.claim_queues_for_steal_spies(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

@@ -2185,6 +2185,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `spies-steal-the-lead`; see
+        /// `advanced/spies_steal_the_lead.rs`.
+        spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
     }
 }
 
@@ -5081,6 +5084,17 @@ impl AdvancedAi {
     /// The twin of `enable_capital_keeps_its_defender_3`.
     pub fn disable_capital_keeps_its_defender_3(&mut self) {
         self.capital_keeps_its_defender_3 = false;
+    }
+
+    /// Opt-in gene `walls-release-the-one-blow`; see
+    /// [`Self::walls_release_the_one_blow`].
+    pub fn enable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = true;
+    }
+
+    /// The twin of `enable_walls_release_the_one_blow`.
+    pub fn disable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = false;
     }
 
     // ---- append: a-b ------------------------------------------------
