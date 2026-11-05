@@ -5212,6 +5212,10 @@ pub const GENES: &[Gene] = &[
     // turns and never disbands a unit within six tiles of an enemy soldier.
     // See `solvency.rs`.
     Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
+    // `captives-come-home`: the live bridge buys our captured Spies back from
+    // their captors while the network is short of its capacity, so their
+    // slots fill again. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
     // Version one's peace clause fired in the opening of 3 of the first 5
     // live carriers, on roaming Warriors at peace, and held the second
     // Settler up to ten turns (132817Z t16-23, 133505Z t13-18; both

@@ -6609,6 +6609,10 @@ pub struct AdvancedAi {
     /// Defend row, the parked strength enters its need and its risk. Off by
     /// default.
     capital_keeps_its_defender_3: bool,
+    /// `captives-come-home`: the live bridge buys our captured Spies back
+    /// when the network needs their slots. See
+    /// `advanced/captives_come_home.rs`. Off by default.
+    captives_come_home: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -10707,6 +10711,9 @@ mod campus_building_claims_the_queue;
 /// `campus-claims-the-free-slot`: a city's free district slot claims its
 /// first Campus. See `advanced/campus_claims_the_free_slot.rs`.
 mod campus_claims_the_free_slot;
+/// `captives-come-home`: the live bridge buys our captured Spies back. See
+/// `advanced/captives_come_home.rs`.
+mod captives_come_home;
 /// `civic-awaits-its-inspiration`: the civic chooser waits for a near
 /// inspiration. See `advanced/civic_inspiration_wait.rs`.
 mod civic_inspiration_wait;
@@ -12030,6 +12037,7 @@ impl AdvancedAi {
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
+            captives_come_home: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
