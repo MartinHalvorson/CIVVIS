@@ -189,7 +189,7 @@ impl AdvancedAi {
         }
         let enemies = Self::shield_enemies(g, pid);
         let domination = plan.strategy == GrandStrategy::Conquest
-            || self.victory_target == Some(VictoryTarget::Domination);
+            || self.active_victory_target(g) == Some(VictoryTarget::Domination);
         let border_turn = !domination && turn % SHIELD_CADENCE == pid as u32 % SHIELD_CADENCE;
         if enemies.is_empty() && !border_turn {
             return false;
