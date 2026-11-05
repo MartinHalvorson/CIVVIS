@@ -359,6 +359,13 @@ mod tests {
         ai.district_plan_adjust_menu_scores(&g, &plan, cid, &rows, &items, &mut protected);
         let charge = ai.seowon_site_loss_score(&g, 0, cid, &items[0], plan.strategy);
         assert!(charge > 0.0);
+        let counts = ai.counts(&g, 0);
+        let raw_difference = control.production_value(&g, 0, cid, &items[0], &plan, &counts)
+            - ai.production_value(&g, 0, cid, &items[0], &plan, &counts);
+        assert!(
+            (raw_difference - charge).abs() < 1e-9,
+            "the floor charge must match the ordinary production scorer's loss"
+        );
         assert!(
             (ordinary[0] - protected[0] - charge).abs() < 1e-9,
             "the planner floor must not erase the Seowon charge"
