@@ -4957,6 +4957,15 @@
           "lane-delegates-production-2": null
         }
       },
+      "luxury-asks-pay-in-strategics": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-asks-pay-in-strategics": null,
+          "luxury-asks-pay-in-strategics-2": null
+        }
+      },
       "luxury-swap-asks": {
         "rule_on": [],
         "head": null,
