@@ -42,10 +42,14 @@ fn a_soldier_condemns_a_banned_faith_at_peace() {
         let (mut g, mut ai, guard, missionary) = fixture("Orthodoxy", adjacent);
         ban(&mut g, "Orthodoxy");
         assert!(!g.is_at_war(0, 2), "the fixture is at peace");
-        let favor = g.players[0].favor;
+        let favor = g.players[0].diplomatic_favor;
         assert!(ai.condemn_step(&mut g, 0, guard));
         assert!(!g.units.contains_key(&missionary), "the Missionary is gone");
-        assert_eq!(g.players[0].favor, favor + 25, "option B pays 25 Favor");
+        assert_eq!(
+            g.players[0].diplomatic_favor,
+            favor + 25.0,
+            "option B pays 25 Favor"
+        );
     }
 }
 
