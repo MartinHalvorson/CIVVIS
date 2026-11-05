@@ -41505,3 +41505,44 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
 }
 
 mod recovery_before_amenities;
+
+// `science-writes-before-it-sails`. See `advanced/research.rs`.
+
+#[test]
+fn science_writes_before_it_sails_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "science_writes_before_it_sails"
+        && gene.tag == "science-writes-before-it-sails"));
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.science_writes_before_it_sails,
+        "production ships it off"
+    );
+    ai.enable_science_writes_before_it_sails();
+    assert!(ai.science_writes_before_it_sails);
+    ai.disable_science_writes_before_it_sails();
+    assert!(!ai.science_writes_before_it_sails);
+}
+
+#[test]
+fn a_science_seat_values_writing_above_the_sailing_goal() {
+    let (game, _city, _center) = planning_capital();
+    let mut ai = AdvancedAi::new();
+    ai.retarget(VictoryTarget::Science);
+    let off = ai.tech_value(&game, 0, "writing", GrandStrategy::Science);
+    ai.enable_science_writes_before_it_sails();
+    let on = ai.tech_value(&game, 0, "writing", GrandStrategy::Science);
+    assert!(
+        (on - off - super::research::WRITING_BEFORE_SAILING_VALUE).abs() < 1e-9,
+        "the bonus is exactly the constant: {off} -> {on}"
+    );
+    // Another lane gets nothing.
+    let mut plain = AdvancedAi::new();
+    plain.retarget(VictoryTarget::Domination);
+    let base = plain.tech_value(&game, 0, "writing", GrandStrategy::Science);
+    plain.enable_science_writes_before_it_sails();
+    assert_eq!(
+        plain.tech_value(&game, 0, "writing", GrandStrategy::Science),
+        base
+    );
+}

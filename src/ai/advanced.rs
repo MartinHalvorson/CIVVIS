@@ -9434,6 +9434,10 @@ pub struct AdvancedAi {
     /// rivals ahead instead of idling on Listening Posts. See
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
+    /// `science-writes-before-it-sails`: a Science seat researches Writing
+    /// ahead of the coastal Sailing goal. See `advanced/research.rs`. Off by
+    /// default.
+    science_writes_before_it_sails: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -12511,6 +12515,7 @@ impl AdvancedAi {
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
+            science_writes_before_it_sails: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,

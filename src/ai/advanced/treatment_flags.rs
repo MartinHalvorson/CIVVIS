@@ -2241,6 +2241,9 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `science-writes-before-it-sails`; see
+        /// [`Self::science_writes_before_it_sails`].
+        science_writes_before_it_sails => enable_science_writes_before_it_sails, disable_science_writes_before_it_sails;
     }
 }
 

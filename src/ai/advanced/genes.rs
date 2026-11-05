@@ -5232,6 +5232,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // `science-writes-before-it-sails` (2026-11-05): live Deity Korea took
+    // the coastal Sailing goal (+190 research value) ~t20 and Writing only at
+    // a median t31, the first Seowon at t45; Writing needs only Pottery. A
+    // Science seat now values Writing above it, and from its first city once
+    // Pottery is in it also takes `science-writing-before-the-luxury`'s slot
+    // ahead of the Irrigation luxury (that gene waits for two cities; live
+    // founds the second ~t48). See `advanced/research.rs`.
+    Gene { tag: "science-writes-before-it-sails", field: "science_writes_before_it_sails", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writes_before_it_sails, disable: AdvancedAi::disable_science_writes_before_it_sails },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

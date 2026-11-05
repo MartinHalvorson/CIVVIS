@@ -240,3 +240,30 @@ fn the_native_opt_in_ships_off_in_both_controllers() {
         |ai| ai.science_writing_before_the_luxury,
     );
 }
+
+#[test]
+fn science_writes_before_it_sails_takes_the_slot_from_the_first_city() {
+    let one_city = |pottery: bool, sails: bool, luxury: bool| {
+        let (mut g, mut ai, _plan) = first_city_opening();
+        // Not Korea: the older gene opens Korea's first city itself.
+        g.players[0].civ = "Indonesia".to_string();
+        if !pottery {
+            g.players[0].techs.remove(&Name::new("pottery"));
+        }
+        if sails {
+            ai.enable_science_writes_before_it_sails();
+        }
+        if luxury {
+            ai.enable_science_writing_before_the_luxury();
+        }
+        assert_eq!(g.player_city_ids(0).len(), 1);
+        ai.science_writing_before_the_luxury_goal(&g, 0)
+    };
+    // The two-city gene alone waits for a non-Korean seat's second city.
+    assert_eq!(one_city(true, false, true), None);
+    // Under the sailing gene the first city takes Writing once Pottery is in.
+    assert_eq!(one_city(true, true, false), Some("writing"));
+    assert_eq!(one_city(false, true, false), None);
+    // Neither gene: nothing.
+    assert_eq!(one_city(true, false, false), None);
+}

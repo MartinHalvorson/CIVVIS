@@ -345,6 +345,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
+| `science-writes-before-it-sails` | off (unmeasured) | Opt-in gene `science-writes-before-it-sails`; see `Self::science_writes_before_it_sails`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `settler-shelters-from-the-war` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
