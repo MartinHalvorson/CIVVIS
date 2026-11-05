@@ -5151,6 +5151,25 @@ pub const GENES: &[Gene] = &[
     // the gene those claims stand aside while a war with a major threatens a
     // home city. See `threatened_war_holds_the_claims.rs`.
     Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range and never fired:
+    // one was the Settler's reserved guard (the kill search skips reserved
+    // guards) and the other was ruled doomed (three Spearmen near every
+    // stand). Their two shots, about 20 each on 38 hp, fell it at the centre
+    // but not at KILL_MARGIN. Under the gene a recovering, guarding or doomed
+    // shooter's ranged blow from its own tile joins the plan as kill-only.
+    // See `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
+    // The strategic scorer prices a land unit at power x 4 + 58 per missing
+    // body, and only the one named threatened city adds a war term. So in
+    // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
+    // chose a Stock Exchange at 104 over any defender at about 52, and the
+    // seat was eliminated at t203. Under the gene, a missing land unit gains
+    // 350 x the enemy-to-our power ratio (1.5 to 3) while that major is at war
+    // with us and a home city is threatened. See
+    // `outmatched_war_prices_the_army.rs`.
+    Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // ---- append: a-b ------------------------------------------------

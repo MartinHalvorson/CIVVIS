@@ -2217,6 +2217,9 @@ impl AdvancedAi {
         /// `builders-cover-the-worked-backlog`'s step. See
         /// `ai/prod_tiles_call_the_builders.rs`.
         base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `outmatched-war-prices-the-army`; see
+        /// `advanced/outmatched_war_prices_the_army.rs`.
+        outmatched_war_prices_the_army => enable_outmatched_war_prices_the_army, disable_outmatched_war_prices_the_army;
         /// Opt-in gene `threatened-war-holds-the-claims`; see
         /// `advanced/threatened_war_holds_the_claims.rs`.
         threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
@@ -5138,6 +5141,17 @@ impl AdvancedAi {
     /// The twin of `enable_anvil_spares_the_one_blow`.
     pub fn disable_anvil_spares_the_one_blow(&mut self) {
         self.anvil_spares_the_one_blow = false;
+    }
+
+    /// Opt-in gene `ranged-kills-are-free`; see
+    /// [`Self::ranged_kills_are_free`].
+    pub fn enable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = true;
+    }
+
+    /// The twin of `enable_ranged_kills_are_free`.
+    pub fn disable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = false;
     }
 
     // ---- append: a-b ------------------------------------------------

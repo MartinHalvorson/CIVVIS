@@ -7624,6 +7624,11 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
+    /// while a major at 1.5x our power is at war with us and a home city is
+    /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
+    /// default.
+    outmatched_war_prices_the_army: bool,
     /// `medina-yields-to-the-amenities`: the housing card is not wanted while
     /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
     medina_yields_to_the_amenities: bool,
@@ -8670,6 +8675,12 @@ pub struct AdvancedAi {
     /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
     /// set each turn in `take_turn_inner`. Off by default.
     plaza_serves_the_scientist: bool,
+    /// `ranged-kills-are-free`: a recovering, guarding or doomed shooter's
+    /// ranged blow from its own tile joins the kill plan as kill-only — only
+    /// in a sequence that fells its target at the centre of the roll, and
+    /// without the stand's danger charged to it. See
+    /// `advanced/battle_planner.rs`. Off by default.
+    ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
@@ -10412,6 +10423,9 @@ mod one_war;
 /// stands down. Opt-in gene `outclassed-siege-stands-down`; see
 /// `advanced/outclassed_siege.rs`.
 mod outclassed_siege;
+/// `outmatched-war-prices-the-army`: see
+/// `advanced/outmatched_war_prices_the_army.rs`.
+mod outmatched_war_prices_the_army;
 /// Our own column is not the host's refusal: the live bridge reports which
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
@@ -12143,6 +12157,7 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            outmatched_war_prices_the_army: false,
             medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
@@ -12303,6 +12318,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             plaza_serves_the_scientist: false,
+            ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
@@ -24239,6 +24255,17 @@ impl AdvancedAi {
                         + early_contact
                         + early_archer
                         + conquest_body
+                        // `outmatched-war-prices-the-army`: a missing land
+                        // unit outweighs the economy while a much stronger
+                        // major threatens a home city. Zero with the gene
+                        // off. See `advanced/outmatched_war_prices_the_army.rs`.
+                        + self.outmatched_war_unit_premium(
+                            g,
+                            pid,
+                            plan,
+                            !naval && !aircraft,
+                            force_gap,
+                        )
                         + if missing_siege {
                             siege_production::FIRST_WEAPON_RESERVATION
                         } else {
