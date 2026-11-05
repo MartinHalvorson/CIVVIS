@@ -156,7 +156,13 @@ impl AdvancedAi {
     /// Science and Farms +1 Food that the model lacked). An unimproved Hills
     /// plot beside the site counts half a Science, the Mine it will most likely
     /// carry. Only the planner's valuation changes; the rules are untouched.
-    fn three_kingdoms_site_yields(&self, g: &Game, pid: usize, district: Name, pos: Pos) -> Yields {
+    pub(super) fn three_kingdoms_site_yields(
+        &self,
+        g: &Game,
+        pid: usize,
+        district: Name,
+        pos: Pos,
+    ) -> Yields {
         let mut yields = Yields::default();
         if !self.korea_reads_three_kingdoms
             || district != crate::name!("seowon")
