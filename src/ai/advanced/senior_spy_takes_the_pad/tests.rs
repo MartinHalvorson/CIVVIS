@@ -100,7 +100,6 @@ fn racer_with_a_pad() -> (Game, u32, u32, u32, u32) {
 
 fn on() -> AdvancedAi {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.enable_disrupt_waits_for_the_match_point();
     ai.enable_senior_spy_takes_the_pad();
     ai
 }
@@ -122,22 +121,12 @@ fn the_senior_takes_the_pad_and_the_junior_moves_on() {
 }
 
 #[test]
-fn no_swap_off_at_the_floor_or_without_a_senior() {
+fn no_swap_off_or_without_a_free_senior() {
     let (g, _, _, junior, senior) = racer_with_a_pad();
     let ids = [junior, senior];
     // Off.
     let mut off = AdvancedAi::targeting(VictoryTarget::Science);
-    off.enable_disrupt_waits_for_the_match_point();
     assert!(!off.senior_spy_swap_pass(&mut g.clone(), 0, Some(1), &ids));
-    // At the floor: three stages landed.
-    let mut late = g.clone();
-    for project in ["launch_moon_landing", "launch_mars_reactor"] {
-        late.players[1].science_projects.insert(project.to_string());
-    }
-    let mut ai = on();
-    if AdvancedAi::science_denial_stages(&late, 1) >= ai.disrupt_from_stages() {
-        assert!(!ai.senior_spy_swap_pass(&mut late, 0, Some(1), &ids));
-    }
     // The holder is the senior one.
     let mut even = g.clone();
     even.spies.get_mut(&senior).unwrap().level = 0;

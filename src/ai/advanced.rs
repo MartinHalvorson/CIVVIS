@@ -8702,9 +8702,8 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs`. Off by default.
     ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
-    /// `senior-spy-takes-the-pad`: before the leader's stage floor, our
-    /// highest-level free Spy takes the post in its seen-pad city from a
-    /// lower-level holder. See `advanced/senior_spy_takes_the_pad.rs`.
+    /// `senior-spy-takes-the-pad`: our highest-level free Spy takes the post
+    /// in the leading racer's seen-pad city from a lower-level holder. See `advanced/senior_spy_takes_the_pad.rs`.
     senior_spy_takes_the_pad: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing

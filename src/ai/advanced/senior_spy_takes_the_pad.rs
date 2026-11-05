@@ -1,7 +1,6 @@
-//! `senior-spy-takes-the-pad`: before the leading space racer reaches the
-//! stage floor where Disrupt Rocketry runs, our highest-level free Spy takes
-//! the post in its Spaceport city from a lower-level Spy, which moves on to
-//! another of the leader's cities.
+//! `senior-spy-takes-the-pad`: our highest-level free Spy takes the post in
+//! the leading space racer's Spaceport city from a lower-level Spy, which
+//! moves on to another of the leader's cities.
 //!
 //! Each Spy picks its own post (`racer_spy_post_for`): a Spy standing in a
 //! racer's city stays, and every other Spy skips a city one of ours already
@@ -14,14 +13,14 @@
 //! side by side on most turns from 150 (39 of 50 in 122513Z, 32 of 32 in
 //! 125414Z).
 //!
-//! Under the gene, while the leader has landed fewer space projects than the
-//! floor (`disrupt_from_stages`: three under
-//! `disrupt-waits-for-the-match-point`, where the Disrupt is withheld anyway,
-//! so the swap costs no disruption), once a turn: the leader's seen-pad city
-//! that a Spy of ours holds, the holder free (no order of ours still running)
-//! and a free Spy of a higher level outside every seen pad city, not
-//! captured. The holder goes to a free leader city (a Campus we have seen
-//! first, then the most populous), and the senior goes to the pad city.
+//! Under the gene, once a turn: the leader's seen-pad city that a Spy of
+//! ours holds, the holder free (no order of ours still running: a Disrupt in
+//! progress is never cut short) and a free Spy of a higher level outside
+//! every seen pad city, not captured. The holder goes to a free leader city
+//! (a Campus we have seen first, then the most populous), and the senior goes
+//! to the pad city. At any stage: the one Deity win (122513Z) ran 14 of its
+//! 17 Disrupts against rivals with one or two projects landed and froze Mali
+//! at two, so the senior is wanted on the pad from the first launch on.
 //! Off: unchanged.
 
 use super::*;
@@ -49,10 +48,6 @@ impl AdvancedAi {
             return false;
         };
         let landed = Self::science_denial_stages(g, leader);
-        let floor = self.disrupt_from_stages();
-        if landed >= floor {
-            return false;
-        }
         let Some((holder, senior, pad, post)) = self.senior_spy_swap(g, pid, leader, ids) else {
             return false;
         };
@@ -87,8 +82,8 @@ impl AdvancedAi {
             think!(self.journal(), Military, Decision,
                    "A level {} Spy takes the post at {city} from a level {} Spy",
                    senior_level + 1, holder_level + 1;
-                   "senior-spy-takes-the-pad: {civ} has landed {landed} of the {floor} space projects \
-                    before the Disrupt; the senior's odds are the better ones");
+                   "senior-spy-takes-the-pad: {civ} has landed {landed} space project(s); the \
+                    senior's Disrupt odds are the better ones");
         }
         true
     }
