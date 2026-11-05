@@ -753,7 +753,11 @@ impl AdvancedAi {
                 // deliberately much smaller than the gap between Campus,
                 // support, Zone, and other core floors.
                 let order_offset = (row.order as f64 * 0.25).min(3.0);
-                *score = score.max(floor - order_offset);
+                // Raising a planned item to its type's floor must not erase
+                // the Science its site removes from neighboring Seowons.
+                let seowon_charge =
+                    self.seowon_site_loss_score(g, city.owner, cid, item, plan.strategy);
+                *score = score.max(floor - order_offset - seowon_charge);
                 continue;
             }
             // Encampments, Aerodromes, and Spaceports have tactical or

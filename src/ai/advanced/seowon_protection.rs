@@ -90,6 +90,31 @@ impl AdvancedAi {
         loss
     }
 
+    /// The same charge in final production-score units. A coordinated plan
+    /// may raise an item's score to an infrastructure floor; that floor must
+    /// still pay the site cost already priced into the ordinary raw score.
+    pub(super) fn seowon_site_loss_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+        lane: GrandStrategy,
+    ) -> f64 {
+        if !self.districts_protect_seowon_science {
+            return 0.0;
+        }
+        let Item::District { district, pos } = item else {
+            return 0.0;
+        };
+        let loss = self.seowon_site_loss_value(g, pid, *district, *pos, lane);
+        if loss <= 0.0 {
+            return 0.0;
+        }
+        let turns = self.production_build_turns(g, pid, cid, item);
+        loss * 60.0 / self.production_time_divisor(g, cid, item, turns)
+    }
+
     /// The ordinary menu keeps two district sites ranked by their own yield.
     /// When a city has a nearby owned Seowon, admit every legal alternative
     /// for the district kinds already offered, so a clean site can compete.
@@ -293,6 +318,58 @@ mod tests {
         );
         g.cities.get_mut(&cid).unwrap().owner = 1;
         assert_eq!(loss(&ai, &g, site, "theater_square"), 0.0);
+    }
+
+    #[test]
+    fn seowon_protection_survives_planner_floors_without_double_charging() {
+        use crate::ai::advanced::district_planning::PlannedDistrict;
+        let (g, cid, _, site) = fixture();
+        let mut ai = on();
+        ai.enable_campus_through_expansion();
+        ai.enable_district_planning_3();
+        let mut control = AdvancedAi::targeting(VictoryTarget::Science);
+        control.enable_campus_through_expansion();
+        control.enable_district_planning_3();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let district = crate::name!("theater_square");
+        let items = vec![Item::District {
+            district,
+            pos: site,
+        }];
+        let rows = vec![PlannedDistrict {
+            district,
+            family: district,
+            pos: site,
+            support: false,
+            order: 0,
+            purchase: None,
+            owned_fallback: None,
+        }];
+        let mut ordinary = vec![-500.0];
+        let mut protected = ordinary.clone();
+        control.district_plan_adjust_menu_scores(&g, &plan, cid, &rows, &items, &mut ordinary);
+        ai.district_plan_adjust_menu_scores(&g, &plan, cid, &rows, &items, &mut protected);
+        let charge = ai.seowon_site_loss_score(&g, 0, cid, &items[0], plan.strategy);
+        assert!(charge > 0.0);
+        assert!(
+            (ordinary[0] - protected[0] - charge).abs() < 1e-9,
+            "the planner floor must not erase the Seowon charge"
+        );
+        let already_priced = 1_000.0 - charge;
+        let mut high = vec![already_priced];
+        ai.district_plan_adjust_menu_scores(&g, &plan, cid, &rows, &items, &mut high);
+        assert_eq!(
+            high[0], already_priced,
+            "a raw score above the floor must not pay twice"
+        );
     }
 
     #[test]
