@@ -7628,9 +7628,6 @@ pub struct AdvancedAi {
     /// zone's Workshop) at the head of its queue over a deferrable head. See
     /// `advanced/industrial_zone_claims_the_producer_queue.rs`. Off by default.
     industrial_zone_claims_the_producer_queue: bool,
-    /// Science cities may finish a short University before industrial claims.
-    /// See `advanced/universities_before_the_forge.rs`. Off by default.
-    universities_before_the_forge: bool,
     /// `industrial-zone-claims-the-factory`: once Industrialization is known,
     /// the zone city whose Factory reaches the most new cities (then, with
     /// Coal, the Factory city whose plant powers the most Factories) puts it
@@ -9567,6 +9564,9 @@ pub struct AdvancedAi {
     /// defender the city could train, and keeps the Gold otherwise. Runs the
     /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
     threatened_city_buys_its_defender_2: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -12308,7 +12308,6 @@ impl AdvancedAi {
             granary_claims_the_bound_queue: false,
             gold_buys_the_settler: false,
             industrial_zone_claims_the_producer_queue: false,
-            universities_before_the_forge: false,
             industrial_zone_claims_the_factory: false,
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
@@ -12648,6 +12647,7 @@ impl AdvancedAi {
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
+            universities_before_the_forge: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
