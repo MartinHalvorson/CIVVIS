@@ -10849,12 +10849,12 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
-/// A Spy the host reports idle spends its order's patience. See
-/// `advanced/spy_patience_reads_the_host.rs`.
-mod spy_patience_reads_the_host;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
 mod spy_civics_come_first;
+/// A Spy the host reports idle spends its order's patience. See
+/// `advanced/spy_patience_reads_the_host.rs`.
+mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
