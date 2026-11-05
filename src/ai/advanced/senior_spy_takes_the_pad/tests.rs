@@ -110,7 +110,7 @@ fn the_senior_takes_the_pad_and_the_junior_moves_on() {
     let ai = on();
     let ids = [junior, senior];
     assert_eq!(
-        ai.senior_spy_swap(&g, 0, 1, &ids),
+        ai.senior_spy_swap(&g, 0, &[1], &ids),
         Some((junior, senior, capital, second))
     );
     let mut ai = ai;
@@ -118,6 +118,11 @@ fn the_senior_takes_the_pad_and_the_junior_moves_on() {
     assert!(ai.senior_spy_swap_pass(&mut swapped, 0, Some(1), &ids));
     assert!(ai.spy_orders_until.contains_key(&junior));
     assert!(ai.spy_orders_until.contains_key(&senior));
+    // No named leader (the live seat, `racer-keeps-the-spies` off): every
+    // major rival is read, and the swap is the same.
+    let mut unnamed = on();
+    let mut swapped = g.clone();
+    assert!(unnamed.senior_spy_swap_pass(&mut swapped, 0, None, &ids));
 }
 
 #[test]
@@ -130,9 +135,9 @@ fn no_swap_off_or_without_a_free_senior() {
     // The holder is the senior one.
     let mut even = g.clone();
     even.spies.get_mut(&senior).unwrap().level = 0;
-    assert_eq!(on().senior_spy_swap(&even, 0, 1, &ids), None);
+    assert_eq!(on().senior_spy_swap(&even, 0, &[1], &ids), None);
     // The holder's last order is still running.
     let mut busy = on();
     busy.spy_orders_until.insert(junior, g.turn + 3);
-    assert_eq!(busy.senior_spy_swap(&g, 0, 1, &ids), None);
+    assert_eq!(busy.senior_spy_swap(&g, 0, &[1], &ids), None);
 }

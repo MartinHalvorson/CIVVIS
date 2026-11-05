@@ -33,7 +33,7 @@ impl AdvancedAi {
     }
 
     /// The swap, once a turn, before the per-Spy pass. Returns whether one
-    /// was made. Never with the gene off or without a leader.
+    /// was made. Never with the gene off.
     pub(super) fn senior_spy_swap_pass(
         &mut self,
         g: &mut Game,
@@ -44,13 +44,31 @@ impl AdvancedAi {
         if !self.senior_spy_takes_the_pad {
             return false;
         }
-        let Some(leader) = leader else {
+        // The racer `racer-keeps-the-spies` names, else every major rival,
+        // the most space projects landed first: the live seat runs its
+        // denial through `science-denial-every-pad`, with no named leader.
+        let owners: Vec<usize> = match leader {
+            Some(leader) => vec![leader],
+            None => {
+                let mut rivals: Vec<usize> = (0..g.players.len())
+                    .filter(|seat| {
+                        *seat != pid && !g.players[*seat].is_minor && !g.players[*seat].is_barbarian
+                    })
+                    .collect();
+                rivals.sort_by_key(|seat| {
+                    (
+                        std::cmp::Reverse(Self::science_denial_stages(g, *seat)),
+                        *seat,
+                    )
+                });
+                rivals
+            }
+        };
+        let Some((holder, senior, pad, post)) = self.senior_spy_swap(g, pid, &owners, ids) else {
             return false;
         };
-        let landed = Self::science_denial_stages(g, leader);
-        let Some((holder, senior, pad, post)) = self.senior_spy_swap(g, pid, leader, ids) else {
-            return false;
-        };
+        let owner = g.cities[&pad].owner;
+        let landed = Self::science_denial_stages(g, owner);
         let assign = |g: &Game, spy: u32, city: u32| {
             g.legal_spy_actions(pid, spy)
                 .into_iter()
@@ -77,7 +95,7 @@ impl AdvancedAi {
             .or_insert(0) += 1;
         if self.journal().wants(crate::reasoning::Level::Decision) {
             let city = g.cities[&pad].name.clone();
-            let civ = g.players[leader].civ.clone();
+            let civ = g.players[owner].civ.clone();
             let (senior_level, holder_level) = (g.spies[&senior].level, g.spies[&holder].level);
             think!(self.journal(), Military, Decision,
                    "A level {} Spy takes the post at {city} from a level {} Spy",
@@ -89,12 +107,12 @@ impl AdvancedAi {
     }
 
     /// The swap to make, if any: `(holder, senior, pad city, holder's new
-    /// post)`.
+    /// post)`, over `owners`' seen-pad cities in order.
     pub(super) fn senior_spy_swap(
         &self,
         g: &Game,
         pid: usize,
-        leader: usize,
+        owners: &[usize],
         ids: &[u32],
     ) -> Option<(u32, u32, u32, u32)> {
         let ours: Vec<&Spy> = ids
@@ -108,7 +126,11 @@ impl AdvancedAi {
             spy.city
                 .is_some_and(|city| Self::racer_spy_seen_pad(g, pid, city))
         };
-        for pad in g.player_city_ids(leader) {
+        for (leader, pad) in owners.iter().flat_map(|leader| {
+            g.player_city_ids(*leader)
+                .into_iter()
+                .map(move |pad| (*leader, pad))
+        }) {
             if !Self::racer_spy_seen_pad(g, pid, pad) {
                 continue;
             }
