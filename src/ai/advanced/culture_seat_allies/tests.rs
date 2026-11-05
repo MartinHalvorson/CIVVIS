@@ -260,3 +260,44 @@ fn a_science_seat_keeps_waiting_for_a_research_alliance() {
         "no stock kind while our tree lacks Scientific Theory"
     );
 }
+
+/// `science-seat-allies-2`: before Diplomatic Service, with no Research
+/// Alliance yet legal, the Science seat asks a safe rival for a Military
+/// Alliance; once Diplomatic Service is ours it waits again like version one.
+#[test]
+fn a_science_seat_asks_a_military_alliance_before_diplomatic_service() {
+    let mut g = board();
+    science(&mut g, 1, 90.0);
+    let mut ai = science_stock();
+    ai.enable_science_seat_allies_2();
+    ai.enable_research_alliance_first();
+    assert!(
+        ai.seat_allies_armed(),
+        "version two arms the Science seat as one does"
+    );
+    let plan = science_plan(g.turn);
+    let mut early = g.clone();
+    ai.propose_strategic_alliance(&mut early, 0, &plan, None);
+    let asked = proposed(&early, 0);
+    assert!(
+        asked.is_some(),
+        "a partner is asked before Diplomatic Service"
+    );
+    let (partner, kind) = asked.unwrap();
+    assert_ne!(partner, 1, "never the strongest science rival");
+    assert_eq!(kind.as_deref(), Some("military"));
+
+    let mut later = g.clone();
+    later.players[0]
+        .civics
+        .insert(crate::name!("diplomatic_service"));
+    let mut v2 = science_stock();
+    v2.enable_science_seat_allies_2();
+    v2.enable_research_alliance_first();
+    v2.propose_strategic_alliance(&mut later, 0, &plan, None);
+    assert_eq!(
+        proposed(&later, 0),
+        None,
+        "after Diplomatic Service it waits for Research"
+    );
+}

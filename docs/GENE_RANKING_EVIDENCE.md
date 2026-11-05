@@ -354,7 +354,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-foundation-before-backlog` | off (unmeasured) | Prioritize usable labs and nearby Rocketry during a Science posture. | 1 \| 1 |
 | `science-heads-keep-their-queue` | off (unmeasured) | Opt-in gene `science-heads-keep-their-queue`; see `advanced/science_heads_keep_their_queue.rs`. | 1 \| 1 |
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
-| `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
+| `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | — \| 2 |
+| `science-seat-allies-2` | off (unmeasured) | Opt-in gene `science-seat-allies-2`; see `advanced/culture_seat_allies.rs`. | — \| 2 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
@@ -383,6 +384,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
+| `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |

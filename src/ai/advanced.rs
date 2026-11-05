@@ -8775,6 +8775,9 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-seat-allies-2`: version one, and a Military Alliance asked
+    /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
+    science_seat_allies_2: bool,
     /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
     /// sooner. See `advanced/spy_civics_come_first.rs`.
     spy_civics_come_first: bool,
@@ -9876,6 +9879,11 @@ pub struct AdvancedAi {
     /// `walls-release-the-one-blow`: this frame's units of ours whose own
     /// tile is one-blow lethal (filled by `plan_battle`).
     walls_one_blow: BTreeSet<u32>,
+    /// `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    /// strongest neighbour at peace while it is too cold to accept a
+    /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
+    /// default.
+    tribute_buys_the_friendship: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10900,6 +10908,9 @@ mod spy_civics_come_first;
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
+/// `tribute-buys-the-friendship`: see
+/// `advanced/tribute_buys_the_friendship.rs`.
+mod tribute_buys_the_friendship;
 mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
@@ -12483,6 +12494,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
+            science_seat_allies_2: false,
             spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
@@ -12686,6 +12698,7 @@ impl AdvancedAi {
             wounded_out_of_reach_2: false,
             walls_release_the_one_blow: false,
             walls_one_blow: BTreeSet::new(),
+            tribute_buys_the_friendship: false,
         }
     }
 

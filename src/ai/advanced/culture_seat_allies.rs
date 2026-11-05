@@ -48,6 +48,15 @@
 //! binary keeps its alliance orders and the agent takes them under
 //! `ScienceAllies`.
 //!
+//! **`science-seat-allies-2`** (2026-11-05) carries version one and, while the
+//! seat waits for a legal Research Alliance before Diplomatic Service, asks
+//! for a Military Alliance meanwhile (same partner bars). Holding any alliance
+//! boosts Diplomatic Service by 40%, the first civic Spy slot; in 35 live
+//! Deity games it was never boosted and no alliance stood before it. A
+//! Military Alliance also adds combat strength against a shared enemy and a
+//! neighbour that will not declare on us. See
+//! [`AdvancedAi::science_seat_allies_early`].
+//!
 //! Off, or for a seat not aiming at Culture (or Science under
 //! `science-seat-allies`), nothing changes.
 
@@ -65,9 +74,27 @@ impl AdvancedAi {
         self.culture_seat_allies && self.victory_target == Some(VictoryTarget::Culture)
     }
 
-    /// `science-seat-allies`: on, and aiming at Science.
+    /// `science-seat-allies` (or version two): on, and aiming at Science.
     pub(super) fn science_seat_allies_on(&self) -> bool {
-        self.science_seat_allies && self.victory_target == Some(VictoryTarget::Science)
+        (self.science_seat_allies || self.science_seat_allies_2)
+            && self.victory_target == Some(VictoryTarget::Science)
+    }
+
+    /// `science-seat-allies-2`: whether the Science seat asks for a Military
+    /// Alliance while `research-alliance-first` still waits for Scientific
+    /// Theory and Diplomatic Service is not yet ours. Diplomatic Service is
+    /// boosted 40% by holding any alliance (`BOOST_TRIGGER_HAVE_AN_ALLIANCE`,
+    /// Expansion1_Civics.xml) and is the first civic Spy slot; in 35 live Deity
+    /// games of 2026-11-05 it was never boosted and no alliance stood before it
+    /// in any (Civil Service median turn 80, first Declared Friend 94 in 33 of
+    /// 40, first alliance 144 in 14 of 40, Diplomatic Service 123). The Spy
+    /// network decided the lane's one Deity win.
+    pub(super) fn science_seat_allies_early(&self, g: &Game, pid: usize) -> bool {
+        self.science_seat_allies_2
+            && self.victory_target == Some(VictoryTarget::Science)
+            && !g.players[pid]
+                .civics
+                .contains(&crate::name!("diplomatic_service"))
     }
 
     /// Whether either seat gene runs for this seat.
