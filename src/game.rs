@@ -1053,6 +1053,93 @@ impl Game {
         self.game_modes.contains(mode)
     }
 
+    /// Replace native observations without modifying the shared constructor
+    /// rules or retaining knowledge from a newer export after a rewind.
+    pub(crate) fn set_host_research_prerequisites(
+        &mut self,
+        observations: BTreeMap<Name, Vec<Name>>,
+    ) -> Result<(), String> {
+        if let Some(base) = self.host_research_base_rules.take() {
+            self.rules = base;
+        }
+        let mut changes = BTreeMap::new();
+        for (node, mut parents) in observations {
+            let Some(spec) = self.rules.techs.get(&node) else {
+                return Err(format!("unknown node {node}"));
+            };
+            if parents
+                .iter()
+                .any(|parent| !self.rules.techs.contains_key(parent))
+            {
+                return Err(format!("unknown prerequisite for {node}"));
+            }
+            parents.sort();
+            parents.dedup();
+            let mut generated = spec.requires.clone();
+            generated.sort();
+            generated.dedup();
+            if parents != generated {
+                changes.insert(node, parents);
+            }
+        }
+        if changes.is_empty() {
+            return Ok(());
+        }
+        fn visit(
+            node: Name,
+            rules: &Rules,
+            changes: &BTreeMap<Name, Vec<Name>>,
+            marks: &mut BTreeMap<Name, u8>,
+        ) -> bool {
+            match marks.get(&node) {
+                Some(1) => return false,
+                Some(2) => return true,
+                _ => {}
+            }
+            marks.insert(node, 1);
+            let parents = changes.get(&node).unwrap_or(&rules.techs[node].requires);
+            if parents
+                .iter()
+                .any(|parent| !visit(*parent, rules, changes, marks))
+            {
+                return false;
+            }
+            marks.insert(node, 2);
+            true
+        }
+        let mut marks = BTreeMap::new();
+        if self
+            .rules
+            .techs
+            .keys()
+            .any(|node| !visit(*node, &self.rules, &changes, &mut marks))
+        {
+            return Err("cyclic prerequisites".into());
+        }
+        let base = self.rules.clone();
+        let mut observed = (*base).clone();
+        for (node, parents) in changes {
+            observed.techs.get_mut(&node).unwrap().requires = parents;
+        }
+        // AdvancedAi routes research through this compiled transitive index,
+        // not the direct lists alone. Keep every descendant's index coherent.
+        observed.tech_ancestors = crate::rules::ancestry(&observed.techs);
+        self.host_research_base_rules = Some(base);
+        self.rules = Arc::new(observed);
+        Ok(())
+    }
+
+    fn host_research_prerequisites(&self) -> BTreeMap<Name, Vec<Name>> {
+        let Some(base) = &self.host_research_base_rules else {
+            return BTreeMap::new();
+        };
+        self.rules
+            .techs
+            .iter()
+            .filter(|(node, spec)| spec.requires != base.techs[*node].requires)
+            .map(|(node, spec)| (*node, spec.requires.clone()))
+            .collect()
+    }
     pub fn tech_cost(&self, technology: &str) -> f64 {
         self.game_speed.scale(self.rules.techs[technology].cost)
     }
@@ -6321,7 +6408,8 @@ pub struct HostBandPromotions {
 pub struct Game {
     /// Shared with every clone/search branch of this game. A match gets one
     /// immutable snapshot because Gathering Storm randomizes its Future trees
-    /// at setup; no rule changes after the first turn.
+    /// at setup. Native mirrors retain that baseline while replacing revealed
+    /// research prerequisites with observations from the host's actual tree.
     pub rules: Arc<Rules>,
     /// Derived from the rest of the game, never saved, and safe to drop at
     /// any moment — it is only ever a shortcut to an answer the sweep would
@@ -7022,6 +7110,11 @@ pub struct Game {
     /// player. Like production menus, these are refreshed host facts, not rules.
     #[serde(default)]
     pub host_research_quotes: Arc<BTreeMap<usize, BTreeMap<Name, HostResearchQuote>>>,
+    /// Generated rules before the native mirror applied revealed prerequisite
+    /// observations. Restored on every refresh, including older/missing exports.
+    /// Saves keep that valid generated layout plus the observed differences.
+    #[serde(skip)]
+    pub(crate) host_research_base_rules: Option<Arc<Rules>>,
     /// Native strategic-resource prices for units and formations in each city,
     /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
     /// include the host's modifiers; absent prices use the ordinary rules.
@@ -7399,6 +7492,10 @@ struct GameSer {
     /// so an engine update cannot reroll a match in progress.
     #[serde(default)]
     future_tree_layout: Option<FutureTreeLayout>,
+    /// Native revealed prerequisites are observations, not a new generated
+    /// two-column layout. Keep them separate so partial revelations round-trip.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    host_research_prerequisites: BTreeMap<Name, Vec<Name>>,
     /// Zero means the save predates persistent last-seen snapshots. Current
     /// saves must load their memories verbatim so deserialization is pure.
     #[serde(default)]
@@ -7800,6 +7897,7 @@ impl From<GameSer> for Game {
             host_buildable: Arc::new(BTreeMap::new()),
             host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
+            host_research_base_rules: None,
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
@@ -7847,6 +7945,8 @@ impl From<GameSer> for Game {
             city_by_pos: BTreeMap::new(),
             log: crate::actionlog::ActionLog::new(),
         };
+        g.set_host_research_prerequisites(s.host_research_prerequisites)
+            .unwrap_or_else(|error| panic!("invalid saved native research prerequisites: {error}"));
         // Saves from before the two-stage Loyalty model have no Free Cities
         // seat. Appending it preserves every existing player id.
         g.ensure_free_city_player();
@@ -7939,9 +8039,16 @@ impl From<GameSer> for Game {
 
 impl From<Game> for GameSer {
     fn from(g: Game) -> GameSer {
+        let host_research_prerequisites = g.host_research_prerequisites();
+        let future_tree_layout = g
+            .host_research_base_rules
+            .as_ref()
+            .unwrap_or(&g.rules)
+            .future_tree_layout();
         GameSer {
             seed: g.seed,
-            future_tree_layout: Some(g.rules.future_tree_layout()),
+            future_tree_layout: Some(future_tree_layout),
+            host_research_prerequisites,
             visibility_memory_version: 1,
             difficulty: g.difficulty,
             barbarian_difficulty: g.barbarian_difficulty,
@@ -8560,6 +8667,7 @@ impl Game {
             host_buildable: Arc::new(BTreeMap::new()),
             host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
+            host_research_base_rules: None,
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
