@@ -2177,6 +2177,9 @@ impl AdvancedAi {
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
         /// Price the Science lost when a new district crowds an owned Seowon.
         districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `war-defense-spends-the-runway`; see
+        /// `advanced/war_defense_spends_the_runway.rs`.
+        war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
     }
 }
 
