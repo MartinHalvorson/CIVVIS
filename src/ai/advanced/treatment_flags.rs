@@ -2272,6 +2272,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `fresh-water-prices-the-site`; see
+        /// `advanced/fresh_water_site.rs`.
+        fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;
     }
 }
 

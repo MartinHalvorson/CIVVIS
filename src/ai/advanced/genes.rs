@@ -5325,6 +5325,13 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // The site score paid fresh water +12 and a coast-only seat +10 (housing
+    // +4, Harbor base +6), though live non-capital cities on fresh water held
+    // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
+    // and 66% on the coast. 67 of 239 dry or coast-only foundings had a legal
+    // fresh-water plot within two tiles. Under the gene a fresh-water seat
+    // gains +12 more. See `fresh_water_site.rs`.
+    Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
