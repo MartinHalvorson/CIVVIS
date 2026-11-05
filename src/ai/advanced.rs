@@ -7628,9 +7628,9 @@ pub struct AdvancedAi {
     /// barter could not reach and Horses while another strategic is spare.
     /// See `advanced/luxury_asks_pay_in_strategics.rs`.
     luxury_asks_pay_in_strategics_2: bool,
-    /// `luxury-asks-pay-in-strategics-2`: `(turn, partner)` of each
-    /// `barter_short` answer, set by the live bridge each turn.
-    luxury_barter_shorts: Vec<(u32, i64)>,
+    /// `luxury-asks-pay-in-strategics-2`: `(turn, partner, items put up)`
+    /// of each `barter_short` answer, set by the live bridge each turn.
+    luxury_barter_shorts: Vec<(u32, i64, Vec<String>)>,
     /// `medina-yields-to-the-amenities`: the housing card is not wanted while
     /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
     medina_yields_to_the_amenities: bool,

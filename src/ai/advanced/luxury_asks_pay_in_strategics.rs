@@ -34,7 +34,11 @@
 //! stockpile cap). Version two skips a partner that answered `barter_short`
 //! inside [`LUXURY_BARTER_SHORT_STANDARD`] standard turns (the bridge reads
 //! the shorts from the run's log) and puts Horses up only when no other
-//! strategic is spare.
+//! strategic is spare. The shorts that were not about the partner (a
+//! luxury swap's copy, refused by the host's last-copy rule whoever was
+//! asked: 085437Z offered one Marble eight times to three partners) take
+//! that luxury off the swap for the same window instead, so the slot falls
+//! through to the strategic ask.
 
 use super::*;
 
@@ -56,23 +60,54 @@ impl AdvancedAi {
         self.luxury_asks_pay_in_strategics_2
     }
 
-    /// The live bridge: `(turn, partner)` of each `barter_short` answer the
-    /// run's log holds. Replaces what was there.
-    pub fn observe_luxury_barter_shorts(&mut self, shorts: Vec<(u32, i64)>) {
+    /// The live bridge: `(turn, partner, items put up)` of each
+    /// `barter_short` answer the run's log holds. Replaces what was there.
+    pub fn observe_luxury_barter_shorts(&mut self, shorts: Vec<(u32, i64, Vec<String>)>) {
         self.luxury_barter_shorts = shorts;
     }
 
-    /// The host ids of the partners that answered `barter_short` inside the
-    /// window ending this turn. Empty with version two off.
+    /// The items of each short inside the window ending this turn whose
+    /// items are all of `class` ("strategic" or "luxury"), with the partner.
+    fn recent_barter_shorts<'a>(
+        &'a self,
+        g: &'a Game,
+        class: &'a str,
+    ) -> impl Iterator<Item = (i64, &'a [String])> + 'a {
+        let window = g.standard_duration(LUXURY_BARTER_SHORT_STANDARD);
+        let of_class = move |name: &String| {
+            name.strip_prefix("RESOURCE_")
+                .map(|id| id.to_ascii_lowercase())
+                .and_then(|id| g.rules.resources.get(id.as_str()))
+                .is_some_and(|spec| spec.class == class)
+        };
+        self.luxury_barter_shorts
+            .iter()
+            .filter(move |(turn, _, _)| *turn <= g.turn && g.turn - *turn < window)
+            .filter(move |(_, _, items)| !items.is_empty() && items.iter().all(of_class))
+            .map(|(_, partner, items)| (*partner, items.as_slice()))
+    }
+
+    /// The host ids of the partners that answered a strategic-paid ask
+    /// `barter_short` inside the window ending this turn: our strategics are
+    /// not on their table. Empty with version two off.
     pub fn luxury_barter_shorted_partners(&self, g: &Game) -> BTreeSet<i64> {
         if !self.luxury_asks_pay_in_strategics_2 {
             return BTreeSet::new();
         }
-        let window = g.standard_duration(LUXURY_BARTER_SHORT_STANDARD);
-        self.luxury_barter_shorts
-            .iter()
-            .filter(|(turn, _)| *turn <= g.turn && g.turn - *turn < window)
-            .map(|(_, partner)| *partner)
+        self.recent_barter_shorts(g, "strategic")
+            .map(|(partner, _)| partner)
+            .collect()
+    }
+
+    /// The luxuries (`RESOURCE_X`) a swap put up that the buy arm answered
+    /// `barter_short` inside the window ending this turn: the host would not
+    /// let the copy go. Empty with version two off.
+    pub fn luxury_swap_stale_luxuries(&self, g: &Game) -> BTreeSet<String> {
+        if !self.luxury_asks_pay_in_strategics_2 {
+            return BTreeSet::new();
+        }
+        self.recent_barter_shorts(g, "luxury")
+            .flat_map(|(_, items)| items.iter().cloned())
             .collect()
     }
 

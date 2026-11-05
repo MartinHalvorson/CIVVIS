@@ -3088,6 +3088,31 @@ fn append_luxury_swap_order(
     orders: &mut Vec<Order>,
     lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
 ) -> Option<&'static str> {
+    luxury_swap_order(state, orders, lacks, &|_| false)
+}
+
+/// `luxury-asks-pay-in-strategics-2`: the swap, with every luxury in `stale`
+/// (one whose last swap the buy arm answered `barter_short`: the host would
+/// not let that copy go, to any partner) off our side. Live 11-05: 085437Z
+/// put one Marble up eight times from turn 94 to 142, to three partners,
+/// and every ask shorted; 040135Z put one Truffles up eight times. Each held
+/// the luxury slot, so the strategic ask never ran.
+fn append_luxury_swap_order_2(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    stale: &std::collections::BTreeSet<String>,
+) -> Option<&'static str> {
+    luxury_swap_order(state, orders, lacks, &|name| stale.contains(name))
+}
+
+/// Both swaps: `stale` names a luxury never put up.
+fn luxury_swap_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    stale: &dyn Fn(&str) -> bool,
+) -> Option<&'static str> {
     let min_deficit = if lacks.is_some() {
         LUXURY_SWAP_2_MIN_DEFICIT
     } else {
@@ -3112,7 +3137,7 @@ fn append_luxury_swap_order(
         .collect();
     let mut spares: Vec<(&str, f64)> = counts
         .iter()
-        .filter(|(name, _)| !selling.contains(name.as_str()))
+        .filter(|(name, _)| !selling.contains(name.as_str()) && !stale(name.as_str()))
         .map(|(name, count)| (name.as_str(), (count.floor() - 1.0).max(0.0)))
         .filter(|(_, spare)| *spare >= 1.0)
         .collect();
@@ -5909,7 +5934,17 @@ fn decide(
         let fit = ai
             .luxury_swap_asks_2_enabled()
             .then_some(&lacks as &dyn Fn(i64, &str) -> Option<bool>);
-        match append_luxury_swap_order(state, &mut orders, fit) {
+        let swapped = if ai.luxury_asks_pay_in_strategics_2_enabled() {
+            append_luxury_swap_order_2(
+                state,
+                &mut orders,
+                fit,
+                &ai.luxury_swap_stale_luxuries(&mirror_state.game),
+            )
+        } else {
+            append_luxury_swap_order(state, &mut orders, fit)
+        };
+        match swapped {
             None => note_bits.push("luxury_swap=1".to_string()),
             Some(why) => {
                 if why == "luxury_swap_hold:no_spare"
@@ -10241,15 +10276,18 @@ impl SpyLossLedger {
     }
 }
 
-/// `luxury-asks-pay-in-strategics-2`: the partners whose answer to one of
-/// our luxury asks was the Lua buy arm's `barter_short` (the barter we put up
-/// could not go to them), with the turn, read from the run's `events.jsonl`
-/// the way `SpyLossLedger` reads it: incrementally, whole lines only, and over
-/// from the start on a shorter (new) log.
+/// `luxury-asks-pay-in-strategics-2`: each `barter_short` answer of the Lua
+/// buy arm to one of our luxury asks (one of the items we put up could not
+/// go), with the turn, the partner and the items the ask put up (from the
+/// same turn's `order_failed` / `order_verified` line for that partner; empty
+/// when none is in the log), read from the run's `events.jsonl` the way
+/// `SpyLossLedger` reads it: incrementally, whole lines only, and over from
+/// the start on a shorter (new) log.
 #[derive(Default)]
 struct BarterShortLedger {
     offset: u64,
     shorts: Vec<(u32, i64)>,
+    offered: std::collections::BTreeMap<(u32, i64), Vec<String>>,
 }
 
 impl BarterShortLedger {
@@ -10276,35 +10314,69 @@ impl BarterShortLedger {
                 return;
             }
             self.offset += read as u64;
-            if let Some(short) = Self::barter_short(&line) {
-                self.shorts.push(short);
-            }
+            self.read(&line);
         }
     }
 
-    /// `(turn, partner)` of a `deal_offer` line our buy arm answered
-    /// `barter_short`, else `None`.
-    fn barter_short(line: &[u8]) -> Option<(u32, i64)> {
+    /// Keep a `deal_offer` line our buy arm answered `barter_short`, or the
+    /// items of a luxury ask's `order_failed` / `order_verified` line.
+    fn read(&mut self, line: &[u8]) {
         let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
-        if !has(b"deal_offer") || !has(b"barter_short") {
-            return None;
+        let short = has(b"barter_short") && has(b"deal_offer");
+        if !short && !has(b"LUXURY_ANY;") {
+            return;
         }
-        let event: serde_json::Value = serde_json::from_slice(line).ok()?;
-        if event.get("kind")?.as_str()? != "deal_offer"
-            || event.get("reason")?.as_str()? != "barter_short"
-        {
-            return None;
+        let Ok(event) = serde_json::from_slice::<serde_json::Value>(line) else {
+            return;
+        };
+        let text = |key: &str| event.get(key).and_then(|value| value.as_str());
+        let Some(turn) = event
+            .get("turn")
+            .and_then(|turn| turn.as_u64())
+            .and_then(|turn| u32::try_from(turn).ok())
+        else {
+            return;
+        };
+        match text("kind") {
+            Some("deal_offer") if text("reason") == Some("barter_short") => {
+                if let Some(target) = event.get("target").and_then(|target| target.as_i64()) {
+                    self.shorts.push((turn, target));
+                }
+            }
+            Some("order_failed" | "order_verified") if text("order_kind") == Some("buy") => {
+                let (Some(subject), Some(verb)) = (
+                    event.get("subject").and_then(|subject| subject.as_i64()),
+                    text("verb"),
+                ) else {
+                    return;
+                };
+                let Some(list) = verb.strip_prefix("LUXURY_ANY;") else {
+                    return;
+                };
+                let items = list
+                    .split(',')
+                    .filter_map(|part| part.split_once('=').map(|(name, _)| name.to_string()))
+                    .collect();
+                self.offered.insert((turn, subject), items);
+            }
+            _ => {}
         }
-        let turn = u32::try_from(event.get("turn")?.as_u64()?).ok()?;
-        Some((turn, event.get("target")?.as_i64()?))
     }
 
-    /// The shorts on or before `turn` (a replay reads a log that runs on).
-    fn through(&self, turn: u32) -> Vec<(u32, i64)> {
+    /// The shorts on or before `turn` (a replay reads a log that runs on),
+    /// each with the items its ask put up.
+    fn through(&self, turn: u32) -> Vec<(u32, i64, Vec<String>)> {
         self.shorts
             .iter()
-            .copied()
             .filter(|(at, _)| *at <= turn)
+            .map(|(at, partner)| {
+                let items = self
+                    .offered
+                    .get(&(*at, *partner))
+                    .cloned()
+                    .unwrap_or_default();
+                (*at, *partner, items)
+            })
             .collect()
     }
 }

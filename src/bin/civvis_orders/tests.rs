@@ -10175,9 +10175,10 @@ fn luxury_strategic_ask_2_skips_the_shorted_partner_and_keeps_the_horses() {
 }
 
 /// `luxury-asks-pay-in-strategics-2`: the ledger keeps the `barter_short`
-/// answers of our buy arm, by turn and partner, and nothing else.
+/// answers of our buy arm, by turn and partner, each with the items the same
+/// turn's luxury ask to that partner put up, and nothing else.
 #[test]
-fn barter_short_ledger_reads_the_shorts() {
+fn barter_short_ledger_reads_the_shorts_and_what_they_offered() {
     let dir = std::env::temp_dir().join(format!(
         "civvis-barter-ledger-{}-{}",
         std::process::id(),
@@ -10189,14 +10190,71 @@ fn barter_short_ledger_reads_the_shorts() {
         &path,
         concat!(
             "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 3, \"turn\": 88, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"order_failed\", \"order_kind\": \"buy\", \"subject\": 3, \"turn\": 88, \"verb\": \"LUXURY_ANY;RESOURCE_HORSES=3\"}\n",
             "{\"kind\": \"deal_offer\", \"reason\": \"asked\", \"target\": 4, \"turn\": 94, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"order_verified\", \"order_kind\": \"buy\", \"subject\": 4, \"turn\": 94, \"verb\": \"LUXURY_ANY;RESOURCE_SALT=1\"}\n",
+            "{\"kind\": \"order_failed\", \"order_kind\": \"buy\", \"subject\": 1, \"turn\": 100, \"verb\": \"LUXURY_ANY;RESOURCE_MARBLE=1,RESOURCE_WINE=1\"}\n",
             "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 1, \"turn\": 100, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 5, \"turn\": 106, \"verb\": \"LUXURY_ANY\"}\n",
         ),
     )
     .unwrap();
     let mut ledger = BarterShortLedger::default();
     ledger.refresh(&path);
-    assert_eq!(ledger.through(200), vec![(88, 3), (100, 1)]);
-    assert_eq!(ledger.through(95), vec![(88, 3)]);
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        ledger.through(200),
+        vec![
+            (88, 3, names(&["RESOURCE_HORSES"])),
+            (100, 1, names(&["RESOURCE_MARBLE", "RESOURCE_WINE"])),
+            (106, 5, Vec::new()),
+        ]
+    );
+    assert_eq!(
+        ledger.through(95),
+        vec![(88, 3, names(&["RESOURCE_HORSES"]))]
+    );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `luxury-asks-pay-in-strategics-2`: a luxury whose swap shorted stays off
+/// our side; with no other spare the swap holds `no_spare`, the hold the
+/// strategic ask runs on.
+#[test]
+fn luxury_swap_2_keeps_the_stale_copy_home() {
+    let short = |needed: f64, have: f64| StateCity {
+        amenities: have,
+        amenities_needed: needed,
+        ..StateCity::default()
+    };
+    let state = StateSnapshot {
+        turn: 94,
+        gold: 200,
+        cities: vec![short(5.0, 3.0), short(6.0, 4.0), short(3.0, 4.0)],
+        luxury_counts: Some([("RESOURCE_MARBLE".to_string(), 2.0)].into_iter().collect()),
+        rivals: vec![StateRival {
+            player: 4,
+            tradeable_luxuries: Some(vec!["RESOURCE_SILK".to_string()]),
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let none = std::collections::BTreeSet::new();
+    let mut fresh = Vec::new();
+    assert_eq!(
+        append_luxury_swap_order_2(&state, &mut fresh, None, &none),
+        None
+    );
+    assert_eq!(
+        fresh[0].verb.as_deref(),
+        Some("LUXURY_ANY;RESOURCE_MARBLE=1")
+    );
+    let stale: std::collections::BTreeSet<String> =
+        ["RESOURCE_MARBLE".to_string()].into_iter().collect();
+    let mut held = Vec::new();
+    assert_eq!(
+        append_luxury_swap_order_2(&state, &mut held, None, &stale),
+        Some("luxury_swap_hold:no_spare")
+    );
+    assert!(held.is_empty());
 }
