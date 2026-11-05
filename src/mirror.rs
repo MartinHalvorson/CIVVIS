@@ -40,13 +40,13 @@ use serde::Deserialize;
 
 mod air_fog_targets;
 mod board;
-pub use board::*;
+pub(crate) use board::*;
 mod capital_identity;
 mod cities;
-pub use cities::*;
+use cities::*;
 mod dedication_history;
 mod great_people;
-pub use great_people::*;
+use great_people::*;
 mod host_deaths;
 mod policy_windows;
 pub use policy_windows::StatePolicyChange;
