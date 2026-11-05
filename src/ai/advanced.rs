@@ -9339,6 +9339,10 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs` (`slot_cost`, `position_end_tile`).
     /// Off by default.
     slots_survive_the_roll: bool,
+    /// `science-race-keeps-the-campus-cards`: a Science seat with real Campus
+    /// adjacency keeps Rationalism and Natural Philosophy at the head of its
+    /// economic wants. See `advanced/policies.rs`. Off by default.
+    science_race_keeps_the_campus_cards: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -12324,6 +12328,7 @@ impl AdvancedAi {
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
+            science_race_keeps_the_campus_cards: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

@@ -41505,3 +41505,49 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
 }
 
 mod recovery_before_amenities;
+
+// `science-race-keeps-the-campus-cards`. See `advanced/policies.rs`.
+
+#[test]
+fn science_race_keeps_the_campus_cards_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "science_race_keeps_the_campus_cards"
+        && gene.tag == "science-race-keeps-the-campus-cards"));
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.science_race_keeps_the_campus_cards,
+        "production ships it off"
+    );
+    ai.enable_science_race_keeps_the_campus_cards();
+    assert!(ai.science_race_keeps_the_campus_cards);
+    ai.disable_science_race_keeps_the_campus_cards();
+    assert!(!ai.science_race_keeps_the_campus_cards);
+}
+
+#[test]
+fn campus_adjacency_science_counts_the_campus_family_only() {
+    let (mut game, city, _center) = planning_capital();
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        ai.campus_adjacency_science(&game, 0),
+        0.0,
+        "no Campus, nothing"
+    );
+    let campus = install_ai_test_district(&mut game, city, "campus");
+    // Two mountains beside the Campus: +1 Science each.
+    let center = game.cities[&city].pos;
+    let peaks: Vec<Pos> = game
+        .nbrs(campus)
+        .into_iter()
+        .filter(|pos| *pos != center && game.map.tiles[pos].district.is_none())
+        .take(2)
+        .collect();
+    for pos in &peaks {
+        game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
+    }
+    let science = ai.campus_adjacency_science(&game, 0);
+    assert!(science >= 2.0, "two mountains read {science}");
+    // A non-Campus district adds nothing to it.
+    install_ai_test_district(&mut game, city, "holy_site");
+    assert_eq!(ai.campus_adjacency_science(&game, 0), science);
+}
