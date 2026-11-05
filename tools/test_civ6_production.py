@@ -50,7 +50,7 @@ class ProductionActuatorTests(unittest.TestCase):
         self.assertNotIn("CityManager.RequestOperation", hint)
         self.assertRegex(
             self.choose,
-            r'civvisBuild\[cityId\]\s*\n\s*or civvisBuild\[tostring\(cityId\) .. ":next"\]',
+            r'civvisBuild\[tostring\(cityId\) .. ":next"\]\s*\n\s*or civvisBuild\[cityId\]',
         )
         self.assertNotIn("civvisNextBuild", self.source)
 
