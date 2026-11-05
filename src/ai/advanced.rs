@@ -5567,6 +5567,9 @@ pub struct AdvancedAi {
     // ---- append: c-d ------------------------------------------------
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
+    /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
+    /// dying. See `advanced/denial_spies_count_their_losses.rs`.
+    denial_spies_count_their_losses: bool,
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
@@ -6585,6 +6588,12 @@ pub struct AdvancedAi {
     /// gate opens. See `objective_board.rs` (`early_cities_defend_first`).
     /// Off by default.
     capital_keeps_its_defender_2: bool,
+    /// `capital-keeps-its-defender-3`: version two, and a stronger major's
+    /// visible soldier parked within [`objective_board::SURPRISE_TILES`] of
+    /// an early city at peace counts as a threat to it: the city gets its
+    /// Defend row, the parked strength enters its need and its risk. Off by
+    /// default.
+    capital_keeps_its_defender_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -7283,6 +7292,11 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `early-cities-keep-their-distance`: while the empire holds fewer
+    /// than three cities, a site loses value for every tile it stands inside
+    /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
+    /// Off by default.
+    early_cities_keep_their_distance: bool,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
@@ -8626,6 +8640,9 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
+    /// by the live bridge each turn (`observe_spy_losses`).
+    spy_loss_turns: Vec<u32>,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -8633,6 +8650,8 @@ pub struct AdvancedAi {
     /// development half at a third of the clock, as Culture already does.
     /// See `advanced/science_specializes_earlier.rs`. Off by default.
     science_specializes_earlier: bool,
+    /// Finish the missing Science-lane Campus unlock before optional detours.
+    science_writing_before_the_luxury: bool,
     /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
     spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
@@ -9322,6 +9341,10 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs` (`slot_cost`, `position_end_tile`).
     /// Off by default.
     slots_survive_the_roll: bool,
+    /// `spies-steal-the-lead`: a Science seat's Spies steal Eurekas from the
+    /// rivals ahead instead of idling on Listening Posts. See
+    /// `advanced/spies_steal_the_lead.rs`. Off by default.
+    spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
     /// `war-defense-spends-the-runway`: while a major at war with us fields
     /// 1.5x our military power and the treasury covers the deficit for 15
@@ -9675,6 +9698,16 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `walls-release-the-one-blow`: a ring defender that one visible
+    /// hostile blow at the top of its roll removes is not held on the walls
+    /// by `defenders-hold-the-walls`; the rotation and the doomed-blow veto
+    /// take it as they take any other unit. A unit on a City Center or
+    /// defending district keeps its post. See
+    /// `advanced/defenders_hold_the_walls.rs`. Off by default.
+    walls_release_the_one_blow: bool,
+    /// `walls-release-the-one-blow`: this frame's units of ours whose own
+    /// tile is one-blow lethal (filled by `plan_battle`).
+    walls_one_blow: BTreeSet<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10165,6 +10198,8 @@ mod upkeep_waits_for_the_income;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
+mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -10546,6 +10581,7 @@ mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
+mod science_writing_before_the_luxury;
 mod wonder_clearance;
 /// `wonder-adjacent-sites-2` prices a settle site beside a natural wonder
 /// the way the engine pays it; `wonder-ring-recon` sends an explorer to the
@@ -10655,6 +10691,8 @@ mod siege_tier_before_the_beeline;
 mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+/// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
+mod spies_steal_the_lead;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -10706,6 +10744,11 @@ mod camp_buyout;
 /// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
 mod camps_close_the_age;
+
+/// `early-cities-keep-their-distance`: the second and third cities are sited
+/// away from charted rival cities. One opt-in gene; see
+/// `advanced/early_city_distance.rs`.
+mod early_city_distance;
 
 /// `early-archers`: an Archer for every city, the frontier city first, while
 /// the world is Ancient and Classical, and Archery chased until a city can
@@ -11660,6 +11703,7 @@ impl AdvancedAi {
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
             districts_protect_seowon_science: false,
+            denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -11860,6 +11904,7 @@ impl AdvancedAi {
             camps_close_the_age_3: false,
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
+            capital_keeps_its_defender_3: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -11959,6 +12004,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
@@ -12175,8 +12221,10 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
+            science_writing_before_the_luxury: false,
             spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
@@ -12304,6 +12352,7 @@ impl AdvancedAi {
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
+            spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
             war_defense_spends_the_runway: false,
             trade_quotes_pay_the_lump: false,
@@ -12365,6 +12414,8 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            walls_release_the_one_blow: false,
+            walls_one_blow: BTreeSet::new(),
         }
     }
 
@@ -16973,9 +17024,9 @@ impl AdvancedAi {
 
     /// The extra beakers a Campus plot at or above the multiplier's adjacency
     /// threshold will earn this city. See `campus_adjacency_threshold`.
-    fn campus_threshold_bonus(&self, g: &Game, family: Name, pos: Pos) -> f64 {
+    fn campus_threshold_bonus(&self, g: &Game, district: Name, pos: Pos) -> f64 {
         if !self.campus_adjacency_threshold_on()
-            || family != crate::name!("campus")
+            || g.district_family(district) != crate::name!("campus")
             || self.campus_multiplier_half <= 0.0
         {
             return 0.0;
@@ -16985,7 +17036,9 @@ impl AdvancedAi {
         // threshold is tested BEFORE they double anything. Reading the doubled
         // number would credit a plot the host will not pay for.
         let mut raw = Yields::default();
-        for source in g.district_adjacency_sources(crate::name!("campus"), pos) {
+        // The concrete district matters: a Seowon's flat adjacency and crowding
+        // penalty differ from the Campus terrain rules it replaces.
+        for source in g.district_adjacency_sources(district, pos) {
             if source.source != "adjacency_bonus" {
                 raw.add(source.yields);
             }
@@ -26592,7 +26645,11 @@ impl AdvancedAi {
                     GrandStrategy::Recovery => 650.0,
                     _ => 500.0,
                 };
-                if active < g.spy_capacity(pid).max(0) as usize {
+                // `denial-spies-count-their-losses`: no new Spy while recent
+                // ones keep dying. See `advanced/denial_spies_count_their_losses.rs`.
+                if active < g.spy_capacity(pid).max(0) as usize
+                    && !self.spy_losses_pause_training(g)
+                {
                     1_500.0 + strategic + active as f64 * 90.0
                 } else {
                     -10_000.0
@@ -27777,7 +27834,7 @@ impl AdvancedAi {
                 // the linear yield above cannot see a threshold.
                 let adjacency_threshold = self.yield_value(
                     Yields {
-                        science: self.campus_threshold_bonus(g, family, *pos),
+                        science: self.campus_threshold_bonus(g, *district, *pos),
                         ..Yields::default()
                     },
                     pricing_lane,
@@ -28788,6 +28845,9 @@ impl AdvancedAi {
             self.settlement_static_value_uncached(g, pid, pos)
         };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `early-cities-keep-their-distance`: zero with the gene off and from
+        // the third city on. See `advanced/early_city_distance.rs`.
+        value -= self.early_city_rival_penalty(g, pid, pos);
         // `capital-leaves-the-frost`: the first city's frozen ground. Zero
         // with the gene off and once the empire holds a city.
         value -= self.frost_capital_penalty(g, pid, pos);
@@ -32316,6 +32376,9 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
+        // `denial-spies-count-their-losses`: the base production fallback
+        // reads this. See `advanced/denial_spies_count_their_losses.rs`.
+        self.base.spy_training_paused = self.spy_losses_pause_training(g);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -33002,6 +33065,11 @@ impl AdvancedAi {
             // the turn still win). Exact no-op while the gene is off. See
             // `advanced/science_denial_trains_spies.rs`.
             self.claim_queues_for_denial_spies(g, pid, &plan);
+            // `spies-steal-the-lead`: before a racer exists, a Science seat
+            // trains the Spies its steals need, one at a time, under the same
+            // displacement rule. Exact no-op while the gene is off. See
+            // `advanced/spies_steal_the_lead.rs`.
+            self.claim_queues_for_steal_spies(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and

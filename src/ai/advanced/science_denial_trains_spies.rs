@@ -98,7 +98,9 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.science_denial_trains_spies {
+        // `denial-spies-count-their-losses`: the claim stands down while recent
+        // Spies keep dying.
+        if !self.science_denial_trains_spies || self.spy_losses_pause_training(g) {
             return;
         }
         let racers = self.denial_spy_racers(g, pid);

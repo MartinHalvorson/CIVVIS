@@ -5016,6 +5016,55 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // Operator rule 11-04 (#4435): losing the capital or either of the next
+    // two cities restarts the game. Of 173 live second and third cities
+    // (Immortal and Deity, 11-03/04), those founded 5-6 tiles from a charted
+    // rival city were lost 56% of the time, 7-8 tiles 40%, 9-11 23%, 12 or
+    // more 8%; the site value priced only a border within three tiles. Under
+    // the gene, while the empire holds fewer than three cities, a site loses
+    // 8 a tile inside ten of the nearest charted rival city. See
+    // `advanced/early_city_distance.rs`.
+    Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
+    // Live Lv 8 Deity Korea Online, 11-05 (play-it-out policy): 3 of 11
+    // games since 02:01Z ended in our elimination. In 033244Z, from turn
+    // 150, 29 of our units died, all healthy and none inside a city, 21 of
+    // them to Machine Guns, most from two tiles: the Defend force held a
+    // nine-unit ring around Seoul, and defenders-hold-the-walls keeps a
+    // threatened city's healthy defenders off the rotation, so Ancient
+    // Warriors and Archers stood where one blow removed them. A ring
+    // defender whose own tile is one-blow lethal at the top of the roll is
+    // no longer held. See `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
+    // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
+    // ahead instead of idling on Listening Posts or Gain Sources: in a space
+    // racer's city with no Disrupt Rocketry offered, in place of the green
+    // Spy's Gain Sources training step, and no longer withheld outside the
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
+    Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
     // The insolvency guard gave every queue to Commercial Hubs, Stock
     // Exchanges and district projects whenever Gold per turn was negative and
     // the treasury was under 100 + 25 per city. That held even with 100 turns
