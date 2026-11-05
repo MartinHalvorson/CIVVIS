@@ -1346,10 +1346,97 @@ def current_pr(repo: Path) -> Dict[str, Any]:
                 REPOSITORY,
                 "--json",
                 "number,url,state,isDraft,body,headRefName,headRefOid,baseRefOid,"
-                "mergeCommit,mergeStateStatus,mergedAt,statusCheckRollup,title",
+                "mergeCommit,mergeStateStatus,mergedAt,statusCheckRollup,title,"
+                "autoMergeRequest",
             ),
             cwd=repo,
         )
+    )
+
+
+REGISTRY_PATH = "src/ai/advanced/genes.rs"
+REGISTRY_TURN_IDLE_SECONDS = 45 * 60
+REGISTRY_TURN_POLL_SECONDS = 60
+
+
+def writes_registry(pr: Dict[str, Any]) -> bool:
+    return any(row.get("path") == REGISTRY_PATH for row in pr.get("files") or [])
+
+
+def recent_ready_predecessor(
+    pr: Dict[str, Any], other: Dict[str, Any], now: dt.datetime
+) -> bool:
+    if (int(other["number"]) >= int(pr["number"]) or other.get("isDraft")
+            or str(other.get("state") or "").upper() != "OPEN"):
+        return False
+    try:
+        updated = dt.datetime.fromisoformat(other["updatedAt"].replace("Z", "+00:00"))
+        return (updated.tzinfo is not None
+                and (now - updated).total_seconds() <= REGISTRY_TURN_IDLE_SECONDS)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def older_registry_turn(
+    pr: Dict[str, Any], candidates: Sequence[Dict[str, Any]], *, now: dt.datetime
+) -> Optional[int]:
+    """Oldest recently active, ready registry writer with no failed gate.
+
+    Missing/pending checks include the short interval after a push. Failed or
+    cancelled heads must recover before taking a turn; stale/abandoned ready
+    PRs cannot reserve the registry indefinitely. This is a shipping courtesy,
+    not a replacement for any required check or explicit overlap agreement.
+    """
+    if not writes_registry(pr):
+        return None
+    waiting = []
+    for other in candidates:
+        number = int(other["number"])
+        if not recent_ready_predecessor(pr, other, now) or not writes_registry(other):
+            continue
+        state, _ = required_check_state(other.get("statusCheckRollup") or [])
+        if state in {"pending", "success"}:
+            waiting.append(number)
+    return min(waiting) if waiting else None
+
+
+def registry_turn_blocker(
+    repo: Path, pr: Dict[str, Any], cache: Dict[str, Any]
+) -> Optional[int]:
+    own_heads = cache.setdefault("own_heads", {})
+    head = pr["headRefOid"]
+    if head not in own_heads:
+        own_heads[head] = bool(git(repo, "diff", "--name-only", "origin/main...HEAD",
+                                   "--", REGISTRY_PATH))
+    if not own_heads[head]:
+        return None
+    if time.monotonic() >= cache.get("expires", 0.0):
+        rows = gh_json(
+            ("pr", "list", "--repo", REPOSITORY, "--state", "open", "--limit", "100",
+             "--json", "number,state,isDraft,updatedAt,headRefOid"), cwd=repo
+        )
+        candidates = []
+        registry_heads = cache.setdefault("registry_heads", {})
+        now = dt.datetime.now(dt.timezone.utc)
+        for other in rows:
+            if not recent_ready_predecessor(pr, other, now):
+                continue
+            other_head = other["headRefOid"]
+            if other_head in registry_heads and not registry_heads[other_head]:
+                continue
+            fields = "statusCheckRollup" if other_head in registry_heads else "files,statusCheckRollup"
+            details = gh_json(("pr", "view", str(other["number"]), "--repo", REPOSITORY,
+                               "--json", fields), cwd=repo)
+            if other_head not in registry_heads:
+                registry_heads[other_head] = writes_registry(details)
+            if registry_heads[other_head]:
+                candidates.append(dict(other, files=[{"path": REGISTRY_PATH}],
+                                       statusCheckRollup=details.get("statusCheckRollup") or []))
+        cache["candidates"] = candidates
+        cache["expires"] = time.monotonic() + REGISTRY_TURN_POLL_SECONDS
+    return older_registry_turn(
+        dict(pr, files=[{"path": REGISTRY_PATH}]), cache["candidates"],
+        now=dt.datetime.now(dt.timezone.utc)
     )
 
 
@@ -1710,6 +1797,7 @@ def ship_task(args: argparse.Namespace) -> int:
     rerun_attempts: Dict[str, int] = {name: 0 for name in REQUIRED_CHECKS}
     resume_ready_head = True
     retryable_since: Dict[Tuple[str, str], float] = {}
+    registry_turn_cache: Dict[str, Any] = {}
 
     def finish_merged(pr: Dict[str, Any]) -> Optional[int]:
         merged_sha = pr_merge_sha(pr)
@@ -1832,7 +1920,20 @@ def ship_task(args: argparse.Namespace) -> int:
                 raise CommandError("the PR closed before ship completed")
             if str(pr.get("headRefOid") or "") != local_head:
                 raise CommandError("the PR head changed outside this task's one-writer worktree")
-            if not ref_contains(root, "origin/main"):
+            registry_blocker = registry_turn_blocker(root, pr, registry_turn_cache)
+            if registry_blocker and pr.get("autoMergeRequest"):
+                # Disable only the merge request, never the head or its CI.
+                # Otherwise a previously armed request could bypass this turn.
+                disabled = run(
+                    ("gh", "pr", "merge", str(pr["number"]), "--repo", REPOSITORY,
+                     "--disable-auto"), cwd=root, check=False
+                )
+                if disabled.returncode:
+                    if (finished := finish_merged(current_pr(root))) is not None:
+                        return finished
+                    raise CommandError("could not suspend auto-merge for the older registry turn")
+                auto_merge_armed = False
+            if not registry_blocker and not ref_contains(root, "origin/main"):
                 # `main` advancing while the gate runs is the NORMAL state of a
                 # busy trunk, not a problem this loop must fix. Refreshing the
                 # head here — server-side or locally — pushes a new commit,
@@ -1922,6 +2023,10 @@ def ship_task(args: argparse.Namespace) -> int:
                 time.sleep(max(0.1, args.poll_seconds))
                 continue
             if state == "success":
+                if registry_blocker:
+                    print(f"waiting for older ready registry PR #{registry_blocker}")
+                    time.sleep(max(0.1, args.poll_seconds))
+                    continue
                 if not auto_merge_armed:
                     armed = run(
                         (

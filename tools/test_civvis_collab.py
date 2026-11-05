@@ -65,16 +65,74 @@ def body(
 {validation_block(checked)}"""
 
 
+class RegistryTurnTests(unittest.TestCase):
+    now = collab.dt.datetime(2026, 11, 5, 10, tzinfo=collab.dt.timezone.utc)
+
+    def candidate(self, number, **changes):
+        row = dict(number=number, state="OPEN", isDraft=False,
+                   updatedAt="2026-11-05T09:45:00Z",
+                   files=[{"path": collab.REGISTRY_PATH}], statusCheckRollup=[])
+        row.update(changes)
+        return row
+
+    def choose(self, rows, own=None):
+        return collab.older_registry_turn(own or self.candidate(20), rows, now=self.now)
+
+    def test_oldest_ready_registry_writer_gets_the_turn(self):
+        self.assertEqual(self.choose([self.candidate(12), self.candidate(8),
+                                      self.candidate(22)]), 8)
+
+    def test_drafts_nonregistry_and_closed_prs_do_not_reserve_a_turn(self):
+        self.assertIsNone(self.choose([self.candidate(8, isDraft=True),
+                                      self.candidate(9, files=[{"path": "src/game.rs"}]),
+                                      self.candidate(10, state="CLOSED")]))
+
+    def test_failed_or_cancelled_ci_yields_but_pending_ci_keeps_its_turn(self):
+        def check(conclusion):
+            return [{"name": "cargo-test", "status": "COMPLETED",
+                     "conclusion": conclusion}]
+        self.assertEqual(self.choose([self.candidate(8, statusCheckRollup=check("FAILURE")),
+                                      self.candidate(9, statusCheckRollup=check("CANCELLED")),
+                                      self.candidate(10)]), 10)
+
+    def test_inactive_or_unknown_age_prs_cannot_block_indefinitely(self):
+        self.assertIsNone(self.choose([self.candidate(8, updatedAt="2026-11-05T09:14:59Z"),
+                                      self.candidate(9, updatedAt="bad"),
+                                      self.candidate(10, updatedAt="2026-11-05T09:45:00")]))
+        self.assertEqual(self.choose([self.candidate(8, updatedAt="2026-11-05T09:15:00Z")]), 8)
+
+    def test_nonregistry_ship_does_not_join_the_registry_queue(self):
+        self.assertIsNone(self.choose([self.candidate(8)], self.candidate(20, files=[])))
+
+    def test_registry_membership_and_remote_poll_are_cached(self):
+        own = self.candidate(20, headRefOid="our-head")
+        older = self.candidate(8, headRefOid="older-head")
+        cache = {}
+        with mock.patch.object(collab, "git", return_value=collab.REGISTRY_PATH) as git, \
+                mock.patch.object(collab, "gh_json", side_effect=[
+                    [older], {"files": older["files"], "statusCheckRollup": []}]) as gh, \
+                mock.patch.object(collab.time, "monotonic", return_value=1), \
+                mock.patch.object(collab.dt, "datetime", wraps=collab.dt.datetime) as clock:
+            clock.now.return_value = self.now
+            self.assertEqual(collab.registry_turn_blocker(Path("/repo"), own, cache), 8)
+            self.assertEqual(collab.registry_turn_blocker(Path("/repo"), own, cache), 8)
+            git.assert_called_once()
+            self.assertEqual(gh.call_count, 2)
+
+
 class ShipResumeTests(unittest.TestCase):
     def run_ship(self, *, draft=False, remote_head="local-head", conflict=False,
                  stale=False, gate_state=None, rollups=None, expected_error=None,
                  rerun_ok=False, timeout_seconds=3600,
-                 server_omits_local_gate=False, gate_name="cargo-test"):
+                 server_omits_local_gate=False, gate_name="cargo-test",
+                 registry_turns=None, armed_auto_merge=False, disable_result=None):
         branch = "agent/render-win-02/codex-47/resume-20260921T230000Z-abcd"
         ready = pr(branch, body() + "\n## What changed\nPreserve ready CI.\n",
                    draft=draft)
         ready.update(state="OPEN", headRefOid=remote_head,
                      mergeStateStatus="DIRTY" if conflict else "CLEAN")
+        if armed_auto_merge:
+            ready["autoMergeRequest"] = {"enabledAt": "2026-11-05T09:00:00Z"}
         merged = dict(ready, state="MERGED", isDraft=False,
                       headRefOid="local-head", mergeCommit={"oid": "merged-head"})
 
@@ -92,6 +150,10 @@ class ShipResumeTests(unittest.TestCase):
         def run_result(argv, **kwargs):
             # The task contains file changes. Every other command is a
             # successful fake; no GitHub calls, pushes or builds may escape.
+            if (disable_result and argv[:3] == ("gh", "pr", "merge")
+                    and "--disable-auto" in argv):
+                merged_by_server[0] = disable_result == "merged"
+                return subprocess.CompletedProcess(argv, 1, stdout="", stderr="")
             if (server_omits_local_gate and argv[:3] == ("gh", "pr", "merge")
                     and "--auto" in argv):
                 merged_by_server[0] = True
@@ -128,6 +190,8 @@ class ShipResumeTests(unittest.TestCase):
         if gate_state:
             patches["required_check_state"] = mock.Mock(
                 return_value=(gate_state, [gate_name]))
+        if registry_turns is not None:
+            patches["registry_turn_blocker"] = mock.Mock(side_effect=registry_turns)
         args = collab.build_parser().parse_args(
             ["ship", "--poll-seconds", "20", "--timeout-seconds", str(timeout_seconds)])
         if gate_state == "failed":
@@ -158,6 +222,42 @@ class ShipResumeTests(unittest.TestCase):
         calls["required_check_state"].assert_called_once()
         self.assertFalse(any(c.args[1:2] == ("push",)
                              for c in calls["git"].call_args_list))
+
+    def test_registry_wait_disarms_auto_merge_and_preserves_the_ready_head(self):
+        calls = self.run_ship(gate_state="success", registry_turns=[3, None],
+                              armed_auto_merge=True)
+        commands = [c.args[0] for c in calls["run"].call_args_list]
+        self.assertEqual(sum("--disable-auto" in c for c in commands), 1)
+        self.assertEqual(sum("--auto" in c for c in commands), 1)
+        self.assertLess(next(i for i, c in enumerate(commands) if "--disable-auto" in c),
+                        next(i for i, c in enumerate(commands) if "--auto" in c))
+        calls["merge_current_main"].assert_not_called()
+        self.assertFalse(any(c.args[1:2] == ("push",) for c in calls["git"].call_args_list))
+        self.assertEqual(calls["elapsed"], 20)
+
+    def test_registry_wait_does_not_arm_auto_merge_while_ci_is_pending(self):
+        calls = self.run_ship(gate_state="pending", registry_turns=[3],
+                              armed_auto_merge=True)
+        commands = [c.args[0] for c in calls["run"].call_args_list]
+        self.assertTrue(any("--disable-auto" in c for c in commands))
+        self.assertFalse(any("--auto" in c for c in commands))
+        calls["merge_current_main"].assert_not_called()
+
+    def test_registry_wait_does_not_repair_a_conflict_while_waiting(self):
+        calls = self.run_ship(gate_state="pending", conflict=True, registry_turns=[3])
+        calls["merge_current_main"].assert_not_called()
+        calls["gh_api_write"].assert_not_called()
+
+    def test_auto_merge_winning_the_suspend_race_is_a_success(self):
+        calls = self.run_ship(gate_state="success", registry_turns=[3],
+                              armed_auto_merge=True, server_omits_local_gate=True,
+                              disable_result="merged")
+        calls["merge_pr_or_observe_auto_merge"].assert_not_called()
+
+    def test_suspend_failure_on_an_open_pr_stops_shipping(self):
+        self.run_ship(gate_state="success", registry_turns=[3], armed_auto_merge=True,
+                      server_omits_local_gate=True, disable_result="failed",
+                      expected_error="could not suspend auto-merge")
 
     def test_pending_local_gate_cannot_be_bypassed_by_weaker_server_rules(self):
         calls = self.run_ship(

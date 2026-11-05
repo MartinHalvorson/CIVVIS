@@ -2209,6 +2209,10 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-lane-lends-the-army`; see
         /// `advanced/threatened_lane_lends_the_army.rs`.
         threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
+        /// Opt-in gene `prod-tiles-call-the-builders`; acts through
+        /// `builders-cover-the-worked-backlog`'s step. See
+        /// `ai/prod_tiles_call_the_builders.rs`.
+        base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
         /// Opt-in gene `threatened-war-holds-the-claims`; see
         /// `advanced/threatened_war_holds_the_claims.rs`.
         threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
