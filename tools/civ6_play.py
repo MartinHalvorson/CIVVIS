@@ -2876,7 +2876,7 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
                          board_ready=None, relay_s: float | None = None,
-                         defer_s: float = 0.0) -> bool:
+                         defer_s: float = 0.0, alive=None) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
     ``board_ready`` decides only after the screen has failed the exact intro
@@ -2938,6 +2938,15 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
             print(f"[setup] no live board within {defer_s:.0f}s; probing the "
                   "leader intro", flush=True)
         for retry in range(retries):
+            # ★ A GAME THAT DIED IN ITS LOAD WAS PROBED FOR FOUR MINUTES. Live
+            # 2026-11-05 003645Z: Civ VI segfaulted 2 s after Start and this
+            # loop took 120 screenshots of the desktop (~4.3 min) before the
+            # relaunch. Nothing on the screen can answer once the process is
+            # gone, so stop and let the caller's startup failure path run.
+            if alive is not None and not alive():
+                print("[setup] Civilization VI exited during the load; "
+                      "stopping the leader-intro probe", flush=True)
+                return False
             shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
             screenshot(shot)
             if _leader_intro_visible(shot, bounds, leader):
@@ -4294,13 +4303,17 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=1.0,
                              board_ready=board_is_ready, relay_s=0.05,
-                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
+                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0),
+                             alive=lambda: bool(env.game_pids()))
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do
             # not spend the entire normal startup budget waiting for a second
             # event that may not arrive until the brain has that state.
             return True
+        if not env.game_pids():
+            print("the game exited while loading", file=sys.stderr)
+            return False
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
                                                           patience, verify_s,
                                                           bounds)):
@@ -4472,7 +4485,8 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
                     RESTART_INTRO_DEFER_S)
         advance_leader_intro(bounds, args.leader, run_dir, 1,
                              retries=max(8, min(120, int(verify_s))), poll_s=1.0,
-                             board_ready=board_is_ready, relay_s=0.05, defer_s=defer)
+                             board_ready=board_is_ready, relay_s=0.05, defer_s=defer,
+                             alive=lambda: bool(env.game_pids()))
     started = board_seen["value"] or wait_for_agent_start(
         tail, relay, verify_s, still_loading=lambda: bool(env.game_pids()))
     if seat:
