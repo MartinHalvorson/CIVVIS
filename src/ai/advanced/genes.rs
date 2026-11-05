@@ -5081,6 +5081,14 @@ pub const GENES: &[Gene] = &[
     // Amenities line reaching 10-15% of Science. The housing card is not
     // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
     Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

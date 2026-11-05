@@ -356,6 +356,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |
+| `war-defense-spends-the-runway` | off (unmeasured) | Opt-in gene `war-defense-spends-the-runway`; see `advanced/war_defense_spends_the_runway.rs`. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
 
