@@ -61,41 +61,43 @@ fn the_city_tile_is_never_left_to_nobody() {
     assert_eq!(orders[&warrior], ring);
 }
 
-/// A front post a Musketman's blow removes a Warrior on is traded for the
-/// Warrior's own safe tile; the City Center's holder is untouched.
+/// A front post a Musketman's blow removes a wounded Warrior on is traded
+/// for the Warrior's own tile out of its reach; the City Center's holder is
+/// untouched. The Musketman stands beside the post (it strikes from its own
+/// tile, whatever the ground), and the Warrior's tile is four from it.
 #[test]
 fn a_post_one_blow_removes_its_soldier_on_is_moved() {
     let (mut g, city) = bare_town();
-    let (front, musket_at) = g
+    let (front, musket_at, safe) = g
         .wring(city, 1)
         .into_iter()
         .filter(|pos| land(&g, *pos))
         .find_map(|front| {
-            g.wring(front, 2)
+            let musket = g
+                .nbrs(front)
                 .into_iter()
-                .find(|pos| g.wdist(*pos, city) == 3 && land(&g, *pos))
-                .map(|musket| (front, musket))
+                .find(|pos| g.wdist(*pos, city) == 2 && land(&g, *pos))?;
+            let safe = g
+                .wring(city, 2)
+                .into_iter()
+                .filter(|pos| land(&g, *pos) && g.wdist(*pos, musket) >= 4)
+                .min()?;
+            Some((front, musket, safe))
         })
-        .expect("a front tile with land two beyond it");
-    let safe = g
-        .wring(city, 1)
-        .into_iter()
-        .filter(|pos| land(&g, *pos))
-        .max_by_key(|pos| (g.wdist(*pos, musket_at), *pos))
-        .expect("a far ring tile");
-    assert!(
-        g.wdist(safe, musket_at) >= 4,
-        "the far side is out of its reach"
-    );
+        .expect("a front tile, land beside it, and land four beyond");
     let archer = g.spawn_test_unit("archer", 1, city);
     let warrior = g.spawn_test_unit("warrior", 1, safe);
+    g.units.get_mut(&warrior).unwrap().hp = 30;
     g.spawn_test_unit("musketman", 0, musket_at);
     let mut field = DangerField::new(&g, 1);
     assert!(
-        field.upper_danger(front, warrior) >= 100.0,
-        "the front removes the Warrior"
+        field.upper_danger(front, warrior) >= 30.0,
+        "the front removes the wounded Warrior"
     );
-    assert!(field.upper_danger(safe, warrior) < 100.0);
+    assert!(
+        field.upper_danger(safe, warrior) < 30.0,
+        "its own tile is out of reach"
+    );
     let mut orders = BTreeMap::from([(archer, city), (warrior, front)]);
     let spared = spare_the_one_blow(&g, 1, city, &[archer, warrior], &mut orders, &mut field);
     assert_eq!(spared.filled, None, "the Archer holds the city");
