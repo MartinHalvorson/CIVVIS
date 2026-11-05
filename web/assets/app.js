@@ -12931,6 +12931,11 @@ function faithColor(name) {
 // built. Both map renderers draw this one function, because the plate is the
 // main thing a player reads on a map: until it was shared, the default globe
 // worlds showed a bare name and everything else lived behind a click.
+let cityPlateBoxes = [];
+function cityPlateAt(sx, sy) {
+  return cityPlateBoxes.findLast(box => sx >= box.x && sx <= box.x + box.width &&
+    sy >= box.y && sy <= box.y + box.height) || null;
+}
 function drawCityNameplate(c, x, y, S) {
   cx.save();
   cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -12949,6 +12954,13 @@ function drawCityNameplate(c, x, y, S) {
   const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
                       minorPlate ? 48 : 62);
   const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+  // The plate sits above the city's own tile, so a click on it would land on
+  // the neighbour. Keep its box in page pixels for the map click to find.
+  const toPage = cx.getTransform();
+  cityPlateBoxes.push({city: c.id,
+    x: (toPage.a * bx + toPage.c * by + toPage.e) / DPR,
+    y: (toPage.b * bx + toPage.d * by + toPage.f) / DPR,
+    width: tw * toPage.a / DPR, height: bannerHeight * toPage.d / DPR});
   cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
   if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
   cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
@@ -21278,6 +21290,7 @@ function drawPlanetChartMarginalia() {
 }
 
 function drawPlanetMap() {
+  cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
     planetGpuHide();
@@ -32038,6 +32051,19 @@ cv.addEventListener("click", ev => {
   if (!tackMode && !interfaceMode) {
     const target = skyArrivalHit(sx, sy);
     if (target) { skyGoToWorld(target.id); return; }
+  }
+  // A plate is a button: your own opens that city, wherever the plate has
+  // drifted relative to the tiles under it.
+  if (!tackMode && !interfaceMode && !SPEC && state) {
+    const plate = cityPlateAt(sx, sy);
+    const city = plate && state.cities.find(candidate => candidate.id === plate.city);
+    if (city && city.owner === 0) {
+      selCity = city; sel = null;
+      clearUnitIntel();
+      openCityScreen(city.id);
+      draw(); drawSide(); drawUbar();
+      return;
+    }
   }
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;

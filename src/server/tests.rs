@@ -8,8 +8,7 @@ use super::{
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
     EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
     EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-    EMBEDDED_INDEX, EMBEDDED_INDEX_HTML, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL,
-    VIEWER_ACTIVE,
+    EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -14374,6 +14373,16 @@ fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
     // Units first, then the city, and a tile with no city still wraps round.
     assert!(click.contains("held === here.length - 1"));
     assert!(click.contains("sel = here[(held + 1) % here.length];"));
+    // The plate is drawn above the tile, so a click on it has to be caught
+    // before the click is read as a tile, and only one frame's boxes count.
+    let plate = EMBEDDED_APP_JS
+        .find("const plate = cityPlateAt(sx, sy);")
+        .expect("the map click looks for a plate");
+    let tile = EMBEDDED_APP_JS
+        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (tackMode)")
+        .expect("the map click reads its tile");
+    assert!(plate < tile);
+    assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));
 }
 
 #[test]
@@ -14381,7 +14390,7 @@ fn css_font_shorthands_name_a_family() {
     // `font: 800 12px/1 inherit` is invalid CSS, so the whole declaration is
     // dropped: the label under the research turn count kept the 15px serif at
     // line-height 1 and overprinted the number.
-    let invalid = EMBEDDED_INDEX_HTML
+    let invalid = super::EMBEDDED_INDEX_HTML
         .split("font:")
         .skip(1)
         .map(|rest| rest.split(';').next().unwrap_or("").trim())
