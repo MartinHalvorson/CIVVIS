@@ -5039,6 +5039,15 @@
           "opportunistic-war-2": null
         }
       },
+      "parity-upgrades-before-it-buys": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "parity-upgrades-before-it-buys": null,
+          "parity-upgrades-before-it-buys-2": null
+        }
+      },
       "pass-picket": {
         "rule_on": [
           "pass-picket"
@@ -5048,6 +5057,26 @@
         "versions": {
           "pass-picket": null,
           "pass-picket-2": null
+        }
+      },
+      "pingala-follows-research": {
+        "rule_on": [
+          "pingala-follows-research"
+        ],
+        "head": null,
+        "ships": "pingala-follows-research",
+        "versions": {
+          "pingala-follows-research": null,
+          "pingala-follows-research-2": null
+        }
+      },
+      "plaza-serves-the-scientist": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "plaza-serves-the-scientist": null,
+          "plaza-serves-the-scientist-2": null
         }
       },
       "policy-deck-hysteresis": {

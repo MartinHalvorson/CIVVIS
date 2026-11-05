@@ -2216,6 +2216,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
@@ -2238,6 +2241,10 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `plaza-serves-the-scientist-2` (version 2 of
+        /// `plaza-serves-the-scientist`, which it carries); see
+        /// `advanced/plaza_serves_the_scientist_2.rs`.
+        plaza_serves_the_scientist_2 => enable_plaza_serves_the_scientist_2, disable_plaza_serves_the_scientist_2;
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
@@ -2245,6 +2252,18 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Pingala version two retains ordinary dividends and joins a committed
+    /// launch producer. Independently off and unpriced; one family version plays.
+    pub fn enable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research = false;
+        self.pingala_follows_research_2 = true;
+    }
+
+    /// Withhold the independent Pingala launch-job version.
+    pub fn disable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research_2 = false;
+    }
+
     /// Promote an Apostle for the job the empire needs rather than the largest
     /// number on the card. Off in production; opted into by name (`victory_eval
     /// --with apostle-promotion-by-role`, `gene_screen`). See

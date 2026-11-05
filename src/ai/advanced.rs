@@ -3339,6 +3339,10 @@ pub struct AdvancedAi {
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
+    /// Spy id → the turn its current `spy_orders_until` entry was set, so a
+    /// later turn that finds the Spy idle by the host's report spends it. See
+    /// `advanced/spy_patience_reads_the_host.rs`.
+    spy_order_turns: BTreeMap<u32, u32>,
 
     /// Whether a seat playing under an assigned victory target may still
     /// mount a denial against a rival at MATCH POINT. `victory_denial` has
@@ -8263,6 +8267,11 @@ pub struct AdvancedAi {
     /// hold before it buys, never buys an obsolete unit, and stops buying when
     /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
     parity_upgrades_before_it_buys: bool,
+    /// `parity-upgrades-before-it-buys-2`: version one, and the base
+    /// controller's wartime defender purchases skip a unit two or more eras
+    /// behind the world. See
+    /// `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys_2: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -8493,6 +8502,8 @@ pub struct AdvancedAi {
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     pingala_follows_research: bool,
+    /// Independently measured Pingala launch-job version; preserves version one.
+    pingala_follows_research_2: bool,
     /// Native governor establishment is a lower bound, not total tenure.
     /// Keep observed post clocks across fresh boards; city coordinates survive
     /// the bridge's city-id remapping. See `governor_dividends`.
@@ -8716,6 +8727,11 @@ pub struct AdvancedAi {
     /// without the stand's danger charged to it. See
     /// `advanced/battle_planner.rs`. Off by default.
     ranged_kills_are_free: bool,
+    /// `plaza-serves-the-scientist-2`: version 2 of the family. A Science
+    /// seat's Plaza city takes its next tier building ahead of routine work.
+    /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
@@ -10816,6 +10832,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// A Spy the host reports idle spends its order's patience. See
+/// `advanced/spy_patience_reads_the_host.rs`.
+mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -10836,6 +10855,9 @@ mod parity_upgrades_before_it_buys;
 mod paused_district_finish;
 /// `pillaged-districts-repair-first`: see `advanced/pillaged_repairs_first.rs`.
 mod pillaged_repairs_first;
+/// `plaza-serves-the-scientist-2`: the Science Plaza's tier buildings claim
+/// its city's queue. See `advanced/plaza_serves_the_scientist_2.rs`.
+mod plaza_serves_the_scientist_2;
 mod prophet_race_points;
 /// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
 /// and the race stops paying once the host has no Prophet left. See
@@ -11641,6 +11663,7 @@ impl AdvancedAi {
             spy_mission_patience: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
+            spy_order_turns: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
             projected_stock_denial: false,
@@ -12298,6 +12321,7 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
+            parity_upgrades_before_it_buys_2: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
@@ -12346,6 +12370,7 @@ impl AdvancedAi {
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
+            pingala_follows_research_2: false,
             remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
@@ -12379,6 +12404,7 @@ impl AdvancedAi {
             ranged_finish_on_the_mean: false,
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
+            plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
@@ -22725,7 +22751,12 @@ impl AdvancedAi {
         // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
         // first, as they do on the main path. See
         // `advanced/hint_runs_the_claims.rs`.
-        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        // A city the war can reach keeps the governor's own choice (its Walls
+        // or defender): -78's 523-board census found 10 of 12 lost Walls hints
+        // in cities with a hostile within six.
+        let claims_and_writers = self.hint_runs_the_claims
+            && self.base.book_pos >= 4
+            && !self.hint_city_in_reach_of_war(g, pid, city);
         if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
         }
@@ -29501,9 +29532,12 @@ impl AdvancedAi {
         // `denial-spies-count-their-losses`: the base production fallback
         // reads this. See `advanced/denial_spies_count_their_losses.rs`.
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
-        // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
-        self.base.plaza_serves_science =
-            self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);
+        // `parity-upgrades-before-it-buys-2`: the base defender purchases
+        // read this. See `advanced/parity_upgrades_before_it_buys.rs`.
+        self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
+        // `plaza-serves-the-scientist` (and version 2, which carries it): the
+        // Plaza's tier list reads this.
+        self.base.plaza_serves_science = self.plaza_serves_science_on();
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
@@ -30107,6 +30141,10 @@ impl AdvancedAi {
             // displacement rule. Exact no-op while the gene is off. See
             // `advanced/spies_steal_the_lead.rs`.
             self.claim_queues_for_steal_spies(g, pid, &plan);
+            // `plaza-serves-the-scientist-2`: the Science Plaza's next tier
+            // building (the Intelligence Agency's Spy slot and level) under
+            // the same displacement rule. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_tier(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
