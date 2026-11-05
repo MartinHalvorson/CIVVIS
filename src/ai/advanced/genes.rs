@@ -5025,6 +5025,14 @@ pub const GENES: &[Gene] = &[
     // 8 a tile inside ten of the nearest charted rival city. See
     // `advanced/early_city_distance.rs`.
     Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -10017,3 +10017,58 @@ fn the_aluminum_ask_ceiling_tops_up_within_the_treasury() {
         "buys only"
     );
 }
+
+/// `denial-spies-count-their-losses`: the ledger reads our Spy losses
+/// from the run's log as it grows, whole lines only, and starts over on a
+/// new (shorter) log.
+#[test]
+fn spy_loss_ledger_reads_the_log_as_it_grows() {
+    use std::io::Write;
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-spy-ledger-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    let lost = |turn: u32, kind: &str| {
+        format!(
+            "{{\"kind\": \"unit_lost\", \"turn\": {turn}, \"unit\": 7, \"unit_kind\": \"{kind}\"}}\n"
+        )
+    };
+    std::fs::write(
+        &path,
+        format!(
+            "{}{}{}",
+            lost(119, "UNIT_SPY"),
+            lost(120, "UNIT_WARRIOR"),
+            "{\"kind\": \"state\", \"turn\": 121}\n"
+        ),
+    )
+    .unwrap();
+    let mut ledger = SpyLossLedger::default();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![119]);
+
+    // A half-written line waits for its newline.
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    let next = lost(129, "UNIT_SPY");
+    file.write_all(&next.as_bytes()[..20]).unwrap();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![119]);
+    file.write_all(&next.as_bytes()[20..]).unwrap();
+    file.write_all(lost(131, "UNIT_SPY").as_bytes()).unwrap();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![119, 129, 131]);
+    // A replay reads only the losses up to its turn.
+    assert_eq!(ledger.through(129), vec![119, 129]);
+
+    // A new run's shorter log starts the ledger over.
+    std::fs::write(&path, lost(5, "UNIT_SPY")).unwrap();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![5]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

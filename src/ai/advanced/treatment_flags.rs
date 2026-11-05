@@ -2180,6 +2180,9 @@ impl AdvancedAi {
         /// Opt-in gene `early-cities-keep-their-distance`; see
         /// [`Self::early_cities_keep_their_distance`].
         early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
+        /// Opt-in gene `denial-spies-count-their-losses`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
     }
 }
 
