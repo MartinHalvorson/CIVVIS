@@ -1,5 +1,5 @@
 //! One production player, with observation and execution owned by adapters.
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::{finishing::begin_player_turn, AdvancedAi};
@@ -234,27 +234,37 @@ fn execute_frame<'a>(
     )
 }
 
-/// Keep only each city's last `Produce` among a frame's actions, as the
-/// live bridge does before it sends a batch (`civvis_orders.rs`, "Only its
-/// final choice should acquire the host-turn lease").
+/// `districts-price-the-improvement`: drop a city's earlier `Produce` of a
+/// District when a later `Produce` this frame re-sites the SAME District
+/// elsewhere, as the live bridge (which sends only each city's last Produce)
+/// effectively does. Nothing else is dropped: collapsing every earlier order
+/// left a city idle whenever the board refused its last one (the war-paced
+/// Deity read with the wholesale collapse lost 11.5 Production a turn at t100).
 fn final_production_only<'a>(
     actions: impl Iterator<Item = &'a (usize, Action)>,
 ) -> Vec<&'a (usize, Action)> {
     let actions: Vec<&(usize, Action)> = actions.collect();
-    let mut last: BTreeMap<u32, usize> = BTreeMap::new();
-    for (index, (_, action)) in actions.iter().enumerate() {
-        if let Action::Produce { city, .. } = action {
-            last.insert(*city, index);
-        }
-    }
-    actions
-        .into_iter()
-        .enumerate()
-        .filter(|(index, (_, action))| match action {
-            Action::Produce { city, .. } => last.get(city) == Some(index),
-            _ => true,
+    let superseded = |index: usize| -> bool {
+        let Action::Produce {
+            city,
+            item: Item::District { district, pos },
+        } = &actions[index].1
+        else {
+            return false;
+        };
+        actions[index + 1..].iter().any(|(_, later)| {
+            matches!(
+                later,
+                Action::Produce {
+                    city: later_city,
+                    item: Item::District { district: later_district, pos: later_pos },
+                } if later_city == city && later_district == district && later_pos != pos
+            )
         })
-        .map(|(_, action)| action)
+    };
+    (0..actions.len())
+        .filter(|&index| !superseded(index))
+        .map(|index| actions[index])
         .collect()
 }
 
