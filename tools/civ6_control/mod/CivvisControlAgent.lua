@@ -17909,6 +17909,82 @@ CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
 	return mine or low;
 end
 
+-- ★★ PUBLIC WORKS SLOWS THE LEADING RACER.
+--
+-- WC_RES_PUBLIC_WORKS targets a project (Expansion2_Congress.xml, ERA_ATOMIC
+-- to ERA_INFORMATION): option A is +100% Production toward it, option B -50%,
+-- for every civilization. It is the only resolution that touches a space
+-- project, and it reaches the ballot at turns 132-175, while the eventual
+-- winner lands Moon (median t150), Mars (t164) and the Exoplanet (t173).
+-- In all 27 recorded sessions (151 Immortal and Deity runs, 11-01 to 11-05)
+-- the default ballot spent its free vote A on the first target, Earth
+-- Satellite, with 120-334 Favor in hand, and rivals carried A on the Moon
+-- Landing three times and the Exoplanet once while they raced for it.
+--
+-- So: when we lead the race, A on our next project, which no rival can build
+-- yet. Otherwise B on the next project of the leading racer. Past the
+-- Exoplanet the next project is a laser. The ballot spends at most half of
+-- what the Diplomatic Victory ballot left, `PublicWorksMaxVotes` (9) at most.
+-- Replayed over the 16 sessions with a per-turn panel, the racer's next
+-- project already took B in 3, half the bank would have carried it in 5 more
+-- (3, 6, 6, 9 and 9 votes) and 8 stayed out of reach. A Diplomatic racer
+-- keeps its own vote: the participation point is its race. Rivals we have
+-- not met are not read. `nil` leaves the ballot as it was. Off with
+-- `PublicWorksDenial = false`. Bare globals: the chunk is at the register cap.
+CivvisSpaceStage = function(id)
+	return tonumber(try(function()
+		local stats = Players[id]:GetStats();
+		local stage = 0;
+		for _, name in ipairs({ "PROJECT_LAUNCH_EARTH_SATELLITE",
+			"PROJECT_LAUNCH_MOON_LANDING", "PROJECT_LAUNCH_MARS_BASE",
+			"PROJECT_LAUNCH_EXOPLANET_EXPEDITION" }) do
+			local project = GameInfo.Projects[name];
+			if project ~= nil and (stats:GetNumProjectsAdvanced(project.Index) or 0) > 0 then
+				stage = stage + 1;
+			end
+		end
+		return stage;
+	end, 0)) or 0;
+end
+
+CivvisPublicWorksVote = function(rtype, targets, candidates, pid, favor, costs, config, stageOf)
+	config = type(config) == "table" and config or {};
+	if config.PublicWorksDenial == false or rtype ~= "WC_RES_PUBLIC_WORKS"
+		or type(targets) ~= "table" or type(costs) ~= "table"
+		or CivvisDiploRacer(config) then
+		return nil;
+	end
+	stageOf = stageOf or CivvisSpaceStage;
+	local ours, racer = tonumber(stageOf(pid)) or 0, 0;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) then
+			local stage = tonumber(stageOf(tonumber(c.id))) or 0;
+			if stage > racer then racer = stage; end
+		end
+	end
+	local option, stage = 2, racer;
+	if ours > racer then option, stage = 1, ours; end
+	local chain = { "PROJECT_LAUNCH_EARTH_SATELLITE", "PROJECT_LAUNCH_MOON_LANDING",
+		"PROJECT_LAUNCH_MARS_BASE", "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+		"PROJECT_ORBITAL_LASER", "PROJECT_TERRESTRIAL_LASER" };
+	local idx = nil;
+	for step = stage + 1, #chain do
+		for i, t in pairs(targets) do
+			if type(i) == "number" and string.find(tostring(t), chain[step], 1, true) then
+				idx = i;
+			end
+		end
+		if idx ~= nil then break; end
+	end
+	if idx == nil then return nil; end
+	local bank = (tonumber(favor) or 0) / 2;
+	local want = math.min(tonumber(config.PublicWorksMaxVotes) or 9, tonumber(costs.MaxVotes) or 1);
+	while want > 1 and (tonumber(costs[want - 1]) or bank + 1) > bank do
+		want = want - 1;
+	end
+	return idx, option, want, (want > 1) and (tonumber(costs[want - 1]) or 0) or 0;
+end
+
 CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, lastA, config, tourismOf)
 	config = type(config) == "table" and config or {};
 	if config.HeritageDenial == false or rtype ~= "WC_RES_HERITAGE_ORG"
@@ -24054,6 +24130,9 @@ local function tick()
 				local r, info, rtype = entry.r, entry.info, entry.rtype;
 				do
 					local option, selection, votes = 1, 1, 1;
+					-- `CivvisPublicWorksVote` chose: the free-vote denial below
+					-- would otherwise flip its B into an A on the racer's project.
+					local racerSlowed = false;
 					local targets = r.PossibleTargets or {};
 					if rtype == "WC_RES_DIPLOVICTORY" then
 						-- See `CivvisCongressDenialTarget`: never the default, us.
@@ -24305,6 +24384,16 @@ local function tick()
 								rtype, targets, candidates, pid, favor, costs,
 								envoyTally.wc_last_a, cfg, option, selection, votes, spent);
 						end
+					elseif rtype == "WC_RES_PUBLIC_WORKS" then
+						-- See `CivvisPublicWorksVote`.
+						local pwIdx, pwOption, pwVotes, pwPrice = CivvisPublicWorksVote(rtype,
+							targets, candidates, pid, favor, costs, cfg);
+						if pwIdx ~= nil then
+							option, selection, votes = pwOption, pwIdx, pwVotes;
+							favor = favor - pwPrice;
+							spent = spent + pwPrice;
+							racerSlowed = true;
+						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
 					end
@@ -24314,7 +24403,8 @@ local function tick()
 					-- player-target resolution option B names the leader.
 					-- A racer's own participation point is worth more than the
 					-- leader's predicted one: it buys the outcome instead.
-					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
+					local deny = (not racerSlowed and not CivvisDiploRacer(cfg))
+						and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
 					-- See `CivvisCongressTargetIndex`: no option B naming a leader
 					-- the ballot does not offer.
