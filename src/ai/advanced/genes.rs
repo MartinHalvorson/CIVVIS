@@ -5005,6 +5005,16 @@ pub const GENES: &[Gene] = &[
     // fits, the slot asks for a type we lack and pays in strategics the army
     // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
     Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
+    // Version two of `luxury-asks-pay-in-strategics`: after version one's
+    // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
+    // the same partners every time (24 of 27), mostly on Horses (22 of 42;
+    // Niter 2 of 10), and luxury swaps put the same refused copy up turn
+    // after turn (one Marble eight times to three partners). A partner whose
+    // strategic-paid ask shorted inside 30 standard turns is not asked again,
+    // Horses go only when nothing else is spare, and a luxury whose swap
+    // shorted stays home so the slot reaches the strategic ask. See
+    // `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics-2", field: "luxury_asks_pay_in_strategics_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics_2, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics_2 },
     // Version two (live Lv 8 Deity Korea Online, 11-04 night, -af's trace,
     // under the operator's early_city_lost restart: losing any of our first
     // three cities ends the game). Version one moved the capital's Defend

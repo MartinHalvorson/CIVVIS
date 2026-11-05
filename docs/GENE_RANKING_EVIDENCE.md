@@ -295,7 +295,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
-| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | 1 \| 1 |
+| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
+| `luxury-asks-pay-in-strategics-2` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics-2`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `medina-yields-to-the-amenities` | off (unmeasured) | Opt-in gene `medina-yields-to-the-amenities`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |

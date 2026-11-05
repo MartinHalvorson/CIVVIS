@@ -2182,6 +2182,9 @@ impl AdvancedAi {
         /// Opt-in gene `luxury-asks-pay-in-strategics`; see
         /// `advanced/luxury_asks_pay_in_strategics.rs`.
         luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
+        /// Opt-in gene `luxury-asks-pay-in-strategics-2`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics_2 => enable_luxury_asks_pay_in_strategics_2, disable_luxury_asks_pay_in_strategics_2;
         /// Opt-in gene `military-alliance-shield`; see
         /// `advanced/military_alliance_shield.rs`.
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
