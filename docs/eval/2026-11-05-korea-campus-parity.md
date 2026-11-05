@@ -64,11 +64,10 @@ contains the original sealed captured reads, all successful replies and captures
 the failed command/log, amendment, source provenance/context, file hashes and
 `verify_archive.py`. Extract it and run that script with Python 3.12.
 
-These proposals establish which independent guard held the queue and that
-removing it proposes the native-legal district. They are **not** measurements
-of this candidate's activation, uninterrupted original private-state parity,
-native execution, elapsed turns saved, or win-rate gain. The candidate's own
-same-binary OFF/ON proposal qualification and native evaluation remain pending.
+These old-source proposals establish which independent guard held the queue
+and that removing it proposes the native-legal district. They do not measure
+the candidate policy, uninterrupted original private-state parity, native
+execution, elapsed turns saved, or win-rate gain.
 
 ## Evaluation instrumentation corrections
 
@@ -87,10 +86,41 @@ diagnosis, not retroactive qualification. Preserve those failed studies. Future
 native preflights must use the frozen command builder and save actual argv
 before assertions.
 
-## Candidate validation
+## Candidate qualification and validation
 
-- Scoped rustfmt and whitespace checks: passed before checkpoint.
-- Three new tests cover bounded handoff, banked military progress, zero-progress
-  retention after a quote change, and negative scope/budget/emergency cases.
-- Rust execution, full CI, exact-source native candidate build/proposals, and
-  native strength evaluation: pending. No strength improvement is claimed.
+Exact candidate `e520fc4582e5267060c66f099f81228a28faf09d` passed all eight
+initial GitHub gates:7050 Rust tests passed/53 skipped, including16 Campus
+and4 near-rival tests. Separate doctests passed with0 examples and4 ignored;
+controller isolation suites passed79+21+24 tests. All three new tests passed.
+
+[Mac run42067971064](https://github.com/MartinHalvorson/CIVVIS/actions/runs/42067971064)
+passed both focused modules (16+4 tests), built both native binaries and ran
+their smokes. The downloaded artifact's source hashes matched the clean pinned
+checkout before any candidate query. The orders executable SHA256 is
+`88257cc63ce3eccfdd4aeec1250fbca514af99de3e614cdbf899a61064688e2c`.
+
+This candidate then ran the predeclared OFF/ON/ON/OFF roles at the same61/0
+native input. OFF omits only the forced Campus-v2 opt-in; near-rival deterrence
+stays **on in all four roles**. Both OFFs choose Warrior, and both ONs choose
+the native-legal Seowon at6,10. Each role made17 actual reads identical to the
+selected native bytes. Full replies repeat within each setting. Actual EOF
+and query genomes, full command vectors, source/executable bindings and all68
+reads passed the independent verifier. All four scheduled roles completed
+without a query failure or retry in this candidate study.
+
+The [raw candidate archive](2026-11-05-korea-campus-parity.candidate.native.tar.xz)
+also includes the original18 sealed native reads, the Mac artifact's metadata,
+raw replies/captures and a standalone verifier. An extracted copy passes its
+verifier. Archive SHA256:
+`13015ff8f1e9ad1647baf403995bb11ffd8e2dabef9840b115c5170f4740c37d`
+(314364 bytes).
+
+These are cold, fresh-private, same-candidate activation results. Updated
+source defaults are recorded; original-source genome/private-state parity
+is not claimed. This input exposes the parity exception; Campus-v2 also owns
+its earlier changes, so whole-game comparisons of that flag cannot isolate
+this exception's individual strength. Actual construction timing, city
+survival and Science-win strength remain unmeasured.
+
+Current main integration and final-head validation are required before ready.
+No strength improvement is claimed.
