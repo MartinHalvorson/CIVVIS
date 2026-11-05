@@ -5074,6 +5074,15 @@ pub const GENES: &[Gene] = &[
     // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
     // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
     Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

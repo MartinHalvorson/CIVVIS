@@ -2191,6 +2191,9 @@ impl AdvancedAi {
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
+        /// Opt-in gene `threatened-lane-lends-the-army`; see
+        /// `advanced/threatened_lane_lends_the_army.rs`.
+        threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
     }
 }
 
