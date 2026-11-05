@@ -1777,7 +1777,7 @@ ENGINE_PARAMETERS = {
     "LOYALTY_MAXIMUM": 100,
     "LOYALTY_START": 100,
     "DISTRICT_POPULATION_REQUIRED_PER": 3,  # one specialty per three Population
-    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game.rs record_war_unit_loss
+    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game/war_log.rs record_war_unit_loss
     "WAR_WEARINESS_PER_COMBAT_IN_ALLIED_LANDS": 1,  # accrue_combat_weariness
     "WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS": 2,
     "WAR_WEARINESS_PER_WMD_LAUNCHED": 10,  # game.rs Action::WmdStrike

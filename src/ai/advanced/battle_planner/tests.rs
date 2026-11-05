@@ -1248,6 +1248,7 @@ fn previewed_finisher(
             att: 30.0,
             def_base: 20.0,
             host: Some((100.0, 0.0)),
+            kill_only: false,
         }],
     )
 }
@@ -1760,4 +1761,92 @@ fn the_tile_an_embarked_unit_leaves_is_a_stand_for_the_galley() {
         "the reach reads through the unit that leaves"
     );
     assert!(field.danger(at(10, 7), ours) > 0.0);
+}
+
+#[test]
+fn ranged_kills_are_free_ships_off_and_is_registered() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.ranged_kills_are_free, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "ranged_kills_are_free"));
+    super::super::test_support::opt_in_off_in_both_controllers("ranged-kills-are-free", |ai| {
+        ai.ranged_kills_are_free
+    });
+}
+
+/// Two shooters whose shots each deal 25 to a 38-hp target (a kill needs
+/// 38 x KILL_MARGIN), both kill-only (recovering or doomed) and in danger
+/// where they stand: together they are a plan, alone a shot is not, and the
+/// danger at their stand is not charged.
+#[test]
+fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
+    let mut g = open_field();
+    let a = g.spawn_unit("archer", 0, at(9, 4));
+    let b = g.spawn_unit("archer", 0, at(9, 5));
+    let victim = g.spawn_unit("swordsman", 1, at(11, 4));
+    // Three more hostiles keep both stands deadly.
+    for row in [3, 5, 6] {
+        g.spawn_unit("spearman", 1, at(10, row));
+    }
+    wound(&mut g, victim, 38);
+    let shooter = |uid: u32| Shooter {
+        uid,
+        pos: g.units[&uid].pos,
+        hp: g.units[&uid].hp,
+        cost: 40.0,
+        value: 60.0,
+        holds_walls: false,
+    };
+    let shooters = vec![shooter(a), shooter(b)];
+    let targets = vec![Target {
+        uid: victim,
+        pos: g.units[&victim].pos,
+        hp: 38,
+        strength: 35.0,
+        kill_value: 250.0,
+        siege: false,
+        captures: true,
+    }];
+    let shot = |index: usize, uid: u32| Candidate {
+        shooter: index,
+        target: 0,
+        from: g.units[&uid].pos,
+        ranged: true,
+        att: 25.0,
+        def_base: 35.0,
+        host: Some((25.0, 0.0)),
+        kill_only: true,
+    };
+    let need = f64::from(targets[0].hp) * KILL_MARGIN;
+    assert!(
+        50.0 >= need && 25.0 < need,
+        "two shots kill at the margin, one does not"
+    );
+    let mut field = DangerField::new(&g, 0);
+    let both = vec![shot(0, a), shot(1, b)];
+    let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
+    assert_eq!(sequence.len(), 2, "two shots kill: {sequence:?} at {score}");
+    assert!(score > 0.0);
+    let alone = vec![shot(0, a)];
+    let (sequence, _) = search_kill_sequence(&shooters, &targets, &alone, &mut field, false);
+    assert!(sequence.is_empty(), "one shot leaves it alive: no plan");
+    // Live 044106Z t49: two shots of about 20 on the 38-hp Swordsman reach
+    // its health at the centre but not 38 x KILL_MARGIN. Kill-only shots
+    // take no return and no new exposure, so the centre is their bar.
+    let light = |index: usize, uid: u32| Candidate {
+        host: Some((20.0, 0.0)),
+        ..shot(index, uid)
+    };
+    assert!(40.0 < need, "the pair falls short of the margin");
+    let both = vec![light(0, a), light(1, b)];
+    let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
+    assert_eq!(
+        sequence.len(),
+        2,
+        "the centre fells it: {sequence:?} at {score}"
+    );
+    let alone = vec![light(0, a)];
+    let (sequence, _) = search_kill_sequence(&shooters, &targets, &alone, &mut field, false);
+    assert!(sequence.is_empty());
 }

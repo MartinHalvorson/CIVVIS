@@ -8673,6 +8673,12 @@ pub struct AdvancedAi {
     /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
     /// set each turn in `take_turn_inner`. Off by default.
     plaza_serves_the_scientist: bool,
+    /// `ranged-kills-are-free`: a recovering, guarding or doomed shooter's
+    /// ranged blow from its own tile joins the kill plan as kill-only — only
+    /// in a sequence that fells its target at the centre of the roll, and
+    /// without the stand's danger charged to it. See
+    /// `advanced/battle_planner.rs`. Off by default.
+    ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
@@ -12308,6 +12314,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             plaza_serves_the_scientist: false,
+            ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
