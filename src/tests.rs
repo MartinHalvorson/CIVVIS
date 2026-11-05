@@ -81,7 +81,9 @@ fn deity_hands_its_bonuses_to_the_ai_seats() {
     let prince = Game::new_with(options("prince", "standard", &[0]));
     // Seat 0 is the human and is untouched; seat 1 is an AI major.
     assert_eq!(deity.handicap_combat_strength(0), 0.0);
-    assert_eq!(deity.handicap_combat_strength(1), 3.0);
+    // Native Deity preview: +4 Combat Strength bonus due to difficulty.
+    // Captured source: docs/fidelity/native-deity-combat-2026-11-05.json.
+    assert_eq!(deity.handicap_combat_strength(1), 4.0);
     assert_eq!(deity.handicap_yield_pct(0).science, 0.0);
     assert_eq!(deity.handicap_yield_pct(1).production, 80.0);
     assert_eq!(deity.handicap_xp_pct(1), 40.0);
@@ -319,7 +321,7 @@ fn handicaps_reach_city_yields_and_unit_strength() {
             .unwrap();
         g.unit_strength(&g.units[&uid], false)
     };
-    assert_eq!(warrior(&deity, 1) - warrior(&prince, 1), 3.0);
+    assert_eq!(warrior(&deity, 1) - warrior(&prince, 1), 4.0);
     assert_eq!(warrior(&deity, 0), warrior(&prince, 0));
 }
 

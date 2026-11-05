@@ -122,7 +122,7 @@ fn immortal_probe_records_and_applies_asymmetric_level_seven_handicaps() {
 
 #[test]
 fn deity_probe_records_and_applies_asymmetric_level_eight_handicaps() {
-    advanced_handicap("deity", 32.0, 80.0, 3.0, 5);
+    advanced_handicap("deity", 32.0, 80.0, 4.0, 5);
 }
 
 #[test]

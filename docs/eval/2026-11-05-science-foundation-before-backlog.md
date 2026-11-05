@@ -1,0 +1,95 @@
+# Science foundation before advanced backlog
+
+`science-foundation-before-backlog` is a default-off experiment. It tests whether a Science seat should open usable Research Labs and nearby Rocketry before optional advanced army/backlog or air research. It does not assert a strength improvement.
+
+## Native motivation
+
+The qualified legacy continuation of `civvis-20261105T002152Z` issued research at frame zero: Advanced Flight at turn 123, Replaceable Parts at 129, then Rifling at 133, Refining at 136, Steel at 138 and Combustion at 142. The journal places the turn-123 research after a Recovery assessment with Gwangju threatened and four Defend objectives; a later same-turn Science assessment must not be assigned to that earlier order. At turn 133 the initial assessment was Science, and the journal explicitly identifies the tank upgrade as the forcing goal.
+
+That continuation had six Universities and no Research Labs at turn 150; Chemistry and Rocketry were still missing. At turn 133, Replaceable Parts and Radio were known and Chemistry needed Sanitation plus Chemistry. These are facts from one selected saved world, not a representative estimate. Several military technologies remain useful prerequisites later in the space race; the hypothesis concerns ordering and parallel infrastructure construction.
+
+## Predicate and priority
+
+The flag requires a raced Science target, enabled Science victory and a Science decision objective. Recovery, a threatened city or a rush closes it. An owned land military unit with a missing pre-Modern successor technology also closes it, even if that unit is a minority in a modern stack.
+
+Before Chemistry, at least one owned Campus family district must have every prerequisite building of the Research Lab. After Chemistry the target is Rocketry. Every missing immediate parent of the target must already be available to research, preventing a long new beeline. Owned Rocketry ends the window and restores the existing backlog/air priorities. The flag does not turn on `first-launch-keeps-research` or protect Satellites.
+
+The match arm follows walls, openings, appointed war breakthroughs, decisive packages and siege tiers. It also yields to the chooser's barbarian emergency, standing-army fuel and named production goals. Only legal available prerequisites of its selected goal are admitted beyond the rolling era window. Current research is never interrupted.
+
+## Validation status
+
+Seven focused chooser tests, six existing first-launch tests and nine existing old-techs tests pass on candidate source `cdd88e2f0ec08332b58d4629069c4f707fdb5aed`; the 14-test append-point suite also passes. Initial attempts exposed fixture list/set API errors and stale city-defense references from direct unit removal (five tests passed, two chooser tests failed before selection); the fixture now uses the unit-removal API. Registry/macro placement attempts also failed the append-point suite and were corrected before querying. The registry row is appended after all existing rows and before the empty tail markers, preserving every existing bit; the suite requires future synthetic insertions at every marker to preserve that order. These failed/stopped attempts are not passing validation.
+
+External experiment artifacts: `~/civvis-tactics-results/2026-11-04/science-foundation-before-backlog/`. The intent is recorded before querying. The protocol uses two complete current-source OFF controls, then an ON discovery stopped at the first changed order, followed by two ON repetitions against their own complete-payload oracle. The executable is shared; actual genomes, arguments, reads, source hashes and EOF must be checked. Historical native captures supply the inputs; they do not establish full historical parity for the newer controller. The four prospective native attempts are complete; the separately registered, hypothesis-selected old-techs-enabled pair is also complete.
+
+### Qualified action effect
+
+Candidate executable SHA256: `b41452c41cf1a60536bc6b0fb80cbe9304363731cf18d88cf2ed9640daa72083`. Two OFF controls each consumed all 249 preserved requests and 4,326 actual reads. Three ON prefixes each consumed 201 requests and 3,493 actual reads. Every process reached EOF with exit zero; independent verification checked full per-arm payloads, all consumed byte versions/count/order, actual argument differences and measured genome fields. Only this named treatment/forced bit differs.
+
+The first changed order is **turn 133, frame 0: Rifling → Sanitation**. All earlier complete current-source payloads agree, and the other orders at that first changed request agree. This is the prerequisite Chemistry was missing in a state with **five** Universities; the earlier six-University count applies at turn 150. It is a proposal on preserved history, not an executed native action or a strength estimate.
+
+The compact hash-bound firing artifact is `docs/gene_screens/fires/science-foundation-before-backlog.json`, with full proposal histories and verification receipts in the linked `.native.tar.xz` archive. Its read hash identifies the final consumed version at the changed request; the documented ordered input prefix remains part of the experiment. The firing validator accepts the artifact.
+
+
+## Prospective native cohort: two saved Deity/Online worlds
+
+The first two chronological preserved near-100 Science worlds (`033244Z` and `034948Z`) were selected before inspecting their continuation outcomes. Within each world both arms used the same candidate executable, original frozen launcher/Lua/deployment settings and source background; only this new flag differed. Their measured backgrounds have **old-techs off and air-surge-2 on**, so this cohort does not directly exercise the old-techs-enabled diagnostic interaction.
+
+All four loaded at 96/0 and passed actual argv/cwd/genome/binary/Lua/configuration, seat/seed and city-identity checks. Canonical SHA256 records and actual captured reads verified: **866 decisions / 15,032 reads**. These are checksum/integrity checks and one observed PID per arm, not continuous process monitoring or cryptographic signatures.
+
+| World / arm | Native outcome | Chemistry owned | Rocketry owned | First Spaceport complete | Earth Satellite complete | Moon Landing complete |
+|---|---|---:|---:|---:|---:|---:|
+| 033244 / OFF | Science loss 187 | 141 | — | — | — | — |
+| 033244 / ON | Operator-retired at 150; censored | 143 | — | — | — | — |
+| 034948 / ON | Science loss 176 | 120 | 134 | 157 | 167 | — |
+| 034948 / OFF | Science loss 181 | 120 | 133 | 151 | 157 | 168 |
+
+Dashes mean unobserved before termination, not impossible or zero. The ON retirement was requested through the CIVVIS page's new-game control; it is neither a natural loss nor a win. No failed load or no-activation arm was discarded.
+
+Each pair's initial mechanical states agree with typed JSON comparison, ignoring only top-level `run`, `t`, `utc`, `frame`. The first differing first-state turns were **120 and 98**, before observed treatment decisions. The first ON run recorded no foundation-rule decision before retirement. The second ON run recorded and the host verified Replaceable Parts 115, Chemistry 118, Radio 125 and Rocketry 129. This proves native execution of the intended priority; it does not attribute later timing/outcome differences solely to the flag.
+
+**This cohort establishes no strength improvement.** Both selected worlds had already survived to the save band, there is one pair per world, and native trajectories varied before treatment opportunity. The gene remains default-off and unpriced. In the first OFF world, city count fell from six at 141 to two at 150 and one at 163; science fell from 114.625 to 29.8984 to 21.2539. Rocketry was host-verified selected at 163 but not observed completed before the rival won. A research-ordering fix alone cannot recover that lost economy.
+
+In the second ON world Satellites was owned at 148, before its Spaceport completed at 157. The capital produced roughly 37–46 per turn through construction and early launches. Earth Satellite finished at 167; Moon Landing was still incomplete at 176. Launch production is therefore a separate observed bottleneck. At 150, Space Initiative's governor was established in Seoul while the first pad was being built in Gyeongju; governor alignment merits a separate investigation, not a claim that this experiment tested it.
+
+A separately registered OFF/ON pair on the original `002152Z` save near 57 retains its actual old-techs-enabled background. It is hypothesis-selected because its captured input demonstrated the action effect; earlier prerequisite-import experiments on that world are already known. Its results will stay separate from this prospective cohort and from any population win-rate estimate.
+
+
+## Separate targeted old-techs-enabled pair
+
+This additional pair uses the hypothesis-selected original `002152Z` save near turn 57, after all four prospective attempts finished. Both arms retain the source's actual old-techs-enabled genome, original frozen launcher/Lua/deployment and the same candidate binary. Both load at 57/0 and pass all context/identity checks. **440 canonical decisions / 7,645 actual reads** verify independently.
+
+| Arm | Native outcome | Chemistry first observed owned | Rocketry first observed owned | Observed foundation decisions |
+|---|---|---:|---:|---|
+| OFF | Culture loss 141, team 2 | 133 | 139 | None |
+| ON | Culture loss 139, team 5 | 127 | — | Sanitation 120, Chemistry 123, Radio 132, Rocketry 135 |
+
+The final ON state was 138/2 and its native terminal event was at 139; the dash means ownership was not observed before termination. All four named ON research orders were host-verified. Initial mechanical states agree, but trajectories first differ at turn 64, before the treatment decisions. Earlier Chemistry in this realized ON trajectory is **not an attributable six-turn saving**. This is a selected mechanism test on a previously studied world, not another prospective map or an independent population estimate.
+
+Across the six new attempts there are five native losses (three Science, two Culture) and one operator-retired censor. **No win-rate or strength gain is established.** The evidence supports legal, executable priority routing and preserves the negative and non-firing cases. It does not support turning the gene on by default.
+
+## Integrated validation and provenance
+
+The experiments used frozen candidate `cdd88e2f0ec08332b58d4629069c4f707fdb5aed`. Main `95669d69735a77b6ba2992f267759b1b37f7f7dc` was merged once into the task, preserving incoming gene order, spy state and the new flag. The final integration also sorts the module declaration and corrects the comment's turn-133 University count. None of the Python helpers used by the experiments changed across that merge; the native executable, launchers and bound protocols stayed frozen outside the worktree.
+
+Full integrated `cargo test --profile ci --locked` passes on `e0c4d0dd0e74b3dfa17b44a40d3df2a16e9e2bae`: **6,915 passed, zero failed, 57 ignored** across library, binaries and doc-tests. The source remained clean and unchanged. Local overrides were `CARGO_PROFILE_CI_LTO=off`, four build jobs, four test threads and the shared target directory. Integrated append-point (14 tests), gene metadata, firing evidence, evaluation manifest, whitespace and changed small-module formatting checks pass. Final CI must pass before merge; native candidate evidence is not a whole-final-executable attestation.
+
+
+### Real-conflict integration repair
+
+After the full local suite passed and the final head was published, GitHub reported a real conflict with main `04bc90387cd7b69cab782a88123afad6579170e8` (new Writing/wall genes and generated counts). A second main merge was necessary to resolve that conflict. Incoming registry order is retained before the foundation row; the research arms merged cleanly and the foundation helper's behavior is unchanged. The full 6,915-pass result above belongs to the earlier integrated head. On repaired source `024b40a6f3f39e6764412e1d4bcbe75a009f4e30`, all **30 focused tests** pass: foundation 7, first-launch 6, old-techs 9, Writing priority 8. This local build used optimization level 0, LTO off, 64 codegen units and four jobs/test threads; it is a logic check, not a performance measurement. Append-point, gene metadata/firing, manifest, whitespace and small-module formatting checks pass again. Final optimized CI must validate the final head before merge.
+
+
+A further GitHub-reported conflict arose from the appended Spy gene while those focused checks ran. Main `1bdcff2b58bf5202e751600f182534c15df220f0` is integrated to resolve that additive registry conflict. The foundation helper and its test file are byte-identical to the previous checked source, and incoming registry order is preserved. The earlier full-suite and focused results retain their stated revisions; the final merged head requires its own optimized CI checks.
+
+All eight GitHub checks passed on `f09ee1f044b4c16e83f54347333aaec58a7eb265`, including cargo-test, paired-cost and rust-quality. Before merge, another actual additive registry conflict required integrating main `700a7d8cba9416694b8c686999413c9e9e1975bf` (holdable-land-keeps-settling). Both rows are retained in incoming order. The foundation helper and tests remain byte-identical; this repair receives a cached library type-check and metadata/append-point checks locally, followed by fresh required CI on its published head. Earlier native and full-suite results retain their explicit revision scopes.
+
+All eight checks also passed on the next published head `bae212b5c9ca47b84a6515b54dfeaa09b2dc7a88`. A subsequent real registry conflict required main `650459ee03ae54b6d97f77a582597c057ccacec8` (Medina amenities); incoming order and both entries are preserved. A fresh cached library type-check and all 14 append-point tests pass after this repair. The foundation helper and tests remain unchanged; final published-head CI is still required.
+
+The adjacent ready registry change then merged as main `ddb7d25386219a18677b7a054c87907bcf3890e2` (war-defense-spends-the-runway). It is included in the same publication, preserving incoming order before the foundation row. The final head is checked again for library compilation, append-point/metadata consistency and all required CI; no earlier native experiment is relabeled as testing this integrated executable.
+
+All eight checks passed on published `00a07d19410326397e5ad27d2fc6a6bc13df8785`. Main then appended plaza-serves-the-scientist (`47e96e3721a316228556bd75f9a0dadb75c09b4f`), causing another actual registry conflict. That entry is preserved before the foundation row, and current main through `62c2a2063ae0c5ce28430c10379a96b3317d0cdc` (including the game/mirror module moves) is integrated for the repaired publication. The foundation helper and tests remain byte-identical to the candidate; compilation, append/metadata and final published-head CI are checked again. Native outcome claims retain the original frozen-candidate scope.
+
+All eight checks passed on `a2499597b414e44ac2ca68bce6c336ed4715db47`. Before its merge, parity-upgrades-before-it-buys appended another registry entry, requiring current main `66685cc9b1b2fbfe0049b40fce91cf6e0c8ead64` to be integrated. Incoming registry order is retained, and the foundation helper and tests remain unchanged. The repaired publication again receives compilation/metadata checks and its own required CI; the native candidate evidence is not recast as a final executable attestation.
+
+All eight checks also passed on `9755ee9c94287f2c978a9ccabfd3d02f8ba77650`. Subsequent additive registry conflicts are consolidated through main `43791460d0d25191c0b8d104d454f0e452be1a0a`, including the older builder-priority PR and shipping fairness helper #4531. After every resolution, the incoming registry tag sequence is verified exactly with only this new tag removed; the foundation helper and tests remain byte-identical to the candidate. The final publication receives compilation, append/metadata and required CI again. Earlier native and local-suite evidence retains its explicit source scope; neither the incoming first-pad fix nor the workflow change is attributed to this research treatment.
