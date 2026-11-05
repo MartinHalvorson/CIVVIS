@@ -40,6 +40,22 @@ fn served_index_tags_the_app_script_with_its_server_instance() {
 }
 
 #[test]
+fn both_map_renderers_draw_the_one_city_plate() {
+    // The default world is a globe. The plate lived in the flat renderer alone,
+    // so the worlds most games are played on showed a bare name.
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("function drawCityNameplate(")
+            .count(),
+        1
+    );
+    assert!(EMBEDDED_APP_JS.contains("drawCityNameplate(c, x, y, S);"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "drawCityNameplate(city, cell.center.x, cell.center.y, planetCellInradius(cell));"
+    ));
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
