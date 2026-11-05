@@ -44,4 +44,27 @@ compare adjacency and research timing, and measure native outcomes on fresh
 worlds. A fixed-state proposal probe must be labelled as such; it cannot
 recover the original controller's private history.
 
-Validation receipts will be added to the PR after the running checks finish.
+The fixed-input proposal probe completed twelve queries in OFF/ON/ON/OFF
+order across three captured native positions, reinitializing private AI state
+each time. All 204 actual registered reads matched the frozen per-case input;
+complete same-arm payload repeats and one-bit effective-genome differences
+were independently verified. At 42/0, ON changes only the Campus coordinates
+from (17,29) to originally offered safe (15,29). Foundation 43/0 and flooded
+repair 138/0 retain their orders. All other order fields remain equal.
+
+The source was `d66b7cf2dd20abb7fea2e9ebc5de58a0e25b6118`; the executable
+hash and complete inputs/results are bound in
+`docs/gene_screens/fires/campus-above-the-sea.action-pairs.json` and its
+archive. Recaptured byte archives are deduplicated losslessly against the
+identical fixed-input blobs; each actual index retains its exact hash. This
+is proposal firing evidence, not original controller-history reproduction or
+native execution. The original source request had eighteen registered reads;
+the constructed candidate used seventeen, and no read-count parity with the
+original private controller is claimed.
+
+Rust tests, documentation checks and isolated live-action regressions passed
+in CI on that source. The treatment append-point suite passed fourteen tests.
+The initial registry suite found three stale-report failures; after refresh,
+those three tests passed and `tools/genes.py check` passed. All 279 deployed
+genes remain exactly unchanged. Native foundation and outcome verification
+remain pending.
