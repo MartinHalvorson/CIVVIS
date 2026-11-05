@@ -2275,6 +2275,8 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Prefer a safe legal site for a new native Science Campus.
+        campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
         /// Keep defensive formations near their assigned threatened city.
         defenders_keep_the_city_in_reach => enable_defenders_keep_the_city_in_reach, disable_defenders_keep_the_city_in_reach;
     }
