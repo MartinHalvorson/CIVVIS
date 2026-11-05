@@ -202,6 +202,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `camps-close-the-age` | off (unmeasured) | Opt-in gene `camps-close-the-age`; see `Self::camps_close_the_age`. | — \| 3 |
 | `camps-close-the-age-2` | off (unmeasured) | Opt-in gene `camps-close-the-age-2`; see `Self::camps_close_the_age_2`. | — \| 3 |
 | `camps-close-the-age-3` | off (unmeasured) | Opt-in gene `camps-close-the-age-3`; see `Self::camps_close_the_age_3`. | — \| 3 |
+| `campus-above-the-sea` | off (unmeasured) | Prefer a safe legal site for a new native Science Campus. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
@@ -271,6 +272,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
 | `founding-voyage` | off (unmeasured) | Opt-in gene `founding-voyage`; see `Self::founding_voyage`. | 1 \| 1 |
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
+| `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
@@ -325,8 +327,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-follows-research-2` | off (unmeasured) | Pingala version two retains ordinary dividends and joins a committed launch producer. | 1 \| 2 |
-| `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | — \| 2 |
-| `plaza-serves-the-scientist-2` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-2` (version 2 of `plaza-serves-the-scientist`, which it carries); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 2 |
+| `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | — \| 3 |
+| `plaza-serves-the-scientist-2` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-2` (version 2 of `plaza-serves-the-scientist`, which it carries); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
+| `plaza-serves-the-scientist-3` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1 and 2); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
 | `prey-is-declared-on` | off (unmeasured) | Declare on prey without the staged ring or a home Defend row. | 1 \| 1 |
 | `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | — \| 2 |
 | `prey-waits-for-the-march-2` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march-2`; see `Self::prey_waits_for_the_march_2`. | — \| 2 |

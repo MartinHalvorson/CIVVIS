@@ -51,6 +51,8 @@ use verification::*;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+#[path = "civvis_orders/campus_above_sea.rs"]
+mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
 #[path = "civvis_orders/formation_refusals.rs"]
@@ -3654,8 +3656,8 @@ use civvis::ai::player::aid::FINISH_WINDOW as AID_GIFT_FINISH_WINDOW;
 /// Gold in all) because the control mod put three quarters of the treasury
 /// on every retried offer, whatever the planner's reason for offering — a
 /// second front, war fatigue, a religious lane and an envoy reclaim all
-/// paid like a rout. Civilization VI's own database carries no diplomatic
-/// modifier for a gift, so Gold that does not buy the peace buys nothing.
+/// paid like a rout. Beyond the peace itself such Gold buys only the capped
+/// favorable-deal modifier, far less than those offers paid.
 /// Now the planner's `peace_routed` says whether the front is lost; only
 /// then does the order carry a cap (`x`), and the mod offers at most that.
 /// A white offer carries `x = 0`.
@@ -5673,6 +5675,10 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let safer_campuses = campus_above_sea::retarget(ai, mirror_state, &mut orders);
+    if safer_campuses > 0 {
+        note_bits.push(format!("campus_above_the_sea={safer_campuses}"));
+    }
     let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
     if safer_pads > 0 {
         note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));

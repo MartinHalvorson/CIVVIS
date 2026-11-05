@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "fresh-water-prices-the-site",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Five live Deity boards on which a Settler's target changed from a dry or coast-only seat to a fresh-water one in the 524-board census, each cut right after the first state row of the turn (frame 0) and queried with the run's own requested genome on a ci-profile civvis_orders built from the branch, with --resumed. Off and on march to different seats on every board; two boards change a proposed order on this frame.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-fresh-water-prices-the-site.native-queries.tar.xz",
+    "sha256": "a871e37fe836f0b730ce6b2205ebf3461b5ea116d373477afdafda97c8217557"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json"
+  ]
+}

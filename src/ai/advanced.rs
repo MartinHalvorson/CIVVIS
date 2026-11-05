@@ -5586,6 +5586,8 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
     /// new since the last resolve, so a capture beside a standing city
@@ -7345,6 +7347,9 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `fresh-water-prices-the-site`: a fresh-water seat outbids a coast-only
+    /// one. See `advanced/fresh_water_site.rs`. Off by default.
+    fresh_water_prices_the_site: bool,
     /// `early-cities-keep-their-distance`: while the empire holds fewer
     /// than three cities, a site loses value for every tile it stands inside
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
@@ -8771,6 +8776,11 @@ pub struct AdvancedAi {
     /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
+    /// `plaza-serves-the-scientist-3`: version 3, carrying 1 and 2. The
+    /// Science seat's Government Plaza district claims the capital's queue
+    /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_3: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
@@ -10795,6 +10805,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -10821,6 +10832,8 @@ mod first_launch_research;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod free_slot_campus_clock;
+/// `fresh-water-prices-the-site`: see `advanced/fresh_water_site.rs`.
+mod fresh_water_site;
 /// `generals-lead-the-army`: the live bridge keeps a General with each front
 /// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
 mod generals_lead_the_army;
@@ -11948,6 +11961,7 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
@@ -12258,6 +12272,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
@@ -12494,6 +12509,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
+            plaza_serves_the_scientist_3: false,
             // ---- append: s-s ----------------------------------------
             science_seat_allies_2: false,
             spy_civics_come_first: false,
@@ -26252,6 +26268,9 @@ impl AdvancedAi {
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
+        // `fresh-water-prices-the-site`: zero with the gene off. See
+        // `advanced/fresh_water_site.rs`.
+        value += self.fresh_water_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);
@@ -30256,6 +30275,9 @@ impl AdvancedAi {
             // building (the Intelligence Agency's Spy slot and level) under
             // the same displacement rule. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_tier(g, pid, &plan);
+            // `plaza-serves-the-scientist-3`: the Plaza district itself, once
+            // the capital's Campus stands. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_district(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
