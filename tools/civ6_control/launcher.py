@@ -90,6 +90,65 @@ def clear_run_logs() -> None:
             path.unlink()
 
 
+# ★ A 1 GB HALL OF FAME COST EVERY GAME ~15 s OF BLACK SCREEN. Civ VI keeps
+# every finished game's statistics in ``HallofFame.sqlite`` and holds it open
+# for its whole session; by 2026-11-04 this seat's file held 3,275 games
+# (1.03 GB, ~315 KB a game). Its cost hid in two places nothing timed:
+# - the boot: Startup.log's silent gap from `Running SetupAudio` to
+#   `Running Granny::Initialize` was 10-16 s on every measured launch, read
+#   for weeks as audio initialisation. The first launch after the file was
+#   moved aside (11-04 23:42Z) logged both lines in the same second;
+# - the quit: an abandoned game's quit took 11.7-14.8 s while Civ VI wrote its
+#   record into the big file (a `sample` showed the game core in `pread`),
+#   against ~5 s before the file grew past ~1 GB.
+# Civ VI recreates an empty Hall of Fame (~94 KB) when the file is missing.
+# So before each launch, while no game holds it, a file past the cap is
+# renamed to a timestamped archive beside it -- moved, never deleted; the
+# statistics stay readable with `civ6_tactics_ledger.py --hof <archive>`.
+HALL_OF_FAME_NAME = "HallofFame.sqlite"
+HALL_OF_FAME_ROTATE_BYTES = int(float(
+    os.environ.get("CIVVIS_HALL_OF_FAME_ROTATE_MB", "128")) * 1024 * 1024)
+
+
+def hall_of_fame_path() -> Path:
+    """Where this build keeps the Hall of Fame (the legacy user directory)."""
+    return env.LEGACY_USER_DIR / "Sid Meier's Civilization VI" / HALL_OF_FAME_NAME
+
+
+def rotate_hall_of_fame(path: Path | None = None, *, limit: int | None = None,
+                        running: bool | None = None, stamp: str | None = None) -> Path | None:
+    """Archive an oversized Hall of Fame before a launch; return the archive.
+
+    Refuses (returns None) when the file is under ``limit``, when a game is
+    running (it holds the file open), or when SQLite left a journal beside it
+    (that journal belongs to this file, so recovery stays Civ VI's to do).
+    """
+    path = path or hall_of_fame_path()
+    limit = HALL_OF_FAME_ROTATE_BYTES if limit is None else limit
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    if limit <= 0 or size < limit:
+        return None
+    if running is None:
+        running = bool(env.game_pids())
+    if running:
+        return None
+    if any(path.with_name(path.name + suffix).exists()
+           for suffix in ("-journal", "-wal", "-shm")):
+        return None
+    stamp = stamp or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    archive = path.with_name(f"HallofFame-archive-{stamp}.sqlite")
+    if archive.exists():
+        return None
+    try:
+        path.rename(archive)
+    except OSError:
+        return None
+    return archive
+
+
 def launch(args: list[str] | None = None, stdout: Path | None = None) -> subprocess.Popen:
     """Start the game directly, with arguments, and return the process."""
     binary = game_binary()
