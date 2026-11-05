@@ -20,7 +20,7 @@ The match arm follows walls, openings, appointed war breakthroughs, decisive pac
 
 Seven focused chooser tests, six existing first-launch tests and nine existing old-techs tests pass on candidate source `cdd88e2f0ec08332b58d4629069c4f707fdb5aed`; the 14-test append-point suite also passes. Initial attempts exposed fixture list/set API errors and stale city-defense references from direct unit removal (five tests passed, two chooser tests failed before selection); the fixture now uses the unit-removal API. Registry/macro placement attempts also failed the append-point suite and were corrected before querying. The registry row is appended after all existing rows and before the empty tail markers, preserving every existing bit; the suite requires future synthetic insertions at every marker to preserve that order. These failed/stopped attempts are not passing validation.
 
-External experiment artifacts: `~/civvis-tactics-results/2026-11-04/science-foundation-before-backlog/`. The intent is recorded before querying. The protocol uses two complete current-source OFF controls, then an ON discovery stopped at the first changed order, followed by two ON repetitions against their own complete-payload oracle. The executable is shared; actual genomes, arguments, reads, source hashes and EOF must be checked. Historical native captures supply the inputs; they do not establish full historical parity for the newer controller. The four prospective native attempts are complete; a separately registered, hypothesis-selected old-techs-enabled pair remains in progress.
+External experiment artifacts: `~/civvis-tactics-results/2026-11-04/science-foundation-before-backlog/`. The intent is recorded before querying. The protocol uses two complete current-source OFF controls, then an ON discovery stopped at the first changed order, followed by two ON repetitions against their own complete-payload oracle. The executable is shared; actual genomes, arguments, reads, source hashes and EOF must be checked. Historical native captures supply the inputs; they do not establish full historical parity for the newer controller. The four prospective native attempts are complete; the separately registered, hypothesis-selected old-techs-enabled pair is also complete.
 
 ### Qualified action effect
 
@@ -48,8 +48,28 @@ Dashes mean unobserved before termination, not impossible or zero. The ON retire
 
 Each pair's initial mechanical states agree with typed JSON comparison, ignoring only top-level `run`, `t`, `utc`, `frame`. The first differing first-state turns were **120 and 98**, before observed treatment decisions. The first ON run recorded no foundation-rule decision before retirement. The second ON run recorded and the host verified Replaceable Parts 115, Chemistry 118, Radio 125 and Rocketry 129. This proves native execution of the intended priority; it does not attribute later timing/outcome differences solely to the flag.
 
-**This cohort establishes no strength improvement.** Both selected worlds had already survived to the save band, there is one pair per world, and native trajectories varied before treatment opportunity. The gene remains default-off and unpriced. In the first OFF world, city count fell from six at 141 to two at 150 and one at 163; science fell from 114.625 to 29.8984 to 21.2539. Rocketry was host-verified selected at 163 but never completed before the rival won. A research-ordering fix alone cannot recover that lost economy.
+**This cohort establishes no strength improvement.** Both selected worlds had already survived to the save band, there is one pair per world, and native trajectories varied before treatment opportunity. The gene remains default-off and unpriced. In the first OFF world, city count fell from six at 141 to two at 150 and one at 163; science fell from 114.625 to 29.8984 to 21.2539. Rocketry was host-verified selected at 163 but not observed completed before the rival won. A research-ordering fix alone cannot recover that lost economy.
 
 In the second ON world Satellites was owned at 148, before its Spaceport completed at 157. The capital produced roughly 37–46 per turn through construction and early launches. Earth Satellite finished at 167; Moon Landing was still incomplete at 176. Launch production is therefore a separate observed bottleneck. At 150, Space Initiative's governor was established in Seoul while the first pad was being built in Gyeongju; governor alignment merits a separate investigation, not a claim that this experiment tested it.
 
 A separately registered OFF/ON pair on the original `002152Z` save near 57 retains its actual old-techs-enabled background. It is hypothesis-selected because its captured input demonstrated the action effect; earlier prerequisite-import experiments on that world are already known. Its results will stay separate from this prospective cohort and from any population win-rate estimate.
+
+
+## Separate targeted old-techs-enabled pair
+
+This additional pair uses the hypothesis-selected original `002152Z` save near turn 57, after all four prospective attempts finished. Both arms retain the source's actual old-techs-enabled genome, original frozen launcher/Lua/deployment and the same candidate binary. Both load at 57/0 and pass all context/identity checks. **440 canonical decisions / 7,645 actual reads** verify independently.
+
+| Arm | Native outcome | Chemistry first observed owned | Rocketry first observed owned | Observed foundation decisions |
+|---|---|---:|---:|---|
+| OFF | Culture loss 141, team 2 | 133 | 139 | None |
+| ON | Culture loss 139, team 5 | 127 | — | Sanitation 120, Chemistry 123, Radio 132, Rocketry 135 |
+
+The final ON state was 138/2 and its native terminal event was at 139; the dash means ownership was not observed before termination. All four named ON research orders were host-verified. Initial mechanical states agree, but trajectories first differ at turn 64, before the treatment decisions. Earlier Chemistry in this realized ON trajectory is **not an attributable six-turn saving**. This is a selected mechanism test on a previously studied world, not another prospective map or an independent population estimate.
+
+Across the six new attempts there are five native losses (three Science, two Culture) and one operator-retired censor. **No win-rate or strength gain is established.** The evidence supports legal, executable priority routing and preserves the negative and non-firing cases. It does not support turning the gene on by default.
+
+## Integrated validation and provenance
+
+The experiments used frozen candidate `cdd88e2f0ec08332b58d4629069c4f707fdb5aed`. Main `95669d69735a77b6ba2992f267759b1b37f7f7dc` was merged once into the task, preserving incoming gene order, spy state and the new flag. The final integration also sorts the module declaration and corrects the comment's turn-133 University count. None of the Python helpers used by the experiments changed across that merge; the native executable, launchers and bound protocols stayed frozen outside the worktree.
+
+Full integrated `cargo test --profile ci --locked` passes on `e0c4d0dd0e74b3dfa17b44a40d3df2a16e9e2bae`: **6,915 passed, zero failed, 57 ignored** across library, binaries and doc-tests. The source remained clean and unchanged. Local overrides were `CARGO_PROFILE_CI_LTO=off`, four build jobs, four test threads and the shared target directory. Integrated append-point (14 tests), gene metadata, firing evidence, evaluation manifest, whitespace and changed small-module formatting checks pass. Final CI must pass before merge; native candidate evidence is not a whole-final-executable attestation.
