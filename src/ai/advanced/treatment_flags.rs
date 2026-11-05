@@ -2176,6 +2176,9 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `hint-runs-the-claims`; see
+        /// [`Self::hint_runs_the_claims`].
+        hint_runs_the_claims => enable_hint_runs_the_claims, disable_hint_runs_the_claims;
         /// Opt-in gene `luxury-asks-pay-in-strategics`; see
         /// `advanced/luxury_asks_pay_in_strategics.rs`.
         luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;

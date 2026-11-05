@@ -5186,6 +5186,15 @@ pub const GENES: &[Gene] = &[
     // matching `korea-reads-three-kingdoms` on the district side. See
     // `advanced/korea_mines_beside_the_seowon.rs`.
     Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
+    // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
+    // about two thirds of live production prompts (480 vs 230 direct orders
+    // in 072215Z), and each hint came from `advanced_production` alone. The
+    // idle-queue claims (Settler floors, Granary, Builder, Aqueduct,
+    // Industrial Zone, Campus...) never saw those queues, so the sim seat
+    // reached 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
+    // t80 against 0.5. Under the gene the hint's preview runs the same
+    // claim chain first. See `advanced/hint_runs_the_claims.rs`.
+    Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
