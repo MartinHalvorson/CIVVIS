@@ -6084,7 +6084,38 @@ let finaleCountdownResult = null;
 // must never turn that old finale into a restart of the new, active world.
 let finaleCountdownWorld = null;
 
+// On the public site a result screen is somebody reading how their game ended,
+// so it stays until they move on: nobody here is running an unattended display.
+// How the player's own game went. A result that names only the winner tells
+// somebody who lost nothing about the two hundred turns they just played.
+function reignSummary(st) {
+  const me = st.players?.[0];
+  if (SPEC || !me) return "";
+  const majors = st.players.filter(player => !player.is_minor && !player.is_barbarian)
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rank = majors.findIndex(player => player.id === me.id) + 1;
+  const stat = (value, label) =>
+    `<span class="reign-stat"><b>${escapeAttr(value)}</b><small>${escapeAttr(label)}</small></span>`;
+  return `<span class="reign" aria-label="Your reign">` +
+    stat(Math.round(me.score || 0).toLocaleString(), `Score · ${rank} of ${majors.length}`) +
+    stat(me.cities ?? 0, me.cities === 1 ? "City" : "Cities") +
+    stat(me.population ?? 0, "Population") +
+    stat((st.me?.techs || []).length, "Technologies") +
+    stat(me.wonder_count ?? 0, "Wonders") + `</span>`;
+}
+// A new game on the public site starts from choosing a civilization, the same
+// way the first one did, not by re-rolling this world's settings unasked.
+function settleResultActions() {
+  const again = document.getElementById("finale-restart");
+  if (!again || !finaleHoldsForTheReader() || typeof openFrontDoor !== "function") return;
+  again.onclick = () => openFrontDoor("create");
+  again.removeAttribute("title");
+}
+function finaleHoldsForTheReader() {
+  return !SPEC && !!window.CIVVIS_PUBLISHED_BUILD;
+}
 function armFinaleCountdown(signature) {
+  if (finaleHoldsForTheReader()) return;
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
@@ -7611,7 +7642,7 @@ function syncFinaleCountdownChoice() {
 // so the two can never disagree about what is on offer.
 function finaleCountdownChoiceMarkup() {
   const source = document.getElementById("between-game-countdown");
-  if (!source) return "";
+  if (!source || finaleHoldsForTheReader()) return "";
   const options = [...source.options].map(option =>
     `<option value="${escapeAttr(option.value)}"${option.selected ? " selected" : ""}>` +
     `${escapeAttr(option.textContent)}</option>`).join("");
@@ -8342,10 +8373,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <strong class="winner-title">${st.players[0].civ} is no more</strong>
         <span class="winner-verdict">Your last city has fallen</span>
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
+        ${reignSummary(st)}
         <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       armFinaleCountdown(signature);
     }
   }
@@ -8423,15 +8456,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.innerHTML = `<div class="winner-content">
         <span class="winner-kicker">${kicker}</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${winnerName}</strong>
+        <strong class="winner-title">${winnerName}${!SPEC && !winnerIds.includes(0) ? " wins" : ""}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${reignSummary(st)}
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
           ${winnerActions}
         </span>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       recordSimulationResult(st, signature, winnerIds);
       armFinaleCountdown(signature);
     }

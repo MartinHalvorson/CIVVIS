@@ -11994,6 +11994,12 @@ fn a_human_finale_counts_itself_down_to_the_next_game() {
     // The supervisor owns the exhibition's handoff, so a spectated finale
     // never arms this one on top of the countdown it already publishes.
     assert!(EMBEDDED_INDEX.contains("if (SPEC || finaleCountdownResult === signature) return;"));
+    // The public site is somebody reading how their game ended, not an
+    // unattended display, so nothing replaces their result under them.
+    assert!(EMBEDDED_INDEX.contains(
+        "function armFinaleCountdown(signature) {\n  if (finaleHoldsForTheReader()) return;"
+    ));
+    assert!(EMBEDDED_INDEX.contains("return !SPEC && !!window.CIVVIS_PUBLISHED_BUILD;"));
     // All three human endings count down: a victory, a last city lost,
     // and a Tactics draw.
     assert_eq!(
