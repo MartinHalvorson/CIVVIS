@@ -132,9 +132,10 @@ fn the_backlog_counts_worked_production_ground_and_good_idle_ground() {
         BasicAi::production_tile_backlog(&game, 0),
         ProductionTileBacklog { worked: 2, idle: 0 }
     );
-    // Without Construction a worked forest takes no Lumber Mill.
+    // Without Construction the worked forest takes no Lumber Mill: only the
+    // worked Desert Hills remain.
     game.players[0].techs.remove(&crate::name!("construction"));
-    assert_eq!(BasicAi::production_tile_backlog(&game, 0).worked, 2);
+    assert_eq!(BasicAi::production_tile_backlog(&game, 0).worked, 1);
 }
 
 /// Off, the quota is the stock 60% of the backlog. On, one charge per worked
