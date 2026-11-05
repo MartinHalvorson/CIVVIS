@@ -5151,6 +5151,8 @@ pub const GENES: &[Gene] = &[
     // the gene those claims stand aside while a war with a major threatens a
     // home city. See `threatened_war_holds_the_claims.rs`.
     Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
+    Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -8217,6 +8217,8 @@ pub struct AdvancedAi {
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
+    revealed_launch_tech_takes_the_slot: bool,
     /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
     /// hold before it buys, never buys an obsolete unit, and stops buying when
     /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
@@ -10678,6 +10680,7 @@ mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
 mod first_launch_research;
+mod revealed_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -12218,6 +12221,7 @@ impl AdvancedAi {
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
+            revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

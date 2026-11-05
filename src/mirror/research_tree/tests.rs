@@ -246,3 +246,36 @@ fn actual_planner_uses_the_observed_ancestor_instead_of_the_generated_branch() {
         Some("nuclear_fusion")
     );
 }
+
+#[test]
+fn revealed_identity_is_retained_even_when_the_generated_list_matches_and_cleared_on_bad_or_old_exports(
+) {
+    let mut g = game();
+    let node = crate::name!("smart_materials");
+    let parents: Vec<String> = g.rules.techs[&node]
+        .requires
+        .iter()
+        .map(|n| format!("TECH_{}", n.to_uppercase()))
+        .collect();
+    let baseline = g.rules.clone();
+    let mut gaps = Vec::new();
+    apply(
+        &mut g,
+        &state(serde_json::json!([{"t":"TECH_SMART_MATERIALS", "requires":parents}])),
+        &mut gaps,
+    );
+    assert!(g.host_research_prerequisites_revealed(node));
+    assert!(Arc::ptr_eq(&baseline, &g.rules));
+    let copy = g.clone();
+    apply(
+        &mut g,
+        &state(serde_json::json!([{"t":"TECH_SMART_MATERIALS"}])),
+        &mut gaps,
+    );
+    assert!(!g.host_research_prerequisites_revealed(node));
+    assert!(copy.host_research_prerequisites_revealed(node));
+    apply(&mut g, &observed(), &mut gaps);
+    assert!(g.host_research_prerequisites_revealed(node));
+    apply(&mut g, &StateSnapshot::default(), &mut gaps);
+    assert!(!g.host_research_prerequisites_revealed(node));
+}
