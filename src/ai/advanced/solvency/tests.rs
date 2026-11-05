@@ -431,3 +431,64 @@ fn upgrade_upkeep_is_zero_in_an_arena() {
         0.0
     );
 }
+
+/// `bankruptcy-exits-the-drain-2` is a family version: opt-in, and enabling
+/// it turns version one off.
+#[test]
+fn bankruptcy_exits_the_drain_2_is_opt_in_and_replaces_version_one() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "bankruptcy-exits-the-drain-2",
+        |ai| ai.bankruptcy_exits_the_drain_2,
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_bankruptcy_exits_the_drain();
+    ai.enable_bankruptcy_exits_the_drain_2();
+    assert!(ai.bankruptcy_exits_the_drain_2 && !ai.bankruptcy_exits_the_drain);
+}
+
+/// 111305Z t194: 243 Gold at -76.6 a turn is 3.2 turns of runway. Version
+/// one waits for under one turn; version two enters the drain below five.
+#[test]
+fn version_two_enters_the_drain_at_five_turns_of_runway() {
+    let (mut g, _, _) = fixture();
+    g.players[0].gold = 243.0;
+    g.players[0].gold_per_turn = -76.6;
+    let mut one = AdvancedAi::new();
+    one.enable_bankruptcy_exits_the_drain();
+    assert!(!one.drained(&g, 0));
+    let mut two = AdvancedAi::new();
+    two.enable_bankruptcy_exits_the_drain_2();
+    assert!(two.drained(&g, 0));
+    g.players[0].gold = 400.0;
+    assert!(!two.drained(&g, 0), "5.2 turns: the drain stands down");
+}
+
+/// Under version two the cheapest unit beside an enemy soldier stays, and the
+/// interior one goes in its place; version one takes the cheapest wherever it
+/// stands.
+#[test]
+fn version_two_spares_the_unit_holding_the_front() {
+    let (mut g, _, _) = fixture();
+    g.at_war.insert((0, 1));
+    let front_knight = g.spawn_test_unit("knight", 0, (14, 10));
+    let interior_knight = g.spawn_test_unit("knight", 0, (2, 12));
+    g.spawn_test_unit("warrior", 1, (16, 10));
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -2.0;
+
+    let mut two = AdvancedAi::new();
+    two.enable_bankruptcy_exits_the_drain_2();
+    assert!(two.drain_spares_the_front(&g, 0, front_knight));
+    assert!(!two.drain_spares_the_front(&g, 0, interior_knight));
+    let mut drained = g.clone();
+    two.exit_the_drain(&mut drained, 0);
+    assert!(drained.units.contains_key(&front_knight), "the front stays");
+    assert!(
+        !drained.units.contains_key(&interior_knight),
+        "the interior goes"
+    );
+
+    let mut one = AdvancedAi::new();
+    one.enable_bankruptcy_exits_the_drain();
+    assert!(!one.drain_spares_the_front(&g, 0, front_knight));
+}

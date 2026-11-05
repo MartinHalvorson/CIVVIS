@@ -5205,6 +5205,13 @@ pub const GENES: &[Gene] = &[
     // t80 against 0.5. Under the gene the hint's preview runs the same
     // claim chain first. See `advanced/hint_runs_the_claims.rs`.
     Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
+    // Version one of the drain fires below one turn of runway. Live Deity
+    // 111305Z t194 fell from +11.8 to -76.6 Gold a turn with 243 Gold (3.2
+    // turns), started a Bank, went bankrupt at t199, and lost science 352 to
+    // 151 to the amenity charge. Version two enters the drain below five
+    // turns and never disbands a unit within six tiles of an enemy soldier.
+    // See `solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
     // `captives-come-home`: the live bridge buys our captured Spies back from
     // their captors while the network is short of its capacity, so their
     // slots fill again. See `advanced/captives_come_home.rs`.
