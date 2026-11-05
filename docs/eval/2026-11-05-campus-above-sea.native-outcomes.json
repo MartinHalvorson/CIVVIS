@@ -1,0 +1,168 @@
+{
+  "observed_utc": "2026-11-05T20:33:43.720718+00:00",
+  "matrix_finished": true,
+  "scope": "One known-loss native world, four cold continuations. Actual inputs diverge before Campus activation; outcomes are retained and are not deterministic Campus-only counterfactuals or population win-rate evidence.",
+  "roles": [
+    {
+      "role": "01-off",
+      "setup_qualified": true,
+      "last_request": [
+        153,
+        2
+      ],
+      "outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261105T184951Z-campus-sea-pilot-v2-01-off",
+        "score": 535,
+        "t": 1793908013,
+        "team": 1,
+        "turn": 153,
+        "turns_played": 150,
+        "utc": "2026-11-05T19:46:54.837Z",
+        "victory": 3,
+        "victory_type": "VICTORY_CULTURE",
+        "won": false
+      },
+      "records": 387,
+      "registered_reads": 6728,
+      "campus_orders": 28,
+      "retargets_with_matched_planned_action": 0,
+      "tech_marks": {
+        "100": {
+          "rival_techs": 42,
+          "techs": 33
+        },
+        "150": {
+          "rival_techs": 70,
+          "techs": 54
+        }
+      },
+      "operator_retire": null,
+      "stop_reason": "launcher_exited"
+    },
+    {
+      "role": "02-on",
+      "setup_qualified": true,
+      "last_request": [
+        164,
+        2
+      ],
+      "outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261105T184951Z-campus-sea-pilot-v2-02-on",
+        "score": 639,
+        "t": 1793909010,
+        "team": 3,
+        "turn": 164,
+        "turns_played": 161,
+        "utc": "2026-11-05T20:03:31.731Z",
+        "victory": 5,
+        "victory_type": "VICTORY_TECHNOLOGY",
+        "won": false
+      },
+      "records": 430,
+      "registered_reads": 7470,
+      "campus_orders": 19,
+      "retargets_with_matched_planned_action": 0,
+      "tech_marks": {
+        "100": {
+          "rival_techs": 45,
+          "techs": 35
+        },
+        "150": {
+          "rival_techs": 70,
+          "techs": 57
+        }
+      },
+      "operator_retire": null,
+      "stop_reason": "launcher_exited"
+    },
+    {
+      "role": "03-on",
+      "setup_qualified": true,
+      "last_request": [
+        166,
+        2
+      ],
+      "outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261105T184951Z-campus-sea-pilot-v2-03-on",
+        "score": 694,
+        "t": 1793909901,
+        "team": 1,
+        "turn": 166,
+        "turns_played": 163,
+        "utc": "2026-11-05T20:18:22.360Z",
+        "victory": 3,
+        "victory_type": "VICTORY_CULTURE",
+        "won": false
+      },
+      "records": 433,
+      "registered_reads": 7523,
+      "campus_orders": 17,
+      "retargets_with_matched_planned_action": 1,
+      "tech_marks": {
+        "100": {
+          "rival_techs": 44,
+          "techs": 38
+        },
+        "150": {
+          "rival_techs": 66,
+          "techs": 64
+        }
+      },
+      "operator_retire": null,
+      "stop_reason": "launcher_exited"
+    },
+    {
+      "role": "04-off",
+      "setup_qualified": true,
+      "last_request": [
+        156,
+        4
+      ],
+      "outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261105T184951Z-campus-sea-pilot-v2-04-off",
+        "score": 634,
+        "t": 1793910767,
+        "team": 1,
+        "turn": 156,
+        "turns_played": 153,
+        "utc": "2026-11-05T20:32:48.201Z",
+        "victory": 3,
+        "victory_type": "VICTORY_CULTURE",
+        "won": false
+      },
+      "records": 413,
+      "registered_reads": 7173,
+      "campus_orders": 30,
+      "retargets_with_matched_planned_action": 0,
+      "tech_marks": {
+        "100": {
+          "rival_techs": 43,
+          "techs": 35
+        },
+        "150": {
+          "rival_techs": 64,
+          "techs": 58
+        }
+      },
+      "operator_retire": null,
+      "stop_reason": "launcher_exited"
+    }
+  ],
+  "initial_full_mechanical_states_equal": true
+}
