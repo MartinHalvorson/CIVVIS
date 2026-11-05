@@ -210,9 +210,9 @@ impl AdvancedAi {
                 .district_sites(cid, district)
                 .into_iter()
                 .max_by(|left, right| {
-                    g.district_yields(district, *left)
+                    g.district_site_yields(district, *left)
                         .total()
-                        .partial_cmp(&g.district_yields(district, *right).total())
+                        .partial_cmp(&g.district_site_yields(district, *right).total())
                         .unwrap_or(std::cmp::Ordering::Equal)
                         .then(left.cmp(right))
                 })

@@ -5303,6 +5303,14 @@ pub const GENES: &[Gene] = &[
     // carries). The ransom of our captured Spies pays in Diplomatic Favor
     // beside Gold. See `advanced/captives_come_home.rs`.
     Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
+    // The operator moved the live seat to Indonesia (Gitarja), Science only,
+    // on 11-05. Great Nusantara (shipped TRAIT_CIVILIZATION_INDONESIA_NUSANTARA)
+    // gives a Campus, Holy Site, Industrial Zone and Theater Square +1 yield
+    // per two adjacent Coast tiles; data/civs.json carries a flat placeholder,
+    // so every district site picker ranks the Coast at nothing. Under the gene
+    // the seat's pickers rank by district_site_yields, which adds the Coast
+    // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
+    Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
     // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
     // strongest neighbour at peace while it reads Unfriendly or Neutral, up
     // to the opinion a Friendly rival holds, so the friendship ask (sent only
