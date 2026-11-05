@@ -321,3 +321,143 @@ fn a_refused_partner_waits_out_the_refusal_memory() {
     assert!(!ai.military_alliance_shield_step(&mut game, 0, &science, None));
     assert!(asks(&game).is_empty());
 }
+
+fn shield_2() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_military_alliance_shield_2();
+    ai
+}
+
+#[test]
+fn military_alliance_shield_2_is_opt_in_and_turns_version_one_off() {
+    opt_in_off_in_both_controllers("military-alliance-shield-2", |ai| {
+        ai.military_alliance_shield_2
+    });
+    let mut ai = shield();
+    ai.enable_military_alliance_shield_2();
+    assert!(ai.military_alliance_shield_2 && !ai.military_alliance_shield);
+}
+
+/// Live 155735Z t102/t105: version one asked Neutral and Unfriendly rivals the
+/// agent never sent the ask to. Version two passes over a rival the host reads
+/// colder than Friendly; version one does not.
+#[test]
+fn version_two_asks_only_a_friendly_rival() {
+    let science = plan(GrandStrategy::Science, None);
+    let mut game = board();
+    game.turn = 60;
+    // Ratio 2 against 0.6: a gap no nearness term (at most 180) closes.
+    power(&mut game, 1, 300.0);
+    power(&mut game, 2, 60.0);
+    game.players[1]
+        .observed_diplomatic_state
+        .insert(0, "UNFRIENDLY".to_string());
+    game.players[2]
+        .observed_diplomatic_state
+        .insert(0, "FRIENDLY".to_string());
+    let mut v1 = game.clone();
+    assert!(shield().military_alliance_shield_step(&mut v1, 0, &science, None));
+    assert_eq!(
+        asks(&v1)[0].0,
+        1,
+        "version one asks the colder, stronger rival"
+    );
+    let mut ai = shield_2();
+    assert!(ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    assert_eq!(asks(&game), vec![(2, Some("military".to_string()), true)]);
+    assert_eq!(ai.military_alliance_shield_ask(), Some((2, "military")));
+}
+
+/// A refused Military ask falls through to Economic for the same partner,
+/// after the agent's retry floor, under version two's own memory: the shared
+/// refusal memory is not written, so the stock desk's lane ask is not barred.
+#[test]
+fn a_refused_military_ask_falls_through_to_economic() {
+    let science = plan(GrandStrategy::Science, None);
+    let mut game = board();
+    game.turn = 60;
+    power(&mut game, 2, 30.0);
+    let mut ai = shield_2();
+    ai.enable_alliance_remembers_the_refusal();
+    assert!(ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    assert_eq!(asks(&game), vec![(1, Some("military".to_string()), true)]);
+    let id = game.pending_deals.iter().find(|d| d.from == 0).unwrap().id;
+    game.current = 1;
+    game.apply(1, &Action::RejectDeal { deal: id })
+        .expect("refused");
+    game.current = 0;
+    assert!(
+        !ai.alliance_refusal_barred(&game, 0, 1),
+        "the shared memory is left to the stock desk"
+    );
+    // Turn 63: inside the agent's retry floor for player 1; player 2 is under
+    // the threat floor. Nobody is asked.
+    game.turn = 63;
+    assert!(!ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    // Turn 66: Military is barred for player 1; Economic is asked instead.
+    game.turn = 66;
+    assert!(ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    assert_eq!(asks(&game), vec![(1, Some("economic".to_string()), true)]);
+    assert_eq!(
+        counter(&game, "military_alliance_shield:asked_other_kind"),
+        Some(1)
+    );
+}
+
+/// Once our Military Alliance stands, version two binds another neighbour
+/// with a free kind; version one asks nothing more.
+#[test]
+fn version_two_binds_a_second_neighbour() {
+    let science = plan(GrandStrategy::Science, None);
+    let mut game = board();
+    game.turn = 60;
+    let military = AllianceState {
+        kind: "military".to_string(),
+        points: 0.0,
+        level: 1,
+        ends: 90,
+    };
+    game.players[0].alliances.insert(2, military.clone());
+    game.players[2].alliances.insert(0, military);
+    let mut v1 = game.clone();
+    assert!(!shield().military_alliance_shield_step(&mut v1, 0, &science, None));
+    assert!(shield_2().military_alliance_shield_step(&mut game, 0, &science, None));
+    assert_eq!(asks(&game), vec![(1, Some("economic".to_string()), true)]);
+}
+
+/// A seat aiming at Religion never offers a Religious alliance (allies take
+/// no religious pressure from each other); another seat does, once the other
+/// kinds are taken. (The plan is Science so the border does not wait for a
+/// Religious lane ask of the stock desk's own.)
+#[test]
+fn a_religion_lane_never_offers_a_religious_alliance() {
+    let taken = |kind: &str| AllianceState {
+        kind: kind.to_string(),
+        points: 0.0,
+        level: 1,
+        ends: 90,
+    };
+    let mut game = board();
+    game.turn = 60;
+    power(&mut game, 2, 30.0);
+    // Player 1 already holds Military, Economic and Cultural elsewhere.
+    for (slot, kind) in [(5, "military"), (6, "economic"), (7, "cultural")] {
+        game.players[1].alliances.insert(slot, taken(kind));
+    }
+    let mut religion = game.clone();
+    let mut religious_seat = shield_2();
+    religious_seat.victory_target = Some(VictoryTarget::Religion);
+    assert!(!religious_seat.military_alliance_shield_step(
+        &mut religion,
+        0,
+        &plan(GrandStrategy::Science, None),
+        None
+    ));
+    assert!(shield_2().military_alliance_shield_step(
+        &mut game,
+        0,
+        &plan(GrandStrategy::Science, None),
+        None
+    ));
+    assert_eq!(asks(&game), vec![(1, Some("religious".to_string()), true)]);
+}

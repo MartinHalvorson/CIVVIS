@@ -3118,15 +3118,17 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
 /// `culture_allies` (`culture-seat-allies` armed on a seat aiming at
 /// Culture, or `science-seat-allies` on one aiming at Science) keeps them for
 /// that lane as well; the agent takes them under `CultureAllies` /
-/// `ScienceAllies`. `shield` is the host player `military-alliance-shield`
-/// asked this turn ([`AdvancedAi::military_alliance_shield_partner`]): its
-/// `ALLIANCE_MILITARY` crosses on every lane, since that desk prices the
-/// Domination target and prey itself, and the agent takes it under
-/// `MilitaryAllies`. Returns how many were dropped.
+/// `ScienceAllies`. `shield` is the host player and alliance type
+/// `military-alliance-shield` asked this turn
+/// ([`AdvancedAi::military_alliance_shield_ask`]): that one order crosses on
+/// every lane, since that desk prices the Domination target and prey itself,
+/// and the agent takes it under `MilitaryAllies` (`ALLIANCE_MILITARY`) or,
+/// for version two's other kinds, `ShieldAllies`. Returns how many were
+/// dropped.
 fn drop_off_lane_alliances(
     plan: Option<(&str, Option<&str>)>,
     culture_allies: bool,
-    shield: Option<i64>,
+    shield: Option<(i64, &str)>,
     orders: &mut Vec<Order>,
 ) -> usize {
     if plan_races_diplomacy(plan)
@@ -3138,9 +3140,9 @@ fn drop_off_lane_alliances(
     let before = orders.len();
     orders.retain(|order| {
         order.kind != "alliance"
-            || (shield.is_some()
-                && order.subject == shield
-                && order.verb.as_deref() == Some("ALLIANCE_MILITARY"))
+            || shield.is_some_and(|(subject, verb)| {
+                order.subject == Some(subject) && order.verb.as_deref() == Some(verb)
+            })
     });
     before - orders.len()
 }
@@ -4905,10 +4907,15 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    // `military-alliance-shield`: the host player its ask went to.
+    // `military-alliance-shield`: the host player and type its ask went to.
     let shield_subject = ai
-        .military_alliance_shield_partner()
-        .and_then(|partner| host_player_target(mirror_state, state, partner));
+        .military_alliance_shield_ask()
+        .and_then(|(partner, kind)| {
+            Some((
+                host_player_target(mirror_state, state, partner)?,
+                civ6_alliance_type(kind)?,
+            ))
+        });
     let held_alliances = drop_off_lane_alliances(
         plan_facts,
         ai.seat_allies_armed(),
