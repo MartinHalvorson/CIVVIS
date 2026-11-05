@@ -5177,6 +5177,15 @@
           "science-drive-answers-from-the-pad-2": null
         }
       },
+      "science-seat-allies": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "science-seat-allies": null,
+          "science-seat-allies-2": null
+        }
+      },
       "science-victory-drive": {
         "rule_on": [
           "science-victory-drive"
