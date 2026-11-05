@@ -5122,6 +5122,17 @@ impl AdvancedAi {
         self.walls_release_the_one_blow = false;
     }
 
+    /// Opt-in gene `anvil-spares-the-one-blow`; see
+    /// [`Self::anvil_spares_the_one_blow`].
+    pub fn enable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = true;
+    }
+
+    /// The twin of `enable_anvil_spares_the_one_blow`.
+    pub fn disable_anvil_spares_the_one_blow(&mut self) {
+        self.anvil_spares_the_one_blow = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
