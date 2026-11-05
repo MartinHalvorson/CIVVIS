@@ -8248,6 +8248,8 @@ pub struct AdvancedAi {
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
+    revealed_launch_tech_takes_the_slot: bool,
     /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
     /// hold before it buys, never buys an obsolete unit, and stops buying when
     /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
@@ -10777,6 +10779,7 @@ mod nuclear_launcher;
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
 mod peacetime_republic;
+mod revealed_launch_research;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
@@ -12290,6 +12293,7 @@ impl AdvancedAi {
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
+            revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

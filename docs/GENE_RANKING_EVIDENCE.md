@@ -333,6 +333,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
+| `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
