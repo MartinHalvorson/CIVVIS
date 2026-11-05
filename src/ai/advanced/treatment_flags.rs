@@ -2061,6 +2061,9 @@ impl AdvancedAi {
         land_grab_outlasts_the_opening => enable_land_grab_outlasts_the_opening, disable_land_grab_outlasts_the_opening;
         /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
         science_seat_allies => enable_science_seat_allies, disable_science_seat_allies;
+        /// Opt-in gene `science-seat-allies-2`; see
+        /// `advanced/culture_seat_allies.rs`.
+        science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;
@@ -2266,6 +2269,9 @@ impl AdvancedAi {
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `tribute-buys-the-friendship`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
     }
 }
 

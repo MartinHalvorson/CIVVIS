@@ -14330,7 +14330,14 @@ local function applyOrder(player, pid, row, turn)
 	-- specific one-way gift the emergency listener scores. `aid_gift_request`
 	-- records a submission, never an imagined acceptance or victory point.
 	if kind == "aid_gift" then
-		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID" then
+		-- `TRIBUTE` (`tribute-buys-the-friendship`) is the same one-way Gold
+		-- offer to a major at peace, sent to warm a rival too cold for the
+		-- friendship ask: the AI scores a deal in its favour at one opinion
+		-- point per 10 value, capped at 20 (Leaders.xml
+		-- STANDARD_DIPLOMATIC_ONE_SIDED_TRADES), shown on its Intel tab as
+		-- "Favorable trade deals to them".
+		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID"
+				and verb ~= "TRIBUTE" then
 			return false, "aid_gift_unknown_emergency";
 		end
 		if subject < 0 or subject == pid then return false, "aid_gift_target_unmapped"; end
