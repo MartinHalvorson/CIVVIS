@@ -147,6 +147,46 @@ pub(super) struct DistrictPlanCache {
 }
 
 impl AdvancedAi {
+    /// `korea-reads-three-kingdoms`: what Korea's Three Kingdoms pays around
+    /// a Seowon site, which the engine's flat placeholder ability
+    /// (`data/civs.json`: +1 Science and +1 Food in every city) never
+    /// prices. In Civilization VI a Mine adjacent to a Seowon gives +1 Science
+    /// and a Farm adjacent to one gives +1 Food; the live host pays exactly
+    /// that (yield drift, Deity Korea run 002152Z: Seowon-side Mines read +1
+    /// Science and Farms +1 Food that the model lacked). An unimproved Hills
+    /// plot beside the site counts half a Science, the Mine it will most likely
+    /// carry. Only the planner's valuation changes; the rules are untouched.
+    pub(super) fn three_kingdoms_site_yields(
+        &self,
+        g: &Game,
+        pid: usize,
+        district: Name,
+        pos: Pos,
+    ) -> Yields {
+        let mut yields = Yields::default();
+        if !self.korea_reads_three_kingdoms
+            || district != crate::name!("seowon")
+            || g.players[pid].civ != "Korea"
+        {
+            return yields;
+        }
+        for neighbor in g.nbrs(pos) {
+            let Some(tile) = g.map.get(neighbor) else {
+                continue;
+            };
+            if tile.district.is_some() || tile.district_foundation.is_some() {
+                continue;
+            }
+            match tile.improvement {
+                Some(improvement) if improvement == crate::name!("mine") => yields.science += 1.0,
+                Some(improvement) if improvement == crate::name!("farm") => yields.food += 1.0,
+                None if tile.hills => yields.science += 0.5,
+                _ => {}
+            }
+        }
+        yields
+    }
+
     /// The families this city still wants, at the lane's weights: the
     /// settlement wishlist minus everything built, queued or already
     /// founded.  A city plan additionally carries an Industrial Zone as a
@@ -479,10 +519,15 @@ impl AdvancedAi {
                     }
                 }
                 for (pos, price) in plots {
-                    let lane = self.yield_value(
-                        Self::projected_district_yields(&planned_game, variant, pos),
-                        plan.strategy,
-                    );
+                    let mut projected =
+                        Self::projected_district_yields(&planned_game, variant, pos);
+                    projected.add(self.three_kingdoms_site_yields(
+                        &planned_game,
+                        pid,
+                        variant,
+                        pos,
+                    ));
+                    let lane = self.yield_value(projected, plan.strategy);
                     let lost = if citizens.worked_tiles.contains(&pos) {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
@@ -577,10 +622,9 @@ impl AdvancedAi {
                     g.map.tiles[pos].district_foundation.is_none() && !reserved.contains(pos)
                 })
                 .map(|pos| {
-                    let lane = self.yield_value(
-                        Self::projected_district_yields(g, row.district, pos),
-                        plan.strategy,
-                    );
+                    let mut projected = Self::projected_district_yields(g, row.district, pos);
+                    projected.add(self.three_kingdoms_site_yields(g, pid, row.district, pos));
+                    let lane = self.yield_value(projected, plan.strategy);
                     let lost = if citizens.worked_tiles.contains(&pos) {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))

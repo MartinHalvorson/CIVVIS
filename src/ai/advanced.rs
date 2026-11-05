@@ -7577,6 +7577,10 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `korea-reads-three-kingdoms`: the district planner prices a Seowon
+    /// site by the Mines and Farms beside it, as Three Kingdoms pays. See
+    /// `advanced/district_planning.rs`. Off by default.
+    korea_reads_three_kingdoms: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -11964,6 +11968,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            korea_reads_three_kingdoms: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
