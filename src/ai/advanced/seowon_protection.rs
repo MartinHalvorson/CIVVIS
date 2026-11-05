@@ -224,7 +224,7 @@ mod tests {
             .get_mut(&cid)
             .unwrap()
             .districts
-            .remove(&crate::name!("seowon"));
+            .remove(crate::name!("seowon"));
         let tile = g.map.tiles.get_mut(&seowon).unwrap();
         tile.district = None;
         tile.district_foundation = Some(DistrictFoundation {
