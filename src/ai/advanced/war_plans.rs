@@ -152,7 +152,7 @@ impl AdvancedAi {
         if wall_hp <= 0 {
             return Some(None);
         }
-        if super::siege_support::has_attackers(g, pid) {
+        if super::super::siege_support::has_attackers(g, pid) {
             for unit in [crate::name!("battering_ram"), crate::name!("siege_tower")] {
                 if g.city_allows_siege_support(city.id, unit.as_str())
                     && Self::war_can_field_unit(g, pid, unit)

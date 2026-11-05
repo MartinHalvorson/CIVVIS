@@ -982,7 +982,9 @@ impl AdvancedAi {
                 .iter()
                 .any(|city| g.city_allows_siege_support(city.id, kind))
         };
-        if is_breach && (!super::siege_support::has_attackers(g, pid) || !useful_breach(unit)) {
+        if is_breach
+            && (!super::super::siege_support::has_attackers(g, pid) || !useful_breach(unit))
+        {
             return -10_000.0;
         }
         // Obsolete breach equipment must not occupy the only support slot
