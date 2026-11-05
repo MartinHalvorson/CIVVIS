@@ -46,33 +46,57 @@ turn with100 production invested; it emitted a Workshop. This is a paused-item
 selection opportunity, not an existing science head being overwritten. The
 current-head protection features therefore do not promise to cover that case.
 
-## Qualification status
+## Qualification
 
-- Twelve focused regression cases are implemented. Initial full CI caught the
-  12/13 Online-turn boundary: calendar durations use 66% Online scaling, while
-  the intended construction budget uses the 50% production-cost scale. The
-  helper now uses cost scaling; the same boundary regression remains in place.
-  The corrected PR-head run42122350818 passes all12 new cases within7128
-  passing Rust tests (53 skipped). Its developer-tool suites pass80,21 and24
-  tests; documentation examples report0 run/4 ignored. The complete job still
-  fails its final firing-proof gate, so this is not a green CI qualification.
-- Generated evaluation snapshots pass their21 focused Python tests.
-- The generated ranking-evidence page now includes the new unmeasured,
-  default-OFF row. Both targeted table-consistency tests pass. Initial policy
-  CI also correctly reports that new-gene firing evidence is still missing;
-  no waiver has been added.
-- The declaration and false default initializer were moved from the Industrial
-  Zone field group to their required `t-z` append range. All14 append-point
-  tests pass; removing only those moved declaration/default lines leaves the
-  rest of the source byte-identical. Helper, registration, flags and default
-  value are unchanged. This placement fix follows the requested native build
-  source; it does not establish identical binary bytes or final-head execution.
-- Final green CI, exact-source hosted Mac tests, both native binaries/smokes,
-  source-file verification and new-flag OFF/ON/ON/OFF captured-input proposals
-  are pending. Results must be bound to their actual source, not this draft.
-- No new native game or waiting harness may be started without operator
-  approval. The operator's ordinary Indonesia lane retains the seat. No such
-  game or profile-setting change is part of this candidate qualification.
+The corrected candidate is source
+`e6380fe51a31c413e28074e0a7f5da58069ceb95`. Hosted Mac run
+[42122126276](https://github.com/MartinHalvorson/CIVVIS/actions/runs/42122126276)
+passed37 focused tests:12 University,8 producer-queue,7 Factory,6 Campus-building
+and4 near-done cases. Both native executables and their smoke outputs are
+retained. The independent verifier matches4056 tracked source-file hashes,
+Rust1.97.1, the fast native profile, both arm64 binaries and their SHA256s.
+The queried `civvis_orders` SHA256 is
+`9889aaa74f72d063bffff7dcfe40ede8db64c80c6b1a8bb9bfbd53c5773cc49d`.
+
+Four registered cold queries used the sealed Ternate70/0 input with the new
+flag OFF/ON/ON/OFF. OFF chose the legal Industrial Zone at61,21; ON chose the
+legal University. Producer claiming and Factory claiming remained ON in all
+four arms. Only the new tag changes in the actual treatment and forced lists;
+all other genome fields and normalized arguments match. Each query made17
+actual reads of exactly the original bytes. Complete decision/order replies
+repeat within each arm. The independent checker verifies18 original and68
+proposal reads, native quotes/sites and the source/binary binding. It also
+passes after extracting the archive into a different directory.
+
+The [firing artifact](../gene_screens/fires/universities-before-the-forge.action-pairs.json)
+checks raw replies in a43-file archive of1761204 bytes, SHA256
+`cbfcda6e6972d362c06d0f71fdd01c7d5a5cd883688a2cfea6cb510f212f1ccc`.
+It contains commands, replies, raw captures, the original seal, executed probe,
+independent checker and review instructions. Executables and source checkout
+are retained separately. This proves proposal activation on this input only.
+No waiver, price, deployment default or operator force list is changed.
+
+The corrected PR-head run42122350818 passed7128 Rust tests (53 skipped),
+including all12 new cases. Developer-tool suites passed80,21 and24 tests;
+documentation examples reported0 run/4 ignored. Its complete job failed only
+because the firing archive was not yet present. The initial boundary regression
+caught calendar-duration scaling (66% Online) where this construction budget
+requires production-cost scaling (50%); the same12/13-turn test remains and now
+passes on both Ubuntu CI and the qualified Mac candidate.
+
+The declaration and false initializer were subsequently filed in their required
+`t-z` append range. The helper, tests and producer-claim hooks remain byte-for-byte
+unchanged from the native candidate. Main was integrated again only after a
+real conflict appeared; the two conflicting generated snapshots were rebuilt.
+Peer changes in that integration are covered by final CI, not by a claim of
+final-head native execution. Generated snapshots, ranking evidence and append
+ranges are checked separately. `gene_fires.py --max 0` now reports821 genes,
+773 with firing evidence,48 pre-existing waivers and0 missing. Final integrated
+CI remains required before merge.
+
+No native game or waiting harness was started. The operator's ordinary
+Indonesia lane retains the seat; approval is required before any new native
+game scheduling. This candidate qualification changes no lane settings.
 
 Native legality/proposal evidence cannot be promoted into construction or
 strength evidence. The Korea domination goal remains unachieved; this work
