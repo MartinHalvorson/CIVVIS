@@ -1,18 +1,18 @@
 {
   "kind": "captured_native_action_pairs_v1",
   "tag": "holdable-land-keeps-settling",
-  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Seven live Deity Korea Online boards from the mid-game Settler gap (t63-t78: past the opening floor's t60 window, no Settler walking or queued, at peace with every major, no threatened city, the plan short of its target), each cut right after the first state row of the turn (frame 0) and queried with the run's own requested genome on a ci-profile civvis_orders built from the branch (with the walker's Loyalty-forecast seat filter), with --resumed (opening book played and the host's current items adopted, as the live bridge's agent plays a board it first sees past turn one). Control: --resumed reproduces the live early-settler-floor Settler on civvis-20261105T005402Z t42. Off proposes no Settler on any board; on queues one on three: civvis-20261104T230753Z t63 (Gyeongju, seat worth 154.3, 7 turns), civvis-20261104T231540Z t66 (Yangsan, 65.2, 8 turns), civvis-20261105T001634Z t75 (Gyeongju, 67.7, 6 turns). The other four decline and journal why (raiders in the cities' home rings, queues that keep their item, small cities, no acceptable seat, a seat inside 8 tiles of a charted rival city).",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Seven live Deity Korea Online boards from the mid-game Settler gap (t63-t78: past the opening floor's t60 window, no Settler walking or queued, at peace with every major, no threatened city, the plan short of its target), each cut right after the first state row of the turn (frame 0) and queried with the run's own requested genome on a ci-profile civvis_orders built from the branch (with the walker's Loyalty-forecast seat filter and young-district displacement), with --resumed (opening book played and the host's current items adopted, as the live bridge's agent plays a board it first sees past turn one). Control: --resumed reproduces the live early-settler-floor Settler on civvis-20261105T005402Z t42. Off proposes no Settler on any board; on queues one on three: civvis-20261104T230753Z t63 (Gyeongju, seat worth 154.3, 7 turns), civvis-20261104T231540Z t66 (Yangsan, 65.2, 8 turns), civvis-20261105T001634Z t75 (Gyeongju, 67.7, 6 turns). The other four decline and journal why (raiders in the cities' home rings, queues that keep their item, small cities, no acceptable seat, a seat inside 8 tiles of a charted rival city).",
   "archive": {
     "path": "docs/eval/2026-11-05-holdable-land-keeps-settling.native-queries.tar.xz",
-    "sha256": "d6aa65a5bdf3d500277d545576c0f3052ac4eff5e1e8add309a9410d231b6952"
+    "sha256": "81748d2acd90cd11c98c399ac6fbc43caaf4856aac07bda16d9dabf8c9126fcb"
   },
   "members": [
-    "native-queries-04/0000/result.json",
-    "native-queries-04/0001/result.json",
-    "native-queries-04/0002/result.json",
-    "native-queries-04/0003/result.json",
-    "native-queries-04/0004/result.json",
-    "native-queries-04/0005/result.json",
-    "native-queries-04/0006/result.json"
+    "native-queries-05/0000/result.json",
+    "native-queries-05/0001/result.json",
+    "native-queries-05/0002/result.json",
+    "native-queries-05/0003/result.json",
+    "native-queries-05/0004/result.json",
+    "native-queries-05/0005/result.json",
+    "native-queries-05/0006/result.json"
   ]
 }
