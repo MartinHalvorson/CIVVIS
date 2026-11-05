@@ -4984,6 +4984,15 @@
           "merchant-confederation-earns-its-slot-2": null
         }
       },
+      "military-alliance-shield": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "military-alliance-shield": null,
+          "military-alliance-shield-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores"

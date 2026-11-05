@@ -5232,6 +5232,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // Version two (live Lv 8 Deity Korea Online, 11-05, first armed games):
+    // three Military asks to declared friends, three refusals (152431Z t96,
+    // 154934Z t108, 155735Z t108), and asks to Neutral/Unfriendly rivals
+    // the agent never sent were remembered as refused (t87, t102, t105),
+    // barring those rivals from every desk for thirty turns. Version two asks
+    // only Friendly rivals and lets a taken or refused Military kind fall
+    // through to Economic, Cultural or Religious, under its own per-kind
+    // memory. See `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
