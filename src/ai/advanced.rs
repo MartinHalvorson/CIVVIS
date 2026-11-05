@@ -7624,6 +7624,11 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
+    /// while a major at 1.5x our power is at war with us and a home city is
+    /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
+    /// default.
+    outmatched_war_prices_the_army: bool,
     /// `luxury-asks-pay-in-strategics-2`: version two, skipping a partner our
     /// barter could not reach and Horses while another strategic is spare.
     /// See `advanced/luxury_asks_pay_in_strategics.rs`.
@@ -10423,6 +10428,9 @@ mod one_war;
 /// stands down. Opt-in gene `outclassed-siege-stands-down`; see
 /// `advanced/outclassed_siege.rs`.
 mod outclassed_siege;
+/// `outmatched-war-prices-the-army`: see
+/// `advanced/outmatched_war_prices_the_army.rs`.
+mod outmatched_war_prices_the_army;
 /// Our own column is not the host's refusal: the live bridge reports which
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
@@ -12153,6 +12161,7 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
             luxury_barter_shorts: Vec::new(),
             medina_yields_to_the_amenities: false,
@@ -24251,6 +24260,17 @@ impl AdvancedAi {
                         + early_contact
                         + early_archer
                         + conquest_body
+                        // `outmatched-war-prices-the-army`: a missing land
+                        // unit outweighs the economy while a much stronger
+                        // major threatens a home city. Zero with the gene
+                        // off. See `advanced/outmatched_war_prices_the_army.rs`.
+                        + self.outmatched_war_unit_premium(
+                            g,
+                            pid,
+                            plan,
+                            !naval && !aircraft,
+                            force_gap,
+                        )
                         + if missing_siege {
                             siege_production::FIRST_WEAPON_RESERVATION
                         } else {

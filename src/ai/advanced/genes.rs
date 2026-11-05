@@ -5161,6 +5161,15 @@ pub const GENES: &[Gene] = &[
     // shooter's ranged blow from its own tile joins the plan as kill-only.
     // See `advanced/battle_planner.rs`.
     Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
+    // The strategic scorer prices a land unit at power x 4 + 58 per missing
+    // body, and only the one named threatened city adds a war term. So in
+    // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
+    // chose a Stock Exchange at 104 over any defender at about 52, and the
+    // seat was eliminated at t203. Under the gene, a missing land unit gains
+    // 350 x the enemy-to-our power ratio (1.5 to 3) while that major is at war
+    // with us and a home city is threatened. See
+    // `outmatched_war_prices_the_army.rs`.
+    Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
     // Version two of `luxury-asks-pay-in-strategics`: after version one's
     // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
     // the same partners every time (24 of 27), mostly on Horses (22 of 42;
