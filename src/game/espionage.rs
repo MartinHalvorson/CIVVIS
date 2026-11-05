@@ -347,7 +347,22 @@ impl Game {
             ("spaceport", "disrupt_rocketry"),
             ("dam", "breach_dam"),
         ] {
-            let Some(target) = self.active_spy_target_position(city, Name::new(family)) else {
+            // The board's own district, else (under `spy_targets_read_the_host`)
+            // the plot the host aims this mission at.
+            let Some(target) = self
+                .active_spy_target_position(city, Name::new(family))
+                .or_else(|| {
+                    self.spy_targets_read_the_host
+                        .then(|| {
+                            self.host_unit_facts
+                                .get(&spy.id)
+                                .and_then(|facts| facts.spy_targets.as_ref())
+                                .and_then(|targets| targets.get(mission))
+                                .map(|target| target.pos)
+                        })
+                        .flatten()
+                })
+            else {
                 continue;
             };
             let useful = match mission {

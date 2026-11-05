@@ -433,3 +433,94 @@ fn a_spy_in_a_campusless_leader_city_moves_to_its_campus() {
     steals(VictoryTarget::Science).advanced_spies(&mut on, 0, &plan(GrandStrategy::Science));
     assert_ne!(on.spies[&spy].city, Some(capital), "posted away");
 }
+
+/// The host's menu and targets for `spy`: Listening Post at the city, Steal
+/// Tech Boost at `steal_at` with `odds`.
+fn host_targets(g: &mut Game, spy: u32, city: u32, steal_at: Pos, odds: Option<f64>) {
+    let centre = g.cities[&city].pos;
+    Arc::make_mut(&mut g.host_unit_facts).insert(
+        spy,
+        HostUnitFacts {
+            spy_missions: Some(BTreeSet::from([
+                "listening_post".to_string(),
+                STEAL_OPERATION.to_string(),
+            ])),
+            spy_targets: Some(std::collections::BTreeMap::from([
+                (
+                    "listening_post".to_string(),
+                    crate::game::HostSpyTarget {
+                        pos: centre,
+                        success: Some(1.0),
+                        fail: None,
+                    },
+                ),
+                (
+                    STEAL_OPERATION.to_string(),
+                    crate::game::HostSpyTarget {
+                        pos: steal_at,
+                        success: odds,
+                        fail: None,
+                    },
+                ),
+            ])),
+            ..HostUnitFacts::default()
+        },
+    );
+}
+
+#[test]
+fn a_campus_the_board_never_saw_is_stolen_from_at_the_hosts_plot() {
+    let (mut g, racer, _) = board();
+    let campus = g.cities[&racer]
+        .districts
+        .iter()
+        .find_map(|(district, tile)| (g.district_family(*district) == "campus").then_some(*tile))
+        .expect("the fixture campus");
+    // The board forgets the Campus: neither the city nor the tile holds it.
+    g.cities
+        .get_mut(&racer)
+        .unwrap()
+        .districts
+        .remove(Name::new("campus"));
+    g.map.tiles.get_mut(&campus).unwrap().district = None;
+    let spy = idle_spy(&mut g, racer, 2, true);
+    host_targets(&mut g, spy, racer, campus, Some(0.7));
+    let mut off = g.clone();
+    keeps(VictoryTarget::Science).advanced_spies(&mut off, 0, &plan(GrandStrategy::Science));
+    assert_ne!(
+        mission(&off, spy).as_deref(),
+        Some(STEAL_OPERATION),
+        "without the gene the board cannot aim it"
+    );
+    steals(VictoryTarget::Science).advanced_spies(&mut g, 0, &plan(GrandStrategy::Science));
+    assert_eq!(mission(&g, spy).as_deref(), Some(STEAL_OPERATION));
+    assert_eq!(
+        g.spies[&spy].mission.as_ref().map(|mission| mission.target),
+        Some(campus),
+        "aimed at the host's plot"
+    );
+}
+
+#[test]
+fn a_steal_below_the_host_odds_floor_is_not_started() {
+    let run = |odds: f64| {
+        let (mut g, racer, _) = board();
+        let campus = g.cities[&racer]
+            .districts
+            .iter()
+            .find_map(|(district, tile)| {
+                (g.district_family(*district) == "campus").then_some(*tile)
+            })
+            .expect("the fixture campus");
+        let spy = idle_spy(&mut g, racer, 2, true);
+        host_targets(&mut g, spy, racer, campus, Some(odds));
+        steals(VictoryTarget::Science).advanced_spies(&mut g, 0, &plan(GrandStrategy::Science));
+        mission(&g, spy)
+    };
+    assert_eq!(run(0.7).as_deref(), Some(STEAL_OPERATION), "good odds");
+    assert_ne!(
+        run(STEAL_MIN_SUCCESS - 0.2).as_deref(),
+        Some(STEAL_OPERATION),
+        "below the floor"
+    );
+}

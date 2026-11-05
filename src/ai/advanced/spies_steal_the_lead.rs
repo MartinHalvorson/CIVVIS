@@ -71,6 +71,13 @@ use super::*;
 /// The operation this gene runs.
 pub(crate) const STEAL_OPERATION: &str = "steal_tech_boost";
 
+/// The host's success odds under which a steal is not started (when the host
+/// gave odds). Live 080206Z lost both of its late steals in the leader's
+/// cities (t159, t164) while the early ones (t113-126) landed 6 of 8. At ~300
+/// Science a Eureka against a 150-260 Production Spy, a steal below this is a
+/// losing trade.
+pub(crate) const STEAL_MIN_SUCCESS: f64 = 0.4;
+
 /// Technologies a rival must know that we lack before a Spy is trained to
 /// steal from it.
 pub(crate) const STEAL_MIN_LACKED: usize = 3;
@@ -125,7 +132,20 @@ impl AdvancedAi {
         if self.steal_yields_to_the_disrupt(g, spy, legal) {
             return None;
         }
+        if Self::steal_odds(g, spy).is_some_and(|odds| odds < STEAL_MIN_SUCCESS) {
+            return None;
+        }
         Self::steal_the_lead_offered(g, spy, legal).cloned()
+    }
+
+    /// The host's success odds for a steal by `spy` where it stands, when
+    /// the host gave them (`HostUnitFacts::spy_targets`).
+    pub(super) fn steal_odds(g: &Game, spy: u32) -> Option<f64> {
+        g.host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_targets.as_ref())
+            .and_then(|targets| targets.get(STEAL_OPERATION))
+            .and_then(|target| target.success)
     }
 
     /// Whether the steal stands aside for Disrupt Rocketry where `spy`
@@ -167,10 +187,13 @@ impl AdvancedAi {
             .iter()
             .filter(|tech| !g.players[pid].techs.contains(*tech))
             .count();
+        let odds = Self::steal_odds(g, spy).map_or_else(String::new, |odds| {
+            format!(" at {:.0}% host odds", odds * 100.0)
+        });
         think!(self.journal(), Military, Decision,
                "A Spy steals a Eureka in {rival}'s {city_name}";
                "spies-steal-the-lead: {rival} knows {lacked} technologies we lack; \
-                Steal Tech Boost instead of {instead}");
+                Steal Tech Boost{odds} instead of {instead}");
     }
 
     /// The rivals worth a steal: met, living majors we are not allied with,

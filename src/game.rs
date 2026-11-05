@@ -493,10 +493,10 @@ pub(crate) mod defending_district_tests;
 /// Espionage: spies, missions, promotions and counterspies. See
 /// `game/espionage.rs`.
 mod espionage;
-mod growth;
 /// Great People: points, offers, activation, patronage and effects. See
 /// `game/great_people.rs`.
 mod great_people;
+mod growth;
 mod policy_ledger;
 mod research_quotes;
 mod route_avoidance;
@@ -3435,6 +3435,24 @@ pub struct HostUnitFacts {
     /// none and the board's menu stands.
     #[serde(default)]
     pub spy_missions: Option<BTreeSet<String>>,
+    /// Beside `spy_missions`: each offered mission's target plot (the
+    /// district the host aims it at, else the city) and the host's odds,
+    /// keyed by CIVVIS mission kind. `Some` only with entries.
+    #[serde(default)]
+    pub spy_targets: Option<BTreeMap<String, HostSpyTarget>>,
+}
+
+/// One host-offered Spy mission: the plot it aims at and the host's odds
+/// (`UnitManager.GetResultProbability`: `success` = the two
+/// `ESPIONAGE_SUCCESS_*` rows, `fail` = the two `ESPIONAGE_FAIL_*` rows; the
+/// rest is capture or death). `None` odds when the host gave none.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Debug, Default)]
+pub struct HostSpyTarget {
+    pub pos: Pos,
+    #[serde(default)]
+    pub success: Option<f64>,
+    #[serde(default)]
+    pub fail: Option<f64>,
 }
 
 /// The treasury's Gold bill by source — `PlayerTreasury:GetUnitMaintenance`,
@@ -6876,6 +6894,15 @@ pub struct Game {
     /// native games have no host menu, so it changes nothing there.
     #[serde(default)]
     pub heist_reads_the_host_menu: bool,
+    /// `spies-steal-the-lead`: a district mission the host offers at a plot
+    /// (`HostUnitFacts::spy_targets`) is offered there though the board has
+    /// not seen the district. The board learns a rival Campus only once the
+    /// tile is seen, so a host-offered Steal Tech Boost went unsent (live
+    /// 080206Z t145 and 073507Z t150: steal on the host menu, Listening Post
+    /// sent). Set by the seat each spy pass; native games have no host
+    /// targets, so it changes nothing there.
+    #[serde(default)]
+    pub spy_targets_read_the_host: bool,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -7918,6 +7945,7 @@ impl From<GameSer> for Game {
             lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
+            spy_targets_read_the_host: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -8685,6 +8713,7 @@ impl Game {
             lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
+            spy_targets_read_the_host: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
             observed_appeal: Arc::new(BTreeMap::new()),
@@ -24870,7 +24899,6 @@ impl Game {
         }
         true
     }
-
 }
 
 #[cfg(test)]

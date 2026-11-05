@@ -3156,6 +3156,8 @@ impl AdvancedAi {
     pub(super) fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // `culture-denial-heist`: see `Game::heist_reads_the_host_menu`.
         g.heist_reads_the_host_menu = self.culture_denial_heist;
+        // `spies-steal-the-lead`: see `Game::spy_targets_read_the_host`.
+        g.spy_targets_read_the_host = self.spies_steal_the_lead_on(plan);
         self.spy_orders_until.retain(|_, until| *until > g.turn);
         // `science-threat-denial`: the threat model walks every rival's
         // cities, so it is read once for the whole pass rather than per
