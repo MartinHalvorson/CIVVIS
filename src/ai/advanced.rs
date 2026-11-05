@@ -6563,6 +6563,11 @@ pub struct AdvancedAi {
     /// brings a shooter and [`camps_close_the_age::CAMP_AGE_MARGIN`] times
     /// the guard. Off by default.
     camps_close_the_age_2: bool,
+    /// `camps-close-the-age-3`: version two, and a camp within
+    /// `CAMP_NEAR_RADIUS` of our cities gets the same premium and armed
+    /// party in any era while it stands, so it is cleared while its guard is
+    /// small. Off by default.
+    camps_close_the_age_3: bool,
     /// `capital-keeps-its-defender`: while our capital has a Defend row, the
     /// row is urgent and ranks first on the board, ahead of a secondary
     /// city under fire, an Escort and a Recon, so the board never sends the
@@ -11811,6 +11816,7 @@ impl AdvancedAi {
             capital_frost_looks: Vec::new(),
             camps_close_the_age: false,
             camps_close_the_age_2: false,
+            camps_close_the_age_3: false,
             capital_keeps_its_defender: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
