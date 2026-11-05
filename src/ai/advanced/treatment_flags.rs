@@ -2275,6 +2275,9 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Opt-in gene `wounded-ship-sails-on`; see
+        /// `advanced/wounded_ship_sails_on.rs`.
+        wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
     }
 }
 

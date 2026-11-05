@@ -9510,6 +9510,10 @@ pub struct AdvancedAi {
     /// by default.
     science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `wounded-ship-sails-on`: a wounded sea scout with no healing water in
+    /// reach keeps charting instead of fortifying where it can never recover.
+    /// See `advanced/wounded_ship_sails_on.rs`. Off by default.
+    wounded_ship_sails_on: bool,
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
     /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
@@ -10779,6 +10783,8 @@ mod wonder_clearance;
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
+/// `wounded-ship-sails-on`: see `advanced/wounded_ship_sails_on.rs`.
+mod wounded_ship_sails_on;
 
 /// `amphibious-siege-train`: a water-locked siege objective's guns and
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
@@ -12634,6 +12640,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
+            wounded_ship_sails_on: false,
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,

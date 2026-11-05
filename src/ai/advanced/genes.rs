@@ -5330,6 +5330,10 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // `wounded-ship-sails-on`: a wounded sea scout with no healing water in reach
+    // keeps charting instead of fortifying where it can never recover. See
+    // `advanced/wounded_ship_sails_on.rs`.
+    Gene { tag: "wounded-ship-sails-on", field: "wounded_ship_sails_on", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_ship_sails_on, disable: AdvancedAi::disable_wounded_ship_sails_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
