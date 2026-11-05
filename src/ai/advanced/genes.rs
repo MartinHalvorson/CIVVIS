@@ -5151,6 +5151,13 @@ pub const GENES: &[Gene] = &[
     // the gene those claims stand aside while a war with a major threatens a
     // home city. See `threatened_war_holds_the_claims.rs`.
     Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Version one of the drain fires below one turn of runway. Live Deity
+    // 111305Z t194 fell from +11.8 to -76.6 Gold a turn with 243 Gold (3.2
+    // turns), started a Bank, went bankrupt at t199, and lost science 352 to
+    // 151 to the amenity charge. Version two enters the drain below five
+    // turns and never disbands a unit within six tiles of an enemy soldier.
+    // See `solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

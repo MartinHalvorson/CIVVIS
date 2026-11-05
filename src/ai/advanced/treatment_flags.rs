@@ -5138,6 +5138,19 @@ impl AdvancedAi {
         self.anvil_spares_the_one_blow = false;
     }
 
+    /// Opt-in gene `bankruptcy-exits-the-drain-2`, version two of
+    /// `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. A seat plays
+    /// one version, so this turns version one off.
+    pub fn enable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = true;
+        self.bankruptcy_exits_the_drain = false;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain_2`.
+    pub fn disable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

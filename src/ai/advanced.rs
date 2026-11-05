@@ -5537,6 +5537,10 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `bankruptcy-exits-the-drain-2`: the drain at five turns of runway, sparing
+    /// units within six tiles of an enemy soldier. Carries version one. See
+    /// `advanced/solvency.rs`. Off by default.
+    bankruptcy_exits_the_drain_2: bool,
     /// `builder-prices-travel-in-turns`: while a Builder has a charge to
     /// spare, a job scores its value per Builder-turn (the working turn plus
     /// the whole turns of walking) instead of `value - 0.7 × wdist`. See
@@ -11768,6 +11772,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
+            bankruptcy_exits_the_drain_2: false,
             builder_prices_travel_in_turns: false,
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
