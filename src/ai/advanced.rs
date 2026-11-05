@@ -8631,6 +8631,8 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
+    science_foundation_before_backlog: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10581,6 +10583,7 @@ mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
 mod first_launch_research;
+mod science_foundation_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -12178,6 +12181,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
