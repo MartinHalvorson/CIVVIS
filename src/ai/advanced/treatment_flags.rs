@@ -2206,6 +2206,9 @@ impl AdvancedAi {
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
+        /// Opt-in gene `threatened-lane-lends-the-army`; see
+        /// `advanced/threatened_lane_lends_the_army.rs`.
+        threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
     }
 }
 
