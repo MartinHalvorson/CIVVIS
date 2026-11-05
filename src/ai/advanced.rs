@@ -8716,6 +8716,10 @@ pub struct AdvancedAi {
     /// peace) goes to the nearest city of ours, and one inside a city stays. See
     /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
     settler_shelters_from_the_war: bool,
+    /// `settler-shelters-from-the-war-2`: version two, which shelters only
+    /// from a major at war with us (no peace clause). Carries version one. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war_2: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -12363,6 +12367,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
+            settler_shelters_from_the_war_2: false,
             spy_loss_turns: Vec::new(),
             science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
