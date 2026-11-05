@@ -5025,6 +5025,24 @@ pub const GENES: &[Gene] = &[
     // 8 a tile inside ten of the nearest charted rival city. See
     // `advanced/early_city_distance.rs`.
     Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
     // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
     // ahead instead of idling on Listening Posts or Gain Sources: in a space
     // racer's city with no Disrupt Rocketry offered, in place of the green

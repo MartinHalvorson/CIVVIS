@@ -5567,6 +5567,9 @@ pub struct AdvancedAi {
     // ---- append: c-d ------------------------------------------------
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
+    /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
+    /// dying. See `advanced/denial_spies_count_their_losses.rs`.
+    denial_spies_count_their_losses: bool,
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
@@ -6585,6 +6588,12 @@ pub struct AdvancedAi {
     /// gate opens. See `objective_board.rs` (`early_cities_defend_first`).
     /// Off by default.
     capital_keeps_its_defender_2: bool,
+    /// `capital-keeps-its-defender-3`: version two, and a stronger major's
+    /// visible soldier parked within [`objective_board::SURPRISE_TILES`] of
+    /// an early city at peace counts as a threat to it: the city gets its
+    /// Defend row, the parked strength enters its need and its risk. Off by
+    /// default.
+    capital_keeps_its_defender_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -8631,6 +8640,9 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
+    /// by the live bridge each turn (`observe_spy_losses`).
+    spy_loss_turns: Vec<u32>,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10166,6 +10178,8 @@ mod upkeep_waits_for_the_income;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-spies-count-their-losses`: see `advanced/denial_spies_count_their_losses.rs`.
+mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
@@ -11668,6 +11682,7 @@ impl AdvancedAi {
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
             districts_protect_seowon_science: false,
+            denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -11868,6 +11883,7 @@ impl AdvancedAi {
             camps_close_the_age_3: false,
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
+            capital_keeps_its_defender_3: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -12184,6 +12200,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
@@ -26598,7 +26615,11 @@ impl AdvancedAi {
                     GrandStrategy::Recovery => 650.0,
                     _ => 500.0,
                 };
-                if active < g.spy_capacity(pid).max(0) as usize {
+                // `denial-spies-count-their-losses`: no new Spy while recent
+                // ones keep dying. See `advanced/denial_spies_count_their_losses.rs`.
+                if active < g.spy_capacity(pid).max(0) as usize
+                    && !self.spy_losses_pause_training(g)
+                {
                     1_500.0 + strategic + active as f64 * 90.0
                 } else {
                     -10_000.0
@@ -32325,6 +32346,9 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
+        // `denial-spies-count-their-losses`: the base production fallback
+        // reads this. See `advanced/denial_spies_count_their_losses.rs`.
+        self.base.spy_training_paused = self.spy_losses_pause_training(g);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

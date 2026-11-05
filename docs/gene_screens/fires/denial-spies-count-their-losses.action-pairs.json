@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "denial-spies-count-their-losses",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live Lv 8 Deity Korea Online science seats on turns where the live seat ordered a Spy with three or more of its Spies lost (unit_lost UNIT_SPY) inside the previous 20 Online turns: civvis-20261104T232613Z t172 and t174, 20261104T213449Z t145, each the run's events.jsonl cut at the end of the turn and queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live Spy order (produce UNIT_SPY); every on arm orders none, the same cities taking PROJECT_ENHANCE_DISTRICT_CAMPUS, BUILDING_FOOD_MARKET and DISTRICT_ENTERTAINMENT_COMPLEX instead. Two more queried cases (232613Z t188, 222818Z t136) are retained in the archive but not listed: their off arm did not reproduce a live Spy order.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-denial-spies-count-their-losses.native-queries.tar.xz",
+    "sha256": "feca193f21441bef417992ef96999416a81569b45a17975e13e1f20a18e51eff"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0004/result.json"
+  ]
+}
