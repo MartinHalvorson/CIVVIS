@@ -2200,6 +2200,12 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist`; see
         /// `BasicAi::plaza_building_item_for`.
         plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
+        /// Opt-in gene `parity-upgrades-before-it-buys`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `settler-shelters-from-the-war`; see
+        /// `advanced/settler_shelters_from_the_war.rs`.
+        settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
     }
 }
 

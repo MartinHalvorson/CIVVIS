@@ -8212,6 +8212,10 @@ pub struct AdvancedAi {
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
+    /// hold before it buys, never buys an obsolete unit, and stops buying when
+    /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -8665,6 +8669,11 @@ pub struct AdvancedAi {
     /// left to steal), and the turn it last did. See
     /// `AdvancedAi::racer_spy_post_for`.
     steal_dry_cities: BTreeMap<u32, u32>,
+    /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
+    /// major's soldier is within six tiles (a non-friend's within two at
+    /// peace) goes to the nearest city of ours, and one inside a city stays. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -10145,6 +10154,7 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 mod native_air_assault;
+mod native_production_contract;
 pub use air_city_assault::AirCityAssault;
 
 /// Policies and governors: the policy deck, the card checks, and governor
@@ -10737,6 +10747,8 @@ mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
 mod launch_pad_holds_its_queue;
+/// `parity-upgrades-before-it-buys`: see `advanced/parity_upgrades_before_it_buys.rs`.
+mod parity_upgrades_before_it_buys;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -10802,6 +10814,9 @@ mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
+/// `settler-shelters-from-the-war`: see
+/// `advanced/settler_shelters_from_the_war.rs`.
+mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
@@ -12175,6 +12190,7 @@ impl AdvancedAi {
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
+            parity_upgrades_before_it_buys: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
@@ -12257,6 +12273,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
+            settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
@@ -17657,6 +17674,11 @@ impl AdvancedAi {
         let Some((ours, theirs, rival, contact)) = self.border_parity_target(g, pid) else {
             return false;
         };
+        // `parity-upgrades-before-it-buys`: the army we hold is modernised
+        // first; see `advanced/parity_upgrades_before_it_buys.rs`.
+        if self.parity_upgrades_first(g, pid, rival, ours, theirs) > 0 {
+            return true;
+        }
         // The best ranged unit first, then the best melee one — and the first
         // of them the treasury can pay for. Run civvis-20260829T094737Z read
         // 0.16 of Scotland at t100–t111 with 152–277 Gold, and the host's own
@@ -17672,8 +17694,9 @@ impl AdvancedAi {
             }
         }
         let Some(unit) = candidates.into_iter().find(|unit| {
-            g.unit_purchase_cost(pid, contact, unit, "gold")
-                .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
+            self.parity_buy_barred(g, unit, ours, theirs).is_none()
+                && g.unit_purchase_cost(pid, contact, unit, "gold")
+                    .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
         }) else {
             return false;
         };
