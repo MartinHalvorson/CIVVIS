@@ -6861,7 +6861,8 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         || unit.spy_operation.is_some()
         || unit.spy_operation_end_turn.is_some()
         || unit.spy_missions_available.is_some()
-        || unit.spy_mission_targets.is_some();
+        || unit.spy_mission_targets.is_some()
+        || (unit.kind == "UNIT_SPY" && unit.offered_promotions.is_some());
     if !exported {
         Arc::make_mut(&mut game.host_unit_facts).insert(
             uid,
