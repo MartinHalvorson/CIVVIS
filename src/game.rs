@@ -6558,6 +6558,13 @@ pub struct Game {
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
     pub observed_score: Arc<BTreeMap<usize, i64>>,
+    /// Wars between two met rivals as the live host reports them (each
+    /// rival's `at_war_with`), as `(low, high)` seat pairs. Kept apart from
+    /// `at_war`, which every war reader of the planner consults, so the host
+    /// fact reaches only the readers that ask for it
+    /// ([`Game::rivals_at_war`]). Empty in native CIVVIS games.
+    #[serde(default)]
+    pub observed_rival_wars: Arc<BTreeSet<(usize, usize)>>,
     /// Current host Palace locations, distinct from original capitals required
     /// for Domination. Empty in simulated games and older host snapshots.
     #[serde(default)]
@@ -7479,6 +7486,8 @@ struct GameSer {
     #[serde(default)]
     observed_score: BTreeMap<usize, i64>,
     #[serde(default)]
+    observed_rival_wars: BTreeSet<(usize, usize)>,
+    #[serde(default)]
     observed_city_palaces: BTreeMap<u32, bool>,
     #[serde(default)]
     observed_city_religion_markers: BTreeSet<u32>,
@@ -7718,6 +7727,7 @@ impl From<GameSer> for Game {
             host_unit_facts: Arc::new(s.host_unit_facts),
             host_maintenance: Arc::new(s.host_maintenance),
             observed_score: Arc::new(s.observed_score),
+            observed_rival_wars: Arc::new(s.observed_rival_wars),
             observed_city_palaces: Arc::new(s.observed_city_palaces),
             observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
             observed_strategic_income_adjustments: Arc::new(
@@ -7976,6 +7986,7 @@ impl From<Game> for GameSer {
             host_unit_facts: Arc::unwrap_or_clone(g.host_unit_facts),
             host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
             observed_score: Arc::unwrap_or_clone(g.observed_score),
+            observed_rival_wars: Arc::unwrap_or_clone(g.observed_rival_wars),
             observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
             observed_city_religion_markers: Arc::unwrap_or_clone(g.observed_city_religion_markers),
             observed_strategic_income_adjustments: Arc::unwrap_or_clone(
@@ -8484,6 +8495,7 @@ impl Game {
             host_unit_facts: Arc::new(BTreeMap::new()),
             host_maintenance: Arc::new(BTreeMap::new()),
             observed_score: Arc::new(BTreeMap::new()),
+            observed_rival_wars: Arc::new(BTreeSet::new()),
             observed_city_palaces: Arc::new(BTreeMap::new()),
             observed_city_religion_markers: Arc::new(BTreeSet::new()),
             observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
@@ -8951,24 +8963,6 @@ impl Game {
         player.is_barbarian = true;
         player.is_free_city = true;
         self.players.push(player);
-        pid
-    }
-
-    /// Seat a minor civilization that arrived from a mirrored game rather than
-    /// from this game's own setup. A mirrored board is built with zero native
-    /// city-states, so the first sighting of one has nowhere to live; this
-    /// pushes an alive minor seat on demand, keyed by name so the same
-    /// city-state lands on the same seat every rebuild.
-    pub fn ensure_minor_seat(&mut self, civ: &str) -> usize {
-        if let Some(player) = self
-            .players
-            .iter()
-            .find(|player| player.is_minor && !player.is_barbarian && player.civ == civ)
-        {
-            return player.id;
-        }
-        let pid = self.players.len();
-        self.players.push(Player::new(pid, civ, true));
         pid
     }
 
@@ -11172,6 +11166,13 @@ impl Game {
         a_controller != b_controller
             && (a_controller != a || b_controller != b)
             && self.at_war.contains(&pair(a_controller, b_controller))
+    }
+
+    /// Whether two empires are at war: the engine's own relation, or — on a
+    /// mirrored seat, whose `at_war` carries only our own wars — the host's
+    /// report of a war between two met rivals ([`Game::observed_rival_wars`]).
+    pub fn rivals_at_war(&self, a: usize, b: usize) -> bool {
+        self.is_at_war(a, b) || (a != b && self.observed_rival_wars.contains(&(a.min(b), a.max(b))))
     }
 
     fn allocate_conflict_id(&mut self) -> u32 {
@@ -14699,10 +14700,6 @@ impl Game {
 
     pub fn religions_founded(&self) -> usize {
         self.players.iter().filter(|p| p.religion.is_some()).count()
-    }
-
-    pub fn has_pantheon_belief(&self, pid: usize, belief: &str) -> bool {
-        self.players[pid].pantheon.as_deref() == Some(belief)
     }
 
     fn pantheon_effect(&self, pid: usize, effect: &str) -> f64 {

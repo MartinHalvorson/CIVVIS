@@ -6380,6 +6380,42 @@ CivvisMenus.research_quote = function(techs, row)
 	return quote;
 end
 
+-- CivilopediaPage_Technology.lua:15/49 reads the live graph, whose future-era
+-- prerequisites can differ from the database. Observe only revealed nodes and
+-- revealed prerequisites. This diagnostic does not choose or queue research.
+CivvisMenus.research_tree = function(techs)
+	if techs == nil then return nil; end
+	return try(function()
+		local nodes = Game.GetTechs():GetActiveTechNodes();
+		if type(nodes) ~= "table" then return nil; end
+		local out = {};
+		for _, node in ipairs(nodes) do
+			local row = GameInfo.Technologies[node.TechType];
+			if row ~= nil and techs:IsTechRevealed(row.Index) == true
+				and type(node.PrereqTechTypes) == "table" then
+				local prereqs, complete = {}, true;
+				for _, index in ipairs(node.PrereqTechTypes) do
+					local prereq = GameInfo.Technologies[index];
+					if prereq == nil or techs:IsTechRevealed(prereq.Index) ~= true then
+						complete = false;
+						break;
+					end
+					prereqs[#prereqs + 1] = prereq.TechnologyType;
+				end
+				if complete then
+					table.sort(prereqs);
+					local can = try(function() return techs:CanResearch(row.Index); end);
+					local record = { t = row.TechnologyType, requires = prereqs };
+					if type(can) == "boolean" then record.can_research = can; end
+					out[#out + 1] = record;
+				end
+			end
+		end
+		table.sort(out, function(a, b) return a.t < b.t; end);
+		return out;
+	end);
+end
+
 -- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
 -- district. Returns the count and up to sixteen of the plots.
 CivvisMenus.plots = function(city, param, hash)
@@ -8434,6 +8470,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 					return Game.GetEras():HasHeroicGoldenAge(otherId);
 				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				-- The other majors THEY are fighting, among those we have met
+				-- (`CivvisRivalWars`): an ally already at war with our enemy
+				-- is the Military Alliance's +5.
+				at_war_with = CivvisRivalWars(pid, otherId),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -9643,6 +9683,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		research = research,
 		research_progress = research_progress,
 		research_quotes = research_quotes,
+		research_tree = CivvisMenus.research_tree(ptechs),
 		civic = civic,
 		civic_progress = civic_progress,
 		government = government,
@@ -11855,6 +11896,31 @@ CivvisTrade.abandon = function(subject, why)
 	return true;
 end;
 
+-- The majors `otherId` is at war with, among those the seat `pid` has met,
+-- by player id: the diplomacy ribbon shows a met leader's wars, and the
+-- seat's own war with them crosses as `at_war`, so it is left out. A Military
+-- Alliance's +5 holds against "units of players at war with you and your
+-- ally" (LOC_ALLIANCE_LV1_MILITARY_EFFECT_1, Expansion1_Alliances.xml:146),
+-- so a rival already fighting our enemy is the ally that pays at once; until
+-- this export the mirror read every rival as at peace with every other.
+-- nil when either diplomacy is unreadable; an empty table (`[]`) when they
+-- fight nobody else. Bare global for rival_wars_test.lua.
+CivvisRivalWars = function(pid, otherId)
+	local mine = try(function() return Players[pid]:GetDiplomacy(); end);
+	local theirs = try(function() return Players[otherId]:GetDiplomacy(); end);
+	if mine == nil or theirs == nil then return nil; end
+	local wars = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local third = tonumber(id);
+		if third ~= nil and third ~= pid and third ~= otherId
+				and try(function() return mine:HasMet(third); end, false)
+				and try(function() return theirs:IsAtWarWith(third); end, false) then
+			wars[#wars + 1] = third;
+		end
+	end
+	return wars;
+end;
+
 -- ★★ THE PLANNER'S ALLIANCE, ASKED IN THE ORDER THE HOST ALLOWS IT.
 --
 -- CIVVIS's `propose_strategic_alliance` proposes friendship and an alliance
@@ -11905,10 +11971,16 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	-- tag is armed): a Culture seat asks as well; `ScienceAllies`
 	-- (`science-seat-allies`) the same for a Science seat. Its planner never names
 	-- the science racer or the rival setting our culture bar, and the
-	-- culture-racer refusal below still applies.
+	-- culture-racer refusal below still applies. `MilitaryAllies`
+	-- (`military-alliance-shield`): a Military Alliance on any lane -- the
+	-- binary lets through only that desk's own ask, which prices the
+	-- Domination target itself (+5 combat strength against a common enemy,
+	-- Expansion1_Alliances.xml:146; and the alliance's automatic Defensive
+	-- Pact).
 	if (config.VictoryLane ~= "diplomatic"
 			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
-			and not (config.VictoryLane == "science" and config.ScienceAllies == true))
+			and not (config.VictoryLane == "science" and config.ScienceAllies == true)
+			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
@@ -23169,7 +23241,7 @@ function CivvisBoard.restartPoll()
 	restart.issued = true;
 	local before = CivvisBoard.seeds();
 	local regenerated = false;
-	if mode ~= 3 then
+	if mode ~= 3 and mode ~= 6 then
 		regenerated = pcall(function() GameConfiguration.RegenerateSeeds(); end);
 	end
 	local after = CivvisBoard.seeds();
@@ -23202,9 +23274,15 @@ function CivvisBoard.restartPoll()
 end
 
 -- Modes 2 and 5 host the configuration again; the others are the stock Restart.
+-- Mode 6 leaves for the main menu (`Events.ExitToMainMenu()`, as the shipped
+-- Base/Assets/UI/Menus/InGameTopOptionsMenu.lua:461 and EndGame/EndGameMenu.lua:345
+-- do) and the next run starts its game through the ordinary Create Game menus,
+-- in the same process: no relaunch, no boot.
 function CivvisBoard.restartCall(mode)
 	local called = false;
-	if mode == 2 or mode == 5 then
+	if mode == 6 then
+		called = pcall(function() Events.ExitToMainMenu(); end);
+	elseif mode == 2 or mode == 5 then
 		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
 		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	else

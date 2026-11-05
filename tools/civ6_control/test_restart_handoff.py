@@ -121,7 +121,8 @@ class Handoff(unittest.TestCase):
             self.assertEqual(restart_handoff.mode_path(),
                              Path.home() / ".civvis-live-restart-mode")
             self.assertEqual(restart_handoff.restart_mode(modes), restart_handoff.MODE_OFF)
-            for value, mode in (("4\n", 4), ("5", 5), ("1", 1), ("0", 0), ("9", 0), ("x", 0)):
+            for value, mode in (("4\n", 4), ("5", 5), ("6", 6), ("1", 1), ("0", 0), ("9", 0),
+                                ("x", 0)):
                 modes.write_text(value)
                 self.assertEqual(restart_handoff.restart_mode(modes), mode, value)
             os.environ[restart_handoff.MODE_ENV] = "2"

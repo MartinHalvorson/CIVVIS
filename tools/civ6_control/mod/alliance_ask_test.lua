@@ -399,6 +399,32 @@ check("a science seat asks under ScienceAllies", select(2, alliance(scienceAsks,
 CivvisControlConfig.VictoryLane = "diplomatic"
 CivvisControlConfig.ScienceAllies = nil
 
+-- `military-alliance-shield`: under `MilitaryAllies` a Military Alliance is
+-- asked on any lane, and nothing else is. (Past every earlier ask's cooldown.)
+TURN = 300
+CivvisControlConfig.VictoryLane = "domination"
+local _, shieldOff = fixture({ stateIndex = 1 })
+check("a domination seat asks no military alliance by default",
+	select(2, alliance(shieldOff, 6, "ALLIANCE_MILITARY")), "alliance_off_lane")
+CivvisControlConfig.MilitaryAllies = true
+local _, shieldOn = fixture({ stateIndex = 1 })
+check("MilitaryAllies opens the military alliance on a domination seat",
+	select(2, alliance(shieldOn, 8, "ALLIANCE_MILITARY")), "alliance_asked")
+local _, shieldResearch = fixture({ stateIndex = 1 })
+check("MilitaryAllies opens no other kind",
+	select(2, alliance(shieldResearch, 5, "ALLIANCE_RESEARCH")), "alliance_off_lane")
+CivvisControlConfig.VictoryLane = "science"
+local _, shieldScience = fixture({ stateIndex = 1 })
+check("MilitaryAllies opens the military alliance on a science seat",
+	select(2, alliance(shieldScience, 9, "ALLIANCE_MILITARY")), "alliance_asked")
+CivvisControlConfig.VictoryLane = "diplomatic"
+CivvisControlConfig.DiploAllies = false
+local _, shieldSwitch = fixture({ stateIndex = 1 })
+check("the switch still turns it off",
+	select(2, alliance(shieldSwitch, 6, "ALLIANCE_MILITARY")), "alliance_off_lane")
+CivvisControlConfig.DiploAllies = nil
+CivvisControlConfig.MilitaryAllies = nil
+
 if failures > 0 then
 	realPrint(failures .. " failure(s)")
 	os.exit(1)
