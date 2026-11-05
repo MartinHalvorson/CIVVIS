@@ -44,9 +44,8 @@ impl AdvancedAi {
         if !self.senior_spy_takes_the_pad {
             return false;
         }
-        // The racer `racer-keeps-the-spies` names, else every major rival,
-        // the most space projects landed first: the live seat runs its
-        // denial through `science-denial-every-pad`, with no named leader.
+        // The racer `racer-keeps-the-spies` names, else (that gene off)
+        // every major rival, the most space projects landed first.
         let owners: Vec<usize> = match leader {
             Some(leader) => vec![leader],
             None => {
