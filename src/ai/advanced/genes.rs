@@ -5212,6 +5212,10 @@ pub const GENES: &[Gene] = &[
     // turns and never disbands a unit within six tiles of an enemy soldier.
     // See `solvency.rs`.
     Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
+    // `captives-come-home`: the live bridge buys our captured Spies back from
+    // their captors while the network is short of its capacity, so their
+    // slots fill again. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // ---- append: a-b ------------------------------------------------
