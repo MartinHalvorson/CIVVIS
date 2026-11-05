@@ -29,6 +29,13 @@
 //! Heavy Chariot, each Warrior blow on the fortified Spearman dealing ~25
 //! and taking ~38, while the camp kept spawning.
 //!
+//! Version three (`camps-close-the-age-3`) keeps version two and adds the
+//! near camp: a camp within `CAMP_NEAR_RADIUS` of our cities gets the same
+//! premium and armed party in any era while it stands, whatever the Age.
+//! Live Lv 8 Deity Korea Online (11-04): barbarians outclass our line from
+//! turns 9-17, and the near camps stood 32-36 turns with no force on ~60%
+//! of their rows while their need rose 38 -> 70 as their units upgraded.
+//!
 //! Off, the board is byte-identical: [`AdvancedAi::camp_age_short`] answers
 //! `None` before reading anything. Tests: `objective_board/camp_age_tests.rs`.
 
@@ -54,7 +61,7 @@ impl AdvancedAi {
     /// when that is one to [`CAMP_AGE_SHORT`] and a destroyed camp still
     /// scores in the world's era. `None` with the gene off.
     pub(super) fn camp_age_short(&self, g: &Game, pid: usize) -> Option<i64> {
-        if !(self.camps_close_the_age || self.camps_close_the_age_2) {
+        if !(self.camps_close_the_age || self.camps_close_the_age_2 || self.camps_close_the_age_3) {
             return None;
         }
         let spec = g.rules.historic_moments.get(CAMP_MOMENT)?;
