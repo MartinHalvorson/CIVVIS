@@ -5325,6 +5325,13 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // Live Deity, 11-04 21Z to 11-05: into Communism Science rose 17 of 17
+    // (median +15%), into Corporate Libertarianism it fell 5 of 5 at t171-193
+    // (median -15%, worst -27%), on a two-slot gain the capacity fallback took
+    // in the seats closest to a win. Under the gene a seat holding its listed
+    // government reaches only for three slots or more. See
+    // `advanced/government_reach.rs`.
+    Gene { tag: "government-reach-pays-the-switch", field: "government_reach_pays_the_switch", kind: Kind::OptIn, enable: AdvancedAi::enable_government_reach_pays_the_switch, disable: AdvancedAi::disable_government_reach_pays_the_switch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
