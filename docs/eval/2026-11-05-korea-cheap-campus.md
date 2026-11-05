@@ -22,4 +22,10 @@ The future changed-candidate comparison is fixed to this input, with OFF/ON/OFF/
 
 ## Validation checkpoint
 
-Scoped rustfmt and `git diff --check` pass. Three new tests cover the actual queue switch with banked Settler progress, zero-progress Campus protection on the next early-floor claim, and the scope/expansion safety cases. The Campus module now has ten tests; the early floor has four existing regressions. Rust execution, full CI, focused Mac tests and the fixed-input candidate comparison remain pending. No engine rule, native Lua, registry row, new flag or runtime force setting is changed.
+Scoped rustfmt and `git diff --check` pass. Four new tests cover the actual queue switch with banked Settler progress, zero-progress Campus protection with an OFF control that actually reclaims the queue, the first-city boundary, and the scope/expansion safety cases. The Campus module now has eleven tests; the early floor has four existing regressions. Rust execution, full CI, focused Mac tests and the fixed-input candidate comparison remain pending. No engine rule, native Lua, registry row, new flag or runtime force setting is changed.
+
+## First CI correction
+
+The first implementation at `024cd6460c34a86f3da63faab2acdc700a117752` failed the `no walker` guard in [CI42027767001](https://github.com/MartinHalvorson/CIVVIS/actions/runs/42027767001). The general empire census counts queued units as well as field units, so its Settler total did not prove a Settler was walking. The pause now reads the dedicated walking-only census. This is a definition error, not a stale cache.
+
+The unshippable Mac run `42027911145` was canceled after this concrete failure and before any candidate query. Its original protocol and cancellation receipt remain retained. The selected native 46/0 prefix and original-source controls are unchanged; the repaired candidate must use the same input and predeclared four-role comparison. No replacement input or favorable result was selected.

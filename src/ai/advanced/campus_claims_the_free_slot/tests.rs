@@ -289,6 +289,12 @@ fn version_two_claims_every_eligible_city_from_two_citizens() {
 /// The live shape: a long repeated Settler, another walking, and a legal
 /// first Seowon quoted at three turns. Other cities' Walls keep their queues.
 fn korean_settler_and_short_campus() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+    korean_settler_and_short_campus_with_cities(3)
+}
+
+fn korean_settler_and_short_campus_with_cities(
+    count: usize,
+) -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let mut game = Game::new_full(2, 32, 20, 95_210, 250, 0, false);
     game.units.clear();
     for tile in game.map.tiles.values_mut() {
@@ -301,10 +307,14 @@ fn korean_settler_and_short_campus() -> (Game, AdvancedAi, u32, StrategicPlan, I
     for tech in ["pottery", "writing", "mining", "masonry", "bronze_working"] {
         game.players[0].techs.insert(Name::new(tech));
     }
-    let cities = [(5, 5), (15, 5), (25, 5)].map(|pos| game.found_city_for(0, pos, None));
+    let cities: Vec<_> = [(5, 5), (15, 5), (25, 5)]
+        .into_iter()
+        .take(count)
+        .map(|pos| game.found_city_for(0, pos, None))
+        .collect();
     game.game_speed = GameSpeed::Online;
     game.turn = 20;
-    for cid in cities {
+    for &cid in &cities {
         let city = game.cities.get_mut(&cid).unwrap();
         city.pop = 5;
         city.production = 0.0;
@@ -318,7 +328,7 @@ fn korean_settler_and_short_campus() -> (Game, AdvancedAi, u32, StrategicPlan, I
             },
         );
     }
-    let cid = cities[1];
+    let cid = cities[usize::from(count > 1)];
     game.cities.get_mut(&cid).unwrap().queue = vec![unit("settler")];
     game.cities.get_mut(&cid).unwrap().production = 20.0;
     let home = game.cities[&cities[0]].pos;
@@ -397,8 +407,25 @@ fn a_zero_progress_native_seowon_survives_the_next_early_floor_claim() {
         "old floor would replace the foundation"
     );
     assert!(ai.short_seowon_holds_settler_floor(&game, 0, cid));
+    assert!(ai.base.has_practical_settle_site(&game, 0));
+    let mut control = game.clone();
+    let mut without_pause = ai.clone();
+    without_pause.disable_campus_claims_the_free_slot_2();
+    without_pause.claim_early_settler_floor(&mut control, 0, &plan);
+    assert_eq!(
+        head(&control, cid),
+        Some(unit("settler")),
+        "the existing floor really would take this queue without the protection"
+    );
     ai.claim_early_settler_floor(&mut game, 0, &plan);
     assert_eq!(head(&game, cid), Some(campus));
+}
+
+#[test]
+fn the_first_city_keeps_its_settler_even_with_a_short_native_seowon_quote() {
+    let (mut game, ai, cid, plan, _) = korean_settler_and_short_campus_with_cities(1);
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    assert_eq!(head(&game, cid), Some(unit("settler")));
 }
 
 #[test]

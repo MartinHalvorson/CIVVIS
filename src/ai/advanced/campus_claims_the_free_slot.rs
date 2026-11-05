@@ -212,7 +212,7 @@ impl AdvancedAi {
             let campus_before_settler = floor_holds
                 && self.early_settler_floor(g, plan) > 0
                 && n_cities >= 2
-                && settlers > 0
+                && Self::early_settler_census(g, pid).0 > 0
                 && !at_major_war
                 && plan.threatened_city.is_none()
                 && !plan.rush
