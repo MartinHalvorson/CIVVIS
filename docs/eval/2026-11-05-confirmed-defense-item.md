@@ -51,6 +51,35 @@ The initial82bcc3d3b3 prototype passed full CI and Mac run42086133426
 (47 focused tests, both native binaries/smokes); both cold queries selected
 legal Walls with17 identical actual reads each. Review found its exact-all-claims
 restoration too broad, so that prototype remains diagnostic and is not a
-shipping qualification. The refined source needs fresh exact-source CI and
-Mac qualification. Actual Walls construction, capital survival and Science
-strength after this fix remain unmeasured.
+shipping qualification.
+
+The refined candidate `9b72a967d7968c666582ce87b23235d98bdc74ef` passed
+all eight CI gates. Run42091934983 passed7091 Rust tests with53 skipped,
+separate doctests0 passed/4 ignored, and isolation79+21+24. All49 focused
+regressions passed:5 confirmed-fortification,3 defense-repair,12 culture-defense
+and29 adopted-faith tests.
+
+Mac run42091996102 passed the same49 tests, both native binary builds and both
+smokes using Rust1.97.1. All3999 source-file hashes matched the clean pinned
+checkout before queries. Orders executable SHA256:
+`395c406b130eda25d1d6d5379ded595f35456bae7c454142ca89d4c2a3f64bb7`.
+Both refined-candidate cold queries emitted legal Walls, each on17 identical
+actual reads and with matching full decision/order replies. The original two
+queries emitted Slingers. There are no source-default treatment additions or
+removals in these queries. Different source versions and original private
+planner histories still prevent an isolated-source causal strength inference.
+
+The portable raw archive `2026-11-05-confirmed-defense-item.candidate.native.tar.xz`
+is230288 bytes, SHA256
+`8b56ac3bbb68deb0e9eb82866dd9548b26b57a4d9c5252db57b2e19d3dd89eeb`.
+It includes the original18 actual native reads and all68 proposal reads, full
+replies, raw genome/command logs, build/source receipt and standalone verifier.
+The extracted verifier passed. Executables are identified by receipts and are
+not packaged; checksums establish integrity, not signatures.
+
+Actual Walls construction, capital survival and Science strength after this
+fix remain unmeasured. A separately registered four-role native industry-claim
+comparison uses the frozen qualified9b72a967d7 source on two fresh saved worlds.
+It changes only the producer-queue claim, keeps Campus-v2 and near-rival ON,
+and retains every outcome/failure. That source excludes PR4601's separate Scout
+fix; no combined-defense or population-strength result is inferred.
