@@ -6380,6 +6380,42 @@ CivvisMenus.research_quote = function(techs, row)
 	return quote;
 end
 
+-- CivilopediaPage_Technology.lua:15/49 reads the live graph, whose future-era
+-- prerequisites can differ from the database. Observe only revealed nodes and
+-- revealed prerequisites. This diagnostic does not choose or queue research.
+CivvisMenus.research_tree = function(techs)
+	if techs == nil then return nil; end
+	return try(function()
+		local nodes = Game.GetTechs():GetActiveTechNodes();
+		if type(nodes) ~= "table" then return nil; end
+		local out = {};
+		for _, node in ipairs(nodes) do
+			local row = GameInfo.Technologies[node.TechType];
+			if row ~= nil and techs:IsTechRevealed(row.Index) == true
+				and type(node.PrereqTechTypes) == "table" then
+				local prereqs, complete = {}, true;
+				for _, index in ipairs(node.PrereqTechTypes) do
+					local prereq = GameInfo.Technologies[index];
+					if prereq == nil or techs:IsTechRevealed(prereq.Index) ~= true then
+						complete = false;
+						break;
+					end
+					prereqs[#prereqs + 1] = prereq.TechnologyType;
+				end
+				if complete then
+					table.sort(prereqs);
+					local can = try(function() return techs:CanResearch(row.Index); end);
+					local record = { t = row.TechnologyType, requires = prereqs };
+					if type(can) == "boolean" then record.can_research = can; end
+					out[#out + 1] = record;
+				end
+			end
+		end
+		table.sort(out, function(a, b) return a.t < b.t; end);
+		return out;
+	end);
+end
+
 -- `AdjacencyBonusSupport.lua:280`: the engine's own placement offer for a
 -- district. Returns the count and up to sixteen of the plots.
 CivvisMenus.plots = function(city, param, hash)
@@ -9643,6 +9679,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		research = research,
 		research_progress = research_progress,
 		research_quotes = research_quotes,
+		research_tree = CivvisMenus.research_tree(ptechs),
 		civic = civic,
 		civic_progress = civic_progress,
 		government = government,
