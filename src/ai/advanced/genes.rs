@@ -3702,6 +3702,9 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // Native Indonesia Ternate70/0 chose industry with a legal University;
+    // this separate opt-in releases industrial claims for a short University.
+    Gene { tag: "universities-before-the-forge", field: "universities_before_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_universities_before_the_forge, disable: AdvancedAi::disable_universities_before_the_forge },
     // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
     // as its front from turn 146 to 192 and stood ten Dutch sieges down for
     // want of a land road while the Maya and Egypt, at war with us at 3-5x

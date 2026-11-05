@@ -7628,6 +7628,9 @@ pub struct AdvancedAi {
     /// zone's Workshop) at the head of its queue over a deferrable head. See
     /// `advanced/industrial_zone_claims_the_producer_queue.rs`. Off by default.
     industrial_zone_claims_the_producer_queue: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `industrial-zone-claims-the-factory`: once Industrialization is known,
     /// the zone city whose Factory reaches the most new cities (then, with
     /// Coal, the Factory city whose plant powers the most Factories) puts it
@@ -10841,6 +10844,7 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -10896,6 +10900,7 @@ mod spy_civics_come_first;
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
+mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
@@ -12292,6 +12297,7 @@ impl AdvancedAi {
             granary_claims_the_bound_queue: false,
             gold_buys_the_settler: false,
             industrial_zone_claims_the_producer_queue: false,
+            universities_before_the_forge: false,
             industrial_zone_claims_the_factory: false,
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
