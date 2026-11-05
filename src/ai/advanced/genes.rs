@@ -5103,6 +5103,14 @@ pub const GENES: &[Gene] = &[
     // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
     // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // Version two of `parity-upgrades-before-it-buys`: the base controller's
+    // wartime and declaration-window defender purchases bought Ancient
+    // bodies late (46 Heavy Chariots in 33 live Deity games, 34 after turn
+    // 100; 095229Z bought 16 from turn 142 to 174 against an Industrial
+    // army). A unit two or more eras behind the world is bought only for a
+    // city with no military unit on its tile. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
     // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
     // taken by major empires, 13 of them in a war already running, with the
     // captor's soldier within six tiles the turn before in all but two.
@@ -5161,14 +5169,6 @@ pub const GENES: &[Gene] = &[
     // shooter's ranged blow from its own tile joins the plan as kill-only.
     // See `advanced/battle_planner.rs`.
     Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
-    // Version two of `parity-upgrades-before-it-buys`: the base controller's
-    // wartime and declaration-window defender purchases bought Ancient
-    // bodies late (46 Heavy Chariots in 33 live Deity games, 34 after turn
-    // 100; 095229Z bought 16 from turn 142 to 174 against an Industrial
-    // army). A unit two or more eras behind the world is bought only for a
-    // city with no military unit on its tile. See
-    // `advanced/parity_upgrades_before_it_buys.rs`.
-    Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

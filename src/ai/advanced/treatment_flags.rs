@@ -2205,6 +2205,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
@@ -2218,9 +2221,6 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-war-holds-the-claims`; see
         /// `advanced/threatened_war_holds_the_claims.rs`.
         threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
-        /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
-        /// `advanced/parity_upgrades_before_it_buys.rs`.
-        parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
     }
 }
 
