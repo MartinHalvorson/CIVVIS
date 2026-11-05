@@ -5264,6 +5264,17 @@ impl AdvancedAi {
         self.group_steps_read_the_field = false;
     }
 
+    /// Opt-in gene `nusantara-reads-the-coast`; see
+    /// [`Self::nusantara_reads_the_coast`].
+    pub fn enable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = true;
+    }
+
+    /// The twin of `enable_nusantara_reads_the_coast`.
+    pub fn disable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

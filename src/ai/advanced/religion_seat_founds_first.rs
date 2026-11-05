@@ -118,7 +118,7 @@ impl AdvancedAi {
                 if !paused.is_empty() && !paused.contains(pos) {
                     continue;
                 }
-                let faith = g.district_yields(*district, *pos).faith;
+                let faith = g.district_site_yields(*district, *pos).faith;
                 let better = best.as_ref().is_none_or(|(p, f, c, _)| {
                     production
                         .total_cmp(p)
