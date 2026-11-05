@@ -5043,6 +5043,19 @@ pub const GENES: &[Gene] = &[
     // ratio) visible soldier within SURPRISE_TILES of an early city does.
     // See `objective_board.rs` (`surprise_strength_near`).
     Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
+    // Live Lv 8 Deity Korea Online, 11-05 (play-it-out policy): 3 of 11
+    // games since 02:01Z ended in our elimination. In 033244Z, from turn
+    // 150, 29 of our units died, all healthy and none inside a city, 21 of
+    // them to Machine Guns, most from two tiles: the Defend force held a
+    // nine-unit ring around Seoul, and defenders-hold-the-walls keeps a
+    // threatened city's healthy defenders off the rotation, so Ancient
+    // Warriors and Archers stood where one blow removed them. A ring
+    // defender whose own tile is one-blow lethal at the top of the roll is
+    // no longer held. See `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
     // Native 002152 legacy t133: five Universities, no Chemistry, while the
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },

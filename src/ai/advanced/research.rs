@@ -355,6 +355,7 @@ impl AdvancedAi {
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
             let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
+            let science_writing_goal = self.science_writing_before_the_luxury_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let endgame_research_preempts_wartime =
                 self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
@@ -609,6 +610,9 @@ impl AdvancedAi {
                 // `campus-unlock-before-the-luxury`: the Campus unlock ahead
                 // of the Astrology and luxury-connection detours. See
                 // `advanced/domination_research.rs`.
+                // Science can take the same earlier slot without moving any
+                // military, barbarian, wall or committed launch goal above it.
+                _ if science_writing_goal.is_some() => science_writing_goal,
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
                 }
