@@ -6574,6 +6574,15 @@ pub struct AdvancedAi {
     /// capital's last soldier elsewhere. See
     /// `objective_board.rs` (`capital_defend_first`). Off by default.
     capital_keeps_its_defender: bool,
+    /// `capital-keeps-its-defender-2`: the first [`EARLY_CITIES`] cities
+    /// we founded rank their Defend rows ahead of every other row, urgent,
+    /// ordered among themselves by risk (the hostile strength near each over
+    /// its own strength at its health), so a walled, healthy capital yields
+    /// to the early city that is actually going; and an early city with a
+    /// hostile soldier in relief range has a Defend row before the pressure
+    /// gate opens. See `objective_board.rs` (`early_cities_defend_first`).
+    /// Off by default.
+    capital_keeps_its_defender_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -11827,6 +11836,7 @@ impl AdvancedAi {
             camps_close_the_age_2: false,
             camps_close_the_age_3: false,
             capital_keeps_its_defender: false,
+            capital_keeps_its_defender_2: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
