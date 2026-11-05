@@ -2188,6 +2188,27 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `holdable-land-keeps-settling`; see
+        /// `advanced/holdable_land_keeps_settling.rs`.
+        holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
+        /// Opt-in gene `medina-yields-to-the-amenities`; see
+        /// `advanced/medina_quarter.rs`.
+        medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
+        /// Opt-in gene `war-defense-spends-the-runway`; see
+        /// `advanced/war_defense_spends_the_runway.rs`.
+        war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
+        /// Opt-in gene `plaza-serves-the-scientist`; see
+        /// `BasicAi::plaza_building_item_for`.
+        plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
+        /// Opt-in gene `parity-upgrades-before-it-buys`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `settler-shelters-from-the-war`; see
+        /// `advanced/settler_shelters_from_the_war.rs`.
+        settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
+        /// Opt-in gene `threatened-lane-lends-the-army`; see
+        /// `advanced/threatened_lane_lends_the_army.rs`.
+        threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
         /// Opt-in gene `disrupt-waits-for-the-match-point`; see
         /// `advanced/disrupt_waits_for_the_match_point.rs`.
         disrupt_waits_for_the_match_point => enable_disrupt_waits_for_the_match_point, disable_disrupt_waits_for_the_match_point;

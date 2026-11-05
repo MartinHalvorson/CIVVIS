@@ -2017,6 +2017,12 @@ impl AdvancedAi {
                 return acted;
             }
         }
+        // `settler-shelters-from-the-war`: an enemy major's soldier near the
+        // Settler sends it to a city of ours, ahead of the march. Exact no-op
+        // while the gene is off. See `advanced/settler_shelters_from_the_war.rs`.
+        if let Some(acted) = self.settler_shelters_from_the_war_step(g, pid, uid) {
+            return acted;
+        }
         if let Some(home) = self.early_settler_homeward_target(g, uid) {
             return self.return_early_settler_home(g, pid, uid, home);
         }

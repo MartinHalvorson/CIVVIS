@@ -7088,6 +7088,68 @@ CivvisSettlementLoyalty = function(pid, turn, frame, units)
 	return result;
 end
 
+-- ★ THE SPY MENU WITH ITS TARGETS AND ODDS. The missions an IDLE Spy may start
+-- from the city it stands in are the EspionageChooser.lua:190-238 loop:
+-- counterspy in our own city, `CategoryInUI == "OFFENSIVESPY"` anywhere else,
+-- each asked `UnitManager.CanStartOperation(spy, op, cityPlot, false, true)`.
+-- The same call's results name the district plots a mission aims at
+-- (`results[UnitOperationResults.PLOTS]`, EspionageChooser.lua:218-223), and
+-- EspionagePopup.lua:280-287 prices it with
+-- `UnitManager.GetResultProbability(op.Index, spy, targetPlot)`: success is
+-- ESPIONAGE_SUCCESS_UNDETECTED + ESPIONAGE_SUCCESS_MUST_ESCAPE, failure the two
+-- ESPIONAGE_FAIL_* rows, the rest capture or death. The board only knows a
+-- rival's Campus once it has seen the tile, and never the host's odds: live
+-- 080206Z lost both of its late Steal Tech Boosts (t159, t164) in the leader's
+-- cities. `names` keeps the old shape (sorted OperationType strings); each
+-- `targets` row is { op, x, y, success?, fail? } for the first target plot (the
+-- city plot when the host names none). nil when nothing is offered. A global
+-- table, not a top-level local: the main chunk is near Lua's register ceiling.
+CivvisSpyMenu = {
+	read = function(unit, pid)
+		local here = Map.GetPlot(unit:GetX(), unit:GetY());
+		local city = Cities.GetPlotPurchaseCity(here);
+		if city == nil then return nil; end
+		local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
+		local ours = city:GetOwner() == pid;
+		local names, targets = {}, {};
+		for operation in GameInfo.UnitOperations() do
+			local wanted = (ours
+				and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
+				or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
+			if wanted then
+				-- The menu read, not a refusal probe: one line, as
+				-- EspionageChooser.lua:213 asks it.
+				local ok, results = UnitManager.CanStartOperation(unit, operation.Hash, cityPlot, false, true);
+				if ok == true then
+					names[#names + 1] = operation.OperationType;
+					local target = cityPlot;
+					local plots = type(results) == "table" and UnitOperationResults ~= nil
+						and results[UnitOperationResults.PLOTS] or nil;
+					if type(plots) == "table" and type(plots[1]) == "number" then
+						target = Map.GetPlotByIndex(plots[1]) or cityPlot;
+					end
+					local row = { op = operation.OperationType, x = target:GetX(), y = target:GetY() };
+					local odds = try(function()
+						return UnitManager.GetResultProbability(operation.Index, unit, target);
+					end, nil);
+					if type(odds) == "table" then
+						row.success = (tonumber(odds["ESPIONAGE_SUCCESS_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_SUCCESS_MUST_ESCAPE"]) or 0);
+						row.fail = (tonumber(odds["ESPIONAGE_FAIL_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_FAIL_MUST_ESCAPE"]) or 0);
+					end
+					targets[#targets + 1] = row;
+				end
+			end
+		end
+		if #names == 0 then return nil; end
+		table.sort(names);
+		table.sort(targets, function(a, b) return a.op < b.op; end);
+		return { names = names, targets = targets };
+	end,
+};
+-- END CivvisSpyMenu.read
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -8172,26 +8234,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 				spyEnds = unit:GetSpyOperationEndTurn();
 			end);
 			if spyOperation == nil then
-				spyMissions = try(function()
-					local here = Map.GetPlot(unit:GetX(), unit:GetY());
-					local city = Cities.GetPlotPurchaseCity(here);
-					if city == nil then return nil; end
-					local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
-					local ours = city:GetOwner() == pid;
-					local names = {};
-					for operation in GameInfo.UnitOperations() do
-						local wanted = (ours
-							and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
-							or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
-						if wanted and UnitManager.CanStartOperation(
-								unit, operation.Hash, cityPlot, false, true) == true then
-							names[#names + 1] = operation.OperationType;
-						end
-					end
-					if #names == 0 then return nil; end
-					table.sort(names);
-					return names;
-				end, nil);
+				-- See `CivvisSpyMenu.read`: the names and, beside them, each
+				-- offered mission's target plot and host odds.
+				spyMissions = try(function() return CivvisSpyMenu.read(unit, pid); end, nil);
 			end
 		end
 		local unitId = try(function() return unit:GetID(); end, -1);
@@ -8303,7 +8348,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			activity = activity,
 			spy_operation = spyOperation,
 			spy_operation_end_turn = spyEnds,
-			spy_missions_available = spyMissions,
+			spy_missions_available = spyMissions and spyMissions.names or nil,
+			spy_mission_targets = spyMissions and spyMissions.targets or nil,
 			spy_city = CivvisSpyCity(unit, name, pid),
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),
@@ -12473,7 +12519,7 @@ end
 -- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
 CivvisLedger = {
 	open = {}, damage = {}, pending = {}, kinds = {}, positions = {}, expected_gp_activation = {},
-	expected_condemn = {}
+	expected_condemn = {}, expected_spy_travel = {}
 };
 
 -- UnitCommands.xml:47 gives Condemn Heretic no target parameters. Record the
@@ -12641,6 +12687,33 @@ CivvisLedger.preview = function(unit, verb, x, y)
 		out.defender_total_strength = math.max(0, out.defender_strength + out.defender_strength_modifier);
 	end
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	-- UnitPanel.lua:1965-1974 reads these ten preview-text groups from the
+	-- same simulation. Preserve their native strings for component audits;
+	-- do not infer bonuses from the aggregate modifier or issue another query.
+	local textKeys = {
+		"PREVIEW_TEXT_INTERCEPTOR", "PREVIEW_TEXT_ANTI_AIR", "PREVIEW_TEXT_HEALTH",
+		"PREVIEW_TEXT_TERRAIN", "PREVIEW_TEXT_OPPONENT", "PREVIEW_TEXT_MODIFIER",
+		"PREVIEW_TEXT_ASSIST", "PREVIEW_TEXT_PROMOTION", "PREVIEW_TEXT_DEFENSES",
+		"PREVIEW_TEXT_RESOURCES",
+	};
+	local function modifierText(side)
+		local groups, any = {}, false;
+		for _, key in ipairs(textKeys) do
+			local raw = try(function()
+				return results[CombatResultParameters[side]][CombatResultParameters[key]];
+			end, nil);
+			if type(raw) == "table" then
+				local items = {};
+				for _, item in ipairs(raw) do
+					if type(item) == "string" then items[#items + 1] = item; end
+				end
+				if #items > 0 then groups[key] = items; any = true; end
+			end
+		end
+		return any and groups or nil;
+	end
+	out.attacker_modifier_text = modifierText("ATTACKER");
+	out.defender_modifier_text = modifierText("DEFENDER");
 	return out;
 end;
 
@@ -12967,6 +13040,13 @@ end;
 -- are one field apart. Activation consumes the physical Great Person unit;
 -- keep the historical `unit_lost` witness, but mark that non-loss disposition
 -- so a ledger cannot mistake a successful science/culture action for a kill.
+--
+-- A Spy that starts `SPY_TRAVEL_NEW_CITY` is the same kind of non-loss: the
+-- host lifts it off the map that turn and re-creates it at the destination
+-- under a NEW unit id (civvis-20261105T093803Z: Spy 2883607 ordered from
+-- (12,27) to Agra t89, removed t89, Spy 3080195 standing in Agra t92). Read
+-- as losses, 163 of the 253 Deity Spy `unit_lost` lines of 11-04/05 were
+-- journeys. `applyOrder` marks the request; the removal names it.
 CivvisLedger.onUnitRemoved = function(player, unitId)
 	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
 	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
@@ -12975,10 +13055,14 @@ CivvisLedger.onUnitRemoved = function(player, unitId)
 	local key = tostring(unitId);
 	local activationTurn = CivvisLedger.expected_gp_activation[key];
 	CivvisLedger.expected_gp_activation[key] = nil;
+	local travelTurn = CivvisLedger.expected_spy_travel[key];
+	CivvisLedger.expected_spy_travel[key] = nil;
 	CivvisLedger.positions[key] = nil;
 	emit("unit_lost", {
 		turn = turn, unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[key],
-		cause = activationTurn == turn and "great_person_activation" or nil,
+		cause = activationTurn == turn and "great_person_activation"
+			or (travelTurn ~= nil and turn >= travelTurn and turn - travelTurn <= 1 and "spy_travel")
+			or nil,
 		gold = tonumber(try(function()
 			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
 		end, nil)),
@@ -16908,7 +16992,13 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			return operate(unit, hash, params), verb;
+			-- A journey lifts the Spy off the map, possibly inside the request:
+			-- mark it first so `CivvisLedger.onUnitRemoved` names the removal.
+			local travelKey = verb == "SPY_TRAVEL_NEW_CITY" and tostring(unit:GetID()) or nil;
+			if travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = turn; end
+			local sent = operate(unit, hash, params);
+			if not sent and travelKey ~= nil then CivvisLedger.expected_spy_travel[travelKey] = nil; end
+			return sent, verb;
 		end
 		-- Condemning a heretic is a COMMAND, not an operation, and it is
 		-- parameterless: `UnitCommands` gives the row no `InterfaceMode`, so

@@ -5065,6 +5065,63 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
+    // the soonest unthreatened city queues one Settler while the plan wants
+    // more cities and a seat we can very likely hold lies in reach: the
+    // settler-site-gate verdict, nine tiles from charted rival cities, no
+    // stronger major's soldier within six, no raider within three, at peace
+    // with every major. Live Deity Korea Online: Settler starts fell from 70
+    // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
+    // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
+    Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
+    // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
+    // Production in its city, a free Builder per new city) and the
+    // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
+    // the Warlord's Throne (pays only on captures) and the Grand Master's
+    // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
+    // Agency. See `BasicAi::plaza_building_item_for`.
+    Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
+    // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
+    // played out: three eliminations since 11-05 02:01Z, all obsolete armies
+    // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
+    // 50) while border parity bought 80-Gold Warriors at t36-66 for an
+    // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
+    // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
     // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
     // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
     // against 6-7% for Gain Sources / Listening Post, and no disruption

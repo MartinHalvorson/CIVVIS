@@ -3156,6 +3156,8 @@ impl AdvancedAi {
     pub(super) fn advanced_spies(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // `culture-denial-heist`: see `Game::heist_reads_the_host_menu`.
         g.heist_reads_the_host_menu = self.culture_denial_heist;
+        // `spies-steal-the-lead`: see `Game::spy_targets_read_the_host`.
+        g.spy_targets_read_the_host = self.spies_steal_the_lead_on(plan);
         self.spy_orders_until.retain(|_, until| *until > g.turn);
         // `science-threat-denial`: the threat model walks every rival's
         // cities, so it is read once for the whole pass rather than per
@@ -3457,6 +3459,11 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // `spies-steal-the-lead`: remember a foreign city whose host menu
+            // offers this Spy no steal. Exact no-op with the gene off.
+            if self.spies_steal_the_lead_on(plan) {
+                self.steal_note_dry_city(g, pid, spy_id, current_city);
+            }
             // `racer-keeps-the-spies`: an idle Spy outside the leading space
             // racer's cities (and any culture racer's, and any other racer's
             // where Disrupt Rocketry is offered) goes to the leader, before
@@ -3465,7 +3472,8 @@ impl AdvancedAi {
             let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
                 Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
             });
-            if let Some(post) = Self::racer_spy_post(
+            // `spies-steal-the-lead`: a Science aim posts to a Campus city.
+            if let Some(post) = Self::racer_spy_post_for(
                 g,
                 spy_id,
                 current_city,
@@ -3474,6 +3482,8 @@ impl AdvancedAi {
                 &culture_heist_targets,
                 &legal,
                 self.racer_spy_search(),
+                self.spies_steal_the_lead_on(plan),
+                &self.steal_dry_cities,
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),

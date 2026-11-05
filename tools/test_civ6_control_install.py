@@ -1164,7 +1164,20 @@ class ProtectedInstallTest(unittest.TestCase):
         )[0]
         self.assertIn("local activationTurn = CivvisLedger.expected_gp_activation[key];", removal)
         self.assertIn("CivvisLedger.expected_gp_activation[key] = nil;", removal)
-        self.assertIn('cause = activationTurn == turn and "great_person_activation" or nil,', removal)
+        self.assertIn('cause = activationTurn == turn and "great_person_activation"', removal)
+
+        # A Spy starting a journey is lifted off the map and re-created under a
+        # new id at the destination: marked before the request, named on removal.
+        self.assertIn("expected_spy_travel = {}", source)
+        self.assertIn("local travelTurn = CivvisLedger.expected_spy_travel[key];", removal)
+        self.assertIn("CivvisLedger.expected_spy_travel[key] = nil;", removal)
+        self.assertIn('"spy_travel")', removal)
+        travel = source.split('if verb:sub(1, 4) == "SPY_" then', 1)[1].split("return sent, verb;", 1)[0]
+        self.assertIn('verb == "SPY_TRAVEL_NEW_CITY" and tostring(unit:GetID())', travel)
+        self.assertLess(
+            travel.index("CivvisLedger.expected_spy_travel[travelKey] = turn;"),
+            travel.index("local sent = operate(unit, hash, params);"),
+        )
 
         activation = source.split(
             'local activationKey = tostring(id);', 1
