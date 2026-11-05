@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "captives-come-home-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 6 boards of live Deity Korea Science (Online) game civvis-20261105T111305Z, each the run's events.jsonl cut at frame 0 of a turn where Scythia (host player 2) held two of our captured Spies (`captives_of_ours`), our network was below half its capacity, it was that captor's cadence turn, and our Favor (241-278) stood over the 120 vote reserve with no rival at 15 Diplomatic Victory points. Both arms run one frozen civvis_orders built from the branch at 8a9e1603d with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with captives-come-home-2. Off arms holding no `buy CAPTIVE`: 6/6; on arms asking the captor with Favor (`CAPTIVE;FAVOR=n`, n 121-150, Gold ceilings 125-200): 5/6 (the sixth held `ransom_hold:deal_in_flight`).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-captives-come-home-2.native-queries.tar.xz",
+    "sha256": "21f72c5401250e1e58ebe5bc1346aebcce892079959bd20c9ee6c32435bbc71b"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json"
+  ]
+}
