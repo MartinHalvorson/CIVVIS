@@ -2185,6 +2185,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `spies-steal-the-lead`; see
+        /// `advanced/spies_steal_the_lead.rs`.
+        spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;

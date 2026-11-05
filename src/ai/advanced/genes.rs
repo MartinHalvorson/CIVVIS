@@ -5056,6 +5056,15 @@ pub const GENES: &[Gene] = &[
     // defender whose own tile is one-blow lethal at the top of the roll is
     // no longer held. See `advanced/defenders_hold_the_walls.rs`.
     Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
+    // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
+    // ahead instead of idling on Listening Posts or Gain Sources: in a space
+    // racer's city with no Disrupt Rocketry offered, in place of the green
+    // Spy's Gain Sources training step, and no longer withheld outside the
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
+    Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
     // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
     // the soonest unthreatened city queues one Settler while the plan wants
     // more cities and a seat we can very likely hold lies in reach: the
