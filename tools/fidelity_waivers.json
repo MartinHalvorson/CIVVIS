@@ -83,6 +83,12 @@
       "entry": "warlord",
       "field": "human_xp_pct",
       "reason": "Same requirement set as human_combat_strength: LOW_DIFFICULTY_UNIT_XP_SCALING would give Warlord +15% if the inverse at-or-above-Warlord requirement admitted Warlord. Unverified in a live game; the DLL owns the comparison."
+    },
+    {
+      "table": "Difficulties",
+      "entry": "deity",
+      "field": "ai_combat_strength",
+      "reason": "Native Deity combat previews explicitly report +4 Combat Strength bonus due to difficulty; see docs/fidelity/native-deity-combat-2026-11-05.json. CIVVIS uses the observed +4. The literal Leaders.xml HIGH_DIFFICULTY_COMBAT_SCALING projector produces3 from Value=-1 plus four steps; its DLL interpretation remains unresolved. This narrow waiver records that projector limitation, not an intentional weaker AI. The Deity seat regression fixes the runtime expectation at4. No lower-rung runtime value is inferred."
     }
   ]
 }

@@ -85,8 +85,8 @@ shipped data" and was "designed here, not transcribed". That was wrong, and two
 PRs on 2026-08-23 disproved it independently.** It is kept as written-down
 evidence of how easily an unchecked "it lives in the executable" propagates.
 
-`data/difficulties.json` audits against the shipped database as **exact**, on
-both halves. `MajorStartingUnits`, `BonusMinorStartingUnits` and the
+`data/difficulties.json` audits most of the ladder against the shipped database.
+Deity combat now follows a native readback that contradicts the literal modifier projection. `MajorStartingUnits`, `BonusMinorStartingUnits` and the
 `BarbarianAttackForces` bands match cell for cell at every rung — and so do the
 handicaps that were supposed to be unverifiable, because they are ordinary
 shipped `Modifiers` rows (#2375):
@@ -95,9 +95,11 @@ shipped `Modifiers` rows (#2375):
 |---|---|
 | `HIGH_DIFFICULTY_{SCIENCE,CULTURE,FAITH}_SCALING`, +8/rung off Prince | `ai_yield_pct` 8/16/24/32 ✅ |
 | `HIGH_DIFFICULTY_{PRODUCTION,GOLD}_SCALING`, +20/rung | `ai_yield_pct` 20/40/60/80 ✅ |
-| `HIGH_DIFFICULTY_COMBAT_SCALING`, base −1 then +1/rung | `ai_combat_strength` 0/1/2/3 ✅ |
+| `HIGH_DIFFICULTY_COMBAT_SCALING`, base −1 then +1/rung in XML | Deity4 from native preview; lower rungs0/1/2 remain projected |
 | `HIGH_DIFFICULTY_UNIT_XP_SCALING`, +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
 | `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS`, +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, as both a Eureka and an Inspiration set ✅ |
+
+Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses4 at Deity; a narrow fidelity waiver records the unresolved projector/DLL difference. Lower-rung combat values remain projected and have not been sealed by this readback.
 
 And where a number genuinely is not in the database, the binary can still be
 **read**: #2372 disassembled `Rules::Units::Instance::GetUpgradeCost` in
