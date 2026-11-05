@@ -8,6 +8,21 @@
 use super::{host_major_seat_map, modeled_major_player_count, StateSnapshot};
 use crate::{game::Game, hex::offset_to_axial, Pos};
 
+/// One mission the host offers an idle Spy where it stands, with the plot it
+/// aims at and the host's odds (`CivvisSpyMenu.read`: `CanStartOperation`'s
+/// `UnitOperationResults.PLOTS`, else the city plot, priced by
+/// `UnitManager.GetResultProbability`). Offset coordinates, as exported.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct StateSpyTarget {
+    pub op: String,
+    pub x: i32,
+    pub y: i32,
+    #[serde(default)]
+    pub success: Option<f64>,
+    #[serde(default)]
+    pub fail: Option<f64>,
+}
+
 /// Only the host city identity/position of our own Spy's observed plot.
 /// Native city IDs are player-local, so owner and center must cross together.
 #[derive(Debug, Clone, serde::Deserialize)]

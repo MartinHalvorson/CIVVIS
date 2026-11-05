@@ -12,6 +12,12 @@
 
 use super::*;
 
+/// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
+/// gains on a Science aim under the gene, Guilds (its prerequisite) half: the
+/// scale of the lanes' own civic bonuses below (Diplomacy +60 for Political
+/// Philosophy, Civil Service and Guilds).
+pub(crate) const STEAL_CIVIC_VALUE: f64 = 60.0;
+
 impl AdvancedAi {
     /// The technology behind the best Campus building this empire is already
     /// equipped to use and cannot research its way to on merit.
@@ -1956,6 +1962,20 @@ impl AdvancedAi {
         if strategy == GrandStrategy::Religion && civic == "theology" {
             value += 120.0;
         }
+        // `spies-steal-the-lead`: Spy capacity opens at Diplomatic Service
+        // (through Guilds). Live Deity Korea carriers took it at t108-151 and
+        // a stealing Spy is worth ~+50 Science a turn, so a Science aim that
+        // steals wants the civic sooner. Zero with the gene off.
+        if self.spies_steal_the_lead
+            && (strategy == GrandStrategy::Science
+                || self.victory_target == Some(VictoryTarget::Science))
+        {
+            value += match civic {
+                "diplomatic_service" => STEAL_CIVIC_VALUE,
+                "guilds" => STEAL_CIVIC_VALUE / 2.0,
+                _ => 0.0,
+            };
+        }
         value += match civic {
             "foreign_trade" | "craftsmanship" => 25.0,
             "early_empire" | "state_workforce" => 38.0,
@@ -1969,3 +1989,6 @@ impl AdvancedAi {
         (value + 32.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, civic, false)
     }
 }
+
+#[cfg(test)]
+mod steal_civic_tests;
