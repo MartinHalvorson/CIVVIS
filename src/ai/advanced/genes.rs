@@ -4988,6 +4988,14 @@ pub const GENES: &[Gene] = &[
     // camp now gets version two's premium and armed party in any era, so it
     // is cleared while it is small. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-3", field: "camps_close_the_age_3", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_3, disable: AdvancedAi::disable_camps_close_the_age_3 },
+    // `luxury-asks-pay-in-strategics`: live Lv 8 Deity Korea Online, 28 games
+    // 11-04/05: Amenities cost 6.7% of production at t90-110 (the retire
+    // gate's margin); the luxury swap held 74 times with a city short, 51 for
+    // want of any spare copy; Gold alone closed 0 of 16 luxury asks, barter
+    // 22; 56 of the 74 holds stocked 10+ of a strategic. With no spare that
+    // fits, the slot asks for a type we lack and pays in strategics the army
+    // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

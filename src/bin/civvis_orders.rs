@@ -3133,6 +3133,155 @@ fn append_luxury_swap_order(
     None
 }
 
+// ★★★★ A LUXURY WE LACK, PAID IN STRATEGICS OUR ARMY DOES NOT NEED
+// (`luxury-asks-pay-in-strategics`). Live Lv 8 Deity Korea Online (28 games,
+// 2026-11-04 21Z-11-05 00Z): host-reported "Amenities" lines cost 6.7% of all
+// production at turns 90-110 (-79's census of `yield_sources`), the margin by
+// which the near-miss games fell under the quarter-of-the-leader retire gate
+// (0.236 and 0.245). On the luxury slot's turns t50-120 with a city short,
+// the swap held 74 times: `no_spare` 51 (221505Z held ONE luxury type with 7-8
+// cities short; most seats hold every type once), `no_partner` 13, `no_fit`
+// 10. Gold alone closed 0 of 16 luxury asks at Deity, while barter closed 22
+// (a spare copy, or strategics such as `RESOURCE_IRON=4;RESOURCE_COTTON=1`),
+// and in 56 of the 74 holds the seat stockpiled 10 or more of a strategic
+// that the surplus sale sells for Gold anyway. So when the swap finds no
+// spare copy that fits, the same slot asks a partner at peace that offers a
+// type we hold none of, and pays from the strategics held above what our
+// units, their upgrades, their fuel and the barter reserve need
+// (`AdvancedAi::siege_barter_spares`, strategics only): the spare the
+// partner's seat books highest, the smallest lot its book prices at a
+// copy's worth (the whole spare when none does), Gold topping up as the swap
+// does, to a copy's worth. The Lua arm picks a luxury the seat holds none of.
+const LUXURY_STRATEGIC_ASK_UNPRICED_LOT: u32 = 10;
+
+/// `luxury-asks-pay-in-strategics`: see above. `spares` is
+/// `AdvancedAi::siege_barter_spares` (only its strategics are read);
+/// `give_worth(seller, resource_id, amount)` is what the lot is worth to the
+/// seller's mirrored seat, 0 when the seat cannot be named. Returns why it
+/// held, or `None` with the order pushed.
+fn append_luxury_strategic_ask(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    spares: &[civvis::ai::BarterSpare],
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+) -> Option<&'static str> {
+    if amenity_deficit(state) < LUXURY_SWAP_2_MIN_DEFICIT {
+        return Some("luxury_strategic_hold:content");
+    }
+    if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
+        return Some("luxury_strategic_hold:cadence");
+    }
+    let Some(counts) = state.luxury_counts.as_ref() else {
+        return Some("luxury_strategic_hold:counts_unknown");
+    };
+    // The slot is the swap's: a luxury ask already out this turn keeps it.
+    if orders.iter().any(|order| {
+        order.kind == "buy"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.starts_with("LUXURY_ANY"))
+    }) {
+        return Some("luxury_strategic_hold:slot_taken");
+    }
+    let selling: std::collections::BTreeSet<&str> = orders
+        .iter()
+        .filter(|order| order.kind == "sell")
+        .filter_map(|order| order.verb.as_deref())
+        .flat_map(|verb| verb.split([',', ';']))
+        .filter_map(|part| part.split_once('=').map(|(name, _)| name))
+        .collect();
+    let payable: Vec<&civvis::ai::BarterSpare> = spares
+        .iter()
+        .filter(|spare| !spare.luxury && spare.amount > 0)
+        .filter(|spare| !selling.contains(spare.resource.as_str()))
+        .collect();
+    if payable.is_empty() {
+        return Some("luxury_strategic_hold:no_strategic");
+    }
+    let recent = |turn: Option<i64>| {
+        turn.is_some_and(|at| at >= 0 && i64::from(state.turn) - at < LUXURY_SWAP_DENOUNCE_TURNS)
+    };
+    let lacked = |name: &String| counts.get(name).copied().unwrap_or(0.0) < 1.0;
+    let mut partners: Vec<&civvis::mirror::StateRival> = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| luxuries.iter().any(lacked))
+        })
+        .filter(|rival| !recent(rival.our_denounce_turn) && !recent(rival.their_denounce_turn))
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        })
+        .collect();
+    if partners.is_empty() {
+        return Some("luxury_strategic_hold:no_partner");
+    }
+    partners.sort_by_key(|rival| rival.player);
+    let week = (state.turn / LUXURY_BUY_CADENCE) as usize;
+    let partner = partners[week % partners.len()];
+    let seller = partner.player as i64;
+    let worth = f64::from(
+        (LUXURY_BUY_CEILING_BASE
+            + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32)
+            .min(LUXURY_BUY_CEILING_MAX),
+    );
+    // (lot, its worth to the seller) for each spare: the smallest lot that
+    // meets a copy's worth, else the whole spare; unpriced, a fixed lot.
+    let lot = |spare: &civvis::ai::BarterSpare| -> (u32, f64) {
+        if give_worth(seller, &spare.resource_id, spare.amount) <= 0.0 {
+            return (spare.amount.min(LUXURY_STRATEGIC_ASK_UNPRICED_LOT), 0.0);
+        }
+        (1..=spare.amount)
+            .map(|count| (count, give_worth(seller, &spare.resource_id, count)))
+            .find(|(_, value)| *value >= worth)
+            .unwrap_or_else(|| {
+                (
+                    spare.amount,
+                    give_worth(seller, &spare.resource_id, spare.amount),
+                )
+            })
+    };
+    // The spare whose lot covers most of a copy, then the smaller lot, then
+    // the name: a priced lot that meets the worth beats one that does not.
+    let Some((spare, (count, _))) = payable.iter().map(|spare| (*spare, lot(spare))).max_by(
+        |(left, (left_count, left_value)), (right, (right_count, right_value))| {
+            left_value
+                .min(worth)
+                .partial_cmp(&right_value.min(worth))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right_count.cmp(left_count))
+                .then_with(|| right.resource.cmp(&left.resource))
+        },
+    ) else {
+        return Some("luxury_strategic_hold:no_strategic");
+    };
+    let income = state
+        .gold_per_turn
+        .filter(|income| income.is_finite())
+        .unwrap_or(0.0);
+    let carried = (state.gold - LUXURY_BUY_GOLD_RESERVE).max(0)
+        + (25.0 * (income - LUXURY_BUY_INCOME_FLOOR)).floor().max(0.0) as i64;
+    // The swap's top-up: Gold up to a copy's worth, which the treasury and
+    // income carry. The host's counter asks what it wants on top of the lot,
+    // and the Lua arm closes only at or under this.
+    let ceiling = carried.min(worth.floor() as i64).max(0) as i32;
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(seller),
+        verb: Some(format!("LUXURY_ANY;{}={count}", spare.resource)),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 // ★★★★★ THE GUN'S RESOURCE, BOUGHT WHERE A RIVAL OFFERS IT
 // (`siege-buys-the-gun-resource`). Live Emperor civvis-20261007T111017Z (game
 // 343) held Angkor Thom's 400 walls at turns 176-177 at a Trebuchet's 2.3 a
@@ -5606,6 +5755,35 @@ fn decide(
                     || why == "luxury_swap_hold:no_fit"
                 {
                     note_bits.push(why.to_string());
+                }
+                // `luxury-asks-pay-in-strategics`: no spare copy fits, so
+                // the slot pays in strategics the army does not need. See
+                // `append_luxury_strategic_ask`.
+                if ai.luxury_asks_pay_in_strategics_enabled()
+                    && (why == "luxury_swap_hold:no_spare" || why == "luxury_swap_hold:no_fit")
+                {
+                    let game = &mirror_state.game;
+                    let mut held =
+                        ai.siege_gun_resources_held(game, 0, &ai.siege_gun_resource_wants(game, 0));
+                    if ai.army_upgrade_materials_enabled() {
+                        held.extend(
+                            ai.army_upgrade_material_wants(game, 0)
+                                .into_iter()
+                                .map(|want| want.resource),
+                        );
+                    }
+                    let spares = ai.luxury_ask_strategic_spares(game, 0, &held);
+                    let give_worth = |seller: i64, resource: &str, amount: u32| {
+                        (1..game.players.len())
+                            .find(|seat| {
+                                host_player_target(mirror_state, state, *seat) == Some(seller)
+                            })
+                            .map_or(0.0, |seat| game.resource_gold_value(seat, resource, amount))
+                    };
+                    match append_luxury_strategic_ask(state, &mut orders, &spares, &give_worth) {
+                        None => note_bits.push("luxury_strategic_ask=1".to_string()),
+                        Some(why) => note_bits.push(why.to_string()),
+                    }
                 }
             }
         }
@@ -19098,6 +19276,162 @@ mod tests {
         assert_eq!(
             append_luxury_swap_order(&state, &mut held, Some(&full)),
             Some("luxury_swap_hold:no_fit")
+        );
+        assert!(held.is_empty());
+    }
+
+    /// `luxury-asks-pay-in-strategics`: with no spare copy that fits, the
+    /// luxury slot asks a partner at peace that offers a type we lack, paying
+    /// the smallest lot of the strategic its book prices at a copy's worth.
+    #[test]
+    fn luxury_strategic_ask_pays_in_strategics_the_army_does_not_need() {
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let offering = |player, luxuries: &[&str]| StateRival {
+            player,
+            tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+            ..StateRival::default()
+        };
+        let spare = |resource: &str, id: &str, amount: u32, luxury: bool| civvis::ai::BarterSpare {
+            resource: resource.to_string(),
+            resource_id: id.to_string(),
+            amount,
+            luxury,
+        };
+        let state = StateSnapshot {
+            turn: 94, // the luxury slot; week 15
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+            luxury_counts: Some([("RESOURCE_AMBER".to_string(), 1.0)].into_iter().collect()),
+            rivals: vec![
+                // Offers only what we hold: no partner.
+                offering(2, &["RESOURCE_AMBER"]),
+                offering(4, &["RESOURCE_SILK", "RESOURCE_AMBER"]),
+                StateRival {
+                    at_war: true,
+                    ..offering(5, &["RESOURCE_JADE"])
+                },
+                offering(6, &["RESOURCE_WINE"]),
+            ],
+            ..StateSnapshot::default()
+        };
+        // Niter is worth 20 a unit to every seller, Iron 5; luxury spares are
+        // never paid here.
+        let book = |_seller: i64, resource: &str, amount: u32| match resource {
+            "niter" => 20.0 * f64::from(amount),
+            "iron" => 5.0 * f64::from(amount),
+            _ => 0.0,
+        };
+        let spares = vec![
+            spare("RESOURCE_COCOA", "cocoa", 2, true),
+            spare("RESOURCE_IRON", "iron", 30, false),
+            spare("RESOURCE_NITER", "niter", 12, false),
+        ];
+
+        // A copy is worth 135 + 10·3 = 165: 9 Niter (180) meets it, where 30
+        // Iron (150) does not. Partners 4 and 6; 15 % 2 == 1 picks seat 6.
+        // Gold tops up to a copy's worth, which the treasury carries.
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_luxury_strategic_ask(&state, &mut orders, &spares, &book),
+            None
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        assert_eq!(orders[0].subject, Some(6));
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_NITER=9")
+        );
+        assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // Short of Niter, the whole Iron spare goes; a broke treasury tops up
+        // nothing.
+        let iron_only = vec![spare("RESOURCE_IRON", "iron", 30, false)];
+        let mut iron_orders = Vec::new();
+        let mut broke = state.clone();
+        broke.gold = 10;
+        broke.gold_per_turn = Some(-2.0);
+        assert_eq!(
+            append_luxury_strategic_ask(&broke, &mut iron_orders, &iron_only, &book),
+            None
+        );
+        assert_eq!(
+            iron_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_IRON=30")
+        );
+        assert_eq!(iron_orders[0].pos, Some((0, 0)));
+
+        // Unpriced (the seller's seat cannot be named): a fixed lot.
+        let blind_book = |_: i64, _: &str, _: u32| 0.0;
+        let mut blind_orders = Vec::new();
+        assert_eq!(
+            append_luxury_strategic_ask(&state, &mut blind_orders, &iron_only, &blind_book),
+            None
+        );
+        assert_eq!(
+            blind_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_IRON=10")
+        );
+
+        // A strategic another sale gives this turn stays home, and its buyer
+        // is busy: Iron goes to seat 4.
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(6),
+            verb: Some("RESOURCE_NITER=10".to_string()),
+            pos: Some((24, 0)),
+        }];
+        assert_eq!(
+            append_luxury_strategic_ask(&state, &mut selling, &spares, &book),
+            None
+        );
+        assert_eq!(selling.len(), 2);
+        assert_eq!(selling[1].subject, Some(4));
+        assert_eq!(
+            selling[1].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_IRON=30")
+        );
+
+        // Held: content, off the slot, the slot already asked, no strategic
+        // to pay with, nobody at peace offering a type we lack.
+        let mut held = Vec::new();
+        let mut content = state.clone();
+        content.cities = vec![short(3.0, 4.0)];
+        assert_eq!(
+            append_luxury_strategic_ask(&content, &mut held, &spares, &book),
+            Some("luxury_strategic_hold:content")
+        );
+        let mut off_slot = state.clone();
+        off_slot.turn = 95;
+        assert_eq!(
+            append_luxury_strategic_ask(&off_slot, &mut held, &spares, &book),
+            Some("luxury_strategic_hold:cadence")
+        );
+        let mut asked = vec![Order {
+            kind: "buy",
+            subject: Some(4),
+            verb: Some("LUXURY_ANY;RESOURCE_COCOA=1".to_string()),
+            pos: Some((0, 0)),
+        }];
+        assert_eq!(
+            append_luxury_strategic_ask(&state, &mut asked, &spares, &book),
+            Some("luxury_strategic_hold:slot_taken")
+        );
+        let luxury_only = vec![spare("RESOURCE_COCOA", "cocoa", 2, true)];
+        assert_eq!(
+            append_luxury_strategic_ask(&state, &mut held, &luxury_only, &book),
+            Some("luxury_strategic_hold:no_strategic")
+        );
+        let mut lonely = state.clone();
+        lonely.rivals = vec![offering(2, &["RESOURCE_AMBER"])];
+        assert_eq!(
+            append_luxury_strategic_ask(&lonely, &mut held, &spares, &book),
+            Some("luxury_strategic_hold:no_partner")
         );
         assert!(held.is_empty());
     }
