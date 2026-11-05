@@ -12962,6 +12962,126 @@ function faithColor(name) {
   return FAITH_COLORS[Math.abs(h) % FAITH_COLORS.length];
 }
 
+// The city plate: population, name, governor, health, walls and what is being
+// built. Both map renderers draw this one function, because the plate is the
+// main thing a player reads on a map: until it was shared, the default globe
+// worlds showed a bare name and everything else lived behind a click.
+function drawCityNameplate(c, x, y, S) {
+  cx.save();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  // Major-city plates carry both jersey colours, a larger type scale and a
+  // soft colour key. City-states keep a compact single-colour plate. The
+  // difference survives terrain, zoom and colour-blind viewing because it
+  // is expressed in size, line weight and silhouette as well as hue.
+  const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
+  const bannerColor = cityBannerColor(c.owner);
+  const cityOwner = state.players[c.owner];
+  const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+  const governor = cityGovernor(c);
+  const bannerHeight = minorPlate ? 16 : 21;
+  const popWidth = minorPlate ? 14 : 19;
+  cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
+  const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
+                      minorPlate ? 48 : 62);
+  const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+  cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
+  if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
+  cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
+  cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
+  cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
+  cx.shadowBlur = 0;
+  if (!minorPlate) {
+    cx.strokeStyle = bannerColor; cx.lineWidth = 1;
+    cx.beginPath();
+    cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
+    cx.stroke();
+  }
+  cx.fillStyle = bannerColor;
+  cx.beginPath();
+  cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
+  cx.fill();
+  cx.fillStyle = "#10151d";
+  cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
+  cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
+  cx.fillStyle = cityNameInk(c.owner, minorPlate ? "#d8ddd9" : "#fff3cf");
+  cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
+  cx.textAlign = "left";
+  cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
+  cx.textAlign = "center";
+  if (governor) {
+    const waiting = governor.status === "established"
+      ? "" : ` · ${governor.turns_remaining}T`;
+    const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
+    cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+    cx.strokeText(posting, x, by - 5);
+    cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+      : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+    cx.fillText(posting, x, by - 5);
+  }
+  let statusY = by + bannerHeight + 1;
+  if (c.hp < 200) {
+    const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
+    cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
+    cx.fillStyle = hpFraction > .6 ? "#65bd66" : hpFraction > .3 ? "#e2b347" : "#f05a50";
+    cx.fillRect(bx, statusY, tw * hpFraction, 3);
+    statusY += 4;
+  }
+  if ((c.wall_max || 0) > 0) {
+    const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
+    // Civ VI puts its double-shield marker directly beside this blue outer
+    // defense meter. Reserving its own seat means the marker explains the
+    // bar without extending a city banner into its faith or spy markers.
+    const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
+    const wallBarX = bx + wallIconWidth + 2;
+    const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
+    drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
+                                  statusY + 1.5, wallIconWidth);
+    cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
+    cx.fillStyle = "#59aee1";
+    cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
+    statusY += 4;
+  }
+  // Production lives in the medallion alone — one circle on the plate's
+  // right edge carries both what is being built (glyph) and how far along
+  // it is (ring). The old bar under the plate said the same thing a second
+  // time and crowded the health/wall bars, which are the only strips left.
+  // Keyed off data presence, not seat 0 — spectate frames rotate the
+  // observed seat, and an owner gate makes it blink with them.
+  if (c.queue && c.queue.length && c.queue_cost) {
+    const it = c.queue[0];
+    const mx = bx + tw + (minorPlate ? 8 : 10.5);
+    const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
+    cx.fillStyle = "#1c2418f2";
+    cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
+    cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
+    cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
+    const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
+    if (frac > 0) {
+      cx.strokeStyle = "#e09050"; cx.lineCap = "round";
+      cx.beginPath();
+      cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
+      cx.stroke();
+      cx.lineCap = "butt";
+    }
+    // The exhaustive base-game table keeps every district's queue glyph in
+    // the same exact color as its map counter.
+    if (it.unit) {
+      // The medallion is a ring, so it seats its glyph the way a round
+      // counter does whatever is being built inside it.
+      const seat = strategicUnitGlyphSeat(mx, my, mr);
+      drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
+    } else if (it.wonder) {
+      drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
+    } else {
+      cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
+      cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
+      cx.fillText(prodGlyph(it), mx, my + 0.5);
+    }
+  }
+  cx.restore();
+}
+
 // How wide a town of this size sprawls. Anything that has to stand clear of a
 // settlement asks this rather than guessing a constant — a guess sized against
 // a small city grazes a large one, which is exactly what happened to the spy
@@ -20253,6 +20373,8 @@ function drawPlanetLensGroupLabels(cells) {
 // the two levels hand off without a gap: small entities up close, empires at
 // survey distance.
 const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
+const PLANET_CITY_PLATE_SCALE = 1.1;
+const PLANET_CITY_STATE_PLATE_SCALE = 1.6;
 const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
 function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
@@ -21413,7 +21535,12 @@ function drawPlanetMap() {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
       cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
     }
-    if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
+    // Up close there is room for the whole plate, sat above the hex so the unit
+    // garrisoned in the city cannot cover it. Further out a name is all that
+    // fits, and at survey distance the empire labels take over.
+    if (scale >= (cityState ? PLANET_CITY_STATE_PLATE_SCALE : PLANET_CITY_PLATE_SCALE)) {
+      drawCityNameplate(city, cell.center.x, cell.center.y, planetCellInradius(cell));
+    } else if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -22270,118 +22397,7 @@ function drawScene() {
       cx.fillText(c.religion[0].toUpperCase(), fx, fy + 0.4 * k);
       cx.restore();
     }
-    {
-      // Major-city plates carry both jersey colours, a larger type scale and a
-      // soft colour key. City-states keep a compact single-colour plate. The
-      // difference survives terrain, zoom and colour-blind viewing because it
-      // is expressed in size, line weight and silhouette as well as hue.
-      const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
-      const bannerColor = cityBannerColor(c.owner);
-      const cityOwner = state.players[c.owner];
-      const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
-      const governor = cityGovernor(c);
-      const bannerHeight = minorPlate ? 16 : 21;
-      const popWidth = minorPlate ? 14 : 19;
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
-      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
-                          minorPlate ? 48 : 62);
-      const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
-      cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
-      if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
-      cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
-      cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
-      cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
-      cx.shadowBlur = 0;
-      if (!minorPlate) {
-        cx.strokeStyle = bannerColor; cx.lineWidth = 1;
-        cx.beginPath();
-        cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
-        cx.stroke();
-      }
-      cx.fillStyle = bannerColor;
-      cx.beginPath();
-      cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
-      cx.fill();
-      cx.fillStyle = "#10151d";
-      cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
-      cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
-      cx.fillStyle = cityNameInk(c.owner, minorPlate ? "#d8ddd9" : "#fff3cf");
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
-      cx.textAlign = "left";
-      cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
-      cx.textAlign = "center";
-      if (governor) {
-        const waiting = governor.status === "established"
-          ? "" : ` · ${governor.turns_remaining}T`;
-        const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
-        cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
-        cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
-        cx.strokeText(posting, x, by - 5);
-        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
-          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
-        cx.fillText(posting, x, by - 5);
-      }
-      let statusY = by + bannerHeight + 1;
-      if (c.hp < 200) {
-        const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
-        cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
-        cx.fillStyle = hpFraction > .6 ? "#65bd66" : hpFraction > .3 ? "#e2b347" : "#f05a50";
-        cx.fillRect(bx, statusY, tw * hpFraction, 3);
-        statusY += 4;
-      }
-      if ((c.wall_max || 0) > 0) {
-        const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
-        // Civ VI puts its double-shield marker directly beside this blue outer
-        // defense meter. Reserving its own seat means the marker explains the
-        // bar without extending a city banner into its faith or spy markers.
-        const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
-        const wallBarX = bx + wallIconWidth + 2;
-        const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
-        drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
-                                      statusY + 1.5, wallIconWidth);
-        cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
-        cx.fillStyle = "#59aee1";
-        cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
-        statusY += 4;
-      }
-      // Production lives in the medallion alone — one circle on the plate's
-      // right edge carries both what is being built (glyph) and how far along
-      // it is (ring). The old bar under the plate said the same thing a second
-      // time and crowded the health/wall bars, which are the only strips left.
-      // Keyed off data presence, not seat 0 — spectate frames rotate the
-      // observed seat, and an owner gate makes it blink with them.
-      if (c.queue && c.queue.length && c.queue_cost) {
-        const it = c.queue[0];
-        const mx = bx + tw + (minorPlate ? 8 : 10.5);
-        const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
-        cx.fillStyle = "#1c2418f2";
-        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
-        cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
-        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
-        const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
-        if (frac > 0) {
-          cx.strokeStyle = "#e09050"; cx.lineCap = "round";
-          cx.beginPath();
-          cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
-          cx.stroke();
-          cx.lineCap = "butt";
-        }
-        // The exhaustive base-game table keeps every district's queue glyph in
-        // the same exact color as its map counter.
-        if (it.unit) {
-          // The medallion is a ring, so it seats its glyph the way a round
-          // counter does whatever is being built inside it.
-          const seat = strategicUnitGlyphSeat(mx, my, mr);
-          drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
-        } else if (it.wonder) {
-          drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
-        } else {
-          cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-          cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
-          cx.fillText(prodGlyph(it), mx, my + 0.5);
-        }
-      }
-    }
+    drawCityNameplate(c, x, y, S);
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
