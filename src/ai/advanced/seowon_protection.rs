@@ -250,7 +250,10 @@ mod tests {
             district: crate::name!("seowon"),
             cost: 27.0,
         });
-        assert_eq!(loss(&ai, &g, site, "theater_square"), 2.0 * one);
+        assert!(
+            (loss(&ai, &g, site, "theater_square") - 2.0 * one).abs() < 1e-9,
+            "two owned Seowons each pay the same one-point adjacency loss"
+        );
         g.cities.get_mut(&cid).unwrap().owner = 1;
         assert_eq!(loss(&ai, &g, site, "theater_square"), 0.0);
     }
