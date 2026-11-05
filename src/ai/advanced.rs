@@ -6597,11 +6597,6 @@ pub struct AdvancedAi {
     /// Defend row, the parked strength enters its need and its risk. Off by
     /// default.
     capital_keeps_its_defender_3: bool,
-    /// `outclassed-defenders-hold-the-city`: a Defend force below
-    /// `DEFEND_HOLD_RATIO` of the local hostile strength holds its city
-    /// instead of engaging — version two's hold, without its early-city
-    /// ranking. See `advanced/objective_board.rs`. Off by default.
-    outclassed_defenders_hold_the_city: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -8213,6 +8208,11 @@ pub struct AdvancedAi {
     /// `outclassed-siege-stands-down`: by city tile, the first and the last
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
+    /// `outclassed-defenders-hold-the-city`: a Defend force below
+    /// `DEFEND_HOLD_RATIO` of the local hostile strength holds its city
+    /// instead of engaging — version two's hold, without its early-city
+    /// ranking. See `advanced/objective_board.rs`. Off by default.
+    outclassed_defenders_hold_the_city: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -11916,7 +11916,6 @@ impl AdvancedAi {
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
-            outclassed_defenders_hold_the_city: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -12154,6 +12153,7 @@ impl AdvancedAi {
             near_done_work_finishes: false,
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
+            outclassed_defenders_hold_the_city: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
