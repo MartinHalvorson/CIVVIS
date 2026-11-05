@@ -1183,7 +1183,10 @@ impl Game {
                 .map(|site| {
                     (
                         self.map.tiles[&site].district_foundation.is_some(),
-                        self.district_yields(name, site).total(),
+                        // `nusantara-reads-the-coast`: the menu keeps the two
+                        // best fresh sites, so the planner's Coast term must
+                        // rank here too. Equal to `district_yields` otherwise.
+                        self.district_site_yields(name, site).total(),
                         site,
                     )
                 })

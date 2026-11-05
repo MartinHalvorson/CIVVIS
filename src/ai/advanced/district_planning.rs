@@ -414,6 +414,8 @@ impl AdvancedAi {
             }),
             None,
         ));
+        // `nusantara-reads-the-coast`: see `Game::nusantara_site_term`.
+        yields.add(g.nusantara_site_term(district, pos));
         yields
     }
 

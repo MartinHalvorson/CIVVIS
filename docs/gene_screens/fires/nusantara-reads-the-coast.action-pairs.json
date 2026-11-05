@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "nusantara-reads-the-coast",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live run civvis-20261105T165539Z (Indonesia/Gitarja, Deity Online science), turn 78, queried with the run's own forced genome (the tags this binary carries) on a ci-profile civvis_orders built from this branch merged with #4429. The off arm hints Jambi's Industrial Zone at civ6 (62,9), where the live game built it (0 adjacent Coast); the on arm hints (63,11), beside 2 Coast tiles (+1 Production under Great Nusantara). Across turns 40-120 of 165539Z and 154934Z this was the only district order of 48 that changed: the gene bites, rarely.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-nusantara-reads-the-coast.native-queries.tar.xz",
+    "sha256": "c2727189b3842420cc0395cbbbd8670a7787a4b01fd69ec2f4556df8b97dd67c"
+  },
+  "members": [
+    "native-queries-01/0000/result.json"
+  ]
+}
