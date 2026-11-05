@@ -5096,6 +5096,13 @@ pub const GENES: &[Gene] = &[
     // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
     // Agency. See `BasicAi::plaza_building_item_for`.
     Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
+    // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
+    // played out: three eliminations since 11-05 02:01Z, all obsolete armies
+    // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
+    // 50) while border parity bought 80-Gold Warriors at t36-66 for an
+    // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
+    // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
     // Live Deity games work bare hills and forests through the mid-game (20%
     // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
     // empire's Production lost at t60/80/100) while the backlog step trains

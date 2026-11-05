@@ -935,6 +935,10 @@ pub struct StateUnit {
     pub spy_operation_end_turn: Option<i64>,
     #[serde(default)]
     pub spy_missions_available: Option<Vec<String>>,
+    /// Beside the menu: each offered mission's target plot and host odds
+    /// (`CivvisSpyMenu.read`). Absent on older agents.
+    #[serde(default)]
+    pub spy_mission_targets: Option<Vec<StateSpyTarget>>,
     /// The host purchase city of a Spy's plot, including a district operation:
     /// `UnitPanel.lua:2151-2155`, not a nearest-city or city-center guess.
     #[serde(default)]

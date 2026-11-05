@@ -7088,6 +7088,68 @@ CivvisSettlementLoyalty = function(pid, turn, frame, units)
 	return result;
 end
 
+-- ★ THE SPY MENU WITH ITS TARGETS AND ODDS. The missions an IDLE Spy may start
+-- from the city it stands in are the EspionageChooser.lua:190-238 loop:
+-- counterspy in our own city, `CategoryInUI == "OFFENSIVESPY"` anywhere else,
+-- each asked `UnitManager.CanStartOperation(spy, op, cityPlot, false, true)`.
+-- The same call's results name the district plots a mission aims at
+-- (`results[UnitOperationResults.PLOTS]`, EspionageChooser.lua:218-223), and
+-- EspionagePopup.lua:280-287 prices it with
+-- `UnitManager.GetResultProbability(op.Index, spy, targetPlot)`: success is
+-- ESPIONAGE_SUCCESS_UNDETECTED + ESPIONAGE_SUCCESS_MUST_ESCAPE, failure the two
+-- ESPIONAGE_FAIL_* rows, the rest capture or death. The board only knows a
+-- rival's Campus once it has seen the tile, and never the host's odds: live
+-- 080206Z lost both of its late Steal Tech Boosts (t159, t164) in the leader's
+-- cities. `names` keeps the old shape (sorted OperationType strings); each
+-- `targets` row is { op, x, y, success?, fail? } for the first target plot (the
+-- city plot when the host names none). nil when nothing is offered. A global
+-- table, not a top-level local: the main chunk is near Lua's register ceiling.
+CivvisSpyMenu = {
+	read = function(unit, pid)
+		local here = Map.GetPlot(unit:GetX(), unit:GetY());
+		local city = Cities.GetPlotPurchaseCity(here);
+		if city == nil then return nil; end
+		local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
+		local ours = city:GetOwner() == pid;
+		local names, targets = {}, {};
+		for operation in GameInfo.UnitOperations() do
+			local wanted = (ours
+				and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
+				or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
+			if wanted then
+				-- The menu read, not a refusal probe: one line, as
+				-- EspionageChooser.lua:213 asks it.
+				local ok, results = UnitManager.CanStartOperation(unit, operation.Hash, cityPlot, false, true);
+				if ok == true then
+					names[#names + 1] = operation.OperationType;
+					local target = cityPlot;
+					local plots = type(results) == "table" and UnitOperationResults ~= nil
+						and results[UnitOperationResults.PLOTS] or nil;
+					if type(plots) == "table" and type(plots[1]) == "number" then
+						target = Map.GetPlotByIndex(plots[1]) or cityPlot;
+					end
+					local row = { op = operation.OperationType, x = target:GetX(), y = target:GetY() };
+					local odds = try(function()
+						return UnitManager.GetResultProbability(operation.Index, unit, target);
+					end, nil);
+					if type(odds) == "table" then
+						row.success = (tonumber(odds["ESPIONAGE_SUCCESS_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_SUCCESS_MUST_ESCAPE"]) or 0);
+						row.fail = (tonumber(odds["ESPIONAGE_FAIL_UNDETECTED"]) or 0)
+							+ (tonumber(odds["ESPIONAGE_FAIL_MUST_ESCAPE"]) or 0);
+					end
+					targets[#targets + 1] = row;
+				end
+			end
+		end
+		if #names == 0 then return nil; end
+		table.sort(names);
+		table.sort(targets, function(a, b) return a.op < b.op; end);
+		return { names = names, targets = targets };
+	end,
+};
+-- END CivvisSpyMenu.read
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -8172,26 +8234,9 @@ local function exportState(player, pid, turn, frame, eventKind)
 				spyEnds = unit:GetSpyOperationEndTurn();
 			end);
 			if spyOperation == nil then
-				spyMissions = try(function()
-					local here = Map.GetPlot(unit:GetX(), unit:GetY());
-					local city = Cities.GetPlotPurchaseCity(here);
-					if city == nil then return nil; end
-					local cityPlot = Map.GetPlot(city:GetX(), city:GetY());
-					local ours = city:GetOwner() == pid;
-					local names = {};
-					for operation in GameInfo.UnitOperations() do
-						local wanted = (ours
-							and operation.OperationType == "UNITOPERATION_SPY_COUNTERSPY")
-							or ((not ours) and operation.CategoryInUI == "OFFENSIVESPY");
-						if wanted and UnitManager.CanStartOperation(
-								unit, operation.Hash, cityPlot, false, true) == true then
-							names[#names + 1] = operation.OperationType;
-						end
-					end
-					if #names == 0 then return nil; end
-					table.sort(names);
-					return names;
-				end, nil);
+				-- See `CivvisSpyMenu.read`: the names and, beside them, each
+				-- offered mission's target plot and host odds.
+				spyMissions = try(function() return CivvisSpyMenu.read(unit, pid); end, nil);
 			end
 		end
 		local unitId = try(function() return unit:GetID(); end, -1);
@@ -8303,7 +8348,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			activity = activity,
 			spy_operation = spyOperation,
 			spy_operation_end_turn = spyEnds,
-			spy_missions_available = spyMissions,
+			spy_missions_available = spyMissions and spyMissions.names or nil,
+			spy_mission_targets = spyMissions and spyMissions.targets or nil,
 			spy_city = CivvisSpyCity(unit, name, pid),
 			great_person = greatPerson,
 			concert_plots = CivvisRockBandConcertPlots(unit, name),

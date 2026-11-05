@@ -54,7 +54,7 @@ mod state;
 pub use state::*;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
-pub use spy_posting::StateSpyCity;
+pub use spy_posting::{StateSpyCity, StateSpyTarget};
 
 use crate::{
     name::Name,
@@ -4595,6 +4595,7 @@ const UNIT_KEYS: &[&str] = &[
     "spy_operation",
     "spy_operation_end_turn",
     "spy_missions_available",
+    "spy_mission_targets",
     "spy_city",
     "concert_plots",
 ];
@@ -6850,7 +6851,8 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         || unit.activity.is_some()
         || unit.spy_operation.is_some()
         || unit.spy_operation_end_turn.is_some()
-        || unit.spy_missions_available.is_some();
+        || unit.spy_missions_available.is_some()
+        || unit.spy_mission_targets.is_some();
     if !exported {
         Arc::make_mut(&mut game.host_unit_facts).insert(
             uid,
@@ -6900,6 +6902,27 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .collect::<BTreeSet<String>>()
         })
         .filter(|menu| !menu.is_empty());
+    // Each offered mission's target plot and odds, keyed by CIVVIS mission
+    // kind; odds outside [0, 1] are no reading.
+    let odds = |value: Option<f64>| finite(value).filter(|odds| (0.0..=1.0).contains(odds));
+    let spy_targets = unit
+        .spy_mission_targets
+        .as_ref()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    (
+                        civvis_spy_mission_kind(&row.op),
+                        crate::game::HostSpyTarget {
+                            pos: crate::hex::offset_to_axial(row.x, row.y),
+                            success: odds(row.success),
+                            fail: odds(row.fail),
+                        },
+                    )
+                })
+                .collect::<BTreeMap<String, crate::game::HostSpyTarget>>()
+        })
+        .filter(|targets| !targets.is_empty());
     Arc::make_mut(&mut game.host_unit_facts).insert(
         uid,
         crate::game::HostUnitFacts {
@@ -6921,6 +6944,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .filter(|turn| *turn >= 0)
                 .map(|turn| turn as u32),
             spy_missions,
+            spy_targets,
         },
     );
 }
