@@ -672,7 +672,7 @@ wait_for_mirror_listener() {
 # on the tree it was built in: its revision stamp comes from the launch
 # environment (`CIVVIS_COMMIT`) and every CARGO_MANIFEST_DIR read is a test.
 PREBUILD_TREE=${CIVVIS_PREBUILD_TREE:-$HOME/civvis-verification-prebuild}
-PREBUILD_POLL_S=${CIVVIS_PREBUILD_POLL_S:-45}
+PREBUILD_POLL_S=${CIVVIS_PREBUILD_POLL_S:-20}
 PREBUILD_WAIT_S=${CIVVIS_PREBUILD_WAIT_S:-180}
 PREBUILD_NICE=${CIVVIS_PREBUILD_NICE:-10}
 PREBUILD_LOG=${CIVVIS_PREBUILD_LOG:-$LOGS/prebuild.log}
@@ -749,6 +749,7 @@ prebuild_once() {
   if (( rc == 0 )) && [[ "$(git -C "$PREBUILD_TREE" rev-parse HEAD 2>/dev/null)" == "$tip" ]] \
       && write_build_stamp "$PREBUILD_TREE/target/release" "$tip"; then
     print -r -- "[$(date -u +%FT%TZ)] built ${tip:0:7} in $(( SECONDS - started ))s" >>"$PREBUILD_LOG"
+    PREBUILD_BUILT=1
   else
     print -r -- "[$(date -u +%FT%TZ)] build of ${tip:0:7} FAILED (rc=$rc)" >>"$PREBUILD_LOG"
   fi
@@ -759,6 +760,7 @@ prebuild_once() {
 prebuild_loop() {
   local playing=$1
   PREBUILD_CHILD=""
+  PREBUILD_BUILT=0
   trap - EXIT
   trap '[[ -n "$PREBUILD_CHILD" ]] && { pkill -TERM -P "$PREBUILD_CHILD" 2>/dev/null; kill -TERM "$PREBUILD_CHILD" 2>/dev/null }; rm -f -- "$PREBUILD_TREE/target/.civvis-prebuilding"; exit 0' HUP INT TERM
   # Created detached on first use; a tree that cannot be made is a skipped
@@ -769,7 +771,14 @@ prebuild_loop() {
     return 0
   fi
   while true; do
+    PREBUILD_BUILT=0
     prebuild_once "$playing" || true
+    # ★ A MERGE THAT LANDS DURING A BUILD WAITED OUT A WHOLE POLL. Live
+    # 2026-11-05: 8eb9e7b merged at 02:00:00 while 166ec18 compiled; that
+    # build ended 02:01:08, the loop slept, saw 8eb9e7b at 02:01:53, and the
+    # boundary at 02:02:03 waited 47 s for it. After a successful build, look
+    # again at once; a failed one still waits, so it cannot spin.
+    (( PREBUILD_BUILT )) && continue
     # `wait` on a background sleep lets TERM end the loop at once.
     sleep "$PREBUILD_POLL_S" &
     PREBUILD_CHILD=$!
