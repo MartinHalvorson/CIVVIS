@@ -5084,6 +5084,12 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `spy-civics-come-first`: a Science aim researches Nationalism,
+    // Ideology and Cold War (each a Spy slot) sooner, their prerequisites at
+    // half the weight. The Deity win 122513Z reached slots 3 and 4 at t119
+    // and t152; the losses 125414Z at 158/174, 105753Z at 131/173. See
+    // `advanced/spy_civics_come_first.rs`.
+    Gene { tag: "spy-civics-come-first", field: "spy_civics_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_spy_civics_come_first, disable: AdvancedAi::disable_spy_civics_come_first },
     // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
     // the soonest unthreatened city queues one Settler while the plan wants
     // more cities and a seat we can very likely hold lies in reach: the
@@ -5246,6 +5252,12 @@ pub const GENES: &[Gene] = &[
     // claim goes to the next-fastest city or waits a turn. See
     // `advanced/science_heads_keep_their_queue.rs`.
     Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // `denounce-only-to-declare`: the Science seat's threat rung no longer
+    // denounces the space racer; the war opening denounces when a war
+    // follows. Live Deity 11-04/05: a rival we denounced declared war on us
+    // 2.3x as often (stratified), and those wars cost 2.5 cities against
+    // 1.35. See `advanced/denounce_only_to_declare.rs`.
+    Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
     // Version two (live Lv 8 Deity Korea Online, 11-05, first armed games):
     // three Military asks to declared friends, three refusals (152431Z t96,
     // 154934Z t108, 155735Z t108), and asks to Neutral/Unfriendly rivals
