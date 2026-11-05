@@ -282,6 +282,8 @@ fn live_builder_refuses_a_job_step_a_barbarian_can_take() {
 /// any-city rule answers as before.
 #[test]
 fn a_settler_taken_beside_a_standing_city_scars_the_ground_under_the_gene() {
+    use crate::ai::Ai;
+
     let mut game = Game::new_full(2, 20, 14, 91_407, 60, 0, false);
     game.current = 0;
     let founding_settler = game
