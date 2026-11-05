@@ -183,11 +183,13 @@ fn the_strongest_neighbour_is_asked_off_the_domination_lane() {
     assert!(asks(&game).is_empty());
 }
 
-/// The lane's own alliance first: a Science seat whose Research Alliance is
-/// legal, unheld and able to reach the host leaves the border alone (the
-/// stock desk courts that neighbour for Research); once it holds Research,
-/// the Military Alliance goes to another neighbour. The common enemy never
-/// waits.
+/// The lane's own alliance first: a seat whose Research Alliance is legal,
+/// unheld and able to reach the host leaves the border alone (the stock desk
+/// courts that neighbour for Research); once it holds Research, the Military
+/// Alliance goes to another neighbour. The common enemy never waits. The
+/// step runs on an adaptive seat, whose lane ask meets no host filter; the
+/// Science lane's crossing is read on its own (under `science-seat-allies`
+/// the seat-ally bar would also pass over the strongest science rival).
 #[test]
 fn the_border_waits_for_the_lanes_own_alliance() {
     let science = plan(GrandStrategy::Science, None);
@@ -199,14 +201,17 @@ fn the_border_waits_for_the_lanes_own_alliance() {
             .insert(crate::name!("scientific_theory"));
     }
     let mut ai = shield();
-    ai.victory_target = Some(VictoryTarget::Science);
-    ai.science_seat_allies = true;
     assert!(ai.shield_lane_alliance_waits(&game, 0, &science));
     assert!(!ai.military_alliance_shield_step(&mut game, 0, &science, None));
     assert!(asks(&game).is_empty());
 
-    // Off the seat gene the Research ask never reaches the live host, so the
-    // border does not wait for it.
+    // On the Science lane the Research ask reaches the live host only under
+    // `science-seat-allies`; off it the border does not wait for an ask
+    // that never crosses.
+    let mut armed = shield();
+    armed.victory_target = Some(VictoryTarget::Science);
+    armed.science_seat_allies = true;
+    assert!(armed.shield_lane_alliance_waits(&game, 0, &science));
     let mut unarmed = shield();
     unarmed.victory_target = Some(VictoryTarget::Science);
     assert!(!unarmed.shield_lane_alliance_waits(&game, 0, &science));
