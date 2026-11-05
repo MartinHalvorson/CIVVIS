@@ -24,7 +24,16 @@ window.fakeNow = 0;
 Object.defineProperty(performance, "now", { value: () => window.fakeNow });
 window.workerCalls = [];
 window.betweenGameCountdownMs = 10000;
-window.runtimeDelay = new URL(location.href).searchParams.has("slow") ? 600 : 0;
+// `?slow=1` holds every `/runtime` reply until the test calls
+// `releaseRuntime()`, so the loading notice stays up for as long as the test
+// needs to attach and read it. A fixed delay here raced Chrome's startup: the
+// notice came and went before DevTools attached on a busy CI runner.
+window.holdRuntime = new URL(location.href).searchParams.has("slow");
+window.heldRuntime = [];
+window.releaseRuntime = () => {
+  window.holdRuntime = false;
+  window.heldRuntime.splice(0).forEach((deliver) => deliver());
+};
 window.Worker = class {
   constructor() { this.onmessage = null; this.onerror = null; }
   postMessage(message) {
@@ -50,9 +59,11 @@ window.Worker = class {
       answer = {};
     }
     const bytes = new TextEncoder().encode(JSON.stringify(answer));
-    setTimeout(() => this.onmessage({
+    const deliver = () => setTimeout(() => this.onmessage({
       data: { id: message.id, ok: true, answer: bytes },
-    }), message.path === "/runtime" ? window.runtimeDelay : 0);
+    }), 0);
+    if (message.path === "/runtime" && window.holdRuntime) window.heldRuntime.push(deliver);
+    else deliver();
   }
 };
 </script>
@@ -214,12 +225,19 @@ def main() -> int:
         )
         assert "Starting a new world" in loading_text, loading_text
         assert "Runs in this browser" in loading_text, loading_text
+        dev.evaluate("window.releaseRuntime(), true")
         deadline = time.time() + 10
         while time.time() < deadline and not dev.evaluate(
             "window.__civvisBeta && window.__civvisBeta.ready"
         ):
             time.sleep(0.1)
-        time.sleep(0.5)
+        # The notice fades for 450ms after `ready`, so wait for it to go rather
+        # than sleeping 500ms and trusting a loaded runner to keep that margin.
+        deadline = time.time() + 10
+        while time.time() < deadline and dev.evaluate(
+            "!!document.getElementById('civvis-beta-loading')"
+        ):
+            time.sleep(0.1)
         assert not dev.evaluate(
             "!!document.getElementById('civvis-beta-loading')"
         ), "the startup notice remained after the local game was ready"

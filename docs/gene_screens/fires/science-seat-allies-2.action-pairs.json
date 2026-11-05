@@ -1,0 +1,27 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-seat-allies-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Sixteen live Lv 8 Deity Online Science turns, two in each of eight runs (civvis-20261105T100942Z t84/96, 102328Z t96/108, 103825Z t72/84, 105753Z t72/84, 111305Z t84/96, 113105Z t96/108, 114422Z t84/96, 121129Z t72/84): cadence turns after our Civil Service and before Diplomatic Service and Scientific Theory, with a rival reading Friendly or Declared Friend at peace. Each is the run's events.jsonl through the turn's first state frame and nothing after it, queried with the run's own requested genome (carrying science-seat-allies and research-alliance-first, which wait for a legal Research Alliance) on a frozen ci-profile civvis_orders built from the branch. Every off arm proposes no alliance. 4 on arms propose ALLIANCE_MILITARY: 103825Z t72 and t84 to seat 2, 105753Z t72 to seat 2, 111305Z t96 to seat 1; the others hold (no safe partner by the seat gene's bars that turn).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-science-seat-allies-2.native-queries.tar.xz",
+    "sha256": "9ad60077215068bf04ecb50c5bb08b0187c94ef4af7740d352a521cc9ce14fca"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json"
+  ]
+}

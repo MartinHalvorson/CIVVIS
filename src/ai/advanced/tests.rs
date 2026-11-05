@@ -41641,3 +41641,91 @@ fn a_campus_or_industrial_zone_keeps_its_farm_site_under_the_gene() {
         "the Campus stays"
     );
 }
+
+// `districts-price-the-improvement`: the interim Great Nusantara guard. See
+// `advanced/district_planning.rs` (`keeps_the_coast_credit`).
+
+#[test]
+fn an_indonesian_holy_site_never_trades_its_coast_pairs_in_a_resite() {
+    let place = |civ: &str| {
+        let mut ai = AdvancedAi::new();
+        ai.enable_districts_price_the_improvement();
+        let (mut game, city, center) = planning_capital();
+        game.players[0].civ = civ.to_string();
+        planning_claim_disk(&mut game, city, 3);
+        game.players[0].techs.insert(crate::name!("astrology"));
+        let farm = game.nbrs(center)[0];
+        // Two Coast tiles on opposite sides of the Farm: one Nusantara pair
+        // here, and no other plot touches both.
+        let sides: Vec<Pos> = game
+            .nbrs(farm)
+            .into_iter()
+            .filter(|p| *p != center)
+            .collect();
+        let (a, b) = (sides[0], sides[2]);
+        for p in [a, b] {
+            let tile = game.map.tiles.get_mut(&p).unwrap();
+            tile.terrain = crate::name!("coast");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+        }
+        game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+        ai.snapshot_bulldoze_sites(&game, 0);
+        let item = Item::District {
+            district: crate::name!("holy_site"),
+            pos: farm,
+        };
+        assert!(game.can_produce(0, city, &item), "the Farm is a legal site");
+        game.apply(0, &crate::game::Action::Produce { city, item })
+            .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 0.0;
+        ai.resite_bulldozing_districts(&mut game, 0);
+        let site = queued_district_site(&game, city).expect("still a Holy Site");
+        (game, farm, site)
+    };
+    let (game, farm, site) = place("Indonesia");
+    assert!(
+        AdvancedAi::coast_pairs(&game, farm) >= 1,
+        "the fixture's Farm holds a pair"
+    );
+    assert!(
+        AdvancedAi::coast_pairs(&game, site) >= AdvancedAi::coast_pairs(&game, farm),
+        "Indonesia never leaves its Coast pair behind: {farm:?} -> {site:?}"
+    );
+    // Any other civilization takes the clean plot as before.
+    let (_, farm, site) = place("America");
+    assert_ne!(
+        site, farm,
+        "off Indonesia the Holy Site moves to clean ground"
+    );
+}
+
+#[test]
+fn coast_pairs_count_coast_and_lake_neighbours_in_twos() {
+    let (mut game, _city, center) = planning_capital();
+    let around = game.nbrs(center);
+    for p in around.iter() {
+        game.map.tiles.get_mut(p).unwrap().terrain = crate::name!("grassland");
+    }
+    assert_eq!(AdvancedAi::coast_pairs(&game, center), 0);
+    game.map.tiles.get_mut(&around[0]).unwrap().terrain = crate::name!("coast");
+    assert_eq!(
+        AdvancedAi::coast_pairs(&game, center),
+        0,
+        "one tile is half a pair"
+    );
+    game.map.tiles.get_mut(&around[1]).unwrap().terrain = crate::name!("lake");
+    game.map.tiles.get_mut(&around[2]).unwrap().terrain = crate::name!("coast");
+    assert_eq!(AdvancedAi::coast_pairs(&game, center), 1);
+    assert!(
+        AdvancedAi::keeps_the_coast_credit(
+            &game,
+            0,
+            crate::name!("commercial_hub"),
+            center,
+            around[3]
+        ),
+        "a district outside Great Nusantara always passes"
+    );
+}

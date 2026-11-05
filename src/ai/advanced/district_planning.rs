@@ -43,6 +43,7 @@ use crate::game::adjacency::PlanAssumption;
 use crate::game::{Game, Item};
 use crate::name::Name;
 use crate::rules::Yields;
+use crate::think;
 use crate::world::DistrictFoundation;
 use crate::Pos;
 use std::collections::BTreeMap;
@@ -255,6 +256,7 @@ impl AdvancedAi {
                     )
                 })
                 .filter(|(_, value)| *value >= here - slack)
+                .filter(|(site, _)| Self::keeps_the_coast_credit(g, pid, district, pos, *site))
                 .max_by(|left, right| {
                     left.1
                         .total_cmp(&right.1)
@@ -269,6 +271,17 @@ impl AdvancedAi {
                     && g.apply(pid, &crate::game::Action::Produce { city: cid, item })
                         .is_ok()
             });
+            if let (true, Some((site, value))) = (moved, clean) {
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map_or_else(String::new, |city| city.name.clone());
+                think!(self.journal(), Cities, Decision,
+                       "{name} moves its {district} off the {} at {pos:?} to {site:?}",
+                       improvement.map_or_else(|| "bonus resource".to_string(), |i| i.to_string());
+                       "districts-price-the-improvement: the fresh site would bulldoze it; \
+                        the clean plot reads {value:.1} against {here:.1} (slack {slack:.1})");
+            }
             if !moved {
                 // No better ground: the original placement stands, exactly
                 // as it was.
@@ -276,6 +289,49 @@ impl AdvancedAi {
                 let _ = g.apply(pid, &crate::game::Action::Produce { city: cid, item });
             }
         }
+    }
+
+    /// `districts-price-the-improvement`, interim guard for Indonesia's Great
+    /// Nusantara (+1 Campus, Holy Site, Industrial Zone and Theater adjacency
+    /// per two adjacent Coast or Lake tiles on the host). The model's
+    /// adjacency does not carry that term until `nusantara-reads-the-coast`
+    /// adds it, so a re-site never moves one of those districts to a plot
+    /// with fewer Coast/Lake pairs than the one it leaves. Every other seat
+    /// and district passes.
+    pub(super) fn keeps_the_coast_credit(
+        g: &Game,
+        pid: usize,
+        district: Name,
+        from: Pos,
+        to: Pos,
+    ) -> bool {
+        if g.players[pid].civ != "Indonesia" {
+            return true;
+        }
+        let family = g.district_family(district);
+        let nusantara = [
+            crate::name!("campus"),
+            crate::name!("holy_site"),
+            crate::name!("industrial_zone"),
+            crate::name!("theater"),
+        ];
+        if !nusantara.contains(&family) {
+            return true;
+        }
+        Self::coast_pairs(g, to) >= Self::coast_pairs(g, from)
+    }
+
+    /// Adjacent Coast and Lake tiles, in Great Nusantara's pairs.
+    pub(super) fn coast_pairs(g: &Game, pos: Pos) -> usize {
+        crate::hex::neighbors(pos)
+            .into_iter()
+            .filter(|neighbour| {
+                g.map.get(*neighbour).is_some_and(|tile| {
+                    tile.terrain == crate::name!("coast") || tile.terrain == crate::name!("lake")
+                })
+            })
+            .count()
+            / 2
     }
 
     /// `districts-price-the-improvement`: an Industrial Zone or a Campus
