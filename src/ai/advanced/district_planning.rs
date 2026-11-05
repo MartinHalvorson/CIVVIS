@@ -54,6 +54,13 @@ pub(super) const PLAN_BUY_MIN_ADJACENCY: f64 = 3.0;
 /// …and beat the best owned site for the same district by at least this
 /// much raw adjacency, so a near-equal owned plot is used instead of Gold.
 pub(super) const PLAN_BUY_MIN_EDGE: f64 = 2.0;
+/// `districts-price-the-improvement`: how much raw district yield a clean
+/// site may give up against the bulldozing one it replaces — a Farm or Mine
+/// pays about one yield a turn for the rest of the game, and its builder
+/// charge besides. Industrial Zones and Campuses (Seowons) get none: their
+/// adjacency compounds with every building in them (a peaceful paired read
+/// at the Deity seat read production at t100 −4.6 with a flat 1.0).
+pub(super) const RESITE_ADJACENCY_SLACK: f64 = 1.0;
 /// The floor every Gold purchase in `advanced_gold_spending` clears.
 pub(super) const PLAN_BUY_SCORE_FLOOR: f64 = 120.0;
 /// The share of the district's production value a plot purchase may claim —
@@ -147,6 +154,147 @@ pub(super) struct DistrictPlanCache {
 }
 
 impl AdvancedAi {
+    /// `districts-price-the-improvement`: whether a district site bulldozes
+    /// a tile worth pricing even though no citizen works it this turn — an
+    /// improvement (a builder's charge and its yield bonus) or a bonus
+    /// resource, which a district removes for good. The live seat put 372 of
+    /// 773 districts on improved tiles (42 games, 11-04): the planner only
+    /// priced the tile a citizen happened to work that turn, so an idle Farm
+    /// read as free ground. Off, nothing is priced beyond the worked tile.
+    /// `districts-price-the-improvement`: record, at the start of the turn,
+    /// every owned tile a District could bulldoze — an improvement or a bonus
+    /// resource on ground with no district or foundation yet — so a placement
+    /// made on one this turn can be undone. A foundation already standing at
+    /// the start of the turn was placed on an earlier turn and is never
+    /// touched.
+    /// Whether `districts-price-the-improvement` is on, for the observed
+    /// seat's frame executor (`ai/player.rs`).
+    pub(crate) fn districts_price_the_improvement_on(&self) -> bool {
+        self.districts_price_the_improvement
+    }
+
+    pub(super) fn snapshot_bulldoze_sites(&mut self, g: &Game, pid: usize) {
+        self.bulldoze_snapshot.clear();
+        if !self.districts_price_the_improvement {
+            return;
+        }
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if let Some(tile) = g.map.get(*pos) {
+                    if tile.district.is_none()
+                        && tile.district_foundation.is_none()
+                        && (tile.improvement.is_some() || tile.resource.is_some())
+                    {
+                        self.bulldoze_snapshot
+                            .insert(*pos, (tile.improvement, tile.feature, tile.pillaged));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `districts-price-the-improvement`, the catch-all: just before the
+    /// turn ends, a District placed THIS turn on a tile it bulldozed (one in
+    /// the turn's snapshot), with nothing invested, moves to the best clean
+    /// site within [`RESITE_ADJACENCY_SLACK`] of its raw district yield, and
+    /// the bulldozed tile gets its improvement and feature back. The
+    /// planner's charge reaches only the plans it makes; the Aqueduct
+    /// (`ai.rs`, the lowest legal position) and the BasicAi fallback (`max_by`
+    /// yield total) never look at the tile, and they put 24 Aqueducts on Farms
+    /// in 40 live games. The live bridge sends the host only each city's last
+    /// Produce of a batch, so the host never places the first site; the
+    /// observed seat's executor does the same under the gene
+    /// (`ai/player.rs`).
+    pub(super) fn resite_bulldozing_districts(&self, g: &mut Game, pid: usize) {
+        if !self.districts_price_the_improvement || self.bulldoze_snapshot.is_empty() {
+            return;
+        }
+        for cid in g.player_city_ids(pid) {
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
+            let Some(Item::District { district, pos }) = city.queue.first().cloned() else {
+                continue;
+            };
+            let Some(&(improvement, feature, pillaged)) = self.bulldoze_snapshot.get(&pos) else {
+                continue;
+            };
+            if city.production >= 1.0 {
+                continue;
+            }
+            let here = Self::projected_district_yields(g, district, pos).total();
+            // An Industrial Zone or a Campus keeps its placement: see
+            // `compounding_district`.
+            if Self::compounding_district(g, district) {
+                continue;
+            }
+            let slack = RESITE_ADJACENCY_SLACK;
+            // Undo the placement on the board, then read the clean sites
+            // with the foundation gone.
+            let restore = |g: &mut Game, improvement, feature, pillaged| {
+                if let Some(tile) = g.map.tiles.get_mut(&pos) {
+                    tile.district_foundation = None;
+                    tile.improvement = improvement;
+                    tile.feature = feature;
+                    tile.pillaged = pillaged;
+                }
+            };
+            restore(g, improvement, feature, pillaged);
+            let clean = g
+                .district_sites(cid, district)
+                .into_iter()
+                .filter(|site| {
+                    *site != pos
+                        && !self.bulldoze_snapshot.contains_key(site)
+                        && !self.site_bulldozes_a_tile(g, *site)
+                })
+                .map(|site| {
+                    (
+                        site,
+                        Self::projected_district_yields(g, district, site).total(),
+                    )
+                })
+                .filter(|(_, value)| *value >= here - slack)
+                .max_by(|left, right| {
+                    left.1
+                        .total_cmp(&right.1)
+                        .then_with(|| right.0.cmp(&left.0))
+                });
+            let moved = clean.is_some_and(|(site, _)| {
+                let item = Item::District {
+                    district,
+                    pos: site,
+                };
+                g.can_produce(pid, cid, &item)
+                    && g.apply(pid, &crate::game::Action::Produce { city: cid, item })
+                        .is_ok()
+            });
+            if !moved {
+                // No better ground: the original placement stands, exactly
+                // as it was.
+                let item = Item::District { district, pos };
+                let _ = g.apply(pid, &crate::game::Action::Produce { city: cid, item });
+            }
+        }
+    }
+
+    /// `districts-price-the-improvement`: an Industrial Zone or a Campus
+    /// (Seowon) is never steered off improved ground. Their adjacency is
+    /// Production or Science every building in them multiplies; the war-paced
+    /// paired read at the Deity seat (4 pairs) read production at t100 −11.5
+    /// (z −4.7) and science −6.1 while the planner charged them for Farms.
+    fn compounding_district(g: &Game, district: Name) -> bool {
+        let family = g.district_family(district);
+        family == crate::name!("industrial_zone") || family == crate::name!("campus")
+    }
+
+    fn site_bulldozes_a_tile(&self, g: &Game, pos: Pos) -> bool {
+        self.districts_price_the_improvement
+            && g.map
+                .get(pos)
+                .is_some_and(|tile| tile.improvement.is_some() || tile.resource.is_some())
+    }
+
     /// The families this city still wants, at the lane's weights: the
     /// settlement wishlist minus everything built, queued or already
     /// founded.  A city plan additionally carries an Industrial Zone as a
@@ -485,7 +633,10 @@ impl AdvancedAi {
                         Self::projected_district_yields(&planned_game, variant, pos),
                         plan.strategy,
                     );
-                    let lost = if citizens.worked_tiles.contains(&pos) {
+                    let lost = if citizens.worked_tiles.contains(&pos)
+                        || (self.site_bulldozes_a_tile(g, pos)
+                            && !Self::compounding_district(g, variant))
+                    {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
                     } else {
@@ -590,7 +741,10 @@ impl AdvancedAi {
                         Self::projected_district_yields(g, row.district, pos),
                         plan.strategy,
                     );
-                    let lost = if citizens.worked_tiles.contains(&pos) {
+                    let lost = if citizens.worked_tiles.contains(&pos)
+                        || (self.site_bulldozes_a_tile(g, pos)
+                            && !Self::compounding_district(g, row.district))
+                    {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
                     } else {

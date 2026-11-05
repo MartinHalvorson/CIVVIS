@@ -1407,7 +1407,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # its Military Alliance ask reaches the host on every lane. The live
         # binary keeps only that desk's own ask while the tag is armed.
         "MilitaryAllies": bool(args.civvis_decides
-                               and "military-alliance-shield" in (getattr(args, "civvis_with", []) or [])),
+                               and {"military-alliance-shield", "military-alliance-shield-2"}
+                               & set(getattr(args, "civvis_with", []) or [])),
+        # `military-alliance-shield-2`: version two's other alliance kinds too.
+        "ShieldAllies": bool(args.civvis_decides
+                             and "military-alliance-shield-2" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,

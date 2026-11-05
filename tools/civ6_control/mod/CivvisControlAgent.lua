@@ -528,6 +528,32 @@ CivvisCaptivesHeld = function(pid, captor)
 	return #possible;
 end;
 
+-- What a rival thinks of us, reason by reason: the rows the shipped Intel
+-- tab lists under the relationship bar (DiplomacyActionView.lua:895
+-- `selectedPlayerDiplomaticAI:GetDiplomaticModifiers(ms_LocalPlayerID)`,
+-- each `{Text, Score}`; :904 skips a zero score, :914 treats Text as a LOC
+-- key). The diplomatic STATE says whether a neighbour is Unfriendly; only
+-- this says why -- an agenda, a denouncement (-9, Leaders.xml
+-- STANDARD_DIPLOMATIC_DENOUNCED), a delegation (+3), a one-sided trade
+-- (STANDARD_DIPLOMATIC_ONE_SIDED_TRADES, up to +20) -- and so which lever
+-- could move it. Read only. Rows keep the LOC key (language-independent)
+-- and the score; zero rows are dropped as the screen drops them. A bare
+-- global: the main chunk is at its local ceiling. nil when unreadable.
+CivvisOpinionModifiers = function(other, pid)
+	local ai = other:GetDiplomaticAI();
+	if ai == nil then return nil; end
+	local tips = ai:GetDiplomaticModifiers(pid);
+	if type(tips) ~= "table" then return nil; end
+	local out = {};
+	for _, tip in ipairs(tips) do
+		local score = tonumber(tip.Score);
+		if score ~= nil and score ~= 0 then
+			out[#out + 1] = { text = tostring(tip.Text or ""), score = score };
+		end
+	end
+	return out;
+end;
+
 -- Quantities displayed in the met rival's strategic-resource trade column.
 -- Read their existing deal only: never clear, add to, price or submit it.
 -- DiplomacyDealView.lua:1715,1722-1724 reads and displays this same MaxAmount.
@@ -8870,6 +8896,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 				captives_of_ours = try(function()
 					return CivvisCaptivesHeld(pid, otherId);
 				end, nil),
+				-- Its opinion of us, reason by reason (`CivvisOpinionModifiers`).
+				opinion_modifiers = try(function()
+					return CivvisOpinionModifiers(other, pid);
+				end, nil),
 				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
 				-- techs and civics say how far ahead a rival is; these say how
 				-- fast it is moving. Every accessor is one the shipped World
@@ -12049,11 +12079,14 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	-- binary lets through only that desk's own ask, which prices the
 	-- Domination target itself (+5 combat strength against a common enemy,
 	-- Expansion1_Alliances.xml:146; and the alliance's automatic Defensive
-	-- Pact).
+	-- Pact). `ShieldAllies` (`military-alliance-shield-2`): any type, since
+	-- version two binds a neighbour with another kind once Military is taken
+	-- or refused; again the binary passes only that desk's own ask.
 	if (config.VictoryLane ~= "diplomatic"
 			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
 			and not (config.VictoryLane == "science" and config.ScienceAllies == true)
-			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true))
+			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true)
+			and not (config.ShieldAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
@@ -12899,9 +12932,75 @@ CivvisLedger.refuseLethalPreview = function(unit, subject, verb, x, y, turn, row
 	return "lethal_host_preview";
 end;
 
+-- Observe the UI movement path, not a promise that a melee attack will land.
+-- WorldInput.lua:961 reads GetMoveToPathEx(unit, destination); :963-966 read
+-- its plots and :1052-1080 read and display its turn numbers. A MOVE_TO with ATTACK
+-- may still approach without striking, so keep these facts beside the preview.
+-- No operation or combat simulation is requested here. Malformed/unavailable
+-- path data stays unknown, with no invented destination or turn count.
+CivvisLedger.annotateMeleePath = function(unit, x, y, modifiers, payload)
+	payload.native_move_path_known = false;
+	payload.native_move_modifiers_known = type(modifiers) == "number"
+		and modifiers == modifiers and math.abs(modifiers) < math.huge
+		and modifiers % 1 == 0;
+	if payload.native_move_modifiers_known then payload.native_move_modifiers = modifiers; end
+	local function observedNumber(callback)
+		local value = tonumber(try(callback, nil));
+		if value ~= nil and value == value and math.abs(value) < math.huge then return value; end
+		return nil;
+	end
+	payload.unit_x = observedNumber(function() return unit:GetX(); end);
+	payload.unit_y = observedNumber(function() return unit:GetY(); end);
+	payload.moves = observedNumber(function() return unit:GetMovesRemaining(); end);
+	payload.attacks = observedNumber(function() return unit:GetAttacksRemaining(); end);
+	local observation = try(function()
+		local destination = Map.GetPlotIndex(x, y);
+		if type(destination) ~= "number" or destination < 0
+				or destination >= math.huge or destination % 1 ~= 0 then return nil; end
+		local path = UnitManager.GetMoveToPathEx(unit, destination);
+		if type(path) ~= "table" or type(path.plots) ~= "table"
+				or type(path.turns) ~= "table" then return nil; end
+		local n = #path.plots;
+		if n > 256 then return nil; end
+		for _, rows in ipairs({ path.plots, path.turns }) do
+			for key in pairs(rows) do
+				if type(key) ~= "number" or key % 1 ~= 0
+						or key < 1 or key > n then return nil; end
+			end
+		end
+		local positions = {};
+		for i = 1, n do
+			local plotId, turns = path.plots[i], path.turns[i];
+			if type(plotId) ~= "number" or plotId < 0 or plotId >= math.huge
+					or plotId % 1 ~= 0 or type(turns) ~= "number"
+					or turns < 0 or turns >= math.huge or turns % 1 ~= 0 then return nil; end
+			if i > 1 and turns < path.turns[i - 1] then return nil; end
+			local plot = Map.GetPlotByIndex(plotId);
+			local px, py = plot:GetX(), plot:GetY();
+			if type(px) ~= "number" or type(py) ~= "number"
+					or px < 0 or py < 0 or px >= math.huge or py >= math.huge
+					or px % 1 ~= 0 or py % 1 ~= 0 then return nil; end
+			positions[i] = { x = px, y = py, turn = turns };
+		end
+		local result = { native_move_path_known = true, native_move_path_length = n };
+		if n > 0 then
+			result.native_move_path_destination = positions[n];
+			result.native_move_path_destination_matches_order = path.plots[n] == destination;
+			if n > 1 then result.native_move_path_first_step = positions[2]; end
+			for i = 1, n do
+				if path.turns[i] <= 1 then result.native_move_path_this_turn_end = positions[i]; end
+			end
+		end
+		return result;
+	end, nil);
+	if observation ~= nil then
+		for key, value in pairs(observation) do payload[key] = value; end
+	end
+end;
+
 -- Called from `applyOrder` before a strike is requested: emit the preview and
 -- remember it, so the combat this strike produces can carry it.
-CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
+CivvisLedger.strike = function(unit, subject, verb, x, y, turn, moveModifiers)
 	if CivvisFrames ~= nil then CivvisFrames.noteStrike(); end
 	-- `StrikePreview = false` keeps the host's combat simulation out of the
 	-- turn entirely; the strike is still recorded, without a prediction.
@@ -12912,8 +13011,10 @@ CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
 	CivvisLedger.pending[tostring(subject)] = {
 		turn = turn, verb = verb, x = x, y = y, preview = preview, hp = hp, kind = kind,
 	};
-	emit("strike", { turn = turn, unit = subject, unit_kind = kind, verb = verb,
-	                 x = x, y = y, hp = hp, preview = preview });
+	local payload = { turn = turn, unit = subject, unit_kind = kind, verb = verb,
+	                  x = x, y = y, hp = hp, preview = preview };
+	if verb == "ATTACK" then CivvisLedger.annotateMeleePath(unit, x, y, moveModifiers, payload); end
+	emit("strike", payload);
 end;
 
 -- WorldInput.lua:2004-2015 and :2091-2097 read PLOTS and MODIFIERS in
@@ -16269,7 +16370,7 @@ local function applyOrder(player, pid, row, turn)
 				if verb == "ATTACK" then
 					local survivalRefusal = CivvisLedger.refuseLethalPreview(unit, subject, verb, x, y, turn, row);
 					if survivalRefusal ~= nil then return false, survivalRefusal; end
-					CivvisLedger.strike(unit, subject, verb, x, y, turn);
+					CivvisLedger.strike(unit, subject, verb, x, y, turn, modifiers);
 				end
 			else
 				-- Civ6Common.lua:151-152 permits movement toward an unexplored

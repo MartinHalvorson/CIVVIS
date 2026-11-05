@@ -4770,6 +4770,15 @@
           "elimination-yields-to-a-launch-2": null
         }
       },
+      "embassy-finds-the-capital": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "embassy-finds-the-capital": null,
+          "embassy-finds-the-capital-2": null
+        }
+      },
       "eureka-chasing-builder": {
         "rule_on": [
           "eureka-chasing-builder-2"
@@ -4984,6 +4993,15 @@
           "merchant-confederation-earns-its-slot-2": null
         }
       },
+      "military-alliance-shield": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "military-alliance-shield": null,
+          "military-alliance-shield-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores"
@@ -5039,6 +5057,15 @@
           "opportunistic-war-2": null
         }
       },
+      "parity-upgrades-before-it-buys": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "parity-upgrades-before-it-buys": null,
+          "parity-upgrades-before-it-buys-2": null
+        }
+      },
       "pass-picket": {
         "rule_on": [
           "pass-picket"
@@ -5048,6 +5075,26 @@
         "versions": {
           "pass-picket": null,
           "pass-picket-2": null
+        }
+      },
+      "pingala-follows-research": {
+        "rule_on": [
+          "pingala-follows-research"
+        ],
+        "head": null,
+        "ships": "pingala-follows-research",
+        "versions": {
+          "pingala-follows-research": null,
+          "pingala-follows-research-2": null
+        }
+      },
+      "plaza-serves-the-scientist": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "plaza-serves-the-scientist": null,
+          "plaza-serves-the-scientist-2": null
         }
       },
       "policy-deck-hysteresis": {

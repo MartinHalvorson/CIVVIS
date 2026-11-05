@@ -35,6 +35,11 @@
 //! host quotes a Seowon within the existing Campus budget. Native Jinju at
 //! 43/0 offered an eight-turn Seowon but used its only slot for a Plaza.
 //! The ordinary picker still checks the actual site, slot and safety holds.
+//! With version 2, a peaceful Korean Science city may also put a native-quoted
+//! first Seowon of at most five turns before near-rival parity recruitment.
+//! The first expansion, other earlier claims and active-war military queues
+//! keep their existing priority. A committed first Seowon survives a parity
+//! replan with zero paid progress; its remaining quote may change on placement.
 //!
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
@@ -62,6 +67,71 @@ pub(super) const FREE_SLOT_CAMPUS_MIN_POP: i32 = 3;
 pub(super) const FREE_SLOT_CAMPUS_MIN_POP_2: i32 = 2;
 
 impl AdvancedAi {
+    /// A peaceful Korean Science city can briefly invest in its first Seowon
+    /// before chasing a neighbour's military parity. Immediate defence and
+    /// the earlier expansion claims still own their queues.
+    fn korean_science_parity_pause_safe(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.campus_claims_the_free_slot_2
+            && g.players[pid].civ == "Korea"
+            && g.victory_conditions.science
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && g.player_city_ids(pid).len() >= 2
+            && matches!(
+                plan.strategy,
+                GrandStrategy::Science | GrandStrategy::Expansion
+            )
+            && !plan.rush
+            && plan.threatened_city.is_none()
+            && g.cities.get(&cid).is_some_and(|city| {
+                city.owner == pid
+                    && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            })
+            && !g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+    }
+
+    /// Native Jeonju offered a five-turn first Seowon while the parity
+    /// claim held its Warrior. No model estimate grants this exception.
+    fn short_seowon_precedes_parity(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        campus: &Item,
+    ) -> bool {
+        self.korean_science_parity_pause_safe(g, pid, cid, plan)
+            && g.host_production_turns(cid, campus)
+                .is_some_and(|turns| turns.is_finite() && turns > 0.0 && turns <= 5.0)
+    }
+
+    /// Preserve a committed first Campus through the zero-progress native
+    /// replan, even if losing its worked plot changes the remaining quote.
+    pub(super) fn first_seowon_holds_parity(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.korean_science_parity_pause_safe(g, pid, cid, plan)
+            && g.cities[&cid]
+                .queue
+                .first()
+                .is_some_and(|item| self.free_slot_campus_holds(g, pid, cid, plan, item))
+    }
+
     /// A brief native Seowon build, priced by the host rather than an estimate.
     fn short_korean_science_campus(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
         self.campus_claims_the_free_slot_2
@@ -251,7 +321,9 @@ impl AdvancedAi {
                 Some(item) => {
                     // Preserve the original short-circuit order: report the
                     // first binding hold, rather than guessing from the queue.
-                    let hold = if self.deterrence_unit_holds(g, pid, item) {
+                    let hold = if self.deterrence_unit_holds(g, pid, item)
+                        && !self.short_seowon_precedes_parity(g, pid, cid, plan, &campus)
+                    {
                         Some("near-rival deterrence")
                     } else if self.bound_granary_holds(g, pid, cid, plan, item) {
                         Some("bound Granary claim")

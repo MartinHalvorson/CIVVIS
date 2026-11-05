@@ -1771,6 +1771,9 @@ impl AdvancedAi {
         /// Opt-in gene `embassy-finds-the-capital`; see
         /// `AdvancedAi::embassy_finds_the_capital`.
         embassy_finds_the_capital => enable_embassy_finds_the_capital, disable_embassy_finds_the_capital;
+        /// Opt-in gene `embassy-finds-the-capital-2`; see
+        /// `advanced/embassy_capital.rs`.
+        embassy_finds_the_capital_2 => enable_embassy_finds_the_capital_2, disable_embassy_finds_the_capital_2;
         /// Opt-in gene `aluminum-buys-the-tile`; see
         /// `AdvancedAi::aluminum_buys_the_tile`.
         aluminum_buys_the_tile => enable_aluminum_buys_the_tile, disable_aluminum_buys_the_tile;
@@ -2201,6 +2204,9 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `spy-civics-come-first`; see
+        /// `advanced/spy_civics_come_first.rs`.
+        spy_civics_come_first => enable_spy_civics_come_first, disable_spy_civics_come_first;
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
@@ -2216,6 +2222,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
@@ -2238,10 +2247,38 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `plaza-serves-the-scientist-2` (version 2 of
+        /// `plaza-serves-the-scientist`, which it carries); see
+        /// `advanced/plaza_serves_the_scientist_2.rs`.
+        plaza_serves_the_scientist_2 => enable_plaza_serves_the_scientist_2, disable_plaza_serves_the_scientist_2;
+        /// Opt-in gene `science-heads-keep-their-queue`; see
+        /// `advanced/science_heads_keep_their_queue.rs`.
+        science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
+        /// Opt-in gene `denounce-only-to-declare`; see
+        /// `advanced/denounce_only_to_declare.rs`.
+        denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
+        /// Opt-in gene `capture-scar-reads-the-new-city`; see
+        /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
+        capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
+        /// Opt-in gene `districts-price-the-improvement`; see
+        /// [`Self::districts_price_the_improvement`].
+        districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
     }
 }
 
 impl AdvancedAi {
+    /// Pingala version two retains ordinary dividends and joins a committed
+    /// launch producer. Independently off and unpriced; one family version plays.
+    pub fn enable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research = false;
+        self.pingala_follows_research_2 = true;
+    }
+
+    /// Withhold the independent Pingala launch-job version.
+    pub fn disable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research_2 = false;
+    }
+
     /// Promote an Apostle for the job the empire needs rather than the largest
     /// number on the card. Off in production; opted into by name (`victory_eval
     /// --with apostle-promotion-by-role`, `gene_screen`). See
@@ -5194,6 +5231,32 @@ impl AdvancedAi {
     /// The twin of `enable_settler_shelters_from_the_war_2`.
     pub fn disable_settler_shelters_from_the_war_2(&mut self) {
         self.settler_shelters_from_the_war_2 = false;
+    }
+
+    /// Opt-in gene `military-alliance-shield-2`, version two of
+    /// `military-alliance-shield`: only Friendly rivals are asked, and a
+    /// Military kind taken or refused falls through to another kind; see
+    /// `advanced/military_alliance_shield.rs`. A seat plays one version, so
+    /// this turns version one off.
+    pub fn enable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = true;
+        self.military_alliance_shield = false;
+    }
+
+    /// The twin of `enable_military_alliance_shield_2`.
+    pub fn disable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = false;
+    }
+
+    /// Opt-in gene `group-steps-read-the-field`; see
+    /// [`Self::group_steps_read_the_field`].
+    pub fn enable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = true;
+    }
+
+    /// The twin of `enable_group_steps_read_the_field`.
+    pub fn disable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = false;
     }
 
     /// Opt-in gene `nusantara-reads-the-coast`; see
