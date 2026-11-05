@@ -5122,6 +5122,15 @@ pub const GENES: &[Gene] = &[
     // while at war with a major and a home city is threatened. See
     // `threatened_lane_lends_the_army.rs`.
     Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
     // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
     // Swordsman wore down and killed a Settler's Warrior escort and took the
     // Settler while two of our Archers stood within range and never fired:
