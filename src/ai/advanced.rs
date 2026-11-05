@@ -26062,8 +26062,8 @@ impl AdvancedAi {
                     }
 
                     let surplus = branch.total.food - 2.0 * population as f64;
-                    let growth_rate = surplus.max(0.0)
-                        * Game::housing_growth_mult(housing - population as f64);
+                    let growth_rate =
+                        surplus.max(0.0) * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate
