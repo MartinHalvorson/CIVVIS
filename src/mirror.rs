@@ -4611,18 +4611,19 @@ const PUBLIC_STATS_KEYS: &[&str] = &[
 ];
 
 /// The field names `state_schema_gaps` will accept for one struct, extracted from
-/// this file's own source.
+/// the source of this file and of `mirror/state.rs`, where the snapshot types
+/// live.
 ///
 /// ⚠ Only used by the drift test below. It is deliberately crude — `pub name:` lines
 /// inside the named `pub struct` block — because the alternative was another
 /// hand-maintained list, which is the failure it exists to catch.
 #[cfg(test)]
 fn declared_fields(struct_name: &str) -> Vec<String> {
-    let source = include_str!("mirror.rs");
+    let source = concat!(include_str!("mirror.rs"), include_str!("mirror/state.rs"));
     let head = format!("pub struct {struct_name} {{");
     let start = source
         .find(&head)
-        .expect("the struct is declared in this file");
+        .expect("the struct is declared in mirror.rs or mirror/state.rs");
     let body = &source[start + head.len()..];
     let end = body.find("\n}").expect("the struct block terminates");
     body[..end]
