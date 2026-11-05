@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "parity-upgrades-before-it-buys",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live Lv 8 Deity Korea Online turns on which border-parity bought a unit 'to hold parity', each run's events.jsonl cut at the turn's first state frame and queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every listed off arm reproduces the live purchase (UNIT_WARRIOR x3, UNIT_ARCHER, UNIT_HEAVY_CHARIOT); every on arm buys nothing: three with the rival at 2.3-4.3x our power (out of reach), two buying a unit two eras behind the world. No upgrade was affordable above the parity reserve on these boards.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-parity-upgrades-before-it-buys.native-queries.tar.xz",
+    "sha256": "5efd8be520c73b5bab6c00d7cd2b473302a39fabd0ff263e7a3c6c2746cea8e9"
+  },
+  "members": [
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json"
+  ]
+}
