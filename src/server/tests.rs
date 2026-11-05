@@ -5531,7 +5531,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find(">Single player<")
+        .find("<option value=\"single\">Single player</option>")
         .expect("single player mode");
     let multiplayer_mode = EMBEDDED_INDEX
         .find("Multiplayer · later")
