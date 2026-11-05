@@ -329,7 +329,7 @@ database with a cell whose text begins `DIFFICULTY_`.
 | `AiLists`, `TreeData` (2 rows) | one AI list from Warlord, one behaviour-tree node from Immortal | **not carried**, and both are DLL-side AI plumbing |
 | `Difficulties` | eight rows, `DifficultyType` and a name — **nothing else** | the ladder's shape ✅ |
 
-Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses4 at Deity; a narrow fidelity waiver records the unresolved projector/DLL difference. Lower-rung combat values remain projected and have not been sealed by this readback.
+Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses 4 at Deity; the projector applies an explicit native calibration only to the unchanged Deity source-row form. Its generic raw XML calculation remains visible at 3, and no new waiver is added. Lower-rung combat values remain projected and have not been sealed by this readback.
 
 ### The gap that was open: city-states behind walls
 

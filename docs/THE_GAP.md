@@ -99,7 +99,7 @@ shipped `Modifiers` rows (#2375):
 | `HIGH_DIFFICULTY_UNIT_XP_SCALING`, +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
 | `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS`, +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, as both a Eureka and an Inspiration set ✅ |
 
-Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses4 at Deity; a narrow fidelity waiver records the unresolved projector/DLL difference. Lower-rung combat values remain projected and have not been sealed by this readback.
+Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses 4 at Deity; the projector applies an explicit native calibration only to the unchanged Deity source-row form. Its generic raw XML calculation remains visible at 3, and no new waiver is added. Lower-rung combat values remain projected and have not been sealed by this readback.
 
 And where a number genuinely is not in the database, the binary can still be
 **read**: #2372 disassembled `Rules::Units::Instance::GetUpgradeCost` in
