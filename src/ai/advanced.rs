@@ -10537,10 +10537,10 @@ pub(crate) mod city_state_quests;
 
 /// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
 mod science_specializes_earlier;
-mod science_writing_before_the_luxury;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
+mod science_writing_before_the_luxury;
 mod wonder_clearance;
 /// `wonder-adjacent-sites-2` prices a settle site beside a natural wonder
 /// the way the engine pays it; `wonder-ring-recon` sends an explorer to the
