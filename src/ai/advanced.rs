@@ -9362,6 +9362,11 @@ pub struct AdvancedAi {
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-defense-spends-the-runway`: while a major at war with us fields
+    /// 1.5x our military power and the treasury covers the deficit for 15
+    /// turns, the insolvency guard leaves the city queues to the war. See
+    /// `advanced/war_defense_spends_the_runway.rs`. Off by default.
+    war_defense_spends_the_runway: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -10145,6 +10150,9 @@ mod tactics;
 /// The unit turn: the per-unit step, kill priorities, and the religious,
 /// Trader and explorer steps. See `advanced/units.rs`.
 mod units;
+/// `war-defense-spends-the-runway`: see
+/// `advanced/war_defense_spends_the_runway.rs`.
+mod war_defense_spends_the_runway;
 /// War plans: choosing and keeping a war, its cost, and nuclear targets. See
 /// `advanced/war_plans.rs`.
 mod war_plans;
@@ -12371,6 +12379,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
+            war_defense_spends_the_runway: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -20400,7 +20409,12 @@ impl AdvancedAi {
         let economic_recovery =
             g.players[pid].gold_per_turn < -0.5 && g.players[pid].gold < recovery_reserve;
         let emergency_defense = at_major_war && counts.military < city_count.max(1);
-        economic_recovery && !emergency_defense
+        // `war-defense-spends-the-runway`: a losing war the treasury can
+        // still carry keeps its queues. See
+        // `advanced/war_defense_spends_the_runway.rs`.
+        economic_recovery
+            && !emergency_defense
+            && !(at_major_war && self.war_defense_spends_the_runway_holds(g, pid))
     }
 
     /// Science must stop adding recurring expenses before a bankrupt queue
