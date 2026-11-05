@@ -2082,11 +2082,17 @@ fn present(args: &[String], flag: &str) -> bool {
 /// The known set is every `"--…"` literal in this file's own source, so it
 /// cannot drift from what the screen reads.
 fn unknown_flags(args: &[String]) -> Vec<String> {
-    const SOURCE: &str = include_str!("gene_screen.rs");
-    let known: std::collections::BTreeSet<&str> = SOURCE
+    const FILE: &str = include_str!("gene_screen.rs");
+    // The tests name flags this screen does not read; only the screen's own
+    // code counts.
+    let source = FILE
+        .split("\n#[cfg(test)]\nmod tests")
+        .next()
+        .unwrap_or(FILE);
+    let known: std::collections::BTreeSet<&str> = source
         .match_indices("\"--")
         .filter_map(|(at, _)| {
-            let rest = &SOURCE[at + 1..];
+            let rest = &source[at + 1..];
             let end = rest[2..]
                 .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
                 .map_or(rest.len(), |end| end + 2);
