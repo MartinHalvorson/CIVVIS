@@ -5086,6 +5086,17 @@ impl AdvancedAi {
         self.capital_keeps_its_defender_3 = false;
     }
 
+    /// Opt-in gene `walls-release-the-one-blow`; see
+    /// [`Self::walls_release_the_one_blow`].
+    pub fn enable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = true;
+    }
+
+    /// The twin of `enable_walls_release_the_one_blow`.
+    pub fn disable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
