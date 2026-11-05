@@ -122,5 +122,7 @@ its earlier changes, so whole-game comparisons of that flag cannot isolate
 this exception's individual strength. Actual construction timing, city
 survival and Science-win strength remain unmeasured.
 
-Current main integration and final-head validation are required before ready.
-No strength improvement is claimed.
+Current main was merged once without conflict. All three changed Rust files
+remain byte-for-byte identical to the qualified candidate. The Mac artifact
+and proposals precede that merge; final integrated CI validates the inherited
+main changes. No strength improvement is claimed.
