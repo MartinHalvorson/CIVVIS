@@ -6948,6 +6948,12 @@ pub struct Game {
     /// turn; `None` changes nothing.
     #[serde(default)]
     pub lump_quote_viewer: Option<usize>,
+    /// `nusantara-reads-the-coast`: the Indonesian seat whose district site
+    /// pickers price Great Nusantara's Coast adjacency
+    /// ([`Game::district_site_yields`]). Planning only: real yields never read
+    /// it. Set by the seat each turn; `None` changes nothing.
+    #[serde(default)]
+    pub nusantara_site_planner: Option<usize>,
     /// `builders-route-around-mountains`: a Builder never enters a mountain,
     /// whatever the Ski Resort unlock. The host's move pathing put none of
     /// ours on a mountain in 984 Builder-turns after Professional Sports over
@@ -8023,6 +8029,7 @@ impl From<GameSer> for Game {
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             observed_wall_tier_rules: false,
             lump_quote_viewer: None,
+            nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
@@ -8793,6 +8800,7 @@ impl Game {
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             observed_wall_tier_rules: false,
             lump_quote_viewer: None,
+            nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
