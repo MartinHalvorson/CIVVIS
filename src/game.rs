@@ -12153,8 +12153,6 @@ impl Game {
         researched.chain(adopted).map(|(_, value)| *value).sum()
     }
 
-    }
-
     fn city_has_established_governor(&self, pid: usize, cid: u32) -> bool {
         self.players[pid]
             .governor_roster
