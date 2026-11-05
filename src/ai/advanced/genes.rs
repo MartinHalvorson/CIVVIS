@@ -5071,7 +5071,9 @@ pub const GENES: &[Gene] = &[
     // Greece took three on t98-t100 of civvis-20261105T044106Z while each
     // stepped between open tiles. Under the gene, a Settler in the open near
     // an enemy major's soldier goes to the nearest city of ours, and one in a
-    // city stays. See `settler_shelters_from_the_war.rs`.
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
     Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

@@ -189,3 +189,40 @@ fn a_settler_on_its_foundable_site_is_left_to_found() {
         None
     );
 }
+
+/// civvis-20261105T074444Z t31: at peace, a rival soldier stood beside the
+/// Settler and took it on the turn its empire declared. A non-friend's
+/// soldier within two tiles sends the Settler home; a declared friend's
+/// does not.
+#[test]
+fn a_non_friends_soldier_beside_the_settler_at_peace_sends_it_home() {
+    let (base, home, rival) = board();
+    let here = open_tile(&base, home, rival, 3);
+
+    let mut stranger = base.clone();
+    let settler = stranger.spawn_test_unit("settler", 0, here);
+    stranger.spawn_test_unit(
+        "warrior",
+        1,
+        tile_at(&stranger, here, SURPRISE_SHELTER_RADIUS, home),
+    );
+    assert_eq!(
+        sheltering().settler_shelters_from_the_war_step(&mut stranger, 0, settler),
+        Some(true)
+    );
+
+    let mut friend = base.clone();
+    let settler = friend.spawn_test_unit("settler", 0, here);
+    friend.spawn_test_unit(
+        "warrior",
+        1,
+        tile_at(&friend, here, SURPRISE_SHELTER_RADIUS, home),
+    );
+    let until = friend.turn + 30;
+    friend.players[0].friends_until.insert(1, until);
+    friend.players[1].friends_until.insert(0, until);
+    assert_eq!(
+        sheltering().settler_shelters_from_the_war_step(&mut friend, 0, settler),
+        None
+    );
+}

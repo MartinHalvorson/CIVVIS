@@ -8641,8 +8641,8 @@ pub struct AdvancedAi {
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
     /// `settler-shelters-from-the-war`: a Settler in the open while an enemy
-    /// major's soldier is within six tiles goes to the nearest city of ours,
-    /// and one inside a city stays. See
+    /// major's soldier is within six tiles (a non-friend's within two at
+    /// peace) goes to the nearest city of ours, and one inside a city stays. See
     /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
     settler_shelters_from_the_war: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set

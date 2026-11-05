@@ -22,6 +22,14 @@
 //! - a Settler standing on its own target, which it can found this turn, is
 //!   left to found: a city is the shelter.
 //!
+//! The same holds at peace for a soldier of a major that is neither a
+//! declared friend nor an ally, within [`SURPRISE_SHELTER_RADIUS`]. Deity
+//! rivals walk a soldier next to a Settler and declare on the turn they take
+//! it. Of the declaration-turn captures, 3 of 5 had the captor within 2 tiles
+//! the turn before. In `civvis-20261105T074444Z` the first Settler was taken
+//! at t31 from beside a soldier that had stood adjacent at peace. That empire
+//! never founded a second city and was eliminated at t65.
+//!
 //! Its target is kept, so the walk resumes once the soldier is gone.
 //! Barbarians are left to the existing capture rules. With the gene off,
 //! nothing changes.
@@ -34,9 +42,16 @@ use super::*;
 /// capture is the step after the move.
 pub(super) const WAR_SHELTER_RADIUS: i32 = 6;
 
+/// Tiles inside which a soldier of a major at peace with us, but neither a
+/// declared friend nor an ally, sends the Settler to shelter: one step and a
+/// capture away.
+pub(super) const SURPRISE_SHELTER_RADIUS: i32 = 2;
+
 impl AdvancedAi {
-    /// The nearest visible soldier, within [`WAR_SHELTER_RADIUS`] of `at`, of
-    /// a living major at war with `pid`: `(owner, distance)`.
+    /// The nearest visible soldier of a living major that threatens a Settler
+    /// at `at`: within [`WAR_SHELTER_RADIUS`] for a major at war with `pid`,
+    /// within [`SURPRISE_SHELTER_RADIUS`] for one at peace that is neither a
+    /// declared friend nor an ally. `(owner, distance)`.
     pub(super) fn war_shelter_threat(&self, g: &Game, pid: usize, at: Pos) -> Option<(usize, i32)> {
         g.units
             .values()
@@ -45,13 +60,20 @@ impl AdvancedAi {
                     && g.players
                         .get(unit.owner)
                         .is_some_and(|owner| owner.alive && !owner.is_minor && !owner.is_barbarian)
-                    && g.is_at_war(pid, unit.owner)
                     && g.rules.units[unit.kind].class == "military"
                     && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                     && g.unit_visible_to(unit.id, pid)
             })
             .map(|unit| (unit.owner, g.wdist(unit.pos, at)))
-            .filter(|(_, distance)| *distance <= WAR_SHELTER_RADIUS)
+            .filter(|(owner, distance)| {
+                if g.is_at_war(pid, *owner) {
+                    *distance <= WAR_SHELTER_RADIUS
+                } else {
+                    *distance <= SURPRISE_SHELTER_RADIUS
+                        && !g.are_friends(pid, *owner)
+                        && g.alliance_with(pid, *owner).is_none()
+                }
+            })
             .min_by_key(|(owner, distance)| (*distance, *owner))
     }
 
@@ -78,9 +100,9 @@ impl AdvancedAi {
         {
             think!(self.journal(), Expansion, Detail,
                    "Settler shelters in {}", g.cities[&city].name;
-                   "settler-shelters-from-the-war: a soldier of player {enemy}, at war \
-                    with us, stands {distance} tiles away; the city is the one tile it \
-                    cannot be taken from"; current);
+                   "settler-shelters-from-the-war: a soldier of player {enemy} stands \
+                    {distance} tiles away; the city is the one tile it cannot be taken \
+                    from"; current);
             return Some(true);
         }
         let shelter = g
@@ -90,8 +112,8 @@ impl AdvancedAi {
             .min_by_key(|pos| (g.wdist(current, *pos), *pos))?;
         think!(self.journal(), Expansion, Detail,
                "Settler heads for shelter at {shelter:?}";
-               "settler-shelters-from-the-war: a soldier of player {enemy}, at war with \
-                us, stands {distance} tiles away; the nearest city of ours is {} tiles off",
+               "settler-shelters-from-the-war: a soldier of player {enemy} stands \
+                {distance} tiles away; the nearest city of ours is {} tiles off",
                g.wdist(current, shelter); shelter);
         if self.formationless_settler_escort() && self.settlement_safety {
             self.settler_step_out_of_reach(g, pid, uid, shelter);
