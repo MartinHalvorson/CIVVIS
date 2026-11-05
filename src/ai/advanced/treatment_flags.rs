@@ -2221,6 +2221,9 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-war-holds-the-claims`; see
         /// `advanced/threatened_war_holds_the_claims.rs`.
         threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
+        /// Opt-in gene `korea-mines-beside-the-seowon`; see
+        /// `advanced/korea_mines_beside_the_seowon.rs`.
+        korea_mines_beside_the_seowon => enable_korea_mines_beside_the_seowon, disable_korea_mines_beside_the_seowon;
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;

@@ -80,6 +80,10 @@ impl AdvancedAi {
                 yields.add(Self::improvement_tree_yields(g, owner, improvement));
             }
         }
+        // `korea-mines-beside-the-seowon`: Three Kingdoms' +1 Science per
+        // Mine and +1 Food per Farm beside a Seowon. Zero with the gene off.
+        // See `advanced/korea_mines_beside_the_seowon.rs`.
+        yields.add(self.three_kingdoms_improvement_yields(g, pos, improvement));
         let mut value = self.yield_value(yields, strategy);
         if strategy == GrandStrategy::Culture {
             // Tourism is cumulative: delaying a resort or national park by

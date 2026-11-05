@@ -258,3 +258,52 @@ fn the_seat_search_reads_the_holdability_filters() {
         .holdable_land_seat(&game, 0, from, 0, &everywhere)
         .is_err());
 }
+
+/// A district at most half built gives way to the floor's Settler, where the
+/// early floor would keep it; one past half built keeps its queue; and the
+/// empire's first Campus keeps its queue while no Campus stands.
+#[test]
+fn a_district_under_half_built_gives_way_and_one_past_half_keeps_its_queue() {
+    let (mut game, capital, _second) = two_idle_cities();
+    let home = game.cities[&capital].pos;
+    let pos = tile_at(&game, home, 1);
+    let hub = Item::District {
+        district: crate::name!("commercial_hub"),
+        pos,
+    };
+    let cost = game.item_cost_for_city(0, capital, &hub);
+    assert!(cost > 0.0, "fixture: a priced district");
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.queue = vec![hub.clone()];
+        city.production = 0.25 * cost;
+    }
+    assert!(
+        AdvancedAi::holdable_land_may_displace(&game, 0, capital),
+        "a quarter built gives way"
+    );
+    assert!(
+        !AdvancedAi::early_settler_may_displace(&game, 0, capital),
+        "the early floor keeps any invested district"
+    );
+    game.cities.get_mut(&capital).unwrap().production = 0.75 * cost;
+    assert!(
+        !AdvancedAi::holdable_land_may_displace(&game, 0, capital),
+        "three quarters built keeps its queue"
+    );
+
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos,
+    };
+    let campus_cost = game.item_cost_for_city(0, capital, &campus);
+    {
+        let city = game.cities.get_mut(&capital).unwrap();
+        city.queue = vec![campus];
+        city.production = 0.25 * campus_cost;
+    }
+    assert!(
+        !AdvancedAi::holdable_land_may_displace(&game, 0, capital),
+        "the empire's first Campus keeps its queue"
+    );
+}
