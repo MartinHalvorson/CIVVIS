@@ -8200,6 +8200,10 @@ pub struct AdvancedAi {
     /// `outclassed-siege-stands-down`: by city tile, the first and the last
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
+    /// `obsolete-army-spends-the-floor`: a mostly-obsolete army's peacetime
+    /// upgrade pass spends down to the wartime floor. See
+    /// `advanced/obsolete_army_spends_the_floor.rs`. Off by default.
+    obsolete_army_spends_the_floor: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10633,6 +10637,9 @@ mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
+/// `obsolete-army-spends-the-floor`: a mostly-obsolete army upgrades down to
+/// the wartime floor. See `advanced/obsolete_army_spends_the_floor.rs`.
+mod obsolete_army_spends_the_floor;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
@@ -12114,6 +12121,7 @@ impl AdvancedAi {
             near_done_work_finishes: false,
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
+            obsolete_army_spends_the_floor: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

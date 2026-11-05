@@ -226,7 +226,10 @@ impl AdvancedAi {
         let floor = if at_war || BasicAi::barbarian_military_gap(g, pid) {
             30.0
         } else {
-            120.0
+            // `obsolete-army-spends-the-floor`: a mostly-obsolete army upgrades
+            // down to the wartime floor. See
+            // `advanced/obsolete_army_spends_the_floor.rs`.
+            self.obsolete_army_upgrade_floor(g, pid, 120.0)
         };
         let floor = self.upgrade_treasury_floor(g, pid, floor);
         self.modernize_army_preserving_air_wing(g, pid, floor, 0.0);

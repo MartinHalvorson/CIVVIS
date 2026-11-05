@@ -5043,6 +5043,14 @@ pub const GENES: &[Gene] = &[
     // ratio) visible soldier within SURPRISE_TILES of an early city does.
     // See `objective_board.rs` (`surprise_strength_near`).
     Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // Live Deity Online 11-05: at turn 145 a median 8 of our 17 military
+    // units were Ancient-era (56%), with ~246 Gold banked; an affordable
+    // upgrade inside our borders existed on only 22% of turns because the
+    // peacetime pass keeps 120 back against a ~200-Gold upgrade. Late wars
+    // (retire rules off) killed obsolete armies wholesale. A mostly-obsolete
+    // army upgrades down to the wartime floor. See
+    // `advanced/obsolete_army_spends_the_floor.rs`.
+    Gene { tag: "obsolete-army-spends-the-floor", field: "obsolete_army_spends_the_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_obsolete_army_spends_the_floor, disable: AdvancedAi::disable_obsolete_army_spends_the_floor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

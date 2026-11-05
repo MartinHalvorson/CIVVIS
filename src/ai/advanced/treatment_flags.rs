@@ -5081,6 +5081,17 @@ impl AdvancedAi {
         self.capital_keeps_its_defender_3 = false;
     }
 
+    /// Opt-in gene `obsolete-army-spends-the-floor`; see
+    /// [`Self::obsolete_army_spends_the_floor`].
+    pub fn enable_obsolete_army_spends_the_floor(&mut self) {
+        self.obsolete_army_spends_the_floor = true;
+    }
+
+    /// The twin of `enable_obsolete_army_spends_the_floor`.
+    pub fn disable_obsolete_army_spends_the_floor(&mut self) {
+        self.obsolete_army_spends_the_floor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
