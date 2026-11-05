@@ -5392,9 +5392,18 @@ fn blocked_promotions_from(
         // `available_promotions` compares CIVVIS names. Interning the raw host name
         // produced a block set that was correctly populated and matched nothing —
         // the gate measured 153 promotion orders before and 153 after.
+        // A Spy's carries a second prefix, `PROMOTION_SPY_TECHNOLOGIST`, which
+        // the plain strip leaves as `spy_technologist`: no rule of that name,
+        // so a refused Spy promotion was never blocked. The unit-promotion
+        // mapper strips it, as it does for the observed promotions.
         let translated: std::collections::BTreeSet<crate::name::Name> = names
             .iter()
-            .filter_map(|name| civvis_node_name(&rules.promotions, name, "PROMOTION_"))
+            .filter_map(|name| {
+                civvis_node_name(&rules.promotions, name, "PROMOTION_").or_else(|| {
+                    let mapped = civvis_unit_promotion_name(name);
+                    rules.promotions.contains_key(&mapped).then_some(mapped)
+                })
+            })
             .map(|name| crate::name::Name::new(&name))
             .collect();
         if !translated.is_empty() {
@@ -5772,7 +5781,8 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
         || unit.spy_operation.is_some()
         || unit.spy_operation_end_turn.is_some()
         || unit.spy_missions_available.is_some()
-        || unit.spy_mission_targets.is_some();
+        || unit.spy_mission_targets.is_some()
+        || (unit.kind == "UNIT_SPY" && unit.offered_promotions.is_some());
     if !exported {
         Arc::make_mut(&mut game.host_unit_facts).insert(
             uid,
@@ -5843,6 +5853,18 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .collect::<BTreeMap<String, crate::game::HostSpyTarget>>()
         })
         .filter(|targets| !targets.is_empty());
+    // A Spy's promotion menu, as the host offers it, in CIVVIS names; a name
+    // outside the Spy tree is no choice of its.
+    let spy_promotions = (unit.kind == "UNIT_SPY")
+        .then_some(unit.offered_promotions.as_ref())
+        .flatten()
+        .map(|menu| {
+            menu.iter()
+                .map(|name| civvis_unit_promotion_name(name))
+                .filter(|name| crate::game::Game::SPY_PROMOTIONS.contains(&name.as_str()))
+                .map(|name| Name::new(&name))
+                .collect::<BTreeSet<Name>>()
+        });
     Arc::make_mut(&mut game.host_unit_facts).insert(
         uid,
         crate::game::HostUnitFacts {
@@ -5865,6 +5887,7 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                 .map(|turn| turn as u32),
             spy_missions,
             spy_targets,
+            spy_promotions,
         },
     );
 }
@@ -5945,9 +5968,33 @@ fn seat_live_spies(game: &mut crate::game::Game, state: &StateSnapshot) {
                 (Some(_), None) => (None, ends),
                 (None, _) => (None, 0),
             };
+            // ★★★ AND THE HOST'S PROMOTION MENU, WHEN IT CROSSED. `level − 1`
+            // (below) owes a fresh Spy nothing, but a Spy that levels on the
+            // host keeps reading level 1 until its promotion is chosen, so
+            // that rule never owed one either: 99 of 99 live Spies on
+            // 2026-11-05 ended level 1 with no promotion, 81 of them holding
+            // the 15 XP of a pending choice (the XP stops there until it is
+            // made). A Spy whose menu still offers a choice it holds not and
+            // the host has not refused owes exactly one, chosen from that
+            // menu (`available_spy_promotions`); an empty menu, or none at
+            // all, leaves `level − 1`.
+            let held = unit.promotions.len() as i64;
+            let blocked = game.blocked_promotions.get(&unit.id);
+            let owed = facts
+                .and_then(|facts| facts.spy_promotions.as_ref())
+                .is_some_and(|menu| {
+                    menu.iter().any(|name| {
+                        !unit.promotions.contains(name)
+                            && !blocked.is_some_and(|refused| refused.contains(name))
+                    })
+                });
             LiveSpySeat {
                 id: unit.id,
-                level: (unit.level - 1).max(0) as i64,
+                level: if owed {
+                    held + 1
+                } else {
+                    (unit.level - 1).max(0) as i64
+                },
                 promotions: unit
                     .promotions
                     .iter()

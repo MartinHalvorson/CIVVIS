@@ -3449,6 +3449,14 @@ pub struct HostUnitFacts {
     /// keyed by CIVVIS mission kind. `Some` only with entries.
     #[serde(default)]
     pub spy_targets: Option<BTreeMap<String, HostSpyTarget>>,
+    /// A Spy's promotion menu as the host offers it: the stock promotion
+    /// popup's `CanStartCommand(unit, PROMOTE, true, true)` list
+    /// (`UnitPromotionPopup.lua:81-82`), as CIVVIS promotion names. `Some`
+    /// and empty is an observed lack of choices; `None` is no reading. A
+    /// levelled Spy reads host level 1 until its choice is made, so this menu
+    /// is the only witness that a promotion is owed.
+    #[serde(default)]
+    pub spy_promotions: Option<BTreeSet<Name>>,
 }
 
 /// One host-offered Spy mission: the plot it aims at and the host's odds
