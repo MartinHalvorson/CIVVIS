@@ -107,6 +107,7 @@ impl AdvancedAi {
     }
     /// Enable this independently screenable governor relocation.
     pub fn enable_pingala_follows_research(&mut self) {
+        self.pingala_follows_research_2 = false;
         self.pingala_follows_research = true;
     }
     /// Withhold this governor relocation.
@@ -343,7 +344,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Option<Name>)> {
-        if !self.pingala_follows_research || plan.strategy != GrandStrategy::Science {
+        if !self.pingala_follows_research_2 || plan.strategy != GrandStrategy::Science {
             return None;
         }
         let state = g.players[pid].governor_roster.get("pingala")?;
@@ -501,6 +502,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) {
         let enabled = self.pingala_follows_research
+            || self.pingala_follows_research_2
             || self.magnus_follows_settlers
             || self.liang_follows_builders
             || self.reyna_follows_revenue
@@ -555,7 +557,10 @@ impl AdvancedAi {
             return;
         }
         for (governor, enabled) in [
-            ("pingala", self.pingala_follows_research),
+            (
+                "pingala",
+                self.pingala_follows_research || self.pingala_follows_research_2,
+            ),
             ("magnus", self.magnus_follows_settlers),
             ("liang", self.liang_follows_builders),
             ("reyna", self.reyna_follows_revenue),

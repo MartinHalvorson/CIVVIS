@@ -8456,6 +8456,8 @@ pub struct AdvancedAi {
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     pingala_follows_research: bool,
+    /// Independently measured Pingala launch-job version; preserves version one.
+    pingala_follows_research_2: bool,
     /// Native governor establishment is a lower bound, not total tenure.
     /// Keep observed post clocks across fresh boards; city coordinates survive
     /// the bridge's city-id remapping. See `governor_dividends`.
@@ -12282,6 +12284,7 @@ impl AdvancedAi {
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
+            pingala_follows_research_2: false,
             remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,

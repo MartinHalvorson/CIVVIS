@@ -58,6 +58,9 @@ fn queue_job(g: &mut Game, cid: u32, kind: &str, turns: f64) {
 fn registered_and_off_in_both_controllers() {
     use super::super::test_support::opt_in_off_in_both_controllers as check;
     check("pingala-follows-research", |a| a.pingala_follows_research);
+    check("pingala-follows-research-2", |a| {
+        a.pingala_follows_research_2
+    });
     check("magnus-follows-settlers", |a| a.magnus_follows_settlers);
     check("liang-follows-builders", |a| a.liang_follows_builders);
     check("reyna-follows-revenue", |a| a.reyna_follows_revenue);
@@ -441,7 +444,7 @@ fn launch_board() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
         "pingala",
         &["researcher", "connoisseur", "space_initiative", "curator"],
     );
-    ai.enable_pingala_follows_research();
+    ai.enable_pingala_follows_research_2();
     g.players[0].governor_roster.insert(
         "magnus".into(),
         crate::game::GovernorState {
@@ -480,10 +483,10 @@ fn launch_post_swap_keeps_both_governors_and_delivers_project_bonus_after_establ
     let item = g.cities[&new].queue[0].clone();
     let before = g.item_prod_mult(0, new, Some(&item));
     let snapshot = g.clone();
-    ai.disable_pingala_follows_research();
+    ai.disable_pingala_follows_research_2();
     ai.relocate_governors_for_dividends(&mut g, 0, &plan);
     assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
-    ai.enable_pingala_follows_research();
+    ai.enable_pingala_follows_research_2();
     assert_eq!(
         ai.pingala_launch_posts(&g, 0, &plan),
         Some((new, Some(Name::new("magnus"))))
@@ -641,4 +644,29 @@ fn launch_post_does_not_repeat_a_native_swap_on_a_lagged_replan() {
     ai.relocate_governors_for_dividends(&mut lagged, 0, &plan);
     assert_eq!(lagged.players[0].governor_roster["pingala"].city, Some(old));
     assert_eq!(lagged.players[0].governor_roster["magnus"].city, Some(new));
+}
+
+#[test]
+fn pingala_versions_are_exclusive_and_original_keeps_the_launch_freeze() {
+    let (mut g, mut ai, plan, old, new) = launch_board();
+    assert!(ai.pingala_follows_research_2 && !ai.pingala_follows_research);
+    ai.enable_pingala_follows_research();
+    assert!(ai.pingala_follows_research && !ai.pingala_follows_research_2);
+    assert!(ai.pingala_launch_posts(&g, 0, &plan).is_none());
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
+    assert_eq!(g.players[0].governor_roster["magnus"].city, Some(new));
+    ai.enable_pingala_follows_research_2();
+    assert!(!ai.pingala_follows_research && ai.pingala_follows_research_2);
+    ai.disable_pingala_follows_research_2();
+    assert!(!ai.pingala_follows_research && !ai.pingala_follows_research_2);
+}
+
+#[test]
+fn pingala_version_two_retains_the_ordinary_research_relocation() {
+    let (mut g, mut ai, plan, old, new) = board("pingala", &["researcher", "connoisseur"]);
+    ai.enable_pingala_follows_research_2();
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_ne!(old, new);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(new));
 }

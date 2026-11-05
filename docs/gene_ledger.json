@@ -5032,6 +5032,17 @@
           "pass-picket-2": null
         }
       },
+      "pingala-follows-research": {
+        "rule_on": [
+          "pingala-follows-research"
+        ],
+        "head": null,
+        "ships": "pingala-follows-research",
+        "versions": {
+          "pingala-follows-research": null,
+          "pingala-follows-research-2": null
+        }
+      },
       "policy-deck-hysteresis": {
         "rule_on": [
           "policy-deck-hysteresis"
