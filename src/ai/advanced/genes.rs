@@ -5144,6 +5144,13 @@ pub const GENES: &[Gene] = &[
     // Native 002152 legacy t133: five Universities, no Chemistry, while the
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
     // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
     // Swordsman wore down and killed a Settler's Warrior escort and took the
     // Settler while two of our Archers stood within range and never fired:
