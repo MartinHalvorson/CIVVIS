@@ -270,7 +270,8 @@ impl AdvancedAi {
         } else {
             plan.strategy
         };
-        if g.players[pid].research.is_none() {
+        let revealed_launch_switch = self.revealed_launch_research_switch(g, pid);
+        if g.players[pid].research.is_none() || revealed_launch_switch.is_some() {
             // Every candidate's value reads the empire's science rate, and a
             // comparator asks for two values per comparison: under one memo
             // each city's yields are derived once for the whole choice.
@@ -282,6 +283,7 @@ impl AdvancedAi {
             let science_lane_active = self.victory_target == Some(VictoryTarget::Science)
                 || self.phase_specialization_active(g)
                 || self.science_drive_active();
+            let foundation_goal = self.science_foundation_research_goal(g, pid, plan);
             let first_launch_goal = self.first_launch_research_goal(g, pid);
             let science_victory_goal = first_launch_goal.or_else(|| {
                 if science_lane_active {
@@ -525,6 +527,15 @@ impl AdvancedAi {
                         .copied()
                         .flatten()
                         .map(|pick| self.siege_tier_pick(&pick))
+                }
+                // Open labs and the first pad before advanced backlog or air
+                // research, retaining emergencies, fuel and named production.
+                _ if foundation_goal.is_some()
+                    && barbarian_military_goal.is_none()
+                    && standing_army_fuel_goal.is_none()
+                    && production_technology_goal.is_none() =>
+                {
+                    foundation_goal
                 }
                 // `old-techs-before-the-beeline`: behind the siege tier and
                 // ahead of the air surge and every lane beeline, the
@@ -781,6 +792,13 @@ impl AdvancedAi {
                     }
                 }
             }
+            if let Some(goal) = foundation_goal.filter(|goal| forced_goal == Some(*goal)) {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
+                        available.push(tech);
+                    }
+                }
+            }
             let production_step_pick = production_technology_goal
                 .filter(|goal| forced_goal == Some(goal.as_str()))
                 .and_then(|goal| self.named_production_technology_step(g, pid, goal));
@@ -854,6 +872,13 @@ impl AdvancedAi {
                         .unwrap_or(ordinary)
                 })
             };
+            // Reconsider an in-flight path only for the observed milestone,
+            // and only when the ordinary priority ladder also gives it the slot.
+            let pick = pick.filter(|tech| {
+                g.players[pid].research.is_none()
+                    || (revealed_launch_switch == Some(tech.as_str())
+                        && forced_goal == Some(tech.as_str()))
+            });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     // `beeline-orders-by-value` takes the best-valued step,
@@ -865,7 +890,9 @@ impl AdvancedAi {
                     };
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            if opening_archery_goal.as_deref() == Some(goal) {
+                            if foundation_goal == Some(goal) {
+                                format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
+                            } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
                                 if let Some((city, rival, ratio)) =

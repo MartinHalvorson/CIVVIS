@@ -5537,6 +5537,10 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `bankruptcy-exits-the-drain-2`: the drain at five turns of runway, sparing
+    /// units within six tiles of an enemy soldier. Carries version one. See
+    /// `advanced/solvency.rs`. Off by default.
+    bankruptcy_exits_the_drain_2: bool,
     /// `builder-prices-travel-in-turns`: while a Builder has a charge to
     /// spare, a job scores its value per Builder-turn (the working turn plus
     /// the whole turns of walking) instead of `value - 0.7 × wdist`. See
@@ -5567,7 +5571,15 @@ pub struct AdvancedAi {
     /// wants it (`backlog_builder_holds`), as it already spares the housing
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
+    /// `anvil-spares-the-one-blow`: the Anvil never leaves the City Center
+    /// empty while it has a land soldier, and never posts one off the city
+    /// where one blow at the top of its roll removes it. See
+    /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
+    anvil_spares_the_one_blow: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
+    /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
+    disrupt_waits_for_the_match_point: bool,
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
     /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
@@ -6597,6 +6609,10 @@ pub struct AdvancedAi {
     /// Defend row, the parked strength enters its need and its risk. Off by
     /// default.
     capital_keeps_its_defender_3: bool,
+    /// `captives-come-home`: the live bridge buys our captured Spies back
+    /// when the network needs their slots. See
+    /// `advanced/captives_come_home.rs`. Off by default.
+    captives_come_home: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -7618,7 +7634,27 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `korea-mines-beside-the-seowon`: Korea's Builders price a Mine +1
+    /// Science and a Farm +1 Food per adjacent own Seowon (Three Kingdoms).
+    /// See `advanced/korea_mines_beside_the_seowon.rs`. Off by default.
+    korea_mines_beside_the_seowon: bool,
+    /// `hint-runs-the-claims`: the live production hint runs the idle-queue
+    /// claim chain before the strategic governor, as the main path does. See
+    /// `advanced/hint_runs_the_claims.rs`. Off by default.
+    hint_runs_the_claims: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
+    /// while a major at 1.5x our power is at war with us and a home city is
+    /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
+    /// default.
+    outmatched_war_prices_the_army: bool,
+    /// `luxury-asks-pay-in-strategics-2`: version two, skipping a partner our
+    /// barter could not reach and Horses while another strategic is spare.
+    /// See `advanced/luxury_asks_pay_in_strategics.rs`.
+    luxury_asks_pay_in_strategics_2: bool,
+    /// `luxury-asks-pay-in-strategics-2`: `(turn, partner, items put up)`
+    /// of each `barter_short` answer, set by the live bridge each turn.
+    luxury_barter_shorts: Vec<(u32, i64, Vec<String>)>,
     /// `medina-yields-to-the-amenities`: the housing card is not wanted while
     /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
     medina_yields_to_the_amenities: bool,
@@ -8212,6 +8248,8 @@ pub struct AdvancedAi {
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
+    /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
+    revealed_launch_tech_takes_the_slot: bool,
     /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
     /// hold before it buys, never buys an obsolete unit, and stops buying when
     /// parity is out of reach. See `advanced/parity_upgrades_before_it_buys.rs`.
@@ -8446,6 +8484,10 @@ pub struct AdvancedAi {
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     pingala_follows_research: bool,
+    /// Native governor establishment is a lower bound, not total tenure.
+    /// Keep observed post clocks across fresh boards; city coordinates survive
+    /// the bridge's city-id remapping. See `governor_dividends`.
+    remembered_governor_posts: BTreeMap<String, governor_dividends::ObservedGovernorPost>,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -8659,6 +8701,12 @@ pub struct AdvancedAi {
     /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
     /// set each turn in `take_turn_inner`. Off by default.
     plaza_serves_the_scientist: bool,
+    /// `ranged-kills-are-free`: a recovering, guarding or doomed shooter's
+    /// ranged blow from its own tile joins the kill plan as kill-only — only
+    /// in a sequence that fells its target at the centre of the roll, and
+    /// without the stand's danger charged to it. See
+    /// `advanced/battle_planner.rs`. Off by default.
+    ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
@@ -8670,9 +8718,15 @@ pub struct AdvancedAi {
     /// peace) goes to the nearest city of ours, and one inside a city stays. See
     /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
     settler_shelters_from_the_war: bool,
+    /// `settler-shelters-from-the-war-2`: version two, which shelters only
+    /// from a major at war with us (no peace clause). Carries version one. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war_2: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
+    /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
+    science_foundation_before_backlog: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -9380,11 +9434,20 @@ pub struct AdvancedAi {
     /// default.
     science_writes_before_it_sails: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-war-holds-the-claims`: while a war with a major threatens
+    /// a home city, the economy's idle-queue claims stand aside. See
+    /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
+    threatened_war_holds_the_claims: bool,
     /// `war-defense-spends-the-runway`: while a major at war with us fields
     /// 1.5x our military power and the treasury covers the deficit for 15
     /// turns, the insolvency guard leaves the city queues to the war. See
     /// `advanced/war_defense_spends_the_runway.rs`. Off by default.
     war_defense_spends_the_runway: bool,
+    /// `threatened-lane-lends-the-army`: a seat whose victory target is not
+    /// Domination lends its delegated governor the war army target while at
+    /// war with a major and a home city is threatened. See
+    /// `advanced/threatened_lane_lends_the_army.rs`. Off by default.
+    threatened_lane_lends_the_army: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -10227,6 +10290,8 @@ mod medina_quarter;
 
 /// `disrupt-before-the-sources`: see `advanced/disrupt_before_the_sources.rs`.
 mod disrupt_before_the_sources;
+/// `disrupt-waits-for-the-match-point`: see `advanced/disrupt_waits_for_the_match_point.rs`.
+mod disrupt_waits_for_the_match_point;
 
 /// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
 mod unchosen_war_peace;
@@ -10394,6 +10459,9 @@ mod one_war;
 /// stands down. Opt-in gene `outclassed-siege-stands-down`; see
 /// `advanced/outclassed_siege.rs`.
 mod outclassed_siege;
+/// `outmatched-war-prices-the-army`: see
+/// `advanced/outmatched_war_prices_the_army.rs`.
+mod outmatched_war_prices_the_army;
 /// Our own column is not the host's refusal: the live bridge reports which
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
@@ -10633,6 +10701,10 @@ mod amphibious_siege_train;
 /// `anvil-garrisons-its-melee`: an unwalled city's Anvil garrisons its
 /// strongest melee soldier. See `advanced/anvil_garrisons_its_melee.rs`.
 mod anvil_garrisons_its_melee;
+/// `anvil-spares-the-one-blow`: the Anvil keeps the city tile and spares its
+/// soldiers posts where one blow removes them. See
+/// `advanced/anvil_spares_the_one_blow.rs`.
+mod anvil_spares_the_one_blow;
 mod aqueduct_claims_the_capped_queue;
 /// `astrology-before-the-second-city`: the Prophet race's Astrology before
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
@@ -10645,6 +10717,9 @@ mod campus_building_claims_the_queue;
 /// `campus-claims-the-free-slot`: a city's free district slot claims its
 /// first Campus. See `advanced/campus_claims_the_free_slot.rs`.
 mod campus_claims_the_free_slot;
+/// `captives-come-home`: the live bridge buys our captured Spies back. See
+/// `advanced/captives_come_home.rs`.
+mod captives_come_home;
 /// `civic-awaits-its-inspiration`: the civic chooser waits for a near
 /// inspiration. See `advanced/civic_inspiration_wait.rs`.
 mod civic_inspiration_wait;
@@ -10703,6 +10778,7 @@ mod nuclear_launcher;
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
 mod peacetime_republic;
+mod revealed_launch_research;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
@@ -10710,6 +10786,7 @@ mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_foundation_research;
 mod science_power_fuel;
 mod science_suppression_pads;
 mod science_threat_denial;
@@ -10788,6 +10865,11 @@ mod camp_buyout;
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
 mod camps_close_the_age;
 
+/// `hint-runs-the-claims`: the idle-queue claim chain, shared by the main
+/// production path and the live production hint. One opt-in gene; see
+/// `advanced/hint_runs_the_claims.rs`.
+mod hint_runs_the_claims;
+
 /// `early-cities-keep-their-distance`: the second and third cities are sited
 /// away from charted rival cities. One opt-in gene; see
 /// `advanced/early_city_distance.rs`.
@@ -10837,11 +10919,19 @@ mod stalled_settler_site;
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
 mod threatened_city_purchase;
+/// `threatened-lane-lends-the-army`: see
+/// `advanced/threatened_lane_lends_the_army.rs`.
+mod threatened_lane_lends_the_army;
+/// `threatened-war-holds-the-claims`: see
+/// `advanced/threatened_war_holds_the_claims.rs`.
+mod threatened_war_holds_the_claims;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
+/// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
+mod korea_mines_beside_the_seowon;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -11741,13 +11831,16 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
+            bankruptcy_exits_the_drain_2: false,
             builder_prices_travel_in_turns: false,
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
+            anvil_spares_the_one_blow: false,
             // ---- append: c-d ----------------------------------------
+            disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,
@@ -11951,6 +12044,7 @@ impl AdvancedAi {
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
+            captives_come_home: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -12111,7 +12205,12 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            korea_mines_beside_the_seowon: false,
+            hint_runs_the_claims: false,
             // ---- append: l-o ----------------------------------------
+            outmatched_war_prices_the_army: false,
+            luxury_asks_pay_in_strategics_2: false,
+            luxury_barter_shorts: Vec::new(),
             medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
@@ -12190,6 +12289,7 @@ impl AdvancedAi {
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
+            revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -12239,6 +12339,7 @@ impl AdvancedAi {
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
+            remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
             research_building_catchup_3: false,
@@ -12270,10 +12371,13 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             plaza_serves_the_scientist: false,
+            ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
+            settler_shelters_from_the_war_2: false,
             spy_loss_turns: Vec::new(),
+            science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             science_writing_before_the_luxury: false,
@@ -12407,7 +12511,9 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             science_writes_before_it_sails: false,
             // ---- append: t-z ----------------------------------------
+            threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
+            threatened_lane_lends_the_army: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -15390,9 +15496,6 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<f64> {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
-            return None;
-        }
         let at_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -15400,6 +15503,14 @@ impl AdvancedAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
+        // `threatened-lane-lends-the-army`: every other lane borrows the same
+        // target while a home city is threatened. See
+        // `advanced/threatened_lane_lends_the_army.rs`.
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            && !self.threatened_lane_lends_the_army_applies(g, pid, plan, at_war)
+        {
+            return None;
+        }
         if !at_war
             && !matches!(
                 plan.strategy,
@@ -22599,7 +22710,20 @@ impl AdvancedAi {
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
+        // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
+        // first, as they do on the main path. See
+        // `advanced/hint_runs_the_claims.rs`.
+        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        if claims_and_writers {
+            preview.run_idle_queue_claims(&mut board, pid, &plan);
+        }
         preview.advanced_production(&mut board, pid, &plan, false);
+        // `hint-runs-the-claims`: the defensive writers that follow the
+        // governors on the main path, in the same order, so the hint is never
+        // "claims without the Walls". See `advanced/hint_runs_the_claims.rs`.
+        if claims_and_writers {
+            preview.run_hint_defence_writers(&mut board, pid, &plan);
+        }
         board.cities.get(&city)?.queue.first().cloned()
     }
 
@@ -24199,6 +24323,17 @@ impl AdvancedAi {
                         + early_contact
                         + early_archer
                         + conquest_body
+                        // `outmatched-war-prices-the-army`: a missing land
+                        // unit outweighs the economy while a much stronger
+                        // major threatens a home city. Zero with the gene
+                        // off. See `advanced/outmatched_war_prices_the_army.rs`.
+                        + self.outmatched_war_unit_premium(
+                            g,
+                            pid,
+                            plan,
+                            !naval && !aircraft,
+                            force_gap,
+                        )
                         + if missing_siege {
                             siege_production::FIRST_WEAPON_RESERVATION
                         } else {
@@ -29912,106 +30047,11 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
-            // `forward-airfield-project`: a project already in flight takes
-            // its producer's idle queue for the next stage before the routine
-            // claims below refill it. Exact no-op while the gene is off or no
-            // project is in flight. See `claim_forward_airfield_stage_in_flight`.
-            self.claim_forward_airfield_stage_in_flight(g, pid, &plan);
-            // `early-settler-floor`: a Settler for the opening's band floor
-            // goes first, ahead of the Prophet race and the routine claims
-            // below. Exact no-op while the gene is off. See
-            // `advanced/early_settler_floor.rs`.
-            self.claim_early_settler_floor(g, pid, &plan);
-            // `holdable-land-keeps-settling`: past the opening floor, a
-            // Settler for a holdable seat, ahead of the routine claims below.
-            // Exact no-op while the gene is off. See
-            // `advanced/holdable_land_keeps_settling.rs`.
-            self.claim_holdable_land_settler(g, pid, &plan);
-            // `capital-monument-after-the-second-city`: the capital's Monument,
-            // once the second city stands, after the floor's Settler and ahead
-            // of the routine claims. Exact no-op while the gene is off. See
-            // `advanced/capital_monument.rs`.
-            self.claim_capital_monument(g, pid, &plan);
-            // `granary-claims-the-bound-queue`: a housing-bound city's Granary
-            // ahead of the deterrent and the routine claims below; a due
-            // Settler and the faith defence above keep their order. See
-            // `advanced/granary_claims_the_bound_queue.rs`.
-            self.claim_bound_granaries(g, pid, &plan);
-            // `near-rival-deterrence`: a land unit while a neighbour at peace
-            // out-guns us, after the floor's Settler and ahead of the Prophet
-            // race and the routine claims. Exact no-op while the gene is off.
-            // See `advanced/near_rival_deterrence.rs`.
-            self.claim_deterrence_unit(g, pid, &plan);
-            // `trader-fills-the-idle-route`: an empty trade route slot's
-            // Trader, after the floor's Settler, the Granary and the deterrent
-            // and ahead of the Prophet race and the routine claims. Exact
-            // no-op while the gene is off. See
-            // `advanced/trader_fills_the_idle_route.rs`.
-            self.claim_trader_for_idle_route(g, pid, &plan);
-            // `backlog-builder-takes-the-queue`: the worked backlog's Builder,
-            // after the Trader and ahead of the Prophet race and the routine
-            // claims. Exact no-op while the gene is off. See
-            // `advanced/backlog_builder_takes_the_queue.rs`.
-            self.claim_backlog_builder(g, pid, &plan);
-            // `aqueduct-claims-the-capped-queue`: the most capped city's legal
-            // Aqueduct, after the backlog Builder and ahead of the Prophet race
-            // and the routine claims. Exact no-op while the gene is off. See
-            // `advanced/aqueduct_claims_the_capped_queue.rs`.
-            self.claim_capped_aqueduct(g, pid, &plan);
-            // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
-            // most capped city's Neighborhood. Exact no-op while the gene is
-            // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
-            self.claim_capped_neighborhood(g, pid, &plan);
-            // `industrial-zone-claims-the-producer-queue`: the producer step's
-            // Industrial Zone or Workshop, after the Aqueduct and ahead of the
-            // Prophet race and the routine claims. Exact no-op while the gene
-            // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
-            self.claim_producer_zone(g, pid, &plan);
-            // `industrial-zone-claims-the-factory`: the Factory that reaches
-            // the most new cities, or the plant that powers the most Factories,
-            // after the Industrial Zone and ahead of the Campus building claim.
-            // Exact no-op while the gene is off. See
-            // `advanced/industrial_zone_claims_the_factory.rs`.
-            self.claim_factory(g, pid, &plan);
-            // `campus-building-claims-the-queue`: a standing Campus's next
-            // building, after the Industrial Zone and ahead of the Prophet race
-            // and the routine claims. Exact no-op while the gene is off. See
-            // `advanced/campus_building_claims_the_queue.rs`.
-            self.claim_campus_building(g, pid, &plan);
-            // `campus-claims-the-free-slot`: a free district slot's first
-            // Campus, after the Campus building claim and ahead of the Prophet
-            // race and the routine claims. Exact no-op while the gene is off.
-            // See `advanced/campus_claims_the_free_slot.rs`.
-            self.claim_free_slot_campus(g, pid, &plan);
-            // `culture-seat-theater-first`: a Culture seat's first Theater
-            // Squares, after the Campus claims (which yield those cities) and
-            // ahead of the Prophet race and the routine claims. Exact no-op
-            // while the gene is off. See `advanced/culture_theater_first.rs`.
-            self.claim_culture_theaters(g, pid, &plan);
-            // `culture-seat-monuments`: a Culture seat's Monuments, after the
-            // Theater claim (whose heads they leave alone). Exact no-op while
-            // the gene is off. See `advanced/culture_monuments.rs`.
-            self.claim_culture_monuments(g, pid, &plan);
-            // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
-            // Diplomacy seat. Exact no-op while the gene is off. See
-            // `advanced/diplo_statue_harbor.rs`.
-            self.claim_statue_harbor(g, pid, &plan);
-            // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
-            // strongest city of a Diplomatic seat, after the Culture claims
-            // and ahead of the Prophet race and the routine claims. Exact
-            // no-op while the gene is off. See `advanced/diplo_wonder_claim.rs`.
-            self.claim_diplo_wonder(g, pid, &plan);
-            // `prophet-builds-its-site`: the Holy Site a Prophet founds on
-            // goes first. Exact no-op while the gene is off.
-            self.reserve_prophet_site(g, pid, &plan);
-            // `prophet-race-earns-its-points`: the race's Holy Site city
-            // starts its Shrine. Exact no-op while the gene is off.
-            self.reserve_race_shrine(g, pid, &plan);
-            // `pillaged-districts-repair-first`: a pillaged district's repair,
-            // after every claim above so none of them takes the queue back.
-            // Exact no-op while the gene is off. See
-            // `advanced/pillaged_repairs_first.rs`.
-            self.claim_pillaged_repairs(g, pid);
+            // The idle-queue claims, in their fixed order. Moved verbatim into
+            // `advanced/hint_runs_the_claims.rs` so the live production hint
+            // can run the same chain (`hint-runs-the-claims`). It returns
+            // `threatened-war-holds-the-claims`' hold for the claims below.
+            let war_holds = self.run_idle_queue_claims(g, pid, &plan);
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
@@ -30038,7 +30078,9 @@ impl AdvancedAi {
             // one idle queue ahead of the routine claims below, or is bought.
             // Exact no-op while the gene is off. See
             // `advanced/worked_backlog_claim.rs`.
-            self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            if !war_holds {
+                self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            }
             // `science-denial-trains-spies`: against a decisive space racer,
             // the top-Production cities train the Spies its pads need, ahead
             // of the routine claims below (the defence redirects at the end of
@@ -30057,15 +30099,23 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
-            self.reserve_culture_defense_theater(g, pid, &plan);
+            if !war_holds {
+                self.reserve_culture_defense_theater(g, pid, &plan);
+            }
             // `plaza-in-the-district-list`: the Plaza and its tier buildings
             // take one idle queue before the development shortfall's.
             // `capital-campus-before-the-plaza`: the capital's first Campus,
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
-            self.claim_capital_campus(g, pid, &plan);
-            self.reserve_government_plaza(g, pid, &plan);
-            self.reserve_higher_level_investment(g, pid, &plan);
+            if !war_holds {
+                self.claim_capital_campus(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_government_plaza(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_higher_level_investment(g, pid, &plan);
+            }
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // One bounded forward-field project takes an idle queue only
             // after the emergency, victory and economy reservations above.

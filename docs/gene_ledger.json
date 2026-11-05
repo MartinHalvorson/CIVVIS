@@ -4344,6 +4344,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "bankruptcy-exits-the-drain": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "bankruptcy-exits-the-drain": null,
+          "bankruptcy-exits-the-drain-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner"
@@ -4948,6 +4957,15 @@
           "lane-delegates-production-2": null
         }
       },
+      "luxury-asks-pay-in-strategics": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-asks-pay-in-strategics": null,
+          "luxury-asks-pay-in-strategics-2": null
+        }
+      },
       "luxury-swap-asks": {
         "rule_on": [],
         "head": null,
@@ -5144,6 +5162,15 @@
         "versions": {
           "settler-guard-holds": 0.080401,
           "settler-guard-holds-2": null
+        }
+      },
+      "settler-shelters-from-the-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "settler-shelters-from-the-war": null,
+          "settler-shelters-from-the-war-2": null
         }
       },
       "settler-target-hysteresis": {

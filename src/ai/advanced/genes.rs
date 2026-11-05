@@ -4208,6 +4208,15 @@ pub const GENES: &[Gene] = &[
     // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
     // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
     Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
+    // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
+    // against 6-7% for Gain Sources / Listening Post, and no disruption
+    // visibly delayed a winner, whose 3rd -> 4th project took 5-10
+    // turns (Spain t168 -> t178, Zulu t157 -> t162, Phoenicia t155 -> t164).
+    // Disrupt only once the racer has landed three projects; before that the
+    // Spy steals, gains sources or listens. See
+    // `advanced/disrupt_waits_for_the_match_point.rs`.
+    Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
     // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
     // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
     // objective beyond the wing's reach, 120 of them with another city of
@@ -4996,6 +5005,16 @@ pub const GENES: &[Gene] = &[
     // fits, the slot asks for a type we lack and pays in strategics the army
     // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
     Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
+    // Version two of `luxury-asks-pay-in-strategics`: after version one's
+    // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
+    // the same partners every time (24 of 27), mostly on Horses (22 of 42;
+    // Niter 2 of 10), and luxury swaps put the same refused copy up turn
+    // after turn (one Marble eight times to three partners). A partner whose
+    // strategic-paid ask shorted inside 30 standard turns is not asked again,
+    // Horses go only when nothing else is spare, and a luxury whose swap
+    // shorted stays home so the slot reaches the strategic ask. See
+    // `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics-2", field: "luxury_asks_pay_in_strategics_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics_2, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics_2 },
     // Version two (live Lv 8 Deity Korea Online, 11-04 night, -af's trace,
     // under the operator's early_city_lost restart: losing any of our first
     // three cities ends the game). Version one moved the capital's Defend
@@ -5113,6 +5132,98 @@ pub const GENES: &[Gene] = &[
     // too (074444Z lost its first Settler that way at t31). See
     // `settler_shelters_from_the_war.rs`.
     Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range and never fired:
+    // one was the Settler's reserved guard (the kill search skips reserved
+    // guards) and the other was ruled doomed (three Spearmen near every
+    // stand). Their two shots, about 20 each on 38 hp, fell it at the centre
+    // but not at KILL_MARGIN. Under the gene a recovering, guarding or doomed
+    // shooter's ranged blow from its own tile joins the plan as kill-only.
+    // See `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
+    // The strategic scorer prices a land unit at power x 4 + 58 per missing
+    // body, and only the one named threatened city adds a war term. So in
+    // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
+    // chose a Stock Exchange at 104 over any defender at about 52, and the
+    // seat was eliminated at t203. Under the gene, a missing land unit gains
+    // 350 x the enemy-to-our power ratio (1.5 to 3) while that major is at war
+    // with us and a home city is threatened. See
+    // `outmatched_war_prices_the_army.rs`.
+    Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
+    // Three Kingdoms pays +1 Science per Mine and +1 Food per Farm beside a
+    // Seowon (the live host's rule). The engine's data carries a flat
+    // per-city placeholder, so the Builder priced a Seowon-side Mine at its
+    // Production alone. Under the gene Korea's Builders price the adjacency,
+    // matching `korea-reads-three-kingdoms` on the district side. See
+    // `advanced/korea_mines_beside_the_seowon.rs`.
+    Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
+    // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
+    // about two thirds of live production prompts (480 vs 230 direct orders
+    // in 072215Z), and each hint came from `advanced_production` alone. The
+    // idle-queue claims (Settler floors, Granary, Builder, Aqueduct,
+    // Industrial Zone, Campus...) never saw those queues, so the sim seat
+    // reached 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
+    // t80 against 0.5. Under the gene the hint's preview runs the same
+    // claim chain first. See `advanced/hint_runs_the_claims.rs`.
+    Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
+    // Version one of the drain fires below one turn of runway. Live Deity
+    // 111305Z t194 fell from +11.8 to -76.6 Gold a turn with 243 Gold (3.2
+    // turns), started a Bank, went bankrupt at t199, and lost science 352 to
+    // 151 to the amenity charge. Version two enters the drain below five
+    // turns and never disbands a unit within six tiles of an enemy soldier.
+    // See `solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
+    // `captives-come-home`: the live bridge buys our captured Spies back from
+    // their captors while the network is short of its capacity, so their
+    // slots fill again. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
+    // Version one's peace clause fired in the opening of 3 of the first 5
+    // live carriers, on roaming Warriors at peace, and held the second
+    // Settler up to ten turns (132817Z t16-23, 133505Z t13-18; both
+    // eliminated). Version two shelters only from a major at war with us. See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
+    // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
+    Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // `science-writes-before-it-sails` (2026-11-05): live Deity Korea took
     // the coastal Sailing goal (+190 research value) ~t20 and Writing only at
     // a median t31, the first Seowon at t45; Writing needs only Pottery. A

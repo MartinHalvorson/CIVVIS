@@ -206,6 +206,22 @@ impl Game {
         if !Self::spy_needs_promotion(spy) || spy.captured_by.is_some() {
             return Vec::new();
         }
+        // A live Spy's menu is the host's own (`HostUnitFacts::spy_promotions`):
+        // exactly what the host offers, less what it holds or refused, so a
+        // choice never goes out that the host would turn away.
+        if let Some(menu) = self
+            .host_unit_facts
+            .get(&spy_id)
+            .and_then(|facts| facts.spy_promotions.as_ref())
+        {
+            let refused = self.blocked_promotions.get(&spy_id);
+            return menu
+                .iter()
+                .filter(|name| !spy.promotions.contains(name.as_str()))
+                .filter(|name| !refused.is_some_and(|refused| refused.contains(*name)))
+                .copied()
+                .collect();
+        }
         let available: Vec<&str> = self
             .spy_promotion_roster()
             .filter(|promotion| !spy.promotions.contains(*promotion))
@@ -397,14 +413,23 @@ impl Game {
             return Vec::new();
         }
         if Self::spy_needs_promotion(spy) {
-            return self
-                .available_spy_promotions(spy_id)
-                .into_iter()
-                .map(|promotion| Action::PromoteSpy {
-                    spy: spy_id,
-                    promotion: Name::new(&promotion),
-                })
-                .collect();
+            let offers = self.available_spy_promotions(spy_id);
+            // A host menu that leaves nothing to choose (every pick held or
+            // refused) owes nothing this turn: the Spy keeps its missions
+            // rather than standing idle behind a promotion it cannot take.
+            let host_menu = self
+                .host_unit_facts
+                .get(&spy_id)
+                .is_some_and(|facts| facts.spy_promotions.is_some());
+            if !offers.is_empty() || !host_menu {
+                return offers
+                    .into_iter()
+                    .map(|promotion| Action::PromoteSpy {
+                        spy: spy_id,
+                        promotion: Name::new(&promotion),
+                    })
+                    .collect();
+            }
         }
         if spy.ready_turn > self.turn {
             return Vec::new();

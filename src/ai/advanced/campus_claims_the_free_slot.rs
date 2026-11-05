@@ -31,6 +31,11 @@
 //! delegated governor's step, which reads the idle queue the claims and the
 //! routine military floor take first.
 //!
+//! Korea pursuing Science can claim its first slot at one citizen when the
+//! host quotes a Seowon within the existing Campus budget. Native Jinju at
+//! 43/0 offered an eight-turn Seowon but used its only slot for a Plaza.
+//! The ordinary picker still checks the actual site, slot and safety holds.
+//!
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
 //!
@@ -40,6 +45,12 @@
 //! 80: across its first five Emperor games 23 of the t45-65 city samples with
 //! a free slot and a buildable Campus were held back by the three-citizen
 //! floor alone, and the one-a-turn pace left others on a routine unit.
+//!
+//! Native Korea pursuing Science may also take at most three host-quoted
+//! turns for its first Seowon before a longer repeated Settler, during the
+//! early floor, with at least two cities and another Settler walking. War,
+//! rush and threatened plans retain the Settler. The six-city floor remains;
+//! the brief Campus commitment is protected through zero-progress replans.
 
 use super::*;
 
@@ -51,6 +62,30 @@ pub(super) const FREE_SLOT_CAMPUS_MIN_POP: i32 = 3;
 pub(super) const FREE_SLOT_CAMPUS_MIN_POP_2: i32 = 2;
 
 impl AdvancedAi {
+    /// A brief native Seowon build, priced by the host rather than an estimate.
+    fn short_korean_science_campus(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+        self.campus_claims_the_free_slot_2
+            && g.players[pid].civ == "Korea"
+            && g.victory_conditions.science
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            && matches!(item, Item::District { district, .. }
+                if g.district_family(*district) == "campus")
+            && g.host_production_turns(cid, item)
+                .is_some_and(|turns| turns.is_finite() && turns > 0.0 && turns <= 3.0)
+    }
+
+    /// Keep the brief Campus commitment through a fresh native replan. Its
+    /// foundation can already exist while it has no invested production yet.
+    pub(super) fn short_seowon_holds_settler_floor(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| {
+            city.owner == pid
+                && city
+                    .queue
+                    .first()
+                    .is_some_and(|item| self.short_korean_science_campus(g, pid, cid, item))
+        })
+    }
+
     /// The Campus `cid` would claim and how long it takes: the first Campus
     /// (`BasicAi::first_campus_item`) of an unthreatened city of ours with
     /// [`FREE_SLOT_CAMPUS_MIN_POP`] citizens, none standing or queued, and
@@ -65,12 +100,26 @@ impl AdvancedAi {
         if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
             return None;
         }
-        let min_pop = if self.campus_claims_the_free_slot_2 {
+        let city = g.cities.get(&cid)?;
+        let one_citizen_seowon = self.campus_claims_the_free_slot_2
+            && city.pop == 1
+            && g.players[pid].civ == "Korea"
+            && g.victory_conditions.science
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            // Native menu entries are keyed by item type, not placement. The picker
+            // below still chooses and validates a real legal Seowon site.
+            && g.host_production_turns(cid, &Item::District {
+                district: crate::name!("seowon"),
+                pos: city.pos,
+            }).is_some_and(|turns| turns.is_finite() && turns > 0.0
+                && turns <= self.free_slot_campus_turn_budget(g));
+        let min_pop = if one_citizen_seowon {
+            1
+        } else if self.campus_claims_the_free_slot_2 {
             FREE_SLOT_CAMPUS_MIN_POP_2
         } else {
             FREE_SLOT_CAMPUS_MIN_POP
         };
-        let city = g.cities.get(&cid)?;
         if city.owner != pid
             || city.pop < min_pop
             || plan.threatened_city == Some(cid)
@@ -174,7 +223,27 @@ impl AdvancedAi {
             let Some((campus, turns)) = self.free_slot_campus_item(g, pid, cid, plan) else {
                 continue;
             };
-            if self.early_settler_floor_holds(g, pid, cid, plan) {
+            let floor_holds = self.early_settler_floor_holds(g, pid, cid, plan);
+            // Native Deity Korea kept a three-turn Seowon behind a long
+            // Settler at t46-49 while another Settler was already walking.
+            // Let this first Campus briefly precede the repeated Settler;
+            // keep the first expansion, emergencies and finishing queues.
+            let campus_before_settler = floor_holds
+                && self.early_settler_floor(g, plan) > 0
+                && n_cities >= 2
+                && Self::early_settler_census(g, pid).0 > 0
+                && !at_major_war
+                && plan.threatened_city.is_none()
+                && !plan.rush
+                && matches!(
+                    plan.strategy,
+                    GrandStrategy::Expansion | GrandStrategy::Science
+                )
+                && self.short_korean_science_campus(g, pid, cid, &campus)
+                && matches!(g.cities[&cid].queue.first(), Some(Item::Unit { unit }) if *unit == "settler")
+                && g.host_production_turns(cid, &Self::early_settler_item())
+                    .is_some_and(|remaining| remaining.is_finite() && remaining > turns);
+            if floor_holds && !campus_before_settler {
                 self.explain_free_slot_campus_hold(g, cid, turns, "early Settler floor");
                 continue;
             }
@@ -202,7 +271,9 @@ impl AdvancedAi {
                         Some("Campus building claim")
                     } else if Self::queued_wall_breaker(g, item) {
                         Some("queued wall-breaker")
-                    } else if !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war) {
+                    } else if !campus_before_settler
+                        && !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
+                    {
                         let remaining = g.item_cost_for_city(pid, cid, item)
                             - g.item_invested_production(cid, item);
                         if remaining <= g.city_yields(cid).production {

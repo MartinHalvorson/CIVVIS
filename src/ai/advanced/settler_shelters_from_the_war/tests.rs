@@ -226,3 +226,52 @@ fn a_non_friends_soldier_beside_the_settler_at_peace_sends_it_home() {
         None
     );
 }
+
+/// Version two is a family version: opt-in, and enabling it turns version
+/// one off.
+#[test]
+fn version_two_is_opt_in_and_replaces_version_one() {
+    opt_in_off_in_both_controllers("settler-shelters-from-the-war-2", |ai| {
+        ai.settler_shelters_from_the_war_2
+    });
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_shelters_from_the_war();
+    ai.enable_settler_shelters_from_the_war_2();
+    assert!(ai.settler_shelters_from_the_war_2 && !ai.settler_shelters_from_the_war);
+}
+
+/// civvis-20261105T132817Z t16-23: a neighbour's Warrior beside the Settler
+/// at peace. Version one shelters; version two leaves the walk alone. At war,
+/// version two still shelters.
+#[test]
+fn version_two_shelters_only_from_a_war() {
+    let (base, home, rival) = board();
+    let here = open_tile(&base, home, rival, 3);
+    let mut two = AdvancedAi::new();
+    two.enable_settler_shelters_from_the_war_2();
+
+    let mut peace = base.clone();
+    let settler = peace.spawn_test_unit("settler", 0, here);
+    peace.spawn_test_unit(
+        "warrior",
+        1,
+        tile_at(&peace, here, SURPRISE_SHELTER_RADIUS, home),
+    );
+    assert_eq!(
+        sheltering().settler_shelters_from_the_war_step(&mut peace.clone(), 0, settler),
+        Some(true)
+    );
+    assert_eq!(
+        two.settler_shelters_from_the_war_step(&mut peace, 0, settler),
+        None
+    );
+
+    let mut war = base.clone();
+    war.at_war.insert((0, 1));
+    let settler = war.spawn_test_unit("settler", 0, here);
+    war.spawn_test_unit("warrior", 1, tile_at(&war, here, 3, home));
+    assert_eq!(
+        two.settler_shelters_from_the_war_step(&mut war, 0, settler),
+        Some(true)
+    );
+}

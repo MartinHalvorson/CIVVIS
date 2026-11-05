@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "war-defense-spends-the-runway",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Korea civvis-20261105T033244Z t161 and t168 (Aztecs at war, 561/577 power against 2409/3377, 168/93 Gold at -1.7/-1.0 per turn), each cut at its turn's first state export, queried with --resumed (the live seat's past-turn-one agent) on a ci-profile civvis_orders built from main 6c3157329 plus threatened-lane-lends-the-army; both arms carry the run's requested genome and --with threatened-lane-lends-the-army, and the on arm adds the gene. The off arm keeps the live Stock Exchange in Gyeongju; on, the guard stands aside ('The war keeps its queues') and the t168 Theater Square Festival (Jinju) and Market (Jeonju) are no longer started.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-war-defense-spends-the-runway.native-queries.tar.xz",
+    "sha256": "7b375909644d9a3c85891899b911e44770c238a26210a3bbdfe201a15da89c68"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}

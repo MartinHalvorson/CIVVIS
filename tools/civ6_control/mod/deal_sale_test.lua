@@ -80,7 +80,7 @@ local function eventField(line, key)
 end
 
 DealDirection = { OUTGOING = "outgoing", INCOMING = "incoming" }
-DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements", GREATWORK = "greatwork" }
+DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements", GREATWORK = "greatwork", CAPTIVE = "captive" }
 -- Real values, not the _G stub: the buy arm compares an incoming item's
 -- subtype against `DealAgreementTypes.OPEN_BORDERS`, and the stub would hand
 -- back a fresh table on every read so nothing could ever match.
@@ -225,6 +225,18 @@ local function fixture(opts)
 					out[#out + 1] = { ForType = entry.ForType,
 						ForTypeDescriptionID = entry.ForTypeDescriptionID,
 						IsValid = entry.IsValid ~= false }
+				end
+				return out
+			end
+			if kind == DealItemTypes.CAPTIVE then
+				-- `opts.captives`: the ForType of each of our Spies the
+				-- rival (the owner) holds; `opts.captiveInvalid` marks one
+				-- the host would not let go.
+				if owner == 7 then return out end
+				if opts.captivesNil then return nil end
+				for _, forType in ipairs(opts.captives or {}) do
+					out[#out + 1] = { ForType = forType,
+						IsValid = opts.captiveInvalid ~= forType }
 				end
 				return out
 			end
@@ -1476,5 +1488,67 @@ ok, why = sellOrder(7, 3, sparePlayer, 70, "RESOURCE_SILK=1", 30)
 check("a second copy still sells", ok, true)
 check("a second copy is asked", why, "sell_asked")
 resourceRows.RESOURCE_SILK.ResourceClassType = nil
+
+-- ─── our captured Spies ─────────────────────────────────────────────────────
+-- The exporter counts the CAPTIVE items on the captor's side of the table;
+-- `buy CAPTIVE` asks for the first it would let go, EQUALIZE, and the answer
+-- closes only with exactly that captive against our gold within the ceiling.
+-- A function, not a `do` block: the main chunk is at Lua 5.1's 200 locals.
+;(function()
+	local ok, why
+	local captivesHeld = rawget(_G, "CivvisCaptivesHeld")
+	check("the captive count is exported", type(captivesHeld), "function")
+	fixture({ captives = { 901, 902 } })
+	check("two captives are counted", captivesHeld(7, 3), 2)
+	fixture({ captivesNil = true })
+	check("no captive list reads zero", captivesHeld(7, 3), 0)
+	fixture({ noWorkingDeal = true })
+	check("an unreadable deal is unknown", captivesHeld(7, 3), nil)
+
+	reset()
+	local ransom, ransomPlayer = fixture({ captives = { 901, 902 }, captiveInvalid = 901 })
+	ok, why = applyOrder(ransomPlayer, 7, {
+		kind = "buy", subject = "3", verb = "CAPTIVE", x = 150, y = 0,
+	}, 140)
+	check("the ransom ask is submitted", ok, true)
+	local captiveItem = itemOfKind(ransom, DealItemTypes.CAPTIVE)
+	check("the captive is THEIRS to return", captiveItem and captiveItem.owner, 3)
+	check("the first captive they would let go", captiveItem and captiveItem.valueType, 902)
+	check("the ransom ask is EQUALIZE", ransom.sends and ransom.sends[1][1], "equalize")
+	check("the pending ransom keeps the ceiling", trade.pending[3] and trade.pending[3].ceiling, 150)
+	check("the pending ransom wants that captive", trade.pending[3] and trade.pending[3].want, "CAPTIVE:902")
+	local freed = fixture({ incoming = {
+		{ kind = DealItemTypes.CAPTIVE, from = 3, duration = 0, valueType = 902 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 120 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("a ransom within the ceiling is accepted", freed.sends and freed.sends[1][1], "accepted")
+	check("the answer settles the ransom", trade.pending[3], nil)
+
+	reset()
+	local dearAsk, dearAskPlayer = fixture({ captives = { 902 } })
+	applyOrder(dearAskPlayer, 7, { kind = "buy", subject = "3", verb = "CAPTIVE", x = 150, y = 0 }, 150)
+	local dear = fixture({ incoming = {
+		{ kind = DealItemTypes.CAPTIVE, from = 3, duration = 0, valueType = 902 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 400 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("a ransom above the ceiling is declined", dear.sends, nil)
+
+	reset()
+	local swapAsk, swapAskPlayer = fixture({ captives = { 902 } })
+	applyOrder(swapAskPlayer, 7, { kind = "buy", subject = "3", verb = "CAPTIVE", x = 150, y = 0 }, 160)
+	local swapped = fixture({ incoming = {
+		{ kind = DealItemTypes.CAPTIVE, from = 3, duration = 0, valueType = 999 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 50 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("another captive than the one asked is declined", swapped.sends, nil)
+
+	reset()
+	local none, nonePlayer = fixture({ captives = {} })
+	ok, why = applyOrder(nonePlayer, 7, { kind = "buy", subject = "3", verb = "CAPTIVE", x = 150, y = 0 }, 170)
+	check("no captive to ask for is named", why, "buy_no_captive")
+end)()
 
 realPrint("\nall surplus-sale checks passed")
