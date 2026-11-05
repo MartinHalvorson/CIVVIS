@@ -5144,6 +5144,13 @@ pub const GENES: &[Gene] = &[
     // Native 002152 legacy t133: five Universities, no Chemistry, while the
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // From t40 to t120 the backlog Builder claim put a Builder ahead of a
+    // Library, University or Seowon 288 times in 87 live Deity Korea games
+    // (27% of its claims, 3.3 a game), in a seat that loses on rival
+    // Technology. Under the gene science in progress keeps its queue, and the
+    // claim goes to the next-fastest city or waits a turn. See
+    // `advanced/science_heads_keep_their_queue.rs`.
+    Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

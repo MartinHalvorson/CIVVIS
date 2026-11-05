@@ -2215,6 +2215,9 @@ impl AdvancedAi {
         /// `builders-cover-the-worked-backlog`'s step. See
         /// `ai/prod_tiles_call_the_builders.rs`.
         base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `science-heads-keep-their-queue`; see
+        /// `advanced/science_heads_keep_their_queue.rs`.
+        science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
     }
 }
 
