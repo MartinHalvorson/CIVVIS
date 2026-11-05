@@ -3121,12 +3121,8 @@ fn app_palette_js() -> Vec<u8> {
 }
 
 fn app_frontdoor_js() -> Vec<u8> {
-    for p in ["web/assets/app_frontdoor.js"] {
-        if let Ok(bytes) = std::fs::read(p) {
-            return bytes;
-        }
-    }
-    EMBEDDED_APP_FRONTDOOR_JS.as_bytes().to_vec()
+    std::fs::read("web/assets/app_frontdoor.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_FRONTDOOR_JS.as_bytes().to_vec())
 }
 
 fn app_setup_js() -> Vec<u8> {
