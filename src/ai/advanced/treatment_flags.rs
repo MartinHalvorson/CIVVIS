@@ -2209,6 +2209,9 @@ impl AdvancedAi {
         /// Opt-in gene `threatened-lane-lends-the-army`; see
         /// `advanced/threatened_lane_lends_the_army.rs`.
         threatened_lane_lends_the_army => enable_threatened_lane_lends_the_army, disable_threatened_lane_lends_the_army;
+        /// Opt-in gene `luxury-asks-pay-in-strategics-2`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics_2 => enable_luxury_asks_pay_in_strategics_2, disable_luxury_asks_pay_in_strategics_2;
     }
 }
 

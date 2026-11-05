@@ -5131,6 +5131,13 @@ pub const GENES: &[Gene] = &[
     // tile and moves a post where one blow at the top of the roll removes
     // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
     Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Version two of `luxury-asks-pay-in-strategics`: after version one's
+    // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
+    // the same partners every time (24 of 27), mostly on Horses (22 of 42;
+    // Niter 2 of 10). A partner that shorted inside 30 standard turns is not
+    // asked, and Horses go only when nothing else is spare. See
+    // `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics-2", field: "luxury_asks_pay_in_strategics_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics_2, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

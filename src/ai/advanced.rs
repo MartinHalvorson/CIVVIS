@@ -7624,6 +7624,13 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `luxury-asks-pay-in-strategics-2`: version two, skipping a partner our
+    /// barter could not reach and Horses while another strategic is spare.
+    /// See `advanced/luxury_asks_pay_in_strategics.rs`.
+    luxury_asks_pay_in_strategics_2: bool,
+    /// `luxury-asks-pay-in-strategics-2`: `(turn, partner)` of each
+    /// `barter_short` answer, set by the live bridge each turn.
+    luxury_barter_shorts: Vec<(u32, i64)>,
     /// `medina-yields-to-the-amenities`: the housing card is not wanted while
     /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
     medina_yields_to_the_amenities: bool,
@@ -12126,6 +12133,8 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            luxury_asks_pay_in_strategics_2: false,
+            luxury_barter_shorts: Vec::new(),
             medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,

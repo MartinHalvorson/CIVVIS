@@ -10080,3 +10080,123 @@ fn spy_loss_ledger_reads_the_log_as_it_grows() {
     assert_eq!(ledger.through(200), vec![5]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `luxury-asks-pay-in-strategics-2`: a partner that answered
+/// `barter_short` is skipped, and Horses stay home while Niter is spare;
+/// with no other partner and only Horses, version two still asks.
+#[test]
+fn luxury_strategic_ask_2_skips_the_shorted_partner_and_keeps_the_horses() {
+    let short = |needed: f64, have: f64| StateCity {
+        amenities: have,
+        amenities_needed: needed,
+        ..StateCity::default()
+    };
+    let offering = |player, luxuries: &[&str]| StateRival {
+        player,
+        tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+        ..StateRival::default()
+    };
+    let spare = |resource: &str, id: &str, amount: u32| civvis::ai::BarterSpare {
+        resource: resource.to_string(),
+        resource_id: id.to_string(),
+        amount,
+        luxury: false,
+    };
+    let state = StateSnapshot {
+        turn: 94, // the luxury slot; week 15
+        gold: 200,
+        gold_per_turn: Some(12.0),
+        cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+        luxury_counts: Some([("RESOURCE_AMBER".to_string(), 1.0)].into_iter().collect()),
+        rivals: vec![
+            offering(4, &["RESOURCE_SILK"]),
+            offering(6, &["RESOURCE_WINE"]),
+        ],
+        ..StateSnapshot::default()
+    };
+    let book = |_seller: i64, resource: &str, amount: u32| match resource {
+        "niter" => 20.0 * f64::from(amount),
+        "horses" => 40.0 * f64::from(amount),
+        _ => 0.0,
+    };
+    let spares = vec![
+        spare("RESOURCE_HORSES", "horses", 20),
+        spare("RESOURCE_NITER", "niter", 12),
+    ];
+    let none = std::collections::BTreeSet::new();
+
+    // Version one: seat 6 (15 % 2 == 1), Horses, the lot that covers the
+    // copy most cheaply by the book.
+    let mut v1 = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask(&state, &mut v1, &spares, &book),
+        None
+    );
+    assert_eq!(v1[0].subject, Some(6));
+    assert_eq!(v1[0].verb.as_deref(), Some("LUXURY_ANY;RESOURCE_HORSES=5"));
+
+    // Version two: Niter, not Horses.
+    let mut v2 = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut v2, &spares, &book, &none),
+        None
+    );
+    assert_eq!(v2[0].subject, Some(6));
+    assert_eq!(v2[0].verb.as_deref(), Some("LUXURY_ANY;RESOURCE_NITER=9"));
+
+    // Seat 6 shorted: seat 4 is asked instead.
+    let shorted: std::collections::BTreeSet<i64> = [6].into_iter().collect();
+    let mut skip = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut skip, &spares, &book, &shorted),
+        None
+    );
+    assert_eq!(skip[0].subject, Some(4));
+
+    // Both shorted: nobody is asked.
+    let both: std::collections::BTreeSet<i64> = [4, 6].into_iter().collect();
+    let mut held = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut held, &spares, &book, &both),
+        Some("luxury_strategic_hold:no_partner")
+    );
+
+    // Only Horses spare: version two still offers them.
+    let horses = vec![spare("RESOURCE_HORSES", "horses", 20)];
+    let mut only = Vec::new();
+    assert_eq!(
+        append_luxury_strategic_ask_2(&state, &mut only, &horses, &book, &none),
+        None
+    );
+    assert_eq!(
+        only[0].verb.as_deref(),
+        Some("LUXURY_ANY;RESOURCE_HORSES=5")
+    );
+}
+
+/// `luxury-asks-pay-in-strategics-2`: the ledger keeps the `barter_short`
+/// answers of our buy arm, by turn and partner, and nothing else.
+#[test]
+fn barter_short_ledger_reads_the_shorts() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-barter-ledger-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    std::fs::write(
+        &path,
+        concat!(
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 3, \"turn\": 88, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"asked\", \"target\": 4, \"turn\": 94, \"verb\": \"LUXURY_ANY\"}\n",
+            "{\"kind\": \"deal_offer\", \"reason\": \"barter_short\", \"target\": 1, \"turn\": 100, \"verb\": \"LUXURY_ANY\"}\n",
+        ),
+    )
+    .unwrap();
+    let mut ledger = BarterShortLedger::default();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![(88, 3), (100, 1)]);
+    assert_eq!(ledger.through(95), vec![(88, 3)]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

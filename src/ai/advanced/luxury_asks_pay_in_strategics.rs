@@ -23,13 +23,57 @@
 //! above what our units, their upgrades, their fuel and the barter reserve
 //! need ([`AdvancedAi::luxury_ask_strategic_spares`]). `Kind::OptIn`; off,
 //! the bridge emits exactly what it did.
+//!
+//! ## Version two
+//!
+//! `luxury-asks-pay-in-strategics-2`: in the live Deity games after version
+//! one's arming (11-05 02:01Z), 29 of 61 strategic asks died in the Lua buy
+//! arm as `barter_short`, before reaching the partner; 24 of the 27 partners
+//! asked more than once answered the same way every time, and Horses shorted
+//! 22 times in 42 asks against 2 in 10 for Niter (rivals hold Horses at the
+//! stockpile cap). Version two skips a partner that answered `barter_short`
+//! inside [`LUXURY_BARTER_SHORT_STANDARD`] standard turns (the bridge reads
+//! the shorts from the run's log) and puts Horses up only when no other
+//! strategic is spare.
 
 use super::*;
+
+/// `luxury-asks-pay-in-strategics-2`: a partner that answered `barter_short`
+/// inside this many standard turns is not asked again.
+pub(crate) const LUXURY_BARTER_SHORT_STANDARD: u32 = 30;
 
 impl AdvancedAi {
     /// Whether `luxury-asks-pay-in-strategics` is on.
     pub fn luxury_asks_pay_in_strategics_enabled(&self) -> bool {
-        self.luxury_asks_pay_in_strategics
+        self.luxury_asks_pay_in_strategics || self.luxury_asks_pay_in_strategics_2
+    }
+
+    /// Whether `luxury-asks-pay-in-strategics-2` is on: the ask skips a
+    /// partner the buy arm answered `barter_short` within
+    /// [`LUXURY_BARTER_SHORT_STANDARD`] standard turns and keeps Horses back
+    /// while another strategic is spare.
+    pub fn luxury_asks_pay_in_strategics_2_enabled(&self) -> bool {
+        self.luxury_asks_pay_in_strategics_2
+    }
+
+    /// The live bridge: `(turn, partner)` of each `barter_short` answer the
+    /// run's log holds. Replaces what was there.
+    pub fn observe_luxury_barter_shorts(&mut self, shorts: Vec<(u32, i64)>) {
+        self.luxury_barter_shorts = shorts;
+    }
+
+    /// The host ids of the partners that answered `barter_short` inside the
+    /// window ending this turn. Empty with version two off.
+    pub fn luxury_barter_shorted_partners(&self, g: &Game) -> BTreeSet<i64> {
+        if !self.luxury_asks_pay_in_strategics_2 {
+            return BTreeSet::new();
+        }
+        let window = g.standard_duration(LUXURY_BARTER_SHORT_STANDARD);
+        self.luxury_barter_shorts
+            .iter()
+            .filter(|(turn, _)| *turn <= g.turn && g.turn - *turn < window)
+            .map(|(_, partner)| *partner)
+            .collect()
     }
 
     /// The strategics a luxury ask may pay with: the barter spares
@@ -41,7 +85,7 @@ impl AdvancedAi {
         pid: usize,
         held: &BTreeSet<String>,
     ) -> Vec<BarterSpare> {
-        if !self.luxury_asks_pay_in_strategics {
+        if !self.luxury_asks_pay_in_strategics && !self.luxury_asks_pay_in_strategics_2 {
             return Vec::new();
         }
         Self::barter_spares(g, pid, held)
