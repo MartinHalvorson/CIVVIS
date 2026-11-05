@@ -2469,10 +2469,13 @@ fn field_seat(target: VictoryTarget, lane_genes: &[String]) -> AdvancedAi {
 fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64 {
     let delta = journal.since(cursor);
     for thought in delta.thoughts {
-        if !matches!(
-            thought.topic,
-            Topic::Strategy | Topic::Military | Topic::Diplomacy | Topic::Research
-        ) || thought.level > Level::Decision
+        let settler_line = thought.headline.starts_with("Settler held in")
+            || thought.headline.contains("may settle under the Recovery hold");
+        if !settler_line
+            && (!matches!(
+                thought.topic,
+                Topic::Strategy | Topic::Military | Topic::Diplomacy | Topic::Research
+            ) || thought.level > Level::Decision)
         {
             continue;
         }
