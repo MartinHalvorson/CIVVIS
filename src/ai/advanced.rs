@@ -5548,9 +5548,10 @@ pub struct AdvancedAi {
     /// did not ally is not asked again for thirty turns. See
     /// `advanced/alliance_remembers_the_refusal.rs`. Off by default.
     alliance_remembers_the_refusal: bool,
-    /// Partners asked for an alliance, by the turn asked. Written only while
+    /// Partners asked for an alliance, by the turn asked and whether the
+    /// partner was a declared friend then. Written only while
     /// `alliance_remembers_the_refusal` is on.
-    alliance_ask_turns: BTreeMap<usize, u32>,
+    alliance_ask_turns: BTreeMap<usize, (u32, bool)>,
     /// `breaker-spares-the-backlog-builder`: the Domination siege
     /// reservation does not take a queue whose head is the Builder
     /// `backlog-builder-takes-the-queue` claimed while the backlog still
