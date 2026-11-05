@@ -5311,6 +5311,14 @@ pub const GENES: &[Gene] = &[
     // the seat's pickers rank by district_site_yields, which adds the Coast
     // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
     Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // Live Deity (11-05): from t150 the median science seat met half its Power
+    // demand; at t170, 9 of 32 such games held no plant and 7 of them could
+    // build one, five banking Oil beside dark Labs. The plant credit read 4
+    // Power for its own city and paid nothing against a Lab-and-Factory
+    // demand of 5, though the host burns as much fuel as each city in six
+    // tiles needs. Under the gene a plant is worth every city it can fuel in
+    // reach. See `advanced/plant_reads_the_grid.rs`.
+    Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

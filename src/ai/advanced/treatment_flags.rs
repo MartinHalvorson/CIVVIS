@@ -2266,6 +2266,9 @@ impl AdvancedAi {
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `plant-reads-the-grid`; see
+        /// `advanced/plant_reads_the_grid.rs`.
+        plant_reads_the_grid => enable_plant_reads_the_grid, disable_plant_reads_the_grid;
     }
 }
 
