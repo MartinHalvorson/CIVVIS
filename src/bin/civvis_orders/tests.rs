@@ -10295,7 +10295,7 @@ fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
         ..StateSnapshot::default()
     };
     let mut orders = Vec::new();
-    assert_eq!(append_captive_ransom_order(&state, &mut orders), None);
+    assert_eq!(append_captive_ransom_order(&state, &mut orders, None), None);
     assert_eq!(orders.len(), 1);
     let ask = &orders[0];
     assert_eq!(ask.kind, "buy");
@@ -10309,7 +10309,7 @@ fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
 
     // A deal already heading to that captor holds the ask.
     assert_eq!(
-        append_captive_ransom_order(&state, &mut orders),
+        append_captive_ransom_order(&state, &mut orders, None),
         Some("ransom_hold:deal_in_flight")
     );
     assert_eq!(orders.len(), 1);
@@ -10317,12 +10317,12 @@ fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
     // The ceiling is the treasury over the reserve, and too little asks nothing.
     state.gold = RANSOM_GOLD_RESERVE + 90;
     let mut orders = Vec::new();
-    append_captive_ransom_order(&state, &mut orders);
+    append_captive_ransom_order(&state, &mut orders, None);
     assert_eq!(orders[0].pos, Some((90, 0)));
     state.gold = RANSOM_GOLD_RESERVE + i64::from(RANSOM_CEILING_MIN) - 1;
     let mut orders = Vec::new();
     assert_eq!(
-        append_captive_ransom_order(&state, &mut orders),
+        append_captive_ransom_order(&state, &mut orders, None),
         Some("ransom_hold:treasury")
     );
     assert!(orders.is_empty());
@@ -10332,16 +10332,56 @@ fn captive_ransom_asks_the_captor_on_its_turn_within_the_treasury() {
     state.turn = 13;
     let mut orders = Vec::new();
     assert_eq!(
-        append_captive_ransom_order(&state, &mut orders),
+        append_captive_ransom_order(&state, &mut orders, None),
         Some("ransom_hold:no_captor")
     );
     state.turn = 12;
     state.rivals = vec![rival(2, Some(0), false), rival(7, None, false)];
     assert_eq!(
-        append_captive_ransom_order(&state, &mut orders),
+        append_captive_ransom_order(&state, &mut orders, None),
         Some("ransom_hold:no_captor")
     );
     assert!(orders.is_empty());
+}
+
+/// `captives-come-home-2`: Favor rides with the Gold as `CAPTIVE;FAVOR=n`, and
+/// with Favor offered a treasury under the Gold floor still asks.
+#[test]
+fn captive_ransom_offers_favor_beside_the_gold() {
+    let mut state = StateSnapshot {
+        turn: 12,
+        gold: 420,
+        rivals: vec![StateRival {
+            player: 7,
+            captives_of_ours: Some(1),
+            ..StateRival::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders, Some(90)),
+        None
+    );
+    assert_eq!(orders[0].verb.as_deref(), Some("CAPTIVE;FAVOR=90"));
+    assert_eq!(orders[0].pos, Some((RANSOM_CEILING_MAX, 0)));
+
+    state.gold = RANSOM_GOLD_RESERVE + 10;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders, Some(90)),
+        None
+    );
+    assert_eq!(
+        orders[0].pos,
+        Some((10, 0)),
+        "Favor carries an ask the Gold floor would hold"
+    );
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_captive_ransom_order(&state, &mut orders, None),
+        Some("ransom_hold:treasury")
+    );
 }
 
 /// `tribute-buys-the-friendship`: the strongest neighbour at peace, stronger

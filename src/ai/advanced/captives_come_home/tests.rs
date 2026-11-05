@@ -31,3 +31,14 @@ fn captives_come_home_wants_the_slots_only_when_the_network_is_short() {
         "no capacity, no captive to want"
     );
 }
+
+#[test]
+fn version_two_carries_version_one_and_pays_in_favor() {
+    let g = Game::new(3, 32, 22, 71, 250, 0);
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.captives_come_home_pays_favor());
+    ai.enable_captives_come_home_2();
+    assert!(ai.captives_come_home_enabled(), "v2 carries v1's ask");
+    assert!(ai.captives_come_home_wanted(&g, 0, 0, 3));
+    assert!(ai.captives_come_home_pays_favor());
+}
