@@ -31,6 +31,11 @@
 //! delegated governor's step, which reads the idle queue the claims and the
 //! routine military floor take first.
 //!
+//! Korea pursuing Science can claim its first slot at one citizen when the
+//! host quotes a Seowon within the existing Campus budget. Native Jinju at
+//! 43/0 offered an eight-turn Seowon but used its only slot for a Plaza.
+//! The ordinary picker still checks the actual site, slot and safety holds.
+//!
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
 //!
@@ -95,12 +100,26 @@ impl AdvancedAi {
         if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
             return None;
         }
-        let min_pop = if self.campus_claims_the_free_slot_2 {
+        let city = g.cities.get(&cid)?;
+        let one_citizen_seowon = self.campus_claims_the_free_slot_2
+            && city.pop == 1
+            && g.players[pid].civ == "Korea"
+            && g.victory_conditions.science
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
+            // Native menu entries are keyed by item type, not placement. The picker
+            // below still chooses and validates a real legal Seowon site.
+            && g.host_production_turns(cid, &Item::District {
+                district: crate::name!("seowon"),
+                pos: city.pos,
+            }).is_some_and(|turns| turns.is_finite() && turns > 0.0
+                && turns <= self.free_slot_campus_turn_budget(g));
+        let min_pop = if one_citizen_seowon {
+            1
+        } else if self.campus_claims_the_free_slot_2 {
             FREE_SLOT_CAMPUS_MIN_POP_2
         } else {
             FREE_SLOT_CAMPUS_MIN_POP
         };
-        let city = g.cities.get(&cid)?;
         if city.owner != pid
             || city.pop < min_pop
             || plan.threatened_city == Some(cid)
