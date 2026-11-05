@@ -8720,6 +8720,10 @@ pub struct AdvancedAi {
     /// peace) goes to the nearest city of ours, and one inside a city stays. See
     /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
     settler_shelters_from_the_war: bool,
+    /// `settler-shelters-from-the-war-2`: version two, which shelters only
+    /// from a major at war with us (no peace clause). Carries version one. See
+    /// `advanced/settler_shelters_from_the_war.rs`. Off by default.
+    settler_shelters_from_the_war_2: bool,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -12370,6 +12374,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
+            settler_shelters_from_the_war_2: false,
             spy_loss_turns: Vec::new(),
             science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
@@ -22706,10 +22711,17 @@ impl AdvancedAi {
         // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
         // first, as they do on the main path. See
         // `advanced/hint_runs_the_claims.rs`.
-        if self.hint_runs_the_claims && self.base.book_pos >= 4 {
+        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
         }
         preview.advanced_production(&mut board, pid, &plan, false);
+        // `hint-runs-the-claims`: the defensive writers that follow the
+        // governors on the main path, in the same order, so the hint is never
+        // "claims without the Walls". See `advanced/hint_runs_the_claims.rs`.
+        if claims_and_writers {
+            preview.run_hint_defence_writers(&mut board, pid, &plan);
+        }
         board.cities.get(&city)?.queue.first().cloned()
     }
 

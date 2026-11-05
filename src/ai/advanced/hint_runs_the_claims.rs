@@ -30,8 +30,13 @@
 //! place: off, nothing changes. With the gene on and the opening book done,
 //! the preview runs it on its throwaway board before `advanced_production`.
 //! The finishing city's hint is then what the main path would have chosen
-//! for an empty queue. The preview is a clone of the agent, so its journal is
-//! silent (`Journal::clone`) and none of its claims reach the live `why.log`.
+//! for an empty queue. After the governor it also runs the defensive writers
+//! that follow the governors on the main path
+//! ([`AdvancedAi::run_hint_defence_writers`]: the capital's and the frontier's
+//! Walls, the surprise-war wave, the threatened city's defender), so a claim
+//! never takes a hint the main path would give to Walls. The preview is a clone
+//! of the agent, so its journal is silent (`Journal::clone`) and none of its
+//! claims reach the live `why.log`.
 
 use super::*;
 
@@ -183,6 +188,21 @@ impl AdvancedAi {
             self.claim_pillaged_repairs(g, pid);
         }
         war_holds
+    }
+
+    /// The defensive writers that `take_turn_inner` runs after the governors,
+    /// in its order, restricted to those that need no turn-start state: the
+    /// capital's and the frontier's Walls before a surprise war, the surprise
+    /// war's defensive wave, and the threatened city's defender. Under
+    /// `hint-runs-the-claims` the preview runs them after `advanced_production`,
+    /// so a claim never takes a hint the main path would have given to Walls.
+    /// Live replay (civvis-20261105T133505Z t80/t90) and -78's 188-board census
+    /// showed the claims alone displacing Walls on hint turns.
+    pub(super) fn run_hint_defence_writers(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.claim_capital_walls_before_the_surprise(g, pid);
+        self.claim_frontier_walls_before_the_surprise(g, pid);
+        self.mobilize_surprise_defense_production(g, pid);
+        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
     }
 }
 
