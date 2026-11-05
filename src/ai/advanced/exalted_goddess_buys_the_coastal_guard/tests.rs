@@ -92,3 +92,28 @@ fn off_or_another_civ_or_short_of_faith_buys_nothing() {
     let (mut game, _) = coastal_capital("Indonesia", 10.0);
     assert!(!ai.exalted_goddess_coastal_guard(&mut game, 0));
 }
+
+/// Without Shipbuilding a Galley is the only ship. Two eras behind the world
+/// it is still bought; three eras behind it is not.
+#[test]
+fn a_galley_guards_the_early_war_and_not_the_late_one() {
+    let (mut game, _) = coastal_capital("Indonesia", 500.0);
+    game.players[0].techs.remove(&Name::new("shipbuilding"));
+    game.world_era = COASTAL_GUARD_ERAS_BEHIND - 1;
+    let mut ai = AdvancedAi::new();
+    ai.enable_exalted_goddess_buys_the_coastal_guard();
+    assert!(ai.exalted_goddess_coastal_guard(&mut game, 0));
+    let kinds: Vec<Name> = game
+        .player_unit_ids(0)
+        .into_iter()
+        .map(|uid| game.units[&uid].kind)
+        .collect();
+    assert_eq!(kinds, vec![crate::name!("galley")]);
+
+    let (mut game, _) = coastal_capital("Indonesia", 500.0);
+    game.players[0].techs.remove(&Name::new("shipbuilding"));
+    game.world_era = COASTAL_GUARD_ERAS_BEHIND;
+    let mut ai = AdvancedAi::new();
+    ai.enable_exalted_goddess_buys_the_coastal_guard();
+    assert!(!ai.exalted_goddess_coastal_guard(&mut game, 0));
+}
