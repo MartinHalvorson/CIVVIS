@@ -3457,6 +3457,11 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // `spies-steal-the-lead`: remember a foreign city whose host menu
+            // offers this Spy no steal. Exact no-op with the gene off.
+            if self.spies_steal_the_lead_on(plan) {
+                self.steal_note_dry_city(g, pid, spy_id, current_city);
+            }
             // `racer-keeps-the-spies`: an idle Spy outside the leading space
             // racer's cities (and any culture racer's, and any other racer's
             // where Disrupt Rocketry is offered) goes to the leader, before
@@ -3476,6 +3481,7 @@ impl AdvancedAi {
                 &legal,
                 self.racer_spy_search(),
                 self.spies_steal_the_lead_on(plan),
+                &self.steal_dry_cities,
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
