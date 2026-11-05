@@ -262,3 +262,176 @@ fn counterfactuals_leave_the_real_governor_and_yields_unchanged() {
         reading
     );
 }
+
+fn clipped_native_post(template: &Game, turn: u32, governor: &str) -> Game {
+    let mut g = template.clone();
+    g.turn = turn;
+    let establish = g.standard_duration(g.rules.governors[governor].establish_turns);
+    g.players[0]
+        .governor_roster
+        .get_mut(governor)
+        .unwrap()
+        .assigned_turn = turn.saturating_sub(establish);
+    g
+}
+
+#[test]
+fn native_fresh_boards_eventually_relocate_despite_clipped_establishment_age() {
+    let (template, mut ai, plan, old, new) = board("pingala", &["researcher", "connoisseur"]);
+    ai.enable_pingala_follows_research();
+    ai.live_governor_assignment_adapter = true;
+    let review = template.standard_duration(16).max(1);
+    let mut moved = None;
+    for turn in template.turn..=template.turn + review * 2 {
+        let mut fresh = clipped_native_post(&template, turn, "pingala");
+        let establish = fresh.standard_duration(fresh.rules.governors["pingala"].establish_turns);
+        assert!(
+            turn - fresh.players[0].governor_roster["pingala"].assigned_turn
+                < fresh.standard_duration(20)
+        );
+        ai.relocate_governors_for_dividends(&mut fresh, 0, &plan);
+        if fresh.players[0].governor_roster["pingala"].city == Some(new) {
+            assert!(turn - (template.turn - establish) >= fresh.standard_duration(20));
+            moved = Some(turn);
+            break;
+        }
+        assert_eq!(fresh.players[0].governor_roster["pingala"].city, Some(old));
+    }
+    let turn = moved.expect("observing the same post lets its cooldown expire");
+    // The host may still show the old post on another frame while assignment
+    // is in flight. One request per turn, even though the old residence is mature.
+    let mut lagged = clipped_native_post(&template, turn, "pingala");
+    ai.relocate_governors_for_dividends(&mut lagged, 0, &plan);
+    assert_eq!(lagged.players[0].governor_roster["pingala"].city, Some(old));
+}
+
+#[test]
+fn native_replan_frames_do_not_count_as_residence_turns() {
+    let (template, mut ai, plan, old, _) = board("pingala", &["researcher"]);
+    ai.enable_pingala_follows_research();
+    ai.live_governor_assignment_adapter = true;
+    let establish = template.standard_duration(template.rules.governors["pingala"].establish_turns);
+    for _ in 0..30 {
+        let mut fresh = clipped_native_post(&template, template.turn, "pingala");
+        ai.relocate_governors_for_dividends(&mut fresh, 0, &plan);
+        assert_eq!(fresh.players[0].governor_roster["pingala"].city, Some(old));
+        assert_eq!(ai.governor_residence_age(&fresh, 0, "pingala"), establish);
+    }
+}
+
+#[test]
+fn native_post_clock_survives_city_id_remapping_but_not_a_different_post() {
+    let (template, mut ai, _, old, new) = board("pingala", &["researcher"]);
+    ai.live_governor_assignment_adapter = true;
+    let first = clipped_native_post(&template, template.turn, "pingala");
+    ai.observe_governor_posts(&first, 0);
+    let establish = first.standard_duration(first.rules.governors["pingala"].establish_turns);
+    let mut remapped = clipped_native_post(&template, template.turn + 1, "pingala");
+    let mut city = remapped.cities.remove(&old).unwrap();
+    let replacement_id = old + 10000;
+    city.id = replacement_id;
+    remapped.cities.insert(replacement_id, city);
+    remapped.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .city = Some(replacement_id);
+    remapped.players[0].governors = vec![replacement_id];
+    ai.observe_governor_posts(&remapped, 0);
+    assert_eq!(
+        ai.governor_residence_age(&remapped, 0, "pingala"),
+        establish + 1
+    );
+    remapped.turn += 1;
+    remapped.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .city = Some(new);
+    remapped.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .assigned_turn = remapped.turn - establish;
+    ai.observe_governor_posts(&remapped, 0);
+    assert_eq!(
+        ai.governor_residence_age(&remapped, 0, "pingala"),
+        establish
+    );
+}
+
+#[test]
+fn native_post_clock_resets_for_neutralization_missing_posts_and_clock_rollback() {
+    let (template, mut ai, _, old, _) = board("pingala", &["researcher"]);
+    ai.live_governor_assignment_adapter = true;
+    let mut g = clipped_native_post(&template, template.turn, "pingala");
+    ai.observe_governor_posts(&g, 0);
+    g = clipped_native_post(&template, template.turn + 20, "pingala");
+    ai.observe_governor_posts(&g, 0);
+    assert!(ai.governor_residence_age(&g, 0, "pingala") > g.standard_duration(20));
+    g.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .disabled_until = g.turn + 2;
+    ai.observe_governor_posts(&g, 0);
+    assert!(!ai.remembered_governor_posts.contains_key("pingala"));
+    g.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .disabled_until = 0;
+    ai.observe_governor_posts(&g, 0);
+    let establish = g.standard_duration(g.rules.governors["pingala"].establish_turns);
+    assert_eq!(ai.governor_residence_age(&g, 0, "pingala"), establish);
+    g.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .city = None;
+    ai.observe_governor_posts(&g, 0);
+    assert!(!ai.remembered_governor_posts.contains_key("pingala"));
+    g.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .city = Some(old);
+    ai.observe_governor_posts(&g, 0);
+    g = clipped_native_post(&template, template.turn - 1, "pingala");
+    ai.observe_governor_posts(&g, 0);
+    assert_eq!(ai.governor_residence_age(&g, 0, "pingala"), establish);
+}
+
+#[test]
+fn native_post_clock_resets_when_establishment_restarts_in_the_same_city() {
+    let (template, mut ai, _, _, _) = board("pingala", &["researcher"]);
+    ai.live_governor_assignment_adapter = true;
+    let g = clipped_native_post(&template, template.turn, "pingala");
+    ai.observe_governor_posts(&g, 0);
+    let mut g = clipped_native_post(&template, template.turn + 20, "pingala");
+    g.players[0]
+        .governor_roster
+        .get_mut("pingala")
+        .unwrap()
+        .assigned_turn = g.turn;
+    ai.observe_governor_posts(&g, 0);
+    assert_eq!(ai.governor_residence_age(&g, 0, "pingala"), 0);
+}
+
+#[test]
+fn ordinary_governor_cooldowns_ignore_native_observation_memory() {
+    let (template, mut ai, plan, old, _) = board("pingala", &["researcher"]);
+    ai.enable_pingala_follows_research();
+    ai.live_governor_assignment_adapter = true;
+    let g = clipped_native_post(&template, template.turn, "pingala");
+    ai.observe_governor_posts(&g, 0);
+    ai.live_governor_assignment_adapter = false;
+    let mut g = clipped_native_post(
+        &template,
+        template.turn + template.standard_duration(16),
+        "pingala",
+    );
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
+    assert!(ai.remembered_governor_posts.is_empty());
+}
