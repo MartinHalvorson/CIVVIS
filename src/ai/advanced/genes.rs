@@ -5007,6 +5007,16 @@ pub const GENES: &[Gene] = &[
     // early city with a hostile in relief range its row before the pressure
     // gate. See `objective_board.rs` (`early_cities_defend_first`).
     Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
