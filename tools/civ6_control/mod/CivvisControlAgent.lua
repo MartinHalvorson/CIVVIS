@@ -12628,7 +12628,18 @@ CivvisLedger.preview = function(unit, verb, x, y)
 		defender_wall_damage = read("DEFENDER", "DEFENSE_DAMAGE_TO"),
 		attacker_strength = read("ATTACKER", "COMBAT_STRENGTH"),
 		defender_strength = read("DEFENDER", "COMBAT_STRENGTH"),
+		attacker_strength_modifier = read("ATTACKER", "STRENGTH_MODIFIER"),
+		defender_strength_modifier = read("DEFENDER", "STRENGTH_MODIFIER"),
 	};
+	-- UnitPanel.lua:1748-1767 adds STRENGTH_MODIFIER to COMBAT_STRENGTH
+	-- and clamps the displayed total at zero. Keep the legacy base readings;
+	-- an unavailable modifier leaves the new total unknown, not base + zero.
+	if out.attacker_strength ~= nil and out.attacker_strength_modifier ~= nil then
+		out.attacker_total_strength = math.max(0, out.attacker_strength + out.attacker_strength_modifier);
+	end
+	if out.defender_strength ~= nil and out.defender_strength_modifier ~= nil then
+		out.defender_total_strength = math.max(0, out.defender_strength + out.defender_strength_modifier);
+	end
 	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
 	return out;
 end;
