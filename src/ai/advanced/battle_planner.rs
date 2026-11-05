@@ -1148,9 +1148,17 @@ impl BeamState {
             return f64::NEG_INFINITY;
         }
         // `ranged-kills-are-free`: a kill-only blow on a target that lives
-        // is no part of a plan.
-        if self.kill_only_on & !self.killed != 0 {
-            return f64::NEG_INFINITY;
+        // is no part of a plan. Its shooters take no return and no new
+        // exposure, so the centre of the roll is the bar, not KILL_MARGIN:
+        // a near miss still leaves the attacker all but dead.
+        for (index, target) in targets.iter().enumerate() {
+            let bit = 1u32 << index;
+            if self.kill_only_on & bit != 0
+                && self.killed & bit == 0
+                && self.dealt[index] < f64::from(target.hp)
+            {
+                return f64::NEG_INFINITY;
+            }
         }
         let mut score = self.score;
         for (index, target) in targets.iter().enumerate() {
@@ -1628,6 +1636,17 @@ impl AdvancedAi {
             field,
             self.doomed_blow_veto_2,
         );
+        if self.ranged_kills_are_free && (score <= 0.0 || sequence.is_empty()) {
+            let kill_only = candidates
+                .iter()
+                .filter(|candidate| candidate.kill_only)
+                .count();
+            think!(self.journal(), Military, Detail,
+                "Kill search: no sequence from {} blow(s) of {} shooter(s) on {} target(s)",
+                candidates.len(), shooters.len(), targets.len();
+                "{} doomed, {} blow(s) kill-only (recovering, a civilian's guard or doomed: \
+                 only where the target falls)", doomed.len(), kill_only);
+        }
         if score <= 0.0 || sequence.is_empty() {
             return (Vec::new(), armed, wanted, doomed);
         }
@@ -1744,7 +1763,8 @@ impl AdvancedAi {
                 || (self.battle_planner_recovering.contains(&uid)
                     && !(self.ranged_kills_are_free && spec.has_ranged_attack()))
                 || self.battle_planner_ordered.contains(&uid)
-                || self.guard_is_reserved_for_civilian(uid)
+                || (self.guard_is_reserved_for_civilian(uid)
+                    && !(self.ranged_kills_are_free && spec.has_ranged_attack()))
                 // `battle-planner-3`: the siege's taker is not the plan's.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
@@ -1858,10 +1878,12 @@ impl AdvancedAi {
                 }
                 own.extend(found);
             }
-            // `ranged-kills-are-free`: a recovering shooter keeps only its
-            // ranged blows from its own tile, kill-only; it stays the
-            // rotation's otherwise and is not offered as armed.
-            let recovering = self.battle_planner_recovering.contains(&uid);
+            // `ranged-kills-are-free`: a recovering shooter, or a guard a
+            // civilian holds, keeps only its ranged blows from its own tile,
+            // kill-only: it stays the rotation's or the escort's otherwise,
+            // and is not offered as armed. (Only the gene lets either here.)
+            let recovering = self.battle_planner_recovering.contains(&uid)
+                || self.guard_is_reserved_for_civilian(uid);
             if recovering {
                 own.retain(|candidate| candidate.ranged && candidate.from == unit.pos);
                 for candidate in &mut own {

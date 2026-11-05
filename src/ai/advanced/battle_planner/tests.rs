@@ -1759,4 +1759,22 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
     let alone = vec![shot(0, a)];
     let (sequence, _) = search_kill_sequence(&shooters, &targets, &alone, &mut field, false);
     assert!(sequence.is_empty(), "one shot leaves it alive: no plan");
+    // Live 044106Z t49: two shots of about 20 on the 38-hp Swordsman reach
+    // its health at the centre but not 38 x KILL_MARGIN. Kill-only shots
+    // take no return and no new exposure, so the centre is their bar.
+    let light = |index: usize, uid: u32| Candidate {
+        host: Some((20.0, 0.0)),
+        ..shot(index, uid)
+    };
+    assert!(40.0 < 38.0 * KILL_MARGIN);
+    let both = vec![light(0, a), light(1, b)];
+    let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
+    assert_eq!(
+        sequence.len(),
+        2,
+        "the centre fells it: {sequence:?} at {score}"
+    );
+    let alone = vec![light(0, a)];
+    let (sequence, _) = search_kill_sequence(&shooters, &targets, &alone, &mut field, false);
+    assert!(sequence.is_empty());
 }
