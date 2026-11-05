@@ -183,6 +183,55 @@ fn the_strongest_neighbour_is_asked_off_the_domination_lane() {
     assert!(asks(&game).is_empty());
 }
 
+/// The lane's own alliance first: a Science seat whose Research Alliance is
+/// legal, unheld and able to reach the host leaves the border alone (the
+/// stock desk courts that neighbour for Research); once it holds Research,
+/// the Military Alliance goes to another neighbour. The common enemy never
+/// waits.
+#[test]
+fn the_border_waits_for_the_lanes_own_alliance() {
+    let science = plan(GrandStrategy::Science, None);
+    let mut game = board();
+    game.turn = 60;
+    for pid in 0..3 {
+        game.players[pid]
+            .techs
+            .insert(crate::name!("scientific_theory"));
+    }
+    let mut ai = shield();
+    ai.victory_target = Some(VictoryTarget::Science);
+    ai.science_seat_allies = true;
+    assert!(ai.shield_lane_alliance_waits(&game, 0, &science));
+    assert!(!ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    assert!(asks(&game).is_empty());
+
+    // Off the seat gene the Research ask never reaches the live host, so the
+    // border does not wait for it.
+    let mut unarmed = shield();
+    unarmed.victory_target = Some(VictoryTarget::Science);
+    assert!(!unarmed.shield_lane_alliance_waits(&game, 0, &science));
+
+    // At war with player 2, which player 1 fights too: asked at once.
+    let mut war = game.clone();
+    war.at_war.insert((0, 2));
+    war.at_war.insert((1, 2));
+    assert!(ai.military_alliance_shield_step(&mut war, 0, &science, None));
+    assert_eq!(asks(&war), vec![(1, Some("military".to_string()), true)]);
+
+    // Research held with player 2: the Military Alliance goes to player 1.
+    let research = AllianceState {
+        kind: "research".to_string(),
+        points: 0.0,
+        level: 1,
+        ends: 90,
+    };
+    game.players[0].alliances.insert(2, research.clone());
+    game.players[2].alliances.insert(0, research);
+    assert!(!ai.shield_lane_alliance_waits(&game, 0, &science));
+    assert!(ai.military_alliance_shield_step(&mut game, 0, &science, None));
+    assert_eq!(asks(&game), vec![(1, Some("military".to_string()), true)]);
+}
+
 /// A declared friend outranks an equally strong stranger: the host asks it
 /// the alliance itself. (Equal power, so only the nearness term differs, and
 /// inside the reach it differs by less than [`SHIELD_FRIEND`].)

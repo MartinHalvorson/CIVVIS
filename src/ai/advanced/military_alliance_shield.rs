@@ -52,13 +52,28 @@
 //!    enemy: the +5 holds from the turn the alliance is signed. Every turn
 //!    of the war, on every lane. On the live seat the rival's war is the
 //!    host's own report (`Game::rivals_at_war`, #4452).
-//! 2. **The border.** Off the Domination lane, a major with a city within
+//! 2. **The border.** Off the Domination lane, and once the lane's own
+//!    alliance is not waiting to be won ([`AdvancedAi::shield_lane_alliance_waits`]),
+//!    a major with a city within
 //!    [`SHIELD_NEIGHBOUR_REACH`] of one of ours that fields at least
 //!    [`SHIELD_THREAT_FLOOR`] of our power scores [`SHIELD_THREAT_WEIGHT`]
 //!    per unit of that ratio (capped at [`SHIELD_THREAT_RATIO_CAP`]) plus
 //!    [`SHIELD_THREAT_PER_TILE`] per tile nearer than the reach. Allied, it
 //!    cannot declare on us, and its pact stands beside us against anyone
 //!    else who does. Every [`SHIELD_CADENCE`] turns, staggered by seat.
+//!
+//! ★ The lane's own alliance comes first. Any alliance with a neighbour
+//! forbids its war on us and carries the Defensive Pact, and a pair holds one
+//! alliance, so a Military ask to the very partner the stock desk courts for
+//! the lane's kind trades that kind's yield for a +5 that pays only in a
+//! shared war. On the live Deity Korea Science board (civvis-20261104T213449Z)
+//! a first cut did exactly that: every border turn t108-t141 asked player 3
+//! for a Military Alliance where the stock desk asked it for the Research
+//! Alliance. So while the lane's kind (Research on a Science seat, Cultural on
+//! Culture, Religious on Religion, Economic on Expansion and Diplomacy) is
+//! unheld, legal on our tree, and its ask reaches the host, the border arm
+//! waits; the Military Alliance then goes to a second neighbour. The common
+//! enemy does not wait: a war is being fought.
 //!
 //! A declared friend scores [`SHIELD_FRIEND`] more: the live host asks it the
 //! alliance at once, while anyone else is asked the friendship first. Every
@@ -113,6 +128,47 @@ impl AdvancedAi {
     /// when nobody was asked.
     pub fn military_alliance_shield_partner(&self) -> Option<usize> {
         self.military_alliance_shield_ask
+    }
+
+    /// Whether the border arm waits for the lane's own alliance: the kind
+    /// `propose_strategic_alliance` asks for on this plan is not Military, we
+    /// hold none of it, it is legal on our tree, and its ask reaches the live
+    /// host (the Diplomatic lane always; the Culture and Science lanes under
+    /// their seat genes; an adaptive native seat has no host filter).
+    pub(super) fn shield_lane_alliance_waits(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        let kind = if self.research_alliance_lane(g, pid)
+            == super::research_alliance::ResearchAllianceLane::Research
+        {
+            super::research_alliance::ALLY_RESEARCH_KIND
+        } else {
+            match plan.strategy {
+                GrandStrategy::Science => "research",
+                GrandStrategy::Culture => "cultural",
+                GrandStrategy::Religion => "religious",
+                GrandStrategy::Conquest | GrandStrategy::Recovery => "military",
+                GrandStrategy::Expansion | GrandStrategy::Diplomacy => "economic",
+            }
+        };
+        if kind == "military"
+            || (kind == "research" && g.tree_effect(pid, "research_agreements") <= 0.0)
+            || g.players[pid]
+                .alliances
+                .values()
+                .any(|alliance| alliance.ends > g.turn && alliance.kind == kind)
+        {
+            return false;
+        }
+        match self.active_victory_target(g) {
+            None | Some(VictoryTarget::Diplomacy) => true,
+            Some(VictoryTarget::Culture) => self.culture_seat_allies,
+            Some(VictoryTarget::Science) => self.science_seat_allies,
+            Some(_) => false,
+        }
     }
 
     /// The living majors at war with `pid`.
@@ -191,7 +247,9 @@ impl AdvancedAi {
         let enemies = Self::shield_enemies(g, pid);
         let domination = plan.strategy == GrandStrategy::Conquest
             || self.active_victory_target(g) == Some(VictoryTarget::Domination);
-        let border_turn = !domination && turn % SHIELD_CADENCE == pid as u32 % SHIELD_CADENCE;
+        let border_turn = !domination
+            && turn % SHIELD_CADENCE == pid as u32 % SHIELD_CADENCE
+            && !self.shield_lane_alliance_waits(g, pid, plan);
         if enemies.is_empty() && !border_turn {
             return false;
         }
