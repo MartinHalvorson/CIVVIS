@@ -5330,6 +5330,13 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
+    // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
+    // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion
+    // and made no Faith purchase in three games. A threatened coastal city
+    // buys the strongest ranged ship for Faith before the Gold defender buy.
+    // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+    Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

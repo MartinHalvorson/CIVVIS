@@ -5282,6 +5282,17 @@ impl AdvancedAi {
         self.nusantara_reads_the_coast = false;
     }
 
+    /// Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see
+    /// [`Self::exalted_goddess_buys_the_coastal_guard`].
+    pub fn enable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = true;
+    }
+
+    /// The twin of `enable_exalted_goddess_buys_the_coastal_guard`.
+    pub fn disable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
