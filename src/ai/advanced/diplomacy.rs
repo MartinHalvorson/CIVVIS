@@ -3463,7 +3463,8 @@ impl AdvancedAi {
             let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
                 Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
             });
-            if let Some(post) = Self::racer_spy_post(
+            // `spies-steal-the-lead`: a Science aim posts to a Campus city.
+            if let Some(post) = Self::racer_spy_post_for(
                 g,
                 spy_id,
                 current_city,
@@ -3472,6 +3473,7 @@ impl AdvancedAi {
                 &culture_heist_targets,
                 &legal,
                 self.racer_spy_search(),
+                self.spies_steal_the_lead_on(plan),
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),

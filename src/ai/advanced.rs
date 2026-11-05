@@ -7619,6 +7619,9 @@ pub struct AdvancedAi {
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `medina-yields-to-the-amenities`: the housing card is not wanted while
+    /// two or more cities are short of Amenities. See `advanced/medina_quarter.rs`.
+    medina_yields_to_the_amenities: bool,
     /// `luxury-asks-pay-in-strategics`: with no spare copy that fits, the
     /// luxury slot asks a partner for a type we lack and pays in strategics
     /// the army does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
@@ -12075,6 +12078,7 @@ impl AdvancedAi {
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
+            medina_yields_to_the_amenities: false,
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
             military_alliance_shield_ask: None,

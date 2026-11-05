@@ -289,6 +289,40 @@ impl AdvancedAi {
         legal: &[Action],
         search: Option<RacerSpySearch<'_>>,
     ) -> Option<u32> {
+        Self::racer_spy_post_for(
+            g,
+            spy,
+            current_city,
+            leader,
+            racers,
+            culture_racers,
+            legal,
+            search,
+            false,
+        )
+    }
+
+    /// [`Self::racer_spy_post`], and under `spies-steal-the-lead`
+    /// (`prefer_campus`, a Science aim) outside a pad search: the leader's
+    /// cities with a Campus we have seen rank right after a seen pad, and a
+    /// Spy standing in a leader city with no Campus and no pad, where Disrupt
+    /// Rocketry is not offered, moves to a free one with a Campus. Steal Tech
+    /// Boost needs a Campus: live 072215Z posted a Spy to Canada's Halifax (its
+    /// capital, no Campus) at turn 152, where the host offered only Foment
+    /// Unrest and Listening Post, and it ran Gain Sources and Listening Posts
+    /// to the end of the game.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn racer_spy_post_for(
+        g: &Game,
+        spy: u32,
+        current_city: Option<u32>,
+        leader: Option<usize>,
+        racers: &BTreeSet<usize>,
+        culture_racers: &BTreeSet<usize>,
+        legal: &[Action],
+        search: Option<RacerSpySearch<'_>>,
+        prefer_campus: bool,
+    ) -> Option<u32> {
         let leader = leader?;
         let pid = g.spies.get(&spy)?.owner;
         let here = current_city
@@ -297,7 +331,17 @@ impl AdvancedAi {
         let searching = search.is_some_and(|search| {
             Self::racer_spy_searching(g, spy, current_city, Some(leader), search, legal)
         });
-        if (here == Some(leader) && !searching)
+        // `spies-steal-the-lead`: a Spy in a leader city where it can neither
+        // steal nor disrupt leaves for a free leader city with a seen Campus.
+        let campus_move = prefer_campus
+            && !searching
+            && here == Some(leader)
+            && current_city.is_some_and(|city| {
+                !Self::racer_spy_seen_campus(g, pid, city)
+                    && !Self::racer_spy_seen_pad(g, pid, city)
+            })
+            && !Self::racer_spy_disrupt_offered(g, spy, legal);
+        if (here == Some(leader) && !searching && !campus_move)
             || here.is_some_and(|owner| culture_racers.contains(&owner))
             || (here.is_some_and(|owner| racers.contains(&owner))
                 && Self::racer_spy_disrupt_offered(g, spy, legal))
@@ -333,6 +377,7 @@ impl AdvancedAi {
                 !held(*cid)
                     && Some(*cid) != current_city
                     && (!searching || seen_pad(*cid) || fresh(*cid))
+                    && (!campus_move || Self::racer_spy_seen_campus(g, pid, *cid))
                     && legal.iter().any(
                         |action| matches!(action, Action::AssignSpy { city, .. } if city == cid),
                     )
@@ -360,12 +405,26 @@ impl AdvancedAi {
                 };
                 (
                     std::cmp::Reverse(seen_pad(*cid)),
+                    // `spies-steal-the-lead`: a Campus to steal from next.
+                    std::cmp::Reverse(
+                        prefer_campus && !searching && Self::racer_spy_seen_campus(g, pid, *cid),
+                    ),
                     searched_at,
                     std::cmp::Reverse(capital_first),
                     distance,
                     *cid,
                 )
             })
+    }
+
+    /// Whether seat `pid` has seen `cid`'s Campus (the district on a tile it
+    /// has explored): where Steal Tech Boost can run.
+    pub(crate) fn racer_spy_seen_campus(g: &Game, pid: usize, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| {
+            city.districts.iter().any(|(district, tile)| {
+                g.district_family(*district) == "campus" && g.players[pid].explored.contains(tile)
+            })
+        })
     }
 
     /// Whether seat `pid` has seen a standing Spaceport within three tiles of
