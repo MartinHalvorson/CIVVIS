@@ -2201,6 +2201,9 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `spy-civics-come-first`; see
+        /// `advanced/spy_civics_come_first.rs`.
+        spy_civics_come_first => enable_spy_civics_come_first, disable_spy_civics_come_first;
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
@@ -2248,6 +2251,9 @@ impl AdvancedAi {
         /// Opt-in gene `science-heads-keep-their-queue`; see
         /// `advanced/science_heads_keep_their_queue.rs`.
         science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
+        /// Opt-in gene `denounce-only-to-declare`; see
+        /// `advanced/denounce_only_to_declare.rs`.
+        denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
         /// Prefer a safe legal site for a new native Science Campus.
         campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
     }
@@ -5218,6 +5224,21 @@ impl AdvancedAi {
     /// The twin of `enable_settler_shelters_from_the_war_2`.
     pub fn disable_settler_shelters_from_the_war_2(&mut self) {
         self.settler_shelters_from_the_war_2 = false;
+    }
+
+    /// Opt-in gene `military-alliance-shield-2`, version two of
+    /// `military-alliance-shield`: only Friendly rivals are asked, and a
+    /// Military kind taken or refused falls through to another kind; see
+    /// `advanced/military_alliance_shield.rs`. A seat plays one version, so
+    /// this turns version one off.
+    pub fn enable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = true;
+        self.military_alliance_shield = false;
+    }
+
+    /// The twin of `enable_military_alliance_shield_2`.
+    pub fn disable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

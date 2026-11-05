@@ -59,6 +59,8 @@ mod citizen_growth;
 mod formation_refusals;
 #[path = "civvis_orders/generals_lead_the_army.rs"]
 mod generals_lead_the_army;
+#[path = "civvis_orders/governor_exchange.rs"]
+mod governor_exchange;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
 #[path = "civvis_orders/host_move_audit.rs"]
@@ -3093,15 +3095,17 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
 /// `culture_allies` (`culture-seat-allies` armed on a seat aiming at
 /// Culture, or `science-seat-allies` on one aiming at Science) keeps them for
 /// that lane as well; the agent takes them under `CultureAllies` /
-/// `ScienceAllies`. `shield` is the host player `military-alliance-shield`
-/// asked this turn ([`AdvancedAi::military_alliance_shield_partner`]): its
-/// `ALLIANCE_MILITARY` crosses on every lane, since that desk prices the
-/// Domination target and prey itself, and the agent takes it under
-/// `MilitaryAllies`. Returns how many were dropped.
+/// `ScienceAllies`. `shield` is the host player and alliance type
+/// `military-alliance-shield` asked this turn
+/// ([`AdvancedAi::military_alliance_shield_ask`]): that one order crosses on
+/// every lane, since that desk prices the Domination target and prey itself,
+/// and the agent takes it under `MilitaryAllies` (`ALLIANCE_MILITARY`) or,
+/// for version two's other kinds, `ShieldAllies`. Returns how many were
+/// dropped.
 fn drop_off_lane_alliances(
     plan: Option<(&str, Option<&str>)>,
     culture_allies: bool,
-    shield: Option<i64>,
+    shield: Option<(i64, &str)>,
     orders: &mut Vec<Order>,
 ) -> usize {
     if plan_races_diplomacy(plan)
@@ -3113,9 +3117,9 @@ fn drop_off_lane_alliances(
     let before = orders.len();
     orders.retain(|order| {
         order.kind != "alliance"
-            || (shield.is_some()
-                && order.subject == shield
-                && order.verb.as_deref() == Some("ALLIANCE_MILITARY"))
+            || shield.is_some_and(|(subject, verb)| {
+                order.subject == Some(subject) && order.verb.as_deref() == Some(verb)
+            })
     });
     before - orders.len()
 }
@@ -4504,6 +4508,7 @@ struct DecisionMemory<'a> {
     /// The actuation contract's memory: orders the host has provably refused.
     host_order_refusals: &'a mut HostOrderRefusals,
     air_assault_continuation: &'a mut air_assault_continuation::Continuation,
+    governor_exchange: &'a mut governor_exchange::Continuation,
 }
 
 fn decide(
@@ -4520,6 +4525,7 @@ fn decide(
         host_move_refusals,
         host_order_refusals,
         air_assault_continuation,
+        governor_exchange,
     } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -4878,10 +4884,15 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    // `military-alliance-shield`: the host player its ask went to.
+    // `military-alliance-shield`: the host player and type its ask went to.
     let shield_subject = ai
-        .military_alliance_shield_partner()
-        .and_then(|partner| host_player_target(mirror_state, state, partner));
+        .military_alliance_shield_ask()
+        .and_then(|(partner, kind)| {
+            Some((
+                host_player_target(mirror_state, state, partner)?,
+                civ6_alliance_type(kind)?,
+            ))
+        });
     let held_alliances = drop_off_lane_alliances(
         plan_facts,
         ai.seat_allies_armed(),
@@ -5520,6 +5531,12 @@ fn decide(
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
+    }
+
+    // Retained assignments must pass the same refusal filter and outbound
+    // ledger as a newly planned order. The Governor operation budget follows.
+    if let Some(note) = governor_exchange.prepare(state, &mut orders) {
+        note_bits.push(format!("governor_exchange={note}"));
     }
 
     // ⭐ THE ACTUATION CONTRACT. An order that has come back Failed with the
@@ -9146,6 +9163,7 @@ fn main() {
         let mut host_move_refusals = HostMoveRefusals::default();
         let mut host_order_refusals = HostOrderRefusals::default();
         let mut air_assault_continuation = air_assault_continuation::Continuation::default();
+        let mut governor_exchange = governor_exchange::Continuation::default();
         // `denial-spies-count-their-losses`: the one frame reads every loss the
         // log holds up to its turn. See `SpyLossLedger`.
         if ai.denial_spies_count_their_losses_enabled() {
@@ -9172,6 +9190,7 @@ fn main() {
                 host_move_refusals: &mut host_move_refusals,
                 host_order_refusals: &mut host_order_refusals,
                 air_assault_continuation: &mut air_assault_continuation,
+                governor_exchange: &mut governor_exchange,
             },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
@@ -9212,6 +9231,7 @@ fn main() {
     let mut host_move_refusals = HostMoveRefusals::default();
     let mut host_order_refusals = HostOrderRefusals::default();
     let mut air_assault_continuation = air_assault_continuation::Continuation::default();
+    let mut governor_exchange = governor_exchange::Continuation::default();
     // The Firaxis repair cooldown belongs to the host, not the reconstructed
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
@@ -9389,6 +9409,7 @@ fn main() {
                             host_move_refusals: &mut host_move_refusals,
                             host_order_refusals: &mut host_order_refusals,
                             air_assault_continuation: &mut air_assault_continuation,
+                            governor_exchange: &mut governor_exchange,
                         },
                     );
                     live = Some(board);
@@ -9424,6 +9445,7 @@ fn main() {
                                     host_move_refusals: &mut host_move_refusals,
                                     host_order_refusals: &mut host_order_refusals,
                                     air_assault_continuation: &mut air_assault_continuation,
+                                    governor_exchange: &mut governor_exchange,
                                 },
                             );
                             live = Some(fresh);
@@ -9465,6 +9487,7 @@ fn main() {
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
                                         air_assault_continuation: &mut air_assault_continuation,
+                                        governor_exchange: &mut governor_exchange,
                                     },
                                 )
                             } else {
@@ -9480,6 +9503,7 @@ fn main() {
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
                                         air_assault_continuation: &mut air_assault_continuation,
+                                        governor_exchange: &mut governor_exchange,
                                     },
                                 )
                             }
