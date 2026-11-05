@@ -22713,6 +22713,12 @@ impl AdvancedAi {
         queue.clear();
         // A finishing Settler has not appeared in the exported unit roster
         // yet, but already fills the single supply-colony request.
+        // `districts-price-the-improvement`: the hint's District gets the same
+        // end-of-turn re-site the main path gives it (`take_turn_inner`), so a
+        // fresh site on a Farm moves to clean ground here too. The snapshot is
+        // this board before anything is placed. Nothing happens while the gene
+        // is off. See `advanced/district_planning.rs`.
+        preview.snapshot_bulldoze_sites(&board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -22730,6 +22736,7 @@ impl AdvancedAi {
         if claims_and_writers {
             preview.run_hint_defence_writers(&mut board, pid, &plan);
         }
+        preview.resite_bulldozing_districts(&mut board, pid);
         board.cities.get(&city)?.queue.first().cloned()
     }
 
