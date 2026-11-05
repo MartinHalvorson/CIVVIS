@@ -247,12 +247,14 @@ fn the_seat_search_reads_the_holdability_filters() {
     let from = game.cities[&capital].pos;
     let clear = HoldableLandThreats::default();
     assert!(
-        ai.holdable_land_seat(&game, 0, from, 0, &clear).is_some(),
+        ai.holdable_land_seat(&game, 0, from, 0, &clear).is_ok(),
         "fixture: an acceptable seat in reach"
     );
     let everywhere = HoldableLandThreats {
         rival_cities: game.map.tiles.keys().copied().collect(),
         ..HoldableLandThreats::default()
     };
-    assert_eq!(ai.holdable_land_seat(&game, 0, from, 0, &everywhere), None);
+    assert!(ai
+        .holdable_land_seat(&game, 0, from, 0, &everywhere)
+        .is_err());
 }

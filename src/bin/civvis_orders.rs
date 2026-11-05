@@ -10881,6 +10881,17 @@ fn main() {
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
+        // `--resumed`: replay the turn the way the live bridge's agent plays
+        // a board it first sees past turn one (the `--serve` fresh-board
+        // branch): the opening book is already played and the host's current
+        // items are our plan. Without it a fresh one-shot agent has
+        // `book_pos = 0`, so every mid-game replay plays the opening book and
+        // never reaches the strategic production claims at all (no
+        // `early-settler-floor` Settler on a turn the live seat queued one).
+        if args.iter().any(|a| a == "--resumed") && state.turn > 1 {
+            ai.skip_opening_book();
+            adopt_host_production(&mut ours, &state);
+        }
         let mut host_peace_retries = HostPeaceRetries::default();
         let mut host_move_refusals = HostMoveRefusals::default();
         let mut host_order_refusals = HostOrderRefusals::default();

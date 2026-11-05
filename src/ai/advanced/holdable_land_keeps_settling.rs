@@ -73,6 +73,7 @@
 //! Off (the default) nothing here runs.
 
 use super::early_settler_floor::{EARLY_SETTLER_FLOOR_STANDARD_TURN, EARLY_SETTLER_MAX_BUILD};
+use super::settler_admission_journal::SETTLER_ADMISSION_JOURNAL_STRIDE;
 use super::*;
 
 /// Standard turns a new city must have left before the game ends for the
@@ -232,7 +233,7 @@ impl AdvancedAi {
 
     /// The best holdable seat for a Settler trained in a city at `from`: the
     /// `settler-site-gate` verdict over the city's acceptable sites that pass
-    /// [`Self::holdable_land_refusal`].
+    /// [`Self::holdable_land_refusal`]. `Err` says why there is none.
     pub(super) fn holdable_land_seat(
         &self,
         g: &Game,
@@ -240,13 +241,24 @@ impl AdvancedAi {
         from: Pos,
         walkers: usize,
         threats: &HoldableLandThreats,
-    ) -> Option<(Pos, f64)> {
+    ) -> Result<(Pos, f64), String> {
         let mut sites = self.settle_sites(g, pid, from, HOLDABLE_LAND_SITE_RADIUS);
+        let found = sites.len();
         sites.retain(|(site, _)| {
             self.exhaustion_site_unpriceable(g, pid, *site).is_none()
                 && !Self::inside_rival_sphere(g, pid, *site)
-                && Self::holdable_land_refusal(g, threats, *site).is_none()
         });
+        let acceptable = sites.len();
+        let mut refused: BTreeMap<&'static str, usize> = BTreeMap::new();
+        sites.retain(
+            |(site, _)| match Self::holdable_land_refusal(g, threats, *site) {
+                Some(why) => {
+                    *refused.entry(why).or_default() += 1;
+                    false
+                }
+                None => true,
+            },
+        );
         let claimed: Vec<Pos> = self
             .settler_targets
             .iter()
@@ -258,7 +270,33 @@ impl AdvancedAi {
             .map(|(_, target)| *target)
             .collect();
         let floor = Self::settler_site_gate_floor(g.player_city_ids(pid).len());
-        Self::settler_site_gate_verdict(g, &sites, &claimed, walkers, floor).ok()
+        Self::settler_site_gate_verdict(g, &sites, &claimed, walkers, floor).map_err(|hold| {
+            let refused: Vec<String> = refused
+                .iter()
+                .map(|(why, n)| format!("{n} where {why}"))
+                .collect();
+            format!(
+                "{found} site(s), {acceptable} acceptable, {} holdable{}; {}",
+                sites.len(),
+                if refused.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (refused: {})", refused.join(", "))
+                },
+                hold.describe()
+            )
+        })
+    }
+
+    /// Journal why the floor queued nothing this turn, every
+    /// [`SETTLER_ADMISSION_JOURNAL_STRIDE`] turns. Reads only.
+    fn journal_holdable_land_decline(&self, g: &Game, why: &str) {
+        if g.turn.is_multiple_of(SETTLER_ADMISSION_JOURNAL_STRIDE)
+            && self.journal().wants(crate::reasoning::Level::Detail)
+        {
+            think!(self.journal(), Expansion, Detail,
+                "No Settler for holdable land"; "holdable-land-keeps-settling: {why}");
+        }
     }
 
     /// See the module: queue one Settler for holdable land in the
@@ -270,12 +308,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.holdable_land_window(g)
-            || self.base.minor
-            || self.base.barb
-            || plan.strategy == GrandStrategy::Recovery
-            || plan.threatened_city.is_some()
-        {
+        if !self.holdable_land_window(g) || self.base.minor || self.base.barb {
             return;
         }
         let city_ids = g.player_city_ids(pid);
@@ -283,6 +316,13 @@ impl AdvancedAi {
         let (walkers, queued) = Self::early_settler_census(g, pid);
         let target = self.settlement_target(plan);
         if n_cities == 0 || queued > 0 || walkers > 1 || n_cities + walkers >= target {
+            return;
+        }
+        if plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some() {
+            self.journal_holdable_land_decline(
+                g,
+                &format!("{n_cities} cities against {target}, but the plan defends a city"),
+            );
             return;
         }
         let at_major_war = g.players.iter().any(|other| {
@@ -293,6 +333,10 @@ impl AdvancedAi {
                 && g.is_at_war(pid, other.id)
         });
         if at_major_war {
+            self.journal_holdable_land_decline(
+                g,
+                &format!("{n_cities} cities against {target}, but we are at war with a major"),
+            );
             return;
         }
         let opening_capital = self
@@ -308,35 +352,63 @@ impl AdvancedAi {
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
         let mut best: Option<(f64, u32, Pos, f64)> = None;
+        // Why each city was passed over, for the decline line.
+        let mut passed: BTreeMap<&'static str, usize> = BTreeMap::new();
+        let mut seat_miss: Option<String> = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
-            if Some(cid) == opening_capital
-                || city.pop < HOLDABLE_LAND_MIN_POP
-                || (city.last_attacked > 0
-                    && g.turn.saturating_sub(city.last_attacked) <= HOLDABLE_LAND_ATTACK_MEMORY)
-                || Self::early_settler_raider_near(g, city.pos)
-                || !Self::early_settler_may_displace(g, pid, cid)
-                || !g.can_produce(pid, cid, &item)
+            let skip = if Some(cid) == opening_capital {
+                Some("reserved for the conquest opening")
+            } else if city.pop < HOLDABLE_LAND_MIN_POP {
+                Some("too small")
+            } else if city.last_attacked > 0
+                && g.turn.saturating_sub(city.last_attacked) <= HOLDABLE_LAND_ATTACK_MEMORY
             {
+                Some("recently attacked")
+            } else if Self::early_settler_raider_near(g, city.pos) {
+                Some("a raider in its ring")
+            } else if !Self::early_settler_may_displace(g, pid, cid) {
+                Some("its queue keeps its item")
+            } else if !g.can_produce(pid, cid, &item) {
+                Some("cannot train a Settler")
+            } else {
+                None
+            };
+            if let Some(why) = skip {
+                *passed.entry(why).or_default() += 1;
                 continue;
             }
             let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
                 g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
             });
-            if turns > max_turns
-                || best.as_ref().is_some_and(|(old, old_city, _, _)| {
-                    turns > *old + 1e-9 || ((turns - old).abs() <= 1e-9 && cid > *old_city)
-                })
-            {
+            if turns > max_turns {
+                *passed.entry("too slow").or_default() += 1;
                 continue;
             }
-            let Some((site, worth)) = self.holdable_land_seat(g, pid, city.pos, walkers, &threats)
-            else {
+            if best.as_ref().is_some_and(|(old, old_city, _, _)| {
+                turns > *old + 1e-9 || ((turns - old).abs() <= 1e-9 && cid > *old_city)
+            }) {
                 continue;
-            };
-            best = Some((turns, cid, site, worth));
+            }
+            match self.holdable_land_seat(g, pid, city.pos, walkers, &threats) {
+                Ok((site, worth)) => best = Some((turns, cid, site, worth)),
+                Err(why) => {
+                    *passed.entry("no holdable seat").or_default() += 1;
+                    seat_miss.get_or_insert(format!("{}: {why}", city.name));
+                }
+            }
         }
         let Some((turns, cid, site, worth)) = best else {
+            let passed: Vec<String> = passed.iter().map(|(why, n)| format!("{n} {why}")).collect();
+            self.journal_holdable_land_decline(
+                g,
+                &format!(
+                    "{n_cities} cities and {walkers} walking against {target}; cities passed \
+                     over: {}{}",
+                    passed.join(", "),
+                    seat_miss.map_or(String::new(), |miss| format!("; {miss}"))
+                ),
+            );
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();
