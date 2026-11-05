@@ -99,3 +99,73 @@ fn defense_queue_classification_keeps_fortifications_and_local_defenders() {
         assert!(AdvancedAi::active_queue_answers_siege(&g, &item));
     }
 }
+
+#[test]
+fn a_damaged_city_can_reclaim_its_scout_queue_for_walls() {
+    let (mut g, city, _) = fixture();
+    g.at_war.clear();
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: scout.clone(),
+        },
+    )
+    .unwrap();
+    let mut disabled = g.clone();
+    assert!(AdvancedAi::new()
+        .redirect_unsafe_city_queue_for_defense(&mut disabled, 0, Some(city))
+        .is_none());
+    assert_eq!(disabled.cities[&city].queue.first(), Some(&scout));
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_garrison_under_fire();
+    let mut calm = g.clone();
+    calm.cities.get_mut(&city).unwrap().hp = 200;
+    assert!(ai
+        .redirect_unsafe_city_queue_for_defense(&mut calm, 0, None)
+        .is_none());
+    assert_eq!(calm.cities[&city].queue.first(), Some(&scout));
+
+    assert_eq!(
+        ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(city)),
+        Some((city, walls()))
+    );
+    assert_eq!(g.cities[&city].queue.first(), Some(&walls()));
+}
+
+#[test]
+fn a_later_scout_cannot_replace_the_confirmed_wall_handoff() {
+    let (mut g, city, _) = fixture();
+    let mut ai = AdvancedAi::new();
+    ai.enable_garrison_under_fire();
+    let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(city));
+    assert_eq!(claim, Some((city, walls())));
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    g.apply(0, &Action::Produce { city, item: scout }).unwrap();
+    g.at_war.clear();
+    g.cities.get_mut(&city).unwrap().hp = 200;
+    ai.reapply_confirmed_defense_queue(&mut g, 0, claim.as_ref());
+    assert_eq!(g.cities[&city].queue.first(), Some(&walls()));
+}
+
+#[test]
+fn recon_formations_do_not_answer_a_siege_but_local_defenders_still_do() {
+    let (g, _, _) = fixture();
+    for unit in [crate::name!("scout"), crate::name!("ranger")] {
+        for item in [Item::Unit { unit }, Item::Formation { unit, formation: 1 }] {
+            assert!(AdvancedAi::active_queue_is_defensive(&g, &item));
+            assert!(!AdvancedAi::active_queue_answers_siege(&g, &item));
+        }
+    }
+    for unit in [crate::name!("warrior"), crate::name!("archer")] {
+        for item in [Item::Unit { unit }, Item::Formation { unit, formation: 1 }] {
+            assert!(AdvancedAi::active_queue_answers_siege(&g, &item));
+        }
+    }
+}
