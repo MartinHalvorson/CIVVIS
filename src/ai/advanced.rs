@@ -3339,6 +3339,10 @@ pub struct AdvancedAi {
     /// Spy id → the turn its standing order is trusted through. Pruned at
     /// the top of `advanced_spies`.
     spy_orders_until: BTreeMap<u32, u32>,
+    /// Spy id → the turn its current `spy_orders_until` entry was set, so a
+    /// later turn that finds the Spy idle by the host's report spends it. See
+    /// `advanced/spy_patience_reads_the_host.rs`.
+    spy_order_turns: BTreeMap<u32, u32>,
 
     /// Whether a seat playing under an assigned victory target may still
     /// mount a denial against a rival at MATCH POINT. `victory_denial` has
@@ -6613,6 +6617,10 @@ pub struct AdvancedAi {
     /// when the network needs their slots. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
+    /// `denounce-only-to-declare`: the science-threat rung no longer
+    /// denounces; the war opening does, when a war follows. See
+    /// `advanced/denounce_only_to_declare.rs`. Off by default.
+    denounce_only_to_declare: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -8720,6 +8728,9 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
+    /// sooner. See `advanced/spy_civics_come_first.rs`.
+    spy_civics_come_first: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
@@ -9441,6 +9452,11 @@ pub struct AdvancedAi {
     /// rivals ahead instead of idling on Listening Posts. See
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
+    /// `science-heads-keep-their-queue`: a city building a Campus-family
+    /// district or one of its buildings keeps its queue against the backlog
+    /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
+    /// by default.
+    science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -10314,6 +10330,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
+mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;
@@ -10420,6 +10438,8 @@ mod site_lookahead;
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
+/// `science-heads-keep-their-queue`: see `advanced/science_heads_keep_their_queue.rs`.
+mod science_heads_keep_their_queue;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
@@ -10819,6 +10839,12 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// A Spy the host reports idle spends its order's patience. See
+/// `advanced/spy_patience_reads_the_host.rs`.
+mod spy_patience_reads_the_host;
+/// `spy-civics-come-first`: the Spy-slot civics sooner. See
+/// `advanced/spy_civics_come_first.rs`.
+mod spy_civics_come_first;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11647,6 +11673,7 @@ impl AdvancedAi {
             spy_mission_patience: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
+            spy_order_turns: BTreeMap::new(),
             deny_while_targeted: false,
             stock_denial_lead_time: false,
             projected_stock_denial: false,
@@ -12056,6 +12083,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
+            denounce_only_to_declare: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -12387,6 +12415,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
+            spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             settler_shelters_from_the_war_2: false,
@@ -12523,6 +12552,7 @@ impl AdvancedAi {
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
+            science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
