@@ -7294,6 +7294,11 @@ pub struct AdvancedAi {
     /// yields where our own cities press the site. See
     /// `advanced/hidden_border_reach.rs`. Off by default.
     hidden_border_yields_to_our_pressure: bool,
+    /// `holdable-land-keeps-settling`: past the opening floor, the
+    /// soonest unthreatened city queues a Settler while a seat we can very
+    /// likely hold lies in reach. See `advanced/holdable_land_keeps_settling.rs`.
+    /// Off by default.
+    holdable_land_keeps_settling: bool,
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
     /// `advanced/trader_fills_the_idle_route/purchase.rs`. Off by default.
@@ -10580,6 +10585,9 @@ mod gold_buys_the_opening_builder;
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+/// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
+/// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
+mod holdable_land_keeps_settling;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
@@ -11940,6 +11948,7 @@ impl AdvancedAi {
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
+            holdable_land_keeps_settling: false,
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
             holdout_keeps_the_faith_war_2: false,
@@ -32851,6 +32860,11 @@ impl AdvancedAi {
             // below. Exact no-op while the gene is off. See
             // `advanced/early_settler_floor.rs`.
             self.claim_early_settler_floor(g, pid, &plan);
+            // `holdable-land-keeps-settling`: past the opening floor, a
+            // Settler for a holdable seat, ahead of the routine claims below.
+            // Exact no-op while the gene is off. See
+            // `advanced/holdable_land_keeps_settling.rs`.
+            self.claim_holdable_land_settler(g, pid, &plan);
             // `capital-monument-after-the-second-city`: the capital's Monument,
             // once the second city stands, after the floor's Settler and ahead
             // of the routine claims. Exact no-op while the gene is off. See

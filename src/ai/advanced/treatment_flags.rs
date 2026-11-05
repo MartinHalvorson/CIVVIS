@@ -2172,6 +2172,9 @@ impl AdvancedAi {
         /// Opt-in gene `luxury-asks-pay-in-strategics`; see
         /// `advanced/luxury_asks_pay_in_strategics.rs`.
         luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
+        /// Opt-in gene `holdable-land-keeps-settling`; see
+        /// `advanced/holdable_land_keeps_settling.rs`.
+        holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
     }
 }
 

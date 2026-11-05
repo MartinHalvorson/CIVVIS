@@ -5007,6 +5007,15 @@ pub const GENES: &[Gene] = &[
     // early city with a hostile in relief range its row before the pressure
     // gate. See `objective_board.rs` (`early_cities_defend_first`).
     Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
+    // `holdable-land-keeps-settling`: past the opening floor (t45 Online),
+    // the soonest unthreatened city queues one Settler while the plan wants
+    // more cities and a seat we can very likely hold lies in reach: the
+    // settler-site-gate verdict, nine tiles from charted rival cities, no
+    // stronger major's soldier within six, no raider within three, at peace
+    // with every major. Live Deity Korea Online: Settler starts fell from 70
+    // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
+    // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
+    Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
