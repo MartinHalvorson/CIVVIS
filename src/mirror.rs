@@ -4096,7 +4096,7 @@ pub fn modeled_major_player_count(game: &crate::game::Game) -> usize {
 /// export each time, so a peace drops the pair. Rivals on an older export
 /// (`None`) contribute nothing. Our own seat is skipped: `at_war` carries
 /// those wars.
-pub fn apply_rival_wars(
+pub(crate) fn apply_rival_wars(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
     seat_of_host: &BTreeMap<usize, usize>,
@@ -12948,6 +12948,7 @@ const HOST_STATE_STEPS: &[(HostPhase, &[HostStep])] = &[
             ("governor_state", BOTH, step_governor_state),
             ("host_envoys", BOTH, step_host_envoys),
             ("host_war_types", BOTH, step_host_war_types),
+            ("rival_wars", BOTH, step_rival_wars),
             ("great_person_points", BOTH, step_great_person_points),
             ("strategic_stockpiles", BOTH, step_strategic_stockpiles),
             ("player_ages", BOTH, step_player_ages),
@@ -13342,6 +13343,11 @@ fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
             }
         }
     }
+}
+
+/// Who each met rival is fighting besides us. See [`apply_rival_wars`].
+fn step_rival_wars(ctx: &mut HostStepCtx<'_>) {
+    apply_rival_wars(ctx.game, ctx.state, ctx.seat_of_host);
 }
 
 fn step_host_war_types(ctx: &mut HostStepCtx<'_>) {
@@ -14199,8 +14205,6 @@ pub fn rebuild_from_state(
             }
         }
     }
-    // Who each met rival is fighting besides us. See `apply_rival_wars`.
-    apply_rival_wars(&mut game, state, &seat_of_host);
 
     // Met city-states are public actors, not anonymous blocked territory. Keep
     // their real cities, visible units, war state, Envoys and Suzerain so settling,
@@ -16391,8 +16395,6 @@ impl LiveMirror {
                 apply_foreign_unit_strikes(&mut self.game, uid, unit);
             }
         }
-        // Who each met rival is fighting besides us. See `apply_rival_wars`.
-        apply_rival_wars(&mut self.game, state, &seat_of_host);
 
         let free_city_seats: Vec<usize> = self
             .game
