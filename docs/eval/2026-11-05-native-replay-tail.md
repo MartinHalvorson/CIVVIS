@@ -22,6 +22,20 @@ captured bytes and counts. The source was
 `66c54b81327e5b309e2b64484b24b7061a3c78f2fde2aaf38a9af2d9438fbc79`.
 This is evidence about input delivery, not a policy or native strength result.
 
+The committed helper subsequently reproduced two original-binary controls
+through turn 180: 463 requests and 8,050 actual captured reads per control,
+with clean EOF. Independent reconstruction checked every original payload,
+ordered captured byte sequence and count, executable and archive hashes,
+arguments, working directory, and genome. Each control used regular files for
+446 requests and a FIFO prefix with a regular tail for 17 requests.
+
+That qualification used a prospectively specified 180-second request timeout.
+An earlier 45-second regression remains a failure: after 392 matching requests
+and 6,816 matching reads through `153/0`, request `153/1` timed out with only
+7 of its 16 FIFO prefix reads delivered, each about 45 MB. The stable tail
+does not remove prefix throughput costs, and these results do not establish a
+full-history pass or reliable completion at the shorter timeout.
+
 A regular file cannot acknowledge consumption. `FifoReads.served` therefore
 returns `None` when a regular final snapshot is present; `prefix_served` counts
 only the FIFO prefix. Delivery completion proves the prefix was drained and
