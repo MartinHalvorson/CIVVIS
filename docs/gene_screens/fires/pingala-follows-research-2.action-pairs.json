@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "pingala-follows-research-2",
+  "scope": "Offline repeated proposal activation, not native execution or strength. Two OFF and two ON processes each consume393 ordered original-native requests/6834 actual reads through154/0 and exit0 on EOF. Both arms withhold v1; ON alone forces v2. Separate v1/v2 repeats and initial failed metadata qualification audit are retained. Independent verifier reconstructs actual archived reads and rechecks raw replies, membership, arguments, EOF exits and derived pair records.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-pingala-launch.native-queries.tar.xz",
+    "sha256": "15c5979e0bc532dbb5d136b244fd8fec1b61da9807c40bffe1e309b761ba1e12"
+  },
+  "members": [
+    "pingala-launch-one-bit/pair-0.json",
+    "pingala-launch-one-bit/pair-1.json"
+  ]
+}

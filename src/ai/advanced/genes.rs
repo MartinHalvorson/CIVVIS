@@ -5232,6 +5232,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // Independently price the first launch job without changing rated Pingala v1.
+    Gene { tag: "pingala-follows-research-2", field: "pingala_follows_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research_2, disable: AdvancedAi::disable_pingala_follows_research_2 },
     // `denounce-only-to-declare`: the Science seat's threat rung no longer
     // denounces the space racer; the war opening denounces when a war
     // follows. Live Deity 11-04/05: a rival we denounced declared war on us
