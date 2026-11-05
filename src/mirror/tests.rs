@@ -13605,6 +13605,7 @@ fn host_state_step_list_is_the_recorded_order() {
             "governor_state",
             "host_envoys",
             "host_war_types",
+            "rival_wars",
             "great_person_points",
             "strategic_stockpiles",
             "player_ages",
@@ -13626,6 +13627,7 @@ fn host_state_step_list_is_the_recorded_order() {
             "governor_state",
             "host_envoys",
             "host_war_types",
+            "rival_wars",
             "great_person_points",
             "strategic_stockpiles",
             "player_ages",
@@ -15216,4 +15218,49 @@ fn anti_air_mapping_refresh_restores_the_host_type_after_a_modeled_upgrade() {
     assert_eq!(mirror.uid_of[&14352416], uid);
     assert_eq!(mirror.game.units[&uid].kind.as_str(), "anti_air_gun");
     assert_eq!(mirror.game.players[0].gold, 300.0);
+}
+
+/// `apply_rival_wars`: a war either rival names is a war between their seats,
+/// our own seat and unmapped players are skipped, a rival on an older export
+/// adds nothing, the engine's `at_war` is untouched, and a peace drops the
+/// pair on the next export.
+#[test]
+fn rival_wars_cross_into_their_own_observed_set() {
+    let mut game = crate::game::Game::new_full(4, 24, 16, 7_923, 300, 0, false);
+    // Host ids 10, 11, 12 are seats 1, 2, 3; our host id 9 is seat 0.
+    let seat_of_host: BTreeMap<usize, usize> =
+        [(9, 0), (10, 1), (11, 2), (12, 3)].into_iter().collect();
+    let rival = |player: usize, at_war_with: Option<Vec<usize>>| StateRival {
+        player,
+        at_war_with,
+        ..StateRival::default()
+    };
+    let mut state = StateSnapshot {
+        rivals: vec![
+            // Seat 1 fights seat 2, us (host 9) and an unmapped player (40).
+            rival(10, Some(vec![11, 9, 40])),
+            rival(11, Some(Vec::new())),
+            // An older export says nothing.
+            rival(12, None),
+        ],
+        ..StateSnapshot::default()
+    };
+    apply_rival_wars(&mut game, &state, &seat_of_host);
+    assert_eq!(
+        game.observed_rival_wars.iter().copied().collect::<Vec<_>>(),
+        vec![(1, 2)]
+    );
+    assert!(game.rivals_at_war(1, 2) && game.rivals_at_war(2, 1));
+    assert!(!game.rivals_at_war(1, 3));
+    assert!(
+        !game.is_at_war(1, 2),
+        "the engine's own war set is left to the planner's war readers"
+    );
+    assert!(!game.rivals_at_war(0, 1), "our own wars cross as `at_war`");
+
+    // Peace: the pair is gone on the next export.
+    state.rivals[0].at_war_with = Some(Vec::new());
+    apply_rival_wars(&mut game, &state, &seat_of_host);
+    assert!(game.observed_rival_wars.is_empty());
+    assert!(!game.rivals_at_war(1, 2));
 }

@@ -4981,6 +4981,32 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // Version three (live Lv 8 Deity Korea Online, 11-04, -af's sizing):
+    // barbarians outclass our line from turns 9-17, and the camps within
+    // eight of our cities stood 32-36 turns with no force on ~60% of their
+    // rows while their need rose 38 -> 70 as their units upgraded. A near
+    // camp now gets version two's premium and armed party in any era, so it
+    // is cleared while it is small. See `advanced/camps_close_the_age.rs`.
+    Gene { tag: "camps-close-the-age-3", field: "camps_close_the_age_3", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_3, disable: AdvancedAi::disable_camps_close_the_age_3 },
+    // `luxury-asks-pay-in-strategics`: live Lv 8 Deity Korea Online, 28 games
+    // 11-04/05: Amenities cost 6.7% of production at t90-110 (the retire
+    // gate's margin); the luxury swap held 74 times with a city short, 51 for
+    // want of any spare copy; Gold alone closed 0 of 16 luxury asks, barter
+    // 22; 56 of the 74 holds stocked 10+ of a strategic. With no spare that
+    // fits, the slot asks for a type we lack and pays in strategics the army
+    // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
+    // Version two (live Lv 8 Deity Korea Online, 11-04 night, -af's trace,
+    // under the operator's early_city_lost restart: losing any of our first
+    // three cities ends the game). Version one moved the capital's Defend
+    // row above the early city that then fell in all three early-city
+    // losses (225111Z: Yangsan's row valued 726 against the capital's 445;
+    // the capital took 15-19 units and Yangsan fell at t93), while the
+    // capital itself fell in 0 of 19 Deity games. Version two ranks the
+    // early cities' rows first by risk, not the capital first, and gives an
+    // early city with a hostile in relief range its row before the pressure
+    // gate. See `objective_board.rs` (`early_cities_defend_first`).
+    Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

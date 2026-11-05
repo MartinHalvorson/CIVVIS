@@ -65,6 +65,12 @@ MODE_HOST_FROM_CORE = 5     # 2, called from the game core's next publish
 #: menus in the same process.  Modes 1 and 4 crashed this build and 2/5 were
 #: slower than a relaunch (2026-10-15); this one skips only the boot and the
 #: quit, keeping the setup path every game already takes.
+#: ★ VERDICT 2026-11-05 (#4456 live probe, 003514Z -> 003645Z): the exit worked
+#: (answered in 0.9 s, main menu read, settings verified, Start clicked ~17 s
+#: after the ask) and Civ VI then SIGSEGV'd at 0x18 on WinMain ~2 s into the new
+#: game's load (Civ6_Exe_Child-2026-11-04-183707.ips) -- the same fault as
+#: modes 1/3/4. A second game in one process crashes this build whichever way
+#: it is started, so keep the relaunch; this mode stays for diagnostics only.
 MODE_MENU = 6
 MODES = (MODE_RESTART, MODE_HOST, MODE_SAME_MAP, MODE_RESTART_FROM_CORE,
          MODE_HOST_FROM_CORE, MODE_MENU)

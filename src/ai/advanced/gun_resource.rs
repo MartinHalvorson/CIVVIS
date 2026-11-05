@@ -164,6 +164,12 @@ impl AdvancedAi {
         if !self.siege_buys_the_gun_resource && !self.army_upgrade_materials {
             return Vec::new();
         }
+        Self::barter_spares(g, pid, held)
+    }
+
+    /// [`Self::siege_barter_spares`] without its policy gate: what may go in
+    /// a barter, luxuries first, whichever lane asks.
+    pub(super) fn barter_spares(g: &Game, pid: usize, held: &BTreeSet<String>) -> Vec<BarterSpare> {
         let mut need: BTreeMap<Name, f64> = BTreeMap::new();
         for unit in g.units.values().filter(|unit| unit.owner == pid) {
             let spec = &g.rules.units[unit.kind];
