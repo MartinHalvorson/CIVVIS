@@ -16,6 +16,27 @@
 //! followed by an alliance is read as one: the cool-down starts at the ask
 //! and lifts once the partner is allied with us. Both desks that ask
 //! (`propose_strategic_alliance` and the coalition) read and write it.
+//!
+//! ★★ A FRIENDSHIP STEP IS NOT A REFUSAL (2026-11-04). The host takes an
+//! alliance in two asks: to a rival that is only Friendly the agent's
+//! `CivvisAllianceStep` declares the friendship and asks nothing else, and
+//! the alliance itself waits for the next ask, once the friendship stands
+//! (`DIPLO_STATE_DECLARED_FRIEND`; "This relationship state is required to
+//! make an Alliance", Expansion1_Civilopedia_Text.xml
+//! LOC_PEDIA_CONCEPTS_PAGE_DIPLO_12_CHAPTER_CONTENT_PARA_2). The cool-down
+//! read that first ask as a refusal and held the partner thirty turns —
+//! longer than the friendship it had just won. Live Deity Korea Science
+//! civvis-20261104T213449Z (Online speed): the ask to player 3 at t107 was
+//! the friendship step (declared), the bar held it to t137, the 21-turn
+//! Online friendship had lapsed by then, and the t137 ask was the friendship
+//! step again; the alliance itself was never asked, and player 3 won at
+//! t173. So the ask remembers whether the partner was a declared friend: a
+//! partner that was not, and is one now, took the friendship and is asked
+//! for the alliance after [`ALLIANCE_FRIENDSHIP_STEP_TURNS`]. A partner
+//! asked while already a friend, or still not one, keeps the full bar. A
+//! native board bundles the friendship into the alliance deal, so there an
+//! accepted ask is an alliance (no bar) and a refused one leaves no
+//! friendship (full bar), exactly as before.
 
 use super::AdvancedAi;
 use crate::game::Game;
@@ -23,23 +44,40 @@ use crate::game::Game;
 /// Turns a partner that did not ally is left unasked.
 pub(super) const ALLIANCE_REFUSAL_TURNS: u32 = 30;
 
+/// Turns after a friendship step before the alliance itself is asked: the
+/// agent's own retry floor for an alliance ask to one rival
+/// (`AllianceRetryTurns`, default 5, in `CivvisAllianceStep`). An ask inside
+/// it is refused by the agent as `alliance_cooldown` without reaching the
+/// rival, yet would be remembered here as a friend's refusal.
+pub(super) const ALLIANCE_FRIENDSHIP_STEP_TURNS: u32 = 5;
+
 impl AdvancedAi {
     /// `alliance-remembers-the-refusal`: whether `partner` was asked within
     /// [`ALLIANCE_REFUSAL_TURNS`] and is not allied with us. Never off.
+    /// A partner that was not a declared friend when asked and is one now
+    /// took the friendship step: barred only for
+    /// [`ALLIANCE_FRIENDSHIP_STEP_TURNS`].
     pub(super) fn alliance_refusal_barred(&self, g: &Game, pid: usize, partner: usize) -> bool {
-        self.alliance_remembers_the_refusal
-            && g.alliance_with(pid, partner).is_none()
-            && self
-                .alliance_ask_turns
-                .get(&partner)
-                .is_some_and(|asked| g.turn < asked.saturating_add(ALLIANCE_REFUSAL_TURNS))
+        if !self.alliance_remembers_the_refusal || g.alliance_with(pid, partner).is_some() {
+            return false;
+        }
+        let Some(&(asked, friend_when_asked)) = self.alliance_ask_turns.get(&partner) else {
+            return false;
+        };
+        let bar = if !friend_when_asked && g.are_friends(pid, partner) {
+            ALLIANCE_FRIENDSHIP_STEP_TURNS
+        } else {
+            ALLIANCE_REFUSAL_TURNS
+        };
+        g.turn < asked.saturating_add(bar)
     }
 
     /// `alliance-remembers-the-refusal`: an alliance was just asked of
-    /// `partner`. A no-op off.
-    pub(super) fn alliance_note_asked(&mut self, g: &Game, partner: usize) {
+    /// `partner`, a declared friend of ours or not. A no-op off.
+    pub(super) fn alliance_note_asked(&mut self, g: &Game, pid: usize, partner: usize) {
         if self.alliance_remembers_the_refusal {
-            self.alliance_ask_turns.insert(partner, g.turn);
+            self.alliance_ask_turns
+                .insert(partner, (g.turn, g.are_friends(pid, partner)));
         }
     }
 }
@@ -63,7 +101,7 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_alliance_remembers_the_refusal();
         g.turn = 10;
-        ai.alliance_note_asked(&g, 1);
+        ai.alliance_note_asked(&g, 0, 1);
         assert!(
             ai.alliance_refusal_barred(&g, 0, 1),
             "barred the turn it was asked"
@@ -92,9 +130,55 @@ mod tests {
         );
         // Off: nothing is remembered, nothing is barred.
         let mut off = AdvancedAi::new();
-        off.alliance_note_asked(&g, 2);
+        off.alliance_note_asked(&g, 0, 2);
         assert!(off.alliance_ask_turns.is_empty());
         assert!(!off.alliance_refusal_barred(&g, 0, 2));
+    }
+
+    /// Live civvis-20261104T213449Z: the t107 ask to a Friendly rival only
+    /// declared the friendship. Once that friendship stands the alliance is
+    /// asked five turns after the step, not thirty; a partner asked while
+    /// already a friend, or one that refused the friendship too, keeps the
+    /// full bar.
+    #[test]
+    fn a_friendship_step_waits_five_turns_not_thirty() {
+        let mut g = game();
+        let mut ai = AdvancedAi::new();
+        ai.enable_alliance_remembers_the_refusal();
+        g.turn = 107;
+        // Asked while not friends: the host can only declare the friendship.
+        ai.alliance_note_asked(&g, 0, 1);
+        ai.alliance_note_asked(&g, 0, 2);
+        // Player 1 took the friendship; player 2 did not.
+        g.players[0].friends_until.insert(1, 128);
+        g.players[1].friends_until.insert(0, 128);
+        assert!(
+            ai.alliance_refusal_barred(&g, 0, 1),
+            "inside the agent's retry floor"
+        );
+        g.turn = 111;
+        assert!(
+            ai.alliance_refusal_barred(&g, 0, 1),
+            "still inside it at 111"
+        );
+        g.turn = 112;
+        assert!(
+            !ai.alliance_refusal_barred(&g, 0, 1),
+            "the new friend is asked for the alliance at 112"
+        );
+        assert!(
+            ai.alliance_refusal_barred(&g, 0, 2),
+            "a rival that refused the friendship keeps the thirty-turn bar"
+        );
+        // Asked again, now as a friend, and not allied: a real refusal.
+        ai.alliance_note_asked(&g, 0, 1);
+        g.turn = 141;
+        assert!(
+            ai.alliance_refusal_barred(&g, 0, 1),
+            "a friend that refused the alliance waits thirty turns"
+        );
+        g.turn = 142;
+        assert!(!ai.alliance_refusal_barred(&g, 0, 1));
     }
 
     #[test]

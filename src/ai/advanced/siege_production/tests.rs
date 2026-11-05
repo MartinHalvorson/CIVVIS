@@ -767,3 +767,120 @@ fn a_housing_bound_citys_fresh_granary_is_not_given_to_the_siege_gun_under_the_g
         "room to grow: the fresh Granary is routine again"
     );
 }
+
+/// `breaker-spares-the-backlog-builder`: the breaker reservation does not
+/// take the Builder `backlog-builder-takes-the-queue` set at the head while
+/// the worked backlog still wants it; with the gene off it does (live
+/// Immortal civvis-20261104T204728Z t154-182: "Bogota trains a Builder for
+/// the worked backlog" then "gives its fresh builder queue to the siege gun"
+/// every turn, two Catapults built while 12 worked tiles stood unimproved).
+/// Once the backlog is covered the fresh Builder is routine again.
+#[test]
+fn the_backlog_builder_is_not_given_to_the_siege_gun_under_the_gene() {
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    // The capital (25 Production) has just queued the backlog's Builder; a
+    // remote one-Production city is idle; both work bare hills a Mine would
+    // improve; no Builder stands afield; the walled target needs a breaker.
+    let case = |covered: bool| {
+        let (mut g, _, plan, home, target) = siege_gap_case();
+        for uid in g.player_unit_ids(0) {
+            if g.units[&uid].kind == "builder" {
+                g.remove_unit(uid);
+            }
+        }
+        let home_pos = g.cities[&home].pos;
+        let target_pos = g.cities[&target].pos;
+        let remote_pos = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                g.wdist(**pos, home_pos) >= 6
+                    && g.wdist(**pos, target_pos) >= 6
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+            })
+            .map(|(pos, _)| *pos)
+            .next()
+            .expect("a remote land site");
+        let remote = g.found_city_for(0, remote_pos, None);
+        g.players[0].techs.insert(crate::name!("mining"));
+        for cid in [home, remote] {
+            let center = g.cities[&cid].pos;
+            for position in g.cities[&cid].owned_tiles.iter().copied() {
+                if position == center || g.map.tiles[&position].district.is_some() {
+                    continue;
+                }
+                let tile = g.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+            g.cities.get_mut(&cid).unwrap().pop = 4;
+        }
+        if covered {
+            // Two Builders afield cover the eight worked hills.
+            for _ in 0..2 {
+                g.spawn_unit("builder", 0, home_pos);
+            }
+        }
+        g.apply(
+            0,
+            &Action::Produce {
+                city: home,
+                item: builder.clone(),
+            },
+        )
+        .expect("the capital can start its Builder");
+        assert_eq!(g.item_invested_production(home, &builder), 0.0);
+        assert!(
+            crate::ai::BasicAi::unimproved_worked_tiles(&g, 0) >= 4,
+            "fixture: a worked backlog"
+        );
+        for (cid, production) in [(home, 25.0), (remote, 1.0)] {
+            let before = g.city_yields(cid).production;
+            std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+                .entry(cid)
+                .or_default()
+                .production += production - before;
+        }
+        (g, plan, home, remote)
+    };
+    let reserve = |g: &mut Game, plan: &StrategicPlan, gene: bool| {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_builders_cover_the_worked_backlog();
+        ai.enable_backlog_builder_takes_the_queue();
+        if gene {
+            ai.enable_breaker_spares_the_backlog_builder();
+        }
+        ai.reserve_delegated_domination_siege(g, 0, plan)
+    };
+
+    let (mut off, plan, home, _) = case(false);
+    assert_eq!(
+        reserve(&mut off, &plan, false),
+        Some((home, gun.clone())),
+        "off: the fresh backlog Builder yields to the timely siege gun"
+    );
+    let (mut on, plan, home, remote) = case(false);
+    assert_eq!(
+        reserve(&mut on, &plan, true),
+        Some((remote, gun.clone())),
+        "on: the gun goes to the slow idle city"
+    );
+    assert_eq!(on.cities[&home].queue.first(), Some(&builder));
+
+    let (mut covered, plan, home, _) = case(true);
+    assert_eq!(
+        reserve(&mut covered, &plan, true),
+        Some((home, gun)),
+        "a covered backlog: the fresh Builder is routine again"
+    );
+}

@@ -33,17 +33,9 @@
       "group": "bundle",
       "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the deployment bundle: the universe plus `apply_gene_ledger`."
     },
-    "engine_repairs_economy": {
-      "group": "bundle",
-      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: twenty-one economy repairs, each already its own gene."
-    },
     "engine_repairs_universe": {
       "group": "bundle",
       "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the two native halves and nothing else."
-    },
-    "engine_repairs_war": {
-      "group": "bundle",
-      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: twenty-eight war repairs, each already its own gene."
     },
     "envelope_cache_across_own_moves": {
       "group": "infrastructure",
