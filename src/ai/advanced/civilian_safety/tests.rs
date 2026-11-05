@@ -354,10 +354,15 @@ fn a_settler_taken_beside_a_standing_city_scars_the_ground_under_the_gene() {
     );
 
     // A Settler that founds a new city is spent, not taken, under the gene.
-    let site = game
+    // Clear the first scar so its three-tile disk cannot cover the new site.
+    gene.settler_capture_scars.clear();
+    let candidates: Vec<Pos> = game
         .wdisk(home, 6)
         .into_iter()
         .filter(|pos| game.wdist(*pos, home) >= 4 && open_land(&game, *pos))
+        .collect();
+    let site = candidates
+        .into_iter()
         .find(|pos| {
             let probe = game.spawn_test_unit("settler", 0, *pos);
             let legal = game.can_found_city(probe);
