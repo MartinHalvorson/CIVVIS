@@ -5330,6 +5330,8 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // A fresh native Science Campus chooses safe legal land before coastal lowland.
+    Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
     // `science-seat-races-the-congress`: a seat aiming at Science runs the
     // Diplomatic racer's ballot (`CivvisCongressRacer`,
     // `CivvisControlAgent.lua`): participation votes first, then A on itself
@@ -5338,6 +5340,7 @@ pub const GENES: &[Gene] = &[
     // votes that never decided a session. Live only; the simulator has no
     // such Congress, so it cannot screen this.
     Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
+||||||| 2a58ed2f15
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

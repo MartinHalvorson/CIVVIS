@@ -5586,6 +5586,8 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
     /// new since the last resolve, so a capture beside a standing city
@@ -10802,6 +10804,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -11952,6 +11955,7 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
