@@ -29,6 +29,10 @@ impl AdvancedAi {
         if !self.districts_protect_seowon_science {
             return 0.0;
         }
+        // A Seowon's lost output is Campus output, irrespective of the
+        // district taking its neighbor. Honor the same expansion-phase
+        // Science pricing as a new Campus, not the intruding district's lane.
+        let lane = self.campus_pricing_lane("campus", lane);
         let Some(tile) = g.map.get(pos) else {
             return 0.0;
         };
@@ -202,6 +206,39 @@ mod tests {
             before - after,
             2.0,
             "the projected loss equals actual engine output"
+        );
+    }
+
+    #[test]
+    fn seowon_protection_keeps_campus_science_pricing_through_expansion() {
+        let (g, _, _, site) = fixture();
+        let mut ai = on();
+        ai.enable_campus_through_expansion();
+        let science = loss(&ai, &g, site, "theater_square");
+        let expansion = ai.seowon_site_loss_value(
+            &g,
+            0,
+            crate::name!("theater_square"),
+            site,
+            GrandStrategy::Expansion,
+        );
+        assert_eq!(
+            science, expansion,
+            "the district cannot discount the Science it removes"
+        );
+        let mut other_lane = AdvancedAi::new();
+        other_lane.enable_districts_protect_seowon_science();
+        other_lane.enable_campus_through_expansion();
+        let unchanged = other_lane.seowon_site_loss_value(
+            &g,
+            0,
+            crate::name!("theater_square"),
+            site,
+            GrandStrategy::Expansion,
+        );
+        assert!(
+            unchanged < science,
+            "the Science-only pricing must not change other lanes"
         );
     }
 
