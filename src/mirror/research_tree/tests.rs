@@ -261,10 +261,14 @@ fn revealed_identity_is_retained_even_when_the_generated_list_matches_and_cleare
     let mut gaps = Vec::new();
     apply(
         &mut g,
-        &state(serde_json::json!([{"t":"TECH_SMART_MATERIALS", "requires":parents}])),
+        &state(
+            serde_json::json!([{"t":"TECH_SMART_MATERIALS", "requires":parents, "can_research":true}]),
+        ),
         &mut gaps,
     );
     assert!(g.host_research_prerequisites_revealed(node));
+    assert_eq!(g.host_can_research(0, node), Some(true));
+    assert_eq!(g.host_can_research(1, node), None);
     assert!(Arc::ptr_eq(&baseline, &g.rules));
     let copy = g.clone();
     apply(
@@ -273,9 +277,12 @@ fn revealed_identity_is_retained_even_when_the_generated_list_matches_and_cleare
         &mut gaps,
     );
     assert!(!g.host_research_prerequisites_revealed(node));
+    assert_eq!(g.host_can_research(0, node), None);
+    assert_eq!(copy.host_can_research(0, node), Some(true));
     assert!(copy.host_research_prerequisites_revealed(node));
     apply(&mut g, &observed(), &mut gaps);
     assert!(g.host_research_prerequisites_revealed(node));
+    assert_eq!(g.host_can_research(0, node), Some(false));
     apply(&mut g, &StateSnapshot::default(), &mut gaps);
     assert!(!g.host_research_prerequisites_revealed(node));
 }

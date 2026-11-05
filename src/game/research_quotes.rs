@@ -25,6 +25,15 @@ impl Game {
         self.host_revealed_research.contains(&technology)
     }
 
+    /// Current host eligibility, distinct from hypothetical prerequisites.
+    /// Missing observations stay unknown rather than becoming a refusal.
+    pub fn host_can_research(&self, pid: usize, technology: Name) -> Option<bool> {
+        self.host_research_eligibility
+            .get(&pid)?
+            .get(&technology)
+            .copied()
+    }
+
     /// Switching the host's research path banks the previous node's work.
     /// TechTree.lua:238-245 sends VALUE_EXCLUSIVE while another node is active;
     /// :1114 reads saved progress for every node. Use that measured bank, not a

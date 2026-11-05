@@ -10680,7 +10680,6 @@ mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
 mod first_launch_research;
-mod revealed_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -10726,6 +10725,7 @@ mod nuclear_launcher;
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
 mod peacetime_republic;
+mod revealed_launch_research;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.

@@ -18,6 +18,7 @@ impl AdvancedAi {
         if current == goal
             || self.tech_leads_to(g, current, goal)
             || !g.host_research_prerequisites_revealed(goal_name)
+            || g.host_can_research(pid, goal_name) != Some(true)
             || !g.available_techs(pid).contains(&goal_name)
             || g.host_remaining_research_cost(pid, Name::new(current))
                 .is_none()

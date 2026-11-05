@@ -42,6 +42,10 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan) {
             ),
         ]),
     )]));
+    g.host_research_eligibility = Arc::new(BTreeMap::from([(
+        0,
+        BTreeMap::from([(crate::name!("smart_materials"), true)]),
+    )]));
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.enable_revealed_launch_tech_takes_the_slot();
     let plan = StrategicPlan {
@@ -85,7 +89,7 @@ fn native_queue_yields_to_the_revealed_milestone_and_replans_do_not_repeat_it() 
 
 #[test]
 fn off_missing_hidden_and_prerequisite_cases_keep_the_incumbent() {
-    for case in 0..5 {
+    for case in 0..7 {
         let (mut g, mut ai, plan) = fixture();
         match case {
             0 => ai.disable_revealed_launch_tech_takes_the_slot(),
@@ -97,8 +101,17 @@ fn off_missing_hidden_and_prerequisite_cases_keep_the_incumbent() {
                     vec![crate::name!("advanced_ai")],
                 )]))
                 .unwrap(),
-            _ => {
+            4 => {
                 g.players[0].science_projects.clear();
+            }
+            5 => {
+                g.host_research_eligibility = Arc::new(BTreeMap::new());
+            }
+            _ => {
+                g.host_research_eligibility = Arc::new(BTreeMap::from([(
+                    0,
+                    BTreeMap::from([(crate::name!("smart_materials"), false)]),
+                )]));
             }
         }
         ai.advanced_research(&mut g, 0, &plan);

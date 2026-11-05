@@ -1125,6 +1125,7 @@ impl Game {
             self.rules = base;
         }
         self.host_revealed_research = Arc::new(BTreeSet::new());
+        self.host_research_eligibility = Arc::new(BTreeMap::new());
         let revealed = observations.keys().copied().collect();
         let mut changes = BTreeMap::new();
         for (node, mut parents) in observations {
@@ -7220,6 +7221,10 @@ pub struct Game {
     /// Transient observation metadata; refreshed after a native save is loaded.
     #[serde(skip)]
     pub(crate) host_revealed_research: Arc<BTreeSet<Name>>,
+    /// Instantaneous native CanResearch readings, by mirrored player and node.
+    /// Hypothetical prerequisite searches continue to use the rules graph.
+    #[serde(skip)]
+    pub(crate) host_research_eligibility: Arc<BTreeMap<usize, BTreeMap<Name, bool>>>,
     /// Native strategic-resource prices for units and formations in each city,
     /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
     /// include the host's modifiers; absent prices use the ordinary rules.
@@ -8005,6 +8010,7 @@ impl From<GameSer> for Game {
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_research_base_rules: None,
             host_revealed_research: Arc::new(BTreeSet::new()),
+            host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
@@ -8777,6 +8783,7 @@ impl Game {
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_research_base_rules: None,
             host_revealed_research: Arc::new(BTreeSet::new()),
+            host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
