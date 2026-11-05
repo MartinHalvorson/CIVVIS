@@ -37,7 +37,7 @@ use super::*;
 /// every path — exploration, settlers, the army — routes around it. Revealed
 /// terrain is never overridden: once the plot is seen, its real terrain governs.
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
-struct HostUnitOrderKey {
+pub(super) struct HostUnitOrderKey {
     pub(super) verb: String,
     pub(super) pos: Option<(i32, i32)>,
 }
