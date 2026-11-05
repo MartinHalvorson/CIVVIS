@@ -5170,6 +5170,13 @@ pub const GENES: &[Gene] = &[
     // with us and a home city is threatened. See
     // `outmatched_war_prices_the_army.rs`.
     Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
+    // Three Kingdoms pays +1 Science per Mine and +1 Food per Farm beside a
+    // Seowon (the live host's rule). The engine's data carries a flat
+    // per-city placeholder, so the Builder priced a Seowon-side Mine at its
+    // Production alone. Under the gene Korea's Builders price the adjacency,
+    // matching `korea-reads-three-kingdoms` on the district side. See
+    // `advanced/korea_mines_beside_the_seowon.rs`.
+    Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
     // ---- append: a-b ------------------------------------------------
