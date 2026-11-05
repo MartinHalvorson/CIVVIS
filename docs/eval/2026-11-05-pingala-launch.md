@@ -75,8 +75,12 @@ rating. Corrected source `c1d906e185619f4821e50e386f9e1589b59a5c00` passes all
 7025 optimized tests (53 skipped), including 19 governor and two new metadata
 regressions. Separate doctests: 0 passed, 4 ignored. The exact native executable
 SHA256 is `93d3a9557e8b7251b2a04597c8c2b264046035499bef7a2b6a778395ba9c3fe3`.
-Tracked compiled-input hashes and clean source were checked. Final main
-integration validation remains pending.
+Tracked compiled-input hashes and clean source were checked.
+
+Integration retains all 837 positions of main `a4884eab8765382ef1c928c6d9e4f41e9bd599b1`,
+then appends v2. All 279 deployed genes remain identical, including v1 with
+v2 off. Regenerated artifacts add only v2 family metadata; no rating is
+inherited. The final integrated test/check results are recorded in PR #4553.
 
 The earlier pre-version8f91 full library run was6633PASS/3serverFAIL/53ignored.
 The three unchanged server tests pass separately in the same frozen executable.

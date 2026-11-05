@@ -14,6 +14,19 @@
 //! the cheapest units to lose are disbanded until it is not — never a siege
 //! gun, an air unit, a unit an active siege needs, or a city's garrison.
 //!
+//! `bankruptcy-exits-the-drain-2`: the same levers, entered while the
+//! treasury holds less than [`DRAIN_RUNWAY_TURNS`] turns of the deficit, and
+//! no unit disbanded within [`DRAIN_FRONT_RADIUS`] of a visible soldier of an
+//! empire at war with us. Live Deity `civvis-20261105T111305Z` t194: income
+//! fell from +11.8 to -76.6 in one turn, leaving 243 Gold, 3.2 turns. Version
+//! one waits for under one turn, and the recovery queue started a Bank. Gold
+//! hit 0 at t199, the bankruptcy amenity charge reached -6 then -13 a city,
+//! and science fell from 352 to 151 as the space race needed it (also
+//! `civvis-20261105T080206Z`, bankrupt t145-155). The seat was at war with
+//! England at 3.3x our power, so units holding the front stay: interior units
+//! go first, and if the cards and sales cannot close the gap the front keeps
+//! its army.
+//!
 //! **Why (10-14, two Emperor passers lost after the t150 gate).** With gold at
 //! 0 and income negative the host charges `amenities_bankruptcy` in every city
 //! (1 + one per 10 Gold of deficit): 20 → 30 → 50 across 083713Z's ten cities
@@ -37,6 +50,14 @@ pub(crate) const DRAIN_DISBANDS_PER_TURN: usize = 3;
 
 /// A gold card estimated below this many Gold a turn is not slotted for the drain.
 pub(crate) const DRAIN_CARD_MIN_GOLD: f64 = 2.0;
+
+/// `bankruptcy-exits-the-drain-2`: turns of the deficit the treasury must
+/// cover before the drain stands down. Version one is one turn.
+pub(crate) const DRAIN_RUNWAY_TURNS: f64 = 5.0;
+
+/// `bankruptcy-exits-the-drain-2`: tiles from a visible soldier of an empire
+/// at war with us inside which no unit is disbanded.
+pub(crate) const DRAIN_FRONT_RADIUS: i32 = 6;
 
 impl AdvancedAi {
     /// `solvent-or-hold`: income is not positive.
@@ -195,12 +216,35 @@ impl AdvancedAi {
     }
 
     /// `bankruptcy-exits-the-drain`: income is negative and the treasury holds
-    /// less than one turn of it.
+    /// less than one turn of it; under version two, less than
+    /// [`DRAIN_RUNWAY_TURNS`] turns.
     pub(super) fn drained(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
-        self.bankruptcy_exits_the_drain
+        let runway = if self.bankruptcy_exits_the_drain_2 {
+            DRAIN_RUNWAY_TURNS
+        } else {
+            1.0
+        };
+        (self.bankruptcy_exits_the_drain || self.bankruptcy_exits_the_drain_2)
             && player.gold_per_turn < 0.0
-            && player.gold < -player.gold_per_turn
+            && player.gold < -player.gold_per_turn * runway
+    }
+
+    /// `bankruptcy-exits-the-drain-2`: whether `uid` holds the front, with a
+    /// visible soldier of an empire at war with `pid` within
+    /// [`DRAIN_FRONT_RADIUS`]. Always false under version one.
+    pub(super) fn drain_spares_the_front(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        if !self.bankruptcy_exits_the_drain_2 {
+            return false;
+        }
+        let at = g.units[&uid].pos;
+        g.units.values().any(|other| {
+            other.owner != pid
+                && g.is_at_war(pid, other.owner)
+                && g.rules.units[other.kind].class == "military"
+                && g.unit_visible_to(other.id, pid)
+                && g.wdist(other.pos, at) <= DRAIN_FRONT_RADIUS
+        })
     }
 
     /// The gold cards worth slotting while drained, best first, with their
@@ -309,7 +353,8 @@ impl AdvancedAi {
                     && spec.domain.as_deref() != Some("air")
                     && upkeep > 0.0
                     && !garrison
-                    && !self.siege_needs_the_unit(g, pid, uid))
+                    && !self.siege_needs_the_unit(g, pid, uid)
+                    && !self.drain_spares_the_front(g, pid, uid))
                 .then(|| {
                     let power = spec.strength.max(spec.ranged_attack_strength())
                         * f64::from(unit.hp.max(1))

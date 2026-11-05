@@ -2934,6 +2934,59 @@ const LUXURY_BUY_PHASE: u32 = 4;
 /// over cities of `needed − have` where positive. A city whose ledger the
 /// host did not report (`NaN` or `-1`, see `StateCity::amenities`) is left
 /// out rather than read as content or as starving.
+/// `captives-come-home`: Gold the treasury keeps through a ransom: upkeep and the purchase lanes
+/// (luxury top-ups, the upgrade floor) are not spent on a Spy.
+const RANSOM_GOLD_RESERVE: i64 = 150;
+/// The most a Spy is worth back: under a new one's Production at the turns
+/// the network empties (225-262), and its experience comes with it.
+const RANSOM_CEILING_MAX: i32 = 200;
+/// Below this the treasury cannot meet any likely price; no ask goes out.
+const RANSOM_CEILING_MIN: i32 = 40;
+/// One ask per captor every this many turns, staggered by the captor's seat,
+/// so an unanswered deal session cannot stand the trade lane down.
+const RANSOM_CADENCE: u32 = 5;
+
+/// `captives-come-home`: ask one captor at peace with us for one of our
+/// captured Spies (`buy CAPTIVE`), Gold up to the ceiling. The captor is the
+/// one holding most of ours whose staggered [`RANSOM_CADENCE`] turn this is
+/// (`captives_of_ours`, the mod's read of the shipped deal screen); the
+/// ceiling is the treasury over the reserve, capped. `None` when an ask was
+/// pushed, else the hold. The caller decides whether the network wants its
+/// slots (`AdvancedAi::captives_come_home_wanted`). See
+/// `advanced/captives_come_home.rs`.
+fn append_captive_ransom_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let held = |rival: &civvis::mirror::StateRival| rival.captives_of_ours.unwrap_or(0);
+    let captor = state
+        .rivals
+        .iter()
+        .filter(|rival| held(rival) > 0 && !rival.at_war)
+        .filter(|rival| state.turn % RANSOM_CADENCE == rival.player as u32 % RANSOM_CADENCE)
+        .max_by_key(|rival| (held(rival), std::cmp::Reverse(rival.player)));
+    let Some(captor) = captor else {
+        return Some("ransom_hold:no_captor");
+    };
+    let ceiling = (state.gold - RANSOM_GOLD_RESERVE).min(RANSOM_CEILING_MAX as i64) as i32;
+    if ceiling < RANSOM_CEILING_MIN {
+        return Some("ransom_hold:treasury");
+    }
+    // One working deal per rival at a time is the mod's rule.
+    if orders.iter().any(|order| {
+        (order.kind == "sell" || order.kind == "buy") && order.subject == Some(captor.player as i64)
+    }) {
+        return Some("ransom_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(captor.player as i64),
+        verb: Some("CAPTIVE".to_string()),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
     state
         .cities
@@ -3079,6 +3132,10 @@ const LUXURY_SWAP_2_MIN_DEFICIT: f64 = 1.0;
 const LUXURY_SWAP_SECOND_COPY_SPARES: f64 = 4.0;
 const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 
+/// The swap's fit test: whether the seller's seat holds none of a luxury
+/// (`None` when the board cannot read it). `luxury-swap-asks-2` only.
+type LuxuryLacks<'a> = Option<&'a dyn Fn(i64, &str) -> Option<bool>>;
+
 /// `lacks` (`luxury-swap-asks-2`, `None` for version one): whether the rival
 /// with this host player id holds no copy of the luxury, as the host names
 /// it, on its mirrored board; `None` when the board cannot say.
@@ -3086,7 +3143,32 @@ const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 fn append_luxury_swap_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
-    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+    lacks: LuxuryLacks<'_>,
+) -> Option<&'static str> {
+    luxury_swap_order(state, orders, lacks, &|_| false)
+}
+
+/// `luxury-asks-pay-in-strategics-2`: the swap, with every luxury in `stale`
+/// (one whose last swap the buy arm answered `barter_short`: the host would
+/// not let that copy go, to any partner) off our side. Live 11-05: 085437Z
+/// put one Marble up eight times from turn 94 to 142, to three partners,
+/// and every ask shorted; 040135Z put one Truffles up eight times. Each held
+/// the luxury slot, so the strategic ask never ran.
+fn append_luxury_swap_order_2(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    lacks: LuxuryLacks<'_>,
+    stale: &std::collections::BTreeSet<String>,
+) -> Option<&'static str> {
+    luxury_swap_order(state, orders, lacks, &|name| stale.contains(name))
+}
+
+/// Both swaps: `stale` names a luxury never put up.
+fn luxury_swap_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    lacks: LuxuryLacks<'_>,
+    stale: &dyn Fn(&str) -> bool,
 ) -> Option<&'static str> {
     let min_deficit = if lacks.is_some() {
         LUXURY_SWAP_2_MIN_DEFICIT
@@ -3112,7 +3194,7 @@ fn append_luxury_swap_order(
         .collect();
     let mut spares: Vec<(&str, f64)> = counts
         .iter()
-        .filter(|(name, _)| !selling.contains(name.as_str()))
+        .filter(|(name, _)| !selling.contains(name.as_str()) && !stale(name.as_str()))
         .map(|(name, count)| (name.as_str(), (count.floor() - 1.0).max(0.0)))
         .filter(|(_, spare)| *spare >= 1.0)
         .collect();
@@ -3251,6 +3333,45 @@ fn append_luxury_strategic_ask(
     spares: &[civvis::ai::BarterSpare],
     give_worth: &dyn Fn(i64, &str, u32) -> f64,
 ) -> Option<&'static str> {
+    luxury_strategic_ask(state, orders, spares, give_worth, &|_| false, false)
+}
+
+/// `luxury-asks-pay-in-strategics-2`: version one's ask, but never of a
+/// partner in `shorted` (the host's buy arm answered our last barter to it
+/// `barter_short`: it could not take what we put up), and with Horses put up
+/// only when no other strategic is spare. Live Deity games of 11-05 after
+/// version one's arming: 29 of 61 strategic asks died in the Lua arm as
+/// `barter_short` before reaching the partner, 24 of the 27 partners asked
+/// more than once answered the same way every time, and Horses shorted 22
+/// times in 42 asks against 2 in 10 for Niter (the rivals hold their Horses
+/// at the stockpile cap).
+fn append_luxury_strategic_ask_2(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    spares: &[civvis::ai::BarterSpare],
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+    shorted: &std::collections::BTreeSet<i64>,
+) -> Option<&'static str> {
+    luxury_strategic_ask(
+        state,
+        orders,
+        spares,
+        give_worth,
+        &|partner| shorted.contains(&partner),
+        true,
+    )
+}
+
+/// Both versions' ask: `skip` names a partner never asked, and
+/// `horses_last` keeps Horses back while another strategic is spare.
+fn luxury_strategic_ask(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    spares: &[civvis::ai::BarterSpare],
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+    skip: &dyn Fn(i64) -> bool,
+    horses_last: bool,
+) -> Option<&'static str> {
     if amenity_deficit(state) < LUXURY_SWAP_2_MIN_DEFICIT {
         return Some("luxury_strategic_hold:content");
     }
@@ -3277,11 +3398,18 @@ fn append_luxury_strategic_ask(
         .flat_map(|verb| verb.split([',', ';']))
         .filter_map(|part| part.split_once('=').map(|(name, _)| name))
         .collect();
-    let payable: Vec<&civvis::ai::BarterSpare> = spares
+    let mut payable: Vec<&civvis::ai::BarterSpare> = spares
         .iter()
         .filter(|spare| !spare.luxury && spare.amount > 0)
         .filter(|spare| !selling.contains(spare.resource.as_str()))
         .collect();
+    if horses_last
+        && payable
+            .iter()
+            .any(|spare| spare.resource != "RESOURCE_HORSES")
+    {
+        payable.retain(|spare| spare.resource != "RESOURCE_HORSES");
+    }
     if payable.is_empty() {
         return Some("luxury_strategic_hold:no_strategic");
     }
@@ -3306,6 +3434,7 @@ fn append_luxury_strategic_ask(
                     && order.subject == Some(rival.player as i64)
             })
         })
+        .filter(|rival| !skip(rival.player as i64))
         .collect();
     if partners.is_empty() {
         return Some("luxury_strategic_hold:no_partner");
@@ -5748,6 +5877,23 @@ fn decide(
             }
         }
     }
+    // `captives-come-home`: our captured Spies bought back while the network
+    // is short of its slots. See `append_captive_ransom_order`.
+    if ai.captives_come_home_enabled() {
+        let held = state
+            .units
+            .iter()
+            .filter(|unit| unit.kind == "UNIT_SPY")
+            .count();
+        let capacity = state.spy_capacity.unwrap_or(0).max(0) as usize;
+        if ai.captives_come_home_wanted(&mirror_state.game, 0, held, capacity) {
+            match append_captive_ransom_order(state, &mut orders) {
+                None => note_bits.push("captive_ransom=1".to_string()),
+                Some(why) if why != "ransom_hold:no_captor" => note_bits.push(why.to_string()),
+                Some(_) => {}
+            }
+        }
+    }
     // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better
     // siege gun waits on, bought from a met major's trade screen. See
     // `append_gun_resource_buy_order`.
@@ -5862,7 +6008,17 @@ fn decide(
         let fit = ai
             .luxury_swap_asks_2_enabled()
             .then_some(&lacks as &dyn Fn(i64, &str) -> Option<bool>);
-        match append_luxury_swap_order(state, &mut orders, fit) {
+        let swapped = if ai.luxury_asks_pay_in_strategics_2_enabled() {
+            append_luxury_swap_order_2(
+                state,
+                &mut orders,
+                fit,
+                &ai.luxury_swap_stale_luxuries(&mirror_state.game),
+            )
+        } else {
+            append_luxury_swap_order(state, &mut orders, fit)
+        };
+        match swapped {
             None => note_bits.push("luxury_swap=1".to_string()),
             Some(why) => {
                 if why == "luxury_swap_hold:no_spare"
@@ -5895,7 +6051,18 @@ fn decide(
                             })
                             .map_or(0.0, |seat| game.resource_gold_value(seat, resource, amount))
                     };
-                    match append_luxury_strategic_ask(state, &mut orders, &spares, &give_worth) {
+                    let asked = if ai.luxury_asks_pay_in_strategics_2_enabled() {
+                        append_luxury_strategic_ask_2(
+                            state,
+                            &mut orders,
+                            &spares,
+                            &give_worth,
+                            &ai.luxury_barter_shorted_partners(game),
+                        )
+                    } else {
+                        append_luxury_strategic_ask(state, &mut orders, &spares, &give_worth)
+                    };
+                    match asked {
                         None => note_bits.push("luxury_strategic_ask=1".to_string()),
                         Some(why) => note_bits.push(why.to_string()),
                     }
@@ -10183,6 +10350,111 @@ impl SpyLossLedger {
     }
 }
 
+/// `luxury-asks-pay-in-strategics-2`: each `barter_short` answer of the Lua
+/// buy arm to one of our luxury asks (one of the items we put up could not
+/// go), with the turn, the partner and the items the ask put up (from the
+/// same turn's `order_failed` / `order_verified` line for that partner; empty
+/// when none is in the log), read from the run's `events.jsonl` the way
+/// `SpyLossLedger` reads it: incrementally, whole lines only, and over from
+/// the start on a shorter (new) log.
+#[derive(Default)]
+struct BarterShortLedger {
+    offset: u64,
+    shorts: Vec<(u32, i64)>,
+    offered: std::collections::BTreeMap<(u32, i64), Vec<String>>,
+}
+
+impl BarterShortLedger {
+    fn refresh(&mut self, events: &Path) {
+        use std::io::{BufRead, Seek, SeekFrom};
+        let Ok(mut file) = std::fs::File::open(events) else {
+            return;
+        };
+        let length = file.metadata().map_or(0, |meta| meta.len());
+        if length < self.offset {
+            *self = Self::default();
+        }
+        if file.seek(SeekFrom::Start(self.offset)).is_err() {
+            return;
+        }
+        let mut reader = std::io::BufReader::new(file);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let Ok(read) = reader.read_until(b'\n', &mut line) else {
+                return;
+            };
+            if read == 0 || line.last() != Some(&b'\n') {
+                return;
+            }
+            self.offset += read as u64;
+            self.read(&line);
+        }
+    }
+
+    /// Keep a `deal_offer` line our buy arm answered `barter_short`, or the
+    /// items of a luxury ask's `order_failed` / `order_verified` line.
+    fn read(&mut self, line: &[u8]) {
+        let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
+        let short = has(b"barter_short") && has(b"deal_offer");
+        if !short && !has(b"LUXURY_ANY;") {
+            return;
+        }
+        let Ok(event) = serde_json::from_slice::<serde_json::Value>(line) else {
+            return;
+        };
+        let text = |key: &str| event.get(key).and_then(|value| value.as_str());
+        let Some(turn) = event
+            .get("turn")
+            .and_then(|turn| turn.as_u64())
+            .and_then(|turn| u32::try_from(turn).ok())
+        else {
+            return;
+        };
+        match text("kind") {
+            Some("deal_offer") if text("reason") == Some("barter_short") => {
+                if let Some(target) = event.get("target").and_then(|target| target.as_i64()) {
+                    self.shorts.push((turn, target));
+                }
+            }
+            Some("order_failed" | "order_verified") if text("order_kind") == Some("buy") => {
+                let (Some(subject), Some(verb)) = (
+                    event.get("subject").and_then(|subject| subject.as_i64()),
+                    text("verb"),
+                ) else {
+                    return;
+                };
+                let Some(list) = verb.strip_prefix("LUXURY_ANY;") else {
+                    return;
+                };
+                let items = list
+                    .split(',')
+                    .filter_map(|part| part.split_once('=').map(|(name, _)| name.to_string()))
+                    .collect();
+                self.offered.insert((turn, subject), items);
+            }
+            _ => {}
+        }
+    }
+
+    /// The shorts on or before `turn` (a replay reads a log that runs on),
+    /// each with the items its ask put up.
+    fn through(&self, turn: u32) -> Vec<(u32, i64, Vec<String>)> {
+        self.shorts
+            .iter()
+            .filter(|(at, _)| *at <= turn)
+            .map(|(at, partner)| {
+                let items = self
+                    .offered
+                    .get(&(*at, *partner))
+                    .cloned()
+                    .unwrap_or_default();
+                (*at, *partner, items)
+            })
+            .collect()
+    }
+}
+
 /// `--strategy` named a league genome for this seat to play. The league is
 /// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
 /// with the gene ledger applied — and the gene screen prices everything else.
@@ -11095,6 +11367,13 @@ fn main() {
             spy_losses.refresh(&events);
             ai.observe_spy_losses(spy_losses.through(state.turn));
         }
+        // `luxury-asks-pay-in-strategics-2`: the one frame reads every short
+        // the log holds up to its turn. See `BarterShortLedger`.
+        if ai.luxury_asks_pay_in_strategics_2_enabled() {
+            let mut barter_shorts = BarterShortLedger::default();
+            barter_shorts.refresh(&events);
+            ai.observe_luxury_barter_shorts(barter_shorts.through(state.turn));
+        }
         let reply = decide(
             &mut live,
             &mut ai,
@@ -11162,6 +11441,8 @@ fn main() {
     // `denial-spies-count-their-losses`: our Spies the host reported lost,
     // read from the run's own log as it grows. See `SpyLossLedger`.
     let mut spy_losses = SpyLossLedger::default();
+    // `luxury-asks-pay-in-strategics-2`: partners our barter could not reach.
+    let mut barter_shorts = BarterShortLedger::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
     // for it. See "order postconditions" above.
@@ -11220,6 +11501,10 @@ fn main() {
                 if ai.denial_spies_count_their_losses_enabled() {
                     spy_losses.refresh(&events);
                     ai.observe_spy_losses(spy_losses.through(state.turn));
+                }
+                if ai.luxury_asks_pay_in_strategics_2_enabled() {
+                    barter_shorts.refresh(&events);
+                    ai.observe_luxury_barter_shorts(barter_shorts.through(state.turn));
                 }
                 let reply = if fresh_board {
                     // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS

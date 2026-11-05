@@ -193,7 +193,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
-| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | — \| 2 |
+| `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | — \| 2 |
 | `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
 | `breaker-bought-for-the-siege` | off (unmeasured) | Buy the wall-breaker a held siege waits for. | 1 \| 1 |
 | `breaker-spares-the-backlog-builder` | off (unmeasured) | Opt-in gene `breaker-spares-the-backlog-builder`; see `Self::breaker_spares_the_backlog_builder`. | 1 \| 1 |
@@ -213,6 +214,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-monument-after-the-second-city` | off (unmeasured) | Opt-in gene `capital-monument-after-the-second-city`; see `Self::capital_monument_after_the_second_city`. | 1 \| 1 |
 | `capital-walls-at-any-ratio` | off (unmeasured) | Opt-in gene `capital-walls-at-any-ratio`; see `Self::capital_walls_at_any_ratio`. | 1 \| 1 |
 | `capital-watch-arms-the-slinger` | off (unmeasured) | Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`. | 1 \| 1 |
+| `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
 | `city-state-war-is-no-front` | off (unmeasured) | Keep a city-state war from becoming the Domination front. | 1 \| 1 |
 | `city-under-fire-ranks-first` | off (unmeasured) | Opt-in gene `city-under-fire-ranks-first`; see `advanced/objective_board.rs`. | 1 \| 1 |
@@ -241,6 +243,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `diplo-seat-wonder-claim` | off (unmeasured) | `diplo-seat-wonder-claim`. | 1 \| 1 |
 | `diplomat-saves-for-the-apostle` | off (unmeasured) | `diplomat-saves-for-the-apostle`. | 1 \| 1 |
 | `disrupt-before-the-sources` | off (unmeasured) | Let a Spy in the space racer's city disrupt before it trains on Gain Sources. | 1 \| 1 |
+| `disrupt-waits-for-the-match-point` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-match-point`; see `advanced/disrupt_waits_for_the_match_point.rs`. | 1 \| 1 |
 | `districts-protect-seowon-science` | off (unmeasured) | Price the Science lost when a new district crowds an owned Seowon. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
@@ -280,11 +283,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
+| `hint-runs-the-claims` | off (unmeasured) | Opt-in gene `hint-runs-the-claims`; see `Self::hint_runs_the_claims`. | 1 \| 1 |
 | `holdable-land-keeps-settling` | off (unmeasured) | Opt-in gene `holdable-land-keeps-settling`; see `advanced/holdable_land_keeps_settling.rs`. | 1 \| 1 |
 | `holdout-keeps-the-faith-war-2` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war-2`; see `advanced/holdout_faith_war.rs`. | 1 \| 2 |
 | `immortal-skips-the-prophet-race` | off (unmeasured) | Opt-in gene `immortal-skips-the-prophet-race`; see `Self::immortal_skips_the_prophet_race`. | 1 \| 1 |
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
+| `korea-mines-beside-the-seowon` | off (unmeasured) | Opt-in gene `korea-mines-beside-the-seowon`; see `advanced/korea_mines_beside_the_seowon.rs`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |
 | `launch-pad-holds-its-queue` | off (unmeasured) | Opt-in gene `launch-pad-holds-its-queue`; see `Self::launch_pad_holds_its_queue`. | 1 \| 1 |
@@ -292,7 +297,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
-| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | 1 \| 1 |
+| `luxury-asks-pay-in-strategics` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
+| `luxury-asks-pay-in-strategics-2` | off (unmeasured) | Opt-in gene `luxury-asks-pay-in-strategics-2`; see `advanced/luxury_asks_pay_in_strategics.rs`. | — \| 2 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `medina-yields-to-the-amenities` | off (unmeasured) | Opt-in gene `medina-yields-to-the-amenities`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
@@ -340,7 +346,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
-| `settler-shelters-from-the-war` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | 1 \| 1 |
+| `settler-shelters-from-the-war` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
+| `settler-shelters-from-the-war-2` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war-2`, version two of `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-promotions-open-the-walls` | off (unmeasured) | Prefer the wall branch for siege guns in a walled major-war campaign. | 1 \| 1 |
