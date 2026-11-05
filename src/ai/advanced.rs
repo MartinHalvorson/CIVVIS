@@ -9445,6 +9445,11 @@ pub struct AdvancedAi {
     /// rivals ahead instead of idling on Listening Posts. See
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
+    /// `science-heads-keep-their-queue`: a city building a Campus-family
+    /// district or one of its buildings keeps its queue against the backlog
+    /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
+    /// by default.
+    science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -10424,6 +10429,8 @@ mod site_lookahead;
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
+/// `science-heads-keep-their-queue`: see `advanced/science_heads_keep_their_queue.rs`.
+mod science_heads_keep_their_queue;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
@@ -12531,6 +12538,7 @@ impl AdvancedAi {
             saved_work_is_seen: false,
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
+            science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
