@@ -361,6 +361,7 @@ pub fn forceable_treatments() -> Vec<&'static str> {
 /// mutually exclusive. A new numbered member of one of these families is
 /// covered automatically by its base name.
 const MUTUALLY_EXCLUSIVE_TREATMENT_FAMILY_BASES: &[&str] = &[
+    "pingala-follows-research",
     "naval-recon",
     "settler-guard-holds",
     "amenity-project-preemption",
@@ -1357,3 +1358,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod pingala_family_tests;
