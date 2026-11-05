@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-foundation-before-backlog",
+  "scope": "Stateful current-source proposals after identical complete preserved native input prefixes. The read hash below identifies the final consumed version of the changed request; it is not the only input. The ordered chain and all prefix deliveries, own oracles and actual captures are independently verified. No historical controller parity, host execution, survival or strength estimate.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-science-foundation-before-backlog.native.tar.xz",
+    "sha256": "56b1041f3b5ed168637ff7d877fdd46730a5ca8360837d76f653189c06f01d92"
+  },
+  "members": [
+    "result.json"
+  ]
+}

@@ -673,7 +673,13 @@ wait_for_mirror_listener() {
 # environment (`CIVVIS_COMMIT`) and every CARGO_MANIFEST_DIR read is a test.
 PREBUILD_TREE=${CIVVIS_PREBUILD_TREE:-$HOME/civvis-verification-prebuild}
 PREBUILD_POLL_S=${CIVVIS_PREBUILD_POLL_S:-20}
-PREBUILD_WAIT_S=${CIVVIS_PREBUILD_WAIT_S:-180}
+# ★ A STARVED PREBUILD IS NOT WORTH WAITING OUT. At nice 10 on a host at load
+# ~90 a build can crawl: 3428a40 (a 28-line change) started 10:48:25Z on
+# 2026-11-05 and was still compiling seven minutes later, so the boundary at
+# 10:52:20 waited the whole 180 s, gave up, and then built anyway (87 s). Every
+# other in-flight wait so far ended in 4-49 s, and past ~90 s a fresh boundary
+# build at nice 0 (~85 s) is never slower, so cap the wait there.
+PREBUILD_WAIT_S=${CIVVIS_PREBUILD_WAIT_S:-90}
 PREBUILD_NICE=${CIVVIS_PREBUILD_NICE:-10}
 PREBUILD_LOG=${CIVVIS_PREBUILD_LOG:-$LOGS/prebuild.log}
 BUILD_STAMP_NAME=.civvis-built-revision

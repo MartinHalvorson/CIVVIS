@@ -282,6 +282,10 @@ impl AdvancedAi {
     /// [`Self::racer_spy_searching`]) moves to a pad seen or found, else to
     /// the leader's city not searched lately that was searched least recently
     /// (never first), the nearest on a tie; none left, it stays.
+    ///
+    /// Only the tests call this wrapper; the diplomatic turn calls
+    /// [`Self::racer_spy_post_for`] directly.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn racer_spy_post(
         g: &Game,
@@ -307,7 +311,7 @@ impl AdvancedAi {
         )
     }
 
-    /// [`Self::racer_spy_post`], and under `spies-steal-the-lead`
+    /// `racer_spy_post`, and under `spies-steal-the-lead`
     /// (`prefer_campus`, a Science aim) outside a pad search: the leader's
     /// cities with a Campus we have seen rank right after a seen pad, and a
     /// Spy standing in a leader city with no Campus and no pad, where Disrupt

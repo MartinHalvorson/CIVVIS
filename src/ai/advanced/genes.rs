@@ -5141,6 +5141,9 @@ pub const GENES: &[Gene] = &[
     // `builders-cover-the-worked-backlog`. See
     // `ai/prod_tiles_call_the_builders.rs`.
     Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
     // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
     // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
     // against 6-7% for Gain Sources / Listening Post, and no disruption

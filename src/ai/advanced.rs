@@ -8681,6 +8681,8 @@ pub struct AdvancedAi {
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
+    /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
+    science_foundation_before_backlog: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10725,6 +10727,7 @@ mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_foundation_research;
 mod science_power_fuel;
 mod science_suppression_pads;
 mod science_threat_denial;
@@ -12294,6 +12297,7 @@ impl AdvancedAi {
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
+            science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             science_writing_before_the_luxury: false,
