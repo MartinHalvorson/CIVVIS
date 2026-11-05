@@ -22704,10 +22704,17 @@ impl AdvancedAi {
         // `hint-runs-the-claims`: the idle-queue claims see the cleared queue
         // first, as they do on the main path. See
         // `advanced/hint_runs_the_claims.rs`.
-        if self.hint_runs_the_claims && self.base.book_pos >= 4 {
+        let claims_and_writers = self.hint_runs_the_claims && self.base.book_pos >= 4;
+        if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
         }
         preview.advanced_production(&mut board, pid, &plan, false);
+        // `hint-runs-the-claims`: the defensive writers that follow the
+        // governors on the main path, in the same order, so the hint is never
+        // "claims without the Walls". See `advanced/hint_runs_the_claims.rs`.
+        if claims_and_writers {
+            preview.run_hint_defence_writers(&mut board, pid, &plan);
+        }
         board.cities.get(&city)?.queue.first().cloned()
     }
 
