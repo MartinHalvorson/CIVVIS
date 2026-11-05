@@ -2768,33 +2768,6 @@ impl AdvancedAi {
         self.enable_live_bridge_universe();
     }
 
-    /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
-    /// assembly, marching, siege, threat reading, and the war/peace decision.
-    ///
-    /// Split out so the composite's *interaction* is measurable rather than
-    /// assumed. If the whole bundle beats `advanced` by more than the war and
-    /// economy halves do separately, the repairs compound; if it does not, the
-    /// bundle is a sum and should be argued for one term at a time.
-    pub fn enable_engine_repairs_war(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::War))
-        {
-            (gene.enable)(self);
-        }
-    }
-
-    /// The economic half of [`AdvancedAi::enable_engine_repairs`]: settlement,
-    /// growth, districts, and the policy deck.
-    pub fn enable_engine_repairs_economy(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::Economy))
-        {
-            (gene.enable)(self);
-        }
-    }
-
     /// Let a stalled settler found where it stands. Evaluator arm
     /// `advanced_settler_founds_when_stalled`; off in the native production
     /// controller.
@@ -5029,6 +5002,29 @@ impl AdvancedAi {
     /// The twin of `enable_capital_keeps_its_defender`.
     pub fn disable_capital_keeps_its_defender(&mut self) {
         self.capital_keeps_its_defender = false;
+    }
+
+    /// Keep a Governor whose departure would leave our original capital losing Loyalty.
+    pub fn enable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = true;
+        self.base.capital_keeps_its_governor = true;
+    }
+
+    /// Withhold the independently screenable capital Governor guard.
+    pub fn disable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = false;
+        self.base.capital_keeps_its_governor = false;
+    }
+
+    /// Opt-in gene `breaker-spares-the-backlog-builder`; see
+    /// [`Self::breaker_spares_the_backlog_builder`].
+    pub fn enable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_breaker_spares_the_backlog_builder`.
+    pub fn disable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = false;
     }
 
     /// Opt-in gene `camps-close-the-age-3`; see

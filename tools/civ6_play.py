@@ -4410,6 +4410,20 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
                       flush=True)
             elif kind == "restart_called" and not event.get("called"):
                 failure = "the parked game could not call the restart"
+            elif kind == "restart_called" and mode == restart_handoff.MODE_MENU:
+                # ★ MODE 6: the parked game is leaving for the main menu. From
+                # here this run starts its game exactly as a launched one does,
+                # through the Create Game menus, minus the boot. A new game
+                # that loads the previous run's scripts never writes this run's
+                # tag, so the bootstrap fails and the caller relaunches.
+                left = round(time.monotonic() - start, 1)
+                print(f"[restart] the parked game left for the main menu after "
+                      f"{left:.1f}s; starting this run's game from the menus",
+                      flush=True)
+                note(result="menu", left_s=left)
+                tail.run = args.tag
+                setup_mark("restart_menu")
+                return bootstrap_game(tail, on_event, run_dir, args, verify_s=verify_s)
             elif (kind == "loaded" and event.get("ctx") == "agent"
                     and answered is not None):
                 failure = ("the restarted game loaded the previous run's scripts, "
@@ -5732,6 +5746,12 @@ def _play(args: argparse.Namespace) -> int:
         if not args.keep_game_options:
             apply_verification_options()
         launcher.clear_run_logs()
+        # No game holds the Hall of Fame here; a big one slows the boot ~10 s
+        # and the quit ~5 s (`launcher.rotate_hall_of_fame`).
+        archived = launcher.rotate_hall_of_fame()
+        if archived is not None:
+            print(f"[hall-of-fame] archived to {archived}; Civ VI starts a fresh one",
+                  flush=True)
         # Measured before the launch, so placing the window as it appears pays no
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
