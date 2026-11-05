@@ -8776,11 +8776,6 @@ pub struct AdvancedAi {
     /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
-    /// `sea-scout-claims-the-queue`: once a hull can cross Ocean and the
-    /// contact gap is open, the coastal city that finishes it soonest lays down
-    /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
-    /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
-    sea_scout_claims_the_queue: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
@@ -9514,6 +9509,11 @@ pub struct AdvancedAi {
     /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
     /// by default.
     science_heads_keep_their_queue: bool,
+    /// `sea-scout-claims-the-queue`: once a hull can cross Ocean and the
+    /// contact gap is open, the coastal city that finishes it soonest lays down
+    /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
+    /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -12498,7 +12498,6 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             plaza_serves_the_scientist_3: false,
-            sea_scout_claims_the_queue: false,
             // ---- append: s-s ----------------------------------------
             science_seat_allies_2: false,
             spy_civics_come_first: false,
@@ -12639,6 +12638,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
+            sea_scout_claims_the_queue: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
