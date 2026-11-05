@@ -5043,6 +5043,14 @@ pub const GENES: &[Gene] = &[
     // ratio) visible soldier within SURPRISE_TILES of an early city does.
     // See `objective_board.rs` (`surprise_strength_near`).
     Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // `science-race-keeps-the-campus-cards` (2026-11-05): with the retire
+    // rules off, Deity Korea games now end in a rival Science win at t174-200
+    // and our late science per citizen trails the leader's (2.3 against 3.9
+    // net of the handicap). The economic wants put Rationalism and Natural
+    // Philosophy behind late inserts, and 002152Z dropped Natural Philosophy
+    // ~t160 while eight Seowons carried 32 Science it doubles. See
+    // `advanced/policies.rs`.
+    Gene { tag: "science-race-keeps-the-campus-cards", field: "science_race_keeps_the_campus_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_science_race_keeps_the_campus_cards, disable: AdvancedAi::disable_science_race_keeps_the_campus_cards },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

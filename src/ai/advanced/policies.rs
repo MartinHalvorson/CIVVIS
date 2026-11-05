@@ -903,6 +903,22 @@ impl AdvancedAi {
         // economy card: a Builder or Settler card whose window has closed
         // (Serfdom after its Builder finished, Colonization with no Settler),
         // which the plan no longer wants. A held Urban Planning stays wanted.
+        // `science-race-keeps-the-campus-cards`: a Science seat whose
+        // Campuses (Seowons) already carry real adjacency keeps Rationalism
+        // and Natural Philosophy at the head of its economic wants, ahead of
+        // the late inserts above (Medina Quarter, Merchant Confederation),
+        // which otherwise push them out of the few economic slots. Live Deity
+        // Korea 002152Z dropped Natural Philosophy ~t160 for production cards
+        // while its eight Seowons carried 32 Science of adjacency it doubles.
+        // The bankruptcy-drain cards below still go first.
+        if self.science_race_keeps_the_campus_cards
+            && objective == GrandStrategy::Science
+            && self.campus_adjacency_science(g, pid) >= SCIENCE_CARD_ADJACENCY
+        {
+            const CAMPUS_CARDS: [&str; 2] = ["rationalism", "natural_philosophy"];
+            desired.retain(|card| !CAMPUS_CARDS.contains(card));
+            desired.splice(0..0, CAMPUS_CARDS);
+        }
         let urban_planning_tail =
             self.urban_planning_fills_the_slot && !desired.contains(&"urban_planning") && {
                 let card = crate::name!("urban_planning");
@@ -1665,5 +1681,28 @@ impl AdvancedAi {
                 }
             }
         }
+    }
+}
+
+/// `science-race-keeps-the-campus-cards`: the Campus adjacency Science, summed
+/// over the empire, from which the two Campus cards hold their slots. Two
+/// well-placed Campuses (about +4 each) clear it.
+const SCIENCE_CARD_ADJACENCY: f64 = 8.0;
+
+impl AdvancedAi {
+    /// The Science the empire's standing Campus-family districts draw from
+    /// adjacency (Seowon's flat +4 included, as the host's ledger books it).
+    pub(super) fn campus_adjacency_science(&self, g: &Game, pid: usize) -> f64 {
+        let campus = crate::name!("campus");
+        g.cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .flat_map(|city| city.districts.iter())
+            .filter(|(district, _)| g.district_family(**district) == campus)
+            .map(|(district, pos)| {
+                g.district_adjacency_assuming(*district, *pos, None, None)
+                    .science
+            })
+            .sum()
     }
 }

@@ -2183,6 +2183,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `science-race-keeps-the-campus-cards`; see
+        /// [`Self::science_race_keeps_the_campus_cards`].
+        science_race_keeps_the_campus_cards => enable_science_race_keeps_the_campus_cards, disable_science_race_keeps_the_campus_cards;
     }
 }
 
