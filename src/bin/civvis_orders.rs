@@ -57,6 +57,8 @@ mod citizen_growth;
 mod formation_refusals;
 #[path = "civvis_orders/generals_lead_the_army.rs"]
 mod generals_lead_the_army;
+#[path = "civvis_orders/governor_exchange.rs"]
+mod governor_exchange;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
 #[path = "civvis_orders/host_move_audit.rs"]
@@ -4502,6 +4504,7 @@ struct DecisionMemory<'a> {
     /// The actuation contract's memory: orders the host has provably refused.
     host_order_refusals: &'a mut HostOrderRefusals,
     air_assault_continuation: &'a mut air_assault_continuation::Continuation,
+    governor_exchange: &'a mut governor_exchange::Continuation,
 }
 
 fn decide(
@@ -4518,6 +4521,7 @@ fn decide(
         host_move_refusals,
         host_order_refusals,
         air_assault_continuation,
+        governor_exchange,
     } = memory;
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -5514,6 +5518,12 @@ fn decide(
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
+    }
+
+    // Retained assignments must pass the same refusal filter and outbound
+    // ledger as a newly planned order. The Governor operation budget follows.
+    if let Some(note) = governor_exchange.prepare(state, &mut orders) {
+        note_bits.push(format!("governor_exchange={note}"));
     }
 
     // ⭐ THE ACTUATION CONTRACT. An order that has come back Failed with the
@@ -9140,6 +9150,7 @@ fn main() {
         let mut host_move_refusals = HostMoveRefusals::default();
         let mut host_order_refusals = HostOrderRefusals::default();
         let mut air_assault_continuation = air_assault_continuation::Continuation::default();
+        let mut governor_exchange = governor_exchange::Continuation::default();
         // `denial-spies-count-their-losses`: the one frame reads every loss the
         // log holds up to its turn. See `SpyLossLedger`.
         if ai.denial_spies_count_their_losses_enabled() {
@@ -9166,6 +9177,7 @@ fn main() {
                 host_move_refusals: &mut host_move_refusals,
                 host_order_refusals: &mut host_order_refusals,
                 air_assault_continuation: &mut air_assault_continuation,
+                governor_exchange: &mut governor_exchange,
             },
         );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
@@ -9206,6 +9218,7 @@ fn main() {
     let mut host_move_refusals = HostMoveRefusals::default();
     let mut host_order_refusals = HostOrderRefusals::default();
     let mut air_assault_continuation = air_assault_continuation::Continuation::default();
+    let mut governor_exchange = governor_exchange::Continuation::default();
     // The Firaxis repair cooldown belongs to the host, not the reconstructed
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
@@ -9383,6 +9396,7 @@ fn main() {
                             host_move_refusals: &mut host_move_refusals,
                             host_order_refusals: &mut host_order_refusals,
                             air_assault_continuation: &mut air_assault_continuation,
+                            governor_exchange: &mut governor_exchange,
                         },
                     );
                     live = Some(board);
@@ -9418,6 +9432,7 @@ fn main() {
                                     host_move_refusals: &mut host_move_refusals,
                                     host_order_refusals: &mut host_order_refusals,
                                     air_assault_continuation: &mut air_assault_continuation,
+                                    governor_exchange: &mut governor_exchange,
                                 },
                             );
                             live = Some(fresh);
@@ -9459,6 +9474,7 @@ fn main() {
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
                                         air_assault_continuation: &mut air_assault_continuation,
+                                        governor_exchange: &mut governor_exchange,
                                     },
                                 )
                             } else {
@@ -9474,6 +9490,7 @@ fn main() {
                                         host_move_refusals: &mut host_move_refusals,
                                         host_order_refusals: &mut host_order_refusals,
                                         air_assault_continuation: &mut air_assault_continuation,
+                                        governor_exchange: &mut governor_exchange,
                                     },
                                 )
                             }
