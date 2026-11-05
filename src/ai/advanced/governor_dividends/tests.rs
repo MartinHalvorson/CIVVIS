@@ -435,3 +435,203 @@ fn ordinary_governor_cooldowns_ignore_native_observation_memory() {
     assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
     assert!(ai.remembered_governor_posts.is_empty());
 }
+
+fn launch_board() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut g, mut ai, plan, old, new) = board(
+        "pingala",
+        &["researcher", "connoisseur", "space_initiative", "curator"],
+    );
+    ai.enable_pingala_follows_research();
+    g.players[0].governor_roster.insert(
+        "magnus".into(),
+        crate::game::GovernorState {
+            city: Some(new),
+            assigned_turn: 0,
+            disabled_until: 0,
+            promotions: ["provision".into(), "surplus_logistics".into()]
+                .into_iter()
+                .collect(),
+        },
+    );
+    g.players[0].governors.push(new);
+    let pos = g.cities[&new].pos;
+    g.cities
+        .get_mut(&new)
+        .unwrap()
+        .districts
+        .insert(Name::new("spaceport"), pos);
+    let item = Item::Project {
+        project: Name::new("launch_earth_satellite"),
+    };
+    g.cities.get_mut(&new).unwrap().queue = vec![item.clone()];
+    let production = g.item_remaining_cost_for_city(0, new, &item) / 20.0;
+    let before = g.city_yields(new).production;
+    std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+        .entry(new)
+        .or_default()
+        .production += production - before;
+    (g, ai, plan, old, new)
+}
+
+#[test]
+fn launch_post_swap_keeps_both_governors_and_delivers_project_bonus_after_establishment() {
+    let (mut g, mut ai, plan, old, new) = launch_board();
+    let item = g.cities[&new].queue[0].clone();
+    let before = g.item_prod_mult(0, new, Some(&item));
+    let snapshot = g.clone();
+    ai.disable_pingala_follows_research();
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
+    ai.enable_pingala_follows_research();
+    assert_eq!(
+        ai.pingala_launch_posts(&g, 0, &plan),
+        Some((new, Some(Name::new("magnus"))))
+    );
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(new));
+    assert_eq!(g.players[0].governor_roster["magnus"].city, Some(old));
+    assert_eq!(
+        g.players[0].governor_roster["pingala"].assigned_turn,
+        g.turn
+    );
+    assert_eq!(
+        g.item_prod_mult(0, new, Some(&item)),
+        before,
+        "no premature establishment bonus"
+    );
+    g.turn += g.standard_duration(g.rules.governors["pingala"].establish_turns);
+    assert!((g.item_prod_mult(0, new, Some(&item)) - before - 0.3).abs() < 1e-9);
+    assert!(
+        AdvancedAi::governor_dividend_reading(&g, 0, "pingala")
+            >= AdvancedAi::governor_dividend_reading(&snapshot, 0, "pingala")
+    );
+}
+
+#[test]
+fn launch_post_keeps_existing_spaceport_curator_and_specialist_jobs() {
+    let (template, ai, plan, old, new) = launch_board();
+    for variant in 0..7 {
+        let mut g = template.clone();
+        match variant {
+            0 => {
+                let pos = g.cities[&old].pos;
+                g.cities
+                    .get_mut(&old)
+                    .unwrap()
+                    .districts
+                    .insert(Name::new("spaceport"), pos);
+            }
+            1 => {
+                g.observed_great_work_housing = Some(std::sync::Arc::new(
+                    [(old, [("writing".into(), 1)].into_iter().collect())]
+                        .into_iter()
+                        .collect(),
+                ));
+            }
+            2 => {
+                g.players[0]
+                    .governor_roster
+                    .get_mut("magnus")
+                    .unwrap()
+                    .promotions
+                    .insert("industrialist".into());
+            }
+            3 => {
+                let governor = g.players[0].governor_roster.remove("magnus").unwrap();
+                g.players[0]
+                    .governor_roster
+                    .insert("victor".into(), governor);
+            }
+            4 => {
+                g.cities.get_mut(&new).unwrap().loyalty = 89.0;
+            }
+            5 => {
+                g.players[0]
+                    .governor_roster
+                    .get_mut("pingala")
+                    .unwrap()
+                    .assigned_turn = g.turn;
+            }
+            6 => {
+                g.cities.get_mut(&old).unwrap().queue = g.cities[&new].queue.clone();
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            ai.pingala_launch_posts(&g, 0, &plan).is_none(),
+            "variant {variant}"
+        );
+    }
+}
+
+#[test]
+fn launch_post_respects_war_recovery_and_short_native_establishment_runway() {
+    let (template, mut ai, mut plan, old, new) = launch_board();
+    let mut g = template.clone();
+    plan.strategy = GrandStrategy::Recovery;
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
+    plan.strategy = GrandStrategy::Science;
+    g.at_war.insert((0, 1));
+    g.at_war.insert((1, 0));
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
+    let mut g = template;
+    let item = g.cities[&new].queue[0].clone();
+    let before = g.city_yields(new).production;
+    let production = g.item_remaining_cost_for_city(0, new, &item) / 8.0;
+    std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+        .entry(new)
+        .or_default()
+        .production += production - before;
+    assert!(
+        ai.pingala_launch_posts(&g, 0, &plan).is_some(),
+        "eight turns exceed two simulated establishment periods"
+    );
+    ai.live_governor_assignment_adapter = true;
+    assert!(
+        ai.pingala_launch_posts(&g, 0, &plan).is_none(),
+        "eight turns do not exceed two native five-turn periods"
+    );
+}
+
+#[test]
+fn launch_post_can_establish_during_construction_without_boosting_the_spaceport() {
+    let (mut g, mut ai, plan, old, new) = launch_board();
+    g.cities
+        .get_mut(&new)
+        .unwrap()
+        .districts
+        .remove("spaceport");
+    let item = Item::District {
+        district: Name::new("spaceport"),
+        pos: g.cities[&new].pos,
+    };
+    g.cities.get_mut(&new).unwrap().queue = vec![item.clone()];
+    let before = g.city_yields(new).production;
+    let production = g.item_remaining_cost_for_city(0, new, &item) / 12.0;
+    std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
+        .entry(new)
+        .or_default()
+        .production += production - before;
+    let before_mult = g.item_prod_mult(0, new, Some(&item));
+    assert!(ai.pingala_launch_posts(&g, 0, &plan).is_some());
+    ai.relocate_governors_for_dividends(&mut g, 0, &plan);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(new));
+    assert_eq!(g.players[0].governor_roster["magnus"].city, Some(old));
+    g.turn += g.standard_duration(g.rules.governors["pingala"].establish_turns);
+    assert_eq!(g.item_prod_mult(0, new, Some(&item)), before_mult);
+}
+
+#[test]
+fn launch_post_does_not_repeat_a_native_swap_on_a_lagged_replan() {
+    let (template, mut ai, plan, old, new) = launch_board();
+    ai.live_governor_assignment_adapter = true;
+    let mut first = template.clone();
+    ai.relocate_governors_for_dividends(&mut first, 0, &plan);
+    assert_eq!(first.players[0].governor_roster["pingala"].city, Some(new));
+    let mut lagged = template;
+    ai.relocate_governors_for_dividends(&mut lagged, 0, &plan);
+    assert_eq!(lagged.players[0].governor_roster["pingala"].city, Some(old));
+    assert_eq!(lagged.players[0].governor_roster["magnus"].city, Some(new));
+}
