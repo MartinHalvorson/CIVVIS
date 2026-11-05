@@ -7,6 +7,14 @@
 //! `victory_races`, `victory_threat` and `leading_victory_lanes` measure the
 //! races. `victory_label` names them, and `set_winner` ends the game.
 //!
+//! How a game ends: `check_elimination` and `check_domination` after a
+//! unit or city is lost (`on_unit_lost`), the turn limit
+//! (`turn_limit`, `finish_at_turn_limit`, `reported_turn`), draws
+//! (`is_draw`, `declare_draw`), playing on past a victory (`play_on`,
+//! `play_on_blocks`, `played_on`), the victories a win needs
+//! (`effective_required_victories`), and `crown`. These moved verbatim out
+//! of the main `impl Game` block in `game.rs` later the same day.
+//!
 //! Moved verbatim out of the main `impl Game` block in `game.rs`
 //! (2026-11-05). Methods the rest of `game` calls are `pub(super)`; public
 //! methods stay public; the code is otherwise unchanged.
@@ -555,5 +563,374 @@ impl Game {
         } else {
             false
         }
+    }
+
+    pub(super) fn on_unit_lost(&mut self, pid: usize) {
+        self.check_elimination(pid);
+        self.check_domination();
+    }
+
+    pub(super) fn check_elimination(&mut self, pid: usize) {
+        // The camp-based Barbarian seat is permanently alive. The separate
+        // Free Cities seat becomes dormant again after its last city joins a
+        // civilization, so it must pass through ordinary elimination here.
+        if !self.players[pid].alive || self.barb_pid == Some(pid) {
+            return;
+        }
+        // Last army standing. On an arena a side is its army: it has no city
+        // to lose and no Settler to found one with, so the ordinary test —
+        // no city and no Settler left — would wipe out both sides the moment
+        // the first casualty of the battle fell. What ends a side here is
+        // running out of units, and nothing else does.
+        if self.is_arena() {
+            if self.units.values().any(|unit| unit.owner == pid) {
+                return;
+            }
+            // A side that still holds its city is not finished *if the city
+            // can put a unit back on the field*: granted Production finishes
+            // the next unit off the queue, and granted Gold buys one. Losing
+            // the last unit ends a side only when it has nothing left to
+            // field one with — which is the moment the last unit falls when
+            // the arena seats no cities, and equally when it seats one but
+            // grants neither Production nor Gold, the stock arena since the
+            // grants went to zero. Without this the stock battle could not
+            // be won by annihilation: the side that lost its whole army
+            // would stand "alive" behind a city that will never build, and
+            // the side that destroyed it, if it had no melee left to walk
+            // in, would be handed a draw at the clock for winning the fight.
+            if self.cities.values().any(|city| city.owner == pid)
+                && (self.tactics.production > 0 || self.tactics.gold > 0)
+            {
+                return;
+            }
+            self.players[pid].alive = false;
+            self.sync_war_log();
+            return;
+        }
+        if self.unseen_city_owners.contains(&pid) {
+            return;
+        }
+        if self.cities.values().any(|c| c.owner == pid) {
+            return;
+        }
+        if self
+            .units
+            .values()
+            .any(|u| u.owner == pid && u.kind == "settler")
+        {
+            return;
+        }
+        self.players[pid].alive = false;
+        for city in self.cities.values_mut() {
+            if city.occupied_from == Some(pid) {
+                city.occupied_from = None;
+                city.occupation_grievance = None;
+            }
+        }
+        if self.players[pid].is_minor {
+            for player in self.players.iter_mut() {
+                player.envoys.retain(|(minor, _)| *minor != pid);
+            }
+        }
+        for uid in self.player_unit_ids(pid) {
+            self.remove_unit(uid);
+        }
+        // Every war this civilization was fighting ended the moment it
+        // stopped existing; close those records now so they carry the turn it
+        // happened rather than the turn something else touched diplomacy.
+        self.sync_war_log();
+    }
+
+    pub(super) fn check_domination(&mut self) {
+        let majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian)
+            .map(|p| p.id)
+            .collect();
+        if majors.len() < 2 {
+            return;
+        }
+        for candidate in majors.iter().copied().filter(|p| self.victory_eligible(*p)) {
+            if self.players[candidate].team.is_some() {
+                let team = self.team_members(candidate);
+                let team_holds_its_capitals = team.iter().all(|member| {
+                    self.cities.values().any(|capital| {
+                        capital.is_capital
+                            && capital.original_owner == *member
+                            && capital.owner == *member
+                    })
+                });
+                let every_opponent_lost_their_capital = majors
+                    .iter()
+                    .copied()
+                    .filter(|original_owner| {
+                        *original_owner != candidate && !self.same_team(candidate, *original_owner)
+                    })
+                    .all(|original_owner| {
+                        self.cities
+                            .values()
+                            .find(|capital| {
+                                capital.is_capital && capital.original_owner == original_owner
+                            })
+                            .is_none_or(|capital| capital.owner != original_owner)
+                    });
+                if team_holds_its_capitals && every_opponent_lost_their_capital {
+                    self.set_winner(candidate, "domination");
+                    return;
+                }
+                continue;
+            }
+            // "To win a Domination victory, you must capture all original
+            // civilization Capitals" — all of them, the candidate's own
+            // included. A civilization that has lost its own Capital cannot
+            // win this way until it takes it back, which is exactly the rule
+            // the team branch above spells out for a whole side.
+            let controls_every_original_capital = majors.iter().copied().all(|original_owner| {
+                match self
+                    .cities
+                    .values()
+                    .find(|c| c.is_capital && c.original_owner == original_owner)
+                {
+                    // On an arena a side can fall with its city still
+                    // standing in its own name — its last unit gone and no
+                    // grant to field another — and a battle is decided by
+                    // the armies, so a defeated seat's empty city satisfies
+                    // the lane the way a defeated seat with no city does
+                    // below. A world never reaches this: a civilization that
+                    // owns a city is by definition still in the game.
+                    Some(capital) => {
+                        capital.owner == candidate
+                            || (self.is_arena() && !self.players[original_owner].alive)
+                    }
+                    // The engine begins with settlers, so a Capital can be
+                    // missing rather than lost. Defeating a civ before it
+                    // founds one satisfies that seat, and a candidate that
+                    // has never founded its own has none to have lost.
+                    None => original_owner == candidate || !self.players[original_owner].alive,
+                }
+            });
+            if controls_every_original_capital {
+                self.set_winner(candidate, "domination");
+                return;
+            }
+        }
+    }
+
+    /// Whether the game has been asked to carry on past a decided result.
+    pub fn played_on(&self) -> bool {
+        self.decided.is_some()
+    }
+
+    /// Whether this game has reached any terminal result. Most results name a
+    /// winner; a Tactics battle that reaches its selected deadline is the one
+    /// deliberate exception.
+    pub fn is_finished(&self) -> bool {
+        self.winner.is_some() || self.is_draw()
+    }
+
+    /// Whether the terminal result is a draw rather than a victory.
+    pub fn is_draw(&self) -> bool {
+        self.winner.is_none() && self.victory_type.as_deref() == Some(DRAW_RESULT)
+    }
+
+    /// A played-on world has explicitly left its original turn cap behind.
+    /// Keep the configured cap itself intact so a save or successor world can
+    /// still recover the game settings that created this one.
+    pub fn turn_limit(&self) -> Option<u32> {
+        (!self.played_on()).then_some(self.max_turns)
+    }
+
+    /// Finish an over-cap world when Score is not one of its enabled victory
+    /// lanes. The normal end-turn path always tries the score tiebreak at the
+    /// cap, but `set_winner` correctly refuses a disabled lane; an unattended
+    /// server would otherwise keep stepping the same world forever.
+    ///
+    /// Returns `true` when this call made the world terminal. A played-on
+    /// world has no cap, and a Score-enabled world is left to the ordinary
+    /// tiebreak in [`Self::do_end_turn`].
+    pub(crate) fn finish_at_turn_limit(&mut self) -> bool {
+        if self.is_finished()
+            || self.played_on()
+            || self.turn <= self.max_turns
+            || self.victory_lane_open("score")
+        {
+            return false;
+        }
+        if self.is_arena() {
+            return self.declare_draw();
+        }
+
+        self.victory_type = Some(DRAW_RESULT.to_string());
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!(
+                    "The game reached its turn limit ({}) without an enabled victory",
+                    self.max_turns
+                ),
+                None,
+            );
+        }
+        true
+    }
+
+    /// The turn this world is reported on.
+    ///
+    /// A score victory or Tactics draw is settled on the wrap out of the final
+    /// turn — the one place `turn` ever passes the limit. That wrap is
+    /// bookkeeping, not a turn anybody plays: a 250-turn game is decided on
+    /// turn 250, so turn 250 is what every account of the result says. Every
+    /// other reading, live game or any other victory, is the turn being played.
+    pub fn reported_turn(&self) -> u32 {
+        match (self.victory_type.as_deref(), self.turn_limit()) {
+            (Some("score" | DRAW_RESULT), Some(limit)) => limit.min(self.turn),
+            _ => self.turn,
+        }
+    }
+
+    /// Carry on past the result this game already reached: "one more turn".
+    ///
+    /// The verdict is kept in `decided` and the world becomes live again with
+    /// no turn limit. `UntilNextVictory` suppresses only that exact winner and
+    /// path, so an already-satisfied Culture or Domination condition cannot
+    /// instantly re-declare the same result; every genuinely later result can
+    /// still land. `Indefinite` suppresses every later result.
+    ///
+    /// Returns `false` when there is no result to play on past.
+    pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
+        let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
+            return false;
+        };
+        // Read before `decided` is set: a played-on world has no turn limit
+        // left to date a score victory against.
+        let decided_on = self.reported_turn();
+        // Replace rather than retain an older verdict: a world can reach a new
+        // victory after `UntilNextVictory`, and another press must continue
+        // past the result currently on its finish screen.
+        self.decided = Some(Decided {
+            winner,
+            victory_type: victory_type.clone(),
+            // Moved rather than copied: the extension is a live, undecided
+            // world again, and a later ending of its own must not be labelled
+            // with the lanes that ended the game before it.
+            mercy_lanes: std::mem::take(&mut self.mercy_lanes),
+            turn: decided_on,
+            mode,
+        });
+        self.winner = None;
+        self.victory_type = None;
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                // A note is a predicate: the chronicle prints it after the
+                // seat's own name, so "Rome plays on until the next victory".
+                match mode {
+                    PlayOnMode::UntilNextVictory => "plays on until the next victory".to_string(),
+                    PlayOnMode::Indefinite => "plays on indefinitely".to_string(),
+                },
+                None,
+            );
+        }
+        // A decided game stopped mid-turn: whoever is up has to be given their
+        // turn again, or the extension opens on a seat that cannot act.
+        self.begin_turn(self.current);
+        self.sync_war_log();
+        true
+    }
+
+    /// Whether a play-on extension refuses this result outright.
+    pub(super) fn play_on_blocks(&self, pid: usize, vtype: &str) -> bool {
+        self.decided
+            .as_ref()
+            .is_some_and(|decided| match decided.mode {
+                PlayOnMode::Indefinite => true,
+                PlayOnMode::UntilNextVictory => {
+                    decided.winner == pid && decided.victory_type == vtype
+                }
+            })
+    }
+
+    /// The Require-N setting, clamped to what the lobby actually enabled:
+    /// requiring more victory types than exist could never be satisfied, and
+    /// zero — a save written before the option existed — is the stock
+    /// single-victory game.
+    pub fn effective_required_victories(&self) -> usize {
+        // A battle has one victory type: last army standing. Its clock ends
+        // in a draw and is not a second lane to require.
+        if self.is_arena() {
+            return 1;
+        }
+        let enabled = VictoryConditions::NAMES
+            .iter()
+            .filter(|name| self.victory_lane_open(name))
+            .count();
+        self.required_victory_types.clamp(1, enabled.max(1))
+    }
+
+    /// End a Tactics battle at its deadline without crediting either side.
+    pub(super) fn declare_draw(&mut self) -> bool {
+        if self.is_finished() || self.played_on() {
+            return false;
+        }
+        self.victory_type = Some(DRAW_RESULT.to_string());
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!(
+                    "The Tactics battle ended in a draw after {} turns",
+                    self.max_turns
+                ),
+                None,
+            );
+        }
+        true
+    }
+
+    /// Declare the result: the tail of every victory, shared by the normal
+    /// single-victory path, the Require-N completion, and the turn-limit
+    /// most-banked-types award. Checks only what every caller must respect —
+    /// play-on and an already-decided world — so type legality stays with
+    /// [`Self::set_winner`].
+    pub(super) fn crown(&mut self, pid: usize, vtype: &str) -> bool {
+        if self.is_finished() || self.play_on_blocks(pid, vtype) {
+            return false;
+        }
+        self.winner = Some(pid);
+        self.victory_type = Some(vtype.to_string());
+        let winners = self.team_members(pid);
+        let winner = if winners.len() > 1 {
+            let names = winners
+                .iter()
+                .map(|winner| self.civ_name(*winner))
+                .collect::<Vec<_>>()
+                .join(" and ");
+            format!("Team {names}")
+        } else {
+            self.civ_name(pid)
+        };
+        // A Mercy Rule ending is announced by its notation rather than called
+        // a "mercy victory": the rule is a concession, and what there is to
+        // report is the lane the board was being decided on when it fired.
+        let verdict = if vtype == MERCY_VICTORY {
+            format!("won by {}", mercy_label(&self.mercy_lanes))
+        } else if vtype == FLAG_VICTORY {
+            // The verdict names the deed: a flag battle is not "a flag
+            // victory", it is the flag captured.
+            "captured the flag".to_string()
+        } else {
+            format!("won a {vtype} victory")
+        };
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(seat, "General", format!("{winner} {verdict}"), None);
+        }
+        true
     }
 }

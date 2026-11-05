@@ -42,7 +42,8 @@ import sys
 # live game and took the ledger's orders-applied rate from 96% to 87%.
 #
 # When adding a family here, add the matching loop to `civ6_name_audit` in
-# `src/bin/civvis_orders.rs`. Harvesting a name nothing checks buys nothing.
+# `src/bin/civvis_orders/civ6_name_audit.rs`. Harvesting a name nothing checks
+# buys nothing.
 TYPE_ATTR = re.compile(
     rb'(?:BuildingType|DistrictType|UnitType|ImprovementType|ProjectType'
     rb'|UnitPromotionType)'
