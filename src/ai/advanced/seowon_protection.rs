@@ -115,6 +115,41 @@ impl AdvancedAi {
         loss * 60.0 / self.production_time_divisor(g, cid, item, turns)
     }
 
+    /// A reserved district bypasses the scored menu. Keep its kind and city,
+    /// but let legal sites compete on the same production value when the
+    /// reservation would otherwise remove an owned Seowon's Science.
+    pub(super) fn seowon_protection_reserved_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: Item,
+        plan: &super::StrategicPlan,
+    ) -> Item {
+        let Item::District { district, pos } = &item else {
+            return item;
+        };
+        if self.seowon_site_loss_value(g, pid, *district, *pos, plan.strategy) <= 0.0 {
+            return item;
+        }
+        let district = *district;
+        let counts = self.counts(g, pid);
+        let mut best_score = self.production_value(g, pid, cid, &item, plan, &counts);
+        let mut best = item;
+        for pos in g.district_sites(cid, district) {
+            let candidate = Item::District { district, pos };
+            if !g.can_produce(pid, cid, &candidate) {
+                continue;
+            }
+            let score = self.production_value(g, pid, cid, &candidate, plan, &counts);
+            if score > best_score + 1e-9 {
+                best = candidate;
+                best_score = score;
+            }
+        }
+        best
+    }
+
     /// The ordinary menu keeps two district sites ranked by their own yield.
     /// When a city has a nearby owned Seowon, admit every legal alternative
     /// for the district kinds already offered, so a clean site can compete.
@@ -376,6 +411,54 @@ mod tests {
         assert_eq!(
             high[0], already_priced,
             "a raw score above the floor must not pay twice"
+        );
+    }
+
+    #[test]
+    fn seowon_protection_reaches_the_culture_defense_reservation() {
+        let (mut g, cid, _, _) = fixture();
+        std::sync::Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+            1,
+            Yields {
+                culture: 200.0,
+                ..Yields::default()
+            },
+        );
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let mut control = AdvancedAi::targeting(VictoryTarget::Science);
+        control.enable_culture_defense_theater();
+        control.base.w.city_target = 1.0;
+        let mut protected = control.clone();
+        protected.enable_districts_protect_seowon_science();
+        let mut off = g.clone();
+        let mut on = g.clone();
+        control.reserve_culture_defense_theater(&mut off, 0, &plan);
+        protected.reserve_culture_defense_theater(&mut on, 0, &plan);
+        let site = |board: &Game| match board.cities[&cid].queue.first() {
+            Some(Item::District { district, pos }) if district == "theater_square" => *pos,
+            other => panic!("the reservation must still build its Theater: {other:?}"),
+        };
+        let original = site(&off);
+        let clean = site(&on);
+        assert!(loss(&protected, &g, original, "theater_square") > 0.0);
+        assert_eq!(loss(&protected, &g, clean, "theater_square"), 0.0);
+        assert_ne!(
+            original, clean,
+            "the reservation must reach the site protection"
+        );
+        let item = off.cities[&cid].queue[0].clone();
+        assert_eq!(
+            control.seowon_protection_reserved_site(&g, 0, cid, item.clone(), &plan),
+            item,
+            "the disabled gene must preserve the original reservation"
         );
     }
 
