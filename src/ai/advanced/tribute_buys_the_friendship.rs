@@ -24,9 +24,13 @@
 //!   (`Base/Assets/Gameplay/Data/Leaders.xml:1010`, `TRAIT_LEADER_MAJOR_CIV`,
 //!   `ON_DEAL_ENACTED`: `TradeValuePerModifierPoint` 10, `MaxValue` 20,
 //!   `ReductionTurns` 2).
-//! - The engine's own model says a gift buys nothing (`Game::do_trade`). The
-//!   shipped database says otherwise. This gene is live-only for that reason:
-//!   a sim screen cannot price it.
+//! - The engine does not model that modifier (`Game::do_trade`), so this gene
+//!   is live-only: a sim screen cannot price it.
+//!
+//! First live carrier, 222639Z: 80 Gold to France at t115 took its visible
+//! opinion from −3 to +7 on that turn, the row read +7 at t119, and the
+//! friendship ask landed at t120. A luxury purchase (t118) and an embassy
+//! (t119) helped too.
 //!
 //! ## What the gene does
 //!

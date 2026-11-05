@@ -5332,6 +5332,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // A fresh native Science Campus chooses safe legal land before coastal lowland.
     Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
+    // The site score paid fresh water +12 and a coast-only seat +10 (housing
+    // +4, Harbor base +6), though live non-capital cities on fresh water held
+    // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
+    // and 66% on the coast. 67 of 239 dry or coast-only foundings had a legal
+    // fresh-water plot within two tiles. Under the gene a fresh-water seat
+    // gains +12 more. See `fresh_water_site.rs`.
+    Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
     // Live Deity (11-05): from t150 the median science seat met half its Power
     // demand; at t170, 9 of 32 such games held no plant and 7 of them could
     // build one, five banking Oil beside dark Labs. The plant credit read 4

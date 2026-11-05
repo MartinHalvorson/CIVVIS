@@ -3656,8 +3656,8 @@ use civvis::ai::player::aid::FINISH_WINDOW as AID_GIFT_FINISH_WINDOW;
 /// Gold in all) because the control mod put three quarters of the treasury
 /// on every retried offer, whatever the planner's reason for offering — a
 /// second front, war fatigue, a religious lane and an envoy reclaim all
-/// paid like a rout. Civilization VI's own database carries no diplomatic
-/// modifier for a gift, so Gold that does not buy the peace buys nothing.
+/// paid like a rout. Beyond the peace itself such Gold buys only the capped
+/// favorable-deal modifier, far less than those offers paid.
 /// Now the planner's `peace_routed` says whether the front is lost; only
 /// then does the order carry a cap (`x`), and the mod offers at most that.
 /// A white offer carries `x = 0`.
