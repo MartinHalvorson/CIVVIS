@@ -2364,6 +2364,43 @@ fn a_spy_on_a_host_operation_is_not_retasked_and_the_hosts_menu_bounds_the_board
         vec!["listening_post".to_string()]
     );
 
+    // Beside the menu, the host's targets and odds cross as plots (axial)
+    // and fractions; odds outside [0, 1] are no reading.
+    let mut aimed = spy(78, 5, 5);
+    aimed.spy_missions_available = Some(vec![
+        "UNITOPERATION_SPY_LISTENING_POST".to_string(),
+        "UNITOPERATION_SPY_STEAL_TECH_BOOST".to_string(),
+    ]);
+    aimed.spy_mission_targets = Some(vec![
+        StateSpyTarget {
+            op: "UNITOPERATION_SPY_LISTENING_POST".to_string(),
+            x: 5,
+            y: 5,
+            success: Some(1.5),
+            fail: None,
+        },
+        StateSpyTarget {
+            op: "UNITOPERATION_SPY_STEAL_TECH_BOOST".to_string(),
+            x: 6,
+            y: 5,
+            success: Some(0.62),
+            fail: Some(0.2),
+        },
+    ]);
+    mirror.sync(&snapshot, &state(121, vec![aimed]), 0);
+    let uid = mirror.uid_of[&78];
+    let targets = mirror.game.host_unit_facts[&uid]
+        .spy_targets
+        .clone()
+        .expect("the targets cross");
+    assert_eq!(
+        targets["steal_tech_boost"].pos,
+        crate::hex::offset_to_axial(6, 5)
+    );
+    assert_eq!(targets["steal_tech_boost"].success, Some(0.62));
+    assert_eq!(targets["steal_tech_boost"].fail, Some(0.2));
+    assert_eq!(targets["listening_post"].success, None, "1.5 is no reading");
+
     // On an operation: the mission is seated and nothing is offered, on
     // both paths.
     let mut busy = spy(78, 5, 5);
