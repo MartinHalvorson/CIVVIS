@@ -5330,6 +5330,8 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // An assigned Defend formation keeps its combat slots near its threatened city.
+    Gene { tag: "defenders-keep-the-city-in-reach", field: "defenders_keep_the_city_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_keep_the_city_in_reach, disable: AdvancedAi::disable_defenders_keep_the_city_in_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
