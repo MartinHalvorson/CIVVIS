@@ -2934,6 +2934,59 @@ const LUXURY_BUY_PHASE: u32 = 4;
 /// over cities of `needed − have` where positive. A city whose ledger the
 /// host did not report (`NaN` or `-1`, see `StateCity::amenities`) is left
 /// out rather than read as content or as starving.
+/// `captives-come-home`: Gold the treasury keeps through a ransom: upkeep and the purchase lanes
+/// (luxury top-ups, the upgrade floor) are not spent on a Spy.
+const RANSOM_GOLD_RESERVE: i64 = 150;
+/// The most a Spy is worth back: under a new one's Production at the turns
+/// the network empties (225-262), and its experience comes with it.
+const RANSOM_CEILING_MAX: i32 = 200;
+/// Below this the treasury cannot meet any likely price; no ask goes out.
+const RANSOM_CEILING_MIN: i32 = 40;
+/// One ask per captor every this many turns, staggered by the captor's seat,
+/// so an unanswered deal session cannot stand the trade lane down.
+const RANSOM_CADENCE: u32 = 5;
+
+/// `captives-come-home`: ask one captor at peace with us for one of our
+/// captured Spies (`buy CAPTIVE`), Gold up to the ceiling. The captor is the
+/// one holding most of ours whose staggered [`RANSOM_CADENCE`] turn this is
+/// (`captives_of_ours`, the mod's read of the shipped deal screen); the
+/// ceiling is the treasury over the reserve, capped. `None` when an ask was
+/// pushed, else the hold. The caller decides whether the network wants its
+/// slots (`AdvancedAi::captives_come_home_wanted`). See
+/// `advanced/captives_come_home.rs`.
+fn append_captive_ransom_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let held = |rival: &civvis::mirror::StateRival| rival.captives_of_ours.unwrap_or(0);
+    let captor = state
+        .rivals
+        .iter()
+        .filter(|rival| held(rival) > 0 && !rival.at_war)
+        .filter(|rival| state.turn % RANSOM_CADENCE == rival.player as u32 % RANSOM_CADENCE)
+        .max_by_key(|rival| (held(rival), std::cmp::Reverse(rival.player)));
+    let Some(captor) = captor else {
+        return Some("ransom_hold:no_captor");
+    };
+    let ceiling = (state.gold - RANSOM_GOLD_RESERVE).min(RANSOM_CEILING_MAX as i64) as i32;
+    if ceiling < RANSOM_CEILING_MIN {
+        return Some("ransom_hold:treasury");
+    }
+    // One working deal per rival at a time is the mod's rule.
+    if orders.iter().any(|order| {
+        (order.kind == "sell" || order.kind == "buy") && order.subject == Some(captor.player as i64)
+    }) {
+        return Some("ransom_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(captor.player as i64),
+        verb: Some("CAPTIVE".to_string()),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
 fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
     state
         .cities
@@ -5821,6 +5874,23 @@ fn decide(
             // or while another deal holds the same rival's working deal.
             if why == "border_buy_hold:treasury" || why == "border_buy_hold:deal_in_flight" {
                 note_bits.push(why.to_string());
+            }
+        }
+    }
+    // `captives-come-home`: our captured Spies bought back while the network
+    // is short of its slots. See `append_captive_ransom_order`.
+    if ai.captives_come_home_enabled() {
+        let held = state
+            .units
+            .iter()
+            .filter(|unit| unit.kind == "UNIT_SPY")
+            .count();
+        let capacity = state.spy_capacity.unwrap_or(0).max(0) as usize;
+        if ai.captives_come_home_wanted(&mirror_state.game, 0, held, capacity) {
+            match append_captive_ransom_order(state, &mut orders) {
+                None => note_bits.push("captive_ransom=1".to_string()),
+                Some(why) if why != "ransom_hold:no_captor" => note_bits.push(why.to_string()),
+                Some(_) => {}
             }
         }
     }

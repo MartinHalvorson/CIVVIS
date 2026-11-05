@@ -2233,6 +2233,9 @@ impl AdvancedAi {
         /// Opt-in gene `korea-mines-beside-the-seowon`; see
         /// `advanced/korea_mines_beside_the_seowon.rs`.
         korea_mines_beside_the_seowon => enable_korea_mines_beside_the_seowon, disable_korea_mines_beside_the_seowon;
+        /// Opt-in gene `captives-come-home`; see
+        /// `advanced/captives_come_home.rs`.
+        captives_come_home => enable_captives_come_home, disable_captives_come_home;
     }
 }
 
