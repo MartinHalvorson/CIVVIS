@@ -7672,6 +7672,13 @@ pub struct AdvancedAi {
     /// claim chain before the strategic governor, as the main path does. See
     /// `advanced/hint_runs_the_claims.rs`. Off by default.
     hint_runs_the_claims: bool,
+    /// `group-steps-read-the-field`: the group step prices an approach by
+    /// the larger of the one-step forecast and the danger field. See
+    /// `advanced/group_steps_read_the_field.rs`. Off by default.
+    group_steps_read_the_field: bool,
+    /// `group-steps-read-the-field`: the frame's danger field for the group
+    /// step, rebuilt when the visible hostiles at war change.
+    group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
@@ -10813,6 +10820,9 @@ mod gold_buys_the_opening_builder;
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+/// `group-steps-read-the-field`: the group step reads the danger field. See
+/// `advanced/group_steps_read_the_field.rs`.
+mod group_steps_read_the_field;
 /// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
 /// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
 mod holdable_land_keeps_settling;
@@ -12289,6 +12299,8 @@ impl AdvancedAi {
             gold_buys_the_production_tile: false,
             korea_mines_beside_the_seowon: false,
             hint_runs_the_claims: false,
+            group_steps_read_the_field: false,
+            group_step_field: Default::default(),
             // ---- append: l-o ----------------------------------------
             outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
@@ -21078,8 +21090,10 @@ impl AdvancedAi {
     /// a chance to write another queue. Re-running the selector is not enough:
     /// a city can be healthy and undamaged after the first handoff while its
     /// original threat evidence has already been consumed by planning. Keep
-    /// the confirmed item authoritative for the rest of this turn, while
-    /// allowing an already-running defender to stand.
+    /// selected fortifications authoritative for the rest of this turn. A
+    /// later military writer must not erase the Walls selected for native
+    /// Gyeongju before its turn-33 loss. Unit and economic reservations retain
+    /// the existing allowance for a later local defender.
     fn reapply_confirmed_defense_queue(
         &self,
         g: &mut Game,
@@ -21090,9 +21104,12 @@ impl AdvancedAi {
             return;
         };
         let current = g.cities.get(city).and_then(|city| city.queue.first());
-        if current.is_some_and(|current| {
-            current == defence || Self::active_queue_answers_siege(g, current)
-        }) {
+        let fortification = !matches!(defence, Item::Unit { .. } | Item::Formation { .. })
+            && Self::active_queue_answers_siege(g, defence);
+        if current == Some(defence)
+            || (!fortification
+                && current.is_some_and(|item| Self::active_queue_answers_siege(g, item)))
+        {
             return;
         }
         let city_name = g.cities[city].name.clone();
@@ -30559,6 +30576,9 @@ mod opening_walk_tests {
 
 #[cfg(test)]
 mod defensive_repair_queue_tests;
+
+#[cfg(test)]
+mod confirmed_defense_item_tests;
 
 #[cfg(test)]
 mod domination_maintenance_tests;

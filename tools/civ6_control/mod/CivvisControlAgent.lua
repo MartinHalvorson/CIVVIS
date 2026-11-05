@@ -3581,18 +3581,18 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
-	local wanted = nil;
+	local wanted, wantedPlot = nil, nil;
 	if cfg.CivvisDecides then
 		local cityId = try(function() return city:GetID(); end);
 		if cityId ~= nil then
-			-- A direct choice owns the current queue.  If that queue was already
-			-- finishing when the board was exported, the Rust decider also sent a
-			-- deferred next-build lease under a string key in this same table (the
-			-- Lua 5.1 main chunk is at its 200-local ceiling). Consume that lease
-			-- only after the host raises the production blocker, never while the old
-			-- item is still running.
-			wanted = civvisBuild[cityId]
-				or civvisBuild[tostring(cityId) .. ":next"];
+			-- Called only for an empty queue: the next lease supersedes the
+			-- remembered choice that just completed. Keep its selected plot until
+			-- the host placement query revalidates it at consumption time.
+			wanted = civvisBuild[tostring(cityId) .. ":next"]
+				or civvisBuild[cityId];
+			if civvisBuild[tostring(cityId) .. ":next"] == wanted then
+				wantedPlot = civvisBuild[tostring(cityId) .. ":next-plot"];
+			end
 		end
 	end
 	local function playable(name)
@@ -3643,7 +3643,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if wanted ~= nil then
 		local alreadyRefused = refused[wanted];
 		local row, reasons = playable(wanted);
-		if row ~= nil then return wanted, row, "civvis"; end
+		if row ~= nil then return wanted, row, "civvis", wantedPlot; end
 		-- Preserve the host refusal so the next exported board can explain it.
 		if not alreadyRefused and reasons ~= nil and #reasons > 0 then
 			emit("civvis_build_unplayable", {
@@ -4647,12 +4647,12 @@ local function driveProduction(player, turn, force)
 			end
 			local searching = true;
 			while searching do
-				local name, row, why = chooseProduction(
+				local name, row, why, plot = chooseProduction(
 					city, counts, #cities, turn, rejected);
 				if row == nil then
 					searching = false;
 				else
-					local params = buildParams(row, city);
+					local params = buildParams(row, city, plot and plot.x, plot and plot.y);
 					if params == nil then
 						-- CanProduce allows a district whose placement query has no
 						-- legal plot. Reject it for this sweep and ask the ladder for
@@ -4667,6 +4667,8 @@ local function driveProduction(player, turn, force)
 							CivvisK.lastBuild[cityId] = { turn = turn, item = name };
 							if civvisBuild[tostring(cityId) .. ":next"] == name then
 								civvisBuild[tostring(cityId) .. ":next"] = nil;
+								civvisBuild[tostring(cityId) .. ":next-plot"] = nil;
+								civvisBuild[cityId] = nil;
 							end
 							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
 							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
@@ -15499,6 +15501,8 @@ local function applyOrder(player, pid, row, turn)
 		if row2 == nil then return false, "unknown_" .. verb; end
 		local cityId = tonumber(subject) or -1;
 		civvisBuild[tostring(cityId) .. ":next"] = resolved;
+		civvisBuild[tostring(cityId) .. ":next-plot"] =
+			(x ~= nil or y ~= nil) and { x = x, y = y } or nil;
 		-- This is a durable handoff, not a build request.  The queue remains
 		-- untouched until `driveProduction` sees the matching end-turn blocker.
 		emit("build_hint", {
@@ -15683,6 +15687,9 @@ local function applyOrder(player, pid, row, turn)
 			return true, "finishing_defender_preserved";
 		end
 		civvisBuild[cityId] = resolved;
+		-- A newer direct choice replaces any older deferred instruction.
+		civvisBuild[tostring(cityId) .. ":next"] = nil;
+		civvisBuild[tostring(cityId) .. ":next-plot"] = nil;
 		local emergencyWall = false;
 		if not cfg.CivvisDecides and resolved ~= "BUILDING_WALLS"
 				and immediateThreat then
