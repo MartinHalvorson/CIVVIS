@@ -23206,7 +23206,7 @@ function CivvisBoard.restartPoll()
 	restart.issued = true;
 	local before = CivvisBoard.seeds();
 	local regenerated = false;
-	if mode ~= 3 then
+	if mode ~= 3 and mode ~= 6 then
 		regenerated = pcall(function() GameConfiguration.RegenerateSeeds(); end);
 	end
 	local after = CivvisBoard.seeds();
@@ -23239,9 +23239,15 @@ function CivvisBoard.restartPoll()
 end
 
 -- Modes 2 and 5 host the configuration again; the others are the stock Restart.
+-- Mode 6 leaves for the main menu (`Events.ExitToMainMenu()`, as the shipped
+-- Base/Assets/UI/Menus/InGameTopOptionsMenu.lua:461 and EndGame/EndGameMenu.lua:345
+-- do) and the next run starts its game through the ordinary Create Game menus,
+-- in the same process: no relaunch, no boot.
 function CivvisBoard.restartCall(mode)
 	local called = false;
-	if mode == 2 or mode == 5 then
+	if mode == 6 then
+		called = pcall(function() Events.ExitToMainMenu(); end);
+	elseif mode == 2 or mode == 5 then
 		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
 		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	else

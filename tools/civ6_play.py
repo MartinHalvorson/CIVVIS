@@ -4410,6 +4410,20 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
                       flush=True)
             elif kind == "restart_called" and not event.get("called"):
                 failure = "the parked game could not call the restart"
+            elif kind == "restart_called" and mode == restart_handoff.MODE_MENU:
+                # ★ MODE 6: the parked game is leaving for the main menu. From
+                # here this run starts its game exactly as a launched one does,
+                # through the Create Game menus, minus the boot. A new game
+                # that loads the previous run's scripts never writes this run's
+                # tag, so the bootstrap fails and the caller relaunches.
+                left = round(time.monotonic() - start, 1)
+                print(f"[restart] the parked game left for the main menu after "
+                      f"{left:.1f}s; starting this run's game from the menus",
+                      flush=True)
+                note(result="menu", left_s=left)
+                tail.run = args.tag
+                setup_mark("restart_menu")
+                return bootstrap_game(tail, on_event, run_dir, args, verify_s=verify_s)
             elif (kind == "loaded" and event.get("ctx") == "agent"
                     and answered is not None):
                 failure = ("the restarted game loaded the previous run's scripts, "

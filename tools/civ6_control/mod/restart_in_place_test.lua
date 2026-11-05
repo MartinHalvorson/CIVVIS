@@ -53,6 +53,7 @@ local env = {
 		RestartGame = function() calls[#calls + 1] = "RestartGame" end,
 		HostGame = function(kind) calls[#calls + 1] = "HostGame:" .. tostring(kind) end,
 	},
+	Events = { ExitToMainMenu = function() calls[#calls + 1] = "ExitToMainMenu" end },
 	ServerType = { SERVER_TYPE_NONE = 0 },
 	ActionTypes = { ACTION_ENDTURN = 77 },
 	UI = { RequestAction = function(action, parameters)
@@ -157,7 +158,22 @@ assert(source:find("local function onGameCoreTick()\n" ..
 	"\tif CivvisBoard.restart.deferred then pcall(CivvisBoard.restartFromCore); return; end", 1, true),
 	"the game core's publish makes a deferred call")
 
--- 9. The wiring: the retire row's `x = 1` parks instead of retiring, and the
+-- 9. Mode 6 leaves for the main menu from the pulse, seeds untouched: the next
+-- run's Create Game rolls its own.
+board.restart.issued, board.restart.deferred = false, nil
+calls, events = {}, {}
+regenerates = true
+rows = { { x = 6 } }
+board.restartPoll()
+assert(table.concat(calls, ",") == "ExitToMainMenu", table.concat(calls, ","))
+assert(events[1].kind == "restart_issued" and events[1].payload.regenerated == false
+	and events[1].payload.map_seed == events[1].payload.map_seed_before)
+assert(events[#events - 1].kind == "restart_called" and events[#events - 1].payload.called == true
+	and events[#events - 1].payload.mode == 6)
+board.restartPoll()
+assert(#calls == 1, "the menu is asked for once")
+
+-- 10. The wiring: the retire row's `x = 1` parks instead of retiring, and the
 -- HUD pulse polls a parked game before anything else.
 assert(source:find('"SELECT x FROM civvis.orders WHERE run = \'%s\' " ..\n' ..
 	'\t\t\t\t\t"AND kind = \'retire\'"', 1, true), "the retire poll reads x")
