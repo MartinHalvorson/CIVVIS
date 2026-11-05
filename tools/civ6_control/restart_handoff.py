@@ -60,8 +60,14 @@ MODE_HOST = 2        # new seeds, then host the current configuration again
 MODE_SAME_MAP = 3    # the shipped Restart with the seeds it had
 MODE_RESTART_FROM_CORE = 4  # 1, called from the game core's next publish
 MODE_HOST_FROM_CORE = 5     # 2, called from the game core's next publish
+#: Leave for the main menu (`Events.ExitToMainMenu()`, the shipped in-game
+#: menu's own call) and start the next game through the ordinary Create Game
+#: menus in the same process.  Modes 1 and 4 crashed this build and 2/5 were
+#: slower than a relaunch (2026-10-15); this one skips only the boot and the
+#: quit, keeping the setup path every game already takes.
+MODE_MENU = 6
 MODES = (MODE_RESTART, MODE_HOST, MODE_SAME_MAP, MODE_RESTART_FROM_CORE,
-         MODE_HOST_FROM_CORE)
+         MODE_HOST_FROM_CORE, MODE_MENU)
 
 #: The settings a restart keeps.  The next run must have asked for exactly
 #: these, or the restarted game would be a different game than it records.
