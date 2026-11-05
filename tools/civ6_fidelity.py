@@ -1427,7 +1427,7 @@ BUILDING_ALIASES = {
 
 
 # Eureka/Inspiration triggers: the game's BoostClass rows spelled in the
-# trigger vocabulary CIVVIS' engine evaluates (game.rs boost_met).
+# trigger vocabulary CIVVIS' engine evaluates (game/boosts.rs boost_met).
 def boost_spec(row) -> dict | None:
     def named(game_type, prefix, aliases=None):
         entry = slug(game_type, prefix)

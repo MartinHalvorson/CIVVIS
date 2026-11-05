@@ -5581,6 +5581,16 @@ pub struct AdvancedAi {
     /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
     anvil_spares_the_one_blow: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
+    /// tiles of one of our cities counts as founded only when that city is
+    /// new since the last resolve, so a capture beside a standing city
+    /// scars the ground too. See `advanced/civilian_safety.rs`
+    /// (`resolve_vanished_settlers`). Off by default.
+    capture_scar_reads_the_new_city: bool,
+    /// Our city sites at the last `resolve_vanished_settlers`, read by
+    /// `capture-scar-reads-the-new-city`. `None` until the first resolve
+    /// under the gene, when the old any-city rule still answers.
+    capture_scar_city_sites: Option<BTreeSet<Pos>>,
     /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
     /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
     disrupt_waits_for_the_match_point: bool,
@@ -6617,7 +6627,14 @@ pub struct AdvancedAi {
     /// when the network needs their slots. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home: bool,
+    /// `denounce-only-to-declare`: the science-threat rung no longer
+    /// denounces; the war opening does, when a war follows. See
+    /// `advanced/denounce_only_to_declare.rs`. Off by default.
+    denounce_only_to_declare: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
+    /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
+    embassy_finds_the_capital_2: bool,
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
     /// Give a threatened sole capital opening defence priority. Opt-in.
@@ -7670,9 +7687,16 @@ pub struct AdvancedAi {
     /// fighting our enemy or the strongest neighbour at our border. See
     /// `advanced/military_alliance_shield.rs`. Off by default.
     military_alliance_shield: bool,
-    /// `military-alliance-shield`: the partner asked on the last decided
-    /// turn, for the live orders layer. `None` with the gene off.
-    military_alliance_shield_ask: Option<usize>,
+    /// `military-alliance-shield`: the partner and kind asked on the last
+    /// decided turn, for the live orders layer. `None` with the gene off.
+    military_alliance_shield_ask: Option<(usize, &'static str)>,
+    /// `military-alliance-shield-2`: version two asks only Friendly rivals and
+    /// falls through to another kind when Military is taken or refused. See
+    /// `advanced/military_alliance_shield.rs`. Off by default.
+    military_alliance_shield_2: bool,
+    /// `military-alliance-shield-2`: its own asks by partner and kind, by the
+    /// turn asked and whether the partner was a declared friend then.
+    military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -8724,6 +8748,9 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
+    /// sooner. See `advanced/spy_civics_come_first.rs`.
+    spy_civics_come_first: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
@@ -10323,6 +10350,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
+mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
 mod deterrence_trusts_a_friend;
 mod runaway_expander;
@@ -10830,6 +10859,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// `spy-civics-come-first`: the Spy-slot civics sooner. See
+/// `advanced/spy_civics_come_first.rs`.
+mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
@@ -11323,6 +11355,7 @@ impl AdvancedAi {
         self.early_settler_homes.clear();
         self.hostile_last_seen.clear();
         self.settler_vanished.clear();
+        self.capture_scar_city_sites = None;
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.culture_curves.clear();
@@ -11866,6 +11899,8 @@ impl AdvancedAi {
             breaker_spares_the_backlog_builder: false,
             anvil_spares_the_one_blow: false,
             // ---- append: c-d ----------------------------------------
+            capture_scar_reads_the_new_city: false,
+            capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
@@ -12071,7 +12106,9 @@ impl AdvancedAi {
             capital_keeps_its_defender_2: false,
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
+            denounce_only_to_declare: false,
             // ---- append: e-f ----------------------------------------
+            embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
             founding_voyage: false,
@@ -12241,6 +12278,8 @@ impl AdvancedAi {
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
             military_alliance_shield_ask: None,
+            military_alliance_shield_2: false,
+            military_alliance_shield_asks: BTreeMap::new(),
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
@@ -12402,6 +12441,7 @@ impl AdvancedAi {
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
             // ---- append: s-s ----------------------------------------
+            spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             settler_shelters_from_the_war_2: false,

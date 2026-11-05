@@ -4770,6 +4770,15 @@
           "elimination-yields-to-a-launch-2": null
         }
       },
+      "embassy-finds-the-capital": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "embassy-finds-the-capital": null,
+          "embassy-finds-the-capital-2": null
+        }
+      },
       "eureka-chasing-builder": {
         "rule_on": [
           "eureka-chasing-builder-2"
@@ -4982,6 +4991,15 @@
         "versions": {
           "merchant-confederation-earns-its-slot": null,
           "merchant-confederation-earns-its-slot-2": null
+        }
+      },
+      "military-alliance-shield": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "military-alliance-shield": null,
+          "military-alliance-shield-2": null
         }
       },
       "missionary-last-charge-explores": {

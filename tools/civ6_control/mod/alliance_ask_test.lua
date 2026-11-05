@@ -425,6 +425,19 @@ check("the switch still turns it off",
 CivvisControlConfig.DiploAllies = nil
 CivvisControlConfig.MilitaryAllies = nil
 
+-- `military-alliance-shield-2`: under `ShieldAllies` any type is asked on
+-- any lane (the binary passes only that desk's own ask).
+CivvisControlConfig.VictoryLane = "domination"
+CivvisControlConfig.ShieldAllies = true
+local _, shieldEconomic = fixture({ stateIndex = 1 })
+check("ShieldAllies opens an economic alliance on a domination seat",
+	select(2, alliance(shieldEconomic, 10, "ALLIANCE_ECONOMIC")), "alliance_asked")
+CivvisControlConfig.ShieldAllies = nil
+local _, shieldGone = fixture({ stateIndex = 1 })
+check("without ShieldAllies the economic alliance stays off the lane",
+	select(2, alliance(shieldGone, 11, "ALLIANCE_ECONOMIC")), "alliance_off_lane")
+CivvisControlConfig.VictoryLane = "diplomatic"
+
 if failures > 0 then
 	realPrint(failures .. " failure(s)")
 	os.exit(1)

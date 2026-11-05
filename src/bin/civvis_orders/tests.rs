@@ -1117,6 +1117,7 @@ fn direct_city_state_reclaim_crosses_the_host_boundary_as_peace_only() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("the decision is JSON");
@@ -1162,6 +1163,7 @@ fn direct_city_state_reclaim_crosses_the_host_boundary_as_peace_only() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("the confirmed decision is JSON");
@@ -2849,6 +2851,7 @@ fn dialogue_never_declares_war_rides_every_bridge_reply_only_when_selected() {
                 host_move_refusals: &mut HostMoveRefusals::default(),
                 host_order_refusals: &mut HostOrderRefusals::default(),
                 air_assault_continuation: &mut continuation,
+                governor_exchange: &mut governor_exchange::Continuation::default(),
             },
         ))
         .unwrap();
@@ -2935,6 +2938,7 @@ fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .unwrap();
@@ -3071,6 +3075,7 @@ fn dying_barbarian_gets_a_direct_attack_and_a_reserve_before_any_movement() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .unwrap();
@@ -3138,6 +3143,7 @@ fn dying_war_enemy_gets_a_direct_attack_and_a_reserve_before_any_movement() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .unwrap();
@@ -8789,6 +8795,7 @@ fn held_envoys_are_spent_by_the_plan_and_cross_as_envoy_orders() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("bounded decision is JSON");
@@ -8890,6 +8897,7 @@ fn banked_secure_envoys_do_not_cross_the_live_order_boundary() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("the decision is JSON");
@@ -9062,6 +9070,7 @@ fn exact_spent_firaxis_titles_suppress_duplicate_governor_orders() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("the decision is JSON");
@@ -9518,6 +9527,7 @@ fn deciding_does_not_mutate_the_authoritative_live_mirror() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     );
 
@@ -9597,6 +9607,7 @@ fn converted_holy_site_never_emits_a_rival_missionary_purchase() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     ))
     .expect("the decision is JSON");
@@ -9677,6 +9688,7 @@ fn fresh_mirror_translates_a_zero_movement_trader_to_a_trade_route() {
             host_move_refusals: &mut HostMoveRefusals::default(),
             host_order_refusals: &mut HostOrderRefusals::default(),
             air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            governor_exchange: &mut governor_exchange::Continuation::default(),
         },
     );
 
