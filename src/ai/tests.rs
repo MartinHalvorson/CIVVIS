@@ -3705,6 +3705,84 @@ fn plaza_in_the_district_list_wants_one_plaza_then_its_tier_buildings() {
     );
 }
 
+/// `plaza-serves-the-scientist`: with the science flag the Plaza's city builds
+/// the Ancestral Hall, then the Intelligence Agency; a Plaza already holding
+/// the Warlord's Throne goes straight to the Agency; without the flag the
+/// stock list is unchanged.
+#[test]
+fn plaza_serves_the_scientist_takes_the_hall_then_the_agency() {
+    let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| g.units[unit].kind == "settler")
+        .unwrap();
+    g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = g.player_city_ids(0)[0];
+    g.players[0].civics.insert(crate::name!("state_workforce"));
+    let site = g.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            let tile = &g.map.tiles[position];
+            *position != g.cities[&city].pos
+                && tile.district.is_none()
+                && !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+        })
+        .unwrap();
+    g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("government_plaza"));
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("government_plaza"), site);
+    let building =
+        |g: &Game, science: bool| match BasicAi::plaza_building_item_for(g, 0, city, science) {
+            Some(Item::Building { building }) => Some(building),
+            _ => None,
+        };
+    assert_eq!(
+        building(&g, false),
+        Some(crate::name!("warlords_throne")),
+        "stock"
+    );
+    assert_eq!(
+        building(&g, true),
+        Some(crate::name!("ancestral_hall")),
+        "science tier one"
+    );
+    let mut hall = g.clone();
+    hall.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("ancestral_hall"));
+    assert_eq!(
+        building(&hall, true),
+        Some(crate::name!("intelligence_agency")),
+        "then the Agency"
+    );
+    let mut throne = g.clone();
+    throne
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("warlords_throne"));
+    assert_eq!(
+        building(&throne, true),
+        Some(crate::name!("intelligence_agency")),
+        "a Throne already standing goes straight to the Agency"
+    );
+    assert_eq!(
+        BasicAi::plaza_building_item(&g, 0, city),
+        BasicAi::plaza_building_item_for(&g, 0, city, false),
+        "the stock entry point is the flag-off list"
+    );
+}
+
 #[test]
 fn city_state_governors_repair_pillaged_districts_before_new_production() {
     let mut g = Game::new_full(1, 24, 16, 91_769, 120, 0, false);

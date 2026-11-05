@@ -3960,6 +3960,12 @@ pub struct BasicAi {
     /// recent Spy losses pause training; the production fallback then offers
     /// no Spy. False otherwise and on a bare `BasicAi`.
     pub(crate) spy_training_paused: bool,
+    /// `plaza-serves-the-scientist`: set by `AdvancedAi` each turn while the
+    /// gene is on and the seat aims at Science; the Government Plaza's tier
+    /// buildings are then the Ancestral Hall and the Intelligence Agency
+    /// instead of the Warlord's Throne and the Grand Master's Chapel. See
+    /// `BasicAi::plaza_building_item_for`. False on a bare `BasicAi`.
+    pub(crate) plaza_serves_science: bool,
     /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
     /// unfinished Spaceport foundation while no pad of ours stands. See
     /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
@@ -6091,6 +6097,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
+            plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
@@ -6704,6 +6711,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
+            plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
