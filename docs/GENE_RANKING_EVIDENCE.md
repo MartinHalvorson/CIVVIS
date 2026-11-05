@@ -202,6 +202,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `camps-close-the-age` | off (unmeasured) | Opt-in gene `camps-close-the-age`; see `Self::camps_close_the_age`. | — \| 3 |
 | `camps-close-the-age-2` | off (unmeasured) | Opt-in gene `camps-close-the-age-2`; see `Self::camps_close_the_age_2`. | — \| 3 |
 | `camps-close-the-age-3` | off (unmeasured) | Opt-in gene `camps-close-the-age-3`; see `Self::camps_close_the_age_3`. | — \| 3 |
+| `campus-above-the-sea` | off (unmeasured) | Prefer a safe legal site for a new native Science Campus. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
@@ -344,6 +345,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
 | `science-drive-leads-beside-the-lane` | off (unmeasured) | Opt-in gene `science-drive-leads-beside-the-lane`; see `Self::science_drive_leads_beside_the_lane`. | 1 \| 1 |
 | `science-foundation-before-backlog` | off (unmeasured) | Prioritize usable labs and nearby Rocketry during a Science posture. | 1 \| 1 |
+| `science-heads-keep-their-queue` | off (unmeasured) | Opt-in gene `science-heads-keep-their-queue`; see `advanced/science_heads_keep_their_queue.rs`. | 1 \| 1 |
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
