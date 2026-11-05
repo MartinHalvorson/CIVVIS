@@ -5227,6 +5227,21 @@ impl AdvancedAi {
         self.settler_shelters_from_the_war_2 = false;
     }
 
+    /// Opt-in gene `military-alliance-shield-2`, version two of
+    /// `military-alliance-shield`: only Friendly rivals are asked, and a
+    /// Military kind taken or refused falls through to another kind; see
+    /// `advanced/military_alliance_shield.rs`. A seat plays one version, so
+    /// this turns version one off.
+    pub fn enable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = true;
+        self.military_alliance_shield = false;
+    }
+
+    /// The twin of `enable_military_alliance_shield_2`.
+    pub fn disable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

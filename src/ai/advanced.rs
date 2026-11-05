@@ -7684,9 +7684,16 @@ pub struct AdvancedAi {
     /// fighting our enemy or the strongest neighbour at our border. See
     /// `advanced/military_alliance_shield.rs`. Off by default.
     military_alliance_shield: bool,
-    /// `military-alliance-shield`: the partner asked on the last decided
-    /// turn, for the live orders layer. `None` with the gene off.
-    military_alliance_shield_ask: Option<usize>,
+    /// `military-alliance-shield`: the partner and kind asked on the last
+    /// decided turn, for the live orders layer. `None` with the gene off.
+    military_alliance_shield_ask: Option<(usize, &'static str)>,
+    /// `military-alliance-shield-2`: version two asks only Friendly rivals and
+    /// falls through to another kind when Military is taken or refused. See
+    /// `advanced/military_alliance_shield.rs`. Off by default.
+    military_alliance_shield_2: bool,
+    /// `military-alliance-shield-2`: its own asks by partner and kind, by the
+    /// turn asked and whether the partner was a declared friend then.
+    military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -12267,6 +12274,8 @@ impl AdvancedAi {
             luxury_asks_pay_in_strategics: false,
             military_alliance_shield: false,
             military_alliance_shield_ask: None,
+            military_alliance_shield_2: false,
+            military_alliance_shield_asks: BTreeMap::new(),
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,

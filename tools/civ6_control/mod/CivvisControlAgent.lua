@@ -12079,11 +12079,14 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	-- binary lets through only that desk's own ask, which prices the
 	-- Domination target itself (+5 combat strength against a common enemy,
 	-- Expansion1_Alliances.xml:146; and the alliance's automatic Defensive
-	-- Pact).
+	-- Pact). `ShieldAllies` (`military-alliance-shield-2`): any type, since
+	-- version two binds a neighbour with another kind once Military is taken
+	-- or refused; again the binary passes only that desk's own ask.
 	if (config.VictoryLane ~= "diplomatic"
 			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
 			and not (config.VictoryLane == "science" and config.ScienceAllies == true)
-			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true))
+			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true)
+			and not (config.ShieldAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
