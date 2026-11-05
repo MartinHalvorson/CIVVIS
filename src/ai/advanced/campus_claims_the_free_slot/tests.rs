@@ -4,6 +4,145 @@ use crate::rules::Yields;
 use crate::setup::GameSpeed;
 use std::sync::Arc;
 
+fn one_citizen_native_korean_city() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+    let mut game = Game::new_full(2, 32, 20, 95_301, 250, 0, false);
+    game.units.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.hills = true;
+        tile.feature = None;
+        tile.resource = None;
+    }
+    game.players[0].civ = "Korea".to_string();
+    for tech in ["pottery", "writing", "mining", "bronze_working"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    game.game_speed = GameSpeed::Online;
+    game.turn = 43;
+    let capital = game.found_city_for(0, (5, 5), None);
+    let cid = game.found_city_for(0, (15, 5), None);
+    game.cities.get_mut(&capital).unwrap().pop = 4;
+    install_test_district(&mut game, capital, "seowon");
+    game.cities.get_mut(&cid).unwrap().pop = 1;
+    game.cities.get_mut(&cid).unwrap().queue.clear();
+    game.cities.get_mut(&cid).unwrap().production = 0.0;
+    let production = game.city_yields(cid).production;
+    Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        cid,
+        Yields {
+            production: 5.0 - production,
+            ..Default::default()
+        },
+    );
+    let quote_item = Item::District {
+        district: crate::name!("seowon"),
+        pos: game.cities[&cid].pos,
+    };
+    for item in [
+        quote_item,
+        Item::District {
+            district: crate::name!("campus"),
+            pos: game.cities[&cid].pos,
+        },
+    ] {
+        Arc::make_mut(&mut game.host_buildable)
+            .entry(cid)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(26.0),
+                    turns: Some(8.0),
+                },
+            );
+    }
+    let campus = BasicAi::first_campus_item(&game, 0, cid).expect("native first Seowon is legal");
+    let mut ai = AdvancedAi::new();
+    ai.enable_campus_claims_the_free_slot_2();
+    ai.victory_target = Some(VictoryTarget::Science);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, ai, cid, plan, campus)
+}
+
+#[test]
+fn a_one_citizen_korean_science_city_claims_its_native_first_seowon() {
+    let (mut game, ai, cid, plan, campus) = one_citizen_native_korean_city();
+    assert!(game.can_produce(0, cid, &campus));
+    assert!(ai.free_slot_campus_item(&game, 0, cid, &plan).is_some());
+    let mut control = game.clone();
+    let mut version_one = ai.clone();
+    version_one.disable_campus_claims_the_free_slot_2();
+    version_one.enable_campus_claims_the_free_slot();
+    version_one.claim_free_slot_campus(&mut control, 0, &plan);
+    assert_eq!(head(&control, cid), None);
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    assert_eq!(head(&game, cid), Some(campus));
+}
+
+#[test]
+fn the_one_citizen_seowon_keeps_native_budget_and_existing_picker_guards() {
+    let (base, armed, cid, plan, campus) = one_citizen_native_korean_city();
+    for case in [
+        "version one",
+        "other civilization",
+        "other victory",
+        "science disabled",
+        "no native quote",
+        "over budget",
+        "threat",
+        "recent attack",
+        "already standing",
+        "already queued",
+    ] {
+        let mut game = base.clone();
+        let mut ai = armed.clone();
+        let mut plan = plan.clone();
+        match case {
+            "version one" => {
+                ai.disable_campus_claims_the_free_slot_2();
+                ai.enable_campus_claims_the_free_slot();
+            }
+            "other civilization" => game.players[0].civ = "Rome".to_string(),
+            "other victory" => ai.victory_target = Some(VictoryTarget::Culture),
+            "science disabled" => game.victory_conditions.science = false,
+            "no native quote" => {
+                game.host_buildable = Arc::default();
+                assert!(
+                    BasicAi::first_campus_item(&game, 0, cid).is_some(),
+                    "the model alone would offer a Campus"
+                );
+            }
+            "over budget" => {
+                Arc::make_mut(&mut game.host_buildable)
+                    .get_mut(&cid)
+                    .unwrap()
+                    .get_mut(&Game::production_block_key(&campus))
+                    .unwrap()
+                    .turns = Some(16.0)
+            }
+            "threat" => plan.threatened_city = Some(cid),
+            "recent attack" => game.cities.get_mut(&cid).unwrap().last_attacked = game.turn - 1,
+            "already standing" => {
+                install_test_district(&mut game, cid, "seowon");
+            }
+            "already queued" => game.cities.get_mut(&cid).unwrap().queue = vec![campus.clone()],
+            _ => unreachable!(),
+        }
+        assert!(
+            ai.free_slot_campus_item(&game, 0, cid, &plan).is_none(),
+            "{case}"
+        );
+    }
+}
+
 fn armed() -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     ai.enable_campus_claims_the_free_slot();
