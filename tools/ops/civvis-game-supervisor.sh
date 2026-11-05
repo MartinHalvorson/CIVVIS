@@ -822,6 +822,30 @@ adopt_prebuilt() {
 }
 # <<< next-head prebuild
 
+# >>> prebuild while waiting
+# ★ THE SEAT WAS SOMEONE ELSE'S FOR A FIFTH OF THE NIGHT, AND THE LANE CAME BACK
+# TO A COLD BUILD. Between 00:00 and 06:04Z on 2026-11-05 this loop waited 72
+# minutes (20%) on another harness's Civ VI (the tactics save-bank
+# calibrations), and the loop above runs only while a lane game plays -- so
+# every merge during a wait was compiled at the boundary after it. While the
+# seat is held, keep the loop going against what $HEAD_REPO has already built
+# (its stamp), started once, never restarted per poll so a build in flight is
+# not killed. The cycle that follows adopts it exactly as after a lane game.
+prebuild_while_waiting() {
+  local pin="" built=""
+  pin=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
+  [[ "$pin" == head ]] || return 0
+  if [[ -n "$PREBUILD_PID" ]] && kill -0 "$PREBUILD_PID" 2>/dev/null; then
+    return 0
+  fi
+  [[ -f "$HEAD_REPO/target/release/$BUILD_STAMP_NAME" ]] || return 0
+  built=$(cut -d' ' -f1 "$HEAD_REPO/target/release/$BUILD_STAMP_NAME" 2>/dev/null)
+  [[ "$built" =~ ^[0-9a-f]{40}$ ]] || return 0
+  REPO=${REPO:-$HEAD_REPO}
+  prebuild_start "$built"
+}
+# <<< prebuild while waiting
+
 # ★★★★★ A REFUSAL REPEATED FOR AN HOUR IS AN OUTAGE, AND IT READ AS ROUTINE.
 #
 # Every reason this loop declines to start a batch -- a dirty head tree, a fetch
@@ -871,6 +895,7 @@ while true; do
       UNOWNED_PID=$(unowned_harness_pid || true)
       if [[ -n "$UNOWNED_PID" ]]; then
         say "an unowned Civ VI harness is present (pid $UNOWNED_PID); leaving it alone and retrying in 60s"
+        prebuild_while_waiting
         sleep 60
         continue
       fi
@@ -1188,6 +1213,7 @@ while true; do
   LAUNCH_UNOWNED_PID=$(unowned_harness_pid || true)
   if [[ -n "$LAUNCH_UNOWNED_PID" ]]; then
     say "an unowned Civ VI harness appeared during preflight (pid $LAUNCH_UNOWNED_PID); leaving it alone and retrying in 60s"
+    prebuild_while_waiting
     sleep 60
     continue
   fi

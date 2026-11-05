@@ -5033,6 +5033,38 @@ pub const GENES: &[Gene] = &[
     // Spies (stock valuation and denial claim) until they age out.
     // See `advanced/denial_spies_count_their_losses.rs`.
     Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
+    // Live Lv 8 Deity Korea Online, 11-05 (play-it-out policy): 3 of 11
+    // games since 02:01Z ended in our elimination. In 033244Z, from turn
+    // 150, 29 of our units died, all healthy and none inside a city, 21 of
+    // them to Machine Guns, most from two tiles: the Defend force held a
+    // nine-unit ring around Seoul, and defenders-hold-the-walls keeps a
+    // threatened city's healthy defenders off the rotation, so Ancient
+    // Warriors and Archers stood where one blow removed them. A ring
+    // defender whose own tile is one-blow lethal at the top of the roll is
+    // no longer held. See `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
+    // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
+    // ahead instead of idling on Listening Posts or Gain Sources: in a space
+    // racer's city with no Disrupt Rocketry offered, in place of the green
+    // Spy's Gain Sources training step, and no longer withheld outside the
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
+    Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
     // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
     // Swordsman wore down and killed a Settler's Warrior escort and took the
     // Settler while two of our Archers stood within range the whole time and

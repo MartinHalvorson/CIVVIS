@@ -1458,6 +1458,9 @@ impl AdvancedAi {
         if self.shared_danger {
             field.share(g);
         }
+        // `walls-release-the-one-blow`: before the kill search and the
+        // rotation read `holds_the_walls`.
+        self.walls_one_blow = self.walls_one_blow_units(g, pid, &mut field);
         self.census.strike_reach_widened += field.widened;
         if field.widened > 0 {
             think!(self.journal(), Military, Detail,

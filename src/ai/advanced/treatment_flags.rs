@@ -2140,6 +2140,8 @@ impl AdvancedAi {
         /// Opt-in gene `science-specializes-earlier`; see
         /// [`Self::science_specializes_earlier`].
         science_specializes_earlier => enable_science_specializes_earlier, disable_science_specializes_earlier;
+        /// Opt-in Science Writing priority before optional research detours.
+        science_writing_before_the_luxury => enable_science_writing_before_the_luxury, disable_science_writing_before_the_luxury;
         /// Opt-in gene `near-done-work-finishes`; see
         /// `advanced/near_done_work_finishes.rs`.
         near_done_work_finishes => enable_near_done_work_finishes, disable_near_done_work_finishes;
@@ -2183,6 +2185,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `spies-steal-the-lead`; see
+        /// `advanced/spies_steal_the_lead.rs`.
+        spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
     }
 }
 
@@ -5065,6 +5070,31 @@ impl AdvancedAi {
     /// The twin of `enable_camps_close_the_age_3`.
     pub fn disable_camps_close_the_age_3(&mut self) {
         self.camps_close_the_age_3 = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender-3`; see
+    /// [`Self::capital_keeps_its_defender_3`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = false;
+        self.capital_keeps_its_defender_3 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_3`.
+    pub fn disable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender_3 = false;
+    }
+
+    /// Opt-in gene `walls-release-the-one-blow`; see
+    /// [`Self::walls_release_the_one_blow`].
+    pub fn enable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = true;
+    }
+
+    /// The twin of `enable_walls_release_the_one_blow`.
+    pub fn disable_walls_release_the_one_blow(&mut self) {
+        self.walls_release_the_one_blow = false;
     }
 
     /// Opt-in gene `ranged-kills-are-free`; see

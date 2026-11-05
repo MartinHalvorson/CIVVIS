@@ -49,10 +49,60 @@ impl AdvancedAi {
         {
             return false;
         }
+        // `walls-release-the-one-blow`: a ring defender one blow removes is
+        // released to the rotation; see `walls_one_blow_units`.
+        if self.walls_release_the_one_blow && self.walls_one_blow.contains(&uid) {
+            return false;
+        }
         g.player_city_ids(pid).into_iter().any(|cid| {
             let at = g.cities[&cid].pos;
             g.wdist(at, unit.pos) <= WALL_DEFENDER_REACH && Self::walls_threatened(g, pid, at)
         })
+    }
+
+    /// `walls-release-the-one-blow`: our land soldiers whose own tile is
+    /// one-blow lethal this frame — a visible hostile unit's blow there, at
+    /// the top of its roll, meets the unit's health. City and Encampment
+    /// strikes are left out (the walls answer those), and a unit standing on
+    /// a City Center or a defending district is never listed: the district
+    /// takes the blow. Empty with the gene off.
+    pub(super) fn walls_one_blow_units(
+        &self,
+        g: &Game,
+        pid: usize,
+        field: &mut super::battle_planner::DangerField,
+    ) -> BTreeSet<u32> {
+        if !self.walls_release_the_one_blow {
+            return BTreeSet::new();
+        }
+        let mut out = BTreeSet::new();
+        for uid in g.player_unit_ids(pid) {
+            let Some(unit) = g.units.get(&uid) else {
+                continue;
+            };
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                || g.is_embarked(unit)
+                || g.city_at(unit.pos).is_some()
+                || g.defending_district_at(unit.pos).is_some()
+                || !field.reaches_tile(unit.pos)
+            {
+                continue;
+            }
+            let hp = f64::from(unit.hp);
+            let lethal = field
+                .contributions(unit.pos, uid)
+                .iter()
+                .any(|(source, blow)| {
+                    source.is_some_and(|id| id & super::battle_planner::STRUCTURE_SOURCE == 0)
+                        && (blow * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0) >= hp
+                });
+            if lethal {
+                out.insert(uid);
+            }
+        }
+        out
     }
 
     /// Whether a hostile land soldier at war with us stands within
