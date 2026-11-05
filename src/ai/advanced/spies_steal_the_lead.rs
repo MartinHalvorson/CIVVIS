@@ -145,6 +145,35 @@ impl AdvancedAi {
             && !(mission == STEAL_OPERATION && self.spies_steal_the_lead_on(plan))
     }
 
+    /// Record whether the host's menu for `spy`, standing in a foreign
+    /// `city`, offers Steal Tech Boost: a menu without it marks the city dry
+    /// for `STEAL_DRY_MEMORY_TURNS` standard turns; a menu with it clears the mark. No
+    /// host menu (a native board, or a busy Spy) leaves the memory alone.
+    pub(super) fn steal_note_dry_city(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        spy: u32,
+        city: Option<u32>,
+    ) {
+        let Some(city) = city.filter(|city| g.cities.get(city).is_some_and(|c| c.owner != pid))
+        else {
+            return;
+        };
+        let Some(menu) = g
+            .host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_missions.as_ref())
+        else {
+            return;
+        };
+        if menu.contains(STEAL_OPERATION) {
+            self.steal_dry_cities.remove(&city);
+        } else {
+            self.steal_dry_cities.insert(city, g.turn);
+        }
+    }
+
     /// Count and journal a steal the pass just started. `instead` names what
     /// the Spy would have run without the gene.
     pub(super) fn steal_the_lead_note(&self, g: &mut Game, pid: usize, spy: u32, instead: &str) {
