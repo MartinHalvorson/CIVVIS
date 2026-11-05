@@ -5290,6 +5290,19 @@ pub const GENES: &[Gene] = &[
     // turn. Under the gene any improved or bonus-resource site pays its tile
     // as if worked. See `advanced/district_planning.rs`.
     Gene { tag: "districts-price-the-improvement", field: "districts_price_the_improvement", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_price_the_improvement, disable: AdvancedAi::disable_districts_price_the_improvement },
+    // Live Lv 8 Deity Korea 11-05: of 90 full-health units killed in an
+    // enemy phase across the anvil-spares-the-one-blow carriers, 50 had moved
+    // that turn in the field and 52 have no journal line naming the move (the
+    // group step's signature); their killers (Line Infantry, Modern Armor, Jet
+    // Fighters, Machine Guns) out-reach the group step's one-approach-step
+    // forecast. Under the gene its danger checks read the larger of that
+    // forecast and the danger field. See
+    // `advanced/group_steps_read_the_field.rs`.
+    Gene { tag: "group-steps-read-the-field", field: "group_steps_read_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_group_steps_read_the_field, disable: AdvancedAi::disable_group_steps_read_the_field },
+    // `captives-come-home-2`: version 2 of `captives-come-home` (which it
+    // carries). The ransom of our captured Spies pays in Diplomatic Favor
+    // beside Gold. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
     // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
     // (carrying 1 and 2). The Science seat's Government Plaza district claims
     // the capital's queue once its Campus stands. See

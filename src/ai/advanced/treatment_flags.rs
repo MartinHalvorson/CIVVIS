@@ -2247,6 +2247,9 @@ impl AdvancedAi {
         /// Opt-in gene `captives-come-home`; see
         /// `advanced/captives_come_home.rs`.
         captives_come_home => enable_captives_come_home, disable_captives_come_home;
+        /// Opt-in gene `captives-come-home-2` (version 2, carrying version
+        /// 1); see `advanced/captives_come_home.rs`.
+        captives_come_home_2 => enable_captives_come_home_2, disable_captives_come_home_2;
         /// Opt-in gene `plaza-serves-the-scientist-2` (version 2 of
         /// `plaza-serves-the-scientist`, which it carries); see
         /// `advanced/plaza_serves_the_scientist_2.rs`.
@@ -5249,6 +5252,17 @@ impl AdvancedAi {
     /// The twin of `enable_military_alliance_shield_2`.
     pub fn disable_military_alliance_shield_2(&mut self) {
         self.military_alliance_shield_2 = false;
+    }
+
+    /// Opt-in gene `group-steps-read-the-field`; see
+    /// [`Self::group_steps_read_the_field`].
+    pub fn enable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = true;
+    }
+
+    /// The twin of `enable_group_steps_read_the_field`.
+    pub fn disable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = false;
     }
 
     // ---- append: a-b ------------------------------------------------
