@@ -25,7 +25,8 @@
 //!   median rival holds 7.2 cities to our 6.0 at t100, and the leader holds 8.4.
 //!
 //! The mechanism: [`super::early_settler_floor`] queues the opening's Settlers
-//! but closes at standard turn 90, which is t45 Online. After that the only
+//! but closes at standard turn 90, which is t60 Online (the 66% Online scale;
+//! the live line reads "before turn 60"). After that the only
 //! Settler path that reaches an idle queue early is the delegated governor's
 //! `capital-settler-after-completion`, and by then the routine claims have
 //! filled the capital's queue first. The `expansion-best-idle-city`

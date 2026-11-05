@@ -5007,7 +5007,7 @@ pub const GENES: &[Gene] = &[
     // early city with a hostile in relief range its row before the pressure
     // gate. See `objective_board.rs` (`early_cities_defend_first`).
     Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
-    // `holdable-land-keeps-settling`: past the opening floor (t45 Online),
+    // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
     // the soonest unthreatened city queues one Settler while the plan wants
     // more cities and a seat we can very likely hold lies in reach: the
     // settler-site-gate verdict, nine tiles from charted rival cities, no
