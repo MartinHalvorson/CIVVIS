@@ -7,6 +7,15 @@
 //! governor and ranged defence bonuses, city strikes and city damage, the
 //! mass driver, combat XP, combat weariness, and emergency combat records.
 //!
+//! Experience and promotions: the XP a unit earns, scaled by difficulty
+//! (`modified_xp`, `handicap_xp_pct`, `award_xp`), the threshold and
+//! pending promotion, the promotions a unit may take and the offer key the
+//! host uses, a promotion's or unit ability's effect (`promotion_effect`,
+//! `unit_effect`), the Rock Band's any-promotion rule, the
+//! versus-class bonus (`vs_bonus`), and formations (`formation_unlocked`,
+//! `unit_formation_bonus`). These moved verbatim out of the main
+//! `impl Game` block in `game.rs` later the same day.
+//!
 //! Moved verbatim out of the main `impl Game` block in `game.rs`
 //! (2026-11-05). Methods the rest of `game` calls are `pub(super)`; public
 //! methods stay public; the code is otherwise unchanged.
@@ -620,6 +629,279 @@ impl Game {
             {
                 *emergency.contributions.entry(member).or_insert(0) += 1 + i64::from(killed);
             }
+        }
+    }
+
+    /// Percentage added to this seat's experience awards.
+    pub fn handicap_xp_pct(&self, pid: usize) -> f64 {
+        if !self.takes_handicap(pid) {
+            return 0.0;
+        }
+        let spec = self.difficulty_spec();
+        if self.is_human_seat(pid) {
+            spec.human_xp_pct
+        } else {
+            spec.ai_xp_pct
+        }
+    }
+
+    pub fn rock_band_choose_any_promotion(&self, pid: usize) -> bool {
+        self.policy_effect(pid, "rock_band_any_promotion") > 0.0
+    }
+
+    /// Apply unit-specific experience modifiers, then round to the nearest
+    /// integer (with .5 rounding upward) as Civ VI does.
+    pub(super) fn modified_xp(&self, uid: u32, amt: f64) -> i64 {
+        let (owner, kind, trained_bonus) = match self.units.get(&uid) {
+            Some(u) => (u.owner, u.kind, u.xp_bonus_pct),
+            None => return 0,
+        };
+        let spec = &self.rules.units[kind];
+        let mut multiplier = 1.0 + self.handicap_xp_pct(owner) / 100.0;
+        if self.players[owner].government.as_deref() == Some("oligarchy") {
+            multiplier += 0.2;
+        }
+        if spec.promotion_class == "recon" {
+            multiplier += self.policy_effect(owner, "recon_xp_pct") / 100.0;
+        }
+        multiplier += self.policy_effect(owner, "unit_xp_pct") / 100.0;
+        // To Arms! pays its Golden Age half in two parts: POLICY_TO_ARMS_GA_XP
+        // is +50% experience beside POLICY_TO_ARMS_GA_PRODUCTION's +25%
+        // Production. Only the Production half was modelled, and at 15%.
+        if self.dedication_active(owner, "to_arms") {
+            multiplier += 0.5;
+        }
+        multiplier += trained_bonus / 100.0;
+        if spec.promotion_class == "ranged" && self.has_ability(owner, "ta_seti") {
+            multiplier += 0.5;
+        }
+        multiplier += self.civ_effect(owner, "unit_xp_pct") / 100.0;
+        (amt * multiplier).round() as i64
+    }
+
+    pub(super) fn promotion_threshold(level: i32) -> i64 {
+        (15 * level as i64 * (level as i64 + 1)) / 2
+    }
+
+    pub fn promotion_pending(&self, uid: u32) -> bool {
+        self.units.get(&uid).is_some_and(|unit| {
+            let spec = &self.rules.units[unit.kind];
+            let class = &spec.promotion_class;
+            if class == "rock_band" {
+                if let Some(menu) = self.host_band_promotions.get(&uid) {
+                    if menu.held == unit.promotions {
+                        return menu
+                            .offered
+                            .iter()
+                            .any(|name| !unit.promotions.contains(name));
+                    }
+                }
+            }
+            let level_cap = if class == "rock_band" { 4 } else { 8 };
+            spec.earns_xp
+                && !class.is_empty()
+                && (unit.promotions.is_empty() || unit.level < level_cap)
+                && unit.xp >= Self::promotion_threshold(unit.level)
+        })
+    }
+
+    fn promotion_offer_key(uid: u32, level: i32, name: &str) -> u64 {
+        // Stable FNV-1a ranking gives every promotion event a deterministic
+        // three-card offer without consuming the simulation RNG merely by
+        // opening the action list.
+        let mut hash = 0xcbf29ce484222325_u64 ^ uid as u64 ^ ((level as u64) << 32);
+        for byte in name.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
+
+    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        unit.promotions
+            .iter()
+            .filter_map(|name| {
+                self.rules
+                    .promotions
+                    .get(name)?
+                    .effects
+                    .get(effect)
+                    .copied()
+            })
+            .sum()
+    }
+
+    /// Numeric abilities inherent to the unit type plus earned promotions.
+    pub(super) fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        self.rules.units[unit.kind]
+            .effects
+            .get(effect)
+            .copied()
+            .unwrap_or(0.0)
+            + self.promotion_effect(unit, effect)
+    }
+
+    pub fn available_promotions(&self, uid: u32) -> Vec<Name> {
+        let Some(unit) = self.units.get(&uid) else {
+            return vec![];
+        };
+        if unit.moves_left <= 0.0 || !self.promotion_pending(uid) {
+            return vec![];
+        }
+        let class = self.rules.units[unit.kind].promotion_class.as_str();
+        let mut available: Vec<Name> = self
+            .rules
+            .promotions
+            .iter()
+            .filter(|(name, spec)| {
+                spec.class == class
+                    && !unit.promotions.iter().any(|held| *held == **name)
+                    && (spec.requires.is_empty()
+                        || spec
+                            .requires
+                            .iter()
+                            .any(|req| unit.promotions.iter().any(|held| *held == *req)))
+            })
+            .map(|(name, _)| *name)
+            .collect();
+        // Native bands draw their own three choices. A current offer is stronger
+        // evidence than simulated randomness or earlier rejected choices.
+        if class == "rock_band" {
+            if let Some(menu) = self.host_band_promotions.get(&uid) {
+                if menu.held == unit.promotions {
+                    available.retain(|name| menu.offered.contains(name));
+                    return available;
+                }
+            }
+        }
+        // ★★★★★ DROP PROMOTIONS THE HOST HAS ALREADY REFUSED FOR THIS UNIT.
+        //
+        // Filtered here rather than at the three appliers because every chooser and
+        // `do_promote` itself reach the offer through this one function, so one gate
+        // covers them all. Native games leave `blocked_promotions` empty and take the
+        // fast path below.
+        if let Some(blocked) = self.blocked_promotions.get(&uid) {
+            // ⚠ TWO DISTINCT REFUSALS MEAN THE UNIT CANNOT PROMOTE AT ALL, not that
+            // it should try the next name on the list.
+            //
+            // Blocking the pair alone is right for a unit the host refused ONE
+            // promotion for, and wrong for a Civilization VI Apostle, which takes a
+            // single promotion when it is created and can never take another.
+            // CIVVIS keeps `promotion_pending` true for it forever, so a pair block
+            // just walks the offer down the list: in the gate replay TRANSLATOR fell
+            // 67 -> 1 and CHAPLAIN 59 -> 31 while PROSELYTIZER rose 0 -> 83.
+            //
+            // The threshold is read off the corpus rather than assumed. Of 12 units
+            // the host ever refused, the 5 that were asked two or more DISTINCT
+            // promotions are all Apostles walking the list; the 7 asked exactly one
+            // are 4 Apostles that never got a second name and 3 Pike and Shot
+            // refused `PROMOTION_ECHELON`, which the pair block fixes outright.
+            if blocked.len() >= 2 {
+                return vec![];
+            }
+            available.retain(|name| !blocked.contains(name));
+        }
+        let limited_offer = (class == "rock_band"
+            && !self.rock_band_choose_any_promotion(unit.owner))
+            || (class == "religious_apostle"
+                && !self.grants_city_state_unique_bonus(unit.owner, "Yerevan"));
+        if limited_offer {
+            available
+                .sort_by_key(|name| (Self::promotion_offer_key(unit.id, unit.level, name), *name));
+            available.truncate(3);
+        }
+        available
+    }
+
+    /// Whether this civilization has reached the civic for a particular
+    /// formation tier. Spain and Shaka replace the ordinary civic gates for
+    /// naval and land formations respectively.
+    pub(super) fn formation_unlocked(&self, pid: usize, unit: &str, formation: u8) -> bool {
+        let Some(spec) = self.rules.units.get(unit) else {
+            return false;
+        };
+        let standard = match formation {
+            1 => self.tree_effect(pid, "corps_fleets") > 0.0,
+            2 => self.tree_effect(pid, "armies_armadas") > 0.0,
+            _ => false,
+        };
+        if standard {
+            return true;
+        }
+        if spec.domain.as_deref() == Some("sea")
+            && self.civ_effect(pid, "naval_formation_civic_mercantilism") > 0.0
+        {
+            return self.players[pid]
+                .civics
+                .contains(&crate::name!("mercantilism"));
+        }
+        if !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return match formation {
+                1 if self.civ_effect(pid, "land_corps_civic_mercenaries") > 0.0 => self.players
+                    [pid]
+                    .civics
+                    .contains(&crate::name!("mercenaries")),
+                2 if self.civ_effect(pid, "land_army_civic_nationalism") > 0.0 => self.players[pid]
+                    .civics
+                    .contains(&crate::name!("nationalism")),
+                _ => false,
+            };
+        }
+        false
+    }
+
+    pub(super) fn unit_formation_bonus(&self, unit: &Unit) -> f64 {
+        let base = match unit.formation {
+            1 => 10.0,
+            2.. => 17.0,
+            _ => 0.0,
+        };
+        if base > 0.0
+            && !matches!(
+                self.rules.units[unit.kind].domain.as_deref(),
+                Some("sea" | "air")
+            )
+        {
+            base + self.civ_effect(unit.owner, "formation_combat_strength")
+        } else {
+            base
+        }
+    }
+
+    pub(super) fn award_xp(&mut self, uid: u32, amt: f64) {
+        if self
+            .units
+            .get(&uid)
+            .is_none_or(|unit| !self.rules.units[unit.kind].earns_xp)
+        {
+            return;
+        }
+        if self.promotion_pending(uid) {
+            return; // XP gain pauses until the pending promotion is selected.
+        }
+        let gained = self.modified_xp(uid, amt);
+        if let Some(unit) = self.units.get_mut(&uid) {
+            unit.xp += gained;
+        }
+    }
+
+    /// Discipline: +5 combat strength when fighting barbarians.
+    pub(super) fn vs_bonus(&self, owner: usize, opponent: usize) -> f64 {
+        if self.players[opponent].is_barbarian {
+            self.policy_effect(owner, "barbarian_combat")
+        } else if self.players[owner]
+            .alliances
+            .iter()
+            .any(|(ally, alliance)| {
+                alliance.ends > self.turn
+                    && alliance.kind == "military"
+                    && alliance.level >= 1
+                    && self.is_at_war(*ally, opponent)
+            })
+        {
+            5.0
+        } else {
+            0.0
         }
     }
 }

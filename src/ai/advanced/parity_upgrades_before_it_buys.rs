@@ -36,7 +36,7 @@ use super::*;
 /// purchase: buying units chases a number we cannot meet.
 pub(crate) const PARITY_HOPELESS_RATIO: f64 = 2.0;
 /// A unit this many eras behind the world era is not bought for parity.
-pub(crate) const PARITY_BUY_ERAS_BEHIND: usize = 2;
+pub(crate) const PARITY_BUY_ERAS_BEHIND: usize = crate::ai::OBSOLETE_BUY_ERAS_BEHIND;
 
 impl AdvancedAi {
     /// Upgrades bought with parity's Gold, down to its reserve. The count of
@@ -49,7 +49,7 @@ impl AdvancedAi {
         ours: f64,
         theirs: f64,
     ) -> usize {
-        if !self.parity_upgrades_before_it_buys {
+        if !self.parity_upgrades_before_it_buys && !self.parity_upgrades_before_it_buys_2 {
             return 0;
         }
         let bank = g.players[pid].gold;
@@ -74,7 +74,7 @@ impl AdvancedAi {
         ours: f64,
         theirs: f64,
     ) -> Option<&'static str> {
-        if !self.parity_upgrades_before_it_buys {
+        if !self.parity_upgrades_before_it_buys && !self.parity_upgrades_before_it_buys_2 {
             return None;
         }
         if theirs >= PARITY_HOPELESS_RATIO * ours.max(1.0) {
@@ -84,6 +84,15 @@ impl AdvancedAi {
             return Some("obsolete");
         }
         None
+    }
+}
+
+impl AdvancedAi {
+    /// `parity-upgrades-before-it-buys-2`: the base controller's wartime and
+    /// declaration-window defender purchases (`BasicAi::buy_gold_military`)
+    /// take the same `obsolete` bar. Set each turn before the base turn runs.
+    pub(super) fn obsolete_military_buys_barred(&self) -> bool {
+        self.parity_upgrades_before_it_buys_2
     }
 }
 

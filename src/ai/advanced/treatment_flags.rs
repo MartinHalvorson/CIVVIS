@@ -2130,6 +2130,8 @@ impl AdvancedAi {
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
         /// Prioritize usable labs and nearby Rocketry during a Science posture.
         science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
+        /// Replace an obsolete native research path with a revealed launch milestone.
+        revealed_launch_tech_takes_the_slot => enable_revealed_launch_tech_takes_the_slot, disable_revealed_launch_tech_takes_the_slot;
         /// Ask the native market for Coal serving ready research power.
         science_power_buys_fuel => enable_science_power_buys_fuel, disable_science_power_buys_fuel;
         /// Prefer a legal non-lowland site when starting a native Spaceport.
@@ -2217,6 +2219,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys => enable_parity_upgrades_before_it_buys, disable_parity_upgrades_before_it_buys;
+        /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;

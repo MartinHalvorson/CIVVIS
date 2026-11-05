@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "bankruptcy-exits-the-drain-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Korea civvis-20261105T111305Z t194 and t195 (income fell from +11.8 to -76.6 Gold a turn in one turn, leaving 243 then 168 Gold; the seat went bankrupt at t199), each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from main 32736f5812. Both arms carry the run's requested genome (version one not among it); the on arm adds the gene. Off, both turns keep their units and sell nothing. On, the drain enters at 3.2 and 2.3 turns of runway: Horses sold to Scythia (t194, about 308 Gold) and Ethiopia (t195), and a Cuirassier, a Hwacha and a Pike and Shot disbanded each turn ('Disbanding a cuirassier to leave the bankruptcy drain | ... 243 Gold, income -71.6 after its 5 upkeep'). Front-line units within six tiles of an enemy soldier are spared.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-bankruptcy-exits-the-drain-2.native-queries.tar.xz",
+    "sha256": "475326e25193b7951864cef1b59a1c4aaa597c92099bde39af8b2534ef77ecc4"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}
