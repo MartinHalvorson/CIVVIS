@@ -1,0 +1,32 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "districts-protect-seowon-science",
+  "archive": {
+    "path": "docs/gene_screens/fires/districts-protect-seowon-science-restart-proposals.tar.gz",
+    "sha256": "d0d672a3bdea2742c69b4d3312ec32ee12d149aa4e0752c12ed236214ad63dcc"
+  },
+  "members": [
+    "pair.json"
+  ],
+  "scope": "Same captured host bytes and executable, only named gene varied; changed deferred produce_next Industrial Zone site. Proposals only; no host-execution or strength estimate.",
+  "binary_commit": "7dae61e68cab55f406cb8ca4d395fdb06360da6b",
+  "binary_sha256": "2ce19e921e7a38b3300fafa6a5a6ec7c29cb0f43aa2df3ee0ae3ded80d0bb9ab",
+  "controls": {
+    "actual_read_bytes_equal": true,
+    "first_game_prefix": "civvis-20261104T232613Z",
+    "turn": 171,
+    "off_site": [
+      37,
+      10
+    ],
+    "on_site": [
+      35,
+      12
+    ]
+  },
+  "projected_seowon_science_loss": {
+    "off": 2.0,
+    "on": 0.0,
+    "basis": "Independent engine reconstruction of the archived t171 prefix: neighboring owned Seowon 2 Science before, 0 after placing the control Industrial Zone; treatment site has no adjacent owned Seowon. This is a model projection, not a host outcome."
+  }
+}

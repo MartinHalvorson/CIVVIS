@@ -2208,7 +2208,7 @@ fn apply_tree_layout(
 }
 
 /// The transitive prerequisites of every node in a tree.
-fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
+pub(crate) fn ancestry(nodes: &SpecMap<TechSpec>) -> SpecMap<BTreeSet<String>> {
     let mut ancestry: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (name, spec) in nodes.iter() {
         let mut reached: BTreeSet<String> = BTreeSet::new();
