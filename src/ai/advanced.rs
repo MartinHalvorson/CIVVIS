@@ -8247,6 +8247,10 @@ pub struct AdvancedAi {
     /// `outclassed-siege-stands-down`: by city tile, the first and the last
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
+    /// `nusantara-reads-the-coast`: an Indonesian seat's district site
+    /// pickers price Great Nusantara's Coast adjacency. See
+    /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
+    nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
     /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
     revealed_launch_tech_takes_the_slot: bool,
@@ -10770,6 +10774,9 @@ mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
+/// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
+/// Coast. See `advanced/nusantara_reads_the_coast.rs`.
+mod nusantara_reads_the_coast;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
@@ -12284,6 +12291,7 @@ impl AdvancedAi {
             near_done_work_finishes: false,
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
+            nusantara_reads_the_coast: false,
             // ---- append: p-r ----------------------------------------
             revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
@@ -13930,7 +13938,7 @@ impl AdvancedAi {
         let best_site = city_ids
             .iter()
             .flat_map(|cid| g.district_sites(*cid, crate::name!("holy_site")))
-            .map(|pos| g.district_yields(crate::name!("holy_site"), pos).faith)
+            .map(|pos| g.district_site_yields(crate::name!("holy_site"), pos).faith)
             .max_by(f64::total_cmp);
         if !has_holy_site && !holy_site_planned && best_site.is_none() {
             return None;
@@ -18223,7 +18231,7 @@ impl AdvancedAi {
                                     .is_none_or(|civic| g.players[pid].civics.contains(civic))
                         })
                         .map(|(district, _)| {
-                            self.yield_value(g.district_yields(district, *pos), plan.strategy)
+                            self.yield_value(g.district_site_yields(district, *pos), plan.strategy)
                         })
                         .fold(0.0, f64::max)
                         * 10.0;
@@ -18680,7 +18688,7 @@ impl AdvancedAi {
                     if district != "holy_site" {
                         continue;
                     }
-                    let faith = g.district_yields(crate::name!("holy_site"), pos).faith;
+                    let faith = g.district_site_yields(crate::name!("holy_site"), pos).faith;
                     if best
                         .map(|old| {
                             faith > old.0 || (faith == old.0 && (*cid, pos) > (old.1, old.2))
@@ -21469,7 +21477,7 @@ impl AdvancedAi {
                 .max_by(|left, right| {
                     let site_yields = |item: &Item| match item {
                         Item::District { district, pos } => {
-                            g.district_yields(*district, *pos).total()
+                            g.district_site_yields(*district, *pos).total()
                         }
                         _ => 0.0,
                     };
@@ -25200,7 +25208,7 @@ impl AdvancedAi {
                     pricing_lane,
                 ) * 42.0
                     * Self::campus_payback_horizon(g);
-                self.yield_value(g.district_yields(district, *pos), pricing_lane) * 60.0
+                self.yield_value(g.district_site_yields(district, *pos), pricing_lane) * 60.0
                     - self.seowon_site_loss_value(g, pid, *district, *pos, pricing_lane) * 60.0
                     + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, pricing_lane) * 24.0
@@ -29461,6 +29469,8 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
+        self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
         // any living-majors reading of this turn.
         self.retire_defeated_majors(g, pid);

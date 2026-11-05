@@ -10620,9 +10620,9 @@ impl BasicAi {
         g.district_sites(cid, district)
             .into_iter()
             .max_by(|left, right| {
-                g.district_yields(district, *left)
+                g.district_site_yields(district, *left)
                     .total()
-                    .partial_cmp(&g.district_yields(district, *right).total())
+                    .partial_cmp(&g.district_site_yields(district, *right).total())
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then(left.cmp(right))
             })
@@ -12407,9 +12407,9 @@ impl BasicAi {
             .district_sites(cid, Name::new(dname.as_str()))
             .into_iter()
             .max_by(|a, b| {
-                g.district_yields(dname, *a)
+                g.district_site_yields(dname, *a)
                     .total()
-                    .partial_cmp(&g.district_yields(dname, *b).total())
+                    .partial_cmp(&g.district_site_yields(dname, *b).total())
                     .unwrap()
                     .then(a.cmp(b))
             })?;

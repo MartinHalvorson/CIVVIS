@@ -5196,6 +5196,17 @@ impl AdvancedAi {
         self.settler_shelters_from_the_war_2 = false;
     }
 
+    /// Opt-in gene `nusantara-reads-the-coast`; see
+    /// [`Self::nusantara_reads_the_coast`].
+    pub fn enable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = true;
+    }
+
+    /// The twin of `enable_nusantara_reads_the_coast`.
+    pub fn disable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

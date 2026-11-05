@@ -209,7 +209,7 @@ impl BasicAi {
         let best_site = |city: u32| {
             g.district_sites(city, hub)
                 .into_iter()
-                .map(|pos| (pos, g.district_yields(hub, pos)))
+                .map(|pos| (pos, g.district_site_yields(hub, pos)))
                 .max_by(|a, b| {
                     a.1.gold
                         .total_cmp(&b.1.gold)

@@ -277,7 +277,7 @@ impl BasicAi {
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
-                    g.district_yields(Name::new(district), pos).gold,
+                    g.district_site_yields(Name::new(district), pos).gold,
                     std::cmp::Reverse(district),
                     std::cmp::Reverse(pos),
                     item,
@@ -395,7 +395,7 @@ impl BasicAi {
             .filter_map(|pos| {
                 let item = Item::District { district, pos };
                 g.can_produce(pid, cid, &item).then_some((
-                    g.district_yields(district, pos).total(),
+                    g.district_site_yields(district, pos).total(),
                     std::cmp::Reverse(pos),
                     item,
                 ))
@@ -1245,9 +1245,9 @@ impl BasicAi {
             let harbor = Self::civ_district(g, pid, "harbor");
             let sites = g.district_sites(cid, harbor);
             if let Some(pos) = sites.into_iter().max_by(|a, b| {
-                g.district_yields(harbor, *a)
+                g.district_site_yields(harbor, *a)
                     .total()
-                    .partial_cmp(&g.district_yields(harbor, *b).total())
+                    .partial_cmp(&g.district_site_yields(harbor, *b).total())
                     .unwrap()
                     .then(a.cmp(b))
             }) {
@@ -1464,8 +1464,8 @@ impl BasicAi {
                 let best = *sites
                     .iter()
                     .max_by(|a, b| {
-                        let ya = g.district_yields(dname, **a).total();
-                        let yb = g.district_yields(dname, **b).total();
+                        let ya = g.district_site_yields(dname, **a).total();
+                        let yb = g.district_site_yields(dname, **b).total();
                         ya.partial_cmp(&yb).unwrap().then(a.cmp(b))
                     })
                     .unwrap();
@@ -2012,7 +2012,13 @@ impl BasicAi {
         let best_site = |city: &crate::game::City| {
             g.district_sites(city.id, Name::new(zone.as_str()))
                 .into_iter()
-                .map(|pos| (pos, reach(pos), g.district_yields(zone, pos).production))
+                .map(|pos| {
+                    (
+                        pos,
+                        reach(pos),
+                        g.district_site_yields(zone, pos).production,
+                    )
+                })
                 .max_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)).then(b.0.cmp(&a.0)))
         };
         let (designated, pos, reached) = own
@@ -2113,7 +2119,7 @@ impl BasicAi {
         let (pos, adjacency) = g
             .district_sites(cid, Name::new(dname.as_str()))
             .into_iter()
-            .map(|pos| (pos, g.district_yields(dname, pos).production))
+            .map(|pos| (pos, g.district_site_yields(dname, pos).production))
             .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))?;
         if adjacency < 1.0 {
             return None;
@@ -2298,9 +2304,9 @@ impl BasicAi {
         }
         let theater = Self::civ_district(g, pid, "theater_square");
         let pos = g.district_sites(cid, theater).into_iter().max_by(|a, b| {
-            g.district_yields(theater, *a)
+            g.district_site_yields(theater, *a)
                 .total()
-                .partial_cmp(&g.district_yields(theater, *b).total())
+                .partial_cmp(&g.district_site_yields(theater, *b).total())
                 .unwrap_or(Ordering::Equal)
                 .then(a.cmp(b))
         })?;
@@ -2667,7 +2673,7 @@ impl BasicAi {
         let plaza = Self::civ_district(g, pid, "government_plaza");
         g.district_sites(cid, plaza)
             .into_iter()
-            .map(|pos| (g.district_yields(plaza, pos).total(), pos))
+            .map(|pos| (g.district_site_yields(plaza, pos).total(), pos))
             .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
             .map(|(_, pos)| Item::District {
                 district: Name::new(&plaza),

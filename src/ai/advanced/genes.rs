@@ -5224,6 +5224,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
     // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
     Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // The operator moved the live seat to Indonesia (Gitarja), Science only,
+    // on 11-05. Great Nusantara (shipped TRAIT_CIVILIZATION_INDONESIA_NUSANTARA)
+    // gives a Campus, Holy Site, Industrial Zone and Theater Square +1 yield
+    // per two adjacent Coast tiles; data/civs.json carries a flat placeholder,
+    // so every district site picker ranks the Coast at nothing. Under the gene
+    // the seat's pickers rank by district_site_yields, which adds the Coast
+    // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
+    Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
