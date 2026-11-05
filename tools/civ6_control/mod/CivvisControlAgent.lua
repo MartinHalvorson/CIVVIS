@@ -22263,8 +22263,10 @@ local function beginTurn(player, pid, turn)
 	CivvisBoard.reset();
 	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
 	CivvisNameRockBands(player, pid, turn);
-	exportState(player, pid, turn);
+	-- The worker wakes on state. Finish the terrain export before that
+	-- trigger so its captured board cannot contain the previous turn's map.
 	exportTiles(player, pid, turn);
+	exportState(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
 	--
 	-- Seven Settler games of 2026-08-16 ended early on a rival's DIPLOMATIC
@@ -22774,8 +22776,10 @@ local function playTurn(player, pid, turn)
 	-- this path still has to do them itself or the mirror goes dark.
 	if not cfg.CivvisDecides then
 		warTarget = findWarTarget(player, pid);
-		exportState(player, pid, turn);
+		-- The worker wakes on state. Finish the terrain export before that
+		-- trigger so its captured board cannot contain the previous turn's map.
 		exportTiles(player, pid, turn);
+		exportState(player, pid, turn);
 	end
 	local war = declareWar(player, pid, countUnits(player), turn);
 	local builds = driveProduction(player, turn);
