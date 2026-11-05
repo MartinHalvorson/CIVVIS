@@ -150,7 +150,6 @@ pub(crate) fn field_outclass(
 /// The same reading against every land military unit of ours: whether the
 /// owner's visible units near `near` remove most of our army with one blow.
 /// The shared test for a caller that names a target (`city-state-harvest`).
-#[cfg(test)]
 pub(crate) fn field_outclasses(g: &Game, pid: usize, owner: usize, near: Pos) -> bool {
     let ours: Vec<u32> = g.player_unit_ids(pid);
     field_outclass(g, pid, owner, near, &ours).is_some_and(|read| read.outclassed())

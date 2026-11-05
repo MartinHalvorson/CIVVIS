@@ -846,14 +846,12 @@ impl DangerField {
 
 /// The danger field at one tile for one of our units, on a fresh frame.
 /// `DangerField` is the cached form the planner uses; this is the reading
-/// alone, for tests and explainers.
-#[cfg(test)]
+/// alone, for a caller asking about one tile.
 pub(super) fn danger(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
     DangerField::new(g, pid).danger(tile, uid)
 }
 
 /// The same reading on the strike reach (`strike-reach` on).
-#[cfg(test)]
 pub(super) fn strike_danger(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
     DangerField::with_reach(g, pid, true).danger(tile, uid)
 }
