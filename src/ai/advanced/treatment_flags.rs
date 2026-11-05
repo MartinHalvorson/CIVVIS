@@ -1771,6 +1771,9 @@ impl AdvancedAi {
         /// Opt-in gene `embassy-finds-the-capital`; see
         /// `AdvancedAi::embassy_finds_the_capital`.
         embassy_finds_the_capital => enable_embassy_finds_the_capital, disable_embassy_finds_the_capital;
+        /// Opt-in gene `embassy-finds-the-capital-2`; see
+        /// `advanced/embassy_capital.rs`.
+        embassy_finds_the_capital_2 => enable_embassy_finds_the_capital_2, disable_embassy_finds_the_capital_2;
         /// Opt-in gene `aluminum-buys-the-tile`; see
         /// `AdvancedAi::aluminum_buys_the_tile`.
         aluminum_buys_the_tile => enable_aluminum_buys_the_tile, disable_aluminum_buys_the_tile;
@@ -5222,6 +5225,21 @@ impl AdvancedAi {
     /// The twin of `enable_settler_shelters_from_the_war_2`.
     pub fn disable_settler_shelters_from_the_war_2(&mut self) {
         self.settler_shelters_from_the_war_2 = false;
+    }
+
+    /// Opt-in gene `military-alliance-shield-2`, version two of
+    /// `military-alliance-shield`: only Friendly rivals are asked, and a
+    /// Military kind taken or refused falls through to another kind; see
+    /// `advanced/military_alliance_shield.rs`. A seat plays one version, so
+    /// this turns version one off.
+    pub fn enable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = true;
+        self.military_alliance_shield = false;
+    }
+
+    /// The twin of `enable_military_alliance_shield_2`.
+    pub fn disable_military_alliance_shield_2(&mut self) {
+        self.military_alliance_shield_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

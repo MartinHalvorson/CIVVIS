@@ -3862,6 +3862,14 @@ pub const GENES: &[Gene] = &[
     // capitals would have been revealed and 16 a median 7 turns sooner. See
     // `advanced/embassy_capital.rs`.
     Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // Version two of `embassy-finds-the-capital`: a Science aim sends the
+    // capital-revealing Resident Embassy too, the rival knowing the most
+    // technologies first. A Spy travels only to a city we have seen; in 22 of
+    // 30 live Deity technology games (2026-11-05) the winner's capital was
+    // unknown at Diplomatic Service, and the losses had a median of ~6 idle
+    // Spy-turns with Disrupt Rocketry offered against the win's 33. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital-2", field: "embassy_finds_the_capital_2", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital_2, disable: AdvancedAi::disable_embassy_finds_the_capital_2 },
     // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
     // none, buy an unowned Aluminum tile a city can buy, above the reserve.
     // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of
@@ -5258,6 +5266,15 @@ pub const GENES: &[Gene] = &[
     // 2.3x as often (stratified), and those wars cost 2.5 cities against
     // 1.35. See `advanced/denounce_only_to_declare.rs`.
     Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
+    // Version two (live Lv 8 Deity Korea Online, 11-05, first armed games):
+    // three Military asks to declared friends, three refusals (152431Z t96,
+    // 154934Z t108, 155735Z t108), and asks to Neutral/Unfriendly rivals
+    // the agent never sent were remembered as refused (t87, t102, t105),
+    // barring those rivals from every desk for thirty turns. Version two asks
+    // only Friendly rivals and lets a taken or refused Military kind fall
+    // through to Economic, Cultural or Religious, under its own per-kind
+    // memory. See `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
