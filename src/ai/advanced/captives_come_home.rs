@@ -30,6 +30,18 @@
 //! treasury over `RANSOM_GOLD_RESERVE`, capped at `RANSOM_CEILING_MAX`, and
 //! no ask under `RANSOM_CEILING_MIN` (all in `civvis_orders`, beside
 //! `append_captive_ransom_order`). `Kind::OptIn`.
+//!
+//! `held` is the bridge's count of Spies on the map, so a Spy in transit
+//! (lifted off at `SPY_TRAVEL_NEW_CITY`, re-created on arrival) reads as an
+//! empty slot and the half-full test fires a little early. The ask still
+//! needs a rival holding one of ours, and that captive is a lost slot
+//! however many travel, so the cost is at most an ask declined.
+//!
+//! Proven on captured live input (`docs/gene_screens/fires/
+//! captives-come-home.action-pairs.json`): six boards of civvis-20261105T111305Z
+//! where Scythia held two of our Spies; every off arm holds, five on arms ask
+//! Scythia (`buy CAPTIVE`, ceilings 125-200), the sixth holds for another deal
+//! to the same rival that turn.
 
 use super::*;
 

@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "captives-come-home",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 6 boards of live Deity Korea Science (Online) game civvis-20261105T111305Z, each the run's events.jsonl cut at frame 0 of a turn where Scythia (host player 2) held two of our captured Spies (`captives_of_ours`, the mod's read of the shipped deal screen's CAPTIVE column), our network was below half its capacity, the treasury stood over the reserve and it was that captor's cadence turn. Both arms run one frozen civvis_orders built from the branch at ffe0f9425 with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with captives-come-home. Off arms holding no `buy CAPTIVE`: 6/6; on arms asking the captor: 5/6 (the sixth held `ransom_hold:deal_in_flight`: another deal to the same rival that turn).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-captives-come-home.native-queries.tar.xz",
+    "sha256": "1cfb3d8d972a52f5c3a18a96e0f21fc88904730783eeb99175fd08f311963fed"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json"
+  ]
+}
