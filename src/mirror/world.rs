@@ -121,7 +121,7 @@ pub(super) fn apply_seat_victories(game: &mut crate::game::Game, seat: &Seat) {
 /// answer", so a build whose `Game.GetEras()` is missing a getter leaves that
 /// field at whatever the board already held instead of writing a lie into it. A
 /// real era score of 0 is ordinary on turn 1 and is applied.
-fn apply_observed_age(
+pub(super) fn apply_observed_age(
     player: &mut crate::game::Player,
     heroic_golden_age: Option<bool>,
     golden_age: Option<bool>,
