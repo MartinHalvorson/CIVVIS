@@ -52732,13 +52732,14 @@ mod recovery_before_amenities;
 
 // `districts-price-the-improvement`. See `advanced/district_planning.rs`.
 
-/// A planning capital with Writing and a Farm in its first ring. The AI
-/// snapshots the bulldozable ground first (as `take_turn_inner` does), then a
-/// Campus is placed on the Farm with nothing invested.
-fn campus_on_a_farm(ai: &mut AdvancedAi) -> (Game, u32, Pos) {
+/// A planning capital with Writing and Currency and a Farm in its first ring.
+/// The AI snapshots the bulldozable ground first (as `take_turn_inner` does),
+/// then `district` is placed on the Farm with nothing invested.
+fn district_on_a_farm(ai: &mut AdvancedAi, district: &str) -> (Game, u32, Pos) {
     let (mut game, city, center) = planning_capital();
     planning_claim_disk(&mut game, city, 3);
     game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].techs.insert(crate::name!("currency"));
     let farm = game.nbrs(center)[0];
     game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
     ai.snapshot_bulldoze_sites(&game, 0);
@@ -52784,10 +52785,10 @@ fn districts_price_the_improvement_is_a_registered_reversible_opt_in() {
 }
 
 #[test]
-fn a_fresh_campus_on_a_farm_moves_to_clean_ground_under_the_gene() {
+fn a_fresh_hub_on_a_farm_moves_to_clean_ground_under_the_gene() {
     // Off: no snapshot, nothing moves, the Farm stays bulldozed.
     let mut ai = AdvancedAi::new();
-    let (mut game, city, farm) = campus_on_a_farm(&mut ai);
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
     ai.resite_bulldozing_districts(&mut game, 0);
     assert_eq!(
         queued_district_site(&game, city),
@@ -52798,10 +52799,10 @@ fn a_fresh_campus_on_a_farm_moves_to_clean_ground_under_the_gene() {
     // On: the Campus moves to clean ground and the Farm comes back.
     let mut ai = AdvancedAi::new();
     ai.enable_districts_price_the_improvement();
-    let (mut game, city, farm) = campus_on_a_farm(&mut ai);
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
     ai.resite_bulldozing_districts(&mut game, 0);
-    let moved = queued_district_site(&game, city).expect("still a Campus");
-    assert_ne!(moved, farm, "the Campus leaves the Farm");
+    let moved = queued_district_site(&game, city).expect("still a Commercial Hub");
+    assert_ne!(moved, farm, "the Hub leaves the Farm");
     let tile = &game.map.tiles[&moved];
     assert!(
         tile.improvement.is_none() && tile.resource.is_none(),
@@ -52820,18 +52821,18 @@ fn a_fresh_campus_on_a_farm_moves_to_clean_ground_under_the_gene() {
 }
 
 #[test]
-fn an_invested_campus_or_one_without_clean_ground_stays_put() {
+fn an_invested_hub_or_one_without_clean_ground_stays_put() {
     // Production already sunk into the site: the gene does not move it.
     let mut ai = AdvancedAi::new();
     ai.enable_districts_price_the_improvement();
-    let (mut game, city, farm) = campus_on_a_farm(&mut ai);
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
     game.cities.get_mut(&city).unwrap().production = 12.0;
     ai.resite_bulldozing_districts(&mut game, 0);
     assert_eq!(queued_district_site(&game, city), Some(farm));
 
     // With no clean ground left — every other owned plot is improved — the
     // placement stands as it was.
-    let (mut game, city, farm) = campus_on_a_farm(&mut ai);
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "commercial_hub");
     let center = game.cities[&city].pos;
     let owned = game.cities[&city].owned_tiles.clone();
     for pos in owned {
@@ -52848,5 +52849,19 @@ fn an_invested_campus_or_one_without_clean_ground_stays_put() {
     assert!(
         game.map.tiles[&farm].district_foundation.is_some(),
         "the placement stands"
+    );
+}
+
+#[test]
+fn a_campus_or_industrial_zone_keeps_its_farm_site_under_the_gene() {
+    // Their adjacency compounds with every building: the gene leaves them be.
+    let mut ai = AdvancedAi::new();
+    ai.enable_districts_price_the_improvement();
+    let (mut game, city, farm) = district_on_a_farm(&mut ai, "campus");
+    ai.resite_bulldozing_districts(&mut game, 0);
+    assert_eq!(
+        queued_district_site(&game, city),
+        Some(farm),
+        "the Campus stays"
     );
 }

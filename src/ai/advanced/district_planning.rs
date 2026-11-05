@@ -223,17 +223,12 @@ impl AdvancedAi {
                 continue;
             }
             let here = Self::projected_district_yields(g, district, pos).total();
-            // An Industrial Zone's or a Campus's adjacency is Production or
-            // Science that every building in it multiplies, so they move only
-            // to ground at least as good; the rest may give up
-            // `RESITE_ADJACENCY_SLACK` to keep the Farm.
-            let family = g.district_family(district);
-            let slack =
-                if family == crate::name!("industrial_zone") || family == crate::name!("campus") {
-                    0.0
-                } else {
-                    RESITE_ADJACENCY_SLACK
-                };
+            // An Industrial Zone or a Campus keeps its placement: see
+            // `compounding_district`.
+            if Self::compounding_district(g, district) {
+                continue;
+            }
+            let slack = RESITE_ADJACENCY_SLACK;
             // Undo the placement on the board, then read the clean sites
             // with the foundation gone.
             let restore = |g: &mut Game, improvement, feature, pillaged| {
@@ -281,6 +276,16 @@ impl AdvancedAi {
                 let _ = g.apply(pid, &crate::game::Action::Produce { city: cid, item });
             }
         }
+    }
+
+    /// `districts-price-the-improvement`: an Industrial Zone or a Campus
+    /// (Seowon) is never steered off improved ground. Their adjacency is
+    /// Production or Science every building in them multiplies; the war-paced
+    /// paired read at the Deity seat (4 pairs) read production at t100 −11.5
+    /// (z −4.7) and science −6.1 while the planner charged them for Farms.
+    fn compounding_district(g: &Game, district: Name) -> bool {
+        let family = g.district_family(district);
+        family == crate::name!("industrial_zone") || family == crate::name!("campus")
     }
 
     fn site_bulldozes_a_tile(&self, g: &Game, pos: Pos) -> bool {
@@ -627,7 +632,8 @@ impl AdvancedAi {
                         plan.strategy,
                     );
                     let lost = if citizens.worked_tiles.contains(&pos)
-                        || self.site_bulldozes_a_tile(g, pos)
+                        || (self.site_bulldozes_a_tile(g, pos)
+                            && !Self::compounding_district(g, variant))
                     {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
@@ -727,7 +733,8 @@ impl AdvancedAi {
                         plan.strategy,
                     );
                     let lost = if citizens.worked_tiles.contains(&pos)
-                        || self.site_bulldozes_a_tile(g, pos)
+                        || (self.site_bulldozes_a_tile(g, pos)
+                            && !Self::compounding_district(g, row.district))
                     {
                         let tile = self.yield_value(g.modeled_tile_yields(pos), plan.strategy);
                         best_idle.map_or(tile, |idle| (tile - idle).max(0.0))
