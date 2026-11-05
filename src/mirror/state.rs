@@ -110,7 +110,7 @@ fn district_complete_default() -> bool {
 }
 
 impl Default for StateDistrict {
-    pub(super) fn default() -> Self {
+    fn default() -> Self {
         Self {
             kind: String::new(),
             x: 0,
