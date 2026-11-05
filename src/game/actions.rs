@@ -2047,6 +2047,7 @@ impl Game {
 
     fn ranged_defender_strength(&self, defender: &Unit, target: Pos, attacker_owner: usize) -> f64 {
         let def_base = self.unit_strength(defender, true)
+            + self.visibility_combat_bonus(defender.owner, attacker_owner)
             + self.ranged_defense_bonus(defender, false)
             + if self.rules.units[defender.kind].domain.as_deref() == Some("air") {
                 0.0
@@ -2765,6 +2766,15 @@ impl Game {
             && self.tree_effect(unit.owner, "gdr_full_wall_damage") > 0.0
     }
 
+    // Expansion2/Data/Expansion1_Leaders.xml:781-788: the major-civilization
+    // unit modifier is Amount=3 with DeltaWithOpponent=true. It applies on
+    // defense against a ranged shot too, before the wound penalty.
+    fn visibility_combat_bonus(&self, owner: usize, opponent: usize) -> f64 {
+        3.0 * (self.diplomatic_visibility(owner, opponent)
+            - self.diplomatic_visibility(opponent, owner))
+        .max(0.0)
+    }
+
     pub(super) fn matchup_bonus(&self, uid: u32, opponent: &Unit, attacking: bool) -> f64 {
         let u = &self.units[&uid];
         let spec = &self.rules.units[u.kind];
@@ -2777,10 +2787,7 @@ impl Game {
         }) {
             bonus += 2.0;
         }
-        bonus += 3.0
-            * (self.diplomatic_visibility(u.owner, opponent.owner)
-                - self.diplomatic_visibility(opponent.owner, u.owner))
-            .max(0.0);
+        bonus += self.visibility_combat_bonus(u.owner, opponent.owner);
         if self.players[u.owner].religion.is_some()
             && self.players[opponent.owner].religion.is_some()
             && self.players[u.owner].religion != self.players[opponent.owner].religion
@@ -11832,3 +11839,6 @@ mod neutral_airstrip_tests;
 #[cfg(test)]
 #[path = "gran_colombia_promotions_tests.rs"]
 mod gran_colombia_promotions_tests;
+
+#[cfg(test)]
+mod ranged_visibility_tests;
