@@ -96,7 +96,9 @@ fn browser_saves_are_listed_from_the_game_inside_the_envelope() {
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("const game = held.game ?? held;"));
     assert!(!shim.contains("turn: held.turn"));
-||||||| dbf808f0c3
+}
+
+#[test]
 fn both_map_renderers_draw_the_one_city_plate() {
     // The default world is a globe. The plate lived in the flat renderer alone,
     // so the worlds most games are played on showed a bare name.
