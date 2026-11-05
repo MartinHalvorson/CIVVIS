@@ -2169,6 +2169,9 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `luxury-asks-pay-in-strategics`; see
+        /// `advanced/luxury_asks_pay_in_strategics.rs`.
+        luxury_asks_pay_in_strategics => enable_luxury_asks_pay_in_strategics, disable_luxury_asks_pay_in_strategics;
         /// Price the Science lost when a new district crowds an owned Seowon.
         districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
     }
@@ -5027,6 +5030,19 @@ impl AdvancedAi {
     /// The twin of `enable_breaker_spares_the_backlog_builder`.
     pub fn disable_breaker_spares_the_backlog_builder(&mut self) {
         self.breaker_spares_the_backlog_builder = false;
+    }
+
+    /// Opt-in gene `camps-close-the-age-3`; see
+    /// [`Self::camps_close_the_age_3`]. One version of the family plays.
+    pub fn enable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age = false;
+        self.camps_close_the_age_2 = false;
+        self.camps_close_the_age_3 = true;
+    }
+
+    /// The twin of `enable_camps_close_the_age_3`.
+    pub fn disable_camps_close_the_age_3(&mut self) {
+        self.camps_close_the_age_3 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
