@@ -52744,7 +52744,7 @@ fn district_on_a_farm(ai: &mut AdvancedAi, district: &str) -> (Game, u32, Pos) {
     game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
     ai.snapshot_bulldoze_sites(&game, 0);
     let item = Item::District {
-        district: crate::name!("campus"),
+        district: Name::new(district),
         pos: farm,
     };
     assert!(
