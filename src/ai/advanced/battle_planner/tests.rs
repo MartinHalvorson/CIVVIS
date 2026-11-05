@@ -1761,6 +1761,7 @@ fn the_tile_an_embarked_unit_leaves_is_a_stand_for_the_galley() {
         "the reach reads through the unit that leaves"
     );
     assert!(field.danger(at(10, 7), ours) > 0.0);
+}
 
 #[test]
 fn ranged_kills_are_free_ships_off_and_is_registered() {
