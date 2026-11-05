@@ -1480,13 +1480,36 @@ impl AdvancedAi {
                 self.settler_vanished.push(pos);
             }
         }
+        // `capture-scar-reads-the-new-city`: only a city new since the last
+        // resolve is the founding; one that already stood there is where the
+        // Settler was taken. With no record yet, any city answers as before.
+        let ours: BTreeSet<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.cities[&city].pos)
+            .collect();
+        let known = if self.capture_scar_reads_the_new_city {
+            self.capture_scar_city_sites.replace(ours.clone())
+        } else {
+            None
+        };
         for pos in std::mem::take(&mut self.settler_vanished) {
-            let founded = g
-                .player_city_ids(pid)
-                .into_iter()
-                .any(|city| g.wdist(g.cities[&city].pos, pos) <= 2);
+            let beside: Vec<Pos> = ours
+                .iter()
+                .copied()
+                .filter(|at| g.wdist(*at, pos) <= 2)
+                .collect();
+            let founded = beside
+                .iter()
+                .any(|at| known.as_ref().is_none_or(|known| !known.contains(at)));
             if founded {
                 continue;
+            }
+            if let Some(standing) = beside.first() {
+                think!(self.journal(), Expansion, Detail,
+                       "A settler vanished beside a standing city at {standing:?}";
+                       "capture-scar-reads-the-new-city: the city stood there before the \
+                        settler left the board, so it was taken, not spent"; pos);
             }
             let until = g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS);
             for tile in g.wdisk(pos, SETTLER_CAPTURE_SCAR_RADIUS) {
