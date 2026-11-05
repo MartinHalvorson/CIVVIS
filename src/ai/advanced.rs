@@ -7642,6 +7642,13 @@ pub struct AdvancedAi {
     /// claim chain before the strategic governor, as the main path does. See
     /// `advanced/hint_runs_the_claims.rs`. Off by default.
     hint_runs_the_claims: bool,
+    /// `group-steps-read-the-field`: the group step prices an approach by
+    /// the larger of the one-step forecast and the danger field. See
+    /// `advanced/group_steps_read_the_field.rs`. Off by default.
+    group_steps_read_the_field: bool,
+    /// `group-steps-read-the-field`: the frame's danger field for the group
+    /// step, rebuilt when the visible hostiles at war change.
+    group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
@@ -10759,6 +10766,9 @@ mod gold_buys_the_opening_builder;
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+/// `group-steps-read-the-field`: the group step reads the danger field. See
+/// `advanced/group_steps_read_the_field.rs`.
+mod group_steps_read_the_field;
 /// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
 /// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
 mod holdable_land_keeps_settling;
@@ -12218,6 +12228,8 @@ impl AdvancedAi {
             gold_buys_the_production_tile: false,
             korea_mines_beside_the_seowon: false,
             hint_runs_the_claims: false,
+            group_steps_read_the_field: false,
+            group_step_field: Default::default(),
             // ---- append: l-o ----------------------------------------
             outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
