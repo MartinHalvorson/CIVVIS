@@ -377,6 +377,93 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_seowon_threshold_uses_its_own_raw_adjacency_and_matches_rationalism() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        game.players[0].civ = "Korea".to_string();
+        let center = game.cities[&city].pos;
+        let site = game
+            .wdisk(center, 2)
+            .into_iter()
+            .find(|p| game.wdist(*p, center) == 2)
+            .unwrap();
+        game.map.tiles.get_mut(&site).unwrap().owner_city = Some(city);
+        game.cities.get_mut(&city).unwrap().owned_tiles.push(site);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.hills = false;
+        }
+        game.map.tiles.get_mut(&site).unwrap().hills = true;
+        let district = game.civ_district_variant(0, "campus");
+        assert_eq!(district, crate::name!("seowon"));
+        set_district(&mut game, city, site, district.as_str());
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        let mut ai = AdvancedAi::new();
+        ai.enable_campus_adjacency_threshold();
+        ai.refresh_campus_multiplier_constants(&game);
+        let raw = |g: &Game, d| {
+            g.district_adjacency_sources(d, site)
+                .into_iter()
+                .filter(|s| s.source != "adjacency_bonus")
+                .map(|s| s.yields.science)
+                .sum::<f64>()
+        };
+        assert_eq!(raw(&game, district), 4.0);
+        assert_eq!(raw(&game, crate::name!("campus")), 0.0);
+        let before = game.city_yields(city).science;
+        game.players[0].policies.insert(crate::name!("rationalism"));
+        let engine_bonus = game.city_yields(city).science - before;
+        assert!(
+            engine_bonus > 0.0,
+            "the low-population city earns the adjacency half"
+        );
+        assert!(ai.campus_threshold_bonus(&game, district, site) > 0.0);
+
+        // Crowding drops raw Science below the gate. Doubling the remaining
+        // adjacency does not restore the building multiplier in either price.
+        let neighbor = game
+            .nbrs(site)
+            .into_iter()
+            .find(|p| *p != center && game.map.get(*p).is_some())
+            .unwrap();
+        game.map.tiles.get_mut(&neighbor).unwrap().district = Some(crate::name!("industrial_zone"));
+        game.players[0]
+            .policies
+            .insert(crate::name!("natural_philosophy"));
+        assert_eq!(raw(&game, district), 3.0);
+        assert_eq!(
+            game.district_adjacency_sources(district, site)
+                .iter()
+                .map(|s| s.yields.science)
+                .sum::<f64>(),
+            6.0
+        );
+        let with_card = game.city_yields(city).science;
+        game.players[0]
+            .policies
+            .remove(&crate::name!("rationalism"));
+        assert_eq!(with_card, game.city_yields(city).science);
+        assert_eq!(ai.campus_threshold_bonus(&game, district, site), 0.0);
+
+        game.map.tiles.get_mut(&neighbor).unwrap().district = None;
+        let mut off = AdvancedAi::new();
+        off.refresh_campus_multiplier_constants(&game);
+        assert_eq!(off.campus_threshold_bonus(&game, district, site), 0.0);
+        assert_eq!(
+            ai.campus_threshold_bonus(&game, crate::name!("theater_square"), site),
+            0.0
+        );
+    }
+
     /// A research detour requires its prerequisite buildings to stand.
     #[test]
     fn the_chain_goal_requires_held_prerequisites() {
