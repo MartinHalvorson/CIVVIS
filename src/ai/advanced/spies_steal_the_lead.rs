@@ -154,7 +154,12 @@ impl AdvancedAi {
     /// gene that disrupts only at the racer's match point narrows this
     /// predicate, and the steal then fills the turns it withholds.
     pub(super) fn steal_yields_to_the_disrupt(&self, g: &Game, spy: u32, legal: &[Action]) -> bool {
-        Self::racer_spy_disrupt_offered(g, spy, legal)
+        // `disrupt-waits-for-the-match-point`: where the gene withholds the
+        // Disrupt (a racer's city before its last projects) the steal stands
+        // aside too, so the Spy runs the pass's safe operation (Listening
+        // Post or Gain Sources, 6-7% deaths against 50-64% for Disrupt and
+        // steal there) and lives to the match point.
+        Self::racer_spy_disrupt_offered(g, spy, legal) || self.disrupt_withheld_here(g, spy)
     }
 
     /// Whether `mission` stays withheld outside the racers' cities by
