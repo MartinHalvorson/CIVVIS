@@ -169,7 +169,8 @@ fn host_quote_controls_the_limit_and_game_speed_scales_it() {
             );
         assert_eq!(
             ai.university_precedes_industry(&game, 0, city, &plan),
-            expected
+            expected,
+            "speed {speed:?}, native quote {turns}"
         );
     }
 }

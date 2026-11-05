@@ -71,9 +71,11 @@ impl AdvancedAi {
         let turns = g
             .host_production_turns(cid, &university)
             .unwrap_or_else(|| self.production_build_turns(g, pid, cid, &university));
+        // This construction budget follows production-cost scaling (50%
+        // Online), not the separate calendar clock used by standard_duration.
         let eligible = turns.is_finite()
             && turns > 0.0
-            && turns <= f64::from(g.standard_duration(UNIVERSITY_STANDARD_TURNS));
+            && turns <= g.game_speed.scale(f64::from(UNIVERSITY_STANDARD_TURNS));
         if eligible {
             think!(self.journal(), Cities, Detail,
                 "{} leaves its industrial claim to its University", city.name;

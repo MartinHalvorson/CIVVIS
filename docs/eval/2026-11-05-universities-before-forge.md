@@ -48,8 +48,16 @@ current-head protection features therefore do not promise to cover that case.
 
 ## Qualification status
 
-- Twelve focused regression cases are implemented; execution is pending.
+- Twelve focused regression cases are implemented. Initial full CI caught the
+  12/13 Online-turn boundary: calendar durations use 66% Online scaling, while
+  the intended construction budget uses the 50% production-cost scale. The
+  helper now uses cost scaling; the same boundary regression remains in place.
+  Corrected-source execution is pending.
 - Generated evaluation snapshots pass their21 focused Python tests.
+- The generated ranking-evidence page now includes the new unmeasured,
+  default-OFF row. Both targeted table-consistency tests pass. Initial policy
+  CI also correctly reports that new-gene firing evidence is still missing;
+  no waiver has been added.
 - Full candidate CI, exact-source hosted Mac tests, both native binaries/smokes,
   source-file verification and new-flag OFF/ON/ON/OFF captured-input proposals
   are pending. Results must be bound to their actual source, not this draft.
