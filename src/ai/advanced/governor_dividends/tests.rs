@@ -375,7 +375,7 @@ fn native_post_clock_resets_for_neutralization_missing_posts_and_clock_rollback(
         .unwrap()
         .disabled_until = g.turn + 2;
     ai.observe_governor_posts(&g, 0);
-    assert!(!ai.observed_governor_posts.contains_key("pingala"));
+    assert!(!ai.remembered_governor_posts.contains_key("pingala"));
     g.players[0]
         .governor_roster
         .get_mut("pingala")
@@ -390,7 +390,7 @@ fn native_post_clock_resets_for_neutralization_missing_posts_and_clock_rollback(
         .unwrap()
         .city = None;
     ai.observe_governor_posts(&g, 0);
-    assert!(!ai.observed_governor_posts.contains_key("pingala"));
+    assert!(!ai.remembered_governor_posts.contains_key("pingala"));
     g.players[0]
         .governor_roster
         .get_mut("pingala")
@@ -433,5 +433,5 @@ fn ordinary_governor_cooldowns_ignore_native_observation_memory() {
     );
     ai.relocate_governors_for_dividends(&mut g, 0, &plan);
     assert_eq!(g.players[0].governor_roster["pingala"].city, Some(old));
-    assert!(ai.observed_governor_posts.is_empty());
+    assert!(ai.remembered_governor_posts.is_empty());
 }

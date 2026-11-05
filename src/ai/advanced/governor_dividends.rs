@@ -22,17 +22,17 @@ impl AdvancedAi {
     /// or a change to the game's establishment timer.
     fn observe_governor_posts(&mut self, g: &Game, pid: usize) {
         let roster = &g.players[pid].governor_roster;
-        self.observed_governor_posts
+        self.remembered_governor_posts
             .retain(|name, _| roster.contains_key(name.as_str()));
         for (name, state) in roster {
             let key = name.to_string();
             let city = state.city.and_then(|cid| g.cities.get(&cid));
             let Some(city) = city.filter(|_| state.disabled_until <= g.turn) else {
-                self.observed_governor_posts.remove(&key);
+                self.remembered_governor_posts.remove(&key);
                 continue;
             };
             let Some(spec) = g.rules.governors.get(name.as_str()) else {
-                self.observed_governor_posts.remove(&key);
+                self.remembered_governor_posts.remove(&key);
                 continue;
             };
             let establish = g.standard_duration(spec.establish_turns);
@@ -44,7 +44,7 @@ impl AdvancedAi {
                 last_request: None,
             };
             let post = self
-                .observed_governor_posts
+                .remembered_governor_posts
                 .entry(key)
                 .or_insert_with(fresh);
             if post.city != city.pos
@@ -68,7 +68,7 @@ impl AdvancedAi {
         if !self.live_governor_assignment_adapter {
             return age;
         }
-        let post = self.observed_governor_posts.get(governor).filter(|post| {
+        let post = self.remembered_governor_posts.get(governor).filter(|post| {
             state.disabled_until <= g.turn
                 && g.turn >= post.last_seen
                 && state
@@ -191,7 +191,7 @@ impl AdvancedAi {
             || self.governor_residence_age(g, pid, governor) < residence
             || (self.live_governor_assignment_adapter
                 && self
-                    .observed_governor_posts
+                    .remembered_governor_posts
                     .get(governor)
                     .is_some_and(|post| post.last_request == Some(g.turn)))
             || !self.governor_dividend_safe_city(g, pid, current, plan)
@@ -347,7 +347,7 @@ impl AdvancedAi {
         if enabled && self.live_governor_assignment_adapter {
             self.observe_governor_posts(g, pid);
         } else {
-            self.observed_governor_posts.clear();
+            self.remembered_governor_posts.clear();
         }
         if !enabled
             || self.base.minor
@@ -384,7 +384,7 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
-                    if let Some(post) = self.observed_governor_posts.get_mut(governor) {
+                    if let Some(post) = self.remembered_governor_posts.get_mut(governor) {
                         // An asynchronous host assignment can still show
                         // the old post on another frame of this turn.
                         post.last_request = Some(g.turn);
