@@ -1771,6 +1771,9 @@ impl AdvancedAi {
         /// Opt-in gene `embassy-finds-the-capital`; see
         /// `AdvancedAi::embassy_finds_the_capital`.
         embassy_finds_the_capital => enable_embassy_finds_the_capital, disable_embassy_finds_the_capital;
+        /// Opt-in gene `embassy-finds-the-capital-2`; see
+        /// `advanced/embassy_capital.rs`.
+        embassy_finds_the_capital_2 => enable_embassy_finds_the_capital_2, disable_embassy_finds_the_capital_2;
         /// Opt-in gene `aluminum-buys-the-tile`; see
         /// `AdvancedAi::aluminum_buys_the_tile`.
         aluminum_buys_the_tile => enable_aluminum_buys_the_tile, disable_aluminum_buys_the_tile;
@@ -2254,6 +2257,12 @@ impl AdvancedAi {
         /// Opt-in gene `denounce-only-to-declare`; see
         /// `advanced/denounce_only_to_declare.rs`.
         denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
+        /// Opt-in gene `capture-scar-reads-the-new-city`; see
+        /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
+        capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
+        /// Opt-in gene `districts-price-the-improvement`; see
+        /// [`Self::districts_price_the_improvement`].
+        districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
         /// Prefer a safe legal site for a new native Science Campus.
         campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
     }
@@ -5239,6 +5248,17 @@ impl AdvancedAi {
     /// The twin of `enable_military_alliance_shield_2`.
     pub fn disable_military_alliance_shield_2(&mut self) {
         self.military_alliance_shield_2 = false;
+    }
+
+    /// Opt-in gene `group-steps-read-the-field`; see
+    /// [`Self::group_steps_read_the_field`].
+    pub fn enable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = true;
+    }
+
+    /// The twin of `enable_group_steps_read_the_field`.
+    pub fn disable_group_steps_read_the_field(&mut self) {
+        self.group_steps_read_the_field = false;
     }
 
     // ---- append: a-b ------------------------------------------------

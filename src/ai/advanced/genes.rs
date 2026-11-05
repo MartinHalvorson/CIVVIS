@@ -3862,6 +3862,14 @@ pub const GENES: &[Gene] = &[
     // capitals would have been revealed and 16 a median 7 turns sooner. See
     // `advanced/embassy_capital.rs`.
     Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // Version two of `embassy-finds-the-capital`: a Science aim sends the
+    // capital-revealing Resident Embassy too, the rival knowing the most
+    // technologies first. A Spy travels only to a city we have seen; in 22 of
+    // 30 live Deity technology games (2026-11-05) the winner's capital was
+    // unknown at Diplomatic Service, and the losses had a median of ~6 idle
+    // Spy-turns with Disrupt Rocketry offered against the win's 33. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital-2", field: "embassy_finds_the_capital_2", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital_2, disable: AdvancedAi::disable_embassy_finds_the_capital_2 },
     // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
     // none, buy an unowned Aluminum tile a city can buy, above the reserve.
     // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of
@@ -5267,6 +5275,30 @@ pub const GENES: &[Gene] = &[
     // through to Economic, Cultural or Religious, under its own per-kind
     // memory. See `military_alliance_shield.rs`.
     Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
+    // Live Deity Indonesia (11-05): 24 of 53 Settlers lost in 49 games
+    // vanished within two tiles of a city of ours, and the capture lessons
+    // read any such city as the founding, so 13 captures beside a standing
+    // city left no scar. 173830Z lost one at t96 one tile from its city; the
+    // next Settler walked to a site three tiles from that spot and was taken
+    // at t102. Under the gene only a city new since the last resolve counts
+    // as the founding. See `advanced/civilian_safety.rs`.
+    Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
+    // `districts-price-the-improvement` (2026-11-04): 372 of 773 districts
+    // the live seat placed (42 games, 11-04) went onto an improved tile — 120
+    // on Farms, 61 on an improved Wheat/Rice/Maize/Cattle — because the
+    // planner charges a site only the edge of a tile a citizen works THIS
+    // turn. Under the gene any improved or bonus-resource site pays its tile
+    // as if worked. See `advanced/district_planning.rs`.
+    Gene { tag: "districts-price-the-improvement", field: "districts_price_the_improvement", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_price_the_improvement, disable: AdvancedAi::disable_districts_price_the_improvement },
+    // Live Lv 8 Deity Korea 11-05: of 90 full-health units killed in an
+    // enemy phase across the anvil-spares-the-one-blow carriers, 50 had moved
+    // that turn in the field and 52 have no journal line naming the move (the
+    // group step's signature); their killers (Line Infantry, Modern Armor, Jet
+    // Fighters, Machine Guns) out-reach the group step's one-approach-step
+    // forecast. Under the gene its danger checks read the larger of that
+    // forecast and the danger field. See
+    // `advanced/group_steps_read_the_field.rs`.
+    Gene { tag: "group-steps-read-the-field", field: "group_steps_read_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_group_steps_read_the_field, disable: AdvancedAi::disable_group_steps_read_the_field },
     // A fresh native Science Campus chooses safe legal land before coastal lowland.
     Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
     // ---- append: a-b ------------------------------------------------

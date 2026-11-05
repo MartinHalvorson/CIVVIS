@@ -5580,9 +5580,24 @@ pub struct AdvancedAi {
     /// where one blow at the top of its roll removes it. See
     /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
     anvil_spares_the_one_blow: bool,
+    /// `districts-price-the-improvement`: the owned tiles a District could
+    /// bulldoze at the start of this turn (improvement, feature, pillaged),
+    /// so a fresh placement on one can be undone before the turn ends.
+    /// Empty while the gene is off.
+    bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
     /// Prefer a safe legal site for a new native Science Campus. Opt-in.
     campus_above_the_sea: bool,
+    /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
+    /// tiles of one of our cities counts as founded only when that city is
+    /// new since the last resolve, so a capture beside a standing city
+    /// scars the ground too. See `advanced/civilian_safety.rs`
+    /// (`resolve_vanished_settlers`). Off by default.
+    capture_scar_reads_the_new_city: bool,
+    /// Our city sites at the last `resolve_vanished_settlers`, read by
+    /// `capture-scar-reads-the-new-city`. `None` until the first resolve
+    /// under the gene, when the old any-city rule still answers.
+    capture_scar_city_sites: Option<BTreeSet<Pos>>,
     /// `disrupt-waits-for-the-match-point`: Disrupt Rocketry only against a
     /// racer on its last space projects. See `advanced/disrupt_waits_for_the_match_point.rs`.
     disrupt_waits_for_the_match_point: bool,
@@ -6623,7 +6638,14 @@ pub struct AdvancedAi {
     /// denounces; the war opening does, when a war follows. See
     /// `advanced/denounce_only_to_declare.rs`. Off by default.
     denounce_only_to_declare: bool,
+    /// `districts-price-the-improvement`: a district site pays for the
+    /// improvement (and bonus resource) it bulldozes, worked or not. See
+    /// `advanced/district_planning.rs`. Off by default.
+    districts_price_the_improvement: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
+    /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
+    embassy_finds_the_capital_2: bool,
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
     /// Give a threatened sole capital opening defence priority. Opt-in.
@@ -7652,6 +7674,13 @@ pub struct AdvancedAi {
     /// claim chain before the strategic governor, as the main path does. See
     /// `advanced/hint_runs_the_claims.rs`. Off by default.
     hint_runs_the_claims: bool,
+    /// `group-steps-read-the-field`: the group step prices an approach by
+    /// the larger of the one-step forecast and the danger field. See
+    /// `advanced/group_steps_read_the_field.rs`. Off by default.
+    group_steps_read_the_field: bool,
+    /// `group-steps-read-the-field`: the frame's danger field for the group
+    /// step, rebuilt when the visible hostiles at war change.
+    group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
@@ -10789,6 +10818,9 @@ mod gold_buys_the_opening_builder;
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
+/// `group-steps-read-the-field`: the group step reads the danger field. See
+/// `advanced/group_steps_read_the_field.rs`.
+mod group_steps_read_the_field;
 /// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
 /// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
 mod holdable_land_keeps_settling;
@@ -11345,6 +11377,7 @@ impl AdvancedAi {
         self.early_settler_homes.clear();
         self.hostile_last_seen.clear();
         self.settler_vanished.clear();
+        self.capture_scar_city_sites = None;
         self.summoned_guard_turn.clear();
         self.stock_pressure_history.clear();
         self.culture_curves.clear();
@@ -11887,8 +11920,11 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             anvil_spares_the_one_blow: false,
+            bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
             campus_above_the_sea: false,
+            capture_scar_reads_the_new_city: false,
+            capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
@@ -12095,7 +12131,9 @@ impl AdvancedAi {
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
             denounce_only_to_declare: false,
+            districts_price_the_improvement: false,
             // ---- append: e-f ----------------------------------------
+            embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
             founding_voyage: false,
@@ -12257,6 +12295,8 @@ impl AdvancedAi {
             gold_buys_the_production_tile: false,
             korea_mines_beside_the_seowon: false,
             hint_runs_the_claims: false,
+            group_steps_read_the_field: false,
+            group_step_field: Default::default(),
             // ---- append: l-o ----------------------------------------
             outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
@@ -20945,8 +20985,15 @@ impl AdvancedAi {
     /// pre-war exemption above also protects economic repairs, but repairing
     /// a Library or Commercial Hub must not cancel an emergency wall order.
     /// Keep repairs to fortified districts, including unique replacements.
+    /// Recon queues likewise retain their pre-war exemption, but cannot hold
+    /// an already-confirmed siege defense: Yangsan kept a Scout while damaged
+    /// and able to build Walls in the native Deity Korea control.
     fn active_queue_answers_siege(g: &Game, item: &Item) -> bool {
         match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].promotion_class != "recon"
+                    && Self::active_queue_is_defensive(g, item)
+            }
             Item::Repair { repair, pos } => {
                 repair == "district"
                     && g.map
@@ -22763,6 +22810,12 @@ impl AdvancedAi {
         queue.clear();
         // A finishing Settler has not appeared in the exported unit roster
         // yet, but already fills the single supply-colony request.
+        // `districts-price-the-improvement`: the hint's District gets the same
+        // end-of-turn re-site the main path gives it (`take_turn_inner`), so a
+        // fresh site on a Farm moves to clean ground here too. The snapshot is
+        // this board before anything is placed. Nothing happens while the gene
+        // is off. See `advanced/district_planning.rs`.
+        preview.snapshot_bulldoze_sites(&board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -22785,6 +22838,7 @@ impl AdvancedAi {
         if claims_and_writers {
             preview.run_hint_defence_writers(&mut board, pid, &plan);
         }
+        preview.resite_bulldozing_districts(&mut board, pid);
         board.cities.get(&city)?.queue.first().cloned()
     }
 
@@ -29520,6 +29574,8 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        // `districts-price-the-improvement`: what a District could bulldoze.
+        self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
         // `builders-route-around-mountains`: see
@@ -30361,6 +30417,9 @@ impl AdvancedAi {
         // The last reading of the turn: what became of every decision, with
         // `Unit::acted` still saying what each unit did. Observes only.
         self.reconcile_commitments(g, pid);
+        // `districts-price-the-improvement`: a fresh District on a Farm,
+        // Mine or bonus resource moves to a clean site before the turn ends.
+        self.resite_bulldozing_districts(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }

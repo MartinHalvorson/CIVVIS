@@ -271,3 +271,112 @@ fn live_builder_refuses_a_job_step_a_barbarian_can_take() {
         "holding in the city preserves the Builder instead of donating it"
     );
 }
+
+/// Live 173830Z (Deity Indonesia, t96): a Settler was taken one tile from
+/// its own city, and the capture lessons read that standing city as its
+/// founding, so the ground kept no scar; the next Settler walked to a site
+/// three tiles from the spot and was taken at t102. Under
+/// `capture-scar-reads-the-new-city` only a city new since the last resolve
+/// is a founding: a Settler that vanishes beside a city that already stood
+/// scars the ground, and one that founds still leaves no scar. Off, the
+/// any-city rule answers as before.
+#[test]
+fn a_settler_taken_beside_a_standing_city_scars_the_ground_under_the_gene() {
+    use crate::ai::Ai;
+
+    let mut game = Game::new_full(2, 20, 14, 91_407, 60, 0, false);
+    game.current = 0;
+    let founding_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("player 0 has a starting Settler");
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: founding_settler,
+        },
+    )
+    .expect("the starting Settler founds the capital");
+    let home = game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .expect("player 0 has a capital")
+        .pos;
+    let beside = game
+        .nbrs(home)
+        .into_iter()
+        .find(|pos| open_land(&game, *pos))
+        .expect("open land beside the capital");
+
+    let mut gene = AdvancedAi::new();
+    gene.enable_live_bridge();
+    assert!(
+        gene.live_settler_capture_lessons,
+        "the live bridge carries the lessons"
+    );
+    assert!(!gene.capture_scar_reads_the_new_city, "the gene ships off");
+    let mut stock = gene.clone();
+    gene.enable_capture_scar_reads_the_new_city();
+    let journal = crate::reasoning::Journal::recording();
+    gene.attach_journal(journal.handle());
+    // A first resolve records the cities that stand before any loss.
+    gene.resolve_vanished_settlers(&game, 0);
+    stock.resolve_vanished_settlers(&game, 0);
+
+    let taken = game.spawn_test_unit("settler", 0, beside);
+    gene.settler_last_seen.insert(taken, beside);
+    stock.settler_last_seen.insert(taken, beside);
+    game.remove_unit(taken);
+    gene.resolve_vanished_settlers(&game, 0);
+    stock.resolve_vanished_settlers(&game, 0);
+    assert!(
+        gene.settler_capture_scars.contains_key(&beside),
+        "taken beside a city that already stood: the ground is scarred"
+    );
+    let lines: Vec<String> = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| format!("{} | {}", thought.headline, thought.detail))
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("vanished beside a standing city")),
+        "and the journal says why; journal:\n{}",
+        lines.join("\n")
+    );
+    assert!(
+        stock.settler_capture_scars.is_empty(),
+        "off, the standing city still reads as the founding"
+    );
+
+    // A Settler that founds a new city is spent, not taken, under the gene.
+    // Clear the first scar so its three-tile disk cannot cover the new site.
+    gene.settler_capture_scars.clear();
+    let candidates: Vec<Pos> = game
+        .wdisk(home, 6)
+        .into_iter()
+        .filter(|pos| game.wdist(*pos, home) >= 4 && open_land(&game, *pos))
+        .collect();
+    let site = candidates
+        .into_iter()
+        .find(|pos| {
+            let probe = game.spawn_test_unit("settler", 0, *pos);
+            let legal = game.can_found_city(probe);
+            game.remove_unit(probe);
+            legal
+        })
+        .expect("a legal site four to six tiles out");
+    let founder = game.spawn_test_unit("settler", 0, site);
+    gene.settler_last_seen.insert(founder, site);
+    game.apply(0, &Action::FoundCity { unit: founder })
+        .expect("the site is legal");
+    gene.resolve_vanished_settlers(&game, 0);
+    assert!(
+        !gene.settler_capture_scars.contains_key(&site),
+        "a founding leaves a city, not a scar"
+    );
+}

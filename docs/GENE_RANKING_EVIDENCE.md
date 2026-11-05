@@ -216,6 +216,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-walls-at-any-ratio` | off (unmeasured) | Opt-in gene `capital-walls-at-any-ratio`; see `Self::capital_walls_at_any_ratio`. | 1 \| 1 |
 | `capital-watch-arms-the-slinger` | off (unmeasured) | Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`. | 1 \| 1 |
 | `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | 1 \| 1 |
+| `capture-scar-reads-the-new-city` | off (unmeasured) | Opt-in gene `capture-scar-reads-the-new-city`; see `advanced/civilian_safety.rs` (`resolve_vanished_settlers`). | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
 | `city-state-war-is-no-front` | off (unmeasured) | Keep a city-state war from becoming the Domination front. | 1 \| 1 |
 | `city-under-fire-ranks-first` | off (unmeasured) | Opt-in gene `city-under-fire-ranks-first`; see `advanced/objective_board.rs`. | 1 \| 1 |
@@ -246,12 +247,14 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `diplomat-saves-for-the-apostle` | off (unmeasured) | `diplomat-saves-for-the-apostle`. | 1 \| 1 |
 | `disrupt-before-the-sources` | off (unmeasured) | Let a Spy in the space racer's city disrupt before it trains on Gain Sources. | 1 \| 1 |
 | `disrupt-waits-for-the-match-point` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-match-point`; see `advanced/disrupt_waits_for_the_match_point.rs`. | 1 \| 1 |
+| `districts-price-the-improvement` | off (unmeasured) | Opt-in gene `districts-price-the-improvement`; see `Self::districts_price_the_improvement`. | 1 \| 1 |
 | `districts-protect-seowon-science` | off (unmeasured) | Price the Science lost when a new district crowds an owned Seowon. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
+| `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `faith-war-before-the-flip-2` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip-2`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
@@ -282,6 +285,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
+| `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
