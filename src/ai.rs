@@ -2501,6 +2501,10 @@ struct EnvelopeChange {
     removed: bool,
 }
 
+/// `parity-upgrades-before-it-buys` (both versions): a unit this many eras or
+/// more behind the world era is obsolete to buy.
+pub(crate) const OBSOLETE_BUY_ERAS_BEHIND: usize = 2;
+
 #[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
@@ -3970,6 +3974,11 @@ pub struct BasicAi {
     /// recent Spy losses pause training; the production fallback then offers
     /// no Spy. False otherwise and on a bare `BasicAi`.
     pub(crate) spy_training_paused: bool,
+    /// `parity-upgrades-before-it-buys-2`: set by `AdvancedAi` each turn
+    /// while the gene is on. `buy_gold_military` then buys a unit two or more
+    /// eras behind the world only for a city with no military unit of ours on
+    /// its tile. False otherwise and on a bare `BasicAi`.
+    pub(crate) obsolete_buys_garrison_only: bool,
     /// `plaza-serves-the-scientist`: set by `AdvancedAi` each turn while the
     /// gene is on and the seat aims at Science; the Government Plaza's tier
     /// buildings are then the Ancestral Hall and the Intelligence Agency
@@ -6108,6 +6117,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
+            obsolete_buys_garrison_only: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -6723,6 +6733,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
+            obsolete_buys_garrison_only: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -9898,6 +9909,13 @@ impl BasicAi {
                     {
                         continue;
                     }
+                    // `parity-upgrades-before-it-buys-2`: an obsolete body
+                    // only where the city stands empty.
+                    if self.obsolete_buys_garrison_only
+                        && Self::obsolete_buy_barred(g, pid, *cid, name.as_str())
+                    {
+                        continue;
+                    }
                     // Current controllers budget the actual purchase quote.
                     // The historical anchor retains its original price and
                     // predicate order, together with its old recon eligibility.
@@ -9947,6 +9965,28 @@ impl BasicAi {
             },
         )
         .is_ok()
+    }
+
+    /// `parity-upgrades-before-it-buys-2`: whether `unit` is two or more
+    /// eras behind the world (`advanced/parity_upgrades_before_it_buys.rs`'s
+    /// `obsolete` bar) while `city` already holds a military unit of ours on
+    /// its tile. A city standing empty may still buy the body.
+    pub(crate) fn obsolete_buy_barred(g: &Game, pid: usize, city: u32, unit: &str) -> bool {
+        if g.unit_era(unit) + OBSOLETE_BUY_ERAS_BEHIND > g.world_era {
+            return false;
+        }
+        let Some(pos) = g.cities.get(&city).map(|city| city.pos) else {
+            return false;
+        };
+        g.unit_ids_at(pos).iter().any(|uid| {
+            g.units.get(uid).is_some_and(|garrison| {
+                garrison.owner == pid
+                    && g.rules
+                        .units
+                        .get(garrison.kind.as_str())
+                        .is_some_and(|spec| spec.class == "military")
+            })
+        })
     }
 
     fn buy_gold_infrastructure(

@@ -183,3 +183,43 @@ fn actual_wartime_spending_buys_the_requested_field_role() {
     assert_eq!(bought(&g), vec![(city, crate::name!("archer"))]);
     assert_eq!(g.players[0].gold, 125.0);
 }
+
+/// `parity-upgrades-before-it-buys-2`: with the world two eras past the
+/// Ancient defenders on the menu, a garrisoned city buys none of them; an
+/// empty one still buys its body; with the flag off the garrisoned city buys
+/// as before.
+#[test]
+fn an_obsolete_defender_is_bought_only_for_an_empty_city() {
+    let (mut g, mut ai, city) = fixture();
+    g.world_era = 2;
+    assert!(g.unit_era("spearman") + crate::ai::OBSOLETE_BUY_ERAS_BEHIND <= g.world_era);
+    let pos = g.cities[&city].pos;
+
+    let mut empty = g.clone();
+    ai.obsolete_buys_garrison_only = true;
+    assert!(ai.buy_gold_military(&mut empty, 0, &[city], 110.0, false));
+    assert_eq!(bought(&empty), vec![(city, crate::name!("spearman"))]);
+
+    g.spawn_unit("warrior", 0, pos);
+    let mut held = g.clone();
+    assert!(!ai.buy_gold_military(&mut held, 0, &[city], 110.0, false));
+    assert!(bought(&held).is_empty());
+    assert_eq!(held.players[0].gold, 245.0);
+
+    ai.obsolete_buys_garrison_only = false;
+    let mut off = g.clone();
+    assert!(ai.buy_gold_military(&mut off, 0, &[city], 110.0, false));
+    assert_eq!(bought(&off), vec![(city, crate::name!("spearman"))]);
+}
+
+/// Within two eras of the world the flag changes nothing.
+#[test]
+fn a_current_defender_is_bought_with_the_flag_on() {
+    let (mut g, mut ai, city) = fixture();
+    g.world_era = 1;
+    let pos = g.cities[&city].pos;
+    g.spawn_unit("warrior", 0, pos);
+    ai.obsolete_buys_garrison_only = true;
+    assert!(ai.buy_gold_military(&mut g, 0, &[city], 110.0, false));
+    assert_eq!(bought(&g), vec![(city, crate::name!("spearman"))]);
+}
