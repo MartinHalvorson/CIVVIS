@@ -126,7 +126,8 @@ fn the_science_plaza_leaves_settlers_threats_and_other_aims_alone() {
 }
 
 /// One capital of ours with Political Philosophy's state workforce, no Plaza,
-/// `head` at the head of its queue, and a Campus when `campus`.
+/// `head` at the head of its queue, and a Campus when `campus`; population 7,
+/// so a Campus leaves it a free district slot.
 fn capital_without_a_plaza(head: Item, campus: bool) -> (Game, u32) {
     let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
     let settler = g
@@ -157,7 +158,9 @@ fn capital_without_a_plaza(head: Item, campus: bool) -> (Game, u32) {
             .districts
             .insert(crate::name!("campus"), site);
     }
-    g.cities.get_mut(&city).unwrap().queue = vec![head];
+    let capital = g.cities.get_mut(&city).unwrap();
+    capital.pop = 7;
+    capital.queue = vec![head];
     (g, city)
 }
 
