@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "denounce-only-to-declare",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 boards of live Deity Korea Science (Online) games, 2026-11-05 10:09Z-13:35Z, each the run's events.jsonl cut at frame 0 of the turn of its first denunciation of a rival (orders.sqlite kind `denounce`, journalled \"their space race is a science threat\"). Both arms run one frozen ci-profile civvis_orders built from the branch at c5725726c6 with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with denounce-only-to-declare. Off arms reproducing the live DENOUNCE of that rival: 6/8 (the other two denounced later in the live turn, after frame 0; neither arm denounces there). On arms holding every denunciation: 8/8. Changed order sets: 6/8.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-denounce-only-to-declare.native-queries.tar.xz",
+    "sha256": "5f8a9b3fe63a6f9c57a35699dd64e925b88cee438138aa3d1a0475cd954934e1"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}
