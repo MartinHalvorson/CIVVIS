@@ -74,7 +74,7 @@
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT] [--seat-pace]
 //!               [--rival-late-science PCT] [--rival-space-floor TECHS]
-//!               [--rival-war-pace PCT] [--rival-walls PCT]
+//!               [--rival-war-pace PCT] [--rival-walls PCT] [--seat-civ CIV]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -1073,6 +1073,14 @@ struct TraceSample {
     /// what a chair's defence is calibrated against. Absent in older batches.
     #[serde(default)]
     walled: usize,
+    /// ⭐ Cities within 2 of their housing ceiling, and of those the ones
+    /// with more than 4 surplus food: the growth the ceiling holds back. Live
+    /// Deity Online reads 59% of city-turns t30-100 within 2, and 54% of
+    /// those over +4 food (11-04). Absent in older batches.
+    #[serde(default)]
+    near_housing: usize,
+    #[serde(default)]
+    near_housing_fed: usize,
 }
 
 impl TraceSample {
@@ -1082,9 +1090,17 @@ impl TraceSample {
         let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
         let mut holy_site = false;
         let mut walled = 0usize;
+        let (mut near_housing, mut near_housing_fed) = (0usize, 0usize);
         for cid in &cities {
-            yields.add(g.city_yields(*cid));
+            let city_yields = g.city_yields(*cid);
+            yields.add(city_yields);
             if let Some(city) = g.cities.get(cid) {
+                if g.city_housing_headroom(city) <= 2.0 {
+                    near_housing += 1;
+                    if city_yields.food - 2.0 * f64::from(city.pop) > 4.0 {
+                        near_housing_fed += 1;
+                    }
+                }
                 if g.city_max_wall_hp(city) > 0 {
                     walled += 1;
                 }
@@ -1116,6 +1132,8 @@ impl TraceSample {
             religion: g.players[pid].religion.is_some(),
             holy_site,
             walled,
+            near_housing,
+            near_housing_fed,
         }
     }
 }
@@ -2003,6 +2021,10 @@ struct Header {
     /// file played. See [`rival_war_pace::veto_walls`].
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_walls: u32,
+    /// ⭐ `--seat-civ` (2026-11-05): the civilization every measured seat
+    /// plays, or empty for the shuffled draw, which every earlier file played.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    seat_civ: String,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2384,6 +2406,9 @@ struct Profile {
     /// ⭐ `--rival-walls`: the share of a chair's cities that may raise walls
     /// ([`rival_war_pace::veto_walls`]). `None` is no knob.
     rival_walls: Option<u32>,
+    /// ⭐ `--seat-civ`: the civilization every measured seat plays
+    /// ([`seated_civs`]). `None` keeps the shuffled draw.
+    seat_civ: Option<String>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2492,6 +2517,52 @@ fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64
     delta.cursor
 }
 
+/// ⭐ `--seat-civ`: the lobby's civilization list for this game. The measured
+/// seat rotates with the game index, so the list names every seat up to and
+/// including it: the measured seats play `seat_civ`, the seats before them
+/// draw distinct Civilization VI civilizations from a seed-keyed shuffle, and
+/// the engine fills the rest as before. Empty (the shuffled draw) without the
+/// flag, so every earlier batch seats exactly as it did.
+fn seated_civs(profile: &Profile, game: usize, seed: u64) -> Vec<String> {
+    let Some(seat_civ) = &profile.seat_civ else {
+        return Vec::new();
+    };
+    let measured: Vec<usize> = (0..profile.players)
+        .filter(|&index| {
+            !profile.rivals
+                || rival_offset(profile.players, game, profile.rival_chairs, index).is_none()
+        })
+        .collect();
+    let Some(&last) = measured.iter().max() else {
+        return Vec::new();
+    };
+    let mut pool: Vec<String> = civvis::leader_roster::all()
+        .iter()
+        .filter(|record| {
+            record.available
+                && record.civ != *seat_civ
+                && civvis::leader_roster::uses_civ6_mechanics(&record.civ)
+        })
+        .map(|record| record.civ.clone())
+        .collect();
+    pool.sort();
+    pool.dedup();
+    let mut rng = Rng::new(seed ^ 0x5345_4154_4349_5600);
+    for i in (1..pool.len()).rev() {
+        pool.swap(i, rng.below(i + 1));
+    }
+    let mut others = pool.into_iter();
+    (0..=last)
+        .map(|index| {
+            if measured.contains(&index) {
+                seat_civ.clone()
+            } else {
+                others.next().unwrap_or_default()
+            }
+        })
+        .collect()
+}
+
 fn play_game(
     profile: &Profile,
     genes: &[Gene],
@@ -2550,6 +2621,7 @@ fn play_game(
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
+        civs: seated_civs(profile, game, seed),
         victory_conditions: victories,
         difficulty: difficulty.clone(),
         handicap_exempt,
@@ -5219,6 +5291,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_space_floor != found.rival_space_floor
                                 || first.rival_war_pace != found.rival_war_pace
                                 || first.rival_walls != found.rival_walls
+                                || first.seat_civ != found.seat_civ
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -6143,6 +6216,9 @@ fn calibration_read(header: &Header) -> String {
             header.rival_space_floor
         ));
     }
+    if !header.seat_civ.is_empty() {
+        line.push_str(&format!(", the measured seat plays {}", header.seat_civ));
+    }
     if header.rival_walls > 0 {
         line.push_str(&format!(
             ", walls in {}% of the chairs' cities",
@@ -6984,6 +7060,24 @@ fn main() {
     // walls; the rest build a soldier (`rival_war_pace::veto_walls`).
     let rival_walls = present(&args, "--rival-walls")
         .then(|| number(&args, "--rival-walls", 100).clamp(0, 100) as u32);
+    // ⭐ `--seat-civ CIV`: every measured seat plays CIV (the live seat's
+    // civilization), the rest of the field drawn as before. See `seated_civs`.
+    let seat_civ = text(&args, "--seat-civ");
+    if let Some(civ) = &seat_civ {
+        if !civvis::leader_roster::all()
+            .iter()
+            .any(|record| record.available && record.civ == *civ)
+        {
+            eprintln!("--seat-civ {civ}: not a selectable civilization");
+            std::process::exit(2);
+        }
+    }
+    if seat_civ.is_some() && !rivals {
+        eprintln!(
+            "--seat-civ names the measured seat beside the rival chairs, so it needs --rivals"
+        );
+        std::process::exit(2);
+    }
     if (rival_war_pace.is_some() || rival_walls.is_some()) && !rivals {
         eprintln!(
             "--rival-war-pace and --rival-walls act on the rival chairs, so they need --rivals"
@@ -7348,6 +7442,7 @@ fn main() {
         rival_space_floor: rival_space_floor.unwrap_or(0),
         rival_war_pace: rival_war_pace.unwrap_or(0),
         rival_walls: rival_walls.unwrap_or(0),
+        seat_civ: seat_civ.clone().unwrap_or_default(),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7413,6 +7508,7 @@ fn main() {
         rival_space_floor,
         rival_war_pace,
         rival_walls,
+        seat_civ,
         rival_chairs,
         handicap_rivals,
         journal_seeds,
@@ -7601,6 +7697,7 @@ mod tests {
             rival_space_floor: 0,
             rival_war_pace: 0,
             rival_walls: 0,
+            seat_civ: String::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -9175,6 +9272,8 @@ mod tests {
             religion: true,
             holy_site: true,
             walled: 0,
+            near_housing: 0,
+            near_housing_fed: 0,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
