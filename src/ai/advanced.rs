@@ -8455,6 +8455,10 @@ pub struct AdvancedAi {
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     pingala_follows_research: bool,
+    /// Native governor establishment is a lower bound, not total tenure.
+    /// Keep observed post clocks across fresh boards; city coordinates survive
+    /// the bridge's city-id remapping. See `governor_dividends`.
+    remembered_governor_posts: BTreeMap<String, governor_dividends::ObservedGovernorPost>,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -8682,6 +8686,8 @@ pub struct AdvancedAi {
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
+    /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
+    science_foundation_before_backlog: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -9385,6 +9391,10 @@ pub struct AdvancedAi {
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-war-holds-the-claims`: while a war with a major threatens
+    /// a home city, the economy's idle-queue claims stand aside. See
+    /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
+    threatened_war_holds_the_claims: bool,
     /// `war-defense-spends-the-runway`: while a major at war with us fields
     /// 1.5x our military power and the treasury covers the deficit for 15
     /// turns, the insolvency guard leaves the city queues to the war. See
@@ -10724,6 +10734,7 @@ mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_foundation_research;
 mod science_power_fuel;
 mod science_suppression_pads;
 mod science_threat_denial;
@@ -10859,6 +10870,9 @@ mod threatened_city_purchase;
 /// `threatened-lane-lends-the-army`: see
 /// `advanced/threatened_lane_lends_the_army.rs`.
 mod threatened_lane_lends_the_army;
+/// `threatened-war-holds-the-claims`: see
+/// `advanced/threatened_war_holds_the_claims.rs`.
+mod threatened_war_holds_the_claims;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -12263,6 +12277,7 @@ impl AdvancedAi {
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
+            remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
             research_building_catchup_3: false,
@@ -12298,6 +12313,7 @@ impl AdvancedAi {
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             spy_loss_turns: Vec::new(),
+            science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             science_writing_before_the_luxury: false,
@@ -12430,6 +12446,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
+            threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,
             trade_quotes_pay_the_lump: false,
@@ -29949,8 +29966,9 @@ impl AdvancedAi {
             }
             // The idle-queue claims, in their fixed order. Moved verbatim into
             // `advanced/hint_runs_the_claims.rs` so the live production hint
-            // can run the same chain (`hint-runs-the-claims`).
-            self.run_idle_queue_claims(g, pid, &plan);
+            // can run the same chain (`hint-runs-the-claims`). It returns
+            // `threatened-war-holds-the-claims`' hold for the claims below.
+            let war_holds = self.run_idle_queue_claims(g, pid, &plan);
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
@@ -29977,7 +29995,9 @@ impl AdvancedAi {
             // one idle queue ahead of the routine claims below, or is bought.
             // Exact no-op while the gene is off. See
             // `advanced/worked_backlog_claim.rs`.
-            self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            if !war_holds {
+                self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            }
             // `science-denial-trains-spies`: against a decisive space racer,
             // the top-Production cities train the Spies its pads need, ahead
             // of the routine claims below (the defence redirects at the end of
@@ -29996,15 +30016,23 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
-            self.reserve_culture_defense_theater(g, pid, &plan);
+            if !war_holds {
+                self.reserve_culture_defense_theater(g, pid, &plan);
+            }
             // `plaza-in-the-district-list`: the Plaza and its tier buildings
             // take one idle queue before the development shortfall's.
             // `capital-campus-before-the-plaza`: the capital's first Campus,
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
-            self.claim_capital_campus(g, pid, &plan);
-            self.reserve_government_plaza(g, pid, &plan);
-            self.reserve_higher_level_investment(g, pid, &plan);
+            if !war_holds {
+                self.claim_capital_campus(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_government_plaza(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_higher_level_investment(g, pid, &plan);
+            }
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // One bounded forward-field project takes an idle queue only
             // after the emergency, victory and economy reservations above.

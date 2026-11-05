@@ -2125,6 +2125,8 @@ impl AdvancedAi {
         stalled_conquest_takes_science => enable_stalled_conquest_takes_science, disable_stalled_conquest_takes_science;
         /// Keep a committed first Science launch on its research path.
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
+        /// Prioritize usable labs and nearby Rocketry during a Science posture.
+        science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
         /// Ask the native market for Coal serving ready research power.
         science_power_buys_fuel => enable_science_power_buys_fuel, disable_science_power_buys_fuel;
         /// Prefer a legal non-lowland site when starting a native Spaceport.
@@ -2216,6 +2218,9 @@ impl AdvancedAi {
         /// `builders-cover-the-worked-backlog`'s step. See
         /// `ai/prod_tiles_call_the_builders.rs`.
         base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
+        /// Opt-in gene `threatened-war-holds-the-claims`; see
+        /// `advanced/threatened_war_holds_the_claims.rs`.
+        threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
     }
 }
 

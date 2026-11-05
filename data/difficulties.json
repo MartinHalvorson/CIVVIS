@@ -74,7 +74,7 @@
     "human_camp_gold": -20,
     "order": 7,
     "ai_yield_pct": {"science": 32, "culture": 32, "production": 80, "gold": 80, "faith": 32},
-    "ai_combat_strength": 3,
+    "ai_combat_strength": 4,
     "ai_xp_pct": 40,
     "ai_era_boosts": 4,
     "ai_bonus_units": {"warrior": 4, "builder": 2, "settler": 2},
