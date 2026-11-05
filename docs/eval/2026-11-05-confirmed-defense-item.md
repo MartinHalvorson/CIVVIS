@@ -83,3 +83,10 @@ comparison uses the frozen qualified9b72a967d7 source on two fresh saved worlds.
 It changes only the producer-queue claim, keeps Campus-v2 and near-rival ON,
 and retains every outcome/failure. That source excludes PR4601's separate Scout
 fix; no combined-defense or population-strength result is inferred.
+
+Main was merged once as `e8b8dec03b03c8869e81709b40ab765c3e7d21d9`.
+The qualified fortification helper and all five regression tests are
+byte-identical after integration. Generated evaluation snapshots were stale
+in the merged sources; the repository generator rebuilt them and all21 focused
+manifest tests passed before the final push. The integrated-source full gate
+is still required. No combined native execution or strength is inferred.
