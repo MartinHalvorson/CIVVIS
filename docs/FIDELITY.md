@@ -313,7 +313,7 @@ database with a cell whose text begins `DIFFICULTY_`.
 |---|---|---|
 | `HIGH_DIFFICULTY_{SCIENCE,CULTURE,FAITH}_SCALING` | `LinearScaleFromDefaultHandicap` +8/rung off Prince | `ai_yield_pct` 8/16/24/32 ✅ |
 | `HIGH_DIFFICULTY_{PRODUCTION,GOLD}_SCALING` | +20/rung | `ai_yield_pct` 20/40/60/80 ✅ |
-| `HIGH_DIFFICULTY_COMBAT_SCALING` | base −1, +1/rung | `ai_combat_strength` 0/1/2/3 ✅ |
+| `HIGH_DIFFICULTY_COMBAT_SCALING` | base −1, +1/rung in XML; native Deity preview +4 | Deity `ai_combat_strength`4; King/Emperor/Immortal 0/1/2 remain projected |
 | `HIGH_DIFFICULTY_UNIT_XP_SCALING` | +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
 | `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS` | +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, granted as both a Eureka and an Inspiration set ✅ |
 | `LOW_DIFFICULTY_COMBAT_SCALING` | −1/rung below Prince | `human_combat_strength` 1/2/3 ⚠ see below |
@@ -328,6 +328,8 @@ database with a cell whose text begins `DIFFICULTY_`.
 | `STANDARD_DIPLOMACY_RANDOM` | `DifficultyOffset` −1/rung | **not carried** |
 | `AiLists`, `TreeData` (2 rows) | one AI list from Warlord, one behaviour-tree node from Immortal | **not carried**, and both are DLL-side AI plumbing |
 | `Difficulties` | eight rows, `DifficultyType` and a name — **nothing else** | the ladder's shape ✅ |
+
+Native Deity combat previews now establish **+4**, not the literal scaled-row projection of +3. The captured modifier text and totals are in [the native readback](fidelity/native-deity-combat-2026-11-05.json). The model uses 4 at Deity; the projector applies an explicit native calibration only to the unchanged Deity source-row form. Its generic raw XML calculation remains visible at 3, and no new waiver is added. Lower-rung combat values remain projected and have not been sealed by this readback.
 
 ### The gap that was open: city-states behind walls
 

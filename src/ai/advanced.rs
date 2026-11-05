@@ -8456,6 +8456,10 @@ pub struct AdvancedAi {
     reyna_follows_revenue: bool,
     /// Opt-in governor relocation; see `governor_dividends`.
     pingala_follows_research: bool,
+    /// Native governor establishment is a lower bound, not total tenure.
+    /// Keep observed post clocks across fresh boards; city coordinates survive
+    /// the bridge's city-id remapping. See `governor_dividends`.
+    remembered_governor_posts: BTreeMap<String, governor_dividends::ObservedGovernorPost>,
     /// Opt-in bottleneck reservation; see `higher_level_strategy`.
     research_building_catchup: bool,
     /// Disciplined investment variant; see `higher_level_strategy`.
@@ -9388,6 +9392,10 @@ pub struct AdvancedAi {
     /// `advanced/spies_steal_the_lead.rs`. Off by default.
     spies_steal_the_lead: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-war-holds-the-claims`: while a war with a major threatens
+    /// a home city, the economy's idle-queue claims stand aside. See
+    /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
+    threatened_war_holds_the_claims: bool,
     /// `war-defense-spends-the-runway`: while a major at war with us fields
     /// 1.5x our military power and the treasury covers the deficit for 15
     /// turns, the insolvency guard leaves the city queues to the war. See
@@ -10861,6 +10869,9 @@ mod threatened_city_purchase;
 /// `threatened-lane-lends-the-army`: see
 /// `advanced/threatened_lane_lends_the_army.rs`.
 mod threatened_lane_lends_the_army;
+/// `threatened-war-holds-the-claims`: see
+/// `advanced/threatened_war_holds_the_claims.rs`.
+mod threatened_war_holds_the_claims;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -12265,6 +12276,7 @@ impl AdvancedAi {
             research_alliance_asked: BTreeMap::new(),
             reyna_follows_revenue: false,
             pingala_follows_research: false,
+            remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
             research_building_catchup_3: false,
@@ -12433,6 +12445,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             // ---- append: t-z ----------------------------------------
+            threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,
             trade_quotes_pay_the_lump: false,
@@ -29959,6 +29972,12 @@ impl AdvancedAi {
             // its producer's idle queue for the next stage before the routine
             // claims below refill it. Exact no-op while the gene is off or no
             // project is in flight. See `claim_forward_airfield_stage_in_flight`.
+            // `threatened-war-holds-the-claims`: while a war with a major
+            // threatens a home city, the economy's idle-queue claims below
+            // stand aside so those queues reach the war target. Exact no-op
+            // while the gene is off. See
+            // `advanced/threatened_war_holds_the_claims.rs`.
+            let war_holds = self.threatened_war_holds_the_claims_holds(g, pid, &plan);
             self.claim_forward_airfield_stage_in_flight(g, pid, &plan);
             // `early-settler-floor`: a Settler for the opening's band floor
             // goes first, ahead of the Prophet race and the routine claims
@@ -29974,12 +29993,16 @@ impl AdvancedAi {
             // once the second city stands, after the floor's Settler and ahead
             // of the routine claims. Exact no-op while the gene is off. See
             // `advanced/capital_monument.rs`.
-            self.claim_capital_monument(g, pid, &plan);
+            if !war_holds {
+                self.claim_capital_monument(g, pid, &plan);
+            }
             // `granary-claims-the-bound-queue`: a housing-bound city's Granary
             // ahead of the deterrent and the routine claims below; a due
             // Settler and the faith defence above keep their order. See
             // `advanced/granary_claims_the_bound_queue.rs`.
-            self.claim_bound_granaries(g, pid, &plan);
+            if !war_holds {
+                self.claim_bound_granaries(g, pid, &plan);
+            }
             // `near-rival-deterrence`: a land unit while a neighbour at peace
             // out-guns us, after the floor's Settler and ahead of the Prophet
             // race and the routine claims. Exact no-op while the gene is off.
@@ -29990,60 +30013,84 @@ impl AdvancedAi {
             // and ahead of the Prophet race and the routine claims. Exact
             // no-op while the gene is off. See
             // `advanced/trader_fills_the_idle_route.rs`.
-            self.claim_trader_for_idle_route(g, pid, &plan);
+            if !war_holds {
+                self.claim_trader_for_idle_route(g, pid, &plan);
+            }
             // `backlog-builder-takes-the-queue`: the worked backlog's Builder,
             // after the Trader and ahead of the Prophet race and the routine
             // claims. Exact no-op while the gene is off. See
             // `advanced/backlog_builder_takes_the_queue.rs`.
-            self.claim_backlog_builder(g, pid, &plan);
+            if !war_holds {
+                self.claim_backlog_builder(g, pid, &plan);
+            }
             // `aqueduct-claims-the-capped-queue`: the most capped city's legal
             // Aqueduct, after the backlog Builder and ahead of the Prophet race
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/aqueduct_claims_the_capped_queue.rs`.
-            self.claim_capped_aqueduct(g, pid, &plan);
+            if !war_holds {
+                self.claim_capped_aqueduct(g, pid, &plan);
+            }
             // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
             // most capped city's Neighborhood. Exact no-op while the gene is
             // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
-            self.claim_capped_neighborhood(g, pid, &plan);
+            if !war_holds {
+                self.claim_capped_neighborhood(g, pid, &plan);
+            }
             // `industrial-zone-claims-the-producer-queue`: the producer step's
             // Industrial Zone or Workshop, after the Aqueduct and ahead of the
             // Prophet race and the routine claims. Exact no-op while the gene
             // is off. See `advanced/industrial_zone_claims_the_producer_queue.rs`.
-            self.claim_producer_zone(g, pid, &plan);
+            if !war_holds {
+                self.claim_producer_zone(g, pid, &plan);
+            }
             // `industrial-zone-claims-the-factory`: the Factory that reaches
             // the most new cities, or the plant that powers the most Factories,
             // after the Industrial Zone and ahead of the Campus building claim.
             // Exact no-op while the gene is off. See
             // `advanced/industrial_zone_claims_the_factory.rs`.
-            self.claim_factory(g, pid, &plan);
+            if !war_holds {
+                self.claim_factory(g, pid, &plan);
+            }
             // `campus-building-claims-the-queue`: a standing Campus's next
             // building, after the Industrial Zone and ahead of the Prophet race
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/campus_building_claims_the_queue.rs`.
-            self.claim_campus_building(g, pid, &plan);
+            if !war_holds {
+                self.claim_campus_building(g, pid, &plan);
+            }
             // `campus-claims-the-free-slot`: a free district slot's first
             // Campus, after the Campus building claim and ahead of the Prophet
             // race and the routine claims. Exact no-op while the gene is off.
             // See `advanced/campus_claims_the_free_slot.rs`.
-            self.claim_free_slot_campus(g, pid, &plan);
+            if !war_holds {
+                self.claim_free_slot_campus(g, pid, &plan);
+            }
             // `culture-seat-theater-first`: a Culture seat's first Theater
             // Squares, after the Campus claims (which yield those cities) and
             // ahead of the Prophet race and the routine claims. Exact no-op
             // while the gene is off. See `advanced/culture_theater_first.rs`.
-            self.claim_culture_theaters(g, pid, &plan);
+            if !war_holds {
+                self.claim_culture_theaters(g, pid, &plan);
+            }
             // `culture-seat-monuments`: a Culture seat's Monuments, after the
             // Theater claim (whose heads they leave alone). Exact no-op while
             // the gene is off. See `advanced/culture_monuments.rs`.
-            self.claim_culture_monuments(g, pid, &plan);
+            if !war_holds {
+                self.claim_culture_monuments(g, pid, &plan);
+            }
             // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
             // Diplomacy seat. Exact no-op while the gene is off. See
             // `advanced/diplo_statue_harbor.rs`.
-            self.claim_statue_harbor(g, pid, &plan);
+            if !war_holds {
+                self.claim_statue_harbor(g, pid, &plan);
+            }
             // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
             // strongest city of a Diplomatic seat, after the Culture claims
             // and ahead of the Prophet race and the routine claims. Exact
             // no-op while the gene is off. See `advanced/diplo_wonder_claim.rs`.
-            self.claim_diplo_wonder(g, pid, &plan);
+            if !war_holds {
+                self.claim_diplo_wonder(g, pid, &plan);
+            }
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
@@ -30054,7 +30101,9 @@ impl AdvancedAi {
             // after every claim above so none of them takes the queue back.
             // Exact no-op while the gene is off. See
             // `advanced/pillaged_repairs_first.rs`.
-            self.claim_pillaged_repairs(g, pid);
+            if !war_holds {
+                self.claim_pillaged_repairs(g, pid);
+            }
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
@@ -30081,7 +30130,9 @@ impl AdvancedAi {
             // one idle queue ahead of the routine claims below, or is bought.
             // Exact no-op while the gene is off. See
             // `advanced/worked_backlog_claim.rs`.
-            self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            if !war_holds {
+                self.claim_idle_queue_for_worked_backlog(g, pid, &plan);
+            }
             // `science-denial-trains-spies`: against a decisive space racer,
             // the top-Production cities train the Spies its pads need, ahead
             // of the routine claims below (the defence redirects at the end of
@@ -30100,15 +30151,23 @@ impl AdvancedAi {
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
             // Reach both governors without changing their dispatch or opening book.
-            self.reserve_culture_defense_theater(g, pid, &plan);
+            if !war_holds {
+                self.reserve_culture_defense_theater(g, pid, &plan);
+            }
             // `plaza-in-the-district-list`: the Plaza and its tier buildings
             // take one idle queue before the development shortfall's.
             // `capital-campus-before-the-plaza`: the capital's first Campus,
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
-            self.claim_capital_campus(g, pid, &plan);
-            self.reserve_government_plaza(g, pid, &plan);
-            self.reserve_higher_level_investment(g, pid, &plan);
+            if !war_holds {
+                self.claim_capital_campus(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_government_plaza(g, pid, &plan);
+            }
+            if !war_holds {
+                self.reserve_higher_level_investment(g, pid, &plan);
+            }
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // One bounded forward-field project takes an idle queue only
             // after the emergency, victory and economy reservations above.

@@ -2218,6 +2218,9 @@ impl AdvancedAi {
         /// Opt-in gene `outmatched-war-prices-the-army`; see
         /// `advanced/outmatched_war_prices_the_army.rs`.
         outmatched_war_prices_the_army => enable_outmatched_war_prices_the_army, disable_outmatched_war_prices_the_army;
+        /// Opt-in gene `threatened-war-holds-the-claims`; see
+        /// `advanced/threatened_war_holds_the_claims.rs`.
+        threatened_war_holds_the_claims => enable_threatened_war_holds_the_claims, disable_threatened_war_holds_the_claims;
     }
 }
 
