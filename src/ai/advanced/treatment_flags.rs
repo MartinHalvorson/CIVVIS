@@ -2188,6 +2188,15 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `holdable-land-keeps-settling`; see
+        /// `advanced/holdable_land_keeps_settling.rs`.
+        holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
+        /// Opt-in gene `medina-yields-to-the-amenities`; see
+        /// `advanced/medina_quarter.rs`.
+        medina_yields_to_the_amenities => enable_medina_yields_to_the_amenities, disable_medina_yields_to_the_amenities;
+        /// Opt-in gene `war-defense-spends-the-runway`; see
+        /// `advanced/war_defense_spends_the_runway.rs`.
+        war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
