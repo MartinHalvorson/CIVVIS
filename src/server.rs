@@ -3525,8 +3525,8 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Lakes globe, its heat scattered rather than banded by latitude, one seat
-/// at a time.
+/// Tennis Ball globe, its heat scattered rather than banded by latitude, one
+/// seat at a time.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3554,7 +3554,7 @@ fn stock_opening_params(seed: u64) -> Params {
         // `--turn-structure simultaneous`; it is simply not selectable
         // from here.
         turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::Lakes,
+        map_script: MapScript::TeninsBall,
         map_topology,
         // Heat by noise instead of latitude: the world a first visit opens
         // on has no ice cap at either end, and its snow, desert and jungle
