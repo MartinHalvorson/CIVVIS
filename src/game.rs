@@ -501,10 +501,6 @@ mod housing;
 /// City power: demand, supply, renewables, and powered yields. See
 /// `game/power.rs`.
 mod power;
-
-pub use policy_ledger::{EmpireReading, PolicyLedger, PolicyWorth};
-pub use research_quotes::HostResearchQuote;
-
 /// Trade routes: establishing, pricing, running and cancelling them. See
 /// `game/trade_routes.rs`.
 mod trade_routes;
@@ -514,6 +510,9 @@ mod victory;
 /// Zones of control for units and escorted formations. See
 /// `game/zone_of_control.rs`.
 mod zone_of_control;
+
+pub use policy_ledger::{EmpireReading, PolicyLedger, PolicyWorth};
+pub use research_quotes::HostResearchQuote;
 
 #[cfg(test)]
 mod area_damage_unit_removal_tests;
