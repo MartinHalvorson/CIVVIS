@@ -1381,19 +1381,12 @@ impl StrategicAi {
     /// branch with the same stateful agents until the game ends. Cheap tactical
     /// and irreversible priors return before rollouts in `review`, so those
     /// roots deliberately produce no samples here either.
-    pub fn counterfactual_value_samples(
-        &self,
-        g: &Game,
-        pid: usize,
-    ) -> Vec<CounterfactualValueSample> {
-        self.counterfactual_value_samples_with_observation(g, pid, false)
-    }
-
-    /// Like [`Self::counterfactual_value_samples`], with an optional
-    /// fog-honest board/global observation of every rollout endpoint. Keeping
-    /// this opt-in preserves the inexpensive scalar export used for broad
-    /// calibration runs while allowing a contextual evaluator to train on the
-    /// exact distribution Strategic actually ranks.
+    ///
+    /// `include_observation` adds a fog-honest board/global observation of
+    /// every rollout endpoint. Keeping this opt-in preserves the inexpensive
+    /// scalar export used for broad calibration runs while allowing a
+    /// contextual evaluator to train on the exact distribution Strategic
+    /// actually ranks.
     pub fn counterfactual_value_samples_with_observation(
         &self,
         g: &Game,
