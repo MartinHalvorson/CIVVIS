@@ -2249,6 +2249,18 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Pingala version two retains ordinary dividends and joins a committed
+    /// launch producer. Independently off and unpriced; one family version plays.
+    pub fn enable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research = false;
+        self.pingala_follows_research_2 = true;
+    }
+
+    /// Withhold the independent Pingala launch-job version.
+    pub fn disable_pingala_follows_research_2(&mut self) {
+        self.pingala_follows_research_2 = false;
+    }
+
     /// Promote an Apostle for the job the empire needs rather than the largest
     /// number on the card. Off in production; opted into by name (`victory_eval
     /// --with apostle-promotion-by-role`, `gene_screen`). See
