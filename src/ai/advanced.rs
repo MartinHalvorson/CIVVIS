@@ -6588,6 +6588,12 @@ pub struct AdvancedAi {
     /// gate opens. See `objective_board.rs` (`early_cities_defend_first`).
     /// Off by default.
     capital_keeps_its_defender_2: bool,
+    /// `capital-keeps-its-defender-3`: version two, and a stronger major's
+    /// visible soldier parked within [`objective_board::SURPRISE_TILES`] of
+    /// an early city at peace counts as a threat to it: the city gets its
+    /// Defend row, the parked strength enters its need and its risk. Off by
+    /// default.
+    capital_keeps_its_defender_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -11871,6 +11877,7 @@ impl AdvancedAi {
             camps_close_the_age_3: false,
             capital_keeps_its_defender: false,
             capital_keeps_its_defender_2: false,
+            capital_keeps_its_defender_3: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,

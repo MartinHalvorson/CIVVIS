@@ -5067,6 +5067,20 @@ impl AdvancedAi {
         self.camps_close_the_age_3 = false;
     }
 
+    /// Opt-in gene `capital-keeps-its-defender-3`; see
+    /// [`Self::capital_keeps_its_defender_3`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = false;
+        self.capital_keeps_its_defender_3 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_3`.
+    pub fn disable_capital_keeps_its_defender_3(&mut self) {
+        self.capital_keeps_its_defender_3 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

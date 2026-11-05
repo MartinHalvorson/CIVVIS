@@ -1,6 +1,6 @@
 //! `capital-keeps-its-defender`: the capital's Defend row ranks first.
 
-use super::tests::{at, flat_board};
+use super::tests::{at, conquest, flat_board, on};
 use super::*;
 
 fn row(kind: ObjectiveKind, key: ObjectiveKey, value: f64, deadline: Option<u32>) -> Objective {
@@ -230,4 +230,72 @@ fn an_outclassed_defence_holds_the_city() {
         !ai.defend_holds_when_outclassed(true, defend, 0.1),
         "an arena"
     );
+}
+
+#[test]
+fn version_three_ships_off_and_turns_the_others_off() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.capital_keeps_its_defender_3, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "capital_keeps_its_defender_3"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "capital-keeps-its-defender-3",
+        |ai| ai.capital_keeps_its_defender_3,
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_capital_keeps_its_defender();
+    on.enable_capital_keeps_its_defender_2();
+    on.enable_capital_keeps_its_defender_3();
+    assert_eq!(
+        (
+            on.capital_keeps_its_defender,
+            on.capital_keeps_its_defender_2,
+            on.capital_keeps_its_defender_3
+        ),
+        (false, false, true),
+        "one version of the family plays"
+    );
+}
+
+/// A rival at peace, far stronger than us, parks two Swordsmen two tiles
+/// from our second city. Version two sees nothing (no war); version three
+/// reads the parked strength and gives the city its Defend row.
+#[test]
+fn a_stronger_major_parked_at_peace_raises_the_early_citys_row() {
+    let (mut g, [_capital, second, _third, _fourth]) = four_cities();
+    for col in 26..32 {
+        g.spawn_test_unit("swordsman", 1, at(col, 12));
+    }
+    let near = [at(8, 20), at(8, 21)];
+    for pos in near {
+        g.spawn_test_unit("swordsman", 1, pos);
+    }
+    let second_pos = g.cities[&second].pos;
+    assert!(near
+        .iter()
+        .all(|pos| g.wdist(*pos, second_pos) <= SURPRISE_TILES));
+    assert!(!g.is_at_war(0, 1), "at peace");
+    let plan = conquest(&g, None);
+    let row_for = |ai: &mut AdvancedAi, g: &Game| {
+        ai.rebuild_force_groups(g, 0, &plan);
+        ai.objective_board()
+            .rows
+            .iter()
+            .any(|row| row.key == ObjectiveKey::Defend(second))
+    };
+    let mut v3 = on();
+    v3.enable_capital_keeps_its_defender_3();
+    let (close, relief) = v3.surprise_strength_near(&g, 0, second_pos);
+    assert!(
+        close > 0.0 && relief >= close,
+        "the parked soldiers read: {close} / {relief}"
+    );
+    assert!(
+        row_for(&mut v3, &g),
+        "version three raises Defend for the second city"
+    );
+    let mut v2 = on();
+    v2.enable_capital_keeps_its_defender_2();
+    assert!(!row_for(&mut v2, &g), "version two counts only a war");
 }
