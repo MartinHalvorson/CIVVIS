@@ -25,7 +25,7 @@ impl AdvancedAi {
         self.observed_governor_posts
             .retain(|name, _| roster.contains_key(name.as_str()));
         for (name, state) in roster {
-            let key = name.clone();
+            let key = name.to_string();
             let city = state.city.and_then(|cid| g.cities.get(&cid));
             let Some(city) = city.filter(|_| state.disabled_until <= g.turn) else {
                 self.observed_governor_posts.remove(&key);
