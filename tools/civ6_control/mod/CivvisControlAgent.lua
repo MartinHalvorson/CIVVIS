@@ -12971,6 +12971,7 @@ CivvisLedger.annotateMeleePath = function(unit, x, y, modifiers, payload)
 			if type(plotId) ~= "number" or plotId < 0 or plotId >= math.huge
 					or plotId % 1 ~= 0 or type(turns) ~= "number"
 					or turns < 0 or turns >= math.huge or turns % 1 ~= 0 then return nil; end
+			if i > 1 and turns < path.turns[i - 1] then return nil; end
 			local plot = Map.GetPlotByIndex(plotId);
 			local px, py = plot:GetX(), plot:GetY();
 			if type(px) ~= "number" or type(py) ~= "number"

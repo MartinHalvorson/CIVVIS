@@ -128,7 +128,7 @@ test("an empty native answer reports only its observed length", function()
     assert(p.native_move_path_destination == nil and p.native_move_path_this_turn_end == nil)
 end)
 for _, fault in ipairs({"no API", "throwing API", "no path", "no plots", "no turns", "extra turn",
-        "sparse plots", "late bad plot", "nonfinite turn", "bad destination", "too long"}) do
+        "sparse plots", "late bad plot", "nonfinite turn", "decreasing turn", "bad destination", "too long"}) do
     test(fault .. " stays unknown and retains the original request", function()
         local s, env, handler = fixture()
         if fault == "no API" then env.UnitManager.GetMoveToPathEx = nil
@@ -140,6 +140,7 @@ for _, fault in ipairs({"no API", "throwing API", "no path", "no plots", "no tur
         elseif fault == "sparse plots" then s.path = {plots = {[1] = 10, [3] = 30}, turns = {[1] = 1, [3] = 2}}
         elseif fault == "late bad plot" then s.path.plots[3] = 99
         elseif fault == "nonfinite turn" then s.path.turns[3] = 0/0
+        elseif fault == "decreasing turn" then s.path.turns = {1, 2, 1}
         elseif fault == "bad destination" then env.Map.GetPlotIndex = function() return -1 end
         elseif fault == "too long" then for i = 1, 257 do s.path.plots[i] = 10; s.path.turns[i] = 1 end end
         local p = apply(s, handler)
