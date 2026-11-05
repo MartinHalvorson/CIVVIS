@@ -353,6 +353,10 @@ class NextHeadPrebuildTest(unittest.TestCase):
         self.assertIn("sleep 120", out)
         self.assertNotIn("stamp-written", out)
 
+    def test_a_prebuild_in_flight_is_waited_on_no_longer_than_a_boundary_build(self) -> None:
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        self.assertIn("PREBUILD_WAIT_S=${CIVVIS_PREBUILD_WAIT_S:-90}", source)
+
     def test_the_loop_is_wired_into_the_cycle(self) -> None:
         source = SUPERVISOR.read_text(encoding="utf-8")
         climb = source.index("python3 -u tools/civ6_civvis_climb.py")
