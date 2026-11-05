@@ -10072,3 +10072,56 @@ fn spy_loss_ledger_reads_the_log_as_it_grows() {
     assert_eq!(ledger.through(200), vec![5]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `denial-spies-count-their-losses-2`: a Spy lost within three turns of
+/// running Disrupt Rocketry counts; one lost after a steal, or long after its
+/// Disrupt, does not.
+#[test]
+fn spy_loss_ledger_tells_a_disrupt_loss_from_a_steal() {
+    let dir = std::env::temp_dir().join(format!(
+        "civvis-spy-ledger-ops-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("events.jsonl");
+    let state = |turn: u32, spies: &[(i64, &str)]| {
+        let units: Vec<String> = spies
+            .iter()
+            .map(|(id, op)| {
+                format!("{{\"id\": {id}, \"kind\": \"UNIT_SPY\", \"spy_operation\": \"{op}\"}}")
+            })
+            .collect();
+        format!(
+            "{{\"kind\": \"state\", \"ctx\": \"agent\", \"turn\": {turn}, \"units\": [{}]}}\n",
+            units.join(", ")
+        )
+    };
+    let lost = |turn: u32, unit: i64| {
+        format!(
+            "{{\"kind\": \"unit_lost\", \"turn\": {turn}, \"unit\": {unit}, \"unit_kind\": \"UNIT_SPY\"}}\n"
+        )
+    };
+    let log = [
+        state(
+            140,
+            &[
+                (1, "UNITOPERATION_SPY_DISRUPT_ROCKETRY"),
+                (2, "UNITOPERATION_SPY_STEAL_TECH_BOOST"),
+                (3, "UNITOPERATION_SPY_DISRUPT_ROCKETRY"),
+            ],
+        ),
+        lost(142, 1), // two turns after its Disrupt: counts
+        lost(143, 2), // a steal: does not
+        lost(150, 3), // ten turns after its Disrupt: does not
+        lost(151, 4), // never seen on an operation: does not
+    ]
+    .concat();
+    std::fs::write(&path, log).unwrap();
+    let mut ledger = SpyLossLedger::default();
+    ledger.refresh(&path);
+    assert_eq!(ledger.through(200), vec![142, 143, 150, 151]);
+    assert_eq!(ledger.disrupt_through(200), vec![142]);
+    assert_eq!(ledger.disrupt_through(141), Vec::<u32>::new());
+    let _ = std::fs::remove_dir_all(&dir);
+}

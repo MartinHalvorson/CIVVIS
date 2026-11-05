@@ -10063,11 +10063,25 @@ fn audit_host_moves(events: &Path, fallback_players: usize, fallback_turns: u32,
 /// own `events.jsonl`, from where it stopped last time: the mod appends every
 /// turn, and only whole lines are consumed. A shorter file is a new run and
 /// starts the ledger over.
+///
+/// `denial-spies-count-their-losses-2` also remembers each Spy's operation as
+/// the agent `state` records show it (`spy_operation`, with its turn), so a
+/// loss can be told apart by what the Spy was last doing: the version counts
+/// only the Spies lost within [`SPY_LOSS_OPERATION_TURNS`] of running Disrupt
+/// Rocketry.
 #[derive(Default)]
 struct SpyLossLedger {
     offset: u64,
-    turns: Vec<u32>,
+    /// (turn lost, the Spy's last operation and the turn it was seen).
+    losses: Vec<(u32, Option<(String, u32)>)>,
+    /// Spy unit id -> its last operation seen, and the turn.
+    last_operation: std::collections::BTreeMap<i64, (String, u32)>,
 }
+
+/// A loss counts as a Disrupt loss when the Spy was seen running Disrupt
+/// Rocketry this many turns before it, or fewer.
+const SPY_LOSS_OPERATION_TURNS: u32 = 3;
+const SPY_DISRUPT_OPERATION: &str = "UNITOPERATION_SPY_DISRUPT_ROCKETRY";
 
 impl SpyLossLedger {
     fn refresh(&mut self, events: &Path) {
@@ -10093,32 +10107,89 @@ impl SpyLossLedger {
                 return;
             }
             self.offset += read as u64;
-            if let Some(turn) = Self::spy_loss_turn(&line) {
-                self.turns.push(turn);
+            self.read_line(&line);
+        }
+    }
+
+    fn read_line(&mut self, line: &[u8]) {
+        let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
+        if has(b"unit_lost") && has(b"UNIT_SPY") {
+            let Ok(event) = serde_json::from_slice::<serde_json::Value>(line) else {
+                return;
+            };
+            if event.get("kind").and_then(|kind| kind.as_str()) != Some("unit_lost")
+                || event.get("unit_kind").and_then(|kind| kind.as_str()) != Some("UNIT_SPY")
+            {
+                return;
+            }
+            let Some(turn) = event
+                .get("turn")
+                .and_then(|turn| turn.as_u64())
+                .and_then(|turn| u32::try_from(turn).ok())
+            else {
+                return;
+            };
+            let operation = event
+                .get("unit")
+                .and_then(|unit| unit.as_i64())
+                .and_then(|unit| self.last_operation.remove(&unit));
+            self.losses.push((turn, operation));
+        } else if has(b"\"spy_operation\"") && has(b"UNIT_SPY") {
+            let Ok(event) = serde_json::from_slice::<serde_json::Value>(line) else {
+                return;
+            };
+            if event.get("kind").and_then(|kind| kind.as_str()) != Some("state") {
+                return;
+            }
+            let Some(turn) = event
+                .get("turn")
+                .and_then(|turn| turn.as_u64())
+                .and_then(|turn| u32::try_from(turn).ok())
+            else {
+                return;
+            };
+            let units = event
+                .get("units")
+                .or_else(|| event.get("state").and_then(|state| state.get("units")))
+                .and_then(|units| units.as_array());
+            for unit in units.into_iter().flatten() {
+                if unit.get("kind").and_then(|kind| kind.as_str()) != Some("UNIT_SPY") {
+                    continue;
+                }
+                let (Some(id), Some(operation)) = (
+                    unit.get("id").and_then(|id| id.as_i64()),
+                    unit.get("spy_operation").and_then(|op| op.as_str()),
+                ) else {
+                    continue;
+                };
+                self.last_operation
+                    .insert(id, (operation.to_string(), turn));
             }
         }
     }
 
-    /// The turn of a `unit_lost` line for one of our Spies, else `None`.
-    fn spy_loss_turn(line: &[u8]) -> Option<u32> {
-        let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
-        if !has(b"unit_lost") || !has(b"UNIT_SPY") {
-            return None;
-        }
-        let event: serde_json::Value = serde_json::from_slice(line).ok()?;
-        (event.get("kind")?.as_str()? == "unit_lost"
-            && event.get("unit_kind")?.as_str()? == "UNIT_SPY")
-            .then(|| event.get("turn")?.as_u64())
-            .flatten()
-            .and_then(|turn| u32::try_from(turn).ok())
-    }
-
     /// The losses on or before `turn` (a replay reads a log that runs on).
     fn through(&self, turn: u32) -> Vec<u32> {
-        self.turns
+        self.losses
             .iter()
-            .copied()
+            .map(|(lost, _)| *lost)
             .filter(|lost| *lost <= turn)
+            .collect()
+    }
+
+    /// `denial-spies-count-their-losses-2`: only the losses of Spies last
+    /// seen running Disrupt Rocketry, on or before `turn`.
+    fn disrupt_through(&self, turn: u32) -> Vec<u32> {
+        self.losses
+            .iter()
+            .filter(|(lost, operation)| {
+                *lost <= turn
+                    && operation.as_ref().is_some_and(|(operation, seen)| {
+                        operation == SPY_DISRUPT_OPERATION
+                            && lost.saturating_sub(*seen) <= SPY_LOSS_OPERATION_TURNS
+                    })
+            })
+            .map(|(lost, _)| *lost)
             .collect()
     }
 }
@@ -11019,10 +11090,16 @@ fn main() {
         let mut air_assault_continuation = air_assault_continuation::Continuation::default();
         // `denial-spies-count-their-losses`: the one frame reads every loss the
         // log holds up to its turn. See `SpyLossLedger`.
-        if ai.denial_spies_count_their_losses_enabled() {
+        if ai.denial_spies_count_their_losses_enabled()
+            || ai.denial_spies_count_their_losses_2_enabled()
+        {
             let mut spy_losses = SpyLossLedger::default();
             spy_losses.refresh(&events);
-            ai.observe_spy_losses(spy_losses.through(state.turn));
+            ai.observe_spy_losses(if ai.denial_spies_count_their_losses_2_enabled() {
+                spy_losses.disrupt_through(state.turn)
+            } else {
+                spy_losses.through(state.turn)
+            });
         }
         let reply = decide(
             &mut live,
@@ -11146,9 +11223,15 @@ fn main() {
                 // because ids are reassigned when the board is rebuilt. Bounded: it
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
-                if ai.denial_spies_count_their_losses_enabled() {
+                if ai.denial_spies_count_their_losses_enabled()
+                    || ai.denial_spies_count_their_losses_2_enabled()
+                {
                     spy_losses.refresh(&events);
-                    ai.observe_spy_losses(spy_losses.through(state.turn));
+                    ai.observe_spy_losses(if ai.denial_spies_count_their_losses_2_enabled() {
+                        spy_losses.disrupt_through(state.turn)
+                    } else {
+                        spy_losses.through(state.turn)
+                    });
                 }
                 let reply = if fresh_board {
                     // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS

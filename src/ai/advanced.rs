@@ -5565,6 +5565,9 @@ pub struct AdvancedAi {
     /// Granary. See `advanced/siege_production.rs`. Off by default.
     breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-spies-count-their-losses-2`: version two, counting only the
+    /// Spies lost on Disrupt Rocketry. See `advanced/denial_spies_count_their_losses.rs`.
+    denial_spies_count_their_losses_2: bool,
     /// Charge district sites for the Science they remove from owned Seowons. Opt-in.
     districts_protect_seowon_science: bool,
     /// `denial-spies-count-their-losses`: no new Spy while recent ones keep
@@ -11669,6 +11672,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
+            denial_spies_count_their_losses_2: false,
             districts_protect_seowon_science: false,
             denial_spies_count_their_losses: false,
             capital_keeps_its_governor: false,

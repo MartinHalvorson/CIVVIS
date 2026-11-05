@@ -26,6 +26,17 @@
 //! stands down, and the base production fallback (`BasicAi::pick_item`,
 //! where the live replays' Spies came from) offers none. Spies already afield keep their missions; training resumes
 //! once the losses age out of the window. `Kind::OptIn`; off, nothing changes.
+//!
+//! ## Version two
+//!
+//! `denial-spies-count-their-losses-2` counts only the Spies lost within
+//! three turns of running Disrupt Rocketry (the bridge remembers each Spy's
+//! last `spy_operation` from the agent state records). Session -71's
+//! census of the Deity games since 11-04 21Z: of Spies still present 6-8
+//! turns after their order, Disrupt kept 7 of 48 (85% lost), Listening Post
+//! 31 of 40 and Gain Sources 28 of 37, while Steal Tech Boost (`spies-steal-
+//! the-lead`) trades a ~25% loss for 250-431 Science a Eureka. A stealing
+//! network's losses are a good trade and no longer pause training.
 
 use super::*;
 
@@ -38,6 +49,12 @@ impl AdvancedAi {
     /// Whether `denial-spies-count-their-losses` is on.
     pub fn denial_spies_count_their_losses_enabled(&self) -> bool {
         self.denial_spies_count_their_losses
+    }
+
+    /// Whether `denial-spies-count-their-losses-2` is on: the bridge then
+    /// passes only the losses of Spies last seen running Disrupt Rocketry.
+    pub fn denial_spies_count_their_losses_2_enabled(&self) -> bool {
+        self.denial_spies_count_their_losses_2
     }
 
     /// The live bridge: the turns our Spies were lost on, as the host
@@ -58,7 +75,8 @@ impl AdvancedAi {
     /// Whether Spy training stands down this turn. Always false with the
     /// gene off.
     pub(crate) fn spy_losses_pause_training(&self, g: &Game) -> bool {
-        self.denial_spies_count_their_losses && self.recent_spy_losses(g) >= SPY_LOSS_PAUSE_COUNT
+        (self.denial_spies_count_their_losses || self.denial_spies_count_their_losses_2)
+            && self.recent_spy_losses(g) >= SPY_LOSS_PAUSE_COUNT
     }
 }
 

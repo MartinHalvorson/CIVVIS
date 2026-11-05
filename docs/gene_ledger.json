@@ -4656,6 +4656,15 @@
           "declaration-needs-the-edge-2": null
         }
       },
+      "denial-spies-count-their-losses": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "denial-spies-count-their-losses": null,
+          "denial-spies-count-their-losses-2": null
+        }
+      },
       "diplomatic-contender-kept": {
         "rule_on": [],
         "head": null,

@@ -2183,6 +2183,9 @@ impl AdvancedAi {
         /// Opt-in gene `denial-spies-count-their-losses`; see
         /// `advanced/denial_spies_count_their_losses.rs`.
         denial_spies_count_their_losses => enable_denial_spies_count_their_losses, disable_denial_spies_count_their_losses;
+        /// Opt-in gene `denial-spies-count-their-losses-2`; see
+        /// `advanced/denial_spies_count_their_losses.rs`.
+        denial_spies_count_their_losses_2 => enable_denial_spies_count_their_losses_2, disable_denial_spies_count_their_losses_2;
     }
 }
 

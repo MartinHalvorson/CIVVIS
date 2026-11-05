@@ -5033,6 +5033,13 @@ pub const GENES: &[Gene] = &[
     // Spies (stock valuation and denial claim) until they age out.
     // See `advanced/denial_spies_count_their_losses.rs`.
     Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version two of `denial-spies-count-their-losses` (session -71's census,
+    // Deity since 11-04 21Z): Disrupt Rocketry loses 85% of its Spies against
+    // ~23% for Listening Post / Gain Sources, while a Tech Boost steal pays
+    // 250-431 Science a Eureka for a ~25% loss. Only the Spies lost within
+    // three turns of running Disrupt pause training, so a stealing network
+    // is never cut. See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses-2", field: "denial_spies_count_their_losses_2", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses_2, disable: AdvancedAi::disable_denial_spies_count_their_losses_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

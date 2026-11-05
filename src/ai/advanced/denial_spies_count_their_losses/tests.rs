@@ -37,3 +37,18 @@ fn three_recent_losses_pause_spy_training() {
     on.observe_spy_losses(vec![131, 139, 150]);
     assert!(!on.spy_losses_pause_training(&g));
 }
+
+/// Version two pauses on the losses the bridge passes it exactly as version
+/// one does (the bridge passes only Disrupt losses under version two).
+#[test]
+fn version_two_pauses_like_version_one() {
+    let g = game(140);
+    let mut v2 = AdvancedAi::new();
+    v2.observe_spy_losses(vec![129, 131, 139]);
+    assert!(!v2.spy_losses_pause_training(&g));
+    v2.enable_denial_spies_count_their_losses_2();
+    assert!(v2.denial_spies_count_their_losses_2_enabled());
+    assert!(v2.spy_losses_pause_training(&g));
+    v2.observe_spy_losses(vec![131, 139]);
+    assert!(!v2.spy_losses_pause_training(&g));
+}

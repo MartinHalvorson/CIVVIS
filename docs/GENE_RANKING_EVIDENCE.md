@@ -231,7 +231,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
-| `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
+| `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | — \| 2 |
+| `denial-spies-count-their-losses-2` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses-2`; see `advanced/denial_spies_count_their_losses.rs`. | — \| 2 |
 | `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |
 | `diplo-match-point-beelines-the-points` | off (unmeasured) | `diplo-match-point-beelines-the-points`. | 1 \| 1 |
