@@ -41,13 +41,29 @@ multiplier when assigning its completion time.
 
 ## Validation scope
 
-Two original frozen-controller controls reproduce all394 native requests and
-6851 actual ordered reads each through154. No changed candidate query has run
-at this contract revision. Final version-family queries must compare the rated
-original against version two, verifying sibling exclusivity and all other
-memberships, requests and captured reads. Proposals are not native execution,
-saved turns or wins. Later native experiments must freeze source/profile and
-settings and retain losses, failures, nonactivation and censoring.
+Two original frozen-controller controls reproduce all 394 native requests and
+6851 actual ordered reads each through 154. Corrected-source v1 repeats match
+all 394; both v2 repeats first change at 154/0, proposing Pingala to native
+city 65536 and Magnus to 131073. The first versioned query correctly failed
+qualification because metadata reported both siblings. Its four raw query
+results remain retained; the narrow runtime family-list correction fixes the
+reporting contract without changing the governor algorithm.
+
+A separate one-bit experiment holds v1 off in both arms. OFF/ON/ON/OFF each
+consume 393 requests and 6834 actual captured reads, then exit 0 on EOF. Both
+ON repeats propose the same swap. Every prior native proposal and every
+actual read matches. Only the v2 treatment/force bit changes; all other genome
+metadata and arguments agree apart from per-arm mirror paths.
+
+The [raw evidence archive](2026-11-05-pingala-launch.native-queries.tar.xz)
+contains both comparisons, raw replies, process footers, actual captured-byte
+objects, source/binary bindings and an independent verifier. Extract it, then
+from the repository root run `python3 <bundle>/verify.py <bundle> .`. The
+verifier independently reconstructs input bytes and checks the raw evidence
+and derived firing records. Initial metadata qualification failure is retained
+in the archive. Proposals are not native execution, saved turns or wins.
+Later native experiments must freeze source/profile and settings and retain
+losses, failures, nonactivation and censoring.
 
 Nineteen focused local unoptimized tests pass, including original-version
 retention, sibling exclusion, ordinary relocation, a paid launch bonus only
@@ -55,7 +71,12 @@ after establishment, post exchange, existing specialist jobs, construction,
 war/Recovery, short runway and lagged native replans. Fourteen append/index
 checks pass; all830 prior base registry positions are retained. Generated
 metadata retains the279-gene deployment selection; version two inherits no
-rating. Final optimized/process-isolated integration validation is pending.
+rating. Corrected source `c1d906e185619f4821e50e386f9e1589b59a5c00` passes all
+7025 optimized tests (53 skipped), including 19 governor and two new metadata
+regressions. Separate doctests: 0 passed, 4 ignored. The exact native executable
+SHA256 is `93d3a9557e8b7251b2a04597c8c2b264046035499bef7a2b6a778395ba9c3fe3`.
+Tracked compiled-input hashes and clean source were checked. Final main
+integration validation remains pending.
 
 The earlier pre-version8f91 full library run was6633PASS/3serverFAIL/53ignored.
 The three unchanged server tests pass separately in the same frozen executable.
