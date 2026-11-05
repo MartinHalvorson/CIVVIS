@@ -5299,6 +5299,10 @@ pub const GENES: &[Gene] = &[
     // forecast and the danger field. See
     // `advanced/group_steps_read_the_field.rs`.
     Gene { tag: "group-steps-read-the-field", field: "group_steps_read_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_group_steps_read_the_field, disable: AdvancedAi::disable_group_steps_read_the_field },
+    // `captives-come-home-2`: version 2 of `captives-come-home` (which it
+    // carries). The ransom of our captured Spies pays in Diplomatic Favor
+    // beside Gold. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

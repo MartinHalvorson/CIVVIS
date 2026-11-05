@@ -637,6 +637,29 @@ CivvisBarterGive = function(deal, pid, subject, list, player)
 	end, nil) or {};
 	local gave, text, short = {}, {}, false;
 	for name, want in string.gmatch(list, "([%w_]+)=(%d+)") do
+		if name == "FAVOR" then
+			-- Diplomatic Favor from our side, a lump (`captives-come-home-2`
+			-- pays a captive's price in it): keyed `FAVOR`, as `keyOf` names
+			-- the answer's item, so `CivvisWithinGave` holds it to this amount.
+			local amount = tonumber(want) or 0;
+			local item = nil;
+			if amount > 0 and DealItemTypes.FAVOR ~= nil then
+				item = deal:AddItemOfType(DealItemTypes.FAVOR, pid);
+			end
+			if item ~= nil then
+				item:SetDuration(0);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+				if pcall(function() item:SetAmount(amount); end)
+						and try(function() return item:IsValid(); end, true) then
+					gave["FAVOR"] = amount;
+					text[#text + 1] = "FAVOR=" .. tostring(amount);
+				else
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+				end
+			end
+			if gave["FAVOR"] == nil then short = true; end
+		else
 		local row = try(function() return GameInfo.Resources[name]; end, nil);
 		local forType = nil;
 		for _, entry in ipairs(possible) do
@@ -676,6 +699,7 @@ CivvisBarterGive = function(deal, pid, subject, list, player)
 			end
 		end
 		if gave[key] == nil then short = true; end
+		end
 	end
 	if short then return nil, "barter_short"; end
 	if next(gave) == nil then return nil, "barter_nothing"; end
@@ -14624,6 +14648,11 @@ local function applyOrder(player, pid, row, turn)
 			barter = string.match(verb, "^LUXURY_ANY;(.+)$");
 			if barter ~= nil then verb = "LUXURY_ANY"; end
 		end
+		-- `captives-come-home-2`: `CAPTIVE;FAVOR=n` pays with Favor beside Gold.
+		if strategicName == nil and barter == nil then
+			barter = string.match(verb, "^CAPTIVE;(.+)$");
+			if barter ~= nil then verb = "CAPTIVE"; end
+		end
 		strategicAsk = tonumber(strategicAsk);
 		if strategicAsk ~= nil and (strategicAsk <= 0
 				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
@@ -14728,6 +14757,12 @@ local function applyOrder(player, pid, row, turn)
 					return false, "captive_invalid";
 				end
 				want, name = "CAPTIVE:" .. tostring(forType), "CAPTIVE";
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
 			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.

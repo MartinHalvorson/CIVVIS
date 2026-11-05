@@ -6640,6 +6640,10 @@ pub struct AdvancedAi {
     /// improvement (and bonus resource) it bulldozes, worked or not. See
     /// `advanced/district_planning.rs`. Off by default.
     districts_price_the_improvement: bool,
+    /// `captives-come-home-2`: version 2 of the family, carrying version 1.
+    /// The ransom pays in Diplomatic Favor beside Gold. See
+    /// `advanced/captives_come_home.rs`. Off by default.
+    captives_come_home_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -12128,6 +12132,7 @@ impl AdvancedAi {
             captives_come_home: false,
             denounce_only_to_declare: false,
             districts_price_the_improvement: false,
+            captives_come_home_2: false,
             // ---- append: e-f ----------------------------------------
             embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
