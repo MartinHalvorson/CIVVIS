@@ -50,7 +50,8 @@
 //! 1. **The common enemy.** While we are at war with a major, a partner at
 //!    war with the same major scores [`SHIELD_COMMON_ENEMY`] per shared
 //!    enemy: the +5 holds from the turn the alliance is signed. Every turn
-//!    of the war, on every lane.
+//!    of the war, on every lane. On the live seat the rival's war is the
+//!    host's own report (`Game::rivals_at_war`, #4452).
 //! 2. **The border.** Off the Domination lane, a major with a city within
 //!    [`SHIELD_NEIGHBOUR_REACH`] of one of ours that fields at least
 //!    [`SHIELD_THREAT_FLOOR`] of our power scores [`SHIELD_THREAT_WEIGHT`]
@@ -249,7 +250,9 @@ impl AdvancedAi {
             }
             let common = enemies
                 .iter()
-                .filter(|enemy| **enemy != id && g.is_at_war(id, **enemy))
+                // `rivals_at_war`: on the live seat the host's report of a
+                // war between two rivals (`Game::observed_rival_wars`).
+                .filter(|enemy| **enemy != id && g.rivals_at_war(id, **enemy))
                 .count();
             let border = if border_turn {
                 Self::shield_border_score(g, pid, &ours, id)

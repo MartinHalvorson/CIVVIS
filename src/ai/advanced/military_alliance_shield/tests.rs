@@ -119,6 +119,29 @@ fn the_empire_fighting_our_enemy_is_asked_for_a_military_alliance() {
     }
 }
 
+/// On the live seat our own war crosses as `at_war` and a war between two
+/// rivals only as the host's report (`observed_rival_wars`): that report
+/// finds the common enemy too.
+#[test]
+fn a_rivals_war_the_host_reports_finds_the_common_enemy() {
+    let mut game = board();
+    game.at_war.insert((0, 2));
+    Arc::make_mut(&mut game.observed_rival_wars).insert((1, 2));
+    assert!(!game.is_at_war(1, 2));
+    let mut ai = shield();
+    assert!(ai.military_alliance_shield_step(
+        &mut game,
+        0,
+        &plan(GrandStrategy::Science, None),
+        None
+    ));
+    assert_eq!(asks(&game), vec![(1, Some("military".to_string()), true)]);
+    assert_eq!(
+        counter(&game, "military_alliance_shield:asked_common_enemy"),
+        Some(1)
+    );
+}
+
 /// At peace, on the border cadence, the strongest neighbour over the threat
 /// floor is asked; one under the floor is not; off the cadence, or on the
 /// Domination lane, nobody is.
