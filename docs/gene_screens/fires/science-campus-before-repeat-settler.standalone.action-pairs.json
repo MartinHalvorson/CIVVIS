@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-campus-before-repeat-settler",
+  "archive": {
+    "path": "docs/eval/2026-11-06-science-campus-before-repeat-settler.standalone.action-pairs.tar.xz",
+    "sha256": "652d5c261b8b639cc5f4b825d3643db86b7954a7005ccabf191d34fa41f0f8a9"
+  },
+  "members": [
+    "pair-0.json",
+    "pair-1.json"
+  ],
+  "scope": "Hash-bound captured native prefix; fixed identical bytes in every read. This is not the original evolving run/profile and is not a native application or effect test."
+}
