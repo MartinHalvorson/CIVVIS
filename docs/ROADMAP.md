@@ -103,12 +103,14 @@ Everything the old roadmap called planned has shipped and then some:
 
    | file | merges touching it | why it is contended |
    |---|---:|---|
-   | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
-   | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
+   | `src/ai/advanced.rs` | 34% | size — 28.8k lines, and its struct alone is 7.9k |
 
    On 2026-09-11, the same check removes `src/bin/civvis_orders.rs`
    from this target table: its current 200-merge touch rate is 4%, below the
    5% floor. The historical 10% reading no longer justifies a split target.
+
+   On 2026-11-06 it removes `src/ai/advanced/tests.rs` too, at 2% of merges.
+   Splitting worked: that row is why the `census` job had been red.
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
    `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository
@@ -205,10 +207,20 @@ Everything the old roadmap called planned has shipped and then some:
    literal only so the gene pull requests open that day still merge cleanly;
    a follow-up removes them.
 
-   **Still open, in the order the measurement ranks them:** `src/elo.rs`'s four
-   registries and two `ArmKind` match tables (ANCHOR, 15 of 18); and the size
-   half of `advanced.rs` and `tests.rs`, which is the only one of these that
-   splitting answers.
+   **Measured again on 2026-11-06, over 200 merges:** `advanced.rs` 1 of 71
+   consecutive pairs collide, `genes.rs` 40 of 58 and `treatment_flags.rs` 16 of
+   57, every one of those 56 an append to a single line. So the two registries,
+   not `advanced.rs`, were the tax. Their markers went unused because a test
+   demanded an exact prefix; #4683 fixed that and capped both old lists, so new
+   rows and toggles go under the markers. Separately, 10 of the 14 open pull
+   requests in conflict that day conflicted on `docs/EVAL_STATUS.md` and
+   `docs/eval_manifest.json` over two running totals nothing read, and #4684
+   stopped committing them.
+
+   **Still open:** `advanced.rs`'s size, which is a reading cost rather than a
+   merge cost now that its markers work. `elo.rs` and `tests.rs` have left this
+   list: `elo.rs` is 415 lines with its registries gone, and `tests.rs` is under
+   5% of merges since it was split.
 
    **`advanced.rs` had both problems, and its shared-anchor half is done
    (2026-08-18).** It is the most contended file in the repository *and* the
