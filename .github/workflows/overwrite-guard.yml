@@ -46,7 +46,10 @@ jobs:
       # becoming required).
       - uses: actions/checkout@v4
         with:
-          # Blame needs the full history to date the deleted lines.
+          # Blame needs full ancestry, not every historical native-capture
+          # blob. Match quality.yml: fetch blamed contents lazily so a large
+          # archive history cannot exhaust the job before the audit runs.
+          filter: blob:none
           fetch-depth: 0
 
       - name: Blame the deletions
