@@ -5590,6 +5590,10 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// `chemistry-follows-the-university`: a Science seat with a University
+    /// standing researches the whole path to Chemistry. See
+    /// `advanced/science_foundation_research.rs`. Off by default.
+    chemistry_follows_the_university: bool,
     /// Prefer a safe legal site for a new native Science Campus. Opt-in.
     campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
@@ -11699,6 +11703,7 @@ impl AdvancedAi {
             // a follow-up once those have landed.
             // ---- append: a-b ----------------------------------------
             // ---- append: c-d ----------------------------------------
+            chemistry_follows_the_university: false,
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
