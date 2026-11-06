@@ -14741,8 +14741,9 @@ local function applyOrder(player, pid, row, turn)
 		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
 		-- `CAPTIVE`: one of our captured Spies back from its captor, for Gold.
 		local captive = verb == "CAPTIVE" and DealItemTypes.CAPTIVE ~= nil;
+		local greatWork = verb == "GREATWORK_ANY" and DealItemTypes.GREATWORK ~= nil;
 		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil
-				and not captive then
+				and not captive and not greatWork then
 			return false, "buy_unknown_item";
 		end
 		if luxury and verb ~= "LUXURY_ANY"
@@ -14814,6 +14815,33 @@ local function applyOrder(player, pid, row, turn)
 					if barter == nil then return false, gaveText; end
 					name = name .. ";" .. gaveText;
 				end
+			elseif greatWork then
+				-- The rival's public deal inventory, not their hidden city slots.
+				-- DiplomacyDealView.lua:1539-1555 adds GREATWORK for its owner,
+				-- using the description id as subtype and the instance as value.
+				local survey = CivvisGreatWorks.survey(player, turn);
+				local possible = try(function()
+					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.GREATWORK, deal);
+				end, nil) or {};
+				local selected, description = nil, nil;
+				for _, entry in ipairs(possible) do
+					local row = try(function() return GameInfo.GreatWorks[entry.ForTypeDescriptionID]; end, nil);
+					if selected == nil and entry.ForType ~= nil and entry.IsValid ~= false and row ~= nil
+							and row.GreatWorkObjectType ~= nil then
+						local slots = CivvisGreatWorks.matches(survey, { [row.GreatWorkObjectType] = true });
+						if slots ~= nil and slots > 0 then selected, description = entry, row; end
+					end
+				end
+				if selected == nil then return false, "buy_no_great_work"; end
+				local item = deal:AddItemOfType(DealItemTypes.GREATWORK, subject);
+				if item == nil then return false, "no_great_work_item"; end
+				item:SetSubType(selected.ForTypeDescriptionID);
+				item:SetValueType(selected.ForType);
+				if not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "great_work_invalid";
+				end
+				want, name = "GREATWORK:" .. tostring(selected.ForType), description.GreatWorkType;
 			elseif captive then
 				-- The captor's side of the table, the column the shipped
 				-- screen fills with our captured Spies; the first it would
@@ -14930,6 +14958,8 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
 				or reason == "resource_invalid" or reason == "buy_no_favor"
 				or reason == "no_favor_item" or reason == "buy_no_strategic"
+				or reason == "buy_no_great_work" or reason == "no_great_work_item"
+				or reason == "great_work_invalid"
 				or reason == "strategic_invalid" or reason == "barter_nothing"
 				or reason == "barter_short") then
 			-- The engine will not sell passage here right now — usually a
