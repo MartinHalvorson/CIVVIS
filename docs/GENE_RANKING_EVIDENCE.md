@@ -376,6 +376,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `slots-survive-the-roll` | off (unmeasured) | Opt-in gene `slots-survive-the-roll`; see `Self::slots_survive_the_roll`. | 1 \| 1 |
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `space-people-call-the-projects` | off (unmeasured) | Opt-in gene `space-people-call-the-projects`; see `advanced/space_people_call_the_projects.rs`. | 1 \| 1 |
 | `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
 | `spears-answer-the-horse` | off (unmeasured) | Prefer a timely anti-cavalry defender against a visible mounted threat. | 1 \| 1 |
 | `spies-steal-the-lead` | off (unmeasured) | Opt-in gene `spies-steal-the-lead`; see `advanced/spies_steal_the_lead.rs`. | 1 \| 1 |
