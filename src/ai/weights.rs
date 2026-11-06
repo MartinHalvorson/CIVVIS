@@ -11,8 +11,6 @@
 //! here, so every path is unchanged; items the rest of `ai` uses are
 //! `pub(super)`.
 
-use super::*;
-
 /// Strategy weights steering BasicAi decisions. Defaults reproduce the
 /// original hand-tuned behavior; the `evolve` GA searches this space.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
