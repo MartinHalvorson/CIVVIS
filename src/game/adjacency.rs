@@ -236,8 +236,7 @@ impl Game {
     }
 
     /// How many standing or assumed districts neighbour `pos` — the count
-    /// the `district` adjacency key pays on. Shared by the summary and the
-    /// look-ahead so the two cannot disagree about what a neighbour is.
+    /// the `district` adjacency key pays on.
     fn settlement_neighbor_district_count(
         &self,
         pos: Pos,
