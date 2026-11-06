@@ -36,6 +36,14 @@ impl AdvancedAi {
         let old = state.city?;
         let old_city = g.cities.get(&old)?;
         let residence = g.standard_duration(20);
+        think!(self.journal(), Government, Detail,
+            "Reviewing Pingala's committed launch post";
+            "pingala-earns-the-launch review: posture {:?}; age {}/{}; safe old {}; departure {}; old Spaceport {}; disabled {}; promotion {}",
+            plan.strategy, self.governor_residence_age(g, pid, "pingala"), residence,
+            self.governor_dividend_safe_city(g, pid, old, plan),
+            self.base.capital_governor_may_depart(g, pid, "pingala"),
+            old_city.districts.keys().any(|d| g.district_family(*d) == "spaceport"),
+            state.disabled_until > g.turn, state.promotions.contains("space_initiative"));
         if old_city.owner != pid
             || !state.promotions.contains("space_initiative")
             || state.disabled_until > g.turn
@@ -70,6 +78,13 @@ impl AdvancedAi {
         }
         let mut best: Option<LaunchMove> = None;
         for cid in g.player_city_ids(pid) {
+            if matches!(g.cities[&cid].queue.first(), Some(Item::Project { project }) if Game::is_space_project(project))
+            {
+                think!(self.journal(), Government, Detail,
+                    "Reviewing {} as Pingala's launch producer", g.cities[&cid].name;
+                    "pingala-earns-the-launch producer: local safe {}; old post {}",
+                    self.governor_dividend_safe_city(g, pid, cid, plan), cid == old);
+            }
             if cid == old || !self.governor_dividend_safe_city(g, pid, cid, plan) {
                 continue;
             }
@@ -153,6 +168,9 @@ impl AdvancedAi {
             }
             let after_rate = project_rate(&probe, pid, cid, item);
             let after_dividend = Self::governor_dividend_reading(&probe, pid, "pingala");
+            think!(self.journal(), Government, Detail,
+                "Pricing Pingala's launch in {}", g.cities[&cid].name;
+                "pingala-earns-the-launch forecast: quote {turns:.2}, establish {settle:.2}; production rates {baseline:.2}/{transition_rate:.2}/{after_rate:.2}; weighted dividends {before:.2}/{transition_dividend:.2}/{after_dividend:.2}");
             if [
                 transition_rate,
                 transition_dividend,

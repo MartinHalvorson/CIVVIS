@@ -53,3 +53,18 @@ histories, not reproduction of the original private/controller history.
 No captured-input firing result, native actuation,
 city survival, production throughput, or win-rate improvement is claimed yet.
 The operator's native seat restriction remains in force.
+
+## First captured-input result: negative
+
+Frozen source `d7567bb7443c8231b539f37e8fd2fe1313aec306`, executable SHA256
+`06a4eb229057278f2ad544abb860448809a5f32567cfeada485b635c91ee26ad`,
+completed twelve target queries plus twenty-four prior-observation queries.
+All636 actual registered reads matched the declared fixed frontiers; both
+repeated arms matched, and their effective genomes differed only by this flag.
+All orders were identical at134/0,142/0 and153/0. No governor assignment was
+emitted by either arm. The results are retained as a negative proposal test.
+
+Passing the local fixtures did not establish activation on these native states.
+The next source revision adds guard/forecast journal details for diagnosis;
+strategic thresholds are unchanged. This candidate is not ready for promotion
+or a native strength trial.
