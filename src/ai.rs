@@ -3885,6 +3885,69 @@ impl BasicAi {
         !recon_exists && candidates.min() == Some(uid)
     }
 
+    /// Required exchange value for an attack. Dedicated assault and mobile
+    /// units accept thinner advantages, high-strength units press them harder,
+    /// recon avoids routine combat, and siege strongly prefers districts.
+    pub(crate) fn attack_threshold(&self, g: &Game, uid: u32, target: Pos) -> f64 {
+        let unit = &g.units[&uid];
+        let doctrine = Self::unit_doctrine(g, uid);
+        let role = match doctrine {
+            UnitDoctrine::Recon => 14.0,
+            UnitDoctrine::Assault => -2.0,
+            UnitDoctrine::Mobile => -5.0,
+            UnitDoctrine::Ranged => 0.0,
+            UnitDoctrine::Siege => 5.0,
+            UnitDoctrine::Support | UnitDoctrine::Carrier => 1_000.0,
+            UnitDoctrine::AirDefense => -1.0,
+            UnitDoctrine::AirStrike => -4.0,
+        };
+        let attack_strength = g
+            .unit_strength(unit, false)
+            .max(g.unit_ranged_attack_strength(unit));
+        let strength_drive = ((attack_strength - 25.0) * 0.12).clamp(0.0, 8.0);
+        let target_adjustment = if g.city_at(target).is_some()
+            || g.map
+                .get(target)
+                .is_some_and(|tile| tile.district.is_some())
+        {
+            match doctrine {
+                UnitDoctrine::Siege => -22.0,
+                UnitDoctrine::Assault => -3.0,
+                UnitDoctrine::Recon => 8.0,
+                _ => 0.0,
+            }
+        } else {
+            match doctrine {
+                UnitDoctrine::Siege => 14.0,
+                UnitDoctrine::Mobile
+                    if g.unit_ids_at(target).iter().any(|other| {
+                        g.rules.units[g.units[other].kind].class != "military"
+                            || g.units[other].hp <= 40
+                    }) =>
+                {
+                    -6.0
+                }
+                _ => 0.0,
+            }
+        };
+        // A raider's life is cheaper than a major's: no war weariness, no
+        // retaliation invited, no peace to lose, the camp respawns whatever we
+        // do, and killing the unit is the only exit from the zone-of-control
+        // lock that strands our Settlers. See `barbarian_bargain`.
+        let bargain = if self.barbarian_bargain
+            && !self.barb
+            && g.barb_pid.is_some_and(|barb| {
+                g.unit_ids_at(target)
+                    .iter()
+                    .any(|other| g.units[other].owner == barb)
+            }) {
+            BARBARIAN_BARGAIN_DISCOUNT
+        } else {
+            0.0
+        };
+        self.w.attack_floor + role + target_adjustment - strength_drive - bargain
+    }
+
     /// Non-generic actions that define a unit's strategic job. Fast raiders
     /// exploit infrastructure, and aircraft use missions and rebasing instead
     /// of pretending to be land units with long range.
