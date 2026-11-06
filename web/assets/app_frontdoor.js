@@ -1,12 +1,10 @@
 "use strict";
-// The front door of the published site.
+// The main menu of the published site.
 //
-// civvis.ai opens on a live game, and for a long time that was all it did: a
-// visitor who came to play landed on four AIs playing each other, and the way
-// in was two levels down a sidebar — open Game setup, change "Human players",
-// press a button whose label had just changed. This screen is what stands in
-// front of that. The AI game keeps running behind it as the attract loop, and
-// the choice of what to do is the first thing on the page.
+// civvis.ai lands on a live game of AIs, and this screen does not stand in
+// front of it. It opens only when someone asks: `?menu` in the address, or
+// from inside a game. Game setup in the sidebar stays the way in from the
+// landing page.
 //
 // Nothing here builds a game. Every control writes the same setup selects the
 // sidebar uses and "Begin game" calls the same `startNewSimulation()`, so the
@@ -15,21 +13,13 @@
 // It is a third classic script for the same reason `app_setup.js` is a second:
 // it reads shared top-level bindings (`state`, `RULES`) and helpers from the
 // scripts before it, and keeping it apart keeps this work out of the renderer.
-const FRONT_DOOR_SEEN_KEY = "civvis-front-door-dismissed-v1";
-// The published build is the only page a stranger arrives on. The desktop app
-// and the operator's exhibition tabs are started by someone who already chose
-// what they are doing, so the shim's presence is the whole condition.
+
+// The desktop app and the operator's exhibition tabs never show the menu:
+// the shim's presence is the whole condition.
 const frontDoorHost = () => !!window.CIVVIS_PUBLISHED_BUILD;
-// A deep link already said what it wants, a framed page is someone else's
-// layout, and a successor page is mid-handoff. `?menu` asks for it regardless.
+// A visitor lands on the AI game, so only the address can ask for this at load.
 function frontDoorWanted() {
-  if (!frontDoorHost()) return false;
-  const query = new URLSearchParams(location.search);
-  if (query.has("menu")) return true;
-  if ([...query.keys()].length) return false;
-  if (window.top !== window) return false;
-  if (window.CIVVIS_RESTART_HANDOFF || window.CIVVIS_ADOPTING_LIVE_WORLD) return false;
-  try { return sessionStorage.getItem(FRONT_DOOR_SEEN_KEY) !== "1"; } catch (_) { return true; }
+  return frontDoorHost() && new URLSearchParams(location.search).has("menu");
 }
 const fdElement = id => document.getElementById(id);
 const FD_ESCAPE = text => String(text ?? "").replace(/[&<>"']/g,
@@ -186,12 +176,11 @@ async function fdRefreshContinue() {
     `${latest.civ ? `${latest.civ} · ` : ""}Turn ${latest.turn}` +
     (latest.difficulty ? ` · ${titleCase(latest.difficulty)}` : "");
 }
-function closeFrontDoor(remember = true) {
+function closeFrontDoor() {
   const door = fdElement("frontdoor");
   if (!door) return;
   door.hidden = true;
   document.body.classList.remove("frontdoor-open", "frontdoor-over-game");
-  if (remember) try { sessionStorage.setItem(FRONT_DOOR_SEEN_KEY, "1"); } catch (_) {}
 }
 function openFrontDoor(panel = "menu") {
   const door = fdElement("frontdoor");

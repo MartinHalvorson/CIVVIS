@@ -50,6 +50,18 @@ fn front_door_starts_games_through_the_setup_path_and_only_on_the_published_site
     assert!(EMBEDDED_APP_FRONTDOOR_JS.contains("window.CIVVIS_PUBLISHED_BUILD"));
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST"));
+    // civvis.ai lands on the AI game: at load, only `?menu` opens this screen.
+    let wanted = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("function frontDoorWanted() {")
+        .unwrap()
+        .1
+        .split_once("\n}\n")
+        .unwrap()
+        .0;
+    assert_eq!(
+        wanted.trim(),
+        r#"return frontDoorHost() && new URLSearchParams(location.search).has("menu");"#
+    );
     // It loads last, because it reads what the other scripts declare, and the
     // address it is served from is the one the page asks for.
     let setup = EMBEDDED_INDEX_HTML.find("/assets/app_setup.js").unwrap();
