@@ -2296,7 +2296,10 @@ impl AdvancedAi {
         /// Opt-in gene `sea-scout-claims-the-queue`; see
         /// `advanced/contact_fleet.rs`.
         sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
+        /// Rank Spy producers by native turns, sparing science on ties.
+        spies_price_the_science_head => enable_spies_price_the_science_head, disable_spies_price_the_science_head;
     }
+
 }
 
 impl AdvancedAi {

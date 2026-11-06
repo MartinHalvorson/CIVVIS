@@ -5373,6 +5373,8 @@ pub const GENES: &[Gene] = &[
     // Space Initiative stayed away from Indonesia's actual launch producer.
     // Price a current project against establishment and displaced dividends.
     Gene { tag: "pingala-earns-the-launch", field: "pingala_earns_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_earns_the_launch, disable: AdvancedAi::disable_pingala_earns_the_launch },
+    // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
+    Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
