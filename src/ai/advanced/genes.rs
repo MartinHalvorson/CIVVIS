@@ -5153,6 +5153,14 @@ pub const GENES: &[Gene] = &[
     // or more eras behind the world is bought there. See
     // `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
+    // Version three of `parity-upgrades-before-it-buys`: version two's bar
+    // measured the world era, which at Online speed is a clock (era 2 at turn
+    // 51, era 5 at 111), so it refused nearly every gold military purchase
+    // from turn 51, early-war defenders included (disarmed 2026-11-05). Here a
+    // unit is obsolete at three or more eras behind our own newest technology,
+    // on the parity path and the base wartime purchases. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
     // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
     // taken by major empires, 13 of them in a war already running, with the
     // captor's soldier within six tiles the turn before in all but two.
