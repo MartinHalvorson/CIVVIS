@@ -66,7 +66,10 @@ CLI / HTTP server / browser / WASM / evaluation tools
   live in the separately served `web/assets/app_setup.js`. Both are classic
   scripts intentionally: inline controls and renderer callbacks keep their
   existing global contract while setup work no longer conflicts with map
-  rendering edits. Native, beta, and WASM delivery all serve the same pair.
+  rendering edits. Native, beta, and WASM delivery all serve the same pair,
+  plus `web/assets/app_frontdoor.js`, the main menu and Create Game screen that
+  only the published site shows. It holds no game logic of its own: it writes
+  the same setup controls and calls the same start.
   The same Rust engine is compiled for native and WASM use.
 - **Civilization VI bridges** — `tools/civ6_control/` is a Lua controller
   driven by the Rust decider over a mirror; it does not embed the Rust agent
