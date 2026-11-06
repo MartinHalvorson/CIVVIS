@@ -2289,6 +2289,8 @@ impl AdvancedAi {
         /// Opt-in gene `fresh-water-prices-the-site`; see
         /// `advanced/fresh_water_site.rs`.
         fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;
+        /// Keep defensive formations near their assigned threatened city.
+        defenders_keep_the_city_in_reach => enable_defenders_keep_the_city_in_reach, disable_defenders_keep_the_city_in_reach;
     }
 }
 
