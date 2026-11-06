@@ -8326,6 +8326,9 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// A committed, legal Science project keeps its queue ahead of a paused
+    /// district. Independent opt-in; see `paused_district_finish.rs`.
+    paused_district_spares_the_launch: bool,
     /// Coordinate a quoted first Library with the backlog Builder. Independent opt-in.
     parallel_library_backlog: bool,
     /// `plant-reads-the-grid`: a fuel-burning plant is credited the powered

@@ -121,6 +121,106 @@ fn set_turns(g: &mut Game, cid: u32, item: &Item, turns: Option<f64>) {
         .turns = turns;
 }
 
+/// A native-confirmed project already at the head, alongside the two-turn
+/// paused Campus. The menu is a continuation answer, as on Palembang's Mars.
+fn project_head(project: &str) -> (Game, u32, Item, Item, AdvancedAi) {
+    let (mut g, cid, campus, _, mut ai) = board();
+    let item = Item::Project {
+        project: Name::new(project),
+    };
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.queue = vec![item.clone()];
+    city.production = 0.0;
+    Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .insert(
+            Game::production_block_key(&item),
+            HostMenuEntry {
+                cost: Some(900.0),
+                turns: Some(17.0),
+            },
+        );
+    ai.retarget(VictoryTarget::Science);
+    assert!(ai.science_endgame_queue_authoritative(&g, 0, &item));
+    assert!(AdvancedAi::production_commitment_is_legal(
+        &g, 0, cid, &item
+    ));
+    (g, cid, campus, item, ai)
+}
+
+#[test]
+fn launch_guard_is_an_independent_default_off_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "paused-district-spares-the-launch",
+        |ai| ai.paused_district_spares_the_launch,
+    );
+}
+
+#[test]
+fn launch_guard_off_retains_the_old_mars_interruption() {
+    let (mut g, cid, campus, _, ai) = project_head("launch_mars_colony");
+    assert!(!ai.paused_district_spares_the_launch);
+    ai.claim_paused_district_finishes(&mut g, 0);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
+}
+
+#[test]
+fn launch_guard_keeps_all_four_launches_and_both_lasers_even_before_work_is_banked() {
+    for project in [
+        "launch_earth_satellite",
+        "launch_moon_landing",
+        "launch_mars_colony",
+        "exoplanet_expedition",
+        "lagrange_laser_station",
+        "terrestrial_laser_station",
+    ] {
+        let (mut g, cid, campus, item, mut ai) = project_head(project);
+        ai.enable_paused_district_spares_the_launch();
+        assert!(ai.paused_district_finish_item(&g, 0, cid).is_none());
+        ai.claim_paused_district_finishes(&mut g, 0);
+        assert_eq!(g.cities[&cid].queue.first(), Some(&item), "{project}");
+        assert_eq!(g.cities[&cid].production, 0.0);
+        assert_eq!(
+            g.cities[&cid].production_progress[&Game::item_progress_key(&campus)],
+            46.0,
+        );
+    }
+}
+
+#[test]
+fn launch_guard_still_finishes_paused_districts_over_ordinary_work() {
+    let (mut g, cid, campus, _, mut ai) = board();
+    ai.enable_paused_district_spares_the_launch();
+    ai.claim_paused_district_finishes(&mut g, 0);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
+}
+
+#[test]
+fn launch_guard_does_not_commit_an_excluded_domination_seat_to_science() {
+    let (mut g, cid, campus, item, mut ai) = project_head("launch_mars_colony");
+    ai.enable_paused_district_spares_the_launch();
+    ai.retarget(VictoryTarget::Domination);
+    assert!(!ai.science_endgame_queue_authoritative(&g, 0, &item));
+    ai.claim_paused_district_finishes(&mut g, 0);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
+}
+
+#[test]
+fn launch_guard_releases_a_host_refused_project_for_paused_district_recovery() {
+    let (mut g, cid, campus, item, mut ai) = project_head("launch_mars_colony");
+    ai.enable_paused_district_spares_the_launch();
+    Arc::make_mut(&mut g.blocked_production)
+        .entry(cid)
+        .or_default()
+        .insert(Game::production_block_key(&item));
+    assert!(!AdvancedAi::production_commitment_is_legal(
+        &g, 0, cid, &item
+    ));
+    ai.claim_paused_district_finishes(&mut g, 0);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
+}
+
 #[test]
 fn a_two_turn_paused_campus_goes_back_to_the_head() {
     let (mut g, cid, campus, _, ai) = board();
