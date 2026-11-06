@@ -1100,6 +1100,11 @@ local function survey()
 		-- as before. A capability the sender assumes and the receiver lacks is
 		-- how an accepted order becomes a silent no-op.
 		order_queue = cfg.OrderQueue ~= false,
+		-- Effective consumer thresholds, not just the launcher's requested values.
+		-- Keep the same tonumber/fallback contract as CivvisQueue.drain.
+		order_queue_idle_probe_ticks = tonumber(cfg.OrderQueueIdleProbeTicks) or 2,
+		order_queue_noop_probe_ticks = tonumber(cfg.OrderQueueNoopProbeTicks) or 8,
+		order_queue_grace_ticks = tonumber(cfg.OrderQueueGraceTicks) or 30,
 		-- Every MOVE_TO capped to this turn's leg and combat units' queued
 		-- paths cancelled at turn start, so `moves` at export means movement
 		-- available this turn and the mirror may trust it. See CivvisBoard.

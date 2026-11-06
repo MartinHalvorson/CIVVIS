@@ -4121,6 +4121,91 @@ class UnseenGameWindowTest(unittest.TestCase):
         self.assertIn("host_health.clear()", source[configured:configured + 200])
 
 
+class OrderQueueTimingTests(unittest.TestCase):
+    @staticmethod
+    def arguments(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+        values = dict(tag="timing-test", game_mode=[], difficulty="DIFFICULTY_SETTLER",
+                      map_size="MAPSIZE_SMALL", speed="GAMESPEED_ONLINE",
+                      map="Continents.lua", leader="LEADER_TRAJAN",
+                      ruleset="RULESET_EXPANSION_2", order_queue=True)
+        values.update(changes)
+        return Defaults(**values)
+
+    @staticmethod
+    def seat(**changes):
+        value = dict(difficulty="DIFFICULTY_SETTLER", size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", ruleset="RULESET_EXPANSION_2", modes=[])
+        value.update(changes)
+        return value
+
+    def test_absent_overrides_preserve_mod_defaults_and_older_seats(self):
+        config = civ6_play.build_config(self.arguments())
+        for _, key, _ in civ6_play.ORDER_QUEUE_TIMINGS:
+            self.assertNotIn(key, config)
+        self.assertTrue(civ6_play.seat_matches_requested(self.seat(), self.arguments())[0])
+
+    def test_explicit_values_reach_the_actual_baked_config_and_seat_gate(self):
+        arguments = self.arguments(order_queue_idle_probe_ticks=8,
+                                   order_queue_noop_probe_ticks=8,
+                                   order_queue_grace_ticks=30)
+        config = civ6_play.build_config(arguments)
+        self.assertEqual({k: config[k] for _, k, _ in civ6_play.ORDER_QUEUE_TIMINGS},
+                         {"OrderQueueIdleProbeTicks": 8, "OrderQueueNoopProbeTicks": 8,
+                          "OrderQueueGraceTicks": 30})
+        seat = self.seat(order_queue=True, order_queue_idle_probe_ticks=8,
+                         order_queue_noop_probe_ticks=8, order_queue_grace_ticks=30)
+        self.assertTrue(civ6_play.seat_matches_requested(seat, arguments)[0])
+        for _, _, field in civ6_play.ORDER_QUEUE_TIMINGS:
+            with self.subTest(field=field):
+                self.assertFalse(civ6_play.seat_matches_requested(
+                    {k: v for k, v in seat.items() if k != field}, arguments)[0])
+
+    def test_mismatched_or_non_numeric_readback_cannot_qualify(self):
+        arguments = self.arguments(order_queue_idle_probe_ticks=1)
+        for observed in [None, True, "1", 0, 2, float("nan"), float("inf")]:
+            with self.subTest(observed=observed):
+                seat = self.seat(order_queue=True, order_queue_idle_probe_ticks=observed)
+                self.assertFalse(civ6_play.seat_matches_requested(seat, arguments)[0])
+        self.assertTrue(civ6_play.seat_matches_requested(
+            self.seat(order_queue=True, order_queue_idle_probe_ticks=1.0), arguments)[0])
+
+    def test_disabled_or_unreported_queue_cannot_qualify_an_override(self):
+        arguments = self.arguments(order_queue_idle_probe_ticks=8)
+        for enabled in [None, False]:
+            self.assertFalse(civ6_play.seat_matches_requested(
+                self.seat(order_queue=enabled, order_queue_idle_probe_ticks=8), arguments)[0])
+        with self.assertRaises(ValueError):
+            civ6_play.build_config(self.arguments(order_queue=False,
+                                                 order_queue_idle_probe_ticks=8))
+
+    def test_invalid_cli_values_are_rejected_before_play(self):
+        for attribute, _, _ in civ6_play.ORDER_QUEUE_TIMINGS:
+            flag = "--" + attribute.replace("_", "-")
+            for value in ["0", "-1", "8.5", "bad"]:
+                with self.subTest(flag=flag, value=value), \
+                        patch.object(civ6_play, "play") as play, \
+                        patch.object(sys, "stderr", io.StringIO()), \
+                        self.assertRaises(SystemExit) as stopped:
+                    civ6_play.main([flag, value])
+                self.assertEqual(stopped.exception.code, 2)
+                play.assert_not_called()
+        with patch.object(civ6_play, "play") as play, \
+                patch.object(sys, "stderr", io.StringIO()), \
+                self.assertRaises(SystemExit) as stopped:
+            civ6_play.main(["--no-order-queue", "--order-queue-idle-probe-ticks", "8"])
+        self.assertEqual(stopped.exception.code, 2)
+        play.assert_not_called()
+
+    def test_direct_config_callers_cannot_bypass_numeric_validation(self):
+        for value in [0, -1, True, "8", 8.0]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                civ6_play.build_config(self.arguments(order_queue_idle_probe_ticks=value))
+
+
 if __name__ == "__main__":
     unittest.main()
 
