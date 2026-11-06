@@ -1718,6 +1718,8 @@ impl AdvancedAi {
         /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
         /// `AdvancedAi::claim_producer_zone`.
         industrial_zone_claims_the_producer_queue => enable_industrial_zone_claims_the_producer_queue, disable_industrial_zone_claims_the_producer_queue;
+        /// Opt-in Science University priority before industrial claims.
+        universities_before_the_forge => enable_universities_before_the_forge, disable_universities_before_the_forge;
         /// Move a one-war front cut off from every land road to an enemy the
         /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
         /// `advanced/sea_locked_front.rs`.
