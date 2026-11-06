@@ -1093,15 +1093,7 @@ impl Game {
             let attacker = self.units[&uid].clone();
             self.record_war_unit_participation(&attacker, defender);
             self.record_war_city_garrison_participation(cid, attacker.owner);
-            let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
-                + self.promotion_effect(&self.units[&uid], "ranged_vs_district")
-                + self.gdr_siege_bonus(&self.units[&uid])
-                + self.vs_bonus(pid, self.cities[&cid].owner);
-            if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
-                att_base -= 17.0;
-            }
-            let att = effective_strength(att_base, self.units[&uid].hp);
-            let cs = self.city_strength(cid);
+            let (att, cs) = self.ranged_city_strengths(uid, cid).unwrap();
             let dmg = damage(att, cs, &mut self.rng);
             let mult = if spec.siege || self.gdr_full_wall_damage(&self.units[&uid]) {
                 1.0
@@ -2032,6 +2024,25 @@ impl Game {
             .city_district_family_position(city, crate::name!("encampment"))
             .ok_or_else(|| "city has no Encampment".to_string())?;
         self.do_defending_district_strike(pid, cid, position, target)
+    }
+
+    /// The two strengths a shot at a city resolves with, `(shooter, city)`,
+    /// shared by `do_ranged` and the combat forecast.
+    pub(crate) fn ranged_city_strengths(&self, uid: u32, cid: u32) -> Option<(f64, f64)> {
+        let shooter = self.units.get(&uid)?;
+        let city = self.cities.get(&cid)?;
+        let spec = &self.rules.units[shooter.kind];
+        let mut attack = self.unit_ranged_attack_strength(shooter)
+            + self.promotion_effect(shooter, "ranged_vs_district")
+            + self.gdr_siege_bonus(shooter)
+            + self.vs_bonus(shooter.owner, city.owner);
+        if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
+            attack -= 17.0;
+        }
+        Some((
+            effective_strength(attack, shooter.hp),
+            self.city_strength(cid),
+        ))
     }
 
     /// City melee strengths shared by the resolver and capture estimates.

@@ -5026,3 +5026,47 @@ fn step_movement_shortfall_names_a_step_the_unit_cannot_pay() {
     );
     assert!(!g.can_move(settler, target));
 }
+
+#[test]
+fn a_forecast_brackets_the_blow_the_engine_then_strikes() {
+    for seed in 0..16 {
+        let (mut g, target, ring) = controlled_game(3100 + seed);
+        let attacker = g.spawn_unit("warrior", 0, ring[0]);
+        let defender = g.spawn_unit("warrior", 1, target);
+        let forecast = g
+            .combat_forecast(0, attacker, target, false)
+            .expect("a legal attack has a forecast");
+        assert_eq!(forecast.defender_hp, 100);
+        let (dealt_low, dealt_high) = CombatForecast::roll_range(forecast.damage_dealt);
+        let (taken_low, taken_high) = CombatForecast::roll_range(forecast.damage_taken);
+        g.apply(
+            0,
+            &Action::Attack {
+                unit: attacker,
+                target,
+            },
+        )
+        .unwrap();
+        let dealt = 100 - g.units.get(&defender).map_or(0, |unit| unit.hp);
+        let taken = 100 - g.units.get(&attacker).map_or(0, |unit| unit.hp);
+        assert!((dealt_low..=dealt_high).contains(&dealt), "dealt {dealt}");
+        assert!((taken_low..=taken_high).contains(&taken), "took {taken}");
+    }
+}
+
+#[test]
+fn a_forecast_answers_only_for_a_strike_on_offer() {
+    let (g, target, ring) = {
+        let (mut g, target, ring) = controlled_game(3120);
+        g.spawn_unit("warrior", 1, target);
+        (g, target, ring)
+    };
+    // No unit of ours stands there, so there is nothing to price, and a read
+    // of an unoffered strike must never become a way of seeing a defender.
+    assert!(g.combat_forecast(0, 9_999, target, false).is_none());
+    let mut g = g;
+    let attacker = g.spawn_unit("warrior", 0, ring[0]);
+    assert!(g.combat_forecast(0, attacker, target, true).is_none());
+    g.units.get_mut(&attacker).unwrap().moves_left = 0.0;
+    assert!(g.combat_forecast(0, attacker, target, false).is_none());
+}

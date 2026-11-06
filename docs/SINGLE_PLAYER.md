@@ -498,6 +498,17 @@ war with a city-state startable and never endable.
 
 Barbarians are permanently at war with everyone and are not a power; they are
 not listed and are not counted in the "at war with N" line.
+## The combat forecast
+
+Every attack is a decision about two numbers, so hovering what the selected
+unit can strike shows what the blow would do before it is struck: both
+strengths, the health each side would keep, the range the roll can land in, and
+a plain verdict. `POST /forecast` reads the exchange the resolver itself uses
+(`Game::combat_forecast`), so a forecast cannot drift from the blow. It answers
+only for a strike `legal_actions` offers the seat right now, which is what stops
+it reading a unit through the fog, and it answers nothing for an Encampment
+rather than something approximate.
+
 ## The city screen
 
 The sidebar panel is the glance; the city screen is the desk. Left: what the
@@ -542,6 +553,11 @@ key press or scroll stops a running human countdown, because somebody who is
 still deciding has just proved they are there — as does choosing one of the
 ways to keep the world below. A spectated finale keeps the supervisor's
 countdown instead, because the supervisor owns that handoff.
+
+The public site does neither. A result there is somebody reading how their game
+ended, so it holds until they move on, shows their own score, rank, cities,
+population, technologies and wonders, and **Start another game** goes to Create
+Game.
 
 ### Continue after victory
 
