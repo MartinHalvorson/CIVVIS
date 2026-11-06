@@ -226,7 +226,7 @@ function fdShowIntro() {
   fdElement("fd-intro-ability").innerHTML = ability.name
     ? `<b>${FD_ESCAPE(ability.name)}</b>${FD_ESCAPE(ability.text)}` : FD_ESCAPE(ability.text);
   fdElement("fd-intro-goal").textContent =
-    "Found your capital, then build, research and expand. The first civilization to a victory wins.";
+    "Found your capital, then build, research and expand. Right-click a tile to move a unit.";
   fdElement("frontdoor").hidden = false;
   document.body.classList.add("frontdoor-over-game");
   fdShow("intro");
