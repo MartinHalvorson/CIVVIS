@@ -378,13 +378,26 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
     }
 
 
+#: Exact coverage totals that every gene pull request changes. They are not
+#: committed: they were the most conflicted lines in the repository (10 of 14
+#: conflicted pull requests on 2026-11-06), and two gene PRs off one base made
+#: them wrong on `main` by construction. Read them with `--counts`.
+UNCOMMITTED_COVERAGE = ("capability_toggles", "reachable_as_a_gene")
+
+
+def committed_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
+    """`genome_coverage` without the totals that change on every gene PR."""
+    return {key: value for key, value in coverage.items()
+            if key not in UNCOMMITTED_COVERAGE}
+
+
 def build_manifest(repo: Path) -> dict[str, Any]:
     registry = read_registry(repo)
     live = registry["LIVE_BRIDGE_TREATMENTS"]["items"]
     firaxis = set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
     return {
         "schema_version": 1,
-        "genome_coverage": genome_coverage(repo),
+        "genome_coverage": committed_coverage(genome_coverage(repo)),
         "source": {
             "registry": "src/ai/advanced/genes.rs",
             "agents": "src/elo.rs",
@@ -516,10 +529,9 @@ def render_status(manifest: dict[str, Any]) -> str:
         "",
         "How much of the controller the genome instrument can vary at all.",
         "`docs/GENE_SCREEN.md` names the growth direction as \"hundreds of",
-        "genes\"; this is the denominator that direction is measured against.",
+        "genes\". The denominators change on every gene pull request, so they",
+        "are not committed: `python3 tools/eval_manifest.py --counts` prints them.",
         "",
-        f"- Capability toggles on the controller: **{genome['capability_toggles']}**",
-        f"- Reachable as a gene `gene_screen` can vary: **{genome['reachable_as_a_gene']}**",
         f"- Measured by at least one screen: **{genome['measured_by_a_screen']}**",
         f"- Resolved by the ledger (helps or hurts): **{genome['resolved_by_a_screen']}**",
         f"- **Unreachable by any screen: {genome['unreachable_by_any_screen']}**",
@@ -596,23 +608,18 @@ def write_outputs(repo: Path, manifest: dict[str, Any]) -> None:
         (repo / name).write_text(content, encoding="utf-8")
 
 
-#: The genome-coverage running totals, as both generated outputs spell them.
-#:
-#: Every gene PR bumps these same numbers by one, from its own base. Two PRs off
-#: one base both write `838`: git sees an identical edit on both sides, merges
-#: with no conflict, and `main` says 838 while the truth is 839. Neither PR was
-#: wrong and neither could have known, yet exact equality turned every PR in the
-#: repository red until the next gene landed, three times on 2026-11-05 alone.
-#: The next regeneration heals the count, so a small drift is not staleness.
+#: The genome-coverage running totals still committed, as both generated
+#: outputs spell them. The two that every gene PR bumped have left
+#: (`UNCOMMITTED_COVERAGE`). These move with the ledger, and two PRs off one base
+#: can still race: both write `838`, git sees an identical edit, merges with no
+#: conflict, and `main` says 838 while the truth is 839. Exact equality turned
+#: every PR in the repository red over that three times on 2026-11-05 alone. The
+#: next regeneration heals the count, so a small drift is not staleness.
 RUNNING_COUNTS = tuple(
     re.compile(pattern)
     for pattern in (
-        r'("capability_toggles": )(\d+)',
-        r'("reachable_as_a_gene": )(\d+)',
         r'("measured_by_a_screen": )(\d+)',
         r'("resolved_by_a_screen": )(\d+)',
-        r"(Capability toggles on the controller: \*\*)(\d+)",
-        r"(Reachable as a gene `gene_screen` can vary: \*\*)(\d+)",
         r"(Measured by at least one screen: \*\*)(\d+)",
         r"(Resolved by the ledger \(helps or hurts\): \*\*)(\d+)",
     )
@@ -674,8 +681,15 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="write generated outputs")
     mode.add_argument("--check", action="store_true", help="fail when outputs are stale")
+    mode.add_argument("--counts", action="store_true",
+                      help="print the exact genome coverage totals")
     args = parser.parse_args(argv)
     try:
+        if args.counts:
+            for key, value in genome_coverage(args.repo).items():
+                if isinstance(value, int):
+                    print(f"{key}: {value}")
+            return 0
         manifest = build_manifest(args.repo)
         if args.write:
             write_outputs(args.repo, manifest)
