@@ -9533,6 +9533,11 @@ pub struct AdvancedAi {
     /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
     /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
     sea_scout_claims_the_queue: bool,
+    /// `space-people-call-the-projects`: while a Great Person who speeds the
+    /// space race is on offer, a Science seat's district projects earn that
+    /// class's points. See `advanced/space_people_call_the_projects.rs`. Off by
+    /// default.
+    space_people_call_the_projects: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10948,6 +10953,9 @@ mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
+/// `space-people-call-the-projects`: see
+/// `advanced/space_people_call_the_projects.rs`.
+mod space_people_call_the_projects;
 mod spies_steal_the_lead;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
@@ -12694,6 +12702,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
             sea_scout_claims_the_queue: false,
+            space_people_call_the_projects: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,
@@ -22009,6 +22018,11 @@ impl AdvancedAi {
             let naval_eye_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.naval_eye_holds(g, pid, cid, plan, item));
+            // `space-people-call-the-projects`: the called district project
+            // finishes while its person stays on offer.
+            let space_person_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.space_person_project_holds(g, pid, cid, plan, item));
             // `backlog-builder-takes-the-queue`: the claimed Builder finishes
             // while the worked backlog still runs ahead of the charges.
             let backlog_builder_commitment = committed
@@ -22072,6 +22086,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
@@ -22098,6 +22113,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
@@ -29389,6 +29405,9 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `space-people-call-the-projects`: the district projects that earn
+            // a space-race person on offer. Exact no-op while the gene is off.
+            self.claim_queues_for_the_space_people(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
