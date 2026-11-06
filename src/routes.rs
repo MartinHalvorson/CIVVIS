@@ -547,6 +547,44 @@ pub fn route_step(session: &Session, parsed: &Value) -> Value {
     }
 }
 
+/// `POST /forecast` — what a blow would do, before it is struck.
+///
+/// Read-only, and it answers only for a strike the seat could order right now
+/// (`Game::combat_forecast`), so it reveals nothing the map does not show.
+pub fn forecast(session: &Session, parsed: &Value) -> Value {
+    let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
+    let target = parsed["target"]
+        .as_array()
+        .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+    let (Some(unit), Some(target)) = (unit, target) else {
+        return json!({"error": "a forecast needs a unit and a target"});
+    };
+    let ranged = parsed["ranged"].as_bool().unwrap_or(false);
+    let Some(blow) = session.game.combat_forecast(0, unit, target, ranged) else {
+        return json!({"forecast": Value::Null, "error": Value::Null});
+    };
+    let (dealt_low, dealt_high) = crate::game::CombatForecast::roll_range(blow.damage_dealt);
+    let (taken_low, taken_high) = crate::game::CombatForecast::roll_range(blow.damage_taken);
+    json!({
+        "forecast": {
+            "ranged": blow.ranged,
+            "attacker_strength": blow.attacker_strength,
+            "defender_strength": blow.defender_strength,
+            "defender_name": blow.defender_name,
+            "defender_is_city": blow.defender_is_city,
+            "defender_hp": blow.defender_hp,
+            "defender_walls": blow.defender_walls,
+            "damage_dealt": blow.damage_dealt,
+            "damage_taken": blow.damage_taken,
+            "dealt_low": dealt_low,
+            "dealt_high": dealt_high,
+            "taken_low": taken_low,
+            "taken_high": taken_high,
+        },
+        "error": Value::Null,
+    })
+}
+
 /// `POST /view` — seat the viewer on a player, or on the omniscient spectator.
 ///
 /// Returns the new state with `error` set, which is the shape both front ends

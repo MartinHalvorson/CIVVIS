@@ -96,8 +96,11 @@ function fdSet(id, value) {
 function fdShow(panel) {
   fdElement("fd-menu").hidden = panel !== "menu";
   fdElement("fd-create").hidden = panel !== "create";
-  const focus = panel === "create" ? fdElement("fd-begin") : fdElement("fd-play");
-  focus?.focus({preventScroll: true});
+  fdElement("fd-pause").hidden = panel !== "pause";
+  fdElement("fd-intro").hidden = panel !== "intro";
+  fdElement("frontdoor").classList.toggle("fd-centered", panel === "pause" || panel === "intro");
+  const focus = {create: "fd-begin", pause: "fd-resume", intro: "fd-intro-go"}[panel] || "fd-play";
+  fdElement(focus)?.focus({preventScroll: true});
 }
 function fdRenderLeaders() {
   const grid = fdElement("fd-leaders");
@@ -187,7 +190,7 @@ function closeFrontDoor(remember = true) {
   const door = fdElement("frontdoor");
   if (!door) return;
   door.hidden = true;
-  document.body.classList.remove("frontdoor-open");
+  document.body.classList.remove("frontdoor-open", "frontdoor-over-game");
   if (remember) try { sessionStorage.setItem(FRONT_DOOR_SEEN_KEY, "1"); } catch (_) {}
 }
 function openFrontDoor(panel = "menu") {
@@ -199,11 +202,56 @@ function openFrontDoor(panel = "menu") {
   if (panel === "create") fdRenderCreate();
   fdShow(panel);
 }
-function fdBegin() {
+// The menu a game keeps: Escape, or the top bar's menu button. Over a game the
+// chrome stays where it is, because this is a pause and not a change of scene.
+function openGameMenu() {
+  if (!frontDoorHost() || !state || SPEC) return false;
+  fdElement("frontdoor").hidden = false;
+  document.body.classList.add("frontdoor-over-game");
+  fdElement("fd-sound-label").textContent = `Sound: ${soundEnabled ? "on" : "off"}`;
+  fdElement("fd-save-note").textContent = "Your game also saves itself every turn";
+  fdShow("pause");
+  return true;
+}
+async function fdSaveGame() {
+  const note = fdElement("fd-save-note");
+  const name = `${(state.players?.[0]?.civ || "game").replace(/[^A-Za-z0-9]+/g, "-")}-turn-${state.turn}`;
+  note.textContent = "Saving…";
+  try {
+    const done = await fetchJSON("/save", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({name})});
+    note.textContent = done.error ? `Could not save: ${done.error}` : `Saved as ${name}`;
+  } catch (error) {
+    note.textContent = `Could not save: ${error.message || error}`;
+  }
+}
+// The first screen of a game says who you are and what you are trying to do,
+// once, before the map asks for anything.
+function fdShowIntro() {
+  const me = state?.players?.[0];
+  if (!me || SPEC || state.turn !== 1) return;
+  const ability = fdAbility(me.civ);
+  fdElement("fd-intro-crest").innerHTML = fdCrest(me.civ, "fd-crest-large");
+  fdElement("fd-intro-kicker").textContent = `${me.civ} · ${titleCase(state.difficulty || "")}`;
+  fdElement("fd-intro-leader").textContent = me.leader || me.civ;
+  fdElement("fd-intro-ability").innerHTML = ability.name
+    ? `<b>${FD_ESCAPE(ability.name)}</b>${FD_ESCAPE(ability.text)}` : FD_ESCAPE(ability.text);
+  fdElement("fd-intro-goal").textContent =
+    "Found your capital, then build, research and expand. The first civilization to a victory wins.";
+  fdElement("frontdoor").hidden = false;
+  document.body.classList.add("frontdoor-over-game");
+  fdShow("intro");
+}
+async function fdBegin() {
   fdSet("humanplayers", "single");
   fdSet("leader", fdChoice);
+  // The form is refilled from the world on screen, seed included, so a second
+  // game from here would otherwise be the same map. Replaying a seed on purpose
+  // is what Advanced setup is for.
+  fdSet("mapseed", "");
   closeFrontDoor();
-  startNewSimulation();
+  await startNewSimulation();
+  fdShowIntro();
 }
 function fdWire() {
   const door = fdElement("frontdoor");
@@ -211,6 +259,15 @@ function fdWire() {
   fdElement("fd-watch").onclick = () => closeFrontDoor();
   fdElement("fd-back").onclick = () => fdShow("menu");
   fdElement("fd-begin").onclick = fdBegin;
+  fdElement("fd-resume").onclick = () => closeFrontDoor();
+  fdElement("fd-intro-go").onclick = () => closeFrontDoor();
+  fdElement("fd-save").onclick = fdSaveGame;
+  fdElement("fd-sound").onclick = () => {
+    toggleSound();
+    fdElement("fd-sound-label").textContent = `Sound: ${soundEnabled ? "on" : "off"}`;
+  };
+  fdElement("fd-settings").onclick = () => { closeFrontDoor(); togglePanel(false); };
+  fdElement("fd-exit").onclick = () => { closeFrontDoor(); openFrontDoor(); };
   fdElement("fd-continue").onclick = async () => {
     const name = fdElement("fd-continue").dataset.save;
     fdSet("humanplayers", "single");
