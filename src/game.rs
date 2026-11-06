@@ -13422,3 +13422,6 @@ mod native_great_person_recruitment_tests;
 
 #[cfg(test)]
 mod gran_colombia_traits_tests;
+
+#[cfg(test)]
+mod mongolia_combat_tests;
