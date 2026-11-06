@@ -6089,7 +6089,38 @@ let finaleCountdownResult = null;
 // must never turn that old finale into a restart of the new, active world.
 let finaleCountdownWorld = null;
 
+// On the public site a result screen is somebody reading how their game ended,
+// so it stays until they move on: nobody here is running an unattended display.
+// How the player's own game went. A result that names only the winner tells
+// somebody who lost nothing about the two hundred turns they just played.
+function reignSummary(st) {
+  const me = st.players?.[0];
+  if (SPEC || !me) return "";
+  const majors = st.players.filter(player => !player.is_minor && !player.is_barbarian)
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rank = majors.findIndex(player => player.id === me.id) + 1;
+  const stat = (value, label) =>
+    `<span class="reign-stat"><b>${escapeAttr(value)}</b><small>${escapeAttr(label)}</small></span>`;
+  return `<span class="reign" aria-label="Your reign">` +
+    stat(Math.round(me.score || 0).toLocaleString(), `Score · ${rank} of ${majors.length}`) +
+    stat(me.cities ?? 0, me.cities === 1 ? "City" : "Cities") +
+    stat(me.population ?? 0, "Population") +
+    stat((st.me?.techs || []).length, "Technologies") +
+    stat(me.wonder_count ?? 0, "Wonders") + `</span>`;
+}
+// A new game on the public site starts from choosing a civilization, the same
+// way the first one did, not by re-rolling this world's settings unasked.
+function settleResultActions() {
+  const again = document.getElementById("finale-restart");
+  if (!again || !finaleHoldsForTheReader() || typeof openFrontDoor !== "function") return;
+  again.onclick = () => openFrontDoor("create");
+  again.removeAttribute("title");
+}
+function finaleHoldsForTheReader() {
+  return !SPEC && !!window.CIVVIS_PUBLISHED_BUILD;
+}
 function armFinaleCountdown(signature) {
+  if (finaleHoldsForTheReader()) return;
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
@@ -7616,7 +7647,7 @@ function syncFinaleCountdownChoice() {
 // so the two can never disagree about what is on offer.
 function finaleCountdownChoiceMarkup() {
   const source = document.getElementById("between-game-countdown");
-  if (!source) return "";
+  if (!source || finaleHoldsForTheReader()) return "";
   const options = [...source.options].map(option =>
     `<option value="${escapeAttr(option.value)}"${option.selected ? " selected" : ""}>` +
     `${escapeAttr(option.textContent)}</option>`).join("");
@@ -8347,10 +8378,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <strong class="winner-title">${st.players[0].civ} is no more</strong>
         <span class="winner-verdict">Your last city has fallen</span>
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
+        ${reignSummary(st)}
         <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       armFinaleCountdown(signature);
     }
   }
@@ -8428,15 +8461,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.innerHTML = `<div class="winner-content">
         <span class="winner-kicker">${kicker}</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${winnerName}</strong>
+        <strong class="winner-title">${winnerName}${!SPEC && !winnerIds.includes(0) ? " wins" : ""}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${reignSummary(st)}
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
           ${winnerActions}
         </span>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       recordSimulationResult(st, signature, winnerIds);
       armFinaleCountdown(signature);
     }
@@ -12936,6 +12971,11 @@ function faithColor(name) {
 // built. Both map renderers draw this one function, because the plate is the
 // main thing a player reads on a map: until it was shared, the default globe
 // worlds showed a bare name and everything else lived behind a click.
+let cityPlateBoxes = [];
+function cityPlateAt(sx, sy) {
+  return cityPlateBoxes.findLast(box => sx >= box.x && sx <= box.x + box.width &&
+    sy >= box.y && sy <= box.y + box.height) || null;
+}
 function drawCityNameplate(c, x, y, S) {
   cx.save();
   cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -12954,6 +12994,13 @@ function drawCityNameplate(c, x, y, S) {
   const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
                       minorPlate ? 48 : 62);
   const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+  // The plate sits above the city's own tile, so a click on it would land on
+  // the neighbour. Keep its box in page pixels for the map click to find.
+  const toPage = cx.getTransform();
+  cityPlateBoxes.push({city: c.id,
+    x: (toPage.a * bx + toPage.c * by + toPage.e) / DPR,
+    y: (toPage.b * bx + toPage.d * by + toPage.f) / DPR,
+    width: tw * toPage.a / DPR, height: bannerHeight * toPage.d / DPR});
   cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
   if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
   cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
@@ -21399,6 +21446,7 @@ function retirePlanetEffects(now) {
   if (anim.strike && now - anim.strike.t0 >= 220) anim.strike = null;
 }
 function drawPlanetMap() {
+  cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
     planetGpuHide();
@@ -26161,6 +26209,7 @@ function soloTrackerCard(kind) {
       `<span class="wt-bar"><i style="width:${pct}%"></i></span>` +
       `<span class="wt-sub">${Math.round(progress)}/${Math.round(total)} · ${soloRate(perTurn)} per turn</span>` +
       (wants ? `<span class="wt-boostwant" title="${escapeAttr(`Boost: ${wants}`)}">⚡ ${escapeAttr(wants)}</span>` : "") +
+      (studyPlan(tree)[0] ? `<span class="wt-next">Next: ${escapeAttr(titleCase(studyPlan(tree)[0]))}</span>` : "") +
     `</span>` +
     `<span class="wt-turns">${eta ?? "∞"}<small>turn${eta === 1 ? "" : "s"}</small></span></button>`;
 }
@@ -27364,6 +27413,7 @@ function unitPlaque(u, {linked, escortName}) {
     (notes.length ? `<div class="ubar-notes">${notes.join(" · ")}</div>` : "");
 }
 function drawUbar() {
+  syncSettlerLens();
   const bar = document.getElementById("ubar");
   // Published from here rather than watched: the bar is `display:none`
   // whenever nothing is selected, and an element with no CSS box gives a
@@ -29501,6 +29551,18 @@ function openTree(kind) {
   const cols = ERA_NAMES.map(() => []);
   for (const n of Object.keys(specs)) (cols[specs[n].era] || (cols[specs[n].era] = [])).push(n);
   cols.forEach(col => col.sort((a, b) => specs[a].cost - specs[b].cost || a.localeCompare(b)));
+  // Each column sits as near as it can to the column it grows from, so the
+  // lines between them read as branches and not as a tangle.
+  const treeRow = new Map();
+  for (const col of cols) {
+    const score = new Map(col.map((n, row) => {
+      const rows = specs[n].requires.map(r => treeRow.get(r)).filter(r => r !== undefined);
+      return [n, rows.length ? rows.reduce((sum, r) => sum + r, 0) / rows.length : row];
+    }));
+    col.sort((a, b) => score.get(a) - score.get(b));
+    col.forEach((n, row) => treeRow.set(n, row));
+  }
+  const plan = studyPlan(kind);
   // Civ 6 prices a tree node in turns, not in beakers: what a player is
   // choosing between is how long each one takes at the rate this empire is
   // actually running. The raw cost stays in the tooltip, because a tree read
@@ -29531,6 +29593,7 @@ function openTree(kind) {
       const cls = completed ? "done" : (n === current ? "cur" : (avail ? "avail" : "locked"));
       if (completed) { doneHere++; tally.done++; } else if (avail) tally.avail++;
       const canPick = avail && !current;
+      const planned = plan.indexOf(n);
       const turns = completed ? null : nodeTurns(s.cost, n);
       const unlocks = (s.unlocks || []).map(u => titleCase(u.id));
       const why = completed
@@ -29540,14 +29603,14 @@ function openTree(kind) {
           : canPick
             ? `Start this${turns ? ` — ${turnsText(turns)} at the current rate` : ""}`
             : avail
-              ? `Available, but ${heldBy} is under way — this game studies one at a time`
-              : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+              ? `Click to study this after ${heldBy}`
+              : `Click to plan the path here. Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
       const tip = `${titleCase(n)} — ${why}. Cost ${Math.round(s.cost * speed)}` +
         (unlocks.length ? `. Unlocks ${unlocks.join(", ")}` : "");
       // Studied nodes fold to one line: late in a game they are most of the
       // tree, and what is worth the room is what is still to come.
       if (completed)
-        return `<div class="tnode done" title="${escapeAttr(tip)}">` +
+        return `<div class="tnode done" data-n="${n}" title="${escapeAttr(tip)}">` +
           `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}</b>` +
           `<span class="tn-when">${boosted.has(n) ? "⚡" : ""}✓</span></div></div>`;
       // Civ 6 prints the eureka on every node, because planning around them is
@@ -29555,10 +29618,11 @@ function openTree(kind) {
       // has landed says it at the one moment it is worthless.
       const wants = boosted.has(n) ? "" : boostRequirement(s);
       const missing = avail ? [] : s.requires.filter(r => !known.has(r));
-      return `<div class="tnode ${cls}" title="${escapeAttr(tip)}"` +
-        (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
+      return `<div class="tnode ${cls}${planned >= 0 ? " planned" : ""}" data-n="${n}" title="${escapeAttr(tip)}"` +
+        (n === current ? "" : ` onclick='pickTree("${kind}","${n}")'`) + `>` +
         `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}` +
         (s.repeatable ? ` <span class="boost">↻</span>` : "") + `</b>` +
+        (planned >= 0 ? `<span class="tn-plan" aria-label="Step ${planned + 1} of the plan">${planned + 1}</span>` : "") +
         `<span class="tn-when">${n === current ? `${studied}%` : escapeAttr(turnsText(turns))}</span></div>` +
         (n === current ? `<div class="tn-bar"><i style="width:${studied}%"></i></div>` : "") +
         (boosted.has(n) ? `<div class="tn-boost got">⚡ ${techs ? "Eureka" : "Inspiration"} earned</div>`
@@ -29579,7 +29643,12 @@ function openTree(kind) {
       ? `${verb} <b>${escapeAttr(titleCase(current))}</b> · ${studied}%` +
         (nodeTurns(specs[current].cost, current) ? ` · ${turnsText(nodeTurns(specs[current].cost, current))}` : "")
       : (tally.avail ? `Nothing under way — pick a gold node` : `Nothing under way`)) +
-    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span></small>`;
+    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span>` +
+    (plan.length
+      ? `<span class="tree-plan">Then ${escapeAttr(plan.map(titleCase).join(" › "))}` +
+        ` <button type="button" onclick='clearStudyPlan("${kind}")'>Clear path</button></span>`
+      : `<span class="tree-tally">Click any node to plan a path to it</span>`) +
+    `</small>`;
   const holder = document.getElementById("treecols");
   const tree = document.getElementById("tree");
   const reopening = tree.classList.contains("open") && tree.dataset.kind === kind;
@@ -29587,6 +29656,7 @@ function openTree(kind) {
   holder.innerHTML = columns.join("");
   tree.dataset.kind = kind;
   tree.classList.add("open");
+  drawTreeLines(holder, specs, known, current, plan);
   treeSignature = treeStateSignature(kind);
   if (kept) { holder.scrollLeft = kept.left; holder.scrollTop = kept.top; return; }
   // Open where the decisions are: the column holding the current study, or
@@ -29602,6 +29672,7 @@ function treeStateSignature(kind) {
   if (!state || !state.me) return "";
   const techs = kind === "techs";
   return [kind, state.turn, techs ? state.me.research : state.me.civic,
+    studyPlan(kind).join(","),
     Math.round(Number(techs ? state.me.research_progress : state.me.civic_progress) || 0),
     ((techs ? state.me.techs : state.me.civics) || []).length,
     ((techs ? state.me.boosted_techs : state.me.boosted_civics) || []).length,
@@ -29612,9 +29683,136 @@ function refreshOpenTree() {
   if (!tree || !tree.classList.contains("open") || !treeKind) return;
   if (treeStateSignature(treeKind) !== treeSignature) openTree(treeKind);
 }
+// The lines of the tree. A node's own box gives the ends of each curve, so the
+// layout stays with the stylesheet; the gutters between the era columns are
+// where the lines show, and the nodes sit above them. Hovering a node lights
+// the whole chain still standing between the player and it.
+const SVG_NS = "http://www.w3.org/2000/svg";
+function drawTreeLines(holder, specs, known, current, plan) {
+  const nodes = new Map([...holder.querySelectorAll(".tnode[data-n]")]
+    .map(node => [node.dataset.n, node]));
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "tlines");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("width", holder.scrollWidth);
+  svg.setAttribute("height", holder.scrollHeight);
+  const onPath = n => n === current || plan.includes(n);
+  for (const [name, node] of nodes) {
+    for (const need of specs[name].requires) {
+      const from = nodes.get(need);
+      if (!from) continue;
+      const x1 = from.offsetLeft + from.offsetWidth, y1 = from.offsetTop + from.offsetHeight / 2;
+      const y2 = node.offsetTop + node.offsetHeight / 2;
+      // Two nodes of one era stack in one column, so that line bows out into
+      // the gutter and comes back rather than running through the column.
+      const sameColumn = from.parentElement === node.parentElement;
+      const x2 = sameColumn ? x1 : node.offsetLeft;
+      const bend = sameColumn ? 18 : Math.max(16, (x2 - x1) / 2);
+      const line = document.createElementNS(SVG_NS, "path");
+      line.setAttribute("d", sameColumn
+        ? `M${x1} ${y1}C${x1 + bend} ${y1} ${x1 + bend} ${y2} ${x2} ${y2}`
+        : `M${x1} ${y1}C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`);
+      line.setAttribute("class", onPath(name) && (onPath(need) || known.has(need)) ? "on-path"
+        : known.has(name) ? "studied" : known.has(need) ? "open" : "");
+      line.dataset.from = need;
+      line.dataset.to = name;
+      svg.append(line);
+    }
+  }
+  holder.append(svg);
+  holder.onmouseover = event => {
+    const node = event.target.closest?.(".tnode[data-n]");
+    const chain = new Set(node ? [node.dataset.n] : []);
+    for (const name of chain)
+      if (!known.has(name)) for (const need of specs[name].requires) chain.add(need);
+    for (const line of svg.children)
+      line.classList.toggle("lit", chain.has(line.dataset.to) && chain.has(line.dataset.from) &&
+        !known.has(line.dataset.to));
+  };
+}
+// A plan is what to study next, in order, for each tree. The game studies one
+// thing at a time, so the page holds the rest and starts the next step itself
+// when the last one lands. It lives with this world's seed: a plan for another
+// world means nothing.
+const STUDY_PLAN_KEY = "civvis-study-plan-v1";
+let studyPlans = null;
+function studyPlanStore() {
+  const seed = state?.seed ?? null;
+  if (studyPlans && studyPlans.seed === seed) return studyPlans;
+  studyPlans = {seed, techs: [], civics: []};
+  try {
+    const held = JSON.parse(localStorage.getItem(STUDY_PLAN_KEY) || "null");
+    if (held && held.seed === seed) studyPlans = held;
+  } catch (_) {}
+  return studyPlans;
+}
+function studyTaken(kind) {
+  const techs = kind === "techs";
+  return {known: new Set((techs ? state.me.techs : state.me.civics) || []),
+    current: techs ? state.me.research : state.me.civic,
+    specs: techs ? RULES.techs : RULES.civics};
+}
+// What is left to do of a plan: anything already studied or under way is gone.
+function studyPlan(kind) {
+  if (!state?.me || !RULES) return [];
+  const {known, current, specs} = studyTaken(kind);
+  return (studyPlanStore()[kind] || [])
+    .filter(n => specs[n] && !(known.has(n) && !specs[n].repeatable) && n !== current);
+}
+function setStudyPlan(kind, steps) {
+  const plans = studyPlanStore();
+  plans[kind] = steps;
+  try { localStorage.setItem(STUDY_PLAN_KEY, JSON.stringify(plans)); } catch (_) {}
+}
+// Every step still needed to reach a node, prerequisites first and the cheaper
+// branch first where there is a choice.
+function studyPathTo(kind, target) {
+  const {known, current, specs} = studyTaken(kind);
+  const path = [];
+  const visit = name => {
+    if (path.includes(name) || name === current || (known.has(name) && !specs[name].repeatable)) return;
+    for (const need of [...specs[name].requires].sort((a, b) => specs[a].cost - specs[b].cost))
+      visit(need);
+    path.push(name);
+  };
+  visit(target);
+  return path;
+}
+function clearStudyPlan(kind) {
+  setStudyPlan(kind, []);
+  openTree(kind);
+  drawTurnLoop();
+}
+function studyAction(kind, name) {
+  return state.legal_actions.find(action => kind === "techs"
+    ? action.type === "research" && action.tech === name
+    : action.type === "civic" && action.civic === name);
+}
+// Start the next step of each plan that has nothing under way. The rest of the
+// turn must not wait on this, and a step the engine will not take yet (a boost
+// reordered things, say) stays in the plan rather than stopping it.
+async function followStudyPlan() {
+  if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;
+  for (const kind of ["techs", "civics"]) {
+    if (studyTaken(kind).current) continue;
+    for (const name of studyPlan(kind)) {
+      const action = studyAction(kind, name);
+      if (action) { await send(action); break; }
+    }
+  }
+}
 function pickTree(kind, n) {
-  document.getElementById("tree").classList.remove("open");
-  send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+  const path = studyPathTo(kind, n);
+  setStudyPlan(kind, path);
+  // One step that can start now is an ordinary choice, and the tree gets out
+  // of the way. A longer plan stays on screen so the path can be seen.
+  if (path.length === 1 && !studyTaken(kind).current) {
+    document.getElementById("tree").classList.remove("open");
+    setStudyPlan(kind, []);
+    send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+    return;
+  }
+  followStudyPlan().then(() => { openTree(kind); drawTurnLoop(); });
 }
 
 // ---------------------------------------------------------------- lens/tacks
@@ -30547,6 +30745,7 @@ function syncMapLensControls() {
   const exit = document.getElementById("map-lens-exit");
   if (exit) exit.hidden = !mapLens;
   syncDistrictLensControls();
+  drawLensPicker();
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -30556,6 +30755,53 @@ function setMapLens(next) {
 }
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
+// The same lenses from the map's own controls. The dock above lives in the
+// command deck, which a played game keeps closed, so during play the lenses
+// could only be reached by anyone who already knew the Settler lens's key.
+function drawLensPicker() {
+  const picker = document.getElementById("lens-picker");
+  if (!picker || picker.hidden) return;
+  const choice = (attributes, icon, label, pressed, extra = "") =>
+    `<button type="button" class="lens-choice${extra}" ${attributes} aria-pressed="${pressed}">` +
+    `<span aria-hidden="true">${icon}</span>${escapeAttr(label)}</button>`;
+  picker.innerHTML = [...document.querySelectorAll("#map-lens-strip [data-map-lens]")]
+    .filter(button => !button.hidden)
+    .map(button => choice(`data-lens="${escapeAttr(button.dataset.mapLens)}"`,
+      button.querySelector(".map-lens-icon")?.textContent || "◎",
+      button.querySelector(".map-lens-label")?.textContent || button.dataset.mapLens,
+      mapLens === button.dataset.mapLens)).join("") +
+    choice(`data-lens-yields`, "⛁", "Tile yields", SHOW_YIELDS, " lens-choice-all");
+}
+function toggleLensPicker(open) {
+  const picker = document.getElementById("lens-picker");
+  const button = document.getElementById("lenspicker-toggle");
+  if (!picker || !button) return;
+  picker.hidden = !(open ?? picker.hidden);
+  button.setAttribute("aria-expanded", String(!picker.hidden));
+  drawLensPicker();
+}
+document.getElementById("lenspicker-toggle").onclick = () => toggleLensPicker();
+document.getElementById("lens-picker").onclick = event => {
+  const choice = event.target.closest(".lens-choice");
+  if (!choice) return;
+  if (choice.dataset.lens) setMapLens(choice.dataset.lens);
+  else setShowYields(!SHOW_YIELDS);
+  drawLensPicker();
+};
+// Selecting a Settler brings its map up, and deselecting puts it away, because
+// where to found is the only question a Settler asks. It offers once per unit:
+// a player who closes the lens has answered, and a lens they chose themselves
+// is left alone.
+let settlerLensUnit = null, settlerLensOpened = false;
+function syncSettlerLens() {
+  if (SPEC) return;
+  const unit = sel && sel.type === "settler" ? sel.id : null;
+  if (unit === settlerLensUnit) return;
+  if (settlerLensOpened && mapLens === "settler") setMapLens(null);
+  settlerLensUnit = unit;
+  settlerLensOpened = unit !== null && !mapLens;
+  if (settlerLensOpened) setMapLens("settler");
+}
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 // What the hatching over the board is saying. Worth a line because the
 // reading follows its unit as the unit moves, so a viewer who looked away
@@ -32169,6 +32415,19 @@ cv.addEventListener("click", ev => {
     const target = skyArrivalHit(sx, sy);
     if (target) { skyGoToWorld(target.id); return; }
   }
+  // A plate is a button: your own opens that city, wherever the plate has
+  // drifted relative to the tiles under it.
+  if (!tackMode && !interfaceMode && !SPEC && state) {
+    const plate = cityPlateAt(sx, sy);
+    const city = plate && state.cities.find(candidate => candidate.id === plate.city);
+    if (city && city.owner === 0) {
+      selCity = city; sel = null;
+      clearUnitIntel();
+      openCityScreen(city.id);
+      draw(); drawSide(); drawUbar();
+      return;
+    }
+  }
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
@@ -32205,14 +32464,22 @@ cv.addEventListener("click", ev => {
   }
   const here = state.units.filter(u => u.owner === 0 && key(u.pos) === k);
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
-  if (here.length) {
-    const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
-    sel = here[idx];
-    if (city && city.owner === 0) selCity = city;
+  const ours = city && city.owner === 0 ? city : null;
+  // Clicking your city opens it. A garrison does not get in the way: the click
+  // takes each unit on the tile in turn, and the one after the last is the city.
+  const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
+  if (ours && here.length && held === here.length - 1) {
+    selCity = ours; sel = null;
     clearUnitIntel();
-  } else if (city && city.owner === 0) {
-    selCity = city; sel = null;
+    openCityScreen(ours.id);
+  } else if (here.length) {
+    sel = here[(held + 1) % here.length];
+    if (ours) selCity = ours;
     clearUnitIntel();
+  } else if (ours) {
+    selCity = ours; sel = null;
+    clearUnitIntel();
+    openCityScreen(ours.id);
   } else {
     sel = null; selCity = null;
     // Nothing of yours here. If somebody else's unit is, this press is the
@@ -33314,6 +33581,9 @@ function openTurnIfNew() {
   drawTurnLoop();
   resumeAllTravel();
   if (!sel && !selCity) advanceToNextActionUnit(true);
+  // After this tick: a turn opens inside the End Turn request, and `send`
+  // refuses anything else until that request has finished.
+  setTimeout(followStudyPlan);
 }
 function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();

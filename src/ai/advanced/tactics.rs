@@ -739,6 +739,12 @@ impl AdvancedAi {
             enemies,
             visible,
         } = input;
+        if self
+            .defensive_firing_radius(g, pid, uid)
+            .is_some_and(|(city, radius)| g.wdist(tile, city) > radius)
+        {
+            return f64::NEG_INFINITY;
+        }
         if !self.strike_opening || group.posture != ForcePosture::Engage {
             return 0.0;
         }

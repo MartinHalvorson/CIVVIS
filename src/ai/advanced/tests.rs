@@ -35665,6 +35665,70 @@ fn the_capacity_fallback_never_trades_policy_slots_away() {
     );
 }
 
+/// `government-reach-pays-the-switch`: Communism's eight slots stay against
+/// Corporate Libertarianism's ten, and a seat stuck on four still reaches. See
+/// `advanced/government_reach.rs`.
+#[test]
+fn a_two_slot_gain_does_not_pay_for_the_switch() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_503);
+    for civic in [
+        "code_of_laws",
+        "political_philosophy",
+        "class_struggle",
+        "corporate_libertarianism",
+    ] {
+        game.players[0].civics.insert(Name::new(civic));
+    }
+    game.players[0].government = Some("communism".to_string());
+
+    let seat = || {
+        let mut ai = AdvancedAi::new();
+        ai.victory_target = Some(VictoryTarget::Science);
+        ai.enable_government_capacity_fallback();
+        ai
+    };
+    let mut off = game.clone();
+    seat().strategic_government(&mut off, 0, GrandStrategy::Science);
+    assert_eq!(
+        off.players[0].government.as_deref(),
+        Some("corporate_libertarianism"),
+        "the shipped fallback takes the two slots: the live t187 switch"
+    );
+
+    let mut armed = seat();
+    armed.enable_government_reach_pays_the_switch();
+    let mut on = game.clone();
+    armed.strategic_government(&mut on, 0, GrandStrategy::Science);
+    assert_eq!(
+        on.players[0].government.as_deref(),
+        Some("communism"),
+        "the seat keeps the listed pick it holds"
+    );
+}
+
+#[test]
+fn a_seat_outside_its_listed_pick_still_reaches() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_504);
+    for civic in [
+        "code_of_laws",
+        "political_philosophy",
+        "corporate_libertarianism",
+    ] {
+        game.players[0].civics.insert(Name::new(civic));
+    }
+    game.players[0].government = Some("classical_republic".to_string());
+    let mut ai = AdvancedAi::new();
+    ai.victory_target = Some(VictoryTarget::Diplomacy);
+    ai.enable_government_capacity_fallback();
+    ai.enable_government_reach_pays_the_switch();
+    ai.strategic_government(&mut game, 0, GrandStrategy::Diplomacy);
+    assert_eq!(
+        game.players[0].government.as_deref(),
+        Some("corporate_libertarianism"),
+        "six slots pay for the switch"
+    );
+}
+
 /// ★★★★ THE ASSIGNED LANE VETOES THE SCOREBOARD. A `victory_target` refuses
 /// every Great Work building off the Culture lane and every space-race
 /// project off the Science lane. Live King seat `civvis-20260826T112920Z`

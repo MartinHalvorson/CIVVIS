@@ -19,8 +19,8 @@
 //     thread that is allowed to be idle.
 //   * **The finale countdown.** The viewer-selected interval between a result
 //     and the next world, counted where there is a clock to count with.
-//   * **Saved games.** There is no disk. `localStorage` holds them, and the
-//     engine only ever sees a save as an uploaded game.
+//   * **Saved games.** There is no disk. IndexedDB holds them, and the engine
+//     only ever sees a save as an uploaded game.
 
 (function () {
   "use strict";
@@ -41,6 +41,9 @@
     "/live-pause", "/live-new-game",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
+  // The page's front door is for the public site: the desktop app's local
+  // channel was opened by someone who already chose what they are doing.
+  window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST;
 
   // Keep the browser build to the same four choices as the socket server.
   // It starts at ten seconds until the page posts its persisted preference.
@@ -90,6 +93,7 @@
     if (!waiting) return;
     pending.delete(id);
     if (!ok) { waiting.reject(new Error(error)); return; }
+    if (waiting.raw) { waiting.resolve(answer); return; }
     const parsed = JSON.parse(new TextDecoder().decode(answer));
     if (waiting.path.startsWith("/state")) {
       const bytes = answer.byteLength;
@@ -228,10 +232,10 @@
     return openingPresetStarted;
   }
 
-  function ask(method, path, body) {
+  function ask(method, path, body, raw = false) {
     return new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject, path });
+      pending.set(id, { resolve, reject, path, raw });
       worker.postMessage({
         id,
         method,
@@ -350,40 +354,116 @@
 
   // ------------------------------------------------------------------ saves
 
-  const saveKey = (name) => SAVE_PREFIX + name;
+  // A game is megabytes. In localStorage that was a game killer on two counts:
+  // the whole browser gets about 5 MB there, which a Tiny map reached by about
+  // turn 130, and the write was synchronous on the page's thread every turn.
+  // IndexedDB holds as much as the disk will give it, and takes the save as the
+  // bytes the engine produced, so nothing here parses or stringifies a world.
+  // What the list needs is stored apart, so listing never loads a game.
+  const SAVE_DB = "civvis-saves";
+  const SAVE_META = "meta";
+  const SAVE_BODY = "body";
+  let saveDb = null;
 
-  function storedSaves() {
-    const saves = [];
+  function saveDatabase() {
+    if (saveDb === null) {
+      saveDb = new Promise((resolve, reject) => {
+        const opening = indexedDB.open(SAVE_DB, 1);
+        opening.onupgradeneeded = () => {
+          opening.result.createObjectStore(SAVE_META, { keyPath: "name" });
+          opening.result.createObjectStore(SAVE_BODY);
+        };
+        opening.onsuccess = () => resolve(opening.result);
+        opening.onerror = () => reject(opening.error);
+      }).then(moveLegacySaves);
+    }
+    return saveDb;
+  }
+
+  function finished(transaction, value) {
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve(value());
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  function writeRecord(db, meta, bytes) {
+    const transaction = db.transaction([SAVE_META, SAVE_BODY], "readwrite");
+    transaction.objectStore(SAVE_META).put(meta);
+    transaction.objectStore(SAVE_BODY).put(bytes, meta.name);
+    return finished(transaction, () => meta);
+  }
+
+  // What a save written before this change left behind. It moves once, and the
+  // localStorage copy goes only after IndexedDB has confirmed it holds the game.
+  async function moveLegacySaves(db) {
+    const keys = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key || !key.startsWith(SAVE_PREFIX)) continue;
+      if (key && key.startsWith(SAVE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) {
+      const text = localStorage.getItem(key);
       try {
-        const held = JSON.parse(localStorage.getItem(key));
-        saves.push({ name: key.slice(SAVE_PREFIX.length), turn: held.turn ?? 0 });
+        const held = JSON.parse(text);
+        const game = held.game ?? held;
+        await writeRecord(db, {
+          name: key.slice(SAVE_PREFIX.length),
+          turn: game.turn ?? 0,
+          civ: game.players?.[game.human_seats?.[0] ?? 0]?.civ ?? null,
+          difficulty: game.difficulty ?? null,
+          savedAt: Date.now(),
+        }, new TextEncoder().encode(text));
+        localStorage.removeItem(key);
       } catch (error) {
-        // A half-written entry is not a save. Leave it for `writeSave` to
-        // evict rather than break the list every time it is read.
+        // A half-written entry is not a save. It stays where it is and costs
+        // nothing here; the list no longer reads that storage.
       }
     }
-    saves.sort((a, b) => b.turn - a.turn);
-    return saves;
+    return db;
+  }
+
+  async function storedSaves() {
+    const db = await saveDatabase();
+    const reading = db.transaction(SAVE_META).objectStore(SAVE_META).getAll();
+    const saves = await new Promise((resolve, reject) => {
+      reading.onsuccess = () => resolve(reading.result);
+      reading.onerror = () => reject(reading.error);
+    });
+    return saves.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+  }
+
+  async function readSave(name) {
+    const db = await saveDatabase();
+    const reading = db.transaction(SAVE_BODY).objectStore(SAVE_BODY).get(name);
+    return new Promise((resolve, reject) => {
+      reading.onsuccess = () => resolve(reading.result ?? null);
+      reading.onerror = () => reject(reading.error);
+    });
+  }
+
+  // The world a save belongs to, as the last answer described it. Reading it
+  // back out of the save would mean parsing the thing this exists to avoid.
+  const seenWorld = { turn: 0, civ: null, difficulty: null };
+  function noteWorld(answer) {
+    // The seat at the keyboard is always the first player.
+    if (!answer || answer.spectate !== false || typeof answer.turn !== "number") return;
+    seenWorld.turn = answer.turn;
+    if (answer.difficulty) seenWorld.difficulty = answer.difficulty;
+    const civ = answer.players?.[0]?.civ;
+    if (civ) seenWorld.civ = civ;
   }
 
   async function writeSave(name) {
-    const game = await ask("GET", "/save", "");
+    const bytes = await ask("GET", "/save", "", true);
     try {
-      localStorage.setItem(saveKey(name), JSON.stringify(game));
+      await writeRecord(await saveDatabase(),
+        { name, ...seenWorld, savedAt: Date.now(), bytes: bytes.byteLength }, bytes);
     } catch (error) {
-      // A whole game is megabytes and the quota is not large. Drop the
-      // autosave first — it is the one copy nobody asked for by name.
-      localStorage.removeItem(saveKey(AUTOSAVE_NAME));
-      try {
-        localStorage.setItem(saveKey(name), JSON.stringify(game));
-      } catch (again) {
-        return { error: `there is no room to save ${name}: ${again.message}` };
-      }
+      return { error: `there is no room to save ${name}: ${error.message}` };
     }
-    return { error: null, name, turn: game.turn ?? 0 };
+    return { error: null, name, turn: seenWorld.turn };
   }
 
   // --------------------------------------------------------------- dispatch
@@ -399,7 +479,13 @@
     const parsed = body ? safeParse(body) : {};
 
     // The routes that need storage the engine cannot reach.
-    if (method === "GET" && path === "/saves") return json({ saves: storedSaves() });
+    if (method === "GET" && path === "/saves") {
+      try {
+        return json({ saves: await storedSaves() });
+      } catch (error) {
+        return json({ saves: [], error: `saves are unavailable: ${error.message}` });
+      }
+    }
 
     if (method === "POST" && path === "/save") {
       const name = String(parsed.name || "");
@@ -410,9 +496,12 @@
     }
 
     if (method === "POST" && path === "/load" && parsed.name) {
-      const held = localStorage.getItem(saveKey(String(parsed.name)));
+      const held = await readSave(String(parsed.name));
       if (held === null) return json({ error: `there is no save called ${parsed.name}` });
-      return json(await ask("POST", "/load", JSON.stringify({ game: JSON.parse(held) })));
+      // Spliced, not parsed: the engine reads this request, and nothing on the
+      // page needs to look inside the game on its way there.
+      const game = new TextDecoder().decode(held);
+      return json(await ask("POST", "/load", `{"game":${game}}`));
     }
 
     if (method === "POST" && path === "/pace") {
@@ -443,6 +532,7 @@
 
     const started = performance.now();
     let answer = await ask(method, target, body);
+    noteWorld(answer);
     report.requests++;
     if (answer && typeof answer.turn === "number") {
       report.lastTurn = answer.turn;
