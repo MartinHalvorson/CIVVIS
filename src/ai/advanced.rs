@@ -9554,6 +9554,10 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `stronger-racer-stays-a-friend`: on a Science seat, a rival stronger
+    /// than us and not yet in the space race can be befriended. See
+    /// `advanced/stronger_racer_stays_a_friend.rs`. Off by default.
+    stronger_racer_stays_a_friend: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10461,6 +10465,9 @@ mod foothold_faces_the_capital;
 mod formation_refusals;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
+/// `stronger-racer-stays-a-friend`: see
+/// `advanced/stronger_racer_stays_a_friend.rs`.
+mod stronger_racer_stays_a_friend;
 
 /// `fog-yields-to-a-stranded-settler`: see `advanced/fog_yields_stranded.rs`.
 mod fog_yields_stranded;
@@ -11737,6 +11744,7 @@ impl AdvancedAi {
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             spies_price_the_science_head: false,
+            stronger_racer_stays_a_friend: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,
