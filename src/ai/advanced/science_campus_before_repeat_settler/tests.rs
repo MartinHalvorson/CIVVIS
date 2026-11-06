@@ -64,7 +64,8 @@ fn board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
             );
     }
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-    ai.enable_campus_claims_the_free_slot_2();
+    ai.disable_campus_claims_the_free_slot();
+    ai.disable_campus_claims_the_free_slot_2();
     ai.enable_early_settler_floor();
     ai.enable_science_campus_before_repeat_settler();
     let plan = StrategicPlan {
@@ -283,4 +284,23 @@ fn commitment_yields_to_new_defensive_or_victory_priorities() {
     other_goal.victory_target = Some(VictoryTarget::Culture);
     assert!(!other_goal.science_campus_holds_repeat_settler(&g, 0, cid, &plan));
     assert!(ai.free_slot_campus_holds(&g, 0, cid, &plan, &campus));
+}
+
+#[test]
+fn standalone_gene_does_not_enable_ordinary_campus_claims() {
+    let (base, ai, cid, plan, _) = board();
+    for head in [
+        None,
+        Some(Item::Building {
+            building: crate::name!("granary"),
+        }),
+        Some(Item::Unit {
+            unit: crate::name!("builder"),
+        }),
+    ] {
+        let mut g = base.clone();
+        g.cities.get_mut(&cid).unwrap().queue = head.clone().into_iter().collect();
+        ai.claim_free_slot_campus(&mut g, 0, &plan);
+        assert_eq!(g.cities[&cid].queue.first().cloned(), head);
+    }
 }

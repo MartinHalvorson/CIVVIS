@@ -8,7 +8,9 @@
 //! the first capital Campus foundation appeared at 48/1. This is a production
 //! opportunity, not evidence of saved turns or a stronger native outcome.
 //!
-//! The ordinary free-slot Campus picker still validates its site, capacity,
+//! It supplies its own repeated-Settler claim even when both ordinary
+//! free-slot Campus flags are off; it does not enable their broader claims.
+//! The shared free-slot Campus picker still validates its site, capacity,
 //! population and safety. The new exception requires a host quote for both
 //! items, a Campus of at most five native turns, a strictly longer Settler,
 //! at least two founded cities and a Settler already walking. Active major
@@ -20,7 +22,7 @@
 use super::*;
 
 impl AdvancedAi {
-    fn science_campus_pause_safe(
+    pub(super) fn science_campus_pause_safe(
         &self,
         g: &Game,
         pid: usize,
