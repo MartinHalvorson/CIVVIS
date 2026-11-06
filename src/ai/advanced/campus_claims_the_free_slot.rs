@@ -167,7 +167,10 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
-        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
+        if !self.campus_claims_the_free_slot
+            && !self.campus_claims_the_free_slot_2
+            && !self.science_campus_pause_safe(g, pid, cid, plan)
+        {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -239,7 +242,12 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
+        if !self.campus_claims_the_free_slot
+            && !self.campus_claims_the_free_slot_2
+            && !(self.science_campus_pause_safe(g, pid, cid, plan)
+                && g.host_production_turns(cid, item)
+                    .is_some_and(|turns| turns.is_finite() && turns > 0.0))
+        {
             return false;
         }
         let Item::District { district, .. } = item else {
@@ -259,7 +267,10 @@ impl AdvancedAi {
     /// it at the head of its queue, idle or over a deferrable item. One claim
     /// a turn. Exact no-op with the gene off.
     pub(super) fn claim_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
+        if !self.campus_claims_the_free_slot
+            && !self.campus_claims_the_free_slot_2
+            && !self.science_campus_before_repeat_settler
+        {
             return;
         }
         // Version 2: every eligible city, each the quickest of those left.
@@ -298,7 +309,7 @@ impl AdvancedAi {
             // Settler at t46-49 while another Settler was already walking.
             // Let this first Campus briefly precede the repeated Settler;
             // keep the first expansion, emergencies and finishing queues.
-            let campus_before_settler = floor_holds
+            let campus_before_settler = (floor_holds
                 && self.early_settler_floor(g, plan) > 0
                 && n_cities >= 2
                 && Self::early_settler_census(g, pid).0 > 0
@@ -312,7 +323,17 @@ impl AdvancedAi {
                 && self.short_korean_science_campus(g, pid, cid, &campus)
                 && matches!(g.cities[&cid].queue.first(), Some(Item::Unit { unit }) if *unit == "settler")
                 && g.host_production_turns(cid, &Self::early_settler_item())
-                    .is_some_and(|remaining| remaining.is_finite() && remaining > turns);
+                    .is_some_and(|remaining| remaining.is_finite() && remaining > turns))
+                || (floor_holds
+                    && self.science_campus_precedes_repeat_settler(g, pid, cid, plan, &campus));
+            // The standalone Science gene supplies only its narrow exception,
+            // not the ordinary idle/deferrable-queue Campus claims.
+            if !self.campus_claims_the_free_slot
+                && !self.campus_claims_the_free_slot_2
+                && !campus_before_settler
+            {
+                continue;
+            }
             if floor_holds && !campus_before_settler {
                 self.explain_free_slot_campus_hold(g, cid, turns, "early Settler floor");
                 continue;

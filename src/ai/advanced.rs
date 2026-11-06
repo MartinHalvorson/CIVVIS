@@ -8848,6 +8848,8 @@ pub struct AdvancedAi {
     science_foundation_before_backlog: bool,
     /// Explicit Science routing admits legal prerequisite steps beyond the era window.
     science_chain_crosses_window: bool,
+    /// A host-quoted short first Science Campus before a longer repeated Settler.
+    science_campus_before_repeat_settler: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10962,6 +10964,7 @@ mod revealed_launch_research;
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
 mod saved_work_is_seen;
+mod science_campus_before_repeat_settler;
 mod science_chain_crosses_window;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
@@ -11759,6 +11762,7 @@ impl AdvancedAi {
             science_seat_allies_2: false,
             science_foundation_before_backlog: false,
             science_chain_crosses_window: false,
+            science_campus_before_repeat_settler: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,

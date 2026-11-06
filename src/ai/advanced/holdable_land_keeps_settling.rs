@@ -445,7 +445,9 @@ impl AdvancedAi {
                 Some("recently attacked")
             } else if Self::early_settler_raider_near(g, city.pos) {
                 Some("a raider in its ring")
-            } else if !Self::holdable_land_may_displace(g, pid, cid) {
+            } else if self.science_campus_holds_repeat_settler(g, pid, cid, plan)
+                || !Self::holdable_land_may_displace(g, pid, cid)
+            {
                 Some("its queue keeps its item")
             } else if !g.can_produce(pid, cid, &item) {
                 Some("cannot train a Settler")
