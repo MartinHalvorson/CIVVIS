@@ -1795,9 +1795,12 @@ impl AdvancedAi {
                 spec.is_melee_capable(),
             );
             let mut own: Vec<Candidate> = Vec::new();
+            let firing_post = self.defensive_firing_radius(g, pid, uid);
             let mut stands: Vec<Pos> = vec![unit.pos];
             stands.extend(g.reachable(uid));
             for stand in stands {
+                let ranged_stand_allowed =
+                    firing_post.is_none_or(|(city, radius)| g.wdist(stand, city) <= radius);
                 if !targets
                     .iter()
                     .any(|target| g.wdist(stand, target.pos) <= range)
@@ -1811,6 +1814,7 @@ impl AdvancedAi {
                             continue;
                         }
                         if spec.has_ranged_attack()
+                            && ranged_stand_allowed
                             && board.ranged_order_is_legal(
                                 pid,
                                 uid,
@@ -2949,9 +2953,15 @@ impl AdvancedAi {
         if !matches!(group.posture, ForcePosture::Advance | ForcePosture::Engage) {
             return None;
         }
-        let target = match group.posture {
+        let defense_anchor = self.defensive_formation_anchor(g, pid, group);
+        let target = defense_anchor.unwrap_or(match group.posture {
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             _ => group.objective,
+        });
+        let on_post = |tile| {
+            defense_anchor.is_none_or(|anchor| {
+                g.wdist(tile, anchor) <= super::defenders_hold_the_walls::WALL_DEFENDER_REACH
+            })
         };
         // A force of one is not a formation and keeps today's step; a force
         // of several is planned even when the armed and the ordered leave a
@@ -2965,7 +2975,12 @@ impl AdvancedAi {
             let city = &g.cities[&cid];
             city.owner != pid && g.is_at_war(pid, city.owner)
         });
-        let contacts = Self::contacts(g, pid, &members, CONTACT_BAND);
+        let mut contacts = Self::contacts(g, pid, &members, CONTACT_BAND);
+        if let Some(anchor) = defense_anchor {
+            contacts.retain(|contact| {
+                g.wdist(contact.pos, anchor) <= super::defenders_hold_the_walls::WALL_THREAT_REACH
+            });
+        }
         let in_contact = !Self::contacts(g, pid, &members, CONTACT_RANGE).is_empty();
 
         // Who wants what. A wounded unit on a board that heals wants a heal
@@ -3038,6 +3053,7 @@ impl AdvancedAi {
             let mut candidates: Vec<(f64, i32, Pos)> = pool
                 .iter()
                 .copied()
+                .filter(|tile| on_post(*tile))
                 .filter(|tile| depth(*tile) == 1 && our_side(*tile))
                 .map(|tile| {
                     let facing = nearest_contact(tile).unwrap_or(target);
@@ -3096,6 +3112,7 @@ impl AdvancedAi {
             let mut candidates: Vec<(u8, f64, i32, Pos)> = pool
                 .iter()
                 .copied()
+                .filter(|tile| on_post(*tile))
                 .filter(|tile| !taken.contains(tile) && depth(*tile) >= range.min(2))
                 .filter_map(|tile| {
                     let at_range = aims.iter().any(|aim| {
@@ -3148,6 +3165,7 @@ impl AdvancedAi {
             let mut candidates: Vec<(bool, i32, f64, i32, Pos)> = pool
                 .iter()
                 .copied()
+                .filter(|tile| on_post(*tile))
                 .filter(|tile| {
                     let reach = g.wdist(*tile, target);
                     !taken.contains(tile)
@@ -3188,6 +3206,7 @@ impl AdvancedAi {
             let mut candidates: Vec<(usize, f64, i32, Pos)> = pool
                 .iter()
                 .copied()
+                .filter(|tile| on_post(*tile))
                 .filter(|tile| !taken.contains(tile) && depth(*tile) >= 2)
                 .map(|tile| {
                     let beside = front_tiles
