@@ -55,6 +55,11 @@ RANGES = [("a", "b"), ("c", "d"), ("e", "f"), ("g", "k"),
 MIN_ANCHORS = 2
 
 GENE_PATH = "src/ai/advanced/genes.rs"
+FLAGS_PATH = "src/ai/advanced/treatment_flags.rs"
+#: Ceilings, not targets: what `main` held on 2026-11-06 plus what the pull
+#: requests open that day add. They only ever come down.
+GENE_ROWS_ABOVE_THE_MARKERS = 880
+TOGGLES_OUTSIDE_THE_MARKERS = 638
 GENE_TAG = re.compile(r'Gene\s*\{\s*tag:\s*"([^"]+)"')
 
 
@@ -334,15 +339,51 @@ class GeneRegistryAppendPoints(unittest.TestCase):
         found = marks((REPO / GENE_PATH).read_text(encoding="utf-8").splitlines())
         self.assertEqual([span for _, span in found], RANGES)
 
-    def test_every_marker_appends_without_renumbering_existing_genes(self):
+    def test_a_new_row_keeps_the_existing_genes_in_order(self):
+        """The order holds, not the index. A row under an earlier marker shifts
+        the rows filed below it by one, and a run reads its bits against the
+        gene list in its own header, so that moves nothing a run wrote. This
+        used to demand an exact prefix, which meant any row under a later
+        marker failed the next row under an earlier one, so every gene was
+        filed above the markers and they went unused."""
         source = (REPO / GENE_PATH).read_text(encoding="utf-8")
         before = _gene_tags(source)
         self.assertGreater(len(before), 90, "the registry scrape found almost nothing")
         for tag in self.SAMPLES:
             with self.subTest(tag=tag):
                 after = _gene_tags(_gene_with_entry(source, tag))
-                self.assertEqual(after[:len(before)], before)
-                self.assertEqual(after[len(before):], [tag])
+                self.assertIn(tag, after)
+                self.assertEqual([row for row in after if row != tag], before)
+        # The case the old prefix rule failed: a row already under a late
+        # marker, then one under an early one.
+        after = _gene_tags(_gene_with_entry(
+            _gene_with_entry(source, "zephyr-probe"), "alpha-probe"))
+        self.assertLess(after.index("alpha-probe"), after.index("zephyr-probe"))
+        self.assertEqual(
+            [row for row in after if not row.endswith("-probe")], before)
+
+    def test_new_rows_go_under_the_markers(self):
+        """Above the markers every gene PR lands on one line. Measured over
+        the 200 merges before 2026-11-06: 40 of 58 consecutive pairs collided,
+        all on that line. The ceiling leaves room for the pull requests open
+        that day, and only ever comes down."""
+        lines = (REPO / GENE_PATH).read_text(encoding="utf-8").splitlines(True)
+        first = marks([line.rstrip("\n") for line in lines])[0][0]
+        above = len(_gene_tags("".join(lines[:first])))
+        self.assertLessEqual(
+            above, GENE_ROWS_ABOVE_THE_MARKERS,
+            "file a new gene row under the marker for its tag's first letter")
+
+    def test_new_toggles_go_under_the_markers(self):
+        """The same, for `toggles!` entries: 16 of 57 pairs collided there."""
+        text = (REPO / FLAGS_PATH).read_text(encoding="utf-8")
+        blocks = re.findall(r"^    toggles! \{\n(.*?)^    \}$", text, re.M | re.S)
+        self.assertEqual(len(blocks), 2, "expected the marked block and the old one")
+        marked, old = blocks
+        self.assertTrue(marks(marked.splitlines()), "the first block lost its markers")
+        self.assertLessEqual(
+            len(re.findall(r" => enable_", old)), TOGGLES_OUTSIDE_THE_MARKERS,
+            "file a new toggle under the marker for its flag's first letter")
 
     def test_every_gene_row_below_a_marker_matches_that_marker(self):
         lines = (REPO / GENE_PATH).read_text(encoding="utf-8").splitlines(True)

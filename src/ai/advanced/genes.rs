@@ -38,10 +38,11 @@
 //!
 //! ⚠ Existing rows are never re-ordered: the screen writes genes in this
 //! order, and `tools/genes.py` re-derives a batch's gene set from this file
-//! at the commit the batch names. Add a row below the tail append marker for
-//! its tag's first-letter range. Every marker follows the existing rows, so
-//! the distinct append points let concurrent gene PRs merge without moving a
-//! positional bit that a running screen already wrote.
+//! at the commit the batch names. Add a row at the end of the tail append
+//! marker's range for its tag's first letter, so concurrent gene PRs merge.
+//! A row under an earlier marker does shift the rows filed below it by one,
+//! and that is harmless: a run's bits are read against the gene list in its
+//! own header, and `gene_screen` refuses to merge runs whose lists differ.
 //!
 //! Every row's comment is the note its old table row or its old bundle line
 //! carried — the reason the gene exists and the measurement that motivated
