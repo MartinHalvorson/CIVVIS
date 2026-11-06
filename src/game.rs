@@ -479,7 +479,6 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
-pub mod border_forecast;
 pub mod quests;
 
 mod actions;
@@ -11757,7 +11756,7 @@ impl Game {
     /// production call site turned out to be a pure read and now takes
     /// [`Self::player_vision_frame`] instead; this stays for tests that want
     /// an owned snapshot without depending on the `Arc`.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
         self.player_vision_frame(pid).as_ref().clone()
     }

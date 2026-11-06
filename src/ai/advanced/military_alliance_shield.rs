@@ -87,7 +87,7 @@
 //!
 //! On the live seat the order crosses as `ALLIANCE_MILITARY`
 //! (`civ6_alliance_type`). `drop_off_lane_alliances` keeps the gene's own ask
-//! ([`AdvancedAi::military_alliance_shield_partner`]) on every lane, and the
+//! ([`AdvancedAi::military_alliance_shield_ask`]) on every lane, and the
 //! agent's `CivvisAllianceStep` takes it under `MilitaryAllies`, which
 //! civ6_play.py sets when the tag is armed.
 //!
@@ -160,16 +160,9 @@ pub(super) const SHIELD_RETRY_TURNS: u32 =
     super::alliance_remembers_the_refusal::ALLIANCE_FRIENDSHIP_STEP_TURNS;
 
 impl AdvancedAi {
-    /// The partner `military-alliance-shield` asked on the last decided turn,
-    /// for the live orders layer's lane filter. `None` with the gene off or
-    /// when nobody was asked.
-    pub fn military_alliance_shield_partner(&self) -> Option<usize> {
-        self.military_alliance_shield_ask
-            .map(|(partner, _)| partner)
-    }
-
     /// The partner and the alliance kind the shield asked on the last decided
-    /// turn (always `military` under version one).
+    /// turn (always `military` under version one), for the live orders
+    /// layer's lane filter. `None` with the gene off or when nobody was asked.
     pub fn military_alliance_shield_ask(&self) -> Option<(usize, &'static str)> {
         self.military_alliance_shield_ask
     }
