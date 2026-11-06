@@ -45,6 +45,20 @@
   // channel was opened by someone who already chose what they are doing.
   window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST;
 
+  // Seed public-site defaults before the viewer reads its preferences. An
+  // explicit choice, including spin off or no trail, always wins on return.
+  function applyPublishedViewDefaults(storage) {
+    for (const [key, value] of [
+      ["civvis-world-spin", "1"],
+      ["civvis-unit-tail-turns", "2"],
+    ]) {
+      if (storage.getItem(key) === null) storage.setItem(key, value);
+    }
+  }
+  if (!LOCAL_DESKTOP_HOST) {
+    try { applyPublishedViewDefaults(localStorage); } catch (_) {}
+  }
+
   // Keep the browser build to the same four choices as the socket server.
   // It starts at ten seconds until the page posts its persisted preference.
   const FINALE_OPTIONS_MS = new Set([0, 3000, 5000, 10000]);

@@ -7358,7 +7358,11 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("function animationRefreshInterval(now = performance.now())"));
     assert!(!EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
     assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
-    assert!(EMBEDDED_INDEX.contains("Math.max(animationRefreshInterval(now),"));
+    assert!(EMBEDDED_INDEX.contains("const MAX_SPINNING_PAINT_SHARE = .75"));
+    assert!(EMBEDDED_INDEX.contains("const spinning = spinRunning();"));
+    assert!(EMBEDDED_INDEX.contains("animationPaintInterval(now, spinning)"));
+    assert!(EMBEDDED_INDEX.contains("animationPaintInterval(now, spinning, true)"));
+    assert!(EMBEDDED_INDEX.contains("Math.max(refresh, drawCost / share)"));
     assert!(EMBEDDED_INDEX.contains("function drawPlanetGpuSurface("));
     assert!(EMBEDDED_INDEX.contains("powerPreference: \"high-performance\""));
     assert!(EMBEDDED_INDEX.contains("precision mediump float;"));
