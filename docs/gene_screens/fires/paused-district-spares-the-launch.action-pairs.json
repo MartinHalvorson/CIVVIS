@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "paused-district-spares-the-launch",
+  "archive": {
+    "path": "docs/eval/2026-11-06-paused-district-spares-the-launch.native-queries.tar.xz",
+    "sha256": "cc94e4351a7a50203826ae9e9829d0df099814ae07e521a8bc40569d14911cc7"
+  },
+  "members": [
+    "activation-pairs/raw-action-pairs.json"
+  ],
+  "scope": "Eight standalone OFF/OFF/ON/ON resumed-planner queries on both distinct actual prefixes read in native101921 request178/1. Rebuilt after integrating the newer Mongolia engine/data changes; exact source-tree/hash receipt included. Both prefix pairs remove Neighborhood displacement of active Mars. Proposal activation on one historical request only: no historical planner-memory reconstruction, native actuation, saved turns, whole-game or win-rate claim. The separate476-request chronological replay applies to pre-integration b6+guard source."
+}
