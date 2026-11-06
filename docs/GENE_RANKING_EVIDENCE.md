@@ -402,6 +402,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
 | `world-religion-condemns-the-faith` | off (unmeasured) | Opt-in gene `world-religion-condemns-the-faith`; see `advanced/world_religion_condemns.rs`. | 1 \| 1 |
+| `wounded-ship-sails-on` | off (unmeasured) | Opt-in gene `wounded-ship-sails-on`; see `advanced/wounded_ship_sails_on.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

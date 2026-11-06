@@ -9541,6 +9541,10 @@ pub struct AdvancedAi {
     /// World Religion's option B names, at peace, and the agent's ballot asks
     /// for it. See `advanced/world_religion_condemns.rs`. Off by default.
     world_religion_condemns_the_faith: bool,
+    /// `wounded-ship-sails-on`: a wounded sea scout with no healing water in
+    /// reach keeps charting instead of fortifying where it can never recover.
+    /// See `advanced/wounded_ship_sails_on.rs`. Off by default.
+    wounded_ship_sails_on: bool,
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
     /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
@@ -10813,6 +10817,8 @@ mod wonder_clearance;
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
+/// `wounded-ship-sails-on`: see `advanced/wounded_ship_sails_on.rs`.
+mod wounded_ship_sails_on;
 
 /// `amphibious-siege-train`: a water-locked siege objective's guns and
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
@@ -11702,6 +11708,7 @@ impl AdvancedAi {
             sea_scout_claims_the_queue: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
+            wounded_ship_sails_on: false,
             threatened_war_holds_the_claims: false,
             ..Default::default()
         }

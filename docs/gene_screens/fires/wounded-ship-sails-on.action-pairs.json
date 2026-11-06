@@ -1,0 +1,23 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "wounded-ship-sails-on",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 12 boards of six live Deity Science (Online) games (civvis-20261105T172506Z, 121129Z, 111305Z, 093803Z, 095229Z, 173830Z), each the run's events.jsonl cut at frame 0 of a turn where a wounded sea hull stood with full moves in unowned water, unmoved for at least 30 turns. Both arms run one frozen civvis_orders --resumed built from the branch at 2fb4cb881 with the run's own requested genome; the on arm adds --with wounded-ship-sails-on. The claim ('sails on') is journaled in 8/12 on arms and 0/12 off arms, on exactly the eight boards whose off arm journals 'holds position to heal'; orders differ in 7/12, and in the eighth (172506Z t100) the explorer found no move that turn. The four that do not fire are not this gene's case on one frame: 095229Z (two boards) stands at 72 hp with danger 34, journalling 'holds rather than strike', a different path the gene rightly leaves alone; 111305Z (two boards) is at 53 hp, above ROTATE_HP, so only the live decider's in-memory recovering set holds it and a one-shot replay reads it as fit.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-wounded-ship-sails-on.native-queries.tar.xz",
+    "sha256": "bdaf3938dbfcc31674dd1118705d9525f64a382b6f9c83f44fee96674688aeb5"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}
