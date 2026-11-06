@@ -320,6 +320,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
+| `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
@@ -353,6 +354,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
+| `science-chain-crosses-window` | off (unmeasured) | Explicit Science routing admits legal prerequisite steps beyond the era window. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
 | `science-drive-answers-from-the-pad` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad`; see `Self::science_drive_answers_from_the_pad`. | — \| 2 |
 | `science-drive-answers-from-the-pad-2` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad-2`; see `Self::science_drive_answers_from_the_pad_2`. | — \| 2 |

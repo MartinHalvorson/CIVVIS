@@ -7700,6 +7700,10 @@ pub struct AdvancedAi {
     /// step, rebuilt when the visible hostiles at war change.
     group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
+    /// `nusantara-settles-the-shore`: an Indonesian seat's site score prices
+    /// the Coast. See `advanced/nusantara_settles_the_shore.rs`. Off by
+    /// default.
+    nusantara_settles_the_shore: bool,
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
     /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
@@ -8834,6 +8838,8 @@ pub struct AdvancedAi {
     spy_loss_turns: Vec<u32>,
     /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
     science_foundation_before_backlog: bool,
+    /// Explicit Science routing admits legal prerequisite steps beyond the era window.
+    science_chain_crosses_window: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10928,6 +10934,9 @@ mod nuclear_launcher;
 /// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
 /// Coast. See `advanced/nusantara_reads_the_coast.rs`.
 mod nusantara_reads_the_coast;
+/// `nusantara-settles-the-shore`: Indonesia's site score prices the Coast.
+/// See `advanced/nusantara_settles_the_shore.rs`.
+mod nusantara_settles_the_shore;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
@@ -10937,6 +10946,7 @@ mod revealed_launch_research;
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
 mod saved_work_is_seen;
+mod science_chain_crosses_window;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -10961,12 +10971,12 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
-mod spaceport_above_sea;
-mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
+mod spaceport_above_sea;
+mod spears_answer_the_horse;
 mod spies_steal_the_lead;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
@@ -11719,6 +11729,7 @@ impl AdvancedAi {
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             // ---- append: l-o ----------------------------------------
+            nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
@@ -11728,6 +11739,7 @@ impl AdvancedAi {
             science_seat_races_the_congress: false,
             science_seat_allies_2: false,
             science_foundation_before_backlog: false,
+            science_chain_crosses_window: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,
@@ -24359,6 +24371,9 @@ impl AdvancedAi {
         // `fresh-water-prices-the-site`: zero with the gene off. See
         // `advanced/fresh_water_site.rs`.
         value += self.fresh_water_site_bonus(g, pid, pos);
+        // `nusantara-settles-the-shore`: zero with the gene off and for any
+        // other civilization. See `advanced/nusantara_settles_the_shore.rs`.
+        value += self.nusantara_shore_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);

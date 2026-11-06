@@ -8890,7 +8890,7 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
     assert!(frontdoor.contains("await startNewSimulation();"));
     // Escape reaches the game menu last, after everything it used to unwind.
     assert!(EMBEDDED_APP_JS.contains(
-        "if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;"
+        "if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openPauseMenu()) return;"
     ));
 }
 
@@ -14674,6 +14674,28 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
 }
 
 #[test]
+fn continue_goes_back_to_the_game_on_the_table() {
+    // From a game, the main menu's Continue used to load a save, which at best
+    // lost a turn's moves and at worst was a different game.
+    let refresh = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("async function fdRefreshContinue() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("fdRefreshContinue is a top-level function")
+        .0;
+    let on_the_table = refresh.find("if (state && !SPEC) {").unwrap();
+    let saves = refresh.find("\"/saves\"").unwrap();
+    assert!(on_the_table < saves);
+    assert!(refresh.contains("delete button.dataset.save;"));
+    // The engine's identifiers stay out of what a player reads. They live in
+    // the note, whose file the ruleset fingerprint covers, so the screen strips
+    // them rather than the data.
+    assert!(include_str!("../../data/civs.json").contains("(TRAIT_FREE_TRADING_POSTS"));
+    assert!(
+        EMBEDDED_APP_FRONTDOOR_JS.contains(".replace(/\\s*\\((?=[^)]*_)[A-Z0-9_ +]+\\)/g, \"\")")
+    );
+}
+
+#[test]
 fn a_boost_is_announced_once_and_not_on_a_loaded_game() {
     let boosts = EMBEDDED_APP_MOMENTS_JS
         .split_once("function boostMoments() {")
@@ -14685,4 +14707,41 @@ fn a_boost_is_announced_once_and_not_on_a_loaded_game() {
     assert!(boosts.contains("if (!before) return [];"));
     assert!(boosts.contains("filter(id => !before.has(id))"));
     assert!(EMBEDDED_APP_MOMENTS_JS.contains("...boostMoments()]"));
+}
+
+#[test]
+fn no_two_page_scripts_declare_the_same_function() {
+    // The page's scripts share one global scope, and a later `function` silently
+    // replaces an earlier one. The sound module's `tone` replaced the renderer's
+    // colour helper of the same name: tiles painted the wrong colour, and once
+    // audio was running the draw threw part-way through every frame. Nothing
+    // failed, because audio stays suspended until a real click.
+    let scripts = [
+        ("app_palette.js", super::EMBEDDED_APP_PALETTE_JS),
+        ("app.js", EMBEDDED_APP_JS),
+        ("app_setup.js", EMBEDDED_APP_SETUP_JS),
+        ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
+        ("app_frontdoor.js", EMBEDDED_APP_FRONTDOOR_JS),
+    ];
+    let mut seen = std::collections::HashMap::new();
+    let mut declared = 0;
+    for (file, source) in scripts {
+        for line in source.lines() {
+            let Some(rest) = line
+                .strip_prefix("function ")
+                .or_else(|| line.strip_prefix("async function "))
+            else {
+                continue;
+            };
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            declared += 1;
+            if let Some(first) = seen.insert(name.clone(), file) {
+                panic!("{name} is declared in both {first} and {file}");
+            }
+        }
+    }
+    assert!(declared > 1000, "the scan found only {declared} functions");
 }
