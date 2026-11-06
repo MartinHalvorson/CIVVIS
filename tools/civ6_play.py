@@ -6852,7 +6852,7 @@ def _play(args: argparse.Namespace) -> int:
 
     if state["outcome"] and (args.end_game_seconds > 0 or state["outcome"].get("won") is True):
         hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
-        print(f"holding the native victory sequence (fallback {hold:.0f}s)", flush=True)
+        print(f"holding the final screen through native playback (fallback {hold:.0f}s)", flush=True)
         if state["outcome"].get("won") is True:
             hold_native_victory(tail, state["outcome"], args.end_game_seconds, record)
         else:
@@ -7658,13 +7658,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
-    # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
-    # fast because something is waiting behind it; nothing is waiting behind this
-    # one, because the game is over. The operator's standing brief asks for ten
-    # seconds on the final screen and this is the only knob that can grant it.
+    # Wins always finish the native movie. This setting retains a minimum
+    # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
-                    help="how long the victory/defeat screen is held before the "
-                         "autoclose shim dismisses it")
+                    help="minimum end-of-game presentation time; wins always finish "
+                         "their native victory movie before shutdown")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

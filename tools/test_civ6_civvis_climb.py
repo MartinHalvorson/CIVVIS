@@ -2068,7 +2068,7 @@ class EndScreenEvidenceTests(unittest.TestCase):
 
 
 class FinalScreenHoldTests(unittest.TestCase):
-    """The hold has to live in the harness, because the mod's clock cannot run."""
+    """The harness retains the native ending before shutting down the game."""
 
     def test_the_harness_holds_before_it_stops_the_game(self):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
@@ -2083,7 +2083,7 @@ class FinalScreenHoldTests(unittest.TestCase):
         holding there would add ten seconds to every failure in a batch."""
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
-        self.assertIn('if state["outcome"] and args.end_game_seconds > 0:', source)
+        self.assertIn('if state["outcome"] and (args.end_game_seconds > 0 or state["outcome"].get("won") is True):', source)
 
 
 class IdleSettlerTests(unittest.TestCase):
