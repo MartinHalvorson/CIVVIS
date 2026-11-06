@@ -3,6 +3,109 @@ use crate::rules::Yields;
 use crate::setup::GameSpeed;
 use std::sync::Arc;
 
+fn theaters_without_writing_slots() -> (Game, Vec<u32>, Item) {
+    let (mut game, cities) = theater_less_empire();
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    for cid in &cities {
+        crate::game::install_test_district(&mut game, *cid, "theater_square");
+        game.cities.get_mut(cid).unwrap().queue = vec![unit("warrior")];
+        assert!(game.can_produce(0, *cid, &amphitheater));
+    }
+    (game, cities, amphitheater)
+}
+
+#[test]
+fn theaters_without_slots_claim_exactly_one_first_amphitheater() {
+    let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&game, 0);
+    ai.claim_culture_theaters(&mut game, 0, &plan);
+    let claimed: Vec<_> = cities
+        .iter()
+        .filter(|cid| game.cities[cid].queue.first() == Some(&amphitheater))
+        .copied()
+        .collect();
+    assert_eq!(
+        claimed.len(),
+        1,
+        "a Theater district is not yet a Writing slot"
+    );
+    assert!(
+        ai.culture_theater_holds(&game, 0, claimed[0], &plan, &amphitheater),
+        "the delegated production scorer must retain the new building"
+    );
+    let queues: Vec<_> = cities
+        .iter()
+        .map(|cid| game.cities[cid].queue.clone())
+        .collect();
+    ai.claim_culture_theaters(&mut game, 0, &plan);
+    assert_eq!(
+        queues,
+        cities
+            .iter()
+            .map(|cid| game.cities[cid].queue.clone())
+            .collect::<Vec<_>>(),
+        "a queued Amphitheater does not claim another city"
+    );
+}
+
+#[test]
+fn first_writing_slots_do_not_override_survival_settlers_or_finished_work() {
+    let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+    let ai = seat(VictoryTarget::Culture, true);
+    game.cities.get_mut(&cities[0]).unwrap().queue = vec![unit("settler")];
+    game.cities.get_mut(&cities[1]).unwrap().queue = vec![Item::Building {
+        building: crate::name!("walls"),
+    }];
+    let mut plan = ai.assess(&game, 0);
+    plan.threatened_city = Some(cities[2]);
+    ai.claim_culture_theaters(&mut game, 0, &plan);
+    assert!(cities
+        .iter()
+        .all(|cid| !game.cities[cid].queue.contains(&amphitheater)));
+    plan.threatened_city = None;
+    let cost = game.item_cost_for_city(0, cities[2], &unit("warrior"));
+    game.cities.get_mut(&cities[2]).unwrap().production = cost - 1.0;
+    ai.claim_culture_theaters(&mut game, 0, &plan);
+    assert!(
+        cities
+            .iter()
+            .all(|cid| !game.cities[cid].queue.contains(&amphitheater)),
+        "the remaining eligible city finishes its current unit first"
+    );
+}
+
+#[test]
+fn a_completed_amphitheater_or_another_lane_leaves_routine_production_alone() {
+    let (game, cities, amphitheater) = theaters_without_writing_slots();
+    for ai in [
+        seat(VictoryTarget::Science, true),
+        seat(VictoryTarget::Culture, false),
+    ] {
+        let mut other = game.clone();
+        claim(&ai, &mut other);
+        assert!(cities
+            .iter()
+            .all(|cid| other.cities[cid].queue == vec![unit("warrior")]));
+    }
+    let mut completed = game;
+    completed
+        .cities
+        .get_mut(&cities[0])
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    let ai = seat(VictoryTarget::Culture, true);
+    claim(&ai, &mut completed);
+    assert!(cities
+        .iter()
+        .all(|cid| completed.cities[cid].queue == vec![unit("warrior")]));
+    let plan = ai.assess(&completed, 0);
+    assert!(!ai.culture_theater_holds(&completed, 0, cities[1], &plan, &amphitheater));
+}
+
 /// Three cities of four citizens with Drama and Poetry and Writing in hand,
 /// production 10, no district but the centre: every city has a free slot and
 /// can build its first Theater Square and its first Campus.
