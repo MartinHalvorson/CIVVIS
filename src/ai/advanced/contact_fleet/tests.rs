@@ -476,14 +476,21 @@ fn version_two_stands_off_a_city_that_took_the_hull_back() {
     assert!(head_is_a_ship(&game, city));
 
     // Another claim retakes the head; the hull leaves the queue, as in 015754Z.
-    game.cities.get_mut(&city).unwrap().queue = vec![routine.clone()];
+    // Starting it moved its banked progress, so pay it again: the stand-off must
+    // be why it is not reclaimed, not a hull too slow to start.
+    let hull = unit("quadrireme");
+    let cost = game.item_cost_for_city(0, city, &hull);
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue = vec![routine.clone()];
+    held.production_progress
+        .insert(Game::item_progress_key(&hull), (cost - 1.0).max(0.0));
     careful.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     game.turn += 1;
     careful.claim_queue_for_the_sea_scout(&mut game, 0, &plan(81));
     assert_eq!(game.cities[&city].queue.first(), Some(&routine));
     assert_eq!(game.players[0].counters["sea_scout_claims"], 1);
 
-    // Version 1 fights for it every frame.
+    // Version 1, on the same board, fights for it every frame.
     claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(81));
     assert!(head_is_a_ship(&game, city));
 }
