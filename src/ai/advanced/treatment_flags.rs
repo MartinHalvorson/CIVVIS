@@ -86,6 +86,9 @@ impl AdvancedAi {
         // ---- append: l-o --------------------------------------------
         // ---- append: p-r --------------------------------------------
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `stronger-racer-stays-a-friend`; see
+        /// `advanced/stronger_racer_stays_a_friend.rs`.
+        stronger_racer_stays_a_friend => enable_stronger_racer_stays_a_friend, disable_stronger_racer_stays_a_friend;
         // ---- append: t-z --------------------------------------------
     }
 

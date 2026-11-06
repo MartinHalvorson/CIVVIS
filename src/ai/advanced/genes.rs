@@ -5415,6 +5415,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
     // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
     Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
+    // `stronger-racer-stays-a-friend`: on a Science seat, a rival stronger than
+    // us that reads as racing but has no project landed and no pad seen can
+    // still be befriended. Live Deity 11-05/06: rivals Friendly and stronger
+    // than us were asked on 8% of 994 rival-turns and declared on us at 5.5-7.9%
+    // in ten turns, against 0.2% for a friend; removing
+    // `friendship-ends-at-the-race` freed the ask on 15 of 18 replayed boards.
+    // See `advanced/stronger_racer_stays_a_friend.rs`.
+    Gene { tag: "stronger-racer-stays-a-friend", field: "stronger_racer_stays_a_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_stronger_racer_stays_a_friend, disable: AdvancedAi::disable_stronger_racer_stays_a_friend },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -263,7 +263,12 @@ impl AdvancedAi {
         }
         // `friendship-ends-at-the-race`: a rival racing to win is left to the
         // counter once the friendship lapses.
-        if self.friendship_ends_at_the_race && self.friend_is_racing(g, other) {
+        // `stronger-racer-stays-a-friend`: not one stronger than us, before a
+        // launch. See `advanced/stronger_racer_stays_a_friend.rs`.
+        if self.friendship_ends_at_the_race
+            && self.friend_is_racing(g, other)
+            && !self.racer_stays_a_friend(g, pid, other)
+        {
             return Some("friendship-ends-at-the-race: they are racing to win, so they are left to the counter");
         }
         // `friendship-spares-the-prey`: a rival this much weaker is a conquest

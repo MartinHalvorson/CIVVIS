@@ -391,6 +391,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
 | `stalled-conquest-takes-science` | off (unmeasured) | Opt-in gene `stalled-conquest-takes-science`; see `Self::stalled_conquest_takes_science`. | 1 \| 1 |
 | `stalled-spreader-braves-the-march` | off (unmeasured) | Opt-in gene `stalled-spreader-braves-the-march`; see `Self::stalled_spreader_braves_the_march`. | 1 \| 1 |
+| `stronger-racer-stays-a-friend` | off (unmeasured) | Opt-in gene `stronger-racer-stays-a-friend`; see `advanced/stronger_racer_stays_a_friend.rs`. | 1 \| 1 |
 | `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
