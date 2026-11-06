@@ -12966,6 +12966,11 @@ function faithColor(name) {
 // built. Both map renderers draw this one function, because the plate is the
 // main thing a player reads on a map: until it was shared, the default globe
 // worlds showed a bare name and everything else lived behind a click.
+let cityPlateBoxes = [];
+function cityPlateAt(sx, sy) {
+  return cityPlateBoxes.findLast(box => sx >= box.x && sx <= box.x + box.width &&
+    sy >= box.y && sy <= box.y + box.height) || null;
+}
 function drawCityNameplate(c, x, y, S) {
   cx.save();
   cx.textAlign = "center"; cx.textBaseline = "middle";
@@ -12984,6 +12989,13 @@ function drawCityNameplate(c, x, y, S) {
   const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
                       minorPlate ? 48 : 62);
   const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+  // The plate sits above the city's own tile, so a click on it would land on
+  // the neighbour. Keep its box in page pixels for the map click to find.
+  const toPage = cx.getTransform();
+  cityPlateBoxes.push({city: c.id,
+    x: (toPage.a * bx + toPage.c * by + toPage.e) / DPR,
+    y: (toPage.b * bx + toPage.d * by + toPage.f) / DPR,
+    width: tw * toPage.a / DPR, height: bannerHeight * toPage.d / DPR});
   cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
   if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
   cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
@@ -21313,6 +21325,7 @@ function drawPlanetChartMarginalia() {
 }
 
 function drawPlanetMap() {
+  cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
     planetGpuHide();
@@ -32223,6 +32236,19 @@ cv.addEventListener("click", ev => {
     const target = skyArrivalHit(sx, sy);
     if (target) { skyGoToWorld(target.id); return; }
   }
+  // A plate is a button: your own opens that city, wherever the plate has
+  // drifted relative to the tiles under it.
+  if (!tackMode && !interfaceMode && !SPEC && state) {
+    const plate = cityPlateAt(sx, sy);
+    const city = plate && state.cities.find(candidate => candidate.id === plate.city);
+    if (city && city.owner === 0) {
+      selCity = city; sel = null;
+      clearUnitIntel();
+      openCityScreen(city.id);
+      draw(); drawSide(); drawUbar();
+      return;
+    }
+  }
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
@@ -32259,14 +32285,22 @@ cv.addEventListener("click", ev => {
   }
   const here = state.units.filter(u => u.owner === 0 && key(u.pos) === k);
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
-  if (here.length) {
-    const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
-    sel = here[idx];
-    if (city && city.owner === 0) selCity = city;
+  const ours = city && city.owner === 0 ? city : null;
+  // Clicking your city opens it. A garrison does not get in the way: the click
+  // takes each unit on the tile in turn, and the one after the last is the city.
+  const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
+  if (ours && here.length && held === here.length - 1) {
+    selCity = ours; sel = null;
     clearUnitIntel();
-  } else if (city && city.owner === 0) {
-    selCity = city; sel = null;
+    openCityScreen(ours.id);
+  } else if (here.length) {
+    sel = here[(held + 1) % here.length];
+    if (ours) selCity = ours;
     clearUnitIntel();
+  } else if (ours) {
+    selCity = ours; sel = null;
+    clearUnitIntel();
+    openCityScreen(ours.id);
   } else {
     sel = null; selCity = null;
     // Nothing of yours here. If somebody else's unit is, this press is the
