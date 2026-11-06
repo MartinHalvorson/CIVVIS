@@ -20,6 +20,20 @@ def map_report(
     }
 
 
+class UncaughtTests(unittest.TestCase):
+    def test_a_thrown_error_fails_and_a_warning_does_not(self):
+        thrown = "TypeError: bad value\n    at tone (app_moments.js:41:17)"
+        self.assertEqual(verify.uncaught_problems(["a warning", "another"]), [])
+        problems = verify.uncaught_problems(["a warning", thrown, thrown])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("threw 2 time(s)", problems[0])
+        self.assertIn("TypeError: bad value", problems[0])
+
+    def test_the_check_runs_with_sound_on(self):
+        source = open(verify.__file__, encoding="utf-8").read()
+        self.assertIn('"--autoplay-policy=no-user-gesture-required"', source)
+
+
 class MapDeliveryTests(unittest.TestCase):
     def test_current_lane_requires_a_patch(self):
         problems = verify.map_delivery_problems(
