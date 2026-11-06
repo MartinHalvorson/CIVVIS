@@ -202,6 +202,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `camps-close-the-age` | off (unmeasured) | Opt-in gene `camps-close-the-age`; see `Self::camps_close_the_age`. | — \| 3 |
 | `camps-close-the-age-2` | off (unmeasured) | Opt-in gene `camps-close-the-age-2`; see `Self::camps_close_the_age_2`. | — \| 3 |
 | `camps-close-the-age-3` | off (unmeasured) | Opt-in gene `camps-close-the-age-3`; see `Self::camps_close_the_age_3`. | — \| 3 |
+| `campus-above-the-sea` | off (unmeasured) | Prefer a safe legal site for a new native Science Campus. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
@@ -271,6 +272,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
 | `founding-voyage` | off (unmeasured) | Opt-in gene `founding-voyage`; see `Self::founding_voyage`. | 1 \| 1 |
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
+| `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
@@ -388,6 +390,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
 | `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
+| `universities-before-the-forge` | off (unmeasured) | Opt-in Science University priority before industrial claims. | 1 \| 1 |
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |

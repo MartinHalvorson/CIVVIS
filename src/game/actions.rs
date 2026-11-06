@@ -5824,13 +5824,16 @@ impl Game {
             return Err("Open Borders requires Early Empire for both civilizations".into());
         }
         let utilities = self.trade_utilities(from, to, offer, request);
-        // ★ A GIFT IS LEGAL, AND IT BUYS NOTHING — Civilization VI's rule, and
-        // since 2026-08-24 this engine's. A one-sided deal that only GIVES
-        // proposes and the recipient accepts; the game's own database carries
-        // no diplomatic modifier for a gift (a delegation and a demand, yes),
-        // so `relationship_opinion` has none either. Until now the engine
-        // refused the gift outright, which was stricter than the game it
-        // mirrors and hid the question the live seat actually faces. An
+        // ★ A GIFT IS LEGAL, AND THIS ENGINE PRICES IT AT NOTHING. A one-sided
+        // deal that only GIVES proposes and the recipient accepts. Civilization
+        // VI pays for it: `Leaders.xml` STANDARD_DIPLOMATIC_ONE_SIDED_TRADES
+        // gives one opinion point per 10 value of a deal in the AI's favour,
+        // up to 20, fading a point every two turns (live 222639Z t115: 80
+        // Gold, -3 to +7). `relationship_opinion` has no such term, a known
+        // gap, so a screen cannot price `tribute-buys-the-friendship`. Until
+        // 2026-08-24 the engine refused the gift outright, which was stricter
+        // than the game it mirrors and hid the question the live seat
+        // actually faces. An
         // exchange must still pay both sides; the AI never gives without
         // receiving (`gifts_given` is the counter that says so).
         let gift = request.is_empty();

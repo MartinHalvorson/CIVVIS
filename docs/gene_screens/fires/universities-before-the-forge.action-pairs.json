@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "universities-before-the-forge",
+  "source_sha": "e6380fe51a31c413e28074e0a7f5da58069ceb95",
+  "hosted_native_run": 42122126276,
+  "binary_sha256": "9889aaa74f72d063bffff7dcfe40ede8db64c80c6b1a8bb9bfbd53c5773cc49d",
+  "scope": "Cold proposal activation only on captured Indonesia Deity Online Ternate70/0. Default-OFF and unpriced. New flag OFF/ON/ON/OFF with producer and Factory flags ON throughout; OFF chooses legal Industrial Zone and ON legal University. All actual captured query reads equal the eighteen identical original reads; full decisions and orders repeat per arm. Native execution, construction, saved turns, original private-planner parity and strength are unmeasured. No game or harness was started and no lane settings changed.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-universities-before-forge.native-queries.tar.xz",
+    "sha256": "cbfcda6e6972d362c06d0f71fdd01c7d5a5cd883688a2cfea6cb510f212f1ccc"
+  },
+  "members": [
+    "university-native-queries/action-pairs.json"
+  ]
+}

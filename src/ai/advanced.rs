@@ -5586,6 +5586,8 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
     /// new since the last resolve, so a capture beside a standing city
@@ -7345,6 +7347,9 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `fresh-water-prices-the-site`: a fresh-water seat outbids a coast-only
+    /// one. See `advanced/fresh_water_site.rs`. Off by default.
+    fresh_water_prices_the_site: bool,
     /// `early-cities-keep-their-distance`: while the empire holds fewer
     /// than three cities, a site loses value for every tile it stands inside
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
@@ -9574,6 +9579,9 @@ pub struct AdvancedAi {
     /// defender the city could train, and keeps the Gold otherwise. Runs the
     /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
     threatened_city_buys_its_defender_2: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -10801,6 +10809,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -10827,6 +10836,8 @@ mod first_launch_research;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod free_slot_campus_clock;
+/// `fresh-water-prices-the-site`: see `advanced/fresh_water_site.rs`.
+mod fresh_water_site;
 /// `generals-lead-the-army`: the live bridge keeps a General with each front
 /// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
 mod generals_lead_the_army;
@@ -10859,6 +10870,7 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -10917,6 +10929,7 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
@@ -11951,6 +11964,7 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
@@ -12261,6 +12275,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
@@ -12654,6 +12669,7 @@ impl AdvancedAi {
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
+            universities_before_the_forge: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
@@ -25913,18 +25929,6 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
-        if headroom >= 2.0 {
-            1.0
-        } else if headroom >= 1.0 {
-            0.5
-        } else if headroom > -4.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
     fn settlement_output_value(total: Yields, population: usize) -> f64 {
         let surplus = total.food - 2.0 * population as f64;
         total.production * 2.6
@@ -26070,8 +26074,8 @@ impl AdvancedAi {
                     }
 
                     let surplus = branch.total.food - 2.0 * population as f64;
-                    let growth_rate = surplus.max(0.0)
-                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                    let growth_rate =
+                        surplus.max(0.0) * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate
@@ -26256,6 +26260,9 @@ impl AdvancedAi {
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
+        // `fresh-water-prices-the-site`: zero with the gene off. See
+        // `advanced/fresh_water_site.rs`.
+        value += self.fresh_water_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);

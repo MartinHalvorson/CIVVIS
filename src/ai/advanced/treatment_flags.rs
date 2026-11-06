@@ -1718,6 +1718,8 @@ impl AdvancedAi {
         /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
         /// `AdvancedAi::claim_producer_zone`.
         industrial_zone_claims_the_producer_queue => enable_industrial_zone_claims_the_producer_queue, disable_industrial_zone_claims_the_producer_queue;
+        /// Opt-in Science University priority before industrial claims.
+        universities_before_the_forge => enable_universities_before_the_forge, disable_universities_before_the_forge;
         /// Move a one-war front cut off from every land road to an enemy the
         /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
         /// `advanced/sea_locked_front.rs`.
@@ -2275,6 +2277,11 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Prefer a safe legal site for a new native Science Campus.
+        campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
+        /// Opt-in gene `fresh-water-prices-the-site`; see
+        /// `advanced/fresh_water_site.rs`.
+        fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;
         /// Opt-in gene `sea-scout-claims-the-queue`; see
         /// `advanced/contact_fleet.rs`.
         sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
