@@ -8548,6 +8548,8 @@ pub struct AdvancedAi {
     pingala_follows_research: bool,
     /// Independently measured Pingala launch-job version; preserves version one.
     pingala_follows_research_2: bool,
+    /// Price a committed launch against establishment and displaced dividends. Opt-in.
+    pingala_earns_the_launch: bool,
     /// Native governor establishment is a lower bound, not total tenure.
     /// Keep observed post clocks across fresh boards; city coordinates survive
     /// the bridge's city-id remapping. See `governor_dividends`.
@@ -12473,6 +12475,7 @@ impl AdvancedAi {
             reyna_follows_revenue: false,
             pingala_follows_research: false,
             pingala_follows_research_2: false,
+            pingala_earns_the_launch: false,
             remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
@@ -29953,8 +29956,12 @@ impl AdvancedAi {
         }
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
-        self.strategic_governors(g, pid, &plan);
-        self.relocate_governors_for_dividends(g, pid, &plan);
+        // A launch exchange must precede title operations: the native bridge
+        // retains a reciprocal assignment pair only before any title operation.
+        if !self.relocate_pingala_for_launch(g, pid, &plan) {
+            self.strategic_governors(g, pid, &plan);
+            self.relocate_governors_for_dividends(g, pid, &plan);
+        }
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured

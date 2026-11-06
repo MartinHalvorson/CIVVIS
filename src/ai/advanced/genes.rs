@@ -5342,6 +5342,9 @@ pub const GENES: &[Gene] = &[
     // fresh-water plot within two tiles. Under the gene a fresh-water seat
     // gains +12 more. See `fresh_water_site.rs`.
     Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
+    // Space Initiative stayed away from Indonesia's actual launch producer.
+    // Price a current project against establishment and displaced dividends.
+    Gene { tag: "pingala-earns-the-launch", field: "pingala_earns_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_earns_the_launch, disable: AdvancedAi::disable_pingala_earns_the_launch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
