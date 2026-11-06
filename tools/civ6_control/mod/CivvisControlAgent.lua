@@ -24395,6 +24395,14 @@ local function tick()
 								n, mode = 1, "free";
 							end
 						end
+						-- `science-seat-races-the-congress`: a Science racer short of a
+						-- claim banks for the next one. Of 117 B votes on 51 Deity
+						-- games none decided a session; the free vote keeps the
+						-- participation point when the rivals gang.
+						if mode == "deny" and CivvisCongressRacer(cfg)
+								and not CivvisDiploRacer(cfg) then
+							n, mode = 1, "free";
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;

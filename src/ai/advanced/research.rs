@@ -799,6 +799,13 @@ impl AdvancedAi {
                     }
                 }
             }
+            self.admit_science_chain_steps(
+                g,
+                pid,
+                science_victory_goal,
+                forced_goal,
+                &mut available,
+            );
             let production_step_pick = production_technology_goal
                 .filter(|goal| forced_goal == Some(goal.as_str()))
                 .and_then(|goal| self.named_production_technology_step(g, pid, goal));
