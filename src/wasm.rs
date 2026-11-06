@@ -632,7 +632,7 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     sized(answer.into_bytes())
 }
 
-// The opening world's own contract — that it is the Tiny Lakes globe, sized
+// The opening world's own contract — that it is the Tiny Tennis Ball globe, sized
 // by the shipped table — is tested natively on `stock_opening_params`
 // in the parent module, where the suite actually runs; a `#[cfg(test)]`
 // module here would only ever be compiled for a target whose tests nobody
