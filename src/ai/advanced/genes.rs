@@ -5385,6 +5385,14 @@ pub const GENES: &[Gene] = &[
     // votes that never decided a session. Live only; the simulator has no
     // such Congress, so it cannot screen this.
     Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
+    // Gitarja's +2 Faith beside Coast or Lake and Great Nusantara's district
+    // adjacency are absent from the site score, so Indonesia ranked sites as
+    // if landlocked: 43 of 97 live foundings were inland and 27 of those had
+    // a legal shore plot within two tiles. Under the gene a shore seat gains
+    // +16, but a coast-only seat only with no fresh water within two tiles,
+    // so it does not pull a city off fresh water. Indonesia only. See
+    // `nusantara_settles_the_shore.rs`.
+    Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
