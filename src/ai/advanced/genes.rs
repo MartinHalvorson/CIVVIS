@@ -5395,6 +5395,15 @@ pub const GENES: &[Gene] = &[
     // so it does not pull a city off fresh water. Indonesia only. See
     // `nusantara_settles_the_shore.rs`.
     Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
+    // Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp Heavy Chariot
+    // one tile, reading "danger 69 where it stood, -0 where it stands"; the
+    // Galley beside it stepped into the tile it left and killed it. With
+    // `strike-reach` on the field's reach stops at tiles our units hold, so
+    // it never stands a hostile on a tile the unit is leaving. Under the gene
+    // a hostile that can strike the unit's tile and whose flood holds the new
+    // tile, within its range of the old one, counts. See
+    // `advanced/battle_planner.rs`.
+    Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
