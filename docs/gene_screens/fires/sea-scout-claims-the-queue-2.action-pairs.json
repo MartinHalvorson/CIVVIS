@@ -1,0 +1,27 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "sea-scout-claims-the-queue-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. The same 16 boards as version 1: six live Deity Science (Online) games, each cut at frame 0 of a turn after Cartography with no sea hull of ours afloat. Both arms run one frozen civvis_orders --resumed built from the branch at 5becb1cea with the run's own requested genome less version 1; the on arm adds --with sea-scout-claims-the-queue-2. The claim ('starts <hull> for the contact fleet') is journaled in 7/16 on arms and 0/16 off arms, and orders differ in the same 7. Version 1 fired on 12: version 2 gives up the boards whose only coastal heads are Campus, Plaza or Builder work, by design. 215700Z claims at t96 ahead of a Workshop where version 1 claimed at t93 ahead of a Library. Heads taken: Workshops, a Theater Square, a Commercial Hub, a Factory, an Aqueduct, an Industrial Zone. A single-frame replay shows one pass of the decider, so it cannot show the stand-off from a city that took the claim back: the unit tests carry that.",
+  "archive": {
+    "path": "docs/eval/2026-11-06-sea-scout-claims-the-queue-2.native-queries.tar.xz",
+    "sha256": "085cf6d4a09e08ccb8ac346158f6d7579efa813bfe63ee9b3af4714620abb7e1"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json"
+  ]
+}

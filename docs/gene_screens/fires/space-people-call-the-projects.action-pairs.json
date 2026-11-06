@@ -1,0 +1,29 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "space-people-call-the-projects",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 18 boards of nine live Deity Science (Online) games of 2026-11-05/06, each the run's events.jsonl cut at frame 0 of a turn with Rocketry known and von Braun, Kwolek, Korolev or Sagan on the host's screen within 720 points. Both arms run one frozen civvis_orders --resumed built from the branch at 5becb1cea with the run's own requested genome; the on arm adds --with space-people-call-the-projects. Orders differ in 10/18 reads and the claim ('runs <project> for <person>') is journaled in 10/18 on arms and 0/18 off arms. Claims went ahead of Neighborhoods, empty queues, Observation Balloons and routine buildings; never Campus or Plaza work, power, the Spaceport or a Builder. The eight that do not fire: two are Recovery turns (10 of 266 plan-labelled turns past t150); on the others every eligible head is such protected work, or a nearer call found no room. A single-frame replay shows one pass of the decider, so it cannot show the stand-off from a city that took the claim back: the unit tests carry that.",
+  "archive": {
+    "path": "docs/eval/2026-11-06-space-people-call-the-projects.native-queries.tar.xz",
+    "sha256": "3772315aa59a6fc09e79b0007dc258ee5d06943400e0bfa42cc966dfd77b83a3"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json",
+    "native-queries-01/0016/result.json",
+    "native-queries-01/0017/result.json"
+  ]
+}

@@ -2302,6 +2302,12 @@ impl AdvancedAi {
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Opt-in gene `space-people-call-the-projects`; see
+        /// `advanced/space_people_call_the_projects.rs`.
+        /// Opt-in gene `sea-scout-claims-the-queue-2` (version 2, carrying 1);
+        /// see `advanced/contact_fleet.rs`.
+        sea_scout_claims_the_queue_2 => enable_sea_scout_claims_the_queue_2, disable_sea_scout_claims_the_queue_2;
+        space_people_call_the_projects => enable_space_people_call_the_projects, disable_space_people_call_the_projects;
         /// Prefer a safe legal site for a new native Science Campus.
         campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
         /// Opt-in gene `fresh-water-prices-the-site`; see

@@ -368,7 +368,7 @@ fn the_sea_scout_claims_a_working_queue_only_with_the_gene() {
 #[test]
 fn the_claim_stands_alone_once_a_hull_is_queued() {
     let (mut game, city) = working_city();
-    let ai = claimant();
+    let mut ai = claimant();
     ai.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     let queued = game.cities[&city].queue.clone();
     ai.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
@@ -428,4 +428,69 @@ fn a_city_too_slow_to_finish_the_hull_keeps_its_queue() {
     claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     assert!(!head_is_a_ship(&game, city));
     assert!(!game.players[0].counters.contains_key("sea_scout_claims"));
+}
+
+/// A seat with `contact-fleet` and version 2 of the claim on.
+fn careful_claimant() -> AdvancedAi {
+    let mut ai = diplomat(true);
+    ai.enable_sea_scout_claims_the_queue_2();
+    ai
+}
+
+#[test]
+fn version_two_leaves_other_claims_work_alone() {
+    let library = Item::Building {
+        building: Name::new("library"),
+    };
+    let agency = Item::Building {
+        building: Name::new("intelligence_agency"),
+    };
+    for head in [library, agency.clone(), unit("builder")] {
+        let (mut game, city) = city_working_on(head.clone());
+        careful_claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+        assert_eq!(game.cities[&city].queue.first(), Some(&head), "{head:?}");
+    }
+    // Version 1 took the Agency, as it did in 015754Z.
+    let (mut game, city) = city_working_on(agency);
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(head_is_a_ship(&game, city));
+}
+
+#[test]
+fn version_two_still_takes_routine_work() {
+    let (mut game, city) = city_working_on(Item::Building {
+        building: Name::new("monument"),
+    });
+    careful_claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(head_is_a_ship(&game, city));
+}
+
+#[test]
+fn version_two_stands_off_a_city_that_took_the_hull_back() {
+    let routine = Item::Building {
+        building: Name::new("monument"),
+    };
+    let (mut game, city) = city_working_on(routine.clone());
+    let mut careful = careful_claimant();
+    careful.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(head_is_a_ship(&game, city));
+
+    // Another claim retakes the head; the hull leaves the queue, as in 015754Z.
+    // Starting it moved its banked progress, so pay it again: the stand-off must
+    // be why it is not reclaimed, not a hull too slow to start.
+    let hull = unit("quadrireme");
+    let cost = game.item_cost_for_city(0, city, &hull);
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue = vec![routine.clone()];
+    held.production_progress
+        .insert(Game::item_progress_key(&hull), (cost - 1.0).max(0.0));
+    careful.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    game.turn += 1;
+    careful.claim_queue_for_the_sea_scout(&mut game, 0, &plan(81));
+    assert_eq!(game.cities[&city].queue.first(), Some(&routine));
+    assert_eq!(game.players[0].counters["sea_scout_claims"], 1);
+
+    // Version 1, on the same board, fights for it every frame.
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(81));
+    assert!(head_is_a_ship(&game, city));
 }

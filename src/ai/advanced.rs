@@ -8806,6 +8806,10 @@ pub struct AdvancedAi {
     /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
+    /// The turn each queue claim last took each city, by city and claim. Live
+    /// across frames, so a claim can stand off from a city that took its item
+    /// back. See `AdvancedAi::queue_claim_open`.
+    queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
     /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
@@ -9552,6 +9556,15 @@ pub struct AdvancedAi {
     /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
     /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
     sea_scout_claims_the_queue: bool,
+    /// `space-people-call-the-projects`: while a Great Person who speeds the
+    /// space race is on offer, a Science seat's district projects earn that
+    /// class's points. See `advanced/space_people_call_the_projects.rs`. Off by
+    /// default.
+    space_people_call_the_projects: bool,
+    /// `sea-scout-claims-the-queue-2`: version 2, carrying 1. The sea scout's
+    /// claim leaves other claims' work alone and stands off from a city that
+    /// took the hull back. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
     // ---- append: t-z ------------------------------------------------
@@ -10967,6 +10980,9 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-people-call-the-projects`: see
+/// `advanced/space_people_call_the_projects.rs`.
+mod space_people_call_the_projects;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
@@ -11729,6 +11745,7 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
             pillaged_districts_repair_first: false,
+            queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
             science_seat_races_the_congress: false,
             science_seat_allies_2: false,
@@ -11736,6 +11753,8 @@ impl AdvancedAi {
             science_chain_crosses_window: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
+            space_people_call_the_projects: false,
+            sea_scout_claims_the_queue_2: false,
             spies_price_the_science_head: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
@@ -20988,6 +21007,11 @@ impl AdvancedAi {
             let naval_eye_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.naval_eye_holds(g, pid, cid, plan, item));
+            // `space-people-call-the-projects`: the called district project
+            // finishes while its person stays on offer.
+            let space_person_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.space_person_project_holds(g, pid, cid, plan, item));
             // `backlog-builder-takes-the-queue`: the claimed Builder finishes
             // while the worked backlog still runs ahead of the charges.
             let backlog_builder_commitment = committed
@@ -21051,6 +21075,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
@@ -21077,6 +21102,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
@@ -27452,6 +27478,9 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `space-people-call-the-projects`: the district projects that earn
+            // a space-race person on offer. Exact no-op while the gene is off.
+            self.claim_queues_for_the_space_people(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
