@@ -2983,10 +2983,17 @@
   #treetitle .tree-study b { color: var(--blue); }
   #tree[data-kind="civics"] #treetitle .tree-study b { color: #c9a2ee; }
   #treetitle .tree-tally { color: var(--faint); font-weight: 700; }
-  #treecols { display: flex; gap: 14px; flex: 1; overflow: auto; align-items: flex-start; padding-bottom: 6px; }
+  #treecols { position: relative; display: flex; gap: 46px; flex: 1; overflow: auto; align-items: flex-start; padding-bottom: 6px; }
+  .tlines { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .tlines path { fill: none; stroke: #3a5249; stroke-width: 1.5; opacity: .55; transition: stroke .12s, opacity .12s; }
+  .tlines path.studied { stroke: #4f7f60; opacity: .5; }
+  .tlines path.open { stroke: var(--gold-deep); opacity: .85; }
+  .tlines path.on-path { stroke: var(--blue); stroke-width: 2.5; opacity: 1; }
+  #tree[data-kind="civics"] .tlines path.on-path { stroke: #b98be0; }
+  .tlines path.lit { stroke: var(--gold-bright); stroke-width: 2.5; opacity: 1; }
   .tcol { display: flex; flex-direction: column; gap: 6px; flex: none; width: 216px; }
   .tera {
-    position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 8px;
+    position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 8px;
     padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63;
     border-radius: 7px; font: 700 var(--type-secondary)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase;
   }
@@ -2996,6 +3003,7 @@
      reading: the meter while it is studied, the boost while it can still be
      earned, what it waits on while it waits, and what it unlocks as chips. */
   .tnode {
+    position: relative; z-index: 1;
     display: grid; gap: 5px; padding: 8px 10px; color: #bcc9c3; background: #101d1a;
     border: 1px solid #2d443d; border-radius: 9px; font-size: var(--type-control); line-height: 1.3; transition: .12s;
   }
@@ -3013,9 +3021,25 @@
   #tree[data-kind="civics"] .tnode.cur { color: #f1e6fb; border-color: #b98be0; background: #221a2c; box-shadow: 0 0 18px #b98be02e; }
   #tree[data-kind="civics"] .tnode.cur .tn-when { color: #c9a2ee; }
   .tnode.avail { color: var(--gold-bright); border-color: var(--gold); }
+  .tnode.planned { border-color: var(--blue); box-shadow: 0 0 0 1px #76cde44d; }
+  #tree[data-kind="civics"] .tnode.planned { border-color: #b98be0; box-shadow: 0 0 0 1px #b98be04d; }
+  .tn-plan {
+    display: inline-grid; place-items: center; min-width: 19px; height: 19px; border-radius: 50%;
+    color: #071318; background: var(--blue); font: 800 11px/1 var(--font-ui);
+  }
+  #tree[data-kind="civics"] .tn-plan { background: #c9a2ee; }
+  #treetitle .tree-plan { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #dbe5e0; }
+  #treetitle .tree-plan button {
+    padding: 2px 8px; color: #c9d6d0; background: none; border: 1px solid #536c63; border-radius: 6px;
+    font: 600 11px/1.5 var(--font-ui); cursor: pointer;
+  }
+  #treetitle .tree-plan button:hover { color: var(--gold-bright); border-color: var(--gold); }
+  .wt-next { color: var(--muted); font: 600 var(--type-label)/1.3 var(--font-ui); }
   .tnode[onclick] { cursor: pointer; }
   .tnode[onclick]:hover { transform: translateY(-2px); background: #24372e; }
-  .tnode.locked { opacity: .55; }
+  /* Dimmed by its contents, not the card: the tree's lines run behind the
+     nodes, and a see-through card shows them through its text. */
+  .tnode.locked > * { opacity: .55; }
   .tn-bar { height: 4px; overflow: hidden; border-radius: 3px; background: #ffffff17; }
   .tn-bar i { display: block; height: 100%; border-radius: 3px; background: var(--blue); }
   #tree[data-kind="civics"] .tn-bar i { background: #b98be0; }
@@ -3195,7 +3219,7 @@
     #pediabody { grid-template-columns: minmax(118px, .72fr) minmax(0, 1fr); gap: 8px; }
     #tree { padding: 13px; }
     #treehead { margin-bottom: 11px; }
-    #treecols { gap: 10px; }
+    #treecols { gap: 32px; }
     .tcol { width: 172px; }
     #tradelist { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 13px 16px; }
     .trade-toolbar { flex-wrap: wrap; padding: 9px 13px; }

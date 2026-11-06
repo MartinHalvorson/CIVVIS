@@ -26066,6 +26066,7 @@ function soloTrackerCard(kind) {
       `<span class="wt-bar"><i style="width:${pct}%"></i></span>` +
       `<span class="wt-sub">${Math.round(progress)}/${Math.round(total)} · ${soloRate(perTurn)} per turn</span>` +
       (wants ? `<span class="wt-boostwant" title="${escapeAttr(`Boost: ${wants}`)}">⚡ ${escapeAttr(wants)}</span>` : "") +
+      (studyPlan(tree)[0] ? `<span class="wt-next">Next: ${escapeAttr(titleCase(studyPlan(tree)[0]))}</span>` : "") +
     `</span>` +
     `<span class="wt-turns">${eta ?? "∞"}<small>turn${eta === 1 ? "" : "s"}</small></span></button>`;
 }
@@ -29406,6 +29407,18 @@ function openTree(kind) {
   const cols = ERA_NAMES.map(() => []);
   for (const n of Object.keys(specs)) (cols[specs[n].era] || (cols[specs[n].era] = [])).push(n);
   cols.forEach(col => col.sort((a, b) => specs[a].cost - specs[b].cost || a.localeCompare(b)));
+  // Each column sits as near as it can to the column it grows from, so the
+  // lines between them read as branches and not as a tangle.
+  const treeRow = new Map();
+  for (const col of cols) {
+    const score = new Map(col.map((n, row) => {
+      const rows = specs[n].requires.map(r => treeRow.get(r)).filter(r => r !== undefined);
+      return [n, rows.length ? rows.reduce((sum, r) => sum + r, 0) / rows.length : row];
+    }));
+    col.sort((a, b) => score.get(a) - score.get(b));
+    col.forEach((n, row) => treeRow.set(n, row));
+  }
+  const plan = studyPlan(kind);
   // Civ 6 prices a tree node in turns, not in beakers: what a player is
   // choosing between is how long each one takes at the rate this empire is
   // actually running. The raw cost stays in the tooltip, because a tree read
@@ -29436,6 +29449,7 @@ function openTree(kind) {
       const cls = completed ? "done" : (n === current ? "cur" : (avail ? "avail" : "locked"));
       if (completed) { doneHere++; tally.done++; } else if (avail) tally.avail++;
       const canPick = avail && !current;
+      const planned = plan.indexOf(n);
       const turns = completed ? null : nodeTurns(s.cost, n);
       const unlocks = (s.unlocks || []).map(u => titleCase(u.id));
       const why = completed
@@ -29445,14 +29459,14 @@ function openTree(kind) {
           : canPick
             ? `Start this${turns ? ` — ${turnsText(turns)} at the current rate` : ""}`
             : avail
-              ? `Available, but ${heldBy} is under way — this game studies one at a time`
-              : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+              ? `Click to study this after ${heldBy}`
+              : `Click to plan the path here. Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
       const tip = `${titleCase(n)} — ${why}. Cost ${Math.round(s.cost * speed)}` +
         (unlocks.length ? `. Unlocks ${unlocks.join(", ")}` : "");
       // Studied nodes fold to one line: late in a game they are most of the
       // tree, and what is worth the room is what is still to come.
       if (completed)
-        return `<div class="tnode done" title="${escapeAttr(tip)}">` +
+        return `<div class="tnode done" data-n="${n}" title="${escapeAttr(tip)}">` +
           `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}</b>` +
           `<span class="tn-when">${boosted.has(n) ? "⚡" : ""}✓</span></div></div>`;
       // Civ 6 prints the eureka on every node, because planning around them is
@@ -29460,10 +29474,11 @@ function openTree(kind) {
       // has landed says it at the one moment it is worthless.
       const wants = boosted.has(n) ? "" : boostRequirement(s);
       const missing = avail ? [] : s.requires.filter(r => !known.has(r));
-      return `<div class="tnode ${cls}" title="${escapeAttr(tip)}"` +
-        (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
+      return `<div class="tnode ${cls}${planned >= 0 ? " planned" : ""}" data-n="${n}" title="${escapeAttr(tip)}"` +
+        (n === current ? "" : ` onclick='pickTree("${kind}","${n}")'`) + `>` +
         `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}` +
         (s.repeatable ? ` <span class="boost">↻</span>` : "") + `</b>` +
+        (planned >= 0 ? `<span class="tn-plan" aria-label="Step ${planned + 1} of the plan">${planned + 1}</span>` : "") +
         `<span class="tn-when">${n === current ? `${studied}%` : escapeAttr(turnsText(turns))}</span></div>` +
         (n === current ? `<div class="tn-bar"><i style="width:${studied}%"></i></div>` : "") +
         (boosted.has(n) ? `<div class="tn-boost got">⚡ ${techs ? "Eureka" : "Inspiration"} earned</div>`
@@ -29484,7 +29499,12 @@ function openTree(kind) {
       ? `${verb} <b>${escapeAttr(titleCase(current))}</b> · ${studied}%` +
         (nodeTurns(specs[current].cost, current) ? ` · ${turnsText(nodeTurns(specs[current].cost, current))}` : "")
       : (tally.avail ? `Nothing under way — pick a gold node` : `Nothing under way`)) +
-    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span></small>`;
+    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span>` +
+    (plan.length
+      ? `<span class="tree-plan">Then ${escapeAttr(plan.map(titleCase).join(" › "))}` +
+        ` <button type="button" onclick='clearStudyPlan("${kind}")'>Clear path</button></span>`
+      : `<span class="tree-tally">Click any node to plan a path to it</span>`) +
+    `</small>`;
   const holder = document.getElementById("treecols");
   const tree = document.getElementById("tree");
   const reopening = tree.classList.contains("open") && tree.dataset.kind === kind;
@@ -29492,6 +29512,7 @@ function openTree(kind) {
   holder.innerHTML = columns.join("");
   tree.dataset.kind = kind;
   tree.classList.add("open");
+  drawTreeLines(holder, specs, known, current, plan);
   treeSignature = treeStateSignature(kind);
   if (kept) { holder.scrollLeft = kept.left; holder.scrollTop = kept.top; return; }
   // Open where the decisions are: the column holding the current study, or
@@ -29507,6 +29528,7 @@ function treeStateSignature(kind) {
   if (!state || !state.me) return "";
   const techs = kind === "techs";
   return [kind, state.turn, techs ? state.me.research : state.me.civic,
+    studyPlan(kind).join(","),
     Math.round(Number(techs ? state.me.research_progress : state.me.civic_progress) || 0),
     ((techs ? state.me.techs : state.me.civics) || []).length,
     ((techs ? state.me.boosted_techs : state.me.boosted_civics) || []).length,
@@ -29517,9 +29539,136 @@ function refreshOpenTree() {
   if (!tree || !tree.classList.contains("open") || !treeKind) return;
   if (treeStateSignature(treeKind) !== treeSignature) openTree(treeKind);
 }
+// The lines of the tree. A node's own box gives the ends of each curve, so the
+// layout stays with the stylesheet; the gutters between the era columns are
+// where the lines show, and the nodes sit above them. Hovering a node lights
+// the whole chain still standing between the player and it.
+const SVG_NS = "http://www.w3.org/2000/svg";
+function drawTreeLines(holder, specs, known, current, plan) {
+  const nodes = new Map([...holder.querySelectorAll(".tnode[data-n]")]
+    .map(node => [node.dataset.n, node]));
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "tlines");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("width", holder.scrollWidth);
+  svg.setAttribute("height", holder.scrollHeight);
+  const onPath = n => n === current || plan.includes(n);
+  for (const [name, node] of nodes) {
+    for (const need of specs[name].requires) {
+      const from = nodes.get(need);
+      if (!from) continue;
+      const x1 = from.offsetLeft + from.offsetWidth, y1 = from.offsetTop + from.offsetHeight / 2;
+      const y2 = node.offsetTop + node.offsetHeight / 2;
+      // Two nodes of one era stack in one column, so that line bows out into
+      // the gutter and comes back rather than running through the column.
+      const sameColumn = from.parentElement === node.parentElement;
+      const x2 = sameColumn ? x1 : node.offsetLeft;
+      const bend = sameColumn ? 18 : Math.max(16, (x2 - x1) / 2);
+      const line = document.createElementNS(SVG_NS, "path");
+      line.setAttribute("d", sameColumn
+        ? `M${x1} ${y1}C${x1 + bend} ${y1} ${x1 + bend} ${y2} ${x2} ${y2}`
+        : `M${x1} ${y1}C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`);
+      line.setAttribute("class", onPath(name) && (onPath(need) || known.has(need)) ? "on-path"
+        : known.has(name) ? "studied" : known.has(need) ? "open" : "");
+      line.dataset.from = need;
+      line.dataset.to = name;
+      svg.append(line);
+    }
+  }
+  holder.append(svg);
+  holder.onmouseover = event => {
+    const node = event.target.closest?.(".tnode[data-n]");
+    const chain = new Set(node ? [node.dataset.n] : []);
+    for (const name of chain)
+      if (!known.has(name)) for (const need of specs[name].requires) chain.add(need);
+    for (const line of svg.children)
+      line.classList.toggle("lit", chain.has(line.dataset.to) && chain.has(line.dataset.from) &&
+        !known.has(line.dataset.to));
+  };
+}
+// A plan is what to study next, in order, for each tree. The game studies one
+// thing at a time, so the page holds the rest and starts the next step itself
+// when the last one lands. It lives with this world's seed: a plan for another
+// world means nothing.
+const STUDY_PLAN_KEY = "civvis-study-plan-v1";
+let studyPlans = null;
+function studyPlanStore() {
+  const seed = state?.seed ?? null;
+  if (studyPlans && studyPlans.seed === seed) return studyPlans;
+  studyPlans = {seed, techs: [], civics: []};
+  try {
+    const held = JSON.parse(localStorage.getItem(STUDY_PLAN_KEY) || "null");
+    if (held && held.seed === seed) studyPlans = held;
+  } catch (_) {}
+  return studyPlans;
+}
+function studyTaken(kind) {
+  const techs = kind === "techs";
+  return {known: new Set((techs ? state.me.techs : state.me.civics) || []),
+    current: techs ? state.me.research : state.me.civic,
+    specs: techs ? RULES.techs : RULES.civics};
+}
+// What is left to do of a plan: anything already studied or under way is gone.
+function studyPlan(kind) {
+  if (!state?.me || !RULES) return [];
+  const {known, current, specs} = studyTaken(kind);
+  return (studyPlanStore()[kind] || [])
+    .filter(n => specs[n] && !(known.has(n) && !specs[n].repeatable) && n !== current);
+}
+function setStudyPlan(kind, steps) {
+  const plans = studyPlanStore();
+  plans[kind] = steps;
+  try { localStorage.setItem(STUDY_PLAN_KEY, JSON.stringify(plans)); } catch (_) {}
+}
+// Every step still needed to reach a node, prerequisites first and the cheaper
+// branch first where there is a choice.
+function studyPathTo(kind, target) {
+  const {known, current, specs} = studyTaken(kind);
+  const path = [];
+  const visit = name => {
+    if (path.includes(name) || name === current || (known.has(name) && !specs[name].repeatable)) return;
+    for (const need of [...specs[name].requires].sort((a, b) => specs[a].cost - specs[b].cost))
+      visit(need);
+    path.push(name);
+  };
+  visit(target);
+  return path;
+}
+function clearStudyPlan(kind) {
+  setStudyPlan(kind, []);
+  openTree(kind);
+  drawTurnLoop();
+}
+function studyAction(kind, name) {
+  return state.legal_actions.find(action => kind === "techs"
+    ? action.type === "research" && action.tech === name
+    : action.type === "civic" && action.civic === name);
+}
+// Start the next step of each plan that has nothing under way. The rest of the
+// turn must not wait on this, and a step the engine will not take yet (a boost
+// reordered things, say) stays in the plan rather than stopping it.
+async function followStudyPlan() {
+  if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;
+  for (const kind of ["techs", "civics"]) {
+    if (studyTaken(kind).current) continue;
+    for (const name of studyPlan(kind)) {
+      const action = studyAction(kind, name);
+      if (action) { await send(action); break; }
+    }
+  }
+}
 function pickTree(kind, n) {
-  document.getElementById("tree").classList.remove("open");
-  send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+  const path = studyPathTo(kind, n);
+  setStudyPlan(kind, path);
+  // One step that can start now is an ordinary choice, and the tree gets out
+  // of the way. A longer plan stays on screen so the path can be seen.
+  if (path.length === 1 && !studyTaken(kind).current) {
+    document.getElementById("tree").classList.remove("open");
+    setStudyPlan(kind, []);
+    send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+    return;
+  }
+  followStudyPlan().then(() => { openTree(kind); drawTurnLoop(); });
 }
 
 // ---------------------------------------------------------------- lens/tacks
@@ -33219,6 +33368,9 @@ function openTurnIfNew() {
   drawTurnLoop();
   resumeAllTravel();
   if (!sel && !selCity) advanceToNextActionUnit(true);
+  // After this tick: a turn opens inside the End Turn request, and `send`
+  // refuses anything else until that request has finished.
+  setTimeout(followStudyPlan);
 }
 function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();
