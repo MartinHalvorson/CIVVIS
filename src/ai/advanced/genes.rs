@@ -38,10 +38,11 @@
 //!
 //! ⚠ Existing rows are never re-ordered: the screen writes genes in this
 //! order, and `tools/genes.py` re-derives a batch's gene set from this file
-//! at the commit the batch names. Add a row below the tail append marker for
-//! its tag's first-letter range. Every marker follows the existing rows, so
-//! the distinct append points let concurrent gene PRs merge without moving a
-//! positional bit that a running screen already wrote.
+//! at the commit the batch names. Add a row at the end of the tail append
+//! marker's range for its tag's first letter, so concurrent gene PRs merge.
+//! A row under an earlier marker does shift the rows filed below it by one,
+//! and that is harmless: a run's bits are read against the gene list in its
+//! own header, and `gene_screen` refuses to merge runs whose lists differ.
 //!
 //! Every row's comment is the note its old table row or its old bundle line
 //! carried — the reason the gene exists and the measurement that motivated
@@ -5194,6 +5195,7 @@ pub const GENES: &[Gene] = &[
     // Native 002152 legacy t133: five Universities, no Chemistry, while the
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    Gene { tag: "science-chain-crosses-window", field: "science_chain_crosses_window", kind: Kind::OptIn, enable: AdvancedAi::enable_science_chain_crosses_window, disable: AdvancedAi::disable_science_chain_crosses_window },
     // On the Science seat's losing-war turns, 309 of 664 queue decisions
     // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
     // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
@@ -5385,6 +5387,14 @@ pub const GENES: &[Gene] = &[
     // votes that never decided a session. Live only; the simulator has no
     // such Congress, so it cannot screen this.
     Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
+    // Gitarja's +2 Faith beside Coast or Lake and Great Nusantara's district
+    // adjacency are absent from the site score, so Indonesia ranked sites as
+    // if landlocked: 43 of 97 live foundings were inland and 27 of those had
+    // a legal shore plot within two tiles. Under the gene a shore seat gains
+    // +16, but a coast-only seat only with no fresh water within two tiles,
+    // so it does not pull a city off fresh water. Indonesia only. See
+    // `nusantara_settles_the_shore.rs`.
+    Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
     // Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp Heavy Chariot
     // one tile, reading "danger 69 where it stood, -0 where it stands"; the
     // Galley beside it stepped into the tile it left and killed it. With

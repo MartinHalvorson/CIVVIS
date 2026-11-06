@@ -22,8 +22,8 @@ class RunningCountTests(unittest.TestCase):
     That must not turn every PR red; a forgotten regeneration still must.
     """
 
-    JSON = '{\n  "capability_toggles": 838,\n  "derived": 73\n}\n'
-    STATUS = "- Capability toggles on the controller: **838**\n- Other: **73**\n"
+    JSON = '{\n  "measured_by_a_screen": 838,\n  "derived": 73\n}\n'
+    STATUS = "- Measured by at least one screen: **838**\n- Other: **73**\n"
 
     def test_a_merge_race_of_one_is_current(self):
         self.assertTrue(eval_manifest.is_current(
@@ -54,8 +54,7 @@ class RunningCountTests(unittest.TestCase):
     def test_every_count_the_status_prints_is_covered(self):
         rendered = eval_manifest.render_status(
             eval_manifest.build_manifest(REPO))
-        for label in ("Capability toggles on the controller",
-                      "Reachable as a gene", "Measured by at least one screen",
+        for label in ("Measured by at least one screen",
                       "Resolved by the ledger"):
             line = next(l for l in rendered.splitlines() if label in l)
             self.assertTrue(
@@ -290,6 +289,17 @@ class GenomeCoverageTests(unittest.TestCase):
                                 c["resolved_by_a_screen"])
         self.assertEqual(len(c["unreachable_toggles"]),
                          c["unreachable_by_any_screen"])
+
+    def test_the_totals_every_gene_changes_are_not_committed(self):
+        """Every gene PR changed these and any two collided, so a gene PR must
+        leave both generated files alone."""
+        manifest = eval_manifest.build_manifest(REPO)
+        outputs = eval_manifest.rendered_outputs(manifest)
+        for key in eval_manifest.UNCOMMITTED_COVERAGE:
+            self.assertNotIn(key, manifest["genome_coverage"])
+            self.assertIn(key, self.coverage)
+            for name, text in outputs.items():
+                self.assertNotIn(key, text, name)
 
     def test_a_toggle_named_differently_from_its_row_is_still_reachable(self):
         """The real fixture, not a synthetic one: this exact flag is the

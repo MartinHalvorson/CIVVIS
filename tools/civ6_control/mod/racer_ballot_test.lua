@@ -336,6 +336,27 @@ check("the same target as the lane", raced.selection, requests[1].selection)
 check("the same spend as the lane", raced.spent, spent)
 check("the same border votes as the lane", raced.border, requests[2].votes)
 check("the same PR option as the lane", raced.pr, requests[3].option)
+-- Short of a claim above the denial floor, a Science racer banks: a paid B
+-- never decided a session. The Diplomatic lane keeps its denial.
+config.VictoryLane = "science"
+config.ScienceCongressRacer = true
+spent, mode = run(120, 14, 6, 12)
+check("science racer short of a claim casts the free vote", mode, "free")
+check("science racer banks the Favor", requests[1].votes, 1)
+check("science racer's free vote stays on B", requests[1].option, 2)
+-- With the rivals' gang on a leader past 16: the same free vote beside them.
+spent, mode = run(300, 17, 6, 8)
+check("science racer joins the gang free", mode, "free")
+check("science racer spends nothing on the gang's vote", requests[1].votes, 1)
+check("science racer votes with the gang", requests[1].option, 2)
+config.VictoryLane = "science"
+config.ScienceCongressRacer = nil
+spent, mode = run(120, 14, 6, 12)
+check("without the tag the denial still pays", mode, "deny")
+check("without the tag it casts the bank", requests[1].votes > 1, true)
+config.VictoryLane = "diplomatic"
+spent, mode = run(120, 14, 6, 12)
+check("the Diplomatic lane keeps its denial", mode, "deny")
 -- A Public Works vote stands: the racer's buying branch leaves its count.
 GameInfo.Resolutions.WC_RES_PUBLIC_WORKS = { ResolutionType = "WC_RES_PUBLIC_WORKS", Hash = 6 }
 config.VictoryLane = "science"
