@@ -2847,4 +2847,3 @@ at PCT percent. The draws come from a keyed hash rather than the game's RNG.
 The rows gain `war_starts`, `rival_war_turns`, `cities_lost_100` and
 `cities_taken_100` (also with `--trace`). See
 [gene_screens/rival_war_pace.md](gene_screens/rival_war_pace.md).
-
