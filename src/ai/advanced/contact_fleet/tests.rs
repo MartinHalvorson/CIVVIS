@@ -320,3 +320,112 @@ fn contact_fleet_is_opt_in_and_off_by_default() {
     ai.disable_contact_fleet();
     assert!(!ai.base.contact_fleet);
 }
+
+/// A seat whose controller has both `contact-fleet` and the claim on.
+fn claimant() -> AdvancedAi {
+    let mut ai = diplomat(true);
+    ai.enable_sea_scout_claims_the_queue();
+    ai
+}
+
+/// The fixture's city with `head` queued and the Quadrireme all but paid, so
+/// that it can finish the hull inside the claim's window.
+fn city_working_on(head: Item) -> (Game, u32) {
+    let (mut game, city) = coastal_seat();
+    let hull = unit("quadrireme");
+    let cost = game.item_cost_for_city(0, city, &hull);
+    let held = game.cities.get_mut(&city).unwrap();
+    held.queue = vec![head];
+    held.production_progress
+        .insert(Game::item_progress_key(&hull), (cost - 1.0).max(0.0));
+    (game, city)
+}
+
+/// The fixture's city with a Library at the head of its queue.
+fn working_city() -> (Game, u32) {
+    city_working_on(Item::Building {
+        building: Name::new("library"),
+    })
+}
+
+fn head_is_a_ship(game: &Game, city: u32) -> bool {
+    matches!(game.cities[&city].queue.first(), Some(Item::Unit { unit })
+        if game.rules.units[unit.as_str()].domain.as_deref() == Some("sea"))
+}
+
+#[test]
+fn the_sea_scout_claims_a_working_queue_only_with_the_gene() {
+    let (mut game, city) = working_city();
+    diplomat(true).claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(!head_is_a_ship(&game, city), "off: the queue is untouched");
+    assert!(!game.players[0].counters.contains_key("sea_scout_claims"));
+
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(head_is_a_ship(&game, city), "on: the hull takes the head");
+    assert_eq!(game.players[0].counters["sea_scout_claims"], 1);
+}
+
+#[test]
+fn the_claim_stands_alone_once_a_hull_is_queued() {
+    let (mut game, city) = working_city();
+    let ai = claimant();
+    ai.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    let queued = game.cities[&city].queue.clone();
+    ai.claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert_eq!(game.cities[&city].queue, queued);
+    assert_eq!(game.players[0].counters["sea_scout_claims"], 1);
+}
+
+#[test]
+fn no_claim_before_a_hull_can_cross_ocean() {
+    let (mut game, city) = working_city();
+    game.players[0].techs.remove(&Name::new("cartography"));
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(!head_is_a_ship(&game, city));
+}
+
+#[test]
+fn no_claim_once_the_contact_gap_closes() {
+    let (mut game, city) = working_city();
+    close_the_gap(&mut game, city);
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(!head_is_a_ship(&game, city));
+}
+
+#[test]
+fn a_threatened_city_keeps_its_queue() {
+    let (mut game, city) = working_city();
+    let mut threatened = plan(80);
+    threatened.threatened_city = Some(city);
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &threatened);
+    assert!(!head_is_a_ship(&game, city));
+}
+
+#[test]
+fn a_wonder_or_a_soldier_keeps_the_head() {
+    for wonder in [true, false] {
+        let (mut game, city) = working_city();
+        let head = if wonder {
+            Item::Wonder {
+                wonder: Name::new("great_library"),
+                pos: game.cities[&city].pos,
+            }
+        } else {
+            unit("warrior")
+        };
+        game.cities.get_mut(&city).unwrap().queue = vec![head.clone()];
+        claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+        assert_eq!(game.cities[&city].queue.first(), Some(&head));
+    }
+}
+
+#[test]
+fn a_city_too_slow_to_finish_the_hull_keeps_its_queue() {
+    let (mut game, city) = coastal_seat();
+    game.cities.get_mut(&city).unwrap().queue = vec![Item::Building {
+        building: Name::new("library"),
+    }];
+    claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
+    assert!(!head_is_a_ship(&game, city));
+    assert!(!game.players[0].counters.contains_key("sea_scout_claims"));
+}

@@ -2293,6 +2293,9 @@ impl AdvancedAi {
         /// Opt-in gene `plant-reads-the-grid`; see
         /// `advanced/plant_reads_the_grid.rs`.
         plant_reads_the_grid => enable_plant_reads_the_grid, disable_plant_reads_the_grid;
+        /// Opt-in gene `sea-scout-claims-the-queue`; see
+        /// `advanced/contact_fleet.rs`.
+        sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
         /// Opt-in gene `wounded-ship-sails-on`; see
         /// `advanced/wounded_ship_sails_on.rs`.
         wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
