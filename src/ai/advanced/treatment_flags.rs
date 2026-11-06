@@ -1718,6 +1718,8 @@ impl AdvancedAi {
         /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
         /// `AdvancedAi::claim_producer_zone`.
         industrial_zone_claims_the_producer_queue => enable_industrial_zone_claims_the_producer_queue, disable_industrial_zone_claims_the_producer_queue;
+        /// Opt-in Science University priority before industrial claims.
+        universities_before_the_forge => enable_universities_before_the_forge, disable_universities_before_the_forge;
         /// Move a one-war front cut off from every land road to an enemy the
         /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
         /// `advanced/sea_locked_front.rs`.
@@ -2061,6 +2063,9 @@ impl AdvancedAi {
         land_grab_outlasts_the_opening => enable_land_grab_outlasts_the_opening, disable_land_grab_outlasts_the_opening;
         /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
         science_seat_allies => enable_science_seat_allies, disable_science_seat_allies;
+        /// Opt-in gene `science-seat-allies-2`; see
+        /// `advanced/culture_seat_allies.rs`.
+        science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;
@@ -2266,6 +2271,17 @@ impl AdvancedAi {
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `tribute-buys-the-friendship`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
+        /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
+        plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
+        /// Prefer a safe legal site for a new native Science Campus.
+        campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
+        /// Opt-in gene `fresh-water-prices-the-site`; see
+        /// `advanced/fresh_water_site.rs`.
+        fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;
     }
 }
 
@@ -5260,6 +5276,17 @@ impl AdvancedAi {
     /// The twin of `enable_group_steps_read_the_field`.
     pub fn disable_group_steps_read_the_field(&mut self) {
         self.group_steps_read_the_field = false;
+    }
+
+    /// Opt-in gene `nusantara-reads-the-coast`; see
+    /// [`Self::nusantara_reads_the_coast`].
+    pub fn enable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = true;
+    }
+
+    /// The twin of `enable_nusantara_reads_the_coast`.
+    pub fn disable_nusantara_reads_the_coast(&mut self) {
+        self.nusantara_reads_the_coast = false;
     }
 
     // ---- append: a-b ------------------------------------------------

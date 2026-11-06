@@ -182,6 +182,104 @@ fn the_drain_disbands_the_cheapest_strength_and_spares_garrisons_and_guns() {
     assert_eq!(ours(&covered), before, "the treasury covers the deficit");
 }
 
+/// Native Indonesia 221304Z, 162/0: a Quadrireme's exported bill was 2,
+/// exactly covered by Levee en Masse. Deleting it and a 4-Gold Musketman
+/// reduced the native unit total by only 2, not the journal's claimed 6.
+#[test]
+fn the_drain_keeps_the_free_ship_and_uses_a_paying_unit() {
+    for version_two in [false, true] {
+        let (mut g, _, archers) = fixture();
+        let ship = g.spawn_test_unit("quadrireme", 0, (6, 6));
+        let musket = g.spawn_test_unit("musketman", 0, (6, 8));
+        g.players[0].policies = [crate::name!("levee_en_masse")].into_iter().collect();
+        g.players[0].gold = 0.0;
+        g.players[0].gold_per_turn = -1.0;
+        for (uid, bill) in [(ship, 2.0), (musket, 4.0)] {
+            std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+                uid,
+                crate::game::HostUnitFacts {
+                    maintenance: Some(bill),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut ai = AdvancedAi::new();
+        if version_two {
+            ai.enable_bankruptcy_exits_the_drain_2();
+        } else {
+            ai.enable_bankruptcy_exits_the_drain();
+        }
+        let before = g.unit_gold_maintenance(0);
+        ai.exit_the_drain(&mut g, 0);
+        assert!(
+            g.units.contains_key(&ship),
+            "the discounted ship costs nothing"
+        );
+        assert!(
+            !g.units.contains_key(&musket),
+            "the Musketman can relieve the deficit"
+        );
+        assert!(archers.iter().all(|uid| g.units.contains_key(uid)));
+        assert_eq!(before - g.unit_gold_maintenance(0), 2.0);
+    }
+}
+
+/// The number disbanded must cover the deficit with what the economy really
+/// stops charging. Check native bills (already formed), modeled formation
+/// bills, discounts, and Elite Forces' per-unit surcharge against the actual
+/// before/after treasury-maintenance calculation.
+#[test]
+fn the_drain_counts_effective_savings_until_the_deficit_is_covered() {
+    for formation in [0, 1, 2] {
+        for card in [None, Some("conscription"), Some("levee_en_masse")] {
+            for observed in [None, Some(2.0), Some(6.0)] {
+                for surcharge in [false, true] {
+                    let (mut g, _, _) = fixture();
+                    g.units.clear();
+                    g.players[0].policies = card.into_iter().map(Name::new).collect();
+                    if surcharge {
+                        g.players[0].policies.insert(crate::name!("elite_forces"));
+                    }
+                    for pos in [(6, 6), (6, 8), (8, 8)] {
+                        let uid = g.spawn_test_unit("musketman", 0, pos);
+                        g.units.get_mut(&uid).unwrap().formation = formation;
+                        if let Some(bill) = observed {
+                            std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+                                uid,
+                                crate::game::HostUnitFacts {
+                                    maintenance: Some(bill),
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+                    let before = g.unit_gold_maintenance(0);
+                    let cost = before / 3.0;
+                    let deficit = if cost > 0.0 { cost * 1.5 } else { 1.0 };
+                    g.players[0].gold = 0.0;
+                    g.players[0].gold_per_turn = -deficit;
+                    let mut ai = AdvancedAi::new();
+                    ai.enable_bankruptcy_exits_the_drain_2();
+                    ai.exit_the_drain(&mut g, 0);
+                    let after = g.unit_gold_maintenance(0);
+                    let remaining = g.player_unit_ids(0).len();
+                    if cost > 0.0 {
+                        assert_eq!(
+                            remaining, 1,
+                            "{formation:?}/{card:?}/{observed:?}/{surcharge}"
+                        );
+                        assert!(before - after >= deficit);
+                        assert!(cost < deficit, "one unit would not suffice");
+                    } else {
+                        assert_eq!(remaining, 3, "free units cannot cover a deficit");
+                        assert_eq!(before, after);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Drained, Caravansaries is worth 2 Gold a route; with the deficit covered
 /// or the gene off, no card is pushed.
 #[test]

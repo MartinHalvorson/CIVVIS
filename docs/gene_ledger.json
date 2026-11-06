@@ -5103,7 +5103,8 @@
         "ships": null,
         "versions": {
           "plaza-serves-the-scientist": null,
-          "plaza-serves-the-scientist-2": null
+          "plaza-serves-the-scientist-2": null,
+          "plaza-serves-the-scientist-3": null
         }
       },
       "policy-deck-hysteresis": {
@@ -5174,6 +5175,15 @@
         "versions": {
           "science-drive-answers-from-the-pad": null,
           "science-drive-answers-from-the-pad-2": null
+        }
+      },
+      "science-seat-allies": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "science-seat-allies": null,
+          "science-seat-allies-2": null
         }
       },
       "science-victory-drive": {

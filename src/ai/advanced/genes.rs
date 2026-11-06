@@ -3702,6 +3702,9 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // Native Indonesia Ternate70/0 chose industry with a legal University;
+    // this separate opt-in releases industrial claims for a short University.
+    Gene { tag: "universities-before-the-forge", field: "universities_before_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_universities_before_the_forge, disable: AdvancedAi::disable_universities_before_the_forge },
     // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
     // as its front from turn 146 to 192 and stood ten Dutch sieges down for
     // want of a land road while the Maya and Egypt, at war with us at 3-5x
@@ -4568,6 +4571,12 @@ pub const GENES: &[Gene] = &[
     // leading science rival or a space racer. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // Version two of `science-seat-allies`: before Diplomatic Service the
+    // Science seat asks for a Military Alliance instead of waiting for a legal
+    // Research Alliance. Any alliance boosts Diplomatic Service 40%, the first
+    // civic Spy slot; in 35 live Deity games (2026-11-05) it was never boosted
+    // and no alliance stood before it. See `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies-2", field: "science_seat_allies_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies_2, disable: AdvancedAi::disable_science_seat_allies_2 },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live
@@ -5303,6 +5312,36 @@ pub const GENES: &[Gene] = &[
     // carries). The ransom of our captured Spies pays in Diplomatic Favor
     // beside Gold. See `advanced/captives_come_home.rs`.
     Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
+    // The operator moved the live seat to Indonesia (Gitarja), Science only,
+    // on 11-05. Great Nusantara (shipped TRAIT_CIVILIZATION_INDONESIA_NUSANTARA)
+    // gives a Campus, Holy Site, Industrial Zone and Theater Square +1 yield
+    // per two adjacent Coast tiles; data/civs.json carries a flat placeholder,
+    // so every district site picker ranks the Coast at nothing. Under the gene
+    // the seat's pickers rank by district_site_yields, which adds the Coast
+    // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
+    Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    // strongest neighbour at peace while it reads Unfriendly or Neutral, up
+    // to the opinion a Friendly rival holds, so the friendship ask (sent only
+    // to a Friendly rival, accepted 30 of 50 on Deity 11-04/05) can land. A
+    // favorable deal is worth +1 per 10 Gold to the AI, capped at +20
+    // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
+    // `advanced/tribute_buys_the_friendship.rs`.
+    Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
+    // (carrying 1 and 2). The Science seat's Government Plaza district claims
+    // the capital's queue once its Campus stands. See
+    // `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // A fresh native Science Campus chooses safe legal land before coastal lowland.
+    Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
+    // The site score paid fresh water +12 and a coast-only seat +10 (housing
+    // +4, Harbor base +6), though live non-capital cities on fresh water held
+    // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
+    // and 66% on the coast. 67 of 239 dry or coast-only foundings had a legal
+    // fresh-water plot within two tiles. Under the gene a fresh-water seat
+    // gains +12 more. See `fresh_water_site.rs`.
+    Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

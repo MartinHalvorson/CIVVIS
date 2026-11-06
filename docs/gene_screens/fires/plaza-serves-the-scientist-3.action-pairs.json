@@ -1,0 +1,22 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "plaza-serves-the-scientist-3",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 11 boards of three live Deity Science (Online, Indonesia seat) games (civvis-20261105T165539Z, 172506Z, 151911Z), each the run's events.jsonl cut at frame 0 of a turn where no Government Plaza stood or was queued, the capital's Campus stood, the host listed DISTRICT_GOVERNMENT among the capital's buildable items and the capital produced routine work. Both arms run one frozen civvis_orders --resumed built from the branch at a3b8a9fef with the run's own requested genome less the gene's family siblings; the on arm adds --with plaza-serves-the-scientist-3. Orders differ in 10/11 reads. The on arm's claim ('starts the Government Plaza for the Science plaza') is journaled in 10/11 and the off arm's in 0/11; the Plaza is the produced head in 2, and in the other 8 it queues behind work one turn from done (near-done-work-finishes, paused-district-finishes), which the next turn's pass then displaces.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-plaza-serves-the-scientist-3.native-queries.tar.xz",
+    "sha256": "03c579c942686abd7991b29d6a4b5620c986db34b4b1dd4fbda4c76414b6229f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json"
+  ]
+}

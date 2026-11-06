@@ -5586,6 +5586,8 @@ pub struct AdvancedAi {
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
+    /// Prefer a safe legal site for a new native Science Campus. Opt-in.
+    campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
     /// new since the last resolve, so a capture beside a standing city
@@ -7345,6 +7347,9 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `fresh-water-prices-the-site`: a fresh-water seat outbids a coast-only
+    /// one. See `advanced/fresh_water_site.rs`. Off by default.
+    fresh_water_prices_the_site: bool,
     /// `early-cities-keep-their-distance`: while the empire holds fewer
     /// than three cities, a site loses value for every tile it stands inside
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
@@ -8295,6 +8300,10 @@ pub struct AdvancedAi {
     /// `outclassed-siege-stands-down`: by city tile, the first and the last
     /// turn of the field's current outclassed streak. Empty with the gene off.
     outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
+    /// `nusantara-reads-the-coast`: an Indonesian seat's district site
+    /// pickers price Great Nusantara's Coast adjacency. See
+    /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
+    nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
     /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
     revealed_launch_tech_takes_the_slot: bool,
@@ -8767,7 +8776,15 @@ pub struct AdvancedAi {
     /// Carries version 1. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_2: bool,
+    /// `plaza-serves-the-scientist-3`: version 3, carrying 1 and 2. The
+    /// Science seat's Government Plaza district claims the capital's queue
+    /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
+    /// Off by default.
+    plaza_serves_the_scientist_3: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-seat-allies-2`: version one, and a Military Alliance asked
+    /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
+    science_seat_allies_2: bool,
     /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
     /// sooner. See `advanced/spy_civics_come_first.rs`.
     spy_civics_come_first: bool,
@@ -9557,6 +9574,9 @@ pub struct AdvancedAi {
     /// defender the city could train, and keeps the Gold otherwise. Runs the
     /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
     threatened_city_buys_its_defender_2: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -9869,6 +9889,11 @@ pub struct AdvancedAi {
     /// `walls-release-the-one-blow`: this frame's units of ours whose own
     /// tile is one-blow lethal (filled by `plan_battle`).
     walls_one_blow: BTreeSet<u32>,
+    /// `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    /// strongest neighbour at peace while it is too cold to accept a
+    /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
+    /// default.
+    tribute_buys_the_friendship: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10779,6 +10804,7 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -10805,6 +10831,8 @@ mod first_launch_research;
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod free_slot_campus_clock;
+/// `fresh-water-prices-the-site`: see `advanced/fresh_water_site.rs`.
+mod fresh_water_site;
 /// `generals-lead-the-army`: the live bridge keeps a General with each front
 /// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
 mod generals_lead_the_army;
@@ -10837,6 +10865,7 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -10845,6 +10874,9 @@ mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
+/// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
+/// Coast. See `advanced/nusantara_reads_the_coast.rs`.
+mod nusantara_reads_the_coast;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
@@ -10889,6 +10921,10 @@ mod spy_civics_come_first;
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
 mod trader_fills_the_idle_route;
+/// `tribute-buys-the-friendship`: see
+/// `advanced/tribute_buys_the_friendship.rs`.
+mod tribute_buys_the_friendship;
+mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
@@ -11923,6 +11959,7 @@ impl AdvancedAi {
             anvil_spares_the_one_blow: false,
             bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_above_the_sea: false,
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
             disrupt_waits_for_the_match_point: false,
@@ -12233,6 +12270,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
@@ -12381,6 +12419,7 @@ impl AdvancedAi {
             near_done_work_finishes: false,
             outclassed_siege_stands_down: false,
             outclassed_sieges: BTreeMap::new(),
+            nusantara_reads_the_coast: false,
             // ---- append: p-r ----------------------------------------
             revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
@@ -12468,7 +12507,9 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             plaza_serves_the_scientist_2: false,
+            plaza_serves_the_scientist_3: false,
             // ---- append: s-s ----------------------------------------
+            science_seat_allies_2: false,
             spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
@@ -12622,6 +12663,7 @@ impl AdvancedAi {
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
+            universities_before_the_forge: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
@@ -12672,6 +12714,7 @@ impl AdvancedAi {
             wounded_out_of_reach_2: false,
             walls_release_the_one_blow: false,
             walls_one_blow: BTreeSet::new(),
+            tribute_buys_the_friendship: false,
         }
     }
 
@@ -14032,7 +14075,7 @@ impl AdvancedAi {
         let best_site = city_ids
             .iter()
             .flat_map(|cid| g.district_sites(*cid, crate::name!("holy_site")))
-            .map(|pos| g.district_yields(crate::name!("holy_site"), pos).faith)
+            .map(|pos| g.district_site_yields(crate::name!("holy_site"), pos).faith)
             .max_by(f64::total_cmp);
         if !has_holy_site && !holy_site_planned && best_site.is_none() {
             return None;
@@ -18325,7 +18368,7 @@ impl AdvancedAi {
                                     .is_none_or(|civic| g.players[pid].civics.contains(civic))
                         })
                         .map(|(district, _)| {
-                            self.yield_value(g.district_yields(district, *pos), plan.strategy)
+                            self.yield_value(g.district_site_yields(district, *pos), plan.strategy)
                         })
                         .fold(0.0, f64::max)
                         * 10.0;
@@ -18782,7 +18825,7 @@ impl AdvancedAi {
                     if district != "holy_site" {
                         continue;
                     }
-                    let faith = g.district_yields(crate::name!("holy_site"), pos).faith;
+                    let faith = g.district_site_yields(crate::name!("holy_site"), pos).faith;
                     if best
                         .map(|old| {
                             faith > old.0 || (faith == old.0 && (*cid, pos) > (old.1, old.2))
@@ -21583,7 +21626,7 @@ impl AdvancedAi {
                 .max_by(|left, right| {
                     let site_yields = |item: &Item| match item {
                         Item::District { district, pos } => {
-                            g.district_yields(*district, *pos).total()
+                            g.district_site_yields(*district, *pos).total()
                         }
                         _ => 0.0,
                     };
@@ -22810,6 +22853,9 @@ impl AdvancedAi {
         let plan = self.plan.clone()?;
         let mut preview = self.clone();
         let mut board = g.clone();
+        // `nusantara-reads-the-coast`: the hint plans on a fresh board, so it
+        // names its own planner, as `take_turn_inner` does.
+        preview.seat_nusantara_site_planner(&mut board, pid);
         let queue = &mut board.cities.get_mut(&city)?.queue;
         let incoming_settler =
             matches!(queue.first(), Some(Item::Unit { unit }) if unit == "settler");
@@ -25326,7 +25372,7 @@ impl AdvancedAi {
                     pricing_lane,
                 ) * 42.0
                     * Self::campus_payback_horizon(g);
-                self.yield_value(g.district_yields(district, *pos), pricing_lane) * 60.0
+                self.yield_value(g.district_site_yields(district, *pos), pricing_lane) * 60.0
                     - self.seowon_site_loss_value(g, pid, *district, *pos, pricing_lane) * 60.0
                     + adjacency_threshold
                     + self.yield_value(spec.citizen_yields, pricing_lane) * 24.0
@@ -25877,18 +25923,6 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
-        if headroom >= 2.0 {
-            1.0
-        } else if headroom >= 1.0 {
-            0.5
-        } else if headroom > -4.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
     fn settlement_output_value(total: Yields, population: usize) -> f64 {
         let surplus = total.food - 2.0 * population as f64;
         total.production * 2.6
@@ -26034,8 +26068,8 @@ impl AdvancedAi {
                     }
 
                     let surplus = branch.total.food - 2.0 * population as f64;
-                    let growth_rate = surplus.max(0.0)
-                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                    let growth_rate =
+                        surplus.max(0.0) * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate
@@ -26220,6 +26254,9 @@ impl AdvancedAi {
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
+        // `fresh-water-prices-the-site`: zero with the gene off. See
+        // `advanced/fresh_water_site.rs`.
+        value += self.fresh_water_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);
@@ -29589,6 +29626,8 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
+        self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
         // any living-majors reading of this turn.
         self.retire_defeated_majors(g, pid);
@@ -30222,6 +30261,9 @@ impl AdvancedAi {
             // building (the Intelligence Agency's Spy slot and level) under
             // the same displacement rule. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_tier(g, pid, &plan);
+            // `plaza-serves-the-scientist-3`: the Plaza district itself, once
+            // the capital's Campus stands. Exact no-op while the gene is off.
+            self.claim_queue_for_the_plaza_district(g, pid, &plan);
             // A broad host-observed Amenity deficit can persist through an
             // active Conquest plan while every city finishes an unrelated
             // queue. This comes after force, settlement, envoy, religion, and
