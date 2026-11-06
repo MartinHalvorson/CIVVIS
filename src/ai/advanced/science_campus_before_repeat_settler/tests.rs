@@ -233,6 +233,15 @@ fn midgame_settler_claim_also_respects_the_first_city_campus_commitment() {
     install_test_district(&mut g, other, "campus");
     assert!(AdvancedAi::holdable_land_may_displace(&g, 0, cid));
     assert!(ai.science_campus_holds_repeat_settler(&g, 0, cid, &plan));
+    let mut control = g.clone();
+    let mut off = ai.clone();
+    off.disable_science_campus_before_repeat_settler();
+    off.claim_holdable_land_settler(&mut control, 0, &plan);
+    assert_eq!(
+        control.cities[&cid].queue.first(),
+        Some(&settler()),
+        "the unprotected midgame claim would actually replace this Campus"
+    );
     ai.claim_holdable_land_settler(&mut g, 0, &plan);
     assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
 }
