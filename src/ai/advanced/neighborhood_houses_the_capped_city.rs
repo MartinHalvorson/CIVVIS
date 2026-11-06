@@ -44,19 +44,6 @@ pub(crate) const NEIGHBORHOOD_CITIES_PER_CLAIM: usize = 5;
 /// (`Game::housing_growth_mult`: 2 or more grows at full rate).
 const CAPPED_HEADROOM: f64 = 2.0;
 
-/// The host's growth factor at a housing headroom (`Game::housing_growth_mult`).
-fn growth_factor(headroom: f64) -> f64 {
-    if headroom >= 2.0 {
-        1.0
-    } else if headroom >= 1.0 {
-        0.5
-    } else if headroom > -4.0 {
-        0.25
-    } else {
-        0.0
-    }
-}
-
 /// The Neighborhood a city would claim: the item, its turns, the city's
 /// housing headroom, and the housing the site adds.
 pub(crate) struct CappedNeighborhood {
@@ -264,7 +251,7 @@ impl AdvancedAi {
                    "neighborhood-houses-the-capped-city: population {pop} against housing {cap:.0}, \
                     growth x{}; the site at {pos:?} houses {housing:.0} by its Appeal, {turns:.1} turns, \
                     ahead of {}",
-                   growth_factor(headroom),
+                   Game::housing_growth_mult(headroom),
                    head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                        "{} (it keeps its progress)", Self::plain_item(&item))));
         }
