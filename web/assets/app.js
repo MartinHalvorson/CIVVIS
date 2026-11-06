@@ -7517,7 +7517,8 @@ let paceRealigned = false;
 let paceDisagreed = 0;
 let paceChoice = null;   // the pace this world is being held at
 let paceAsserted = null; // the server pace we have already answered with a push
-// The viewer's own pace, null until they pick one. Distinct from paceChoice,
+// The viewer's own pace, null until they pick one, or on the published site
+// until its opening pace stands in for one. Distinct from paceChoice,
 // which is what the world on screen is being held at: the two differ exactly
 // while a Tactics battle borrows Blitz over a slower preference, and this is
 // what the next full game goes back to.
@@ -7545,14 +7546,20 @@ function rememberPace(ms) {
   paceDisagreed = 0;
   try { localStorage.setItem(PACE_KEY, String(ms)); } catch (e) {}
 }
+// The published site opens at Lightning; a desktop build opens on whatever its
+// server reports. Soft in the same way as the Tactics default below: paceChoice
+// tells the module on its first frame and nothing reaches localStorage, so a
+// pace the viewer picked by hand still wins.
+const PUBLISHED_SITE_PACE_MS = 0;
 function restorePace() {
   const select = document.getElementById("specspeed");
   if (!select) return;
   let stored = null;
   try { stored = localStorage.getItem(PACE_KEY); } catch (e) {}
-  if (stored === null || stored === "") return;
-  const ms = +stored;
-  if (!Number.isFinite(ms) || !paceOffered(select, ms)) return;
+  const picked = stored === null || stored === "" ? NaN : +stored;
+  const ms = Number.isFinite(picked) && paceOffered(select, picked) ? picked
+    : window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;
+  if (ms === null) return;
   paceChoice = ms;
   pacePreference = ms;
   select.value = String(ms);
