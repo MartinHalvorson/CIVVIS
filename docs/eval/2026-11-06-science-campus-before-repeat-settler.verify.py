@@ -66,6 +66,8 @@ with tarfile.open(args.archive,'r:*') as tar:
   records=[json.loads(line) for line in data(cold+'/stderr.log').decode().splitlines()[:20] if line.startswith('{')]
   raw=next(x for x in records if x.get('kind')=='genome')
   assert {key:raw.get(key) for key in metadata['genome']}==metadata['genome']
+ if not protocol['shared_forced_tags']:
+  assert not ({'campus-claims-the-free-slot','campus-claims-the-free-slot-2'} & set(genomes['OFF-0']['treatments']))
  assert payloads['OFF-0']==payloads['OFF-1'] and payloads['ON-0']==payloads['ON-1']
  assert len(set(counts.values()))==1
  for n in [0,1]:
