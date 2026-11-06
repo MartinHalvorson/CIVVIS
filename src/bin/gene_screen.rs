@@ -7678,17 +7678,27 @@ mod tests {
             "o.jsonl",
         ]))
         .is_empty());
+        // The live-seat field's flags are known here.
+        assert!(unknown_flags(&args(&[
+            "--rival-war-pace",
+            "200",
+            "--rival-walls",
+            "55",
+            "--seat-civ",
+            "Indonesia",
+        ]))
+        .is_empty());
         // 11-05: a harness flag this build does not carry, and a misspelling.
         assert_eq!(
             unknown_flags(&args(&[
                 "--games",
                 "12",
-                "--seat-civ",
-                "Korea",
+                "--rival-moods",
+                "3",
                 "--gams",
                 "3"
             ])),
-            vec!["--seat-civ".to_string(), "--gams".to_string()]
+            vec!["--rival-moods".to_string(), "--gams".to_string()]
         );
     }
 
