@@ -1,0 +1,93 @@
+{
+  "scope": "Actual native final-read state facts and proposed research for Indonesia115056Z68/0. This is not a reconstruction of changing reads/history, a treatment application, or proof of saved cities or turns.",
+  "run": "civvis-20261106T115056Z",
+  "decision_receipt_sha256": "a562e438ec1f9032322ebe8547ee34483f17aeb5dd6a2a7b1ee00f4219d7a3c4",
+  "binary_sha256": "86a5e386b118db11230671957171162c0e0a750ef5e1f4c2ee9bbe9cf30626b9",
+  "frame": [
+    68,
+    0
+  ],
+  "final_read_sha256": "2b6bd40bd8580b84ee44eb03cc899a43a71e72af39681efee9d0d151d5ea38e1",
+  "final_read_bytes": 9049888,
+  "known_technologies": [
+    "TECH_POTTERY",
+    "TECH_ANIMAL_HUSBANDRY",
+    "TECH_MINING",
+    "TECH_SAILING",
+    "TECH_ASTROLOGY",
+    "TECH_IRRIGATION",
+    "TECH_ARCHERY",
+    "TECH_WRITING",
+    "TECH_MASONRY",
+    "TECH_BRONZE_WORKING",
+    "TECH_THE_WHEEL",
+    "TECH_CELESTIAL_NAVIGATION",
+    "TECH_CURRENCY",
+    "TECH_HORSEBACK_RIDING",
+    "TECH_IRON_WORKING"
+  ],
+  "selected_research_orders": [
+    {
+      "kind": "research",
+      "subject": null,
+      "verb": "TECH_APPRENTICESHIP",
+      "x": null,
+      "y": null
+    }
+  ],
+  "army_counts": {
+    "UNIT_ARCHER": 3,
+    "UNIT_HEAVY_CHARIOT": 3
+  },
+  "native_research_quotes": [
+    {
+      "c": 80,
+      "p": 47,
+      "t": "TECH_ENGINEERING"
+    },
+    {
+      "c": 150,
+      "p": 0,
+      "t": "TECH_APPRENTICESHIP"
+    },
+    {
+      "c": 150,
+      "p": 71,
+      "t": "TECH_MACHINERY"
+    },
+    {
+      "c": 195,
+      "p": 0,
+      "t": "TECH_STIRRUPS"
+    }
+  ],
+  "native_stock": {
+    "RESOURCE_ALUMINUM": 0,
+    "RESOURCE_COAL": 0,
+    "RESOURCE_HORSES": 0,
+    "RESOURCE_IRON": 0,
+    "RESOURCE_NITER": 0,
+    "RESOURCE_OIL": 0,
+    "RESOURCE_URANIUM": 0
+  },
+  "native_income": {
+    "RESOURCE_ALUMINUM": 0,
+    "RESOURCE_COAL": 0,
+    "RESOURCE_HORSES": 0,
+    "RESOURCE_IRON": 0,
+    "RESOURCE_NITER": 0,
+    "RESOURCE_OIL": 0,
+    "RESOURCE_URANIUM": 0
+  },
+  "journal": [
+    {
+      "line": 2298,
+      "text": "[why] t68 Research/Decision Researching apprenticeship | the most valuable step toward stirrups, needed to modernize the standing army at war"
+    }
+  ],
+  "sources": {
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261106T115056Z/events.jsonl": "0b9963af85058fa9680e582fe1b10e2d3d8294fe1c384344e4b270e94ef73ff9",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261106T115056Z/decisions.jsonl": "b8aad7e88055325399855410efbfe96789864bbb1b86f4a843bb59790e2858a8",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261106T115056Z/why.log": "ea5b1c0cbb1ed5dd59ce0ad290ea6aa3039f627f21f06da3c07c34774dbaade5"
+  }
+}

@@ -258,7 +258,11 @@ impl AdvancedAi {
             .into_iter()
             // One obsolete scout must not displace the empire's victory lane.
             .filter(|(_, (count, _))| *count >= 2)
-            .max_by(|(a, (_, av)), (b, (_, bv))| av.total_cmp(bv).then_with(|| b.cmp(a)))
+            .max_by(|(a, (_, av)), (b, (_, bv))| {
+                self.modernization_research_value(g, pid, *a, *av)
+                    .total_cmp(&self.modernization_research_value(g, pid, *b, *bv))
+                    .then_with(|| b.cmp(a))
+            })
             .map(|(tech, _)| tech)
     }
 

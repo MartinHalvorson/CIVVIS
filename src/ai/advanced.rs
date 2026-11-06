@@ -7706,6 +7706,8 @@ pub struct AdvancedAi {
     /// step, rebuilt when the visible hostiles at war change.
     group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
+    /// Rank wartime upgrade goals by gain per remaining research. Opt-in.
+    modernization_prices_the_path: bool,
     /// `nusantara-settles-the-shore`: an Indonesian seat's site score prices
     /// the Coast. See `advanced/nusantara_settles_the_shore.rs`. Off by
     /// default.
@@ -11179,6 +11181,7 @@ mod competitive_economy;
 mod envoys_open_the_siege_road;
 mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
+mod modernization_prices_the_path;
 /// The research turn: the tech and civic `AdvancedAi` studies next, and how
 /// it prices them. See `advanced/research.rs`.
 mod research;

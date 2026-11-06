@@ -5430,6 +5430,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
+    Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // ---- append: p-r ------------------------------------------------
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
