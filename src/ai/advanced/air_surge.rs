@@ -1180,7 +1180,7 @@ impl AdvancedAi {
     /// capital, a Tech loss at turn 248. A Bomber is `siege: true` and takes
     /// walls at full rate from ten tiles away, and Domination is decided only
     /// by original capitals.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn air_surge_objective_value(
         &self,
         g: &Game,

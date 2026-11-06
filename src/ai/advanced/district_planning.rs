@@ -18,10 +18,8 @@
 //! - **Which plot belongs to whom.** Districts claim plots independently:
 //!   the Commercial Hub that orders first takes the river-mountain hex the
 //!   Campus wanted, because nothing reserves ground across districts. The
-//!   plan assigns plots **once**, best marginal value first — the same
-//!   greedy the settle look-ahead runs for a city that does not exist yet
-//!   (`settlement_district_lookahead_from_positions`), run here for the
-//!   city that does — and charges every site the worked tile it destroys.
+//!   plan assigns plots **once**, best marginal value first, and charges
+//!   every site the worked tile it destroys.
 //! - **Which tile to buy.** The best legal owned Campus plot measured ≤ +2
 //!   across three seeds while plots at adjacency ≥ 4 are under 1% of the
 //!   map (`campus_adjacency_threshold`'s survey): the ground worth planning

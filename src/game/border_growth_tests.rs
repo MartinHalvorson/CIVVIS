@@ -74,6 +74,46 @@ fn only_a_full_civilization_moves_its_border_with_its_own_culture() {
     }
 }
 
+/// The engine's own border curve, read off what it does: the next plot costs
+/// `10 + 6 × plots^1.3` past the first seven, truncated, and whatever Culture
+/// that leaves stays banked toward the plot after it.
+#[test]
+fn a_plot_costs_the_shipped_curve_and_the_change_stays_banked() {
+    let (mut game, city, center) = controlled_game(941_103);
+    for position in ring(&game, center, 2) {
+        claim(&mut game, city, position);
+    }
+    let owned = game.cities[&city].owned_tiles.len();
+    assert_eq!(owned, 19, "the centre and two full rings");
+    // A literal, not the formula again: 10 + 6 × 12^1.3 is 161.7.
+    let need = 161.0;
+
+    // One turn's Culture, measured rather than assumed.
+    game.cities.get_mut(&city).unwrap().border_culture = 0.0;
+    game.process_city(0, city);
+    let culture = game.cities[&city].border_culture;
+    assert_eq!(game.cities[&city].owned_tiles.len(), owned);
+
+    // This turn's Culture leaves the bank half a point short: no plot.
+    game.cities.get_mut(&city).unwrap().border_culture = need - culture - 0.5;
+    game.process_city(0, city);
+    assert_eq!(
+        game.cities[&city].owned_tiles.len(),
+        owned,
+        "half a point short of the curve buys nothing"
+    );
+
+    // Three points over: one plot, and the three stay banked.
+    game.cities.get_mut(&city).unwrap().border_culture = need - culture + 3.0;
+    game.process_city(0, city);
+    assert_eq!(game.cities[&city].owned_tiles.len(), owned + 1);
+    let change = game.cities[&city].border_culture;
+    assert!(
+        (change - 3.0).abs() < 0.5,
+        "the plot spends the curve and no more: {change}"
+    );
+}
+
 #[test]
 fn a_city_state_cannot_buy_a_plot_with_gold() {
     // CanAnnexTilesWithGold is 0 for CITY_STATE, so no price is ever
