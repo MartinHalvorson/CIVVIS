@@ -53,11 +53,17 @@ fn nothing_plays_the_blank_default() {
         }
     }
     assert!(files.len() > 500, "the walk saw only {} files", files.len());
-    // Split so this test does not find itself.
+    // Split so this test does not find itself; comments may name it, to say
+    // what it means.
     let blank = concat!("AdvancedAi", "::default()");
+    let calls_it = |source: String| {
+        source
+            .lines()
+            .any(|line| line.contains(blank) && !line.trim_start().starts_with("//"))
+    };
     let offenders: Vec<_> = files
         .iter()
-        .filter(|path| std::fs::read_to_string(path).is_ok_and(|source| source.contains(blank)))
+        .filter(|path| std::fs::read_to_string(path).is_ok_and(calls_it))
         .collect();
     assert!(
         offenders.is_empty(),
