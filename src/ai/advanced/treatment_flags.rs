@@ -2066,6 +2066,10 @@ impl AdvancedAi {
         /// Opt-in gene `science-seat-allies-2`; see
         /// `advanced/culture_seat_allies.rs`.
         science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
+        /// Opt-in gene `science-seat-builds-the-statue`; see
+        /// `advanced/diplo_statue_harbor.rs`.
+        science_seat_builds_the_statue => enable_science_seat_builds_the_statue,
+            disable_science_seat_builds_the_statue;
         /// Opt-in gene `science-seat-races-the-congress`: a live-only ballot
         /// change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`.
         science_seat_races_the_congress => enable_science_seat_races_the_congress,

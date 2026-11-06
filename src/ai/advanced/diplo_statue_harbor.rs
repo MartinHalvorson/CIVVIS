@@ -24,6 +24,11 @@
 //! Theater claim's rule), with the other claims' heads kept. The delegated
 //! governor's rescoring leaves it alone ([`AdvancedAi::statue_harbor_holds`]).
 //!
+//! **`science-seat-builds-the-statue`** (2026-11-06): a seat aiming at Science
+//! does the same from [`SCIENCE_STATUE_HARBOR_TURN`]. Deity 11-05, 51 games: the
+//! Statue was on the buildable list in 20, mostly for want of a Harbor by the
+//! site. An earlier Harbor would stand in the way of the first Campus.
+//!
 //! Off, or for a seat not aiming at Diplomacy, nothing changes.
 
 use super::*;
@@ -36,7 +41,25 @@ pub(super) const STATUE_HARBOR_PRODUCTION_SHARE: f64 = 0.75;
 /// first-district horizon (`FIRST_CAMPUS_MAX_TURNS`).
 pub(super) const STATUE_HARBOR_MAX_TURNS: f64 = 15.0;
 
+/// The first turn a Science seat starts the Statue's Harbor. Civil Engineering
+/// landed at a median t152 (t140-159) across 51 Deity Online games, and the
+/// Harbor needs up to [`STATUE_HARBOR_MAX_TURNS`] of that lead.
+pub(super) const SCIENCE_STATUE_HARBOR_TURN: u32 = 120;
+
 impl AdvancedAi {
+    /// Whether this seat reaches for the Statue this turn: a Diplomacy seat,
+    /// or under `science-seat-builds-the-statue` a Science seat from
+    /// [`SCIENCE_STATUE_HARBOR_TURN`].
+    fn statue_harbor_seat(&self, g: &Game) -> bool {
+        match self.active_victory_target(g) {
+            Some(VictoryTarget::Diplomacy) => true,
+            Some(VictoryTarget::Science) => {
+                self.science_seat_builds_the_statue && g.turn >= SCIENCE_STATUE_HARBOR_TURN
+            }
+            _ => false,
+        }
+    }
+
     /// Whether the Statue of Liberty is still open to this seat: no city on
     /// the board holds it and the host has not ruled it out.
     fn statue_still_open(g: &Game) -> bool {
@@ -125,7 +148,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<(u32, Item, f64)> {
         if !self.diplo_seat_statue_harbor
-            || self.active_victory_target(g) != Some(VictoryTarget::Diplomacy)
+            || !self.statue_harbor_seat(g)
             || !Self::statue_still_open(g)
         {
             return None;
@@ -170,7 +193,7 @@ impl AdvancedAi {
         item: &Item,
     ) -> bool {
         if !self.diplo_seat_statue_harbor
-            || self.active_victory_target(g) != Some(VictoryTarget::Diplomacy)
+            || !self.statue_harbor_seat(g)
             || !Self::statue_still_open(g)
         {
             return false;

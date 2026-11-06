@@ -25,6 +25,13 @@
 //! claim holds. The strategic governor's rescoring leaves the claimed wonder
 //! alone ([`AdvancedAi::diplo_wonder_holds`]).
 //!
+//! **`science-seat-builds-the-statue`** (2026-11-06) carries the claim to a seat
+//! aiming at Science, for the Statue alone. Deity 11-05, 51 games: rivals block
+//! Congress points from about 16, and points from outside the Congress step
+//! over that wall. The Statue costs 620 Production on Online, about 11 turns of
+//! the best city, and rivals rarely take it. See
+//! `advanced/diplo_statue_harbor.rs` for the Harbor it needs.
+//!
 //! Off, or for a seat not assigned Diplomacy, nothing changes.
 
 use super::*;
@@ -36,6 +43,10 @@ pub(super) const DIPLO_WONDER_MAX_TURNS: f64 = 30.0;
 
 /// The fewest cities a seat holds before it claims one.
 pub(super) const DIPLO_WONDER_MIN_CITIES: usize = 3;
+
+/// The fewest points a wonder pays before a Science seat claims it
+/// (`science-seat-builds-the-statue`): the Statue of Liberty's four.
+pub(super) const SCIENCE_SEAT_WONDER_POINTS: f64 = 4.0;
 
 /// Whether a candidate `(points, turns, production, city)` claims ahead of
 /// `other`: the most points, then the soonest finish, then the most
@@ -69,8 +80,21 @@ impl AdvancedAi {
     /// Whether the gene acts for this seat this turn.
     fn diplo_wonder_claim_on(&self, g: &Game) -> bool {
         self.diplo_seat_wonder_claim
-            && self.active_victory_target(g) == Some(VictoryTarget::Diplomacy)
-            && !self.lane_lost
+            && match self.active_victory_target(g) {
+                Some(VictoryTarget::Diplomacy) => !self.lane_lost,
+                // A lost Science race is when this seat most needs the points.
+                Some(VictoryTarget::Science) => self.science_seat_builds_the_statue,
+                _ => false,
+            }
+    }
+
+    /// Whether this seat's claim takes a wonder worth `points`. A Science seat
+    /// takes only the Statue of Liberty: a lesser wonder's points do not pay
+    /// for the Production it takes from the science race.
+    fn diplo_wonder_worth_it(&self, g: &Game, points: f64) -> bool {
+        points > 0.0
+            && (self.active_victory_target(g) != Some(VictoryTarget::Science)
+                || points >= SCIENCE_SEAT_WONDER_POINTS)
     }
 
     /// The Diplomatic-point wonder `cid` would claim: its points and build
@@ -108,7 +132,7 @@ impl AdvancedAi {
                     return None;
                 }
                 let points = diplomatic_points(g, &item);
-                if points <= 0.0 {
+                if !self.diplo_wonder_worth_it(g, points) {
                     return None;
                 }
                 let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {

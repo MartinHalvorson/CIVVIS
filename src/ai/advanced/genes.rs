@@ -5393,6 +5393,11 @@ pub const GENES: &[Gene] = &[
     // so it does not pull a city off fresh water. Indonesia only. See
     // `nusantara_settles_the_shore.rs`.
     Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
+    // `science-seat-builds-the-statue`: a seat aiming at Science claims a Harbor
+    // from t120 and the Statue of Liberty for its four Diplomatic Victory
+    // Points, which step over the Congress gang wall at about 16. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "science-seat-builds-the-statue", field: "science_seat_builds_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_builds_the_statue, disable: AdvancedAi::disable_science_seat_builds_the_statue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

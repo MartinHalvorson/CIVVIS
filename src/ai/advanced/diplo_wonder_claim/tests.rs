@@ -74,6 +74,42 @@ fn a_diplomatic_seat_claims_a_diplomatic_point_wonder() {
 }
 
 /// A wonder that pays no Diplomatic points is not this gene's.
+/// `science-seat-builds-the-statue`: a Science seat under the tag passes over
+/// a lesser wonder, and its claim survives a lost Science race. The Statue's
+/// four points clear the bar; two do not.
+#[test]
+fn a_science_seat_claims_only_the_four_point_wonder() {
+    let (game, city, _) = mahabodhi_board();
+    let plan = wonder_plan(GrandStrategy::Science, game.turn);
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Science);
+    seat.enable_diplo_seat_wonder_claim();
+    assert!(!seat.diplo_wonder_claim_on(&game), "off without the tag");
+    seat.enable_science_seat_builds_the_statue();
+    seat.lane_lost = true;
+    assert!(
+        seat.diplo_wonder_claim_on(&game),
+        "a lost race keeps the claim"
+    );
+    assert!(
+        seat.diplo_wonder_item(&game, 0, city, &plan).is_none(),
+        "the Mahabodhi Temple's two points stay with the science race"
+    );
+    assert!(seat.diplo_wonder_worth_it(&game, SCIENCE_SEAT_WONDER_POINTS));
+    assert!(!seat.diplo_wonder_worth_it(&game, SCIENCE_SEAT_WONDER_POINTS - 1.0));
+
+    let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    diplomat.enable_diplo_seat_wonder_claim();
+    assert!(
+        diplomat.diplo_wonder_worth_it(&game, 1.0),
+        "a Diplomacy seat still takes the Potala"
+    );
+    diplomat.lane_lost = true;
+    assert!(
+        !diplomat.diplo_wonder_claim_on(&game),
+        "a Diplomacy seat's lost lane still stops it"
+    );
+}
+
 #[test]
 fn a_wonder_without_points_is_not_claimed() {
     let (game, city) = strategic_wonder_fixture(6_402, "pyramids");
