@@ -14568,7 +14568,7 @@ fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
         .find("const plate = cityPlateAt(sx, sy);")
         .expect("the map click looks for a plate");
     let tile = EMBEDDED_APP_JS
-        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (tackMode)")
+        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (sitePick)")
         .expect("the map click reads its tile");
     assert!(plate < tile);
     assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));
