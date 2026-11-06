@@ -146,6 +146,9 @@ impl AdvancedAi {
         item: &Item,
         at_major_war: bool,
     ) -> bool {
+        if Self::live_gp_cultural_building_commitment(g, pid, cid, item) {
+            return false;
+        }
         let remaining =
             g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
         if remaining <= g.city_yields(cid).production {
