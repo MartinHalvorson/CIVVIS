@@ -12,7 +12,7 @@ swiftc -swift-version 5 -O join_victory_tail.swift -o join-victory-tail
 
 `repair_victory_endings.py VIDEO... --renderer PATH --joiner PATH` preserves
 original videos and sidecars under `~/civvis-civ6-runs/clips/repairs/`, remuxes
-the existing gameplay prefix, and renders the last twelve seconds plus a
+the existing gameplay prefix, and renders the ending (starting before victory) plus a
 five-second final hold. The terminal card starts at the recorded victory time.
 The receipt distinguishes a confirmed winning minimum from measured counters,
 checks original-prefix pixels, and points to an ending preview. The old raw

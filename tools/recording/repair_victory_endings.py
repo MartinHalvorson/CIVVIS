@@ -12,6 +12,12 @@ import subprocess
 from pathlib import Path
 
 
+def repair_start(duration, victory_at):
+    # Some old masters already held the final turn for more than twelve seconds.
+    # Begin before its result so the card is never delayed past the victory.
+    return max(0, min(int(duration - 12), int(victory_at) - 2))
+
+
 def repair(video, renderer, joiner):
     import civvis_video_story as story
     import civvis_video_goal as gate
@@ -67,7 +73,7 @@ def repair(video, renderer, joiner):
     victory_at = float(quality["turn_offsets_seconds"][str(final_turn)])
     info = gate.media_info(video)
     duration = info["duration_seconds"]
-    cut = max(0, int(duration - 12))  # only the last twelve seconds are reencoded
+    cut = repair_start(duration, victory_at)
     work = Path.home() / "civvis-civ6-runs/clips/repairs/victory-completion" / gid
     work.mkdir(parents=True, exist_ok=True)
     hud = work / "result.hud.json"
@@ -97,7 +103,12 @@ def repair(video, renderer, joiner):
         if max(error) > 1:
             raise ValueError(f"untouched gameplay pixels differ: {seconds}: {error}")
         comparisons.append(dict(seconds=seconds, mean_absolute_rgb_error=error))
-    preview(candidate, result["duration_seconds"] - 1, work / "ending.png")
+    ending = work / "ending.png"
+    if ending.exists():
+        ending.unlink()
+    preview(candidate, result["duration_seconds"] - 1, ending)
+    if not ending.exists():
+        raise ValueError("repaired ending could not be decoded")
     original = work / video.name
     if original.exists():
         raise ValueError("original backup already exists; refusing to replace it")

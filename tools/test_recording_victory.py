@@ -52,6 +52,16 @@ class TerminalGateTest(unittest.TestCase):
                     kind="victory", victory_type="VICTORY_TECHNOLOGY", turn=2,
                     won=True, local_player=0)))
 
+    def test_an_existing_long_victory_hold_is_still_a_confirmed_result(self):
+        self.assertEqual(self.gate.terminal_presentation(dict(self.evidence, expected_seconds=40)), (10, 1))
+
+    def test_repair_starts_before_victory_even_when_the_old_master_has_a_long_hold(self):
+        spec = importlib.util.spec_from_file_location("repair", Path(__file__).parent / "recording/repair_victory_endings.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.repair_start(1214, 1197.987), 1195)
+        self.assertEqual(module.repair_start(645.7, 644.687), 633)
+
     def test_only_the_confirmed_final_turn_can_replace_gameplay(self):
         self.assertEqual(self.gate.terminal_presentation(self.evidence), (10, 1))
         for changes in (dict(start_seconds=1), dict(kind="arbitrary_card"),

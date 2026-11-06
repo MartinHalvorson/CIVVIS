@@ -452,8 +452,7 @@ def terminal_presentation(evidence):
     if (terminal.get("kind") != "confirmed_victory_card" or not local_victory(outcome)
             or outcome["turn"] != final or not isinstance(start, (int, float))
             or offset is None or abs(start - float(offset)) > 0.05
-            or not 1 <= start < evidence.get("expected_seconds", 0)
-            or evidence["expected_seconds"] - start > 15):
+            or not 1 <= start < evidence.get("expected_seconds", 0)):
         raise QualityError("unverified or mistimed terminal result card")
     return float(start), final - 1
 
