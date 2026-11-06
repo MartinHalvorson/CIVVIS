@@ -50,7 +50,7 @@ impl BasicAi {
 
     /// The buildings that open a slot for `work`: the target first, then the
     /// prerequisite needed to make it buildable.
-    fn live_great_person_work_chain(work: &str) -> &'static [&'static str] {
+    pub(super) fn live_great_person_work_chain(work: &str) -> &'static [&'static str] {
         match work {
             "writing" => &["amphitheater"],
             "art" => &["art_museum", "amphitheater"],

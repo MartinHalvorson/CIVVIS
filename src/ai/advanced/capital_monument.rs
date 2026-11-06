@@ -97,6 +97,9 @@ impl AdvancedAi {
     /// not a Settler, Walls, a wonder, a project or a repair, and not
     /// finishing this turn.
     fn capital_monument_may_defer(g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+        if Self::live_gp_cultural_building_commitment(g, pid, cid, item) {
+            return false;
+        }
         let remaining =
             g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
         if remaining <= g.city_yields(cid).production {

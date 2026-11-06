@@ -20169,6 +20169,7 @@ impl AdvancedAi {
             let live_gp_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 Self::production_commitment_is_legal(g, pid, cid, item)
                     && (Self::live_gp_district_commitment(g, pid, item)
+                        || Self::live_gp_cultural_building_commitment(g, pid, cid, item)
                         || (self.artifact_before_more_museums
                             && BasicAi::live_artifact_activation_pending(g, pid)
                             && matches!(item, Item::Unit { unit } if unit == "archaeologist")))
