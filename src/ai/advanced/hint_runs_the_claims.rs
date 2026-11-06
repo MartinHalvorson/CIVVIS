@@ -106,6 +106,11 @@ impl AdvancedAi {
         // after the Trader and ahead of the Prophet race and the routine
         // claims. Exact no-op while the gene is off. See
         // `advanced/backlog_builder_takes_the_queue.rs`.
+        let early_library = if !war_holds {
+            self.claim_parallel_library_backlog(g, pid, plan)
+        } else {
+            None
+        };
         if !war_holds {
             self.claim_backlog_builder(g, pid, plan);
         }
@@ -141,7 +146,12 @@ impl AdvancedAi {
         // building, after the Industrial Zone and ahead of the Prophet race
         // and the routine claims. Exact no-op while the gene is off. See
         // `advanced/campus_building_claims_the_queue.rs`.
-        if !war_holds {
+        let library_still_held = early_library.as_ref().is_some_and(|(cid, item)| {
+            g.cities
+                .get(cid)
+                .is_some_and(|city| city.queue.first() == Some(item))
+        });
+        if !war_holds && !library_still_held {
             self.claim_campus_building(g, pid, plan);
         }
         // `campus-claims-the-free-slot`: a free district slot's first

@@ -148,13 +148,17 @@ impl AdvancedAi {
         enough && f64::from(cover) < wanted
     }
 
-    /// See the module: while the worked backlog runs ahead of the charges,
-    /// the city that trains a Builder soonest puts one at the head of its
-    /// queue, idle or over a deferrable item. One claim a turn. Exact no-op
-    /// with the gene off.
-    pub(super) fn claim_backlog_builder(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    /// Select the original claim without changing queues. `exclude` supports
+    /// the parallel-job forecast; `None` preserves the original ranking.
+    pub(super) fn backlog_builder_claim_candidate(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        exclude: Option<u32>,
+    ) -> Option<(f64, u32, Item)> {
         if !self.backlog_builder_takes_the_queue {
-            return;
+            return None;
         }
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
@@ -165,6 +169,9 @@ impl AdvancedAi {
         });
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
+            if exclude == Some(cid) {
+                continue;
+            }
             let Some((builder, turns)) = self.backlog_builder_item(g, pid, cid, plan) else {
                 continue;
             };
@@ -198,6 +205,11 @@ impl AdvancedAi {
                 best = Some((turns, cid, builder));
             }
         }
+        best
+    }
+
+    pub(super) fn claim_backlog_builder(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let best = self.backlog_builder_claim_candidate(g, pid, plan, None);
         let Some((turns, cid, builder)) = best else {
             return;
         };

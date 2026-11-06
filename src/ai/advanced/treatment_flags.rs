@@ -85,6 +85,8 @@ impl AdvancedAi {
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------
         // ---- append: p-r --------------------------------------------
+        /// Coordinate a quoted opening Library and backlog Builder.
+        parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
     }

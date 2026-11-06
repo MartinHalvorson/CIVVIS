@@ -119,12 +119,17 @@ impl AdvancedAi {
                 .is_some_and(|(building, _, _)| building == *item)
     }
 
-    /// See the module: the city whose Campus can build its next building puts
-    /// it at the head of its queue, idle or over a deferrable item. One claim
-    /// a turn. Exact no-op with the gene off.
-    pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    /// Select the original claim without changing queues. `exclude` supports
+    /// the parallel-job forecast; `None` preserves the original ranking.
+    pub(super) fn campus_building_claim_candidate(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        exclude: Option<u32>,
+    ) -> Option<(u8, f64, u32, Item)> {
         if !self.campus_building_claims_the_queue {
-            return;
+            return None;
         }
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
@@ -138,6 +143,9 @@ impl AdvancedAi {
         let settlers = self.counts(g, pid).settlers;
         let mut best: Option<(u8, f64, u32, Item)> = None;
         for cid in city_ids {
+            if exclude == Some(cid) {
+                continue;
+            }
             let Some((building, rank, turns)) = self.campus_building_claim_item(g, pid, cid, plan)
             else {
                 continue;
@@ -181,6 +189,11 @@ impl AdvancedAi {
                 best = Some((rank, turns, cid, building));
             }
         }
+        best
+    }
+
+    pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let best = self.campus_building_claim_candidate(g, pid, plan, None);
         let Some((_, turns, cid, building)) = best else {
             return;
         };

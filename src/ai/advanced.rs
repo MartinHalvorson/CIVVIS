@@ -8324,6 +8324,8 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// Coordinate a quoted first Library with the backlog Builder. Independent opt-in.
+    parallel_library_backlog: bool,
     /// `plant-reads-the-grid`: a fuel-burning plant is credited the powered
     /// yields of every city it can fuel in reach, not 4 Power for its own
     /// city. See `advanced/plant_reads_the_grid.rs`. Off by default.
@@ -10491,6 +10493,7 @@ mod food_focus_grows_the_small_city;
 
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
+mod parallel_library_backlog;
 
 /// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
 mod capital_walls_at_any_ratio;

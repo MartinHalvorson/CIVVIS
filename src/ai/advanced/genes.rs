@@ -5429,6 +5429,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
