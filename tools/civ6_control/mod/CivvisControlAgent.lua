@@ -14360,7 +14360,11 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local key = "aid_gift:" .. verb .. ":" .. subject;
 		local asked = peaceAsked[key];
-		if asked ~= nil and (turn - asked) < (cfg.AidGiftRetryTurns or 2) then
+		-- A tribute is one whole gift: a second to the same rival inside this
+		-- window bought about +2 for 80 or 120 Gold on the live Deity lane.
+		local retry = verb == "TRIBUTE" and (cfg.TributeRetryTurns or 30)
+			or (cfg.AidGiftRetryTurns or 2);
+		if asked ~= nil and (turn - asked) < retry then
 			return false, "aid_gift_cooldown";
 		end
 		local ran, submitted, paid, reason = pcall(submitAidGift, subject, amount);

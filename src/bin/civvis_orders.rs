@@ -2112,29 +2112,36 @@ fn append_captive_ransom_order(
 
 /// `tribute-buys-the-friendship`: Gold the treasury keeps through a tribute.
 const TRIBUTE_GOLD_RESERVE: i64 = 100;
-/// Below this a tribute moves the rival's opinion too little to send.
-const TRIBUTE_MIN_GOLD: i32 = 30;
+/// The smallest tribute sent: a rival a point short still gets a gift it
+/// notices.
+const TRIBUTE_MIN_GOLD: i64 = 30;
 /// The visible opinion a tribute aims for: the median total of a rival the
 /// host reads as Friendly on the live Deity lane (+4), plus a point.
 const TRIBUTE_TARGET_OPINION: f64 = 5.0;
 /// Gold per point of a favorable deal (`TradeValuePerModifierPoint`, shipped
 /// `Leaders.xml` `STANDARD_DIPLOMATIC_ONE_SIDED_TRADES`).
 const TRIBUTE_GOLD_PER_POINT: f64 = 10.0;
-/// The most a favorable deal is worth to the AI (`MaxValue`, same row).
-const TRIBUTE_MODIFIER_CAP: f64 = 20.0;
-/// One tribute per rival every this many turns, staggered by its seat.
+/// The most one gift has been seen to buy. The row's `MaxValue` is 20, but on
+/// the first live carriers 80, 101 and 139 Gold bought about +9, +9 and +10,
+/// and a further 80 or 120 Gold to the same rival about +2. A gap wider than
+/// this is out of reach, and paying toward it bought nothing: seven such gifts
+/// (789 Gold) warmed no rival.
+const TRIBUTE_ONE_GIFT_POINTS: f64 = 10.0;
+/// One tribute per rival every this many turns, staggered by its seat. The
+/// mod holds a rival to one gift per `TributeRetryTurns`; see `aid_gift`.
 const TRIBUTE_CADENCE: u32 = 5;
-/// The Intel tab's row for that modifier, as the English host reports it.
-/// Another language reads 0 here and may ask past the cap, which wastes Gold
-/// but changes nothing else.
+/// The Intel tab's row for that modifier, as the English host reports it. A
+/// standing row means a gift already paid. Below the visibility that names it
+/// the row reads "Unknown Reason"; the mod's retry bar covers that case.
 const TRIBUTE_FAVORABLE_TRADE_ROW: &str = "Favorable trade deals";
 
 /// `tribute-buys-the-friendship`: a one-way Gold gift (`aid_gift` verb
 /// `TRIBUTE`) to the strongest met major at peace with us, the rival
 /// `befriend-the-strongest` courts, while it is stronger than us and reads
 /// Unfriendly or Neutral. The amount is the opinion gap to
-/// [`TRIBUTE_TARGET_OPINION`] at [`TRIBUTE_GOLD_PER_POINT`], inside what the
-/// favorable-deal modifier still has room for and the treasury over
+/// [`TRIBUTE_TARGET_OPINION`] at [`TRIBUTE_GOLD_PER_POINT`], sent whole or not
+/// at all: only a gap one gift can close ([`TRIBUTE_ONE_GIFT_POINTS`]), only
+/// to a rival not already holding one, and only from the treasury over
 /// [`TRIBUTE_GOLD_RESERVE`]. `None` when a gift was pushed, else the hold.
 /// See `advanced/tribute_buys_the_friendship.rs`.
 fn append_tribute_order(
@@ -2176,13 +2183,18 @@ fn append_tribute_order(
         .filter(|reason| reason.text.starts_with(TRIBUTE_FAVORABLE_TRADE_ROW))
         .map(|reason| reason.score.max(0.0))
         .sum();
-    let points = (TRIBUTE_TARGET_OPINION - total).min(TRIBUTE_MODIFIER_CAP - favorable);
+    if favorable > 0.0 {
+        return Some("tribute_hold:already_paid");
+    }
+    let points = TRIBUTE_TARGET_OPINION - total;
     if points <= 0.0 {
         return Some("tribute_hold:no_gap");
     }
-    let wanted = (points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64;
-    let amount = wanted.min(state.gold - TRIBUTE_GOLD_RESERVE);
-    if amount < i64::from(TRIBUTE_MIN_GOLD) {
+    if points > TRIBUTE_ONE_GIFT_POINTS {
+        return Some("tribute_hold:out_of_reach");
+    }
+    let amount = ((points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64).max(TRIBUTE_MIN_GOLD);
+    if amount > state.gold - TRIBUTE_GOLD_RESERVE {
         return Some("tribute_hold:treasury");
     }
     // One working deal per rival, and a tribute beside a war, peace,
