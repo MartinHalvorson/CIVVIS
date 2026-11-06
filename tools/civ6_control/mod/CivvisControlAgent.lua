@@ -847,6 +847,7 @@ local function resolveActions()
 		-- of those sightings already have one of our military units within two
 		-- tiles, against 12,708 rival religious-unit sightings to our 590.
 		"UNITCOMMAND_CONDEMN_HERETIC",
+		"UNITCOMMAND_PROJECT_PRODUCTION",
 		-- Cancels a unit's queued path; see CivvisBoard.cancelQueuedPaths.
 		"UNITCOMMAND_CANCEL",
 	}) do
@@ -17234,6 +17235,21 @@ local function applyOrder(player, pid, row, turn)
 			local ok, why = commandUnit(unit, hash, true);
 			if not ok then CivvisLedger.cancelCondemn(unit:GetID()); end
 			return ok, ok and verb or (why or "condemn_refused");
+		end
+		-- Expansion2/Data/Expansion1_UnitCommands.xml:11 has no InterfaceMode.
+		-- UnitPanel.lua:2512-2513 therefore requests this command with exactly
+		-- two arguments. Its native gate owns Royal Society eligibility, charges,
+		-- the active district project and the once-per-city/turn restriction.
+		-- x/y only guard against a stale position; they are not command params.
+		if verb == "CONTRIBUTE_PROJECT" then
+			if x == nil or y == nil then return false, "no_project_position"; end
+			if unit:GetX() ~= x or unit:GetY() ~= y then return false, "project_position_changed"; end
+			local hash = CMD["UNITCOMMAND_PROJECT_PRODUCTION"];
+			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			local ok, why = commandUnit(unit, hash);
+			if not ok then return false, why or "cannot_project_production"; end
+			emit("project_contribution_requested", {turn = turn, unit = subject, x = x, y = y});
+			return true, "project_contribution_requested";
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, BUILD_IMPROVEMENT,

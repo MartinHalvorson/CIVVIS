@@ -9565,6 +9565,8 @@ pub struct AdvancedAi {
     /// claim leaves other claims' work alone and stands off from a city that
     /// took the hull back. See `advanced/contact_fleet.rs`. Off by default.
     sea_scout_claims_the_queue_2: bool,
+    /// Rank Spy producers by native turns, sparing science on ties. Off by default.
+    spies_price_the_science_head: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10975,12 +10977,13 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
-/// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+mod spies_price_the_science_head;
+/// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
@@ -11749,6 +11752,7 @@ impl AdvancedAi {
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,
             sea_scout_claims_the_queue_2: false,
+            spies_price_the_science_head: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,

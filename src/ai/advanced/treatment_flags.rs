@@ -2327,6 +2327,8 @@ impl AdvancedAi {
         /// Opt-in gene `nusantara-settles-the-shore`; see
         /// `advanced/nusantara_settles_the_shore.rs`.
         nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
+        /// Rank Spy producers by native turns, sparing science on ties.
+        spies_price_the_science_head => enable_spies_price_the_science_head, disable_spies_price_the_science_head;
     }
 }
 

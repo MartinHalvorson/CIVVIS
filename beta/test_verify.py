@@ -33,6 +33,11 @@ class UncaughtTests(unittest.TestCase):
         source = open(verify.__file__, encoding="utf-8").read()
         self.assertIn('"--autoplay-policy=no-user-gesture-required"', source)
 
+    def test_the_check_builds_no_audio_context(self):
+        # On a runner with no sound device this hung and failed every deploy.
+        source = open(verify.__file__, encoding="utf-8").read()
+        self.assertNotIn("await Promise.race", source)
+
 
 class MapDeliveryTests(unittest.TestCase):
     def test_current_lane_requires_a_patch(self):
