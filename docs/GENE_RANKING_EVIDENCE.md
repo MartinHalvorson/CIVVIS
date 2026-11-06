@@ -237,6 +237,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
+| `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
 | `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
@@ -287,6 +288,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
+| `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
@@ -328,6 +330,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-earns-the-launch` | off (unmeasured) | Opt-in committed launch relocation; see `governor_dividends/pingala_launch`. | 1 \| 1 |
 | `pingala-follows-research-2` | off (unmeasured) | Pingala version two retains ordinary dividends and joins a committed launch producer. | 1 \| 2 |
+| `plant-reads-the-grid` | off (unmeasured) | Opt-in gene `plant-reads-the-grid`; see `advanced/plant_reads_the_grid.rs`. | 1 \| 1 |
 | `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | — \| 3 |
 | `plaza-serves-the-scientist-2` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-2` (version 2 of `plaza-serves-the-scientist`, which it carries); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
 | `plaza-serves-the-scientist-3` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1 and 2); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
@@ -397,6 +400,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `war-defense-spends-the-runway` | off (unmeasured) | Opt-in gene `war-defense-spends-the-runway`; see `advanced/war_defense_spends_the_runway.rs`. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
+| `world-religion-condemns-the-faith` | off (unmeasured) | Opt-in gene `world-religion-condemns-the-faith`; see `advanced/world_religion_condemns.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
