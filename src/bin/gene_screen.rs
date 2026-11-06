@@ -2873,7 +2873,6 @@ fn play_game(
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
-    drop(observe);
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
         let path = format!("{}.journal.{seed}.txt", profile.journal_base);

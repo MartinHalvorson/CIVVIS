@@ -370,7 +370,7 @@ pub fn roll(seed: u64, turn: u32, rival: usize, target: usize) -> f64 {
         ^ (turn as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ ((rival as u64) << 48)
         ^ ((target as u64) << 40)
-        ^ 0x5741_5250_4143_45; // "WARPACE"
+        ^ 0x57_4152_5041_4345; // "WARPACE"
     z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
