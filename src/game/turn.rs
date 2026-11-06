@@ -413,8 +413,7 @@ impl Game {
 
     // Kept as the compact test-facing API; the authoritative turn path uses
     // the richer result so it can reduce upkeep without a second scan.
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn process_city(&mut self, pid: usize, cid: u32) -> Yields {
         self.process_city_with_upkeep(pid, cid).0
     }

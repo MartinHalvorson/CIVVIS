@@ -302,7 +302,7 @@ impl Game {
     /// shipped steps: `CITY_HOUSING_LEFT_50PCT_GROWTH` 1,
     /// `CITY_HOUSING_LEFT_25PCT_GROWTH` 0 and `CITY_HOUSING_LEFT_ZERO_GROWTH`
     /// -4. Growth stops *at* -4, not one short of -5.
-    pub(super) fn housing_growth_mult(headroom: f64) -> f64 {
+    pub(crate) fn housing_growth_mult(headroom: f64) -> f64 {
         if headroom >= 2.0 {
             1.0
         } else if headroom >= 1.0 {

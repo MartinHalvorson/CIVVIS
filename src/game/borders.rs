@@ -3,8 +3,7 @@
 //! The culture cost of a city's next tile (`border_influence_cost`),
 //! growing its borders by one tile (`expand_borders`), and the culture
 //! bomb that claims the ring around a new district or improvement
-//! (`culture_bomb`). Forecasting where borders will grow is in
-//! `game/border_forecast.rs`.
+//! (`culture_bomb`).
 //!
 //! Moved verbatim out of the main `impl Game` block in `game.rs`
 //! (2026-11-05). Methods the rest of `game` calls are `pub(super)`; public

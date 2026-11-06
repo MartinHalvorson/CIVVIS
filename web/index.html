@@ -2028,7 +2028,7 @@
   }
   .leader.at-war { border-color: #6b3f3c; background: #1c1312bb; }
   .leader.allied { border-color: #4a805d; background: #14261fbb; }
-  .leader-head { display: flex; align-items: baseline; gap: 9px; }
+  .leader-head { display: flex; align-items: center; gap: 9px; }
   .leader-name { color: var(--gold-bright); font: 600 17px Georgia, serif; }
   .leader-civ { color: var(--muted); font-size: var(--type-secondary); }
   .leader-stance {
@@ -2174,6 +2174,10 @@
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
+  /* Provenance is for whoever is checking a build. In a game it is a commit
+     hash sat on top of the End Turn panel, so it stands down (the text stays
+     in the document for the build checks that read it). */
+  body.civ6-frame #buildmark { visibility: hidden; }
   #buildmark-commit {
     color: #c6d9d1; cursor: pointer; pointer-events: auto; text-decoration-color: transparent;
     text-underline-offset: 2px;
@@ -2268,6 +2272,13 @@
   .winner-title { color: var(--gold-bright); font: 600 32px/1.05 Georgia, serif; }
   .winner-verdict { margin-top: 8px; color: #f3e5bd; font: 600 17px/1.2 Georgia, serif; }
   .winner-meta { margin-top: 13px; }
+  .reign {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%;
+    margin-top: 14px; padding: 10px 6px; border-block: 1px solid #d7b66a33;
+  }
+  .reign-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  .reign-stat b { color: #f3e5bd; font: 700 19px/1.1 Georgia, serif; font-variant-numeric: tabular-nums; }
+  .reign-stat small { color: var(--muted); font: 700 10px/1.25 var(--font-ui); letter-spacing: .04em; text-align: center; }
   .winner-countdown {
     margin-top: 16px; color: #f6edcf; font-size: var(--type-control); letter-spacing: .10em;
     text-shadow: 0 2px 10px #000, 0 0 18px color-mix(in srgb, var(--winner-color, #d7b66a) 40%, transparent);
@@ -2977,10 +2988,17 @@
   #treetitle .tree-study b { color: var(--blue); }
   #tree[data-kind="civics"] #treetitle .tree-study b { color: #c9a2ee; }
   #treetitle .tree-tally { color: var(--faint); font-weight: 700; }
-  #treecols { display: flex; gap: 14px; flex: 1; overflow: auto; align-items: flex-start; padding-bottom: 6px; }
+  #treecols { position: relative; display: flex; gap: 46px; flex: 1; overflow: auto; align-items: flex-start; padding-bottom: 6px; }
+  .tlines { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .tlines path { fill: none; stroke: #3a5249; stroke-width: 1.5; opacity: .55; transition: stroke .12s, opacity .12s; }
+  .tlines path.studied { stroke: #4f7f60; opacity: .5; }
+  .tlines path.open { stroke: var(--gold-deep); opacity: .85; }
+  .tlines path.on-path { stroke: var(--blue); stroke-width: 2.5; opacity: 1; }
+  #tree[data-kind="civics"] .tlines path.on-path { stroke: #b98be0; }
+  .tlines path.lit { stroke: var(--gold-bright); stroke-width: 2.5; opacity: 1; }
   .tcol { display: flex; flex-direction: column; gap: 6px; flex: none; width: 216px; }
   .tera {
-    position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 8px;
+    position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 8px;
     padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63;
     border-radius: 7px; font: 700 var(--type-secondary)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase;
   }
@@ -2990,6 +3008,7 @@
      reading: the meter while it is studied, the boost while it can still be
      earned, what it waits on while it waits, and what it unlocks as chips. */
   .tnode {
+    position: relative; z-index: 1;
     display: grid; gap: 5px; padding: 8px 10px; color: #bcc9c3; background: #101d1a;
     border: 1px solid #2d443d; border-radius: 9px; font-size: var(--type-control); line-height: 1.3; transition: .12s;
   }
@@ -3007,9 +3026,25 @@
   #tree[data-kind="civics"] .tnode.cur { color: #f1e6fb; border-color: #b98be0; background: #221a2c; box-shadow: 0 0 18px #b98be02e; }
   #tree[data-kind="civics"] .tnode.cur .tn-when { color: #c9a2ee; }
   .tnode.avail { color: var(--gold-bright); border-color: var(--gold); }
+  .tnode.planned { border-color: var(--blue); box-shadow: 0 0 0 1px #76cde44d; }
+  #tree[data-kind="civics"] .tnode.planned { border-color: #b98be0; box-shadow: 0 0 0 1px #b98be04d; }
+  .tn-plan {
+    display: inline-grid; place-items: center; min-width: 19px; height: 19px; border-radius: 50%;
+    color: #071318; background: var(--blue); font: 800 11px/1 var(--font-ui);
+  }
+  #tree[data-kind="civics"] .tn-plan { background: #c9a2ee; }
+  #treetitle .tree-plan { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #dbe5e0; }
+  #treetitle .tree-plan button {
+    padding: 2px 8px; color: #c9d6d0; background: none; border: 1px solid #536c63; border-radius: 6px;
+    font: 600 11px/1.5 var(--font-ui); cursor: pointer;
+  }
+  #treetitle .tree-plan button:hover { color: var(--gold-bright); border-color: var(--gold); }
+  .wt-next { color: var(--muted); font: 600 var(--type-label)/1.3 var(--font-ui); }
   .tnode[onclick] { cursor: pointer; }
   .tnode[onclick]:hover { transform: translateY(-2px); background: #24372e; }
-  .tnode.locked { opacity: .55; }
+  /* Dimmed by its contents, not the card: the tree's lines run behind the
+     nodes, and a see-through card shows them through its text. */
+  .tnode.locked > * { opacity: .55; }
   .tn-bar { height: 4px; overflow: hidden; border-radius: 3px; background: #ffffff17; }
   .tn-bar i { display: block; height: 100%; border-radius: 3px; background: var(--blue); }
   #tree[data-kind="civics"] .tn-bar i { background: #b98be0; }
@@ -3189,7 +3224,7 @@
     #pediabody { grid-template-columns: minmax(118px, .72fr) minmax(0, 1fr); gap: 8px; }
     #tree { padding: 13px; }
     #treehead { margin-bottom: 11px; }
-    #treecols { gap: 10px; }
+    #treecols { gap: 32px; }
     .tcol { width: 172px; }
     #tradelist { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 13px 16px; }
     .trade-toolbar { flex-wrap: wrap; padding: 9px 13px; }
@@ -4725,7 +4760,7 @@
     color: var(--wt-color); font: 800 15px/1 Georgia, serif; font-variant-numeric: tabular-nums;
   }
   .wt-turns small {
-    color: var(--muted); font: 800 var(--type-label)/1.4 inherit;
+    color: var(--muted); font: 800 var(--type-label)/1.4 var(--font-ui);
     letter-spacing: .08em; text-transform: uppercase;
   }
   /* Nothing being studied is a blocker, and Civ 6 says so on the panel itself
@@ -4837,7 +4872,7 @@
     flex: none; display: inline-flex; align-items: baseline; gap: 5px;
     color: var(--gold-bright); font: 600 17px/1.1 Georgia, serif;
   }
-  .ubar-level { color: var(--gold); font: 800 11px/1 inherit; font-style: normal; }
+  .ubar-level { color: var(--gold); font: 800 11px/1 var(--font-ui); font-style: normal; }
   .ubar-stats { display: flex; align-items: center; gap: 7px; min-width: 0; flex-wrap: wrap; }
   .ubar-stat {
     display: inline-flex; align-items: baseline; gap: 3px; color: var(--muted);
@@ -4951,6 +4986,218 @@
   @media (max-height: 820px) {
     body.civ6-frame #actionoptions { max-height: 22vh; }
   }
+
+  /* ------------------------------------------------- the front door
+     Everything that belongs to watching stands down while the menu is up, so
+     the world is the backdrop and nothing else competes with it. */
+  body.frontdoor-open #side,
+  body.frontdoor-open #buildmark,
+  body.frontdoor-open #maparea > :not(#map) { visibility: hidden; }
+  /* Space is pure black. A page any other shade drew the map's box around it. */
+  body.frontdoor-open { background: #000; }
+  #frontdoor {
+    position: fixed; inset: 0; z-index: 9000; display: flex; color: #edf3f0;
+    background: linear-gradient(90deg, #050b09f5 0, #050b09d9 28%, #050b0940 58%, #050b0900 100%);
+    font-family: inherit;
+  }
+  #frontdoor[hidden] { display: none; }
+  #frontdoor button, #frontdoor select, #frontdoor input { font: inherit; }
+  .fd-menu {
+    width: min(460px, 100%); box-sizing: border-box; padding: clamp(24px, 7vh, 72px) 44px;
+    display: flex; flex-direction: column; justify-content: center; gap: 28px;
+    animation: fd-rise .42s ease-out both;
+  }
+  .fd-menu[hidden], .fd-create[hidden] { display: none; }
+  @keyframes fd-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .fd-wordmark { margin: 0; font: 600 clamp(44px, 8vh, 66px)/1 Georgia, "Times New Roman", serif;
+    letter-spacing: .06em; color: var(--gold-bright); text-shadow: 0 2px 22px #d7b66a40; }
+  .fd-wordmark span { font-size: .42em; letter-spacing: .02em; color: var(--gold); margin-left: 2px; }
+  .fd-tagline { margin: 12px 0 0; font-size: 17px; line-height: 1.45; color: #cfdad5; max-width: 34ch; }
+  .fd-nav { display: flex; flex-direction: column; gap: 10px; }
+  .fd-entry {
+    display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; cursor: pointer;
+    padding: 13px 18px; border-radius: 10px; border: 1px solid #36504680; color: #edf3f0;
+    background: #0c1a16d9; text-decoration: none; box-sizing: border-box;
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+  .fd-entry b { font-size: 16px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .fd-entry small { font-size: 13px; color: #a9bbb4; }
+  .fd-entry:hover { transform: translateX(4px); border-color: var(--gold); }
+  .fd-entry:focus-visible { border-color: var(--gold-bright); outline: 2px solid var(--gold-bright); outline-offset: 2px; }
+  .fd-entry[hidden] { display: none; }
+  .fd-entry.fd-primary {
+    color: #1a1407; border-color: #f0d28c;
+    background: linear-gradient(180deg, #f3d995, #c9a24f);
+    box-shadow: 0 6px 28px #d7b66a38;
+  }
+  .fd-entry.fd-primary b { font-size: 19px; }
+  .fd-entry.fd-primary small { color: #4a3a17; }
+  .fd-create {
+    flex: 1; min-width: 0; box-sizing: border-box; padding: 26px clamp(18px, 3vw, 44px);
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 16px;
+    background: #050b09ee; animation: fd-rise .28s ease-out both;
+  }
+  .fd-create-head { display: flex; align-items: center; gap: 16px; }
+  .fd-create-head h2 { margin: 0; font: 600 30px/1 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-back { background: none; border: 1px solid #36504680; color: #cfdad5; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  .fd-back:hover, .fd-back:focus-visible { border-color: var(--gold); color: var(--gold-bright); outline: none; }
+  #fd-search { margin-left: auto; width: min(280px, 40vw); padding: 9px 12px; border-radius: 8px;
+    color: #edf3f0; background: #0c1a16; border: 1px solid #36504680; }
+  #fd-search:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .fd-create-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 22px; min-height: 0; }
+  #fd-leaders {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 8px;
+    align-content: start; overflow-y: auto; padding: 2px 6px 2px 2px; min-height: 0;
+  }
+  .fd-leader {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; text-align: left;
+    color: #edf3f0; background: #0c1a16; border: 1px solid #2b4138; border-radius: 10px; min-width: 0;
+  }
+  .fd-leader:hover, .fd-leader:focus-visible { border-color: var(--gold); outline: none; }
+  .fd-leader.on { border-color: var(--gold-bright); background: #1b2a1f; box-shadow: inset 0 0 0 1px var(--gold-bright); }
+  .fd-leader-text { display: flex; flex-direction: column; min-width: 0; }
+  .fd-leader-text b { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fd-leader-text small { font-size: 12px; color: #a9bbb4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fd-empty { grid-column: 1 / -1; color: #a9bbb4; margin: 12px 4px; }
+  .fd-crest {
+    flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+    color: #fff7e2; font: 700 15px/1 Georgia, "Times New Roman", serif; letter-spacing: .02em;
+    background: radial-gradient(circle at 35% 30%, hsl(var(--crest, 40) 60% 52%), hsl(var(--crest, 40) 62% 24%));
+    box-shadow: 0 0 0 2px #d7b66a, inset 0 0 0 3px #0000004d;
+  }
+  .fd-crest-random { background: radial-gradient(circle at 35% 30%, #5c6f68, #1c2a25); }
+  .fd-crest-large { width: 84px; height: 84px; font-size: 30px; }
+  .fd-crest-small { width: 30px; height: 30px; font-size: 12px; }
+  .fd-side { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; padding-right: 4px; }
+  #fd-dossier { display: flex; gap: 16px; padding: 14px; border-radius: 12px; background: #0c1a16; border: 1px solid #2b4138; }
+  .fd-dossier-text { min-width: 0; }
+  .fd-dossier-text h3 { margin: 0; font: 600 23px/1.15 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-dossier-sub { margin: 3px 0 8px; font-size: 13px; color: #a9bbb4; }
+  .fd-ability { margin: 0; font-size: 14px; line-height: 1.42; color: #dbe5e0; }
+  .fd-ability b { display: block; color: var(--gold-bright); }
+  .fd-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #a9bbb4; }
+  .fd-field select { padding: 9px 10px; border-radius: 8px; color: #edf3f0; background: #0c1a16; border: 1px solid #36504680;
+    font-size: 14px; letter-spacing: 0; text-transform: none; }
+  .fd-field select:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  #fd-difficulty { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .fd-step { padding: 7px 2px; font-size: 13px; letter-spacing: 0; text-transform: none; cursor: pointer; color: #dbe5e0;
+    background: #0c1a16; border: 1px solid #2b4138; border-radius: 7px; }
+  .fd-step:hover, .fd-step:focus-visible { border-color: var(--gold); outline: none; }
+  .fd-step.on { color: #1a1407; background: var(--gold-bright); border-color: var(--gold-bright); font-weight: 700; }
+  #fd-difficulty-note { min-height: 1.3em; font-size: 13px; letter-spacing: 0; text-transform: none; color: #cfdad5; }
+  .fd-create-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+  .fd-link { background: none; border: 0; color: #a9bbb4; cursor: pointer; text-decoration: underline; padding: 8px; }
+  .fd-link:hover, .fd-link:focus-visible { color: var(--gold-bright); outline: none; }
+  #fd-begin {
+    padding: 13px 44px; border-radius: 10px; cursor: pointer; font-size: 17px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: #1a1407; border: 1px solid #f0d28c;
+    background: linear-gradient(180deg, #f3d995, #c9a24f); box-shadow: 0 6px 28px #d7b66a38;
+  }
+  #fd-begin:hover, #fd-begin:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  #frontdoor.fd-centered { background: #050b09b8; align-items: center; justify-content: center; }
+  .fd-pause, .fd-begin-card {
+    display: flex; flex-direction: column; gap: 10px; width: min(420px, calc(100% - 32px)); box-sizing: border-box;
+    padding: 26px; border-radius: 16px; border: 1px solid #d7b66a55; background: #0a1512f7;
+    box-shadow: 0 30px 90px #000c; animation: fd-rise .22s ease-out both;
+  }
+  .fd-pause[hidden], .fd-begin-card[hidden] { display: none; }
+  .fd-pause h2 { margin: 0 0 8px; text-align: center; font: 600 26px/1 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-pause .fd-entry:hover { transform: none; }
+  .fd-begin-card { align-items: center; text-align: center; gap: 8px; }
+  .fd-intro-kicker { margin: 8px 0 0; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; }
+  .fd-begin-card h2 { margin: 0; font: 600 30px/1.1 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-intro-ability { margin: 6px 0 0; font-size: 15px; line-height: 1.45; color: #dbe5e0; }
+  .fd-intro-ability b { display: block; color: var(--gold-bright); }
+  .fd-intro-goal { margin: 6px 0 10px; font-size: 13px; line-height: 1.45; color: #a9bbb4; }
+  #fd-intro-go {
+    padding: 12px 34px; border-radius: 10px; cursor: pointer; font-size: 15px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #1a1407; border: 1px solid #f0d28c;
+    background: linear-gradient(180deg, #f3d995, #c9a24f);
+  }
+  #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  /* Payoffs: what a turn delivered, across the top and clear of the panels. */
+  #moments {
+    position: fixed; top: 112px; left: 50%; z-index: 40; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: min(440px, calc(100% - 24px)); pointer-events: none;
+  }
+  .moment {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 10px 18px;
+    pointer-events: auto; cursor: pointer; color: #edf3f0; text-align: center; font: inherit;
+    background: #0a1512f2; border: 1px solid #d7b66a66; border-radius: 12px;
+    box-shadow: 0 14px 38px #000a; animation: moment-in .32s cubic-bezier(.2,.9,.3,1.2) both;
+  }
+  .moment:hover { border-color: var(--gold-bright); transform: none; }
+  @keyframes moment-in { from { opacity: 0; transform: translateY(-12px) scale(.97); } to { opacity: 1; transform: none; } }
+  .moment-kicker { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; }
+  .moment-name { font: 600 21px/1.15 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .moment-note { font-size: 13px; color: #cfdad5; }
+  .moment-big { padding: 16px 22px; border-color: var(--gold); box-shadow: 0 14px 44px #000a, 0 0 34px #d7b66a33; }
+  .moment-big .moment-name { font-size: 27px; }
+  @media (max-width: 760px) {
+    #frontdoor { background: #050b09e6; }
+    .fd-menu { padding: 24px; width: 100%; }
+    .fd-create { padding: 14px; overflow-y: auto; grid-template-rows: auto auto auto; }
+    .fd-create-body { grid-template-columns: minmax(0, 1fr); }
+    #fd-leaders { max-height: 42vh; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fd-menu, .fd-create, .fd-pause, .fd-begin-card, .moment { animation: none; }
+    .fd-entry { transition: none; }
+    .fd-entry:hover { transform: none; }
+  }
+
+  /* Lenses during play. Their dock lives in the command deck, which a played
+     game keeps closed, so the map's own controls open this instead. */
+  #lenspicker-toggle { display: none; }
+  body.civ6-frame #lenspicker-toggle { display: block; }
+  #lens-picker {
+    position: fixed; left: 12px; bottom: 66px; z-index: 30; display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; width: 270px; padding: 8px;
+    color: #dbe5e0; background: #0a1512f4; border: 1px solid #d7b66a55; border-radius: 12px;
+    box-shadow: 0 16px 44px #000a;
+  }
+  #lens-picker[hidden] { display: none; }
+  .lens-choice {
+    display: flex; align-items: center; gap: 8px; padding: 7px 9px; color: inherit; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    font: 600 13px/1.2 var(--font-ui);
+  }
+  .lens-choice:hover, .lens-choice:focus-visible { border-color: var(--gold); outline: none; transform: none; }
+  .lens-choice[aria-pressed="true"] { color: #1a1407; background: var(--gold-bright); }
+  .lens-choice-all { grid-column: 1 / -1; border-top: 1px solid #d7b66a33; border-radius: 0 0 8px 8px; }
+
+  /* The combat forecast: what a blow would do, above the unit panel. */
+  #combat-forecast {
+    position: fixed; left: 50%; bottom: 118px; z-index: 28; transform: translateX(-50%);
+    width: min(420px, calc(100% - 24px)); padding: 10px 14px 11px; color: #edf3f0; pointer-events: none;
+    background: #0a1512f5; border: 1px solid #d7b66a66; border-radius: 12px; box-shadow: 0 14px 38px #000a;
+  }
+  #combat-forecast[hidden] { display: none; }
+  .cf-head { font: 700 11px/1.2 var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; text-align: center; }
+  .cf-sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 6px; }
+  .cf-side { min-width: 0; text-align: center; }
+  .cf-name { font: 700 13px/1.2 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-strength { font: 700 26px/1.1 Georgia, serif; color: var(--gold-bright); }
+  .cf-versus { font-size: 18px; color: var(--gold); }
+  .cf-bar { display: flex; height: 7px; margin-top: 4px; overflow: hidden; background: #24110f; border-radius: 4px; }
+  .cf-bar i { display: block; height: 100%; }
+  .cf-left { background: #65bd66; }
+  .cf-lost { background: #f05a50; }
+  .cf-hp { margin-top: 3px; font: 700 12px/1.2 var(--font-ui); font-variant-numeric: tabular-nums; }
+  .cf-hp small { color: var(--muted); font-weight: 600; }
+  .cf-verdict { margin-top: 7px; text-align: center; font: 700 13px/1.25 var(--font-ui); }
+  .cf-verdict.tone-good { color: #8fe0a0; }
+  .cf-verdict.tone-warn { color: #f0d28c; }
+  .cf-verdict.tone-bad { color: #ff8a7c; }
+
+  /* Says how to do the thing just attempted, where the attempt was made. */
+  #map-hint {
+    position: fixed; z-index: 34; transform: translate(-50%, -160%); padding: 6px 11px; pointer-events: none;
+    color: #1a1407; background: var(--gold-bright); border-radius: 8px; box-shadow: 0 8px 22px #000a;
+    font: 700 13px/1.2 var(--font-ui); white-space: nowrap;
+  }
+  #map-hint[hidden] { display: none; }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
@@ -4990,6 +5237,61 @@
 </script>
 </head>
 <body aria-busy="false">
+<div id="moments" aria-live="polite"></div>
+<div id="frontdoor" role="dialog" aria-modal="true" aria-label="CIVVIS main menu" hidden>
+  <section class="fd-menu" id="fd-menu">
+    <header>
+      <h2 class="fd-wordmark">CIVVIS<span>.ai</span></h2>
+      <p class="fd-tagline">Build an empire that stands the test of time, free in your browser.</p>
+    </header>
+    <nav class="fd-nav" aria-label="Main menu">
+      <button type="button" class="fd-entry" id="fd-continue" hidden><b>Continue</b><small id="fd-continue-sub"></small></button>
+      <button type="button" class="fd-entry fd-primary" id="fd-play"><b>Single player</b><small>Pick a civilization and take your first turn</small></button>
+      <button type="button" class="fd-entry" id="fd-watch"><b>Watch the AIs</b><small>This game is live: four AIs playing right now</small></button>
+      <a class="fd-entry" href="/home"><b>About CIVVIS</b><small>What this is and how it was built</small></a>
+    </nav>
+  </section>
+  <section class="fd-pause" id="fd-pause" aria-label="Game menu" hidden>
+    <h2>Game menu</h2>
+    <button type="button" class="fd-entry fd-primary" id="fd-resume"><b>Back to the game</b></button>
+    <button type="button" class="fd-entry" id="fd-save"><b>Save game</b><small id="fd-save-note">Your game also saves itself every turn</small></button>
+    <button type="button" class="fd-entry" id="fd-settings"><b>Settings and logs</b></button>
+    <button type="button" class="fd-entry" id="fd-sound"><b id="fd-sound-label">Sound</b></button>
+    <button type="button" class="fd-entry" id="fd-exit"><b>Main menu</b><small>This game is kept: Continue brings you back</small></button>
+  </section>
+  <section class="fd-begin-card" id="fd-intro" aria-live="polite" hidden>
+    <div id="fd-intro-crest"></div>
+    <p class="fd-intro-kicker" id="fd-intro-kicker"></p>
+    <h2 id="fd-intro-leader"></h2>
+    <p class="fd-intro-ability" id="fd-intro-ability"></p>
+    <p class="fd-intro-goal" id="fd-intro-goal"></p>
+    <button type="button" id="fd-intro-go">Begin your journey</button>
+  </section>
+  <section class="fd-create" id="fd-create" aria-label="Create a game" hidden>
+    <div class="fd-create-head">
+      <button type="button" class="fd-back" id="fd-back">‹ Back</button>
+      <h2>Create game</h2>
+      <input id="fd-search" type="search" placeholder="Search civilizations" aria-label="Search civilizations and leaders" autocomplete="off">
+    </div>
+    <div class="fd-create-body">
+      <div id="fd-leaders" role="radiogroup" aria-label="Choose your civilization"></div>
+      <div class="fd-side">
+        <div id="fd-dossier" aria-live="polite"></div>
+        <div class="fd-field"><span>Difficulty</span>
+          <div id="fd-difficulty" role="radiogroup" aria-label="Difficulty"></div>
+          <div id="fd-difficulty-note"></div>
+        </div>
+        <label class="fd-field">Map<select id="fd-map"></select></label>
+        <label class="fd-field">World size<select id="fd-size"></select></label>
+        <label class="fd-field">Game speed<select id="fd-speed"></select></label>
+      </div>
+    </div>
+    <div class="fd-create-foot">
+      <button type="button" class="fd-link" id="fd-advanced">Advanced setup</button>
+      <button type="button" id="fd-begin">Begin game</button>
+    </div>
+  </section>
+</div>
 <div id="world-transition" role="status" aria-live="polite" aria-atomic="true">
   <div class="world-transition-card">
     <div class="world-transition-mark" aria-hidden="true">V</div>
@@ -5027,6 +5329,9 @@
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
+  <div id="lens-picker" aria-label="Map lenses" hidden></div>
+  <div id="map-hint" role="status" hidden></div>
+  <div id="combat-forecast" aria-live="polite" hidden></div>
   <div id="map-controls-dock">
     <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
          zoom out, let the world turn, and dismiss. The spin sits past the zoom
@@ -5041,6 +5346,8 @@
         <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
         <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
         <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
+        <button id="lenspicker-toggle" type="button" aria-expanded="false" aria-controls="lens-picker"
+          title="Map lenses" aria-label="Map lenses">◎</button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
         <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
@@ -6074,5 +6381,7 @@
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/app_setup.js"></script>
+<script src="/assets/app_moments.js"></script>
+<script src="/assets/app_frontdoor.js"></script>
 </body>
 </html>

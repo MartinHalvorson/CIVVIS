@@ -1,0 +1,27 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "sea-scout-claims-the-queue",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 16 boards of six live Deity Science (Online) games (civvis-20261105T215700Z, 154934Z, 103825Z, 133505Z, 211703Z, 125414Z), each the run's events.jsonl cut at frame 0 of a turn after Cartography with no sea hull of ours afloat. Both arms run one frozen civvis_orders --resumed built from the branch at 241b71f4f with the run's own requested genome (which carries contact-fleet); the on arm adds --with sea-scout-claims-the-queue. Orders differ in 12/16 reads and the claim ('starts <hull> for the contact fleet') is journaled in 12/16 on arms and 0/16 off arms. The four that do not fire: 211703Z's only coastal city made 2 Production on a Knight at t89 and already held a slow Quadrireme at t120, which the arm reads as being rebuilt; 125414Z t81 and t110 are unexplained. 215700Z t93 lays down a Caravel at Badung in 4.0 turns, where the live game started a Quadrireme at t104 quoted at 33.3 turns and launched it at t118.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-sea-scout-claims-the-queue.native-queries.tar.xz",
+    "sha256": "3827489872d12f5e3c7896ede80d89be1c437f50a9960d6eec937fdcf56e7c21"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json"
+  ]
+}

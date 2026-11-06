@@ -1718,6 +1718,8 @@ impl AdvancedAi {
         /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
         /// `AdvancedAi::claim_producer_zone`.
         industrial_zone_claims_the_producer_queue => enable_industrial_zone_claims_the_producer_queue, disable_industrial_zone_claims_the_producer_queue;
+        /// Opt-in Science University priority before industrial claims.
+        universities_before_the_forge => enable_universities_before_the_forge, disable_universities_before_the_forge;
         /// Move a one-war front cut off from every land road to an enemy the
         /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
         /// `advanced/sea_locked_front.rs`.
@@ -2272,6 +2274,12 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `world-religion-condemns-the-faith`; see
+        /// `advanced/world_religion_condemns.rs`.
+        world_religion_condemns_the_faith => enable_world_religion_condemns_the_faith, disable_world_religion_condemns_the_faith;
+        /// Opt-in gene `government-reach-pays-the-switch`; see
+        /// `advanced/government_reach.rs`.
+        government_reach_pays_the_switch => enable_government_reach_pays_the_switch, disable_government_reach_pays_the_switch;
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
@@ -2280,6 +2288,14 @@ impl AdvancedAi {
         /// Opt-in gene `fresh-water-prices-the-site`; see
         /// `advanced/fresh_water_site.rs`.
         fresh_water_prices_the_site => enable_fresh_water_prices_the_site, disable_fresh_water_prices_the_site;
+        /// Keep defensive formations near their assigned threatened city.
+        defenders_keep_the_city_in_reach => enable_defenders_keep_the_city_in_reach, disable_defenders_keep_the_city_in_reach;
+        /// Opt-in gene `plant-reads-the-grid`; see
+        /// `advanced/plant_reads_the_grid.rs`.
+        plant_reads_the_grid => enable_plant_reads_the_grid, disable_plant_reads_the_grid;
+        /// Opt-in gene `sea-scout-claims-the-queue`; see
+        /// `advanced/contact_fleet.rs`.
+        sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
     }
 }
 
@@ -5285,6 +5301,16 @@ impl AdvancedAi {
     /// The twin of `enable_nusantara_reads_the_coast`.
     pub fn disable_nusantara_reads_the_coast(&mut self) {
         self.nusantara_reads_the_coast = false;
+    }
+
+    /// Opt-in committed launch relocation; see `governor_dividends/pingala_launch`.
+    pub fn enable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = true;
+    }
+
+    /// Withhold the committed launch relocation.
+    pub fn disable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = false;
     }
 
     // ---- append: a-b ------------------------------------------------

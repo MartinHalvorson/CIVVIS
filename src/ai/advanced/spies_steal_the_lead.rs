@@ -264,9 +264,9 @@ impl AdvancedAi {
     }
 
     /// Whether `item`, at the head of a queue, is routine work a Spy may
-    /// displace: the denial claim's rule (no defensive building, military
-    /// unit, Settler, Spy, Wonder, project or repair).
-    pub(super) fn steal_spy_displaces(g: &Game, item: &Item) -> bool {
+    /// displace: no defensive building, military unit, Settler, Spy, Wonder,
+    /// project or repair. The steal and denial claims share this rule.
+    pub(super) fn spy_displaces(g: &Game, item: &Item) -> bool {
         match item {
             Item::Building { building } => g
                 .rules
@@ -331,7 +331,7 @@ impl AdvancedAi {
                     && city
                         .queue
                         .first()
-                        .is_none_or(|head| Self::steal_spy_displaces(g, head))
+                        .is_none_or(|head| Self::spy_displaces(g, head))
                     && g.can_produce(pid, *cid, &spy)
             })
             .map(|cid| (g.city_yields(cid).production, cid))
