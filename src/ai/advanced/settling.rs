@@ -13,9 +13,8 @@
 //!
 //! Moved verbatim out of the one `impl AdvancedAi` block in `advanced.rs`
 //! (2026-11-04). Methods the rest of the controller calls are `pub(super)`;
-//! the code is otherwise unchanged. `settlement_static_value_uncached` and
-//! `settle_value_visible` stay in `advanced.rs` for now because open PRs edit
-//! them.
+//! the code is otherwise unchanged. The scoring behind `settle_value` is in
+//! `settlement_value.rs`.
 
 use super::*;
 
