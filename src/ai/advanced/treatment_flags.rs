@@ -85,6 +85,8 @@ impl AdvancedAi {
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------
+        /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
+        modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
         /// Keep a committed Science launch or laser ahead of paused districts.
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;

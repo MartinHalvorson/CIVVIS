@@ -317,6 +317,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `merchant-confederation-earns-its-slot-2` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot-2`; version one plus the seat it may take. | — \| 2 |
 | `military-alliance-shield` | off (unmeasured) | Opt-in gene `military-alliance-shield`; see `advanced/military_alliance_shield.rs`. | — \| 2 |
 | `military-alliance-shield-2` | off (unmeasured) | Opt-in gene `military-alliance-shield-2`, version two of `military-alliance-shield`: only Friendly rivals are asked, and a Military kind taken or refused falls through to another kind; see `advanced/military_alliance_shield.rs`. | — \| 2 |
+| `modernization-prices-the-path` | off (unmeasured) | Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`. | 1 \| 1 |
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
 | `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
