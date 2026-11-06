@@ -3702,6 +3702,9 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // Native Indonesia Ternate70/0 chose industry with a legal University;
+    // this separate opt-in releases industrial claims for a short University.
+    Gene { tag: "universities-before-the-forge", field: "universities_before_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_universities_before_the_forge, disable: AdvancedAi::disable_universities_before_the_forge },
     // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
     // as its front from turn 146 to 192 and stood ten Dutch sieges down for
     // want of a land road while the Maya and Egypt, at war with us at 3-5x
@@ -5232,13 +5235,11 @@ pub const GENES: &[Gene] = &[
     // matching `korea-reads-three-kingdoms` on the district side. See
     // `advanced/korea_mines_beside_the_seowon.rs`.
     Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
-    // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
-    // about two thirds of live production prompts (480 vs 230 direct orders
-    // in 072215Z), and each hint came from `advanced_production` alone. The
-    // idle-queue claims (Settler floors, Granary, Builder, Aqueduct,
-    // Industrial Zone, Campus...) never saw those queues, so the sim seat
-    // reached 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
-    // t80 against 0.5. Under the gene the hint's preview runs the same
+    // Live Lv 8 Deity Korea (11-05): consumed produce_next hints decide about
+    // a quarter of live production choices (the bridge's production_next_*
+    // counters: 50-75 consumed against 170-280 direct orders a game), and each
+    // hint came from `advanced_production` alone, so the idle-queue claims
+    // never saw those queues. Under the gene the hint's preview runs the same
     // claim chain first. See `advanced/hint_runs_the_claims.rs`.
     Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
     // Version one of the drain fires below one turn of runway. Live Deity
@@ -5333,6 +5334,21 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // Live (11-01 to 11-05): option A in all 74 World Religion sessions, though
+    // option B lets anyone condemn a faith's units at peace for 25 Favor and
+    // the Deity median session reads 5 rival votes. 213449Z lost to Orthodoxy
+    // at t173 with 9 of 9 cities converted, no religious unit and 869 Faith.
+    // Under the gene the ballot buys B on the faith holding the most cities
+    // when Favor reaches it, and our soldiers condemn that faith at peace. See
+    // `advanced/world_religion_condemns.rs`.
+    Gene { tag: "world-religion-condemns-the-faith", field: "world_religion_condemns_the_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_world_religion_condemns_the_faith, disable: AdvancedAi::disable_world_religion_condemns_the_faith },
+    // Live Deity, 11-04 21Z to 11-05: into Communism Science rose 17 of 17
+    // (median +15%), into Corporate Libertarianism it fell 5 of 5 at t171-193
+    // (median -15%, worst -27%), on a two-slot gain the capacity fallback took
+    // in the seats closest to a win. Under the gene a seat holding its listed
+    // government reaches only for three slots or more. See
+    // `advanced/government_reach.rs`.
+    Gene { tag: "government-reach-pays-the-switch", field: "government_reach_pays_the_switch", kind: Kind::OptIn, enable: AdvancedAi::enable_government_reach_pays_the_switch, disable: AdvancedAi::disable_government_reach_pays_the_switch },
     // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
     // (carrying 1 and 2). The Science seat's Government Plaza district claims
     // the capital's queue once its Campus stands. See
@@ -5340,6 +5356,24 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // A fresh native Science Campus chooses safe legal land before coastal lowland.
     Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
+    // The site score paid fresh water +12 and a coast-only seat +10 (housing
+    // +4, Harbor base +6), though live non-capital cities on fresh water held
+    // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
+    // and 66% on the coast. 67 of 239 dry or coast-only foundings had a legal
+    // fresh-water plot within two tiles. Under the gene a fresh-water seat
+    // gains +12 more. See `fresh_water_site.rs`.
+    Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
+    // An assigned Defend formation keeps its combat slots near its threatened city.
+    Gene { tag: "defenders-keep-the-city-in-reach", field: "defenders_keep_the_city_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_keep_the_city_in_reach, disable: AdvancedAi::disable_defenders_keep_the_city_in_reach },
+    // Live Deity (11-05): from t150 the median science seat met half its Power
+    // demand; at t170, 9 of 32 such games held no plant and 7 of them could
+    // build one, five banking Oil beside dark Labs. The plant credit read 4
+    // Power for its own city and paid nothing against a Lab-and-Factory
+    // demand of 5, though the host burns as much fuel as each city in six
+    // tiles needs. Under the gene a plant is worth every city it can fuel in
+    // reach, and the Factory claim, which named Coal alone, takes the plant
+    // the fuel can run. See `advanced/plant_reads_the_grid.rs`.
+    Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -1324,16 +1324,6 @@ pub enum StartEraChoice {
     RandomPerGame,
 }
 
-impl StartEraChoice {
-    /// How the rating profile names this choice.
-    pub fn profile_id(self) -> String {
-        match self {
-            Self::Fixed(era) => era.to_string(),
-            Self::RandomPerGame => "random".to_string(),
-        }
-    }
-}
-
 /// Which era arms a custom battle.
 ///
 /// The arena's original rule was "whatever start era the game was asked for",

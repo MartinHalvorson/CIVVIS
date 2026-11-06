@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::leader_roster;
 use crate::name::{AsName, Name};
 use crate::parallel::WorkPool;
+use crate::pedia::title as pretty;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
@@ -478,7 +479,6 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
-pub mod border_forecast;
 pub mod quests;
 
 mod actions;
@@ -522,6 +522,8 @@ mod city_states;
 /// Combat: attack range and reach, strength and bonuses, city strikes, XP
 /// and promotions. See `game/combat.rs`.
 mod combat;
+mod combat_forecast;
+pub use combat_forecast::CombatForecast;
 /// Completion: finishing a city's item, wonder effects, and placing new
 /// units. See `game/completion.rs`.
 mod completion;
@@ -5922,20 +5924,6 @@ pub const EVENT_CATEGORIES: [&str; 11] = [
     "Diplomacy",
     "CityState",
 ];
-
-/// Ruleset identifiers are snake_case; event text is for people.
-fn pretty(id: &str) -> String {
-    id.split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
 
 /// Events older than this are dropped, oldest first. Long games are long.
 const EVENT_LIMIT: usize = 2_000;
@@ -11770,7 +11758,7 @@ impl Game {
     /// production call site turned out to be a pure read and now takes
     /// [`Self::player_vision_frame`] instead; this stays for tests that want
     /// an owned snapshot without depending on the `Arc`.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
         self.player_vision_frame(pid).as_ref().clone()
     }
