@@ -47,6 +47,9 @@ use host_move_audit::*;
 use host_refusals::*;
 use verification::*;
 
+#[path = "civvis_orders/builder_diagnostics.rs"]
+mod builder_diagnostics;
+
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
@@ -8742,6 +8745,16 @@ fn main() {
             Some((snapshot, state))
         };
 
+    if args.iter().any(|a| a == "--explain-builders") {
+        match builder_diagnostics::explain(&args, &ai, players, max_turns, frontier, &load) {
+            Ok(report) => println!("{report}"),
+            Err(why) => {
+                eprintln!("civvis-orders: {why}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--explain-settler") {
         diagnostics::explain_settler(args, players, max_turns, frontier, &load);
         return;
