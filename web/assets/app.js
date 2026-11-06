@@ -27498,6 +27498,11 @@ function drawUbar() {
     if (a.type === "convert_barbarians")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
+  // The verb a new player looks for. Right-click is the fast way, and nothing
+  // on screen would ever tell them so.
+  if (u.moves_left > 0)
+    h += `<button title="Click where this unit should go. Right-click a tile does the same." ` +
+      `onclick='setInterfaceMode("move_to")'>➜ Move</button>`;
   // Standing orders close the loop: a unit the player has answered for stops
   // asking, and the End Turn button stops counting it.
   const standing = unitOrder(u);
@@ -32470,6 +32475,19 @@ cv.addEventListener("click", ev => {
   const ours = city && city.owner === 0 ? city : null;
   // Clicking your city opens it. A garrison does not get in the way: the click
   // takes each unit on the tile in turn, and the one after the last is the city.
+  // A tile the selected unit could go to or strike, clicked. A mouse orders
+  // with the right button, as Civ 6 does, so a stray click cannot march an army;
+  // it keeps the selection and says how. A touch screen has no right button, so
+  // a tap there is the order.
+  if (sel && !here.length && !ours && unitCanBeOrderedTo(k)) {
+    if (mapPointerType === "touch") {
+      clearUnitIntel();
+      issueSelectedUnitOrder(pos);
+    } else {
+      showMapHint(ev.clientX, ev.clientY, strikeAt(pos) ? "Right-click to attack" : "Right-click to move here");
+    }
+    return;
+  }
   const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
   if (ours && here.length && held === here.length - 1) {
     selCity = ours; sel = null;
@@ -32495,6 +32513,23 @@ cv.addEventListener("click", ev => {
 
 // A right/secondary press previews the destination, and release commits the
 // move or attack. Left click remains a selection gesture unless a map verb is armed.
+let mapPointerType = "mouse";
+cv.addEventListener("pointerdown", event => { mapPointerType = event.pointerType || "mouse"; });
+function unitCanBeOrderedTo(tile) {
+  return (sel.reachable || []).some(reachable => key(reachable) === tile) ||
+    state.legal_actions.some(action => action.unit === sel.id && action.target &&
+      ["attack", "ranged", "theological_attack"].includes(action.type) && key(action.target) === tile);
+}
+let mapHintTimer = null;
+function showMapHint(x, y, text) {
+  const hint = document.getElementById("map-hint");
+  hint.textContent = text;
+  hint.style.left = `${x}px`;
+  hint.style.top = `${y}px`;
+  hint.hidden = false;
+  clearTimeout(mapHintTimer);
+  mapHintTimer = setTimeout(() => { hint.hidden = true; }, 1600);
+}
 function issueSelectedUnitOrder(pos) {
   if (!sel || SPEC || !state) return false;
   const k = key(pos);

@@ -5189,6 +5189,14 @@
   .cf-verdict.tone-good { color: #8fe0a0; }
   .cf-verdict.tone-warn { color: #f0d28c; }
   .cf-verdict.tone-bad { color: #ff8a7c; }
+
+  /* Says how to do the thing just attempted, where the attempt was made. */
+  #map-hint {
+    position: fixed; z-index: 34; transform: translate(-50%, -160%); padding: 6px 11px; pointer-events: none;
+    color: #1a1407; background: var(--gold-bright); border-radius: 8px; box-shadow: 0 8px 22px #000a;
+    font: 700 13px/1.2 var(--font-ui); white-space: nowrap;
+  }
+  #map-hint[hidden] { display: none; }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
@@ -5321,6 +5329,7 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="lens-picker" aria-label="Map lenses" hidden></div>
+  <div id="map-hint" role="status" hidden></div>
   <div id="combat-forecast" aria-live="polite" hidden></div>
   <div id="map-controls-dock">
     <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
