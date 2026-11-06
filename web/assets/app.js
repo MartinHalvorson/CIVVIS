@@ -26934,7 +26934,8 @@ function drawDiplomacy() {
           meter("Cities", player.cities) +
           meter("Military", Math.round(player.military));
       return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}">` +
-        `<div class="leader-head"><span class="leader-name">${player.leader || player.civ}</span>` +
+        `<div class="leader-head">${player.is_minor ? "" : fdCrest(player.civ, "fd-crest-small")}` +
+        `<span class="leader-name">${player.leader || player.civ}</span>` +
         `<span class="leader-civ">${player.is_minor
           ? `${titleCase(player.cs_type || "city")}-state` : player.civ}</span>` +
         `<span class="leader-stance ${stance}">${stanceWord}</span></div>` +
