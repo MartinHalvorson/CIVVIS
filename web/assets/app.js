@@ -21336,11 +21336,11 @@ function drawPlanetChartMarginalia() {
 // queues sat full for ever, which kept the page repainting as if something were
 // moving and held the GPU path off. A played game gets all of it; a watched one
 // stays still at this scale, as it always has, and only its queues are emptied.
-function drawCasualtyToken(casualty, x, y) {
-  const r = 10.5, ink = unitTokenInk(casualty.owner), style = civ6UnitFlagStyle(casualty);
-  drawStrategicUnitCounter(x, y, r, style, pcol(casualty.owner), ink, 1.6);
+function drawCasualtyToken(d, x, y) {
+  const r = 10.5, tokenInk = unitTokenInk(d.owner), style = civ6UnitFlagStyle(d);
+  drawStrategicUnitCounter(x, y, r, style, pcol(d.owner), tokenInk, 1.6);
   const seat = strategicUnitGlyphSeat(x, y, r, style);
-  drawUnitPictogram(casualty.type, seat.x, seat.y, seat.size, ink);
+  drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
 }
 function planetEffectsShown() {
   return !SPEC && mapLens !== "empire";
