@@ -12677,6 +12677,25 @@ fn browser_runs_a_civ_six_turn_loop() {
 /// in keep a class each: `playing-solo` for a seat somebody is holding,
 /// `watching-world` for a simulation being watched.
 #[test]
+fn a_study_plan_starts_its_next_step_as_each_turn_opens() {
+    // The engine studies one thing at a time, so a plan is the page's to carry
+    // out: it has to start the next step without being asked.
+    let open_turn = EMBEDDED_APP_JS
+        .split_once("function openTurnIfNew() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("openTurnIfNew is a top-level function")
+        .0;
+    assert!(open_turn.contains("setTimeout(followStudyPlan);"));
+    // A plan never outlives its world, and an agent holding the seat is not
+    // overruled by a plan the player made before handing it over.
+    assert!(EMBEDDED_APP_JS.contains("if (held && held.seed === seed) studyPlans = held;"));
+    assert!(EMBEDDED_APP_JS
+        .contains("if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;"));
+    // Every node in the tree is a click, because any node can be planned to.
+    assert!(EMBEDDED_APP_JS.contains("(n === current ? \"\" : ` onclick='pickTree"));
+}
+
+#[test]
 fn browser_seats_a_person_in_the_civ_six_arrangement() {
     for piece in [
         "id=\"civtop\"",
@@ -14424,4 +14443,43 @@ fn a_post_to_a_live_control_names_its_sender() {
         bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"),
         "{bare}"
     );
+}
+
+#[test]
+fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
+    // The city screen is the heart of a 4X and nothing on the map led to it:
+    // the click only updated the sidebar, which is hidden during play.
+    let click = EMBEDDED_APP_JS
+        .split_once("const ours = city && city.owner === 0 ? city : null;")
+        .and_then(|(_, rest)| rest.split_once("readUnitIntel(pos, \"move\");"))
+        .expect("the map click keeps its city branch")
+        .0;
+    assert_eq!(click.matches("openCityScreen(ours.id);").count(), 2);
+    // Units first, then the city, and a tile with no city still wraps round.
+    assert!(click.contains("held === here.length - 1"));
+    assert!(click.contains("sel = here[(held + 1) % here.length];"));
+    // The plate is drawn above the tile, so a click on it has to be caught
+    // before the click is read as a tile, and only one frame's boxes count.
+    let plate = EMBEDDED_APP_JS
+        .find("const plate = cityPlateAt(sx, sy);")
+        .expect("the map click looks for a plate");
+    let tile = EMBEDDED_APP_JS
+        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (tackMode)")
+        .expect("the map click reads its tile");
+    assert!(plate < tile);
+    assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));
+}
+
+#[test]
+fn css_font_shorthands_name_a_family() {
+    // `font: 800 12px/1 inherit` is invalid CSS, so the whole declaration is
+    // dropped: the label under the research turn count kept the 15px serif at
+    // line-height 1 and overprinted the number.
+    let invalid = super::EMBEDDED_INDEX_HTML
+        .split("font:")
+        .skip(1)
+        .map(|rest| rest.split(';').next().unwrap_or("").trim())
+        .filter(|value| *value != "inherit" && value.ends_with(" inherit"))
+        .count();
+    assert_eq!(invalid, 0);
 }
