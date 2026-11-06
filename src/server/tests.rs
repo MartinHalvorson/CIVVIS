@@ -8834,6 +8834,25 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
 }
 
 #[test]
+fn a_played_game_reaches_its_lenses_from_the_map() {
+    // The lens dock lives in the command deck, which a played game keeps closed.
+    assert!(EMBEDDED_INDEX.contains("id=\"lenspicker-toggle\""));
+    assert!(EMBEDDED_INDEX.contains("id=\"lens-picker\""));
+    assert!(EMBEDDED_INDEX.contains("body.civ6-frame #lenspicker-toggle { display: block; }"));
+    // The picker offers what the dock offers, so a lens added there is here too.
+    assert!(EMBEDDED_APP_JS.contains("#map-lens-strip [data-map-lens]"));
+    // A Settler offers its lens once, and leaves a lens the player chose alone.
+    let settler = EMBEDDED_APP_JS
+        .split_once("function syncSettlerLens() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("syncSettlerLens is a top-level function")
+        .0;
+    assert!(settler.contains("if (unit === settlerLensUnit) return;"));
+    assert!(settler.contains("settlerLensOpened = unit !== null && !mapLens;"));
+    assert!(EMBEDDED_APP_JS.contains("function drawUbar() {\n  syncSettlerLens();"));
+}
+
+#[test]
 fn city_icons_are_shared_by_flat_globe_and_minimaps() {
     let icon = EMBEDDED_INDEX
         .split("function drawCityIcon")

@@ -5142,6 +5142,26 @@
     .fd-entry { transition: none; }
     .fd-entry:hover { transform: none; }
   }
+
+  /* Lenses during play. Their dock lives in the command deck, which a played
+     game keeps closed, so the map's own controls open this instead. */
+  #lenspicker-toggle { display: none; }
+  body.civ6-frame #lenspicker-toggle { display: block; }
+  #lens-picker {
+    position: fixed; left: 12px; bottom: 66px; z-index: 30; display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; width: 270px; padding: 8px;
+    color: #dbe5e0; background: #0a1512f4; border: 1px solid #d7b66a55; border-radius: 12px;
+    box-shadow: 0 16px 44px #000a;
+  }
+  #lens-picker[hidden] { display: none; }
+  .lens-choice {
+    display: flex; align-items: center; gap: 8px; padding: 7px 9px; color: inherit; text-align: left;
+    background: none; border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    font: 600 13px/1.2 var(--font-ui);
+  }
+  .lens-choice:hover, .lens-choice:focus-visible { border-color: var(--gold); outline: none; transform: none; }
+  .lens-choice[aria-pressed="true"] { color: #1a1407; background: var(--gold-bright); }
+  .lens-choice-all { grid-column: 1 / -1; border-top: 1px solid #d7b66a33; border-radius: 0 0 8px 8px; }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
@@ -5273,6 +5293,7 @@
   <aside id="victoryhud" data-layout-widget="victory" aria-label="Turn and victory tracker"></aside>
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
+  <div id="lens-picker" aria-label="Map lenses" hidden></div>
   <div id="map-controls-dock">
     <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
          zoom out, let the world turn, and dismiss. The spin sits past the zoom
@@ -5287,6 +5308,8 @@
         <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
         <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
         <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
+        <button id="lenspicker-toggle" type="button" aria-expanded="false" aria-controls="lens-picker"
+          title="Map lenses" aria-label="Map lenses">◎</button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
         <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
