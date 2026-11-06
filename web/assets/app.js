@@ -27270,6 +27270,7 @@ function unitPlaque(u, {linked, escortName}) {
     (notes.length ? `<div class="ubar-notes">${notes.join(" · ")}</div>` : "");
 }
 function drawUbar() {
+  syncSettlerLens();
   const bar = document.getElementById("ubar");
   // Published from here rather than watched: the bar is `display:none`
   // whenever nothing is selected, and an element with no CSS box gives a
@@ -30601,6 +30602,7 @@ function syncMapLensControls() {
   const exit = document.getElementById("map-lens-exit");
   if (exit) exit.hidden = !mapLens;
   syncDistrictLensControls();
+  drawLensPicker();
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -30610,6 +30612,53 @@ function setMapLens(next) {
 }
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
+// The same lenses from the map's own controls. The dock above lives in the
+// command deck, which a played game keeps closed, so during play the lenses
+// could only be reached by anyone who already knew the Settler lens's key.
+function drawLensPicker() {
+  const picker = document.getElementById("lens-picker");
+  if (!picker || picker.hidden) return;
+  const choice = (attributes, icon, label, pressed, extra = "") =>
+    `<button type="button" class="lens-choice${extra}" ${attributes} aria-pressed="${pressed}">` +
+    `<span aria-hidden="true">${icon}</span>${escapeAttr(label)}</button>`;
+  picker.innerHTML = [...document.querySelectorAll("#map-lens-strip [data-map-lens]")]
+    .filter(button => !button.hidden)
+    .map(button => choice(`data-lens="${escapeAttr(button.dataset.mapLens)}"`,
+      button.querySelector(".map-lens-icon")?.textContent || "◎",
+      button.querySelector(".map-lens-label")?.textContent || button.dataset.mapLens,
+      mapLens === button.dataset.mapLens)).join("") +
+    choice(`data-lens-yields`, "⛁", "Tile yields", SHOW_YIELDS, " lens-choice-all");
+}
+function toggleLensPicker(open) {
+  const picker = document.getElementById("lens-picker");
+  const button = document.getElementById("lenspicker-toggle");
+  if (!picker || !button) return;
+  picker.hidden = !(open ?? picker.hidden);
+  button.setAttribute("aria-expanded", String(!picker.hidden));
+  drawLensPicker();
+}
+document.getElementById("lenspicker-toggle").onclick = () => toggleLensPicker();
+document.getElementById("lens-picker").onclick = event => {
+  const choice = event.target.closest(".lens-choice");
+  if (!choice) return;
+  if (choice.dataset.lens) setMapLens(choice.dataset.lens);
+  else setShowYields(!SHOW_YIELDS);
+  drawLensPicker();
+};
+// Selecting a Settler brings its map up, and deselecting puts it away, because
+// where to found is the only question a Settler asks. It offers once per unit:
+// a player who closes the lens has answered, and a lens they chose themselves
+// is left alone.
+let settlerLensUnit = null, settlerLensOpened = false;
+function syncSettlerLens() {
+  if (SPEC) return;
+  const unit = sel && sel.type === "settler" ? sel.id : null;
+  if (unit === settlerLensUnit) return;
+  if (settlerLensOpened && mapLens === "settler") setMapLens(null);
+  settlerLensUnit = unit;
+  settlerLensOpened = unit !== null && !mapLens;
+  if (settlerLensOpened) setMapLens("settler");
+}
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 // What the hatching over the board is saying. Worth a line because the
 // reading follows its unit as the unit moves, so a viewer who looked away
