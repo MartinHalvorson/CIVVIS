@@ -7387,7 +7387,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // Strategic combat stays diagrammatic: damage labels and compact hit
     // sparks, without a second cinematic effects renderer.
     assert!(EMBEDDED_INDEX.contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
-    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
+    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now, pos: nu.pos });"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
     assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
     assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
