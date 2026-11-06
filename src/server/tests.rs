@@ -8697,14 +8697,14 @@ fn a_unit_counter_is_the_base_games_own_flag() {
     assert!(plate.contains("g.globalCompositeOperation = \"multiply\";"));
     assert!(plate.contains("g.globalCompositeOperation = \"destination-in\";"));
 
-    // One counter routine paints the flat map, the globe and each's casualty,
+    // One counter routine paints the flat map, the globe and the casualty,
     // so no surface can quietly keep drawing a circle.
     assert!(EMBEDDED_INDEX
         .contains("function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"));
     assert_eq!(
         EMBEDDED_INDEX.matches("drawStrategicUnitCounter(").count(),
-        5,
-        "the flat map, the globe and both casualties all paint the one counter"
+        4,
+        "the flat map, the globe and the casualty all paint the one counter"
     );
     // And the selection ring is still the counter's own outline, not a
     // circle drawn over a flag.

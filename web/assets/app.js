@@ -21335,6 +21335,12 @@ function drawPlanetChartMarginalia() {
 // queues sat full for ever, which kept the page repainting as if something were
 // moving and held the GPU path off. A played game gets all of it; a watched one
 // stays still at this scale, as it always has, and only its queues are emptied.
+function drawCasualtyToken(casualty, x, y) {
+  const r = 10.5, ink = unitTokenInk(casualty.owner), style = civ6UnitFlagStyle(casualty);
+  drawStrategicUnitCounter(x, y, r, style, pcol(casualty.owner), ink, 1.6);
+  const seat = strategicUnitGlyphSeat(x, y, r, style);
+  drawUnitPictogram(casualty.type, seat.x, seat.y, seat.size, ink);
+}
 function planetEffectsShown() {
   return !SPEC && mapLens !== "empire";
 }
@@ -21395,10 +21401,7 @@ function drawPlanetCombatEffects(cellByKey, onSheet, now) {
     cx.globalAlpha = 1 - e;
     cx.translate(spot.x, spot.y + e * 5);
     cx.rotate((death.owner % 2 ? 1 : -1) * e * 1.2);
-    const ink = unitTokenInk(death.owner), style = civ6UnitFlagStyle(death);
-    drawStrategicUnitCounter(0, 0, 10.5, style, pcol(death.owner), ink, 1.6);
-    const seat = strategicUnitGlyphSeat(0, 0, 10.5, style);
-    drawUnitPictogram(death.type, seat.x, seat.y, seat.size, ink);
+    drawCasualtyToken(death, 0, 0);
     cx.restore();
   }
   for (const spark of anim.sparks) {
@@ -22700,12 +22703,7 @@ function drawScene() {
     cx.translate(d.x, d.y + e * 5);
     cx.rotate((d.owner % 2 ? 1 : -1) * e * 1.2);
     cx.translate(-d.x, -d.y);
-    const r = 10.5;
-    const tokenInk = unitTokenInk(d.owner);
-    const style = civ6UnitFlagStyle(d);
-    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
-    drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+    drawCasualtyToken(d, d.x, d.y);
     cx.restore();
     cx.globalAlpha = 1;
   }
