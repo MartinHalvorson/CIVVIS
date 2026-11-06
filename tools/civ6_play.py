@@ -5462,13 +5462,48 @@ def seat_matches_requested(
 #: loss's recording, so a loss's hold only serves someone watching live: a
 #: short look at the result, not ten seconds the next game waits for.
 LOSS_SCREEN_HOLD_S = 3.0
+VICTORY_MOVIE_FALLBACK_S = 45.0
+VICTORY_MOVIE_TIMEOUT_S = 180.0
+VICTORY_RESULT_HOLD_S = 3.0
 
 
 def end_game_hold_seconds(outcome: dict, requested: float) -> float:
     """The final-screen hold: all of ``requested`` for our win, a short look otherwise."""
     if isinstance(outcome, dict) and outcome.get("won") is True:
-        return requested
+        return max(requested, VICTORY_MOVIE_FALLBACK_S)
     return min(requested, LOSS_SCREEN_HOLD_S)
+
+
+def hold_native_victory(tail, outcome: dict, requested: float, record) -> None:
+    """Drain the UI log until the native movie finishes, then show its result.
+
+    A missing movie callback gets a bounded fallback and an explicit incomplete
+    receipt. Publishers must not mistake that fallback for a completed movie.
+    """
+    started = time.monotonic()
+    finished_at = None
+    movie_started = False
+    while True:
+        now = time.monotonic()
+        for event in tail.poll():
+            record(event)
+            if event.get("kind") == "victory_movie_started":
+                movie_started = True
+            elif event.get("kind") == "victory_movie_finished":
+                movie_started = True
+                finished_at = now
+        if finished_at is not None and now >= max(started + requested,
+                                                  finished_at + VICTORY_RESULT_HOLD_S):
+            record(dict(kind="victory_presentation_complete", complete=True,
+                        turn=outcome.get("turn"), seconds=now - started))
+            return
+        fallback = end_game_hold_seconds(outcome, requested)
+        if (not movie_started and now - started >= fallback) or now - started >= max(VICTORY_MOVIE_TIMEOUT_S, requested):
+            record(dict(kind="victory_presentation_complete", complete=False,
+                        turn=outcome.get("turn"), seconds=now - started,
+                        reason="movie_completion_not_observed"))
+            return
+        time.sleep(0.1)
 
 
 def summary_reason(state: dict, reason: str) -> str:
@@ -6803,28 +6838,10 @@ def _play(args: argparse.Namespace) -> int:
     # board, while the old agreement checker compared only the two stale files
     # and reported success. Stop the process before publishing the summary so a
     # completed run has one unambiguous last frame.
-    # ⚠⚠⚠ HOLD THE FINAL SCREEN HERE, NOT IN THE MOD — THE MOD CANNOT DO IT.
-    #
-    # `CivvisControlAutoClose` gained an `EndGameSeconds` clock for `EndGameMenu` in
-    # #1041 and it is INERT. Measured across every run on this machine:
-    #
-    #     250 runs, 145 `autoclose_armed` for EndGameMenu, ZERO `autoclose`
-    #
-    # The shim never closes that screen, and the reason is structural: Civilization
-    # VI halts the Game Core when it shows the end-of-game screen, so the shim is
-    # ticking off a frame loop that has just stopped. A Lua clock cannot run there.
-    #
-    # ⚠ The same absent event is what `civ6_civvis_climb.outcome_of` keys
-    # `reached_end_screen` on, which is why that column has been `None` on all 250
-    # runs while claiming to record whether the game reached its end screen.
-    #
-    # So the thing that actually decides how long the operator sees the result is
-    # THIS gap — between `finished()` breaking the loop above and `launcher.stop()`
-    # killing the game below. Unheld it is a second or two.
-    #
-    # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
-    # refusal has nothing on screen worth looking at, and holding there would add
-    # ten seconds to every failure in a batch.
+    # The harness owns shutdown after victory. Keep draining the UI log after
+    # the ordinary watch loop ends so EndGameMenu's natural movie-finished
+    # callback can arrive. The popup closer leaves this screen alone, and the
+    # native result remains visible briefly after the complete cinematic.
     # `[end-time] <step> +<s>`: the boundary from the loop ending to the ladder
     # row, step by step (the hold, the rescue queue, the quit, the decider, the
     # summary). Play log only.
@@ -6833,10 +6850,13 @@ def _play(args: argparse.Namespace) -> int:
     def end_mark(step: str) -> None:
         print(f"[end-time] {step} +{time.monotonic() - end_t0:.2f}s", flush=True)
 
-    if state["outcome"] and args.end_game_seconds > 0:
+    if state["outcome"] and (args.end_game_seconds > 0 or state["outcome"].get("won") is True):
         hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
-        print(f"holding the final screen for {hold:.0f}s", flush=True)
-        time.sleep(hold)
+        print(f"holding the final screen through native playback (fallback {hold:.0f}s)", flush=True)
+        if state["outcome"].get("won") is True:
+            hold_native_victory(tail, state["outcome"], args.end_game_seconds, record)
+        else:
+            time.sleep(hold)
     elif state.get("operator_retire_event") and not state.get("restart_parked"):
         # ``UI.RequestAction`` crosses from the control mod into the game core
         # asynchronously.  Leave it a small frame window to commit the native
@@ -7638,13 +7658,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
-    # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
-    # fast because something is waiting behind it; nothing is waiting behind this
-    # one, because the game is over. The operator's standing brief asks for ten
-    # seconds on the final screen and this is the only knob that can grant it.
+    # Wins always finish the native movie. This setting retains a minimum
+    # presentation time; it cannot shorten a winning cinematic.
     ap.add_argument("--end-game-seconds", type=float, default=10.0,
-                    help="how long the victory/defeat screen is held before the "
-                         "autoclose shim dismisses it")
+                    help="minimum end-of-game presentation time; wins always finish "
+                         "their native victory movie before shutdown")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

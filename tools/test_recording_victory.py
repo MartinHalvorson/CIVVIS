@@ -84,5 +84,39 @@ class TerminalGateTest(unittest.TestCase):
         self.assertEqual(scan.call_args.args, ("candidate.mp4", 0, 10.0, {"1": 0}))
 
 
+@unittest.skipIf(sys.platform == "win32", "macOS recorder uses fcntl")
+class NativeVictoryWindowTest(unittest.TestCase):
+    def check_window(self, complete):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            keeper = types.ModuleType("civvis_clip_keeper")
+            keeper.HOME = keeper.CLIPS = keeper.DESKTOP = keeper.CONTROL = root
+            keeper.STATE = root / "state.json"
+            keeper.STATE.write_text(json.dumps(dict(games=dict(game=dict(segments=[
+                dict(path="game.0.mp4", started=0, ended=1100)])))))
+            (root / "game").mkdir()
+            (root / "game/events.jsonl").write_text("" if complete is None else json.dumps(dict(
+                kind="victory_presentation_complete", complete=complete, t=1040)))
+            (root / "game-play.log").write_text('[victory] {"t":1000}\n')
+            gate = types.ModuleType("civvis_video_goal")
+            gate.event_instant = lambda event: event.get("t")
+            stubs = dict(civvis_clip_keeper=keeper, civvis_video_goal=gate,
+                         civvis_video_story=types.ModuleType("civvis_video_story"),
+                         civvis_pericles_ladder=types.ModuleType("civvis_pericles_ladder"))
+            spec = importlib.util.spec_from_file_location("native_publisher", Path(__file__).parent / "recording/civvis_youtube_publisher.py")
+            publisher = importlib.util.module_from_spec(spec)
+            with mock.patch.dict(sys.modules, stubs), mock.patch.object(sys, "path", list(sys.path)):
+                spec.loader.exec_module(publisher)
+            publisher.PLAY_LOGS = root
+            return publisher.clip_window("game")
+
+    def test_export_ends_after_the_whole_movie_and_native_result(self):
+        self.assertEqual(self.check_window(True), (0, 1040))
+
+    def test_missing_or_incomplete_movies_are_preserved_for_review(self):
+        self.assertIsNone(self.check_window(None))
+        self.assertIsNone(self.check_window(False))
+
+
 if __name__ == "__main__":
     unittest.main()

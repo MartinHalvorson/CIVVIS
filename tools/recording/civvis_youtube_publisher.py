@@ -179,6 +179,22 @@ def clip_window(gid):
                     pass
     if victory_t is None:
         return None
+    presentation_t = None
+    event_path = K.CONTROL / gid / "events.jsonl"
+    if event_path.exists():
+        for line in event_path.read_text(errors="replace").splitlines():
+            if '"victory_presentation_complete"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+                if event.get("kind") == "victory_presentation_complete":
+                    if event.get("complete") is not True:
+                        return None  # keep the source for review; never advertise a cut-off movie
+                    presentation_t = video_goal.event_instant(event)
+            except (ValueError, TypeError):
+                continue
+    if presentation_t is None:
+        return None  # no proof the native victory movie played to completion
     offset = 0.0
     for i, seg in enumerate(segs):
         name = Path(seg.get("path", "")).name
@@ -186,8 +202,8 @@ def clip_window(gid):
         started, ended = seg.get("started"), seg.get("ended")
         if started is None or ended is None:
             return None
-        if i == len(segs) - 1 or victory_t <= ended:
-            end = offset + (victory_t - started - trim) + 7.0
+        if i == len(segs) - 1 or presentation_t <= ended:
+            end = offset + (presentation_t - started - trim)
             first_trim = trims.get(Path(segs[0].get("path", "")).name, 0.0)
             start = 3.0 if first_trim > 0 else 0.0
             if end <= start + 60:
@@ -428,13 +444,6 @@ def publish_one(dry_run):
             log(f"{gid}: on-screen story failed ({error!r}); rendering without it")
             story = None
         if story:
-            final_item = story["items"][-1] if story["items"] else {}
-            if final_item.get("confirmed_result"):
-                import victory_state
-                _, _, events = video_story._load(gid)
-                outcome = next(e for e in reversed(events) if victory_state.local_victory(e))
-                evidence["terminal_presentation"] = dict(kind="confirmed_victory_card",
-                                                         start_seconds=final_item["t"], outcome=outcome)
             t = texts(verdict, gid, story)
             YT_STAGING.mkdir(parents=True, exist_ok=True)
             hud = YT_STAGING / f"{gid}.hud.json"
