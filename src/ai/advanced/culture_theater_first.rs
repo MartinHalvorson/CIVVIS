@@ -50,8 +50,14 @@
 //! kept selecting infrastructure; the first Amphitheater arrived after 120.
 //! Both versions therefore reserve one safe, fastest build for the empire's
 //! first Amphitheater, leaving settlers, defenses and imminent completions
-//! under the same protections as the district claim. Later buildings keep
-//! their ordinary valuations.
+//! under the same protections as the district claim. Additional Amphitheaters
+//! keep their ordinary valuations.
+//!
+//! The first Art Museum receives the same reservation after Humanism. Native
+//! Deity Pericles 20261106T233736Z still had no art slots at turn 162 despite
+//! 1,555 Faith and 472 Artist points: patronage correctly refused an unusable
+//! creator. One legal Art Museum opens three slots and the Artist economy; an
+//! Archaeological Museum does not supply compatible art slots.
 
 use super::*;
 
@@ -136,8 +142,12 @@ impl AdvancedAi {
         }
         match item {
             Item::Building { building } => {
-                g.building_is_family(*building, crate::name!("amphitheater"))
-                    && self.culture_needs_first_amphitheater(g, pid)
+                [crate::name!("amphitheater"), crate::name!("art_museum")]
+                    .into_iter()
+                    .any(|family| {
+                        g.building_is_family(*building, family)
+                            && self.culture_needs_first_building(g, pid, family)
+                    })
                     && g.cities.get(&cid).is_some_and(|city| {
                         city.owner == pid
                             && plan.threatened_city != Some(cid)
@@ -250,32 +260,33 @@ impl AdvancedAi {
                            "{} (it keeps its progress)", Self::plain_item(&item))));
             }
         }
-        self.claim_first_culture_amphitheater(g, pid, plan, at_major_war);
+        for building in [crate::name!("amphitheater"), crate::name!("art_museum")] {
+            self.claim_first_culture_building(g, pid, plan, at_major_war, building);
+        }
     }
 
-    fn culture_needs_first_amphitheater(&self, g: &Game, pid: usize) -> bool {
+    fn culture_needs_first_building(&self, g: &Game, pid: usize, family: Name) -> bool {
         !g.cities.values().any(|city| {
             city.owner == pid
                 && city
                     .buildings
                     .iter()
-                    .any(|building| g.building_is_family(*building, crate::name!("amphitheater")))
+                    .any(|building| g.building_is_family(*building, family))
         })
     }
 
-    fn claim_first_culture_amphitheater(
+    fn claim_first_culture_building(
         &self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
         at_major_war: bool,
+        building: Name,
     ) {
-        if !self.culture_needs_first_amphitheater(g, pid) {
+        if !self.culture_needs_first_building(g, pid, building) {
             return;
         }
-        let item = Item::Building {
-            building: crate::name!("amphitheater"),
-        };
+        let item = Item::Building { building };
         if g.cities
             .values()
             .any(|city| city.owner == pid && city.queue.contains(&item))
@@ -317,8 +328,8 @@ impl AdvancedAi {
         if let Some((turns, cid)) = choice {
             if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
                 think!(self.journal(), Cities, Decision,
-                    "{} claims the first Amphitheater for the Culture victory", g.cities[&cid].name;
-                    "culture-seat-theater-first: first writing slots in {turns:.1} turns");
+                    "{} claims the first {} for the Culture victory", g.cities[&cid].name, building;
+                    "culture-seat-theater-first: first compatible work slots in {turns:.1} turns");
             }
         }
     }
