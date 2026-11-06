@@ -28,6 +28,13 @@
 //! Science exposes the seat to this path next, and the Favor pays for the
 //! ballot in three kills.
 //!
+//! Prior art: the soldier half existed as `condemn-under-congress`, removed in
+//! #2469 at -0.19 pp over 38,160 native seats, verdict Unresolved. That gene
+//! had no ballot, so it acted only when the native Congress happened to pass
+//! option B, and it was never read live. This one asks for the vote and is
+//! judged on live ballots, conversions held and Favor earned, not on a repeat
+//! of that screen.
+//!
 //! The ballot lives in the agent (`CivvisWorldReligionCondemn`), leased by a
 //! `WORLD_RELIGION_CONDEMNS` row each batch. A founder keeps its option A.
 //! `preserve_competing_faith` still spares a faith that holds the leader off.
