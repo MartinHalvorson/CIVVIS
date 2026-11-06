@@ -37,11 +37,43 @@ regression, not a reconstruction of the native board or a strength experiment.
 
 ## Validation
 
-Focused Rust tests and the bounded fixed-input proposal probe are pending.
-The probe protocol is set before execution: two off repeats must agree before
-two on repeats; the same binary, stock strategy, Indonesia, Science target,
-fixed captured input, frame identity, observed genome delta, actual reads and
-clean EOF are checked. The only policy delta is this opt-in.
+All6 focused Rust regressions passed locally with the unoptimized CI profile.
+The macOS linker emitted an unwind-table size warning in that test build; the
+full optimized suite remains for CI.
+
+The bounded fixed-input probe passed: both off repeats emitted
+`TECH_MACHINERY`, while both on repeats emitted `TECH_REPLACEABLE_PARTS`.
+Each of the4 queries independently verified17 actual reads of the same
+31,281,479-byte input and exited0. The same binary, default deployment
+controller, Indonesia, assigned Science, frame129/0 and observed genome delta
+were verified. The only policy delta was this opt-in.
+
+Probe source: `808d6fa3589bd1e2d3a50978856741f61f76218a`. Binary SHA256:
+`24bf0f39bee982681ee1ad41def8928bafbdd685629452e0c53191ee8d7448bd`.
+The archive retains both raw result pairs, raw replies/stderr/invocations,
+capture indices and bytes, cold metadata, protocol and source receipt. Identical
+capture byte archives are represented by tar hard links after verifying their
+original contents, preserving every logical capture path.
+
+The first cold-start preflight rejected an obsolete `--strategy stock` flag
+before any board query or input read. Its failure, original driver/protocol,
+raw stderr and explicit amendment are retained inside the archive. The amended
+invocation omits that retired flag and uses the default deployment controller;
+no failed policy query was retried.
+
+The standalone verifier independently reconstructed both pairs and all actual
+read counts, and the repository gene-fires gate accepted this proposal evidence.
+Run:
+
+```sh
+python3 docs/eval/2026-11-06-science-chain-window.verify.py \
+  docs/eval/2026-11-06-science-chain-window.action-pairs.tar.xz
+python3 tools/gene_fires.py --max 0
+```
+
+This candidate may delay useful optional backfill. It adds no new threat
+assessment or modernization policy; it preserves existing selected-goal
+precedence. Native strength testing remains necessary before changing defaults.
 
 This fixed-input probe deliberately makes no original canonical-control claim:
 it uses the last captured read from129/0 as a stable file, rather than the
