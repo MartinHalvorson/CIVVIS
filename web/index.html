@@ -2027,7 +2027,7 @@
   }
   .leader.at-war { border-color: #6b3f3c; background: #1c1312bb; }
   .leader.allied { border-color: #4a805d; background: #14261fbb; }
-  .leader-head { display: flex; align-items: baseline; gap: 9px; }
+  .leader-head { display: flex; align-items: center; gap: 9px; }
   .leader-name { color: var(--gold-bright); font: 600 17px Georgia, serif; }
   .leader-civ { color: var(--muted); font-size: var(--type-secondary); }
   .leader-stance {
@@ -4992,6 +4992,8 @@
   body.frontdoor-open #side,
   body.frontdoor-open #buildmark,
   body.frontdoor-open #maparea > :not(#map) { visibility: hidden; }
+  /* Space is pure black. A page any other shade drew the map's box around it. */
+  body.frontdoor-open { background: #000; }
   #frontdoor {
     position: fixed; inset: 0; z-index: 9000; display: flex; color: #edf3f0;
     background: linear-gradient(90deg, #050b09f5 0, #050b09d9 28%, #050b0940 58%, #050b0900 100%);
@@ -5064,6 +5066,7 @@
   }
   .fd-crest-random { background: radial-gradient(circle at 35% 30%, #5c6f68, #1c2a25); }
   .fd-crest-large { width: 84px; height: 84px; font-size: 30px; }
+  .fd-crest-small { width: 30px; height: 30px; font-size: 12px; }
   .fd-side { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; padding-right: 4px; }
   #fd-dossier { display: flex; gap: 16px; padding: 14px; border-radius: 12px; background: #0c1a16; border: 1px solid #2b4138; }
   .fd-dossier-text { min-width: 0; }
@@ -5186,6 +5189,29 @@
   .cf-verdict.tone-good { color: #8fe0a0; }
   .cf-verdict.tone-warn { color: #f0d28c; }
   .cf-verdict.tone-bad { color: #ff8a7c; }
+
+  /* Choosing a tile on the map. */
+  #site-pick {
+    position: fixed; top: 52px; left: 50%; z-index: 32; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px; padding: 8px 10px 8px 16px; white-space: nowrap;
+    color: var(--gold-bright); background: #0a1512f5; border: 1px solid #d7b66a88; border-radius: 12px;
+    box-shadow: 0 12px 34px #000a; font: 600 16px/1.2 Georgia, serif;
+  }
+  #site-pick[hidden] { display: none; }
+  /* The tiles being chosen between are the whole of what matters now. */
+  body.site-picking #moments { display: none; }
+  #site-pick button {
+    padding: 6px 10px; color: #dbe5e0; background: none; border: 1px solid #536c63; border-radius: 8px;
+    font: 600 12px/1.2 var(--font-ui); cursor: pointer;
+  }
+  #site-pick button:hover { color: var(--gold-bright); border-color: var(--gold); transform: none; }
+  /* Says how to do the thing just attempted, where the attempt was made. */
+  #map-hint {
+    position: fixed; z-index: 34; transform: translate(-50%, -160%); padding: 6px 11px; pointer-events: none;
+    color: #1a1407; background: var(--gold-bright); border-radius: 8px; box-shadow: 0 8px 22px #000a;
+    font: 700 13px/1.2 var(--font-ui); white-space: nowrap;
+  }
+  #map-hint[hidden] { display: none; }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
@@ -5318,6 +5344,8 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="lens-picker" aria-label="Map lenses" hidden></div>
+  <div id="site-pick" role="status" hidden><span id="site-pick-text"></span><button type="button" id="site-pick-cancel">Back to the city</button></div>
+  <div id="map-hint" role="status" hidden></div>
   <div id="combat-forecast" aria-live="polite" hidden></div>
   <div id="map-controls-dock">
     <!-- Primary row: collapse the deck, set the map area, face north, zoom in,

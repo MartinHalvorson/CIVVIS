@@ -9,7 +9,8 @@
 //! (`divide_into_regions`, `apportion`, `regions_for_seats`,
 //! `archipelago_minor_regions`); placing starts in them
 //! (`regional_starts`, `fill_remaining_starts`); and balancing territory
-//! and start quality afterwards.
+//! and start quality afterwards. `place_starts_and_finish` runs all of it,
+//! as the last stage of map generation.
 //!
 //! Moved verbatim out of `mapgen.rs` (2026-11-05). `mapgen.rs` re-exports
 //! everything here, so every path is unchanged; items the rest of `mapgen`
@@ -1313,4 +1314,518 @@ pub(super) fn equalize_start_quality(
         seated[weakest].1 = better.1;
         qualities[weakest] = better.0;
     }
+}
+
+/// How many seats a map has, and any true start points they must take.
+pub(super) struct SeatRequest<'a> {
+    pub(super) num_major_spawns: usize,
+    pub(super) num_minor_spawns: usize,
+    pub(super) leader_starts: &'a [TrueStartPoint],
+    pub(super) minor_starts: &'a [Option<TrueStartPoint>],
+}
+
+/// The end of map generation, once the terrain is final: choose every start,
+/// top up the strategic resources and artifacts around them, and retire any
+/// feature a later pass left invalid.
+pub(super) fn place_starts_and_finish(
+    mut wm: WorldMap,
+    land: BTreeSet<Pos>,
+    rules: &Rules,
+    script: MapScript,
+    seats: SeatRequest<'_>,
+    rng: &mut Rng,
+) -> (WorldMap, Vec<Pos>) {
+    let SeatRequest {
+        num_major_spawns,
+        num_minor_spawns,
+        leader_starts,
+        minor_starts,
+    } = seats;
+    // --- spawns. Civilization VI does not search for good plots and hope they
+    // come out spread: `AssignStartingPlots` calls
+    // `StartPositioner.DivideMapIntoMajorRegions` before it considers a single
+    // plot, cuts the map into one region per civilization of roughly equal
+    // fertility, and gives each region a start. So does this. Which landmass a
+    // seat lands on falls out of the division rather than being allocated by
+    // script, so an ocean-separated world seats every continent it can afford
+    // to seat and a continuous one is divided just the same way.
+    let passable: BTreeSet<Pos> = land
+        .iter()
+        .filter(|pos| rules.is_passable(&wm.tiles[pos]))
+        // Nobody has ever founded a city on an ice cap. A true-start world
+        // carries a real Antarctica and a real Greenland, which between them
+        // are a tenth of its land; left in the ground the regions are cut from
+        // they take a tenth of the city-states with them and seat them where
+        // no city has stood — and a region with no other ground to offer seats
+        // one there whatever the candidate pool says. A rolled world's snow is
+        // a thin polar fringe rather than a continent, and is left alone.
+        .filter(|pos| !script.is_fixed_geography() || wm.tiles[pos].terrain != "snow")
+        .cloned()
+        .collect();
+    let total_spawns = num_major_spawns + num_minor_spawns;
+    let candidates_for = |component: &BTreeSet<Pos>, needed: usize| {
+        let mut candidates: Vec<Pos> = component
+            .iter()
+            .filter(|position| {
+                let tile = &wm.tiles[position];
+                matches!(tile.terrain.as_str(), "grassland" | "plains")
+                    && tile.feature.is_none()
+                    && tile.improvement.is_none()
+            })
+            .cloned()
+            .collect();
+        if candidates.len() < needed {
+            candidates = component
+                .iter()
+                .filter(|position| {
+                    let tile = &wm.tiles[position];
+                    tile.improvement.is_none()
+                        && tile.feature.as_deref() != Some("oasis")
+                        && !tile
+                            .feature
+                            .as_ref()
+                            .and_then(|feature| rules.features.get(feature))
+                            .is_some_and(|feature| feature.natural_wonder)
+                })
+                .cloned()
+                .collect();
+        }
+        candidates.sort();
+        candidates
+    };
+    let components = connected_components(&wm, &passable);
+    let fertility: BTreeMap<Pos, i32> = passable
+        .iter()
+        .map(|position| (*position, tile_fertility(rules, &wm.tiles[position])))
+        .collect();
+    let wonders: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.feature
+                .as_deref()
+                .and_then(|feature| rules.features.get(feature))
+                .is_some_and(|feature| feature.natural_wonder)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    let all_candidates = candidates_for(&passable, total_spawns);
+    // Standing beside a Natural Wonder costs a capital the tiles it cannot work
+    // from its first turn, so the shipped standoffs are applied to the pool a
+    // region picks from. That was the wrong place for it while a search over
+    // the pool decided the *spacing* too; now the regions fix the spacing and
+    // the pool only decides where inside a region a start stands.
+    let pool_clear_of_wonders = |floor: i32, needed: usize| -> BTreeSet<Pos> {
+        let clear: BTreeSet<Pos> = all_candidates
+            .iter()
+            .copied()
+            .filter(|position| {
+                wonders
+                    .iter()
+                    .all(|wonder| wm.distance(*position, *wonder) >= floor)
+            })
+            .collect();
+        if clear.len() >= needed {
+            clear
+        } else {
+            all_candidates.iter().copied().collect()
+        }
+    };
+
+    let major_pool = pool_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
+    let major_regions = if script == MapScript::Islands {
+        // An archipelago's fair share is a slice of the whole island field,
+        // not simply one of its largest rocks. `regions_for_seats` apportions
+        // seats to landmasses by fertility, which is right when those
+        // landmasses are continents. Here it picked the eight richest islands
+        // without regard to where they were, leaving the other thirty or forty
+        // islands outside every start region and sometimes putting one major's
+        // nearest neighbour three times farther away than another's.
+        //
+        // Divide the complete archipelago instead. A region may contain more
+        // than one island on this script: that is the maritime territory its
+        // civilization opens into. The farthest-point seeds spread the regions
+        // over the map, while the capacity pass still gives each one a roughly
+        // equal share of land and fertility.
+        let archipelago: Vec<Pos> = passable.iter().copied().collect();
+        divide_into_regions(&wm, &archipelago, &fertility, num_major_spawns)
+    } else {
+        regions_for_seats(&wm, &components, &fertility, num_major_spawns)
+    };
+    // A four-seat Tenins Ball is the stock game, and its layout is part of
+    // that map type's promise: one civilization at each end of each lobe, a
+    // handful of tiles in from the seam. The regional model would seat them
+    // at each half-lobe's center of fertility instead — the right general
+    // answer and the wrong shape for this world.
+    let lobe_ends = (script == MapScript::TeninsBall && num_major_spawns == 4)
+        .then(|| tennis_ball_major_starts(&wm, &major_pool))
+        .flatten();
+    // A two-seat Tactics planet's layout is its type's promise too: the sides
+    // open at the farthest usable plots on one landmass, on opposite faces of
+    // the world but joined by ground.
+    //
+    // Both ends come out of a *single* connected component, never out of the
+    // world-wide candidate pool, and that is the whole guarantee: two plots in
+    // one component of `passable` have a walkable line between them, so the
+    // side that opens on the far face can march to the other rather than
+    // needing a boat it has not got. `components` is ordered largest first, so
+    // the first one that can seat both sides is the main continent. Only if no
+    // landmass at all holds two candidate plots does this widen — and it
+    // widens to the largest component itself rather than to the pool, because
+    // a start on bare ground is a smaller compromise than a start the enemy
+    // cannot reach.
+    //
+    // At sea the guarantee inverts, and so does the component it is taken
+    // from. The naval globe seats the two sides on *different* islands by
+    // design — that is what makes it a naval battle rather than a land one
+    // with water around it — so requiring one landmass would defeat the map
+    // type. What has to connect instead is the water between them: two fleets
+    // launched into seas that do not join could never meet, which is the same
+    // unwinnable battle the land rule exists to prevent, reached from the
+    // other element. So the pool is every candidate plot whose own shore
+    // touches the world ocean, meaning the largest connected body of passable
+    // water, and the two ends are the farthest apart of those.
+    let planet_pool = (script.is_planet_battlefield() && num_major_spawns == 2)
+        .then(|| {
+            if script.is_naval_battlefield() {
+                let sea: BTreeSet<Pos> = wm
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile) && rules.is_passable(tile))
+                    .map(|(pos, _)| *pos)
+                    .collect();
+                let ocean = connected_components(&wm, &sea).into_iter().next()?;
+                let pool: BTreeSet<Pos> = major_pool
+                    .iter()
+                    .copied()
+                    .filter(|pos| wm.neighbors(*pos).into_iter().any(|n| ocean.contains(&n)))
+                    .collect();
+                return (pool.len() >= 2).then_some(pool);
+            }
+            components
+                .iter()
+                .find_map(|component| {
+                    let pool: BTreeSet<Pos> = major_pool.intersection(component).copied().collect();
+                    (pool.len() >= 2).then_some(pool)
+                })
+                .or_else(|| {
+                    components
+                        .iter()
+                        .find(|component| component.len() >= 2)
+                        .cloned()
+                })
+        })
+        .flatten();
+    let planet_ends = planet_pool
+        .as_ref()
+        .and_then(|pool| tactics_planet_major_starts(&wm, pool));
+    // A two-seat bounded battlefield instead uses opposite corners or ends of
+    // its rectangle. More seats than two fall back to the regional model.
+    let arena_ends = (script == MapScript::Battlefield && num_major_spawns == 2)
+        .then(|| battlefield_major_starts(&wm, &major_pool))
+        .flatten();
+    // A scenario's seats are neither chosen nor dealt: each side opens where
+    // it actually was, and which of the two is seat 0 decides who moves first.
+    // So this is answered before the shuffle below and skips it — swapping
+    // Nelson and Villeneuve would be a different battle with the same name.
+    let scenario_seats = if script.is_scenario() && num_major_spawns == 2 {
+        if script == MapScript::Trafalgar {
+            crate::trafalgar::major_starts(&wm)
+        } else {
+            let scenario = crate::historical_scenarios::by_script(script)
+                .expect("every scenario map script has a catalogue row");
+            let plan = crate::historical_terrain::by_id(scenario.id)
+                .expect("every catalogue battle has a drawn chart");
+            let afloat = crate::historical_terrain::sides_afloat(rules, scenario);
+            crate::historical_terrain::major_starts(&wm, plan, afloat)
+        }
+    } else {
+        None
+    };
+    let mut spawns = if let Some(starts) = scenario_seats {
+        starts
+    } else if let Some(mut starts) = lobe_ends.or(planet_ends).or(arena_ends) {
+        // Seat order should not correlate with the order the ends are listed.
+        for index in (1..starts.len()).rev() {
+            let other = rng.below(index + 1);
+            starts.swap(index, other);
+        }
+        starts
+    } else if script.is_true_start() {
+        // Earth does not divide into regions: the whole point of the script is
+        // that Rome opens in Italy and the Aztecs open in Mexico, however
+        // lopsided that leaves the continents.
+        //
+        // Nor does a homeland have to be bare grassland to be a homeland. The
+        // pool every other script draws from wants open ground and only widens
+        // when it runs short, which on this map would move Rome out of its own
+        // wooded hills and Cusco off its own mountainside to find some. Asking
+        // for more seats than the world has tiles takes the wider pool
+        // outright: every passable tile that is not a wonder or a village.
+        let candidates = candidates_for(&passable, usize::MAX);
+        let homelands: Vec<TrueStartPoint> = (0..num_major_spawns)
+            .map(|index| {
+                leader_starts
+                    .get(index)
+                    .copied()
+                    .unwrap_or_else(|| leader_roster::legacy_true_start(index))
+            })
+            .collect();
+        historic_major_spawns(&wm, &candidates, &homelands, num_major_spawns)
+    } else {
+        let mut seated = regional_starts(
+            rules,
+            &wm,
+            &major_regions,
+            &major_pool,
+            &fertility,
+            StartBuffers {
+                foreign: &[],
+                foreign_buffer: MAJOR_START_BUFFER,
+                own_buffer: MAJOR_START_BUFFER,
+            },
+        );
+        equalize_start_quality(
+            rules,
+            &wm,
+            &major_regions,
+            &major_pool,
+            &fertility,
+            &mut seated,
+            &[],
+        );
+        let reachable: Vec<Pos> = major_regions.iter().flatten().copied().collect();
+        balance_territory(
+            rules,
+            &wm,
+            &reachable,
+            &major_regions,
+            &major_pool,
+            &mut seated,
+        );
+        let mut starts: Vec<Pos> = seated.into_iter().map(|(_, start)| start).collect();
+        // Seat order should not correlate with the order the regions were cut.
+        for index in (1..starts.len()).rev() {
+            let other = rng.below(index + 1);
+            starts.swap(index, other);
+        }
+        starts
+    };
+    if spawns.len() < num_major_spawns {
+        let missing = num_major_spawns - spawns.len();
+        fill_remaining_starts(rules, &wm, &major_pool, &passable, &mut spawns, missing);
+    }
+
+    // City-states get a second, finer set of regions once the majors are down,
+    // the way `StartPositioner.DivideMapIntoMinorRegions` cuts one. Here they
+    // are cut *inside* each civilization's own cell and apportioned across
+    // them, so every civilization has city-states of its own to court. Taking
+    // the best-scoring remaining gap one at a time instead chained four of them
+    // around whichever civilization had the best ground: measured over 72
+    // worlds, every stock profile left at least one civilization with none
+    // within ten hexes while another had eighteen.
+    let minor_pool = pool_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
+    let minor_regions = if script == MapScript::Islands && !spawns.is_empty() {
+        archipelago_minor_regions(&wm, &passable, &fertility, &spawns, num_minor_spawns)
+    } else if major_regions.is_empty() || spawns.is_empty() {
+        regions_for_seats(&wm, &components, &fertility, num_minor_spawns)
+    } else {
+        // A civilization's own ground means the land nearer to it than to
+        // anyone else, not the region it was given — its start can sit
+        // off-centre in that. Cutting from the cell is what keeps a city-state
+        // on the side of the frontier it was meant for.
+        //
+        // Nearest *on the same landmass*, though. Distance is measured across
+        // water as readily as across grass, so a plain cell reaches over a
+        // strait and claims the near shore of an island nobody was seated on —
+        // and a city-state cut from that half of the cell opens an ocean away
+        // from the civilization it was meant to belong to. Measured on a
+        // fifty-seat world, sixteen hexes away.
+        let home_of = |position: Pos| {
+            components
+                .iter()
+                .position(|component| component.contains(&position))
+        };
+        let start_home: Vec<Option<usize>> = spawns.iter().copied().map(home_of).collect();
+        let start_distances: Vec<MapDistanceRow<'_>> = spawns
+            .iter()
+            .copied()
+            .map(|start| MapDistanceRow::new(&wm, start))
+            .collect();
+        let mut cells: Vec<Vec<Pos>> = vec![Vec::new(); spawns.len()];
+        for tile in major_regions.iter().flatten() {
+            let here = home_of(*tile);
+            let owner = start_distances
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| start_home[*index] == here)
+                .map(|(index, distances)| (distances.distance(*tile), index))
+                .min()
+                .or_else(|| {
+                    start_distances
+                        .iter()
+                        .enumerate()
+                        .map(|(index, distances)| (distances.distance(*tile), index))
+                        .min()
+                });
+            if let Some((_, owner)) = owner {
+                cells[owner].push(*tile);
+            }
+        }
+        // A seat the region system could not place — the fallback filler put it
+        // somewhere the divisions never covered — has no cell at all, and so
+        // was handed no city-state region either, on an island with room for
+        // one. Give it the land it is nearest on its own landmass.
+        for (index, start) in spawns.iter().enumerate() {
+            if !cells[index].is_empty() {
+                continue;
+            }
+            let Some(here) = home_of(*start) else {
+                continue;
+            };
+            cells[index] = components[here]
+                .iter()
+                .copied()
+                .filter(|tile| {
+                    spawns
+                        .iter()
+                        .enumerate()
+                        .filter(|(other, _)| start_home[*other] == Some(here))
+                        .min_by_key(|(other, seat)| (wm.distance(*tile, **seat), *other))
+                        .is_some_and(|(other, _)| other == index)
+                })
+                .collect();
+        }
+        for cell in cells.iter_mut() {
+            cell.sort_unstable();
+        }
+        let weights: Vec<i64> = cells
+            .iter()
+            .map(|cell| {
+                cell.iter()
+                    .map(|position| fertility.get(position).copied().unwrap_or(1) as i64)
+                    .sum()
+            })
+            .collect();
+        // Every civilization gets one before any gets two. Sharing them out in
+        // proportion alone is right where the cells are near enough equal — on
+        // a continent they are, by construction — but an archipelago's cells
+        // differ tenfold, and a tenth of a share rounds to nothing: a
+        // civilization on a small island was handed no city-state region at
+        // all, on an island with room for one, while a neighbour on the big
+        // island held three.
+        let seated_cells: Vec<usize> = (0..cells.len())
+            .filter(|index| !cells[*index].is_empty())
+            .collect();
+        let allocation = if num_minor_spawns >= seated_cells.len() && !seated_cells.is_empty() {
+            let mut given = vec![0_usize; cells.len()];
+            for index in &seated_cells {
+                given[*index] = 1;
+            }
+            let spare: Vec<i64> = seated_cells.iter().map(|index| weights[*index]).collect();
+            let extra = apportion(&spare, num_minor_spawns - seated_cells.len());
+            for (slot, index) in seated_cells.iter().enumerate() {
+                given[*index] += extra[slot];
+            }
+            given
+        } else {
+            apportion(&weights, num_minor_spawns)
+        };
+        let mut cut = Vec::with_capacity(num_minor_spawns);
+        for (cell, count) in cells.iter().zip(allocation) {
+            if count == 0 {
+                continue;
+            }
+            cut.extend(divide_into_regions(&wm, cell, &fertility, count));
+        }
+        cut
+    };
+    let majors: Vec<Pos> = spawns.clone();
+    // A city-state on True Start Earth belongs where it stood, for the same
+    // reason Rome does. The regional cut above divides each civilization's own
+    // cell so everyone has neighbours to court, which is the right answer on a
+    // rolled world and the wrong one here: it put Jerusalem in Siberia and
+    // Cahokia in the Sahara as readily as anywhere else, on the one map whose
+    // whole promise is that places are where they are.
+    //
+    // The majors are already down, so their hexes are the ones a city-state
+    // must not take; `historic_minor_spawns` seats around them the way
+    // `historic_major_spawns` seats around each other. An identity the roster
+    // has no coordinates for keeps the regional seat it would have had.
+    let historic_minors = script
+        .is_true_start()
+        .then(|| {
+            (!minor_starts.is_empty() && minor_starts.iter().any(Option::is_some)).then(|| {
+                let candidates = candidates_for(&passable, usize::MAX);
+                historic_minor_spawns(&wm, &candidates, minor_starts, &majors, num_minor_spawns)
+            })
+        })
+        .flatten();
+    if let Some(minors) = historic_minors {
+        spawns.extend(minors);
+    } else {
+        let minors = regional_starts(
+            rules,
+            &wm,
+            &minor_regions,
+            &minor_pool,
+            &fertility,
+            StartBuffers {
+                foreign: &majors,
+                foreign_buffer: MINOR_MAJOR_BUFFER,
+                own_buffer: MINOR_MINOR_BUFFER,
+            },
+        );
+        spawns.extend(minors.into_iter().map(|(_, start)| start));
+    }
+    if spawns.len() < total_spawns {
+        let missing = total_spawns - spawns.len();
+        fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
+    }
+    let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
+    for s in &occupied {
+        let t = wm.tiles.get_mut(s).unwrap();
+        t.feature = None;
+        t.resource = None;
+    }
+    // Clearing the capitals takes deposits off the map, and the quota is a
+    // claim about what a civilization can reach rather than about what was
+    // laid down before the seats were known. On a world with plenty of land
+    // that is one or two tiles and the top-up finds nothing to do; on a Water
+    // World, where every seat is a large share of the land, it is the
+    // difference between an iron age and a bronze one. Nothing after this
+    // draws from the stream, so a world that needed no top-up is unmoved.
+    if !script.is_battlefield() {
+        place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
+        place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
+    }
+
+    // CIVVIS grows ordinary features before it draws Natural Wonders, the
+    // reverse of Firaxis' effective order for this rule. A later Woods,
+    // Floodplains, or Wonder can therefore invalidate an Oasis that was legal
+    // when rolled. Retire only those Oases after generation is final; this
+    // enforces `NoAdjacentFeatures` without changing the seeded draw stream,
+    // displacing a Natural Wonder, or redrawing a long-established map.
+    let invalid_oases: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            tile.feature.as_deref() == Some("oasis") && !placed_oasis_is_valid(&wm, **position)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    for position in invalid_oases {
+        wm.tiles.get_mut(&position).unwrap().feature = None;
+    }
+    // The old-deposit pass above predates separate Lake terrain and can stage
+    // Volcanic Soil there while preserving the RNG sequence on which wonder,
+    // resource, and start placement depend. Retire any deposit whose final
+    // terrain is not one of Gathering Storm's valid flat/hills land types only
+    // after every seeded generation decision is complete.
+    for tile in wm.tiles.values_mut() {
+        if tile.feature.as_deref() == Some("volcanic_soil") && !volcanic_soil_valid_terrain(tile) {
+            tile.feature = None;
+        }
+    }
+    (wm, spawns)
 }

@@ -532,6 +532,11 @@ There is no production queue, and that is an engine fact rather than a client
 gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
 work.
 
+A district or wonder with more than one possible tile is placed on the map. The
+city screen steps aside, the district's lens shows what each tile would give,
+and the sites are outlined. Clicking one starts it, and Escape goes back to the
+city. A list of coordinates could not say any of that.
+
 ## Endings
 
 A game can end two ways for the person at the keyboard, and both used to
