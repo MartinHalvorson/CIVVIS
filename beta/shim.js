@@ -41,6 +41,9 @@
     "/live-pause", "/live-new-game",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
+  // The page's front door is for the public site: the desktop app's local
+  // channel was opened by someone who already chose what they are doing.
+  window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST;
 
   // Keep the browser build to the same four choices as the socket server.
   // It starts at ten seconds until the page posts its persisted preference.
@@ -359,7 +362,15 @@
       if (!key || !key.startsWith(SAVE_PREFIX)) continue;
       try {
         const held = JSON.parse(localStorage.getItem(key));
-        saves.push({ name: key.slice(SAVE_PREFIX.length), turn: held.turn ?? 0 });
+        // The engine wraps a save in an envelope: the world is `held.game`.
+        // Reading `held.turn` here listed every save as turn 0.
+        const game = held.game ?? held;
+        saves.push({
+          name: key.slice(SAVE_PREFIX.length),
+          turn: game.turn ?? 0,
+          civ: game.players?.[game.human_seats?.[0] ?? 0]?.civ ?? null,
+          difficulty: game.difficulty ?? null,
+        });
       } catch (error) {
         // A half-written entry is not a save. Leave it for `writeSave` to
         // evict rather than break the list every time it is read.
@@ -383,7 +394,7 @@
         return { error: `there is no room to save ${name}: ${again.message}` };
       }
     }
-    return { error: null, name, turn: game.turn ?? 0 };
+    return { error: null, name, turn: (game.game ?? game).turn ?? 0 };
   }
 
   // --------------------------------------------------------------- dispatch
