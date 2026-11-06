@@ -8912,6 +8912,21 @@ fn a_choice_of_tiles_is_made_on_the_map() {
 }
 
 #[test]
+fn a_player_can_find_out_how_to_move() {
+    // Right-click was the only way to move, and nothing said so. The unit panel
+    // carries the verb, a mouse is told, and a touch screen, which has no right
+    // button, orders with the tap.
+    assert!(EMBEDDED_APP_JS.contains("onclick='setInterfaceMode(\"move_to\")'>➜ Move</button>"));
+    assert!(EMBEDDED_APP_JS.contains("if (mapPointerType === \"touch\") {"));
+    assert!(EMBEDDED_APP_JS.contains("\"Right-click to move here\""));
+    assert!(EMBEDDED_INDEX.contains("id=\"map-hint\""));
+    // A click on your own unit or city stays a selection.
+    assert!(
+        EMBEDDED_APP_JS.contains("if (sel && !here.length && !ours && unitCanBeOrderedTo(k)) {")
+    );
+}
+
+#[test]
 fn city_icons_are_shared_by_flat_globe_and_minimaps() {
     let icon = EMBEDDED_INDEX
         .split("function drawCityIcon")
