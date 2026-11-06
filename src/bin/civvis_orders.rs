@@ -5772,7 +5772,12 @@ fn decide(
     if !orders.iter().any(|order| order.kind == "buy") {
         let cultural_activation_pending = state.units.iter().any(|unit| {
             unit.great_person.as_ref().is_some_and(|person| {
-                person.can_activate
+                (person.can_activate
+                    || orders.iter().any(|order| {
+                        order.kind == "unit"
+                            && order.subject == Some(unit.id as i64)
+                            && order.verb.as_deref() == Some("ACTIVATE_GREAT_PERSON")
+                    }))
                     && matches!(
                         person.class.as_deref(),
                         Some(
