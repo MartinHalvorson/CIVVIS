@@ -2066,6 +2066,10 @@ impl AdvancedAi {
         /// Opt-in gene `science-seat-allies-2`; see
         /// `advanced/culture_seat_allies.rs`.
         science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
+        /// Opt-in gene `science-seat-races-the-congress`: a live-only ballot
+        /// change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`.
+        science_seat_races_the_congress => enable_science_seat_races_the_congress,
+            disable_science_seat_races_the_congress;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;
@@ -2299,6 +2303,9 @@ impl AdvancedAi {
         /// Opt-in gene `wounded-ship-sails-on`; see
         /// `advanced/wounded_ship_sails_on.rs`.
         wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
+        /// Opt-in gene `nusantara-settles-the-shore`; see
+        /// `advanced/nusantara_settles_the_shore.rs`.
+        nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
     }
 }
 

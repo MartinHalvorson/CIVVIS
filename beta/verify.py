@@ -513,6 +513,17 @@ def check_gate(dist: pathlib.Path) -> list[str]:
 # ------------------------------------------------------------------- checks
 
 
+def uncaught_problems(console: list[str]) -> list[str]:
+    """Whether the page threw. An uncaught exception reaches `Devtools.console`
+    with its stack, which a warning does not, and a page throwing in its draw
+    loop can still play turns: printing these and passing on is how a build
+    with a map that had stopped painting went out."""
+    thrown = [line for line in console if "\n    at " in line]
+    if not thrown:
+        return []
+    return [f"the page threw {len(thrown)} time(s), first: {thrown[0][:160]}"]
+
+
 def map_delivery_problems(
     report: dict, *, allow_legacy_full_map: bool = False
 ) -> list[str]:
@@ -751,6 +762,12 @@ def main(argv: list[str] | None = None) -> int:
             "--disable-gpu",
             "--window-size=1600,1000",
             "--hide-scrollbars",
+            # Audio on from the first frame. A browser normally holds it until
+            # a click, and a headless check never clicks, so sound code here
+            # ran only half of itself. On 2026-11-06 a sound function named
+            # `tone` replaced the renderer's colour helper: this check passed,
+            # and every real visitor's game froze at their first click.
+            "--autoplay-policy=no-user-gesture-required",
             url,
         ],
         stdout=subprocess.DEVNULL,
@@ -844,6 +861,16 @@ def main(argv: list[str] | None = None) -> int:
         dev.alive = False
 
         print()
+        # What the flag above is for. A browser that ignored it would pass this
+        # check for the old reason, so say which kind of pass this was.
+        audio = dev.evaluate(
+            "(async () => { const context = new AudioContext();"
+            " await Promise.race([context.resume(),"
+            " new Promise(done => setTimeout(done, 2000))]);"
+            " const state = context.state; context.close(); return state; })()"
+        )
+        print(f"    audio       {audio}")
+
         problems = []
         if not report.get("ready"):
             problems.append("the engine never answered")
@@ -927,6 +954,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
         for line in fatal[:8]:
             print(f"    console: {line[:180]}")
+        problems.extend(uncaught_problems(fatal))
 
         print(f"    build       {build['short']}")
         if isinstance(wasm_bytes, int) and not isinstance(wasm_bytes, bool):

@@ -76,7 +76,7 @@ impl AdvancedAi {
     /// A Harbor is placed on `coast`, not merely any water tile.  Keeping the
     /// predicate this narrow means an ocean-only shore does not receive a
     /// bonus for a port it cannot build.
-    fn has_harbor_coast(g: &Game, pos: Pos) -> bool {
+    pub(super) fn has_harbor_coast(g: &Game, pos: Pos) -> bool {
         g.nbrs(pos).iter().any(|neighbor| {
             g.map
                 .get(*neighbor)
