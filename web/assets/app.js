@@ -1285,7 +1285,7 @@ function animateDiff(prev, next) {
         // step. Carrying both endpoints lets the shift ease across the move.
         const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
-                                mapPoints, steps,
+                                mapPoints, steps, positions,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
@@ -1294,8 +1294,9 @@ function animateDiff(prev, next) {
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
-      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
-      anim.sparks.push({ x, y, t0: now });
+      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now,
+                         pos: nu.pos, rise: 16 });
+      anim.sparks.push({ x, y, t0: now, pos: nu.pos });
     }
   }
   for (const pu of prev.units) {
@@ -1307,8 +1308,9 @@ function animateDiff(prev, next) {
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
                          embarked: pu.embarked, t0: deathAt,
-                         dur:320 });
-      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt });
+                         dur:320, pos: pu.pos });
+      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt,
+                         pos: pu.pos, rise: 16 });
     }
   }
   const prevC = new Map((prev.cities || []).map(c => [c.id, c]));
@@ -1320,12 +1322,14 @@ function animateDiff(prev, next) {
     if (hpDrop > 0 || wallDrop > 0) {
       const [x, y] = worldXY(nc.pos);
       if (hpDrop > 0) {
-        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now });
+        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now,
+                           pos: nc.pos, rise: 20 });
       }
       if (wallDrop > 0) {
-        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now });
+        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now,
+                           pos: nc.pos, rise: 29 });
       }
-      anim.sparks.push({ x, y, t0: now });
+      anim.sparks.push({ x, y, t0: now, pos: nc.pos });
     }
     // A city gaining a citizen is the slowest important thing that happens on
     // this map and it passed silently: the settlement quietly gains a house and
@@ -1334,7 +1338,7 @@ function animateDiff(prev, next) {
     if (nc.pop > pc.pop) {
       const [x, y] = worldXY(nc.pos);
       anim.floats.push({ x, y: y + 20, txt: `+${nc.pop - pc.pop} pop`,
-                         col: "#8fe0a0", t0: now });
+                         col: "#8fe0a0", t0: now, pos: nc.pos, rise: -20 });
     }
   }
   // Territory changing hands is the clearest sign a strategy map is moving —
@@ -1370,7 +1374,8 @@ function animateDiff(prev, next) {
     const a = nextU.get(pendingStrike.id) || prevU.get(pendingStrike.id);
     if (a) {
       const [sx, sy] = worldXY(a.pos), [tx, ty] = worldXY(pendingStrike.to);
-      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now };
+      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now,
+                      from: a.pos, to: pendingStrike.to };
     }
     pendingStrike = null;
   }
@@ -21325,6 +21330,125 @@ function drawPlanetChartMarginalia() {
   }
 }
 
+// The globe's half of the map's animation. `animateDiff` has always filled the
+// queues, but only the flat renderer drew and drained them, so on a globe (the
+// default world) a unit teleported, a blow landed with no number, and the
+// queues sat full for ever, which kept the page repainting as if something were
+// moving and held the GPU path off. A played game gets all of it; a watched one
+// stays still at this scale, as it always has, and only its queues are emptied.
+function drawCasualtyToken(d, x, y) {
+  const r = 10.5, tokenInk = unitTokenInk(d.owner), style = civ6UnitFlagStyle(d);
+  drawStrategicUnitCounter(x, y, r, style, pcol(d.owner), tokenInk, 1.6);
+  const seat = strategicUnitGlyphSeat(x, y, r, style);
+  drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+}
+function planetEffectsShown() {
+  return !SPEC && mapLens !== "empire";
+}
+function planetUnitWalk(unit, cellByKey, onSheet, now) {
+  const move = anim.moves.get(unit.id);
+  if (!move || !move.positions) return null;
+  const sample = sampleUnitMove(move, now);
+  if (sample.e >= 1) return null;
+  const from = cellByKey.get(key(move.positions[sample.leg]));
+  const to = cellByKey.get(key(move.positions[sample.leg + 1]));
+  const horizon = onSheet ?? .025;
+  if (!from || !to || from.center.z < horizon || to.center.z < horizon) return null;
+  return {
+    x: from.center.x + (to.center.x - from.center.x) * sample.local,
+    y: from.center.y + (to.center.y - from.center.y) * sample.local
+      - Math.abs(Math.sin(sample.local * Math.PI)) * 2.4,
+  };
+}
+function planetStrikeLunge(unit, cellByKey, onSheet, now) {
+  const strike = anim.strike;
+  if (!strike || strike.id !== unit.id) return null;
+  const from = cellByKey.get(key(strike.from)), to = cellByKey.get(key(strike.to));
+  if (!from || !to) return null;
+  const out = Math.sin(Math.min(1, (now - strike.t0) / 220) * Math.PI) * 0.42;
+  return {x: (to.center.x - from.center.x) * out, y: (to.center.y - from.center.y) * out};
+}
+// Land changing hands, drawn under the units.
+function drawPlanetClaims(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  for (const claim of anim.claims) {
+    const e = (now - claim.t0) / (claim.big ? 1500 : 1050);
+    const cell = cellByKey.get(key(claim.pos));
+    if (e >= 1 || !cell || cell.center.z < (onSheet ?? .02)) continue;
+    const color = pcol(claim.owner);
+    cx.save();
+    cx.globalAlpha = (1 - e) * (claim.big ? 0.42 : 0.28);
+    cx.fillStyle = color;
+    planetPath(cx, cell.points); cx.fill();
+    cx.globalAlpha = (1 - e) * (claim.big ? 1 : 0.8);
+    cx.strokeStyle = color; cx.lineWidth = claim.big ? 3.4 : 2.2;
+    cx.stroke();
+    cx.restore();
+  }
+}
+// Casualties, sparks and numbers, above the units and tied to their tiles so a
+// camera moving under them carries them along.
+function drawPlanetCombatEffects(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  const at = pos => {
+    const cell = cellByKey.get(key(pos));
+    return cell && cell.center.z >= (onSheet ?? .02) ? cell.center : null;
+  };
+  for (const death of anim.deaths) {
+    const e = Math.max(0, (now - death.t0) / death.dur);
+    const spot = at(death.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.translate(spot.x, spot.y + e * 5);
+    cx.rotate((death.owner % 2 ? 1 : -1) * e * 1.2);
+    drawCasualtyToken(death, 0, 0);
+    cx.restore();
+  }
+  for (const spark of anim.sparks) {
+    const e = (now - spark.t0) / 200;
+    const spot = at(spark.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.strokeStyle = "#ffd977"; cx.lineWidth = 2.2;
+    for (let a = 0; a < 6; a++) {
+      const angle = a * 1.047 + 0.3, r1 = 4 + e * 12, r2 = 8 + e * 15;
+      cx.beginPath();
+      cx.moveTo(spot.x + Math.cos(angle) * r1, spot.y + Math.sin(angle) * r1 * 0.7);
+      cx.lineTo(spot.x + Math.cos(angle) * r2, spot.y + Math.sin(angle) * r2 * 0.7);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+  cx.font = "bold 13px sans-serif"; cx.textAlign = "center";
+  for (const float of anim.floats) {
+    const e = (now - float.t0) / 700;
+    const spot = float.pos ? at(float.pos) : null;
+    if (e < 0 || e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = e < 0.75 ? 1 : (1 - e) * 4;
+    const y = spot.y - (float.rise ?? 16) - e * 16;
+    cx.lineWidth = 3; cx.strokeStyle = "#10151d";
+    cx.strokeText(float.txt, spot.x, y);
+    cx.fillStyle = float.col; cx.fillText(float.txt, spot.x, y);
+    cx.restore();
+  }
+}
+// Whatever has run its time goes, drawn or not: a tile behind the planet still
+// finishes its pulse, and a watched world must not fill these for ever.
+function retirePlanetEffects(now) {
+  for (const [id, move] of anim.moves) if (now - move.t0 >= move.dur) anim.moves.delete(id);
+  const live = (list, life) => {
+    for (let i = list.length - 1; i >= 0; i--)
+      if (now - list[i].t0 >= life(list[i])) list.splice(i, 1);
+  };
+  live(anim.claims, claim => claim.big ? 1500 : 1050);
+  live(anim.deaths, death => death.dur);
+  live(anim.sparks, () => 200);
+  live(anim.floats, () => 700);
+  if (anim.strike && now - anim.strike.t0 >= 220) anim.strike = null;
+}
 function drawPlanetMap() {
   cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
@@ -21580,26 +21704,33 @@ function drawPlanetMap() {
   }
   const visibleUnits = empireLens ? [] : state.units;
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  drawPlanetClaims(cellByKey, onSheet, now);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
-  // Use the same stable tile layout as the flat command map. The globe has no
-  // in-flight unit animation, so every overview marker on a cell belongs here.
-  const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
+  // Use the same stable tile layout as the flat command map. A unit on the
+  // move is left out of the stacks, and a played game walks it along its route.
+  const showEffects = planetEffectsShown();
+  const planetUnitStacks = strategicUnitStackSlots(visibleUnits,
+    showEffects ? anim.moves : undefined);
   for (const unit of visibleUnits) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const outline = sel?.id === unit.id ? 2.3 : 1.2;
+    const walking = showEffects ? planetUnitWalk(unit, cellByKey, onSheet, now) : null;
     let stack = strategicUnitStackPlacement(
       planetUnitStacks, unit, planetCellInradius(cell), outline);
-    stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
+    if (!walking)
+      stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
     const r = stack.r;
     // A singleton stays centred; a stack takes stable, gently overlapping
     // seats around it. Let stacked tokens cross the individual face edge a
     // little instead of cutting their already-reduced silhouettes flat.
-    const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
+    const lunge = showEffects ? planetStrikeLunge(unit, cellByKey, onSheet, now) : null;
+    const ux = (walking?.x ?? cell.center.x) + stack.x + (lunge?.x ?? 0);
+    const uy = (walking?.y ?? cell.center.y) + stack.y + (lunge?.y ?? 0);
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
-    const commandTokenClip = !stack.stacked;
+    const commandTokenClip = !stack.stacked && !walking && !lunge;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     const style = civ6UnitFlagStyle(unit);
     drawStrategicUnitCounter(ux, uy, r, style, pcol(unit.owner),
@@ -21611,6 +21742,7 @@ function drawPlanetMap() {
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
+  drawPlanetCombatEffects(cellByKey, onSheet, now);
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
@@ -21645,6 +21777,7 @@ function drawPlanetMap() {
   // Last, and in screen space: a detonation's flash washes the frame itself,
   // exactly as it does over the flat board.
   drawNuclearFlash(now);
+  retirePlanetEffects(now);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -22571,12 +22704,7 @@ function drawScene() {
     cx.translate(d.x, d.y + e * 5);
     cx.rotate((d.owner % 2 ? 1 : -1) * e * 1.2);
     cx.translate(-d.x, -d.y);
-    const r = 10.5;
-    const tokenInk = unitTokenInk(d.owner);
-    const style = civ6UnitFlagStyle(d);
-    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
-    drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+    drawCasualtyToken(d, d.x, d.y);
     cx.restore();
     cx.globalAlpha = 1;
   }
