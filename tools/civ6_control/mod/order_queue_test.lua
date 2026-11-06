@@ -883,17 +883,20 @@ do
 		UNIT_GALLEY = {UnitType = "UNIT_GALLEY", Domain = "DOMAIN_SEA", FormationClass = "FORMATION_CLASS_NAVAL", Combat = 30, RangedCombat = 0},
 	}
 	Game.GetLocalPlayer = function() return PID end
-	local shotCan = false
+	local shotCan, primaryProbe = false, false
 	UnitManager.CanStartOperation = function(unit, hash, ...)
 		if hash == "UNITOPERATION_RANGE_ATTACK" then
-			assert(select('#', ...) == 2, "ranged eligibility uses nil plus the actual params")
+			if not primaryProbe then
+				assert(select('#', ...) == 2, "ranged eligibility uses nil plus the actual params")
+				primaryProbe = true
+			end -- The existing refusal-reason observer also probes other signatures.
 			if shotCan == "throw" then error("unavailable native query") end
 			return shotCan
 		end
 		return oldCan(unit, hash, ...)
 	end
 	local function fresh()
-		reset(); LOG = {}; shotCan = false
+		reset(); LOG = {}; shotCan = false; primaryProbe = false
 		host.units[1441803] = {id = 1441803, kind = "UNIT_ARCHER", x = 3, y = 26, moves = 2, activity = "awake"}
 		host.units[1310732] = {id = 1310732, kind = "UNIT_WARRIOR", x = 3, y = 26, moves = 2}
 	end
@@ -995,7 +998,7 @@ do
 	fresh(); host.units[1441803].embarked = true
 	applyOrders(player, PID, 7, {shot(), leave()})
 	check("departure: embarked shooters retain existing behavior", held(), false)
-	fresh(); host.units[1310732].kind = "UNIT_UNKNOWN"
+	fresh(); host.units[1310732].kind = "missing_definition"
 	applyOrders(player, PID, 7, {shot(), leave()})
 	check("departure: unknown unit definitions do not create dependencies", held(), false)
 	fresh(); shotCan = "throw"
