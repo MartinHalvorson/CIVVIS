@@ -5385,6 +5385,13 @@ pub const GENES: &[Gene] = &[
     // votes that never decided a session. Live only; the simulator has no
     // such Congress, so it cannot screen this.
     Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
+    // `chemistry-follows-the-university` (2026-11-06): live Deity t150 Science
+    // tracks Research Labs, and Chemistry landed t128-146 with Universities
+    // already standing. `science-foundation-before-backlog` only opens when
+    // Chemistry is one step away, so it left those boards unchanged. Estimated
+    // 5-9 turns of Labs, about 4% of Science. See
+    // `advanced/science_foundation_research.rs`.
+    Gene { tag: "chemistry-follows-the-university", field: "chemistry_follows_the_university", kind: Kind::OptIn, enable: AdvancedAi::enable_chemistry_follows_the_university, disable: AdvancedAi::disable_chemistry_follows_the_university },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
