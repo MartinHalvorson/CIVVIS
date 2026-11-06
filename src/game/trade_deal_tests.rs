@@ -524,10 +524,11 @@ fn gathering_storm_merchant_republic_uses_governors_and_district_production() {
     );
 }
 
-/// Civilization VI's rule, read off the game's own database on 2026-08-24:
-/// a one-sided deal that gives is a gift and buys nothing (no diplomatic
-/// modifier exists for one), and a one-sided deal that takes is a demand,
-/// never a trade. The engine used to refuse the gift outright.
+/// This engine's rule: a one-sided deal that gives is a legal gift and buys no
+/// opinion, and a one-sided deal that takes is a demand, never a trade. The
+/// first half is a known gap, not Civilization VI's rule: the shipped
+/// `STANDARD_DIPLOMATIC_ONE_SIDED_TRADES` pays one opinion point per 10 value,
+/// up to 20 (see `validate_trade`). The engine used to refuse the gift outright.
 #[test]
 fn a_gift_is_legal_buys_nothing_and_a_demand_is_refused() {
     let mut game = trade_game();
@@ -546,7 +547,7 @@ fn a_gift_is_legal_buys_nothing_and_a_demand_is_refused() {
     assert_eq!(
         game.relationship_opinion(1, 0),
         opinion_before,
-        "a gift buys no opinion, as in Civilization VI"
+        "this engine prices a gift at no opinion (a known gap)"
     );
     assert_eq!(
         game.do_trade(0, 1, &DealItems::default(), &gift),

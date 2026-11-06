@@ -688,9 +688,9 @@ impl Game {
                 return Err("alliance is unavailable".into());
             }
         }
-        // A proposal that only gives Gold is a gift (legal, buys nothing —
-        // see `validate_trade`); one that only asks is a demand and goes
-        // through `Action::DemandGold`; an exchange goes through the trade
+        // A proposal that only gives Gold is a gift (legal, and priced at
+        // nothing here — see `validate_trade`); one that only asks is a demand
+        // and goes through `Action::DemandGold`; an exchange goes through the trade
         // lane, where both sides must gain.
         let gift = give_gold > 0.0 && request_gold <= 0.0;
         if !open_borders && !friendship && !peace && alliance.is_none() && !gift {

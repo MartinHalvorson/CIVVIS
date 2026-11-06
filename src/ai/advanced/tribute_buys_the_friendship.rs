@@ -24,9 +24,26 @@
 //!   (`Base/Assets/Gameplay/Data/Leaders.xml:1010`, `TRAIT_LEADER_MAJOR_CIV`,
 //!   `ON_DEAL_ENACTED`: `TradeValuePerModifierPoint` 10, `MaxValue` 20,
 //!   `ReductionTurns` 2).
-//! - The engine's own model says a gift buys nothing (`Game::do_trade`). The
-//!   shipped database says otherwise. This gene is live-only for that reason:
-//!   a sim screen cannot price it.
+//! - The engine does not model that modifier (`Game::do_trade`), so this gene
+//!   is live-only: a sim screen cannot price it.
+//!
+//! First live carrier, 222639Z: 80 Gold to France at t115 took its visible
+//! opinion from −3 to +7 on that turn, the row read +7 at t119, and the
+//! friendship ask landed at t120. A luxury purchase (t118) and an embassy
+//! (t119) helped too.
+//!
+//! The first version then paid every five turns, and partial amounts toward
+//! any gap. On its first four carriers 14 gifts (1,392 Gold) warmed one rival,
+//! so it was disarmed at 2026-11-05 23:34Z:
+//! - A first gift bought about +9 to +10 (80, 101 and 139 Gold). A further 80
+//!   or 120 Gold to the same rival bought about +2 and left the row near +8.
+//! - Seven gifts (789 Gold) went to a rival more than the modifier's room from
+//!   Friendly, and none warmed it. The −20 `Different Governments` row stood
+//!   against us in all seven (once hidden as "Unknown Reason"), so a rival on a
+//!   modern government is usually out of reach while we are not.
+//!
+//! So the gift is now one whole payment per rival per 30 turns, and only to a
+//! rival one gift can reach.
 //!
 //! ## What the gene does
 //!
@@ -38,9 +55,11 @@
 //! one-way Gold gift: the shipped `aid_gift` deal path with verb `TRIBUTE`, a
 //! PROPOSED working deal holding only our Gold.
 //! - The amount is ten Gold per point of the gap between the rival's visible
-//!   total and the Friendly median, within the +20 the modifier holds.
-//! - A treasury reserve is kept back, and a gift under the minimum never goes
-//!   out.
+//!   total and the Friendly median, sent whole. A gap over ten points is out
+//!   of reach and no gift goes out.
+//! - A rival holding a "Favorable trade deals" row is not paid again, and the
+//!   mod refuses a second tribute to a rival inside `TributeRetryTurns` (30).
+//! - A treasury reserve is kept back.
 //! - It holds for any other diplomatic or trade order to that rival this
 //!   frame (the host keeps one working deal per rival).
 //!

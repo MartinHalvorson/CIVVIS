@@ -10,20 +10,19 @@
 //! the early Settler floor, the holdable-land Settler, granaries, the
 //! deterrent, the Trader, the backlog Builder, the Aqueduct, the
 //! Neighborhood, the Industrial Zone and Factory, the Campus claims, and the
-//! culture and diplomacy claims. By the next frame the host holds the hinted
-//! item, so an idle-queue claim finds no idle queue.
+//! culture and diplomacy claims. When the host consumes a hint it holds the
+//! hinted item at the next frame, so an idle-queue claim finds no idle queue.
 //!
-//! In live games the hints outnumber direct `produce` orders about two to one
-//! (`orders.sqlite`: 480 vs 230 in civvis-20261105T072215Z, 343 vs 192 in
-//! 062514Z, 440 vs 226 in 052244Z). Two thirds of live production choices
-//! therefore skip every claim gene. The native board has no hint, so every
-//! empty queue there goes through the chain.
+//! The bridge's counters (`civvis_notes.jsonl`, `production_next_*`) size it:
+//! a live game issues 250-500 hints and consumes 50-75 of them, against
+//! 170-280 direct `produce` orders, so consumed hints decide about a quarter
+//! of live production choices. The native board has no hint.
 //!
-//! That is the live/sim gap the state census found. A Korea-seat sim and
-//! the live games agree on tile economics: the improved share of worked tiles
-//! and the production per worked tile match within a few percent. But the sim
-//! seat holds 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
-//! t80 against 0.5 (`claim_producer_zone`).
+//! An earlier version of this note said two thirds, comparing hints issued
+//! with direct orders, and blamed this gap for the Korea-seat sim holding
+//! 7.5 cities at t100 against 5 live. That was wrong: only about 15% of issued
+//! hints are used, and this gene cannot explain most of that gap. It is a
+//! fidelity fix for the quarter of choices a hint does make.
 //!
 //! **What it does.** [`AdvancedAi::run_idle_queue_claims`] is the claim chain,
 //! moved verbatim out of `take_turn_inner`, which still calls it in the same
