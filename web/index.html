@@ -5117,7 +5117,9 @@
   #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
   /* Payoffs: what a turn delivered, across the top and clear of the panels. */
   #moments {
-    position: fixed; top: 112px; left: 50%; z-index: 40; transform: translateX(-50%);
+    /* Above the map's panels and under the screens (14 and up): a banner over
+       an open city or tree covers the thing being read. */
+    position: fixed; top: 112px; left: 50%; z-index: 12; transform: translateX(-50%);
     display: flex; flex-direction: column; align-items: center; gap: 8px;
     width: min(440px, calc(100% - 24px)); pointer-events: none;
   }
