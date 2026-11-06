@@ -1,0 +1,23 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "spies-price-the-science-head",
+  "scope": "Repeated offline proposal activation in one of six cases. Twenty-four queries/408 actual reads, fixed captured frontiers, same program, one effective gene bit. Five cases unchanged. The changed cold baseline differs from the historical native producer; no original private-history or read-timing parity, host actuation, actual completion gain or strength claim. Field Cannon producer changes and an explicit Zoo order disappears as disclosed in the archived raw deltas.",
+  "archive": {
+    "path": "docs/eval/2026-11-06-spies-price-science.native-queries.tar.xz",
+    "sha256": "e40b19803ba1ab730204f9492cb1fe21614fe8dcd200f3bfa4a0406ed5bca786"
+  },
+  "members": [
+    "pairs/case-0-repeat-1.json",
+    "pairs/case-0-repeat-2.json",
+    "pairs/case-1-repeat-1.json",
+    "pairs/case-1-repeat-2.json",
+    "pairs/case-2-repeat-1.json",
+    "pairs/case-2-repeat-2.json",
+    "pairs/case-3-repeat-1.json",
+    "pairs/case-3-repeat-2.json",
+    "pairs/case-4-repeat-1.json",
+    "pairs/case-4-repeat-2.json",
+    "pairs/case-5-repeat-1.json",
+    "pairs/case-5-repeat-2.json"
+  ]
+}

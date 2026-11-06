@@ -2299,7 +2299,6 @@ impl AdvancedAi {
         /// Rank Spy producers by native turns, sparing science on ties.
         spies_price_the_science_head => enable_spies_price_the_science_head, disable_spies_price_the_science_head;
     }
-
 }
 
 impl AdvancedAi {

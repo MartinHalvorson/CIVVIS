@@ -10943,9 +10943,9 @@ mod siege_tier_before_the_beeline;
 mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
-mod spies_price_the_science_head;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
 mod spy_civics_come_first;
