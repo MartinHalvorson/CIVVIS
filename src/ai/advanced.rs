@@ -6647,6 +6647,9 @@ pub struct AdvancedAi {
     /// The ransom pays in Diplomatic Favor beside Gold. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home_2: bool,
+    /// Keep an assigned Defend formation within two tiles of its threatened city.
+    /// See `advanced/defense_formation.rs`. Off by default.
+    defenders_keep_the_city_in_reach: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -10341,6 +10344,7 @@ mod war_target_walls;
 
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+mod defense_formation;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;
 
@@ -12184,6 +12188,7 @@ impl AdvancedAi {
             denounce_only_to_declare: false,
             districts_price_the_improvement: false,
             captives_come_home_2: false,
+            defenders_keep_the_city_in_reach: false,
             // ---- append: e-f ----------------------------------------
             embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,

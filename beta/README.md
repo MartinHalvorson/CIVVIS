@@ -57,7 +57,7 @@ to be movable.
 | --- | --- |
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
-| `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in `localStorage`. |
+| `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in IndexedDB. |
 | `beta/_worker.js` | The whole site's routing: the two lanes, the optional gates on `/` and `/test`, and the response headers. |
 | `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page: project links and the two-card game menu, Watch CIVVIS and Play CIVVIS. Both are settings-carrying links into the simulator, and either card opens the world picker in place — worlds, world sizes, victory lanes, seats — whose cards are such links too. |
 | `beta/download.html` | `civvis.ai/download` (and `/test/download`). Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
@@ -362,9 +362,7 @@ a tag is public.
 
 ## Limits worth knowing
 
-- **Saved games live in `localStorage`**, which is a few megabytes per origin.
-  A large late-game world can exceed it; the shim drops the autosave to make
-  room and reports the failure rather than silently losing a game.
+- **Saved games live in IndexedDB**, as the bytes the engine produced, with what the list shows stored apart so listing never loads a game. They used to live in `localStorage`, whose few megabytes a Tiny map outgrew by about turn 130, and a save left there by an older build moves across on first use. Clearing site data still deletes them, and they stay in the browser that made them.
 - **The league roster is in the bundle**, compiled in like every other file
   under `data/`, so seats carry the same ratings they do on the desktop build.
   It was read from disk until then, and there is no disk here, so every seat
