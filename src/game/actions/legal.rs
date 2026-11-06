@@ -459,6 +459,114 @@ impl Game {
         } else {
             Vec::new()
         };
+        self.push_unit_order_actions(
+            pid,
+            p,
+            unit_order_ids,
+            &current_visibility,
+            &visibility_viewers,
+            &mut acts,
+        );
+        if families.has(ActionFamilies::CORPORATIONS) {
+            for city in self.cities.values().filter(|city| city.owner == pid) {
+                for position in &city.owned_tiles {
+                    if self.can_found_corporation(pid, *position) {
+                        acts.push(Action::FoundCorporation { pos: *position });
+                    }
+                }
+            }
+        }
+        if families.has(ActionFamilies::PRODUCTS) {
+            for city in self.cities.values().filter(|city| city.owner == pid) {
+                for product in &city.products {
+                    for target in self.cities.values().filter(|target| {
+                        target.owner == pid
+                            && target.id != city.id
+                            && target.products.len() < self.product_capacity(target)
+                    }) {
+                        acts.push(Action::MoveProduct {
+                            from: city.id,
+                            to: target.id,
+                            product: Name::new(product),
+                        });
+                    }
+                }
+            }
+        }
+        if families.has(ActionFamilies::FORMATIONS) {
+            let owned_units = self.player_unit_ids(pid);
+            // Releasing an escort belongs with the action that forms it.  In
+            // particular, callers that ask only for FORMATIONS must be able
+            // to both create and dissolve an escort formation.
+            for &uid in &owned_units {
+                if self.units[&uid].linked_to.is_some()
+                    && !self.noncombat_action_blocked_by_zoc(uid)
+                {
+                    acts.push(Action::UnlinkUnits { unit: uid });
+                }
+            }
+            for (index, &uid) in owned_units.iter().enumerate() {
+                for &other in &owned_units[index + 1..] {
+                    if self.can_combine_units(pid, uid, other).is_some() {
+                        acts.push(Action::CombineUnits {
+                            unit: uid,
+                            with: other,
+                        });
+                    }
+                    if self.can_link_units(pid, uid, other) {
+                        let uid_military =
+                            self.rules.units[self.units[&uid].kind].class == "military";
+                        let (unit, with) = if uid_military {
+                            (uid, other)
+                        } else {
+                            (other, uid)
+                        };
+                        acts.push(Action::LinkUnits { unit, with });
+                    }
+                }
+            }
+        }
+        let want_purchases = families.has(ActionFamilies::PURCHASES);
+        let purchasable_units: Vec<Name> = if want_purchases {
+            self.rules.units.keys().cloned().collect()
+        } else {
+            Vec::new()
+        };
+        let purchase_city_ids = if want_purchases {
+            self.player_city_ids(pid)
+        } else {
+            Vec::new()
+        };
+        self.push_city_purchase_actions(pid, p, purchase_city_ids, purchasable_units, &mut acts);
+        if want_core {
+            self.push_core_actions(pid, p, &current_visibility, &visibility_viewers, &mut acts);
+        }
+        if families.has(ActionFamilies::EMPIRE) && !p.is_minor {
+            self.push_empire_actions(pid, p, &mut acts);
+        }
+        if families.has(ActionFamilies::DEALS) && !p.is_minor && !p.is_barbarian {
+            self.push_deal_actions(pid, &mut acts);
+        }
+        if families.has(ActionFamilies::DIPLOMACY) && !p.is_barbarian {
+            self.push_diplomacy_actions(pid, p, &mut acts);
+        }
+        acts.push(Action::EndTurn);
+        if families.has(ActionFamilies::PURCHASES) || families.has(ActionFamilies::EMPIRE) {
+            acts.retain(|action| !self.purchase_action_is_blocked(action));
+        }
+        acts
+    }
+
+    /// The orders each of `pid`'s units could take this turn.
+    fn push_unit_order_actions(
+        &self,
+        pid: usize,
+        p: &Player,
+        unit_order_ids: Vec<u32>,
+        current_visibility: &Arc<TileBits>,
+        visibility_viewers: &BTreeSet<usize>,
+        acts: &mut Vec<Action>,
+    ) {
         for uid in unit_order_ids {
             let u = self.units[&uid].clone();
             let spec = &self.rules.units[u.kind];
@@ -484,8 +592,8 @@ impl Game {
                             && self.combat_target_visible_at(
                                 pid,
                                 target,
-                                &current_visibility,
-                                &visibility_viewers,
+                                current_visibility,
+                                visibility_viewers,
                             )
                         {
                             acts.push(Action::AirStrike { unit: uid, target });
@@ -496,7 +604,7 @@ impl Game {
                             && !self.strike_blocked(uid, target)
                             && (u.hp >= 50
                                 || self.promotion_effect(&u, "air_pillage_at_low_health") > 0.0)
-                            && self.sees(&current_visibility, target)
+                            && self.sees(current_visibility, target)
                             && self.air_pillageable_at(pid, target)
                         {
                             acts.push(Action::AirPillage { unit: uid, target });
@@ -508,8 +616,8 @@ impl Game {
                             && self.combat_target_visible_at(
                                 pid,
                                 target,
-                                &current_visibility,
-                                &visibility_viewers,
+                                current_visibility,
+                                visibility_viewers,
                             )
                         {
                             acts.push(Action::PriorityTarget { unit: uid, target });
@@ -560,8 +668,8 @@ impl Game {
                                 && self.combat_target_visible_at(
                                     pid,
                                     pos,
-                                    &current_visibility,
-                                    &visibility_viewers,
+                                    current_visibility,
+                                    visibility_viewers,
                                 )
                                 && self.unit_has_line_of_sight(uid, pos)
                                 && !self.strike_blocked(uid, pos)
@@ -576,8 +684,8 @@ impl Game {
                                 && self.combat_target_visible_at(
                                     pid,
                                     pos,
-                                    &current_visibility,
-                                    &visibility_viewers,
+                                    current_visibility,
+                                    visibility_viewers,
                                 )
                                 && self.unit_has_line_of_sight(uid, pos)
                             {
@@ -816,76 +924,18 @@ impl Game {
                 acts.push(Action::ConvertBarbarians { unit: uid });
             }
         }
-        if families.has(ActionFamilies::CORPORATIONS) {
-            for city in self.cities.values().filter(|city| city.owner == pid) {
-                for position in &city.owned_tiles {
-                    if self.can_found_corporation(pid, *position) {
-                        acts.push(Action::FoundCorporation { pos: *position });
-                    }
-                }
-            }
-        }
-        if families.has(ActionFamilies::PRODUCTS) {
-            for city in self.cities.values().filter(|city| city.owner == pid) {
-                for product in &city.products {
-                    for target in self.cities.values().filter(|target| {
-                        target.owner == pid
-                            && target.id != city.id
-                            && target.products.len() < self.product_capacity(target)
-                    }) {
-                        acts.push(Action::MoveProduct {
-                            from: city.id,
-                            to: target.id,
-                            product: Name::new(product),
-                        });
-                    }
-                }
-            }
-        }
-        if families.has(ActionFamilies::FORMATIONS) {
-            let owned_units = self.player_unit_ids(pid);
-            // Releasing an escort belongs with the action that forms it.  In
-            // particular, callers that ask only for FORMATIONS must be able
-            // to both create and dissolve an escort formation.
-            for &uid in &owned_units {
-                if self.units[&uid].linked_to.is_some()
-                    && !self.noncombat_action_blocked_by_zoc(uid)
-                {
-                    acts.push(Action::UnlinkUnits { unit: uid });
-                }
-            }
-            for (index, &uid) in owned_units.iter().enumerate() {
-                for &other in &owned_units[index + 1..] {
-                    if self.can_combine_units(pid, uid, other).is_some() {
-                        acts.push(Action::CombineUnits {
-                            unit: uid,
-                            with: other,
-                        });
-                    }
-                    if self.can_link_units(pid, uid, other) {
-                        let uid_military =
-                            self.rules.units[self.units[&uid].kind].class == "military";
-                        let (unit, with) = if uid_military {
-                            (uid, other)
-                        } else {
-                            (other, uid)
-                        };
-                        acts.push(Action::LinkUnits { unit, with });
-                    }
-                }
-            }
-        }
-        let want_purchases = families.has(ActionFamilies::PURCHASES);
-        let purchasable_units: Vec<Name> = if want_purchases {
-            self.rules.units.keys().cloned().collect()
-        } else {
-            Vec::new()
-        };
-        let purchase_city_ids = if want_purchases {
-            self.player_city_ids(pid)
-        } else {
-            Vec::new()
-        };
+    }
+
+    /// What each of `pid`'s cities could buy: plots, producible items, the
+    /// districts a governor opens to Gold or Faith, and units.
+    fn push_city_purchase_actions(
+        &self,
+        pid: usize,
+        p: &Player,
+        purchase_city_ids: Vec<u32>,
+        purchasable_units: Vec<Name>,
+        acts: &mut Vec<Action>,
+    ) {
         for cid in purchase_city_ids {
             let mut plots: Vec<(Pos, f64)> = self
                 .wdisk(self.cities[&cid].pos, 3)
@@ -998,669 +1048,675 @@ impl Game {
                 }
             }
         }
-        if want_core {
-            for city_state in self.players.iter().filter(|player| {
-                player.is_minor
-                    && !player.is_barbarian
-                    && player.alive
-                    && self.suzerain_of(player.id) == Some(pid)
-            }) {
-                if self
-                    .levy_cost(pid, city_state.id)
-                    .is_some_and(|cost| p.gold >= cost)
-                {
-                    acts.push(Action::LevyMilitary {
-                        player: city_state.id,
-                    });
-                }
+    }
+
+    /// The rest of `CORE`: city-state actions, the research and civic choices,
+    /// and what `pid`'s units and cities can do besides move.
+    fn push_core_actions(
+        &self,
+        pid: usize,
+        p: &Player,
+        current_visibility: &Arc<TileBits>,
+        visibility_viewers: &BTreeSet<usize>,
+        acts: &mut Vec<Action>,
+    ) {
+        for city_state in self.players.iter().filter(|player| {
+            player.is_minor
+                && !player.is_barbarian
+                && player.alive
+                && self.suzerain_of(player.id) == Some(pid)
+        }) {
+            if self
+                .levy_cost(pid, city_state.id)
+                .is_some_and(|cost| p.gold >= cost)
+            {
+                acts.push(Action::LevyMilitary {
+                    player: city_state.id,
+                });
             }
-            if p.research.is_none() && !self.is_arena() {
-                for t in self.available_techs(pid) {
-                    acts.push(Action::Research {
-                        tech: Name::new(&t),
-                    });
-                }
+        }
+        if p.research.is_none() && !self.is_arena() {
+            for t in self.available_techs(pid) {
+                acts.push(Action::Research {
+                    tech: Name::new(&t),
+                });
             }
-            if p.civic.is_none() && !self.is_arena() {
-                for c in self.available_civics(pid) {
-                    acts.push(Action::Civic {
-                        civic: Name::new(&c),
-                    });
-                }
+        }
+        if p.civic.is_none() && !self.is_arena() {
+            for c in self.available_civics(pid) {
+                acts.push(Action::Civic {
+                    civic: Name::new(&c),
+                });
             }
-            for uid in self.player_unit_ids(pid) {
-                let u = self.units[&uid].clone();
-                if self.unit_can_fortify(&u) && u.moves_left > 0.0 && !u.fortified {
-                    acts.push(Action::Fortify { unit: uid });
-                }
+        }
+        for uid in self.player_unit_ids(pid) {
+            let u = self.units[&uid].clone();
+            if self.unit_can_fortify(&u) && u.moves_left > 0.0 && !u.fortified {
+                acts.push(Action::Fortify { unit: uid });
             }
-            for cid in self.player_city_ids(pid) {
-                if self.city_can_strike(&self.cities[&cid]) {
-                    let cpos = self.cities[&cid].pos;
-                    for pos in self.wdisk(cpos, 2) {
-                        if !self.map.tiles.contains_key(&pos) {
-                            continue;
-                        }
-                        // See `peaceful_foreign_unit_at`: a city strike is a
-                        // plot order too, and the host picks its defender.
-                        let hit = !self.peaceful_foreign_unit_at(pid, pos)
-                            && self.unit_ids_at(pos).iter().any(|oid| {
-                                let o = &self.units[oid];
-                                o.owner != pid
-                                    && self.is_at_war(pid, o.owner)
-                                    && self.rules.units[o.kind].class == "military"
-                            });
-                        if hit
-                            && self.city_at(pos).is_none()
-                            && self.defending_district_at(pos).is_none()
-                            && self.combat_target_visible_at(
-                                pid,
-                                pos,
-                                &current_visibility,
-                                &visibility_viewers,
-                            )
-                            && self.has_line_of_sight(cpos, pos, true)
-                        {
-                            acts.push(Action::CityStrike {
-                                city: cid,
-                                target: pos,
-                            });
-                        }
-                    }
-                }
-                let city = &self.cities[&cid];
-                for district in self.defending_districts(city) {
-                    if !self.defending_district_can_strike(city, &district) {
+        }
+        for cid in self.player_city_ids(pid) {
+            if self.city_can_strike(&self.cities[&cid]) {
+                let cpos = self.cities[&cid].pos;
+                for pos in self.wdisk(cpos, 2) {
+                    if !self.map.tiles.contains_key(&pos) {
                         continue;
                     }
-                    let source = district.pos;
-                    for pos in self.wdisk(source, 2) {
-                        // See `peaceful_foreign_unit_at`: same plot order, same
-                        // host-chosen defender, same surprise war.
-                        let hit = !self.peaceful_foreign_unit_at(pid, pos)
-                            && self.unit_ids_at(pos).iter().any(|id| {
-                                let other = &self.units[id];
-                                other.owner != pid
-                                    && self.is_at_war(pid, other.owner)
-                                    && self.rules.units[other.kind].class == "military"
-                            });
-                        if hit
-                            && self.city_at(pos).is_none()
-                            && self.defending_district_at(pos).is_none()
-                            && self.combat_target_visible_at(
-                                pid,
-                                pos,
-                                &current_visibility,
-                                &visibility_viewers,
-                            )
-                            && self.has_line_of_sight(source, pos, true)
-                        {
-                            acts.push(self.defending_district_strike_action(cid, &district, pos));
-                        }
+                    // See `peaceful_foreign_unit_at`: a city strike is a
+                    // plot order too, and the host picks its defender.
+                    let hit = !self.peaceful_foreign_unit_at(pid, pos)
+                        && self.unit_ids_at(pos).iter().any(|oid| {
+                            let o = &self.units[oid];
+                            o.owner != pid
+                                && self.is_at_war(pid, o.owner)
+                                && self.rules.units[o.kind].class == "military"
+                        });
+                    if hit
+                        && self.city_at(pos).is_none()
+                        && self.defending_district_at(pos).is_none()
+                        && self.combat_target_visible_at(
+                            pid,
+                            pos,
+                            current_visibility,
+                            visibility_viewers,
+                        )
+                        && self.has_line_of_sight(cpos, pos, true)
+                    {
+                        acts.push(Action::CityStrike {
+                            city: cid,
+                            target: pos,
+                        });
+                    }
+                }
+            }
+            let city = &self.cities[&cid];
+            for district in self.defending_districts(city) {
+                if !self.defending_district_can_strike(city, &district) {
+                    continue;
+                }
+                let source = district.pos;
+                for pos in self.wdisk(source, 2) {
+                    // See `peaceful_foreign_unit_at`: same plot order, same
+                    // host-chosen defender, same surprise war.
+                    let hit = !self.peaceful_foreign_unit_at(pid, pos)
+                        && self.unit_ids_at(pos).iter().any(|id| {
+                            let other = &self.units[id];
+                            other.owner != pid
+                                && self.is_at_war(pid, other.owner)
+                                && self.rules.units[other.kind].class == "military"
+                        });
+                    if hit
+                        && self.city_at(pos).is_none()
+                        && self.defending_district_at(pos).is_none()
+                        && self.combat_target_visible_at(
+                            pid,
+                            pos,
+                            current_visibility,
+                            visibility_viewers,
+                        )
+                        && self.has_line_of_sight(source, pos, true)
+                    {
+                        acts.push(self.defending_district_strike_action(cid, &district, pos));
                     }
                 }
             }
         }
-        if families.has(ActionFamilies::EMPIRE) && !p.is_minor {
-            for (g, spec) in &self.rules.governments {
-                let ok = spec
-                    .civic
-                    .as_ref()
-                    .map(|c| p.civics.contains(c))
-                    .unwrap_or(true);
-                // A second change has to wait out the Anarchy the first one
-                // caused.
-                if ok && p.government.as_deref() != Some(g.as_str()) && p.anarchy_turns == 0 {
-                    acts.push(Action::Government {
-                        government: Name::new(g),
+    }
+
+    /// Empire-wide choices: government and policies, trade routes, Envoys,
+    /// nuclear strikes, the Moon, Great People, governors and the rest of
+    /// `EMPIRE`.
+    fn push_empire_actions(&self, pid: usize, p: &Player, acts: &mut Vec<Action>) {
+        for (g, spec) in &self.rules.governments {
+            let ok = spec
+                .civic
+                .as_ref()
+                .map(|c| p.civics.contains(c))
+                .unwrap_or(true);
+            // A second change has to wait out the Anarchy the first one
+            // caused.
+            if ok && p.government.as_deref() != Some(g.as_str()) && p.anarchy_turns == 0 {
+                acts.push(Action::Government {
+                    government: Name::new(g),
+                });
+            }
+        }
+        if !self.host_policy_change_blocked(pid) {
+            for card in self.available_policies(pid) {
+                let mut next = p.policies.clone();
+                next.insert(Name::new(&card));
+                if self.policies_fit(pid, &next) {
+                    acts.push(Action::SlotPolicy {
+                        policy: Name::new(&card),
                     });
                 }
             }
-            if !self.host_policy_change_blocked(pid) {
-                for card in self.available_policies(pid) {
-                    let mut next = p.policies.clone();
-                    next.insert(Name::new(&card));
-                    if self.policies_fit(pid, &next) {
-                        acts.push(Action::SlotPolicy {
-                            policy: Name::new(&card),
+            for card in &p.policies {
+                acts.push(Action::UnslotPolicy {
+                    policy: Name::new(card),
+                });
+            }
+        }
+        if self.active_routes(pid) < self.trade_capacity(pid) {
+            for uid in self.player_unit_ids(pid) {
+                if self.units[&uid].kind != "trader" {
+                    continue;
+                }
+                let origin = match self.city_at(self.units[&uid].pos) {
+                    Some(cid) if self.cities[&cid].owner == pid => cid,
+                    _ => continue,
+                };
+                // Ask the one validator `do_trade_route` will consult,
+                // not a looser paraphrase of it. The inline filter here
+                // used to skip `blocked_trade_routes` and the World
+                // Congress embargo, so run civvis-20260815T081505Z
+                // reported "routes=2" in its notes for 54 straight turns
+                // while the trader idled — both destinations had been
+                // host-refused at t25/t26 and the actual picker rightly
+                // proposed nothing. An action this enumeration offers
+                // must be one the engine would take.
+                for dest in self.cities.keys() {
+                    if !self.can_establish_trade_route(pid, origin, *dest) {
+                        continue;
+                    }
+                    acts.push(Action::TradeRoute {
+                        unit: uid,
+                        city: *dest,
+                    });
+                }
+            }
+        }
+        if p.envoys_free > 0 {
+            for m in &self.players {
+                if self.can_send_envoy(pid, m.id) {
+                    acts.push(Action::SendEnvoy { player: m.id });
+                }
+            }
+        }
+        // Nuclear strikes are enumerated against enemy city centers in
+        // ICBM range; arbitrary revealed tiles remain legal through apply.
+        for (device_key, thermonuclear, weapon) in [
+            ("project_effect:nuclear_devices", false, "nuclear_device"),
+            (
+                "project_effect:thermonuclear_devices",
+                true,
+                "thermonuclear_device",
+            ),
+        ] {
+            if p.counters.get(device_key).copied().unwrap_or(0) <= 0 {
+                continue;
+            }
+            let range = self.rules.wmds[weapon].icbm_strike_range;
+            // Hoisted once rather than rebuilt per candidate target: an
+            // SSBN's reach does not depend on which city the order names,
+            // and rescanning every unit inside a doubly-nested city loop
+            // would put the whole roster in a hot enumeration path.
+            let submarines: Vec<Pos> = self
+                .units
+                .values()
+                .filter(|unit| unit.owner == pid && unit.kind == "nuclear_submarine")
+                .map(|unit| unit.pos)
+                .collect();
+            let launchers: Vec<(u32, Vec<Pos>)> = self
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .map(|city| {
+                    let mut platforms = vec![city.pos];
+                    platforms.extend(city.owned_tiles.iter().copied().filter(|position| {
+                        self.map.tiles.get(position).is_some_and(|tile| {
+                            tile.improvement.as_deref() == Some("missile_silo") && !tile.pillaged
+                        })
+                    }));
+                    (city.id, platforms)
+                })
+                .collect();
+            for enemy in self.cities.values() {
+                if !self.is_at_war(pid, enemy.owner) || !p.explored.contains(&enemy.pos) {
+                    continue;
+                }
+                let mut offered = false;
+                for (launch, platforms) in &launchers {
+                    if platforms
+                        .iter()
+                        .any(|position| self.wdist(*position, enemy.pos) <= range)
+                    {
+                        offered = true;
+                        acts.push(Action::WmdStrike {
+                            city: *launch,
+                            target: enemy.pos,
+                            thermonuclear,
                         });
                     }
                 }
-                for card in &p.policies {
-                    acts.push(Action::UnslotPolicy {
-                        policy: Name::new(card),
-                    });
+                // A boat in range makes the target reachable from anywhere,
+                // so offer the shot once rather than once per city.
+                if !offered
+                    && submarines
+                        .iter()
+                        .any(|position| self.wdist(*position, enemy.pos) <= range)
+                {
+                    if let Some((launch, _)) = launchers.first() {
+                        acts.push(Action::WmdStrike {
+                            city: *launch,
+                            target: enemy.pos,
+                            thermonuclear,
+                        });
+                    }
                 }
             }
-            if self.active_routes(pid) < self.trade_capacity(pid) {
-                for uid in self.player_unit_ids(pid) {
-                    if self.units[&uid].kind != "trader" {
-                        continue;
-                    }
-                    let origin = match self.city_at(self.units[&uid].pos) {
-                        Some(cid) if self.cities[&cid].owner == pid => cid,
-                        _ => continue,
-                    };
-                    // Ask the one validator `do_trade_route` will consult,
-                    // not a looser paraphrase of it. The inline filter here
-                    // used to skip `blocked_trade_routes` and the World
-                    // Congress embargo, so run civvis-20260815T081505Z
-                    // reported "routes=2" in its notes for 54 straight turns
-                    // while the trader idled — both destinations had been
-                    // host-refused at t25/t26 and the actual picker rightly
-                    // proposed nothing. An action this enumeration offers
-                    // must be one the engine would take.
-                    for dest in self.cities.keys() {
-                        if !self.can_establish_trade_route(pid, origin, *dest) {
+        }
+        // The Moon, when the Modified Future Era put ore on it. Aiming is
+        // offered as one order per ore per city center and a strike as one
+        // per enemy city center: a driver can land on or hit any tile at
+        // all, and the arbitrary ones stay legal through `apply`, but a
+        // catalog with every owned hexagon in it several times over is not
+        // a decision anybody — person, agent or search — can read.
+        if self.mass_drivers(pid) > 0 {
+            let ores: Vec<Name> = self
+                .moon_ores()
+                .into_iter()
+                .filter(|ore| {
+                    self.moon_deposit(ore) >= 1.0 && self.resource_visible_to(pid, ore.as_str())
+                })
+                .collect();
+            if !ores.is_empty() {
+                for city in self.cities.values().filter(|city| city.owner == pid) {
+                    for ore in &ores {
+                        if p.mass_driver_site == Some(city.pos)
+                            && p.mass_driver_ore.as_ref() == Some(ore)
+                        {
                             continue;
                         }
-                        acts.push(Action::TradeRoute {
-                            unit: uid,
-                            city: *dest,
+                        acts.push(Action::AimMassDriver {
+                            site: city.pos,
+                            ore: *ore,
                         });
                     }
                 }
             }
-            if p.envoys_free > 0 {
-                for m in &self.players {
-                    if self.can_send_envoy(pid, m.id) {
-                        acts.push(Action::SendEnvoy { player: m.id });
-                    }
-                }
-            }
-            // Nuclear strikes are enumerated against enemy city centers in
-            // ICBM range; arbitrary revealed tiles remain legal through apply.
-            for (device_key, thermonuclear, weapon) in [
-                ("project_effect:nuclear_devices", false, "nuclear_device"),
-                (
-                    "project_effect:thermonuclear_devices",
-                    true,
-                    "thermonuclear_device",
-                ),
-            ] {
-                if p.counters.get(device_key).copied().unwrap_or(0) <= 0 {
-                    continue;
-                }
-                let range = self.rules.wmds[weapon].icbm_strike_range;
-                // Hoisted once rather than rebuilt per candidate target: an
-                // SSBN's reach does not depend on which city the order names,
-                // and rescanning every unit inside a doubly-nested city loop
-                // would put the whole roster in a hot enumeration path.
-                let submarines: Vec<Pos> = self
-                    .units
-                    .values()
-                    .filter(|unit| unit.owner == pid && unit.kind == "nuclear_submarine")
-                    .map(|unit| unit.pos)
-                    .collect();
-                let launchers: Vec<(u32, Vec<Pos>)> = self
-                    .cities
-                    .values()
-                    .filter(|city| city.owner == pid)
-                    .map(|city| {
-                        let mut platforms = vec![city.pos];
-                        platforms.extend(city.owned_tiles.iter().copied().filter(|position| {
-                            self.map.tiles.get(position).is_some_and(|tile| {
-                                tile.improvement.as_deref() == Some("missile_silo")
-                                    && !tile.pillaged
-                            })
-                        }));
-                        (city.id, platforms)
-                    })
-                    .collect();
+            let armed = p
+                .mass_driver_ore
+                .is_some_and(|ore| self.strategic_stockpile(pid, ore) >= 1.0);
+            if armed && p.mass_driver_shots < self.mass_drivers(pid) {
                 for enemy in self.cities.values() {
-                    if !self.is_at_war(pid, enemy.owner) || !p.explored.contains(&enemy.pos) {
-                        continue;
-                    }
-                    let mut offered = false;
-                    for (launch, platforms) in &launchers {
-                        if platforms
-                            .iter()
-                            .any(|position| self.wdist(*position, enemy.pos) <= range)
-                        {
-                            offered = true;
-                            acts.push(Action::WmdStrike {
-                                city: *launch,
-                                target: enemy.pos,
-                                thermonuclear,
-                            });
-                        }
-                    }
-                    // A boat in range makes the target reachable from anywhere,
-                    // so offer the shot once rather than once per city.
-                    if !offered
-                        && submarines
-                            .iter()
-                            .any(|position| self.wdist(*position, enemy.pos) <= range)
-                    {
-                        if let Some((launch, _)) = launchers.first() {
-                            acts.push(Action::WmdStrike {
-                                city: *launch,
-                                target: enemy.pos,
-                                thermonuclear,
-                            });
-                        }
+                    if self.is_at_war(pid, enemy.owner) && p.explored.contains(&enemy.pos) {
+                        acts.push(Action::MassDriverStrike { target: enemy.pos });
                     }
                 }
             }
-            // The Moon, when the Modified Future Era put ore on it. Aiming is
-            // offered as one order per ore per city center and a strike as one
-            // per enemy city center: a driver can land on or hit any tile at
-            // all, and the arbitrary ones stay legal through `apply`, but a
-            // catalog with every owned hexagon in it several times over is not
-            // a decision anybody — person, agent or search — can read.
-            if self.mass_drivers(pid) > 0 {
-                let ores: Vec<Name> = self
-                    .moon_ores()
-                    .into_iter()
-                    .filter(|ore| {
-                        self.moon_deposit(ore) >= 1.0 && self.resource_visible_to(pid, ore.as_str())
-                    })
-                    .collect();
-                if !ores.is_empty() {
-                    for city in self.cities.values().filter(|city| city.owner == pid) {
-                        for ore in &ores {
-                            if p.mass_driver_site == Some(city.pos)
-                                && p.mass_driver_ore.as_ref() == Some(ore)
-                            {
-                                continue;
-                            }
-                            acts.push(Action::AimMassDriver {
-                                site: city.pos,
-                                ore: *ore,
-                            });
-                        }
-                    }
-                }
-                let armed = p
-                    .mass_driver_ore
-                    .is_some_and(|ore| self.strategic_stockpile(pid, ore) >= 1.0);
-                if armed && p.mass_driver_shots < self.mass_drivers(pid) {
-                    for enemy in self.cities.values() {
-                        if self.is_at_war(pid, enemy.owner) && p.explored.contains(&enemy.pos) {
-                            acts.push(Action::MassDriverStrike { target: enemy.pos });
-                        }
-                    }
-                }
+        }
+        let gp_kinds: BTreeSet<String> = self
+            .rules
+            .great_people
+            .values()
+            .map(|person| person.kind.clone())
+            .collect();
+        for kind in gp_kinds {
+            let Some(_) = self.current_great_person(&kind) else {
+                continue;
+            };
+            if !self.great_person_class_offered_now(pid, &kind) {
+                continue;
             }
-            let gp_kinds: BTreeSet<String> = self
-                .rules
-                .great_people
-                .values()
-                .map(|person| person.kind.clone())
-                .collect();
-            for kind in gp_kinds {
-                let Some(_) = self.current_great_person(&kind) else {
-                    continue;
-                };
-                if !self.great_person_class_offered_now(pid, &kind) {
-                    continue;
-                }
-                if !self.can_activate_current_great_person(pid, &kind) {
-                    continue;
-                }
-                let points = p.gpp.get(&kind).copied().unwrap_or(0.0);
-                let missing = (self.gp_cost(pid, &kind) - points).max(0.0);
-                if missing <= 0.0 {
-                    acts.push(Action::RecruitGreatPerson { kind });
-                } else {
-                    if self
-                        .great_person_patronage_price(pid, &kind, "gold")
-                        .is_some_and(|price| p.gold + f64::EPSILON >= price)
-                    {
-                        acts.push(Action::PatronizeGreatPerson {
-                            kind: kind.clone(),
-                            currency: "gold".to_string(),
-                        });
-                    }
-                    if self
-                        .great_person_patronage_price(pid, &kind, "faith")
-                        .is_some_and(|price| p.faith + f64::EPSILON >= price)
-                    {
-                        acts.push(Action::PatronizeGreatPerson {
-                            kind,
-                            currency: "faith".to_string(),
-                        });
-                    }
-                }
+            if !self.can_activate_current_great_person(pid, &kind) {
+                continue;
             }
-            if self.game_mode("secret_societies")
-                && p.secret_society.is_none()
-                && p.civics.contains(&crate::name!("code_of_laws"))
-            {
-                for society in ["hermetic_order", "owls_of_minerva", "voidsingers"] {
-                    acts.push(Action::ChooseSecretSociety {
-                        society: Name::new(society),
+            let points = p.gpp.get(&kind).copied().unwrap_or(0.0);
+            let missing = (self.gp_cost(pid, &kind) - points).max(0.0);
+            if missing <= 0.0 {
+                acts.push(Action::RecruitGreatPerson { kind });
+            } else {
+                if self
+                    .great_person_patronage_price(pid, &kind, "gold")
+                    .is_some_and(|price| p.gold + f64::EPSILON >= price)
+                {
+                    acts.push(Action::PatronizeGreatPerson {
+                        kind: kind.clone(),
+                        currency: "gold".to_string(),
+                    });
+                }
+                if self
+                    .great_person_patronage_price(pid, &kind, "faith")
+                    .is_some_and(|price| p.faith + f64::EPSILON >= price)
+                {
+                    acts.push(Action::PatronizeGreatPerson {
+                        kind,
+                        currency: "faith".to_string(),
                     });
                 }
             }
-            if !p.is_minor
-                && !p.is_barbarian
-                && p.pantheon.is_none()
-                && p.faith >= self.pantheon_faith_cost()
-            {
-                for b in self.rules.beliefs.pantheon.keys() {
-                    if !self
-                        .players
-                        .iter()
-                        .any(|o| o.pantheon.as_deref() == Some(b.as_str()))
-                    {
-                        acts.push(Action::ChoosePantheon {
-                            belief: Name::new(b),
-                        });
-                    }
+        }
+        if self.game_mode("secret_societies")
+            && p.secret_society.is_none()
+            && p.civics.contains(&crate::name!("code_of_laws"))
+        {
+            for society in ["hermetic_order", "owls_of_minerva", "voidsingers"] {
+                acts.push(Action::ChooseSecretSociety {
+                    society: Name::new(society),
+                });
+            }
+        }
+        if !p.is_minor
+            && !p.is_barbarian
+            && p.pantheon.is_none()
+            && p.faith >= self.pantheon_faith_cost()
+        {
+            for b in self.rules.beliefs.pantheon.keys() {
+                if !self
+                    .players
+                    .iter()
+                    .any(|o| o.pantheon.as_deref() == Some(b.as_str()))
+                {
+                    acts.push(Action::ChoosePantheon {
+                        belief: Name::new(b),
+                    });
                 }
             }
-            if p.prophet_pending && self.religions_founded() < self.max_religions() {
-                let taken = |b: &str| {
-                    self.players
-                        .iter()
-                        .any(|o| o.religion_beliefs.iter().any(|x| x == b))
-                };
-                for fo in self.rules.beliefs.follower.keys().filter(|b| !taken(b)) {
-                    for fu in self.rules.beliefs.founder.keys().filter(|b| !taken(b)) {
-                        acts.push(Action::FoundReligion {
-                            follower: Name::new(fo),
-                            founder: Name::new(fu),
-                        });
-                    }
+        }
+        if p.prophet_pending && self.religions_founded() < self.max_religions() {
+            let taken = |b: &str| {
+                self.players
+                    .iter()
+                    .any(|o| o.religion_beliefs.iter().any(|x| x == b))
+            };
+            for fo in self.rules.beliefs.follower.keys().filter(|b| !taken(b)) {
+                for fu in self.rules.beliefs.founder.keys().filter(|b| !taken(b)) {
+                    acts.push(Action::FoundReligion {
+                        follower: Name::new(fo),
+                        founder: Name::new(fu),
+                    });
                 }
             }
-            if p.governor_roster.is_empty() && p.governors.len() < self.governor_titles(pid) {
-                for cid in self.player_city_ids(pid) {
-                    if !p.governors.contains(&cid) {
-                        acts.push(Action::AssignGovernor { city: cid });
-                    }
+        }
+        if p.governor_roster.is_empty() && p.governors.len() < self.governor_titles(pid) {
+            for cid in self.player_city_ids(pid) {
+                if !p.governors.contains(&cid) {
+                    acts.push(Action::AssignGovernor { city: cid });
                 }
             }
-            if p.governor_titles_spent < self.governor_titles(pid) {
-                for governor in self.rules.governors.keys() {
-                    if !p.governor_roster.contains_key(governor) {
-                        for city in self.player_city_ids(pid) {
-                            if !p
-                                .governor_roster
-                                .values()
-                                .any(|state| state.city == Some(city))
-                            {
-                                acts.push(Action::AppointGovernor {
-                                    governor: Name::new(governor),
-                                    city,
-                                });
-                            }
-                        }
-                    } else {
-                        for promotion in self.available_governor_promotions(pid, governor) {
-                            acts.push(Action::PromoteGovernor {
-                                governor: Name::new(governor),
-                                promotion: Name::new(&promotion),
-                            });
-                        }
-                    }
-                }
-            }
-            for (governor, state) in &p.governor_roster {
-                for city in self.player_city_ids(pid) {
-                    if state.city != Some(city)
-                        && !p
+        }
+        if p.governor_titles_spent < self.governor_titles(pid) {
+            for governor in self.rules.governors.keys() {
+                if !p.governor_roster.contains_key(governor) {
+                    for city in self.player_city_ids(pid) {
+                        if !p
                             .governor_roster
                             .values()
-                            .any(|other| other.city == Some(city))
-                    {
-                        acts.push(Action::ReassignGovernor {
-                            governor: Name::new(governor),
-                            city,
-                        });
-                    }
-                }
-            }
-            for cid in self.player_city_ids(pid) {
-                for unit in ["missionary", "apostle", "guru", "inquisitor"] {
-                    if self
-                        .unit_purchase_cost(pid, cid, unit, "faith")
-                        .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
-                    {
-                        acts.push(Action::Buy {
-                            city: cid,
-                            unit: Name::new(unit),
-                            formation: 0,
-                            currency: "faith".to_string(),
-                        });
-                    }
-                }
-                for building in self.rules.buildings.keys() {
-                    if self
-                        .building_faith_purchase_cost(pid, cid, building)
-                        .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
-                    {
-                        acts.push(Action::BuyBuilding {
-                            city: cid,
-                            building: *building,
-                            currency: "faith".to_string(),
-                        });
-                    }
-                }
-            }
-        }
-        if families.has(ActionFamilies::DEALS) && !p.is_minor && !p.is_barbarian {
-            for deal in self
-                .pending_deals
-                .iter()
-                .filter(|deal| deal.to == pid && deal.expires >= self.turn)
-            {
-                // A peace clause is only acceptable while the war it settles
-                // is being fought and has run its minimum turns; offering the
-                // acceptance anyway would advertise an action that can only
-                // fail. Rejecting a dead offer stays available either way.
-                let settleable = !deal.peace
-                    || (self.is_at_war(deal.from, deal.to)
-                        && self.peace_available_at(deal.from, deal.to).is_none());
-                if settleable {
-                    acts.push(Action::AcceptDeal { deal: deal.id });
-                }
-                acts.push(Action::RejectDeal { deal: deal.id });
-            }
-            for deal in self.quick_deals(pid) {
-                acts.push(Action::Trade {
-                    player: deal.partner,
-                    offer: Box::new(deal.offer),
-                    request: Box::new(deal.request),
-                });
-            }
-            for dedication in self.available_dedications(pid) {
-                acts.push(Action::ChooseDedication {
-                    dedication: Name::new(&dedication),
-                });
-            }
-            if let Some(congress) = self
-                .congress
-                .as_ref()
-                .filter(|session| self.turn < session.closes)
-            {
-                let max_votes = self.congress_affordable_votes(pid);
-                for resolution in &congress.resolutions {
-                    if resolution.ballots.contains_key(&pid) {
-                        continue;
-                    }
-                    for choice in &resolution.choices {
-                        if let Some(proposal) =
-                            self.emergency_proposal_for_resolution(&resolution.id)
+                            .any(|state| state.city == Some(city))
                         {
-                            let (outcome, target) = Self::congress_choice_parts(choice);
-                            let allowed = (proposal.eligible.contains(&pid)
-                                && ((outcome, target) == ("A", "support")
-                                    || (outcome, target) == ("B", "oppose")))
-                                || (proposal.target == pid && (outcome, target) == ("B", "oppose"));
-                            if !allowed {
-                                continue;
-                            }
-                        }
-                        acts.push(Action::CongressVote {
-                            resolution: Name::new(&resolution.id),
-                            choice: choice.clone(),
-                            votes: max_votes,
-                        });
-                    }
-                }
-            }
-        }
-        if families.has(ActionFamilies::DIPLOMACY) && !p.is_barbarian {
-            for o in &self.players {
-                // Diplomacy needs a counterpart. Until the two civilizations
-                // have met there is no embassy to send a demand to, no peace
-                // to sign and nobody to denounce, so none of the acts below
-                // exist against an empire this one has never heard of.
-                if o.id != pid && o.alive && !o.is_barbarian && self.has_met(pid, o.id) {
-                    if self.is_at_war(pid, o.id) {
-                        // A city-state can be at war only because its
-                        // Suzerain is. That derived war must be ended with the
-                        // Suzerain, not through an inapplicable bilateral
-                        // peace action against the city-state itself.
-                        if self.at_war.contains(&pair(pid, o.id))
-                            && !self.emergency_war_pair(pid, o.id)
-                            && self.peace_available_at(pid, o.id).is_none()
-                        {
-                            acts.push(Action::MakePeace { player: o.id });
-                        }
-                    } else if !p.is_minor && !o.is_minor {
-                        // A peace treaty is binding while it runs: no casus
-                        // belli reopens the war before it expires. Emergency
-                        // coalition partners are equally bound while they
-                        // prosecute their shared objective.
-                        let non_aggression = self.peace_treaty_until(pid, o.id).is_some()
-                            || self.emergency_coalition_pair(pid, o.id);
-                        if !non_aggression
-                            && !self.host_blocks_war(pid, o.id)
-                            && !self.are_friends(pid, o.id)
-                            && !self.are_allied(pid, o.id)
-                        {
-                            if self.host_war_type_permission(pid, o.id, "surprise_war")
-                                != Some(false)
-                            {
-                                acts.push(Action::DeclareWar { player: o.id });
-                            }
-                            for casus_belli in [
-                                "formal_war",
-                                "holy_war",
-                                "reconquest_war",
-                                "protectorate_war",
-                                "liberation_war",
-                                "colonial_war",
-                                "territorial_war",
-                                "golden_age_war",
-                                "retribution_war",
-                                "ideological_war",
-                            ] {
-                                if !self.casus_belli_available(pid, o.id, casus_belli) {
-                                    continue;
-                                }
-                                acts.push(Action::DeclareWarWithCasusBelli {
-                                    player: o.id,
-                                    casus_belli: casus_belli.to_string(),
-                                });
-                            }
-                        }
-                        if !self.denounced_active(pid, o.id) && !self.are_friends(pid, o.id) {
-                            acts.push(Action::Denounce { player: o.id });
-                        }
-                        if p.gold + f64::EPSILON >= DELEGATION_GOLD
-                            && self.diplomatic_mission_to(pid, o.id).is_none()
-                        {
-                            acts.push(Action::SendDelegation { player: o.id });
-                        }
-                        if p.gold + f64::EPSILON >= EMBASSY_GOLD
-                            && p.civics.contains(&crate::name!("diplomatic_service"))
-                            && !self
-                                .diplomatic_mission_to(pid, o.id)
-                                .is_some_and(|mission| mission.kind == "embassy")
-                        {
-                            acts.push(Action::SendEmbassy { player: o.id });
-                        }
-                        if o.gold > 0.0 && self.demand_available(pid, o.id) {
-                            acts.push(Action::DemandGold {
-                                player: o.id,
-                                gold: o.gold.min(25.0),
+                            acts.push(Action::AppointGovernor {
+                                governor: Name::new(governor),
+                                city,
                             });
                         }
-                        for promise in [
-                            "no_settling",
-                            "no_conversion",
-                            "no_spying",
-                            "no_city_state_attack",
-                        ] {
-                            if self.promise_request_available(pid, o.id, promise) {
-                                acts.push(Action::RequestPromise {
-                                    player: o.id,
-                                    promise: promise.to_string(),
-                                });
-                            }
+                    }
+                } else {
+                    for promotion in self.available_governor_promotions(pid, governor) {
+                        acts.push(Action::PromoteGovernor {
+                            governor: Name::new(governor),
+                            promotion: Name::new(&promotion),
+                        });
+                    }
+                }
+            }
+        }
+        for (governor, state) in &p.governor_roster {
+            for city in self.player_city_ids(pid) {
+                if state.city != Some(city)
+                    && !p
+                        .governor_roster
+                        .values()
+                        .any(|other| other.city == Some(city))
+                {
+                    acts.push(Action::ReassignGovernor {
+                        governor: Name::new(governor),
+                        city,
+                    });
+                }
+            }
+        }
+        for cid in self.player_city_ids(pid) {
+            for unit in ["missionary", "apostle", "guru", "inquisitor"] {
+                if self
+                    .unit_purchase_cost(pid, cid, unit, "faith")
+                    .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
+                    acts.push(Action::Buy {
+                        city: cid,
+                        unit: Name::new(unit),
+                        formation: 0,
+                        currency: "faith".to_string(),
+                    });
+                }
+            }
+            for building in self.rules.buildings.keys() {
+                if self
+                    .building_faith_purchase_cost(pid, cid, building)
+                    .is_some_and(|cost| p.faith + f64::EPSILON >= cost)
+                {
+                    acts.push(Action::BuyBuilding {
+                        city: cid,
+                        building: *building,
+                        currency: "faith".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Deals to answer or offer, Dedications, and the World Congress.
+    fn push_deal_actions(&self, pid: usize, acts: &mut Vec<Action>) {
+        for deal in self
+            .pending_deals
+            .iter()
+            .filter(|deal| deal.to == pid && deal.expires >= self.turn)
+        {
+            // A peace clause is only acceptable while the war it settles
+            // is being fought and has run its minimum turns; offering the
+            // acceptance anyway would advertise an action that can only
+            // fail. Rejecting a dead offer stays available either way.
+            let settleable = !deal.peace
+                || (self.is_at_war(deal.from, deal.to)
+                    && self.peace_available_at(deal.from, deal.to).is_none());
+            if settleable {
+                acts.push(Action::AcceptDeal { deal: deal.id });
+            }
+            acts.push(Action::RejectDeal { deal: deal.id });
+        }
+        for deal in self.quick_deals(pid) {
+            acts.push(Action::Trade {
+                player: deal.partner,
+                offer: Box::new(deal.offer),
+                request: Box::new(deal.request),
+            });
+        }
+        for dedication in self.available_dedications(pid) {
+            acts.push(Action::ChooseDedication {
+                dedication: Name::new(&dedication),
+            });
+        }
+        if let Some(congress) = self
+            .congress
+            .as_ref()
+            .filter(|session| self.turn < session.closes)
+        {
+            let max_votes = self.congress_affordable_votes(pid);
+            for resolution in &congress.resolutions {
+                if resolution.ballots.contains_key(&pid) {
+                    continue;
+                }
+                for choice in &resolution.choices {
+                    if let Some(proposal) = self.emergency_proposal_for_resolution(&resolution.id) {
+                        let (outcome, target) = Self::congress_choice_parts(choice);
+                        let allowed = (proposal.eligible.contains(&pid)
+                            && ((outcome, target) == ("A", "support")
+                                || (outcome, target) == ("B", "oppose")))
+                            || (proposal.target == pid && (outcome, target) == ("B", "oppose"));
+                        if !allowed {
+                            continue;
                         }
-                        if !self.are_friends(pid, o.id) {
+                    }
+                    acts.push(Action::CongressVote {
+                        resolution: Name::new(&resolution.id),
+                        choice: choice.clone(),
+                        votes: max_votes,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The diplomatic acts open toward every civilization `pid` has met.
+    fn push_diplomacy_actions(&self, pid: usize, p: &Player, acts: &mut Vec<Action>) {
+        for o in &self.players {
+            // Diplomacy needs a counterpart. Until the two civilizations
+            // have met there is no embassy to send a demand to, no peace
+            // to sign and nobody to denounce, so none of the acts below
+            // exist against an empire this one has never heard of.
+            if o.id != pid && o.alive && !o.is_barbarian && self.has_met(pid, o.id) {
+                if self.is_at_war(pid, o.id) {
+                    // A city-state can be at war only because its
+                    // Suzerain is. That derived war must be ended with the
+                    // Suzerain, not through an inapplicable bilateral
+                    // peace action against the city-state itself.
+                    if self.at_war.contains(&pair(pid, o.id))
+                        && !self.emergency_war_pair(pid, o.id)
+                        && self.peace_available_at(pid, o.id).is_none()
+                    {
+                        acts.push(Action::MakePeace { player: o.id });
+                    }
+                } else if !p.is_minor && !o.is_minor {
+                    // A peace treaty is binding while it runs: no casus
+                    // belli reopens the war before it expires. Emergency
+                    // coalition partners are equally bound while they
+                    // prosecute their shared objective.
+                    let non_aggression = self.peace_treaty_until(pid, o.id).is_some()
+                        || self.emergency_coalition_pair(pid, o.id);
+                    if !non_aggression
+                        && !self.host_blocks_war(pid, o.id)
+                        && !self.are_friends(pid, o.id)
+                        && !self.are_allied(pid, o.id)
+                    {
+                        if self.host_war_type_permission(pid, o.id, "surprise_war") != Some(false) {
+                            acts.push(Action::DeclareWar { player: o.id });
+                        }
+                        for casus_belli in [
+                            "formal_war",
+                            "holy_war",
+                            "reconquest_war",
+                            "protectorate_war",
+                            "liberation_war",
+                            "colonial_war",
+                            "territorial_war",
+                            "golden_age_war",
+                            "retribution_war",
+                            "ideological_war",
+                        ] {
+                            if !self.casus_belli_available(pid, o.id, casus_belli) {
+                                continue;
+                            }
+                            acts.push(Action::DeclareWarWithCasusBelli {
+                                player: o.id,
+                                casus_belli: casus_belli.to_string(),
+                            });
+                        }
+                    }
+                    if !self.denounced_active(pid, o.id) && !self.are_friends(pid, o.id) {
+                        acts.push(Action::Denounce { player: o.id });
+                    }
+                    if p.gold + f64::EPSILON >= DELEGATION_GOLD
+                        && self.diplomatic_mission_to(pid, o.id).is_none()
+                    {
+                        acts.push(Action::SendDelegation { player: o.id });
+                    }
+                    if p.gold + f64::EPSILON >= EMBASSY_GOLD
+                        && p.civics.contains(&crate::name!("diplomatic_service"))
+                        && !self
+                            .diplomatic_mission_to(pid, o.id)
+                            .is_some_and(|mission| mission.kind == "embassy")
+                    {
+                        acts.push(Action::SendEmbassy { player: o.id });
+                    }
+                    if o.gold > 0.0 && self.demand_available(pid, o.id) {
+                        acts.push(Action::DemandGold {
+                            player: o.id,
+                            gold: o.gold.min(25.0),
+                        });
+                    }
+                    for promise in [
+                        "no_settling",
+                        "no_conversion",
+                        "no_spying",
+                        "no_city_state_attack",
+                    ] {
+                        if self.promise_request_available(pid, o.id, promise) {
+                            acts.push(Action::RequestPromise {
+                                player: o.id,
+                                promise: promise.to_string(),
+                            });
+                        }
+                    }
+                    if !self.are_friends(pid, o.id) {
+                        acts.push(Action::ProposeDeal {
+                            player: o.id,
+                            give_gold: 0.0,
+                            request_gold: 0.0,
+                            open_borders: false,
+                            friendship: true,
+                            peace: false,
+                            alliance: None,
+                        });
+                    }
+                    if p.civics.contains(&crate::name!("civil_service"))
+                        && o.civics.contains(&crate::name!("civil_service"))
+                        && !self.are_allied(pid, o.id)
+                    {
+                        for kind in ["research", "cultural", "economic", "military", "religious"] {
+                            if kind == "research"
+                                && (self.tree_effect(pid, "research_agreements") <= 0.0
+                                    || self.tree_effect(o.id, "research_agreements") <= 0.0)
+                            {
+                                continue;
+                            }
                             acts.push(Action::ProposeDeal {
                                 player: o.id,
                                 give_gold: 0.0,
                                 request_gold: 0.0,
-                                open_borders: false,
+                                open_borders: self.tree_effect(pid, "open_borders") > 0.0,
                                 friendship: true,
                                 peace: false,
-                                alliance: None,
+                                alliance: Some(kind.to_string()),
                             });
                         }
-                        if p.civics.contains(&crate::name!("civil_service"))
-                            && o.civics.contains(&crate::name!("civil_service"))
-                            && !self.are_allied(pid, o.id)
-                        {
-                            for kind in
-                                ["research", "cultural", "economic", "military", "religious"]
-                            {
-                                if kind == "research"
-                                    && (self.tree_effect(pid, "research_agreements") <= 0.0
-                                        || self.tree_effect(o.id, "research_agreements") <= 0.0)
-                                {
-                                    continue;
-                                }
-                                acts.push(Action::ProposeDeal {
-                                    player: o.id,
-                                    give_gold: 0.0,
-                                    request_gold: 0.0,
-                                    open_borders: self.tree_effect(pid, "open_borders") > 0.0,
-                                    friendship: true,
-                                    peace: false,
-                                    alliance: Some(kind.to_string()),
-                                });
-                            }
-                        }
-                        if self.defensive_pact_available(pid, o.id) {
-                            acts.push(Action::ProposeDefensivePact { player: o.id });
-                        }
-                        for target in self.players.iter().filter(|target| {
-                            target.id != pid
-                                && target.id != o.id
-                                && target.alive
-                                && !target.is_minor
-                                && !target.is_barbarian
-                        }) {
-                            if self.joint_war_available(pid, o.id, target.id) {
-                                acts.push(Action::ProposeJointWar {
-                                    player: o.id,
-                                    target: target.id,
-                                });
-                            }
-                        }
-                    } else if !p.is_minor
-                        && !self.host_blocks_war(pid, o.id)
-                        && !self.are_friends(pid, o.id)
-                        && !self.are_allied(pid, o.id)
-                        && self.peace_treaty_until(pid, o.id).is_none()
-                    {
-                        acts.push(Action::DeclareWar { player: o.id });
                     }
+                    if self.defensive_pact_available(pid, o.id) {
+                        acts.push(Action::ProposeDefensivePact { player: o.id });
+                    }
+                    for target in self.players.iter().filter(|target| {
+                        target.id != pid
+                            && target.id != o.id
+                            && target.alive
+                            && !target.is_minor
+                            && !target.is_barbarian
+                    }) {
+                        if self.joint_war_available(pid, o.id, target.id) {
+                            acts.push(Action::ProposeJointWar {
+                                player: o.id,
+                                target: target.id,
+                            });
+                        }
+                    }
+                } else if !p.is_minor
+                    && !self.host_blocks_war(pid, o.id)
+                    && !self.are_friends(pid, o.id)
+                    && !self.are_allied(pid, o.id)
+                    && self.peace_treaty_until(pid, o.id).is_none()
+                {
+                    acts.push(Action::DeclareWar { player: o.id });
                 }
             }
         }
-        acts.push(Action::EndTurn);
-        if families.has(ActionFamilies::PURCHASES) || families.has(ActionFamilies::EMPIRE) {
-            acts.retain(|action| !self.purchase_action_is_blocked(action));
-        }
-        acts
     }
 
     /// Whether the engine will accept `Attack { unit: uid, target }` right
