@@ -193,7 +193,7 @@ function openFrontDoor(panel = "menu") {
 }
 // The menu a game keeps: Escape, or the top bar's menu button. Over a game the
 // chrome stays where it is, because this is a pause and not a change of scene.
-function openGameMenu() {
+function openPauseMenu() {
   if (!frontDoorHost() || !state || SPEC) return false;
   fdElement("frontdoor").hidden = false;
   document.body.classList.add("frontdoor-over-game");

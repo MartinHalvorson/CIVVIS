@@ -26166,7 +26166,7 @@ function drawCivTop() {
         `aria-pressed="${soundEnabled}">${soundEnabled ? "♪" : "∅"}</button>` +
       `<button class="civtop-btn" type="button" onclick="openPedia()" ` +
         `title="Civilopedia — P" aria-label="Civilopedia">?</button>` +
-      `<button class="civtop-btn" type="button" onclick="openGameMenu() || togglePanel()" ` +
+      `<button class="civtop-btn" type="button" onclick="openPauseMenu() || togglePanel()" ` +
         `title="Game menu — setup, display settings, saves and logs" aria-label="Game menu">☰</button>` +
     `</div>`;
   if (html === civTopHtml) return;
@@ -34291,7 +34291,7 @@ document.addEventListener("keydown", ev => {
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
     // The last Escape in the unwinding is the game's own: nothing is selected
     // and no mode is on, so the only thing left to leave is the game.
-    if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;
+    if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openPauseMenu()) return;
     sel = null; selCity = null; mapLens = null; tackMode = false;
     syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();

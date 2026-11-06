@@ -32,7 +32,7 @@ function audioReady() {
   if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   return audioCtx.state === "running" ? audioCtx : null;
 }
-function tone(freq, {at = 0, dur = .3, gain = .1, type = "sine", to = 0} = {}) {
+function sfxTone(freq, {at = 0, dur = .3, gain = .1, type = "sine", to = 0} = {}) {
   const context = audioReady();
   if (!context) return;
   const start = context.currentTime + at;
@@ -65,24 +65,24 @@ function thud({at = 0, dur = .22, gain = .22, cutoff = 420} = {}) {
   source.start(start);
 }
 const arpeggio = (notes, step, options) =>
-  notes.forEach((freq, i) => tone(freq, {...options, at: i * step}));
+  notes.forEach((freq, i) => sfxTone(freq, {...options, at: i * step}));
 const GAME_SOUNDS = {
-  click: () => tone(1320, {dur: .05, gain: .025, type: "triangle"}),
-  endTurn: () => { tone(196, {dur: .45, gain: .1}); tone(294, {dur: .45, gain: .06, at: .04}); },
+  click: () => sfxTone(1320, {dur: .05, gain: .025, type: "triangle"}),
+  endTurn: () => { sfxTone(196, {dur: .45, gain: .1}); sfxTone(294, {dur: .45, gain: .06, at: .04}); },
   newTurn: () => arpeggio([392, 587], .09, {dur: .32, gain: .06, type: "triangle"}),
   research: () => arpeggio([523, 659, 784], .08, {dur: .38, gain: .07, type: "triangle"}),
   civic: () => arpeggio([440, 554, 740], .09, {dur: .42, gain: .06}),
-  city: () => { for (const freq of [262, 330, 392]) tone(freq, {dur: .8, gain: .06, type: "triangle"}); },
+  city: () => { for (const freq of [262, 330, 392]) sfxTone(freq, {dur: .8, gain: .06, type: "triangle"}); },
   person: () => arpeggio([659, 880, 1319], .1, {dur: .6, gain: .05}),
   wonder: () => {
-    for (const freq of [196, 294, 392]) tone(freq, {dur: 1.6, gain: .06, type: "triangle"});
+    for (const freq of [196, 294, 392]) sfxTone(freq, {dur: 1.6, gain: .06, type: "triangle"});
     arpeggio([587, 784, 988, 1175], .14, {dur: .9, gain: .05, at: .2});
   },
   era: () => {
-    for (const freq of [131, 196, 262]) tone(freq, {dur: 2, gain: .07, type: "sawtooth"});
+    for (const freq of [131, 196, 262]) sfxTone(freq, {dur: 2, gain: .07, type: "sawtooth"});
     arpeggio([392, 523, 659, 784], .18, {dur: 1, gain: .05, type: "triangle"});
   },
-  war: () => { thud(); thud({at: .24}); tone(98, {dur: .7, gain: .1, type: "sawtooth", to: 73}); },
+  war: () => { thud(); thud({at: .24}); sfxTone(98, {dur: .7, gain: .1, type: "sawtooth", to: 73}); },
   contact: () => arpeggio([294, 440, 392], .16, {dur: .5, gain: .06, type: "triangle"}),
 };
 function playSound(name) {
