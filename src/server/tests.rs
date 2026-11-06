@@ -8963,6 +8963,21 @@ fn a_player_can_find_out_how_to_move() {
 }
 
 #[test]
+fn a_phone_keeps_the_map() {
+    // A tap arrives as a mouse move too, so a tooltip would open on every tap
+    // and sit on the panels the next tap is aimed at.
+    assert!(EMBEDDED_APP_JS.contains(
+        "function queueTileTip(clientX, clientY) {\n  // A tap arrives as a mouse move too"
+    ));
+    assert!(EMBEDDED_APP_JS.contains("if (mapPointerType === \"touch\") return;"));
+    // The option list goes because the big button still does the next thing.
+    assert!(
+        EMBEDDED_INDEX.contains("body.civ6-frame #actionoptions, body.civ6-frame .action-eyebrow")
+    );
+    assert!(EMBEDDED_INDEX.contains("white-space: nowrap; overflow: auto hidden;"));
+}
+
+#[test]
 fn city_icons_are_shared_by_flat_globe_and_minimaps() {
     let icon = EMBEDDED_INDEX
         .split("function drawCityIcon")

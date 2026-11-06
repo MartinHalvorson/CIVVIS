@@ -5213,6 +5213,33 @@
     font: 700 13px/1.2 var(--font-ui); white-space: nowrap;
   }
   #map-hint[hidden] { display: none; }
+
+  /* A phone. The map is the game, so the corner panels become one short stack
+     along the bottom edge: the unit's orders in a row that scrolls sideways,
+     under them what the turn is waiting on. The big button still does the next
+     thing, opening the tree or the city, so the list of options can go. */
+  @media (max-width: 640px) {
+    body.civ6-frame #actionpanel {
+      left: 6px; right: 6px; bottom: 6px; width: auto; padding: 6px 8px;
+      grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px;
+    }
+    body.civ6-frame #actionoptions, body.civ6-frame .action-eyebrow, body.civ6-frame .action-sub { display: none; }
+    body.civ6-frame #actionpanel #endturn { width: auto; min-height: 0; padding: 9px 14px; font-size: 13px; }
+    body.civ6-frame #actionpanel #endturn .endturn-hint { display: none; }
+    body.civ6-frame #ubar {
+      left: 6px; right: 6px; bottom: 66px; width: auto; max-width: none; padding: 7px 9px;
+      white-space: nowrap; overflow: auto hidden; scrollbar-width: none;
+    }
+    body.civ6-frame #ubar::-webkit-scrollbar { display: none; }
+    body.civ6-frame #ubar .ubar-head { position: sticky; left: 0; margin-bottom: 5px; }
+    body.civ6-frame #ubar > button { display: inline-block; margin: 0 4px 0 0; padding: 7px 9px; }
+    body.civ6-frame .minimap-frame, body.civ6-frame #mapareaset, body.civ6-frame #compass,
+    body.civ6-frame #spin, body.civ6-frame #paneltoggle, body.civ6-frame .civtop-era { display: none; }
+    body.civ6-frame #map-controls-dock { bottom: 158px; right: auto; width: auto; }
+    body.civ6-frame #notify { bottom: 158px; }
+    body.civ6-frame #lens-picker { bottom: 208px; width: min(270px, calc(100% - 24px)); }
+    #combat-forecast { bottom: 166px; }
+  }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
