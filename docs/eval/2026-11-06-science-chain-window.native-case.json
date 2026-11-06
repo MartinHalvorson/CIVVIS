@@ -1,0 +1,785 @@
+{
+  "utc": "2026-11-06T00:07:48.867163+00:00",
+  "source": "0d13020b2e5ff43e6d0a79a8c9a84bc6b86af1ae",
+  "run": "civvis-20261105T215700Z",
+  "request": [
+    129,
+    0
+  ],
+  "raw_events_sha256": "f71130430d21d32a615e657862ebb94b8b5b08781bdfb19296778a459412d295",
+  "state_raw_sha256": "c0872d2b55628f05166d519deeb8697dd56640fef9e918e23d410c9305a8e90f",
+  "source_techs_sha256": "2f467ce9f38a156e272b134a04f5051ea7a9e5b79a2e7ae09afbf2a3eef1758f",
+  "known_model_names": [
+    "animal_husbandry",
+    "apprenticeship",
+    "archery",
+    "astrology",
+    "astronomy",
+    "banking",
+    "bronze_working",
+    "buttress",
+    "cartography",
+    "celestial_navigation",
+    "construction",
+    "currency",
+    "economics",
+    "education",
+    "engineering",
+    "gunpowder",
+    "horseback_riding",
+    "industrialization",
+    "iron_working",
+    "irrigation",
+    "masonry",
+    "mass_production",
+    "mathematics",
+    "metal_casting",
+    "military_engineering",
+    "military_tactics",
+    "mining",
+    "pottery",
+    "sailing",
+    "sanitation",
+    "scientific_theory",
+    "shipbuilding",
+    "square_rigging",
+    "steam_power",
+    "stirrups",
+    "wheel",
+    "writing"
+  ],
+  "earliest_incomplete_model_era": 2,
+  "latest_window_era": 4,
+  "legal_native_window_candidates": [
+    "ballistics",
+    "castles",
+    "machinery"
+  ],
+  "legal_rocketry_prerequisites_excluded_by_window": [
+    "flight",
+    "replaceable_parts"
+  ],
+  "native_research_order": [
+    {
+      "kind": "research",
+      "subject": null,
+      "verb": "TECH_MACHINERY",
+      "x": null,
+      "y": null
+    }
+  ],
+  "native_research_tree": [
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_REPLACEABLE_PARTS",
+        "TECH_STEEL"
+      ],
+      "t": "TECH_ADVANCED_BALLISTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_RADIO"
+      ],
+      "t": "TECH_ADVANCED_FLIGHT"
+    },
+    {
+      "can_research": false,
+      "requires": [],
+      "t": "TECH_ANIMAL_HUSBANDRY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CURRENCY",
+        "TECH_HORSEBACK_RIDING"
+      ],
+      "t": "TECH_APPRENTICESHIP"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ANIMAL_HUSBANDRY"
+      ],
+      "t": "TECH_ARCHERY"
+    },
+    {
+      "can_research": false,
+      "requires": [],
+      "t": "TECH_ASTROLOGY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_EDUCATION"
+      ],
+      "t": "TECH_ASTRONOMY"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_METAL_CASTING"
+      ],
+      "t": "TECH_BALLISTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_EDUCATION",
+        "TECH_STIRRUPS"
+      ],
+      "t": "TECH_BANKING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MINING"
+      ],
+      "t": "TECH_BRONZE_WORKING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MATHEMATICS",
+        "TECH_SHIPBUILDING"
+      ],
+      "t": "TECH_BUTTRESS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_BUTTRESS"
+      ],
+      "t": "TECH_CARTOGRAPHY"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_CONSTRUCTION"
+      ],
+      "t": "TECH_CASTLES"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ASTROLOGY",
+        "TECH_SAILING"
+      ],
+      "t": "TECH_CELESTIAL_NAVIGATION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_REPLACEABLE_PARTS",
+        "TECH_SANITATION"
+      ],
+      "t": "TECH_CHEMISTRY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_COMBUSTION",
+        "TECH_STEEL"
+      ],
+      "t": "TECH_COMBINED_ARMS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_REFINING",
+        "TECH_STEEL"
+      ],
+      "t": "TECH_COMBUSTION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_SYNTHETIC_MATERIALS"
+      ],
+      "t": "TECH_COMPOSITES"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ELECTRICITY",
+        "TECH_RADIO"
+      ],
+      "t": "TECH_COMPUTERS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_HORSEBACK_RIDING",
+        "TECH_MASONRY"
+      ],
+      "t": "TECH_CONSTRUCTION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_WRITING"
+      ],
+      "t": "TECH_CURRENCY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_METAL_CASTING",
+        "TECH_SCIENTIFIC_THEORY"
+      ],
+      "t": "TECH_ECONOMICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_APPRENTICESHIP",
+        "TECH_MATHEMATICS"
+      ],
+      "t": "TECH_EDUCATION"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_STEAM_POWER"
+      ],
+      "t": "TECH_ELECTRICITY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_THE_WHEEL"
+      ],
+      "t": "TECH_ENGINEERING"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_INDUSTRIALIZATION",
+        "TECH_SCIENTIFIC_THEORY"
+      ],
+      "t": "TECH_FLIGHT"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ADVANCED_BALLISTICS",
+        "TECH_ROCKETRY"
+      ],
+      "t": "TECH_GUIDANCE_SYSTEMS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_APPRENTICESHIP",
+        "TECH_MILITARY_ENGINEERING",
+        "TECH_STIRRUPS"
+      ],
+      "t": "TECH_GUNPOWDER"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ARCHERY"
+      ],
+      "t": "TECH_HORSEBACK_RIDING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MASS_PRODUCTION",
+        "TECH_SQUARE_RIGGING"
+      ],
+      "t": "TECH_INDUSTRIALIZATION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_BRONZE_WORKING"
+      ],
+      "t": "TECH_IRON_WORKING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_POTTERY"
+      ],
+      "t": "TECH_IRRIGATION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_NUCLEAR_FISSION"
+      ],
+      "t": "TECH_LASERS"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_ENGINEERING",
+        "TECH_IRON_WORKING"
+      ],
+      "t": "TECH_MACHINERY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MINING"
+      ],
+      "t": "TECH_MASONRY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_BUTTRESS",
+        "TECH_EDUCATION",
+        "TECH_MILITARY_TACTICS"
+      ],
+      "t": "TECH_MASS_PRODUCTION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CURRENCY"
+      ],
+      "t": "TECH_MATHEMATICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_GUNPOWDER"
+      ],
+      "t": "TECH_METAL_CASTING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CONSTRUCTION"
+      ],
+      "t": "TECH_MILITARY_ENGINEERING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_PRINTING",
+        "TECH_SIEGE_TACTICS"
+      ],
+      "t": "TECH_MILITARY_SCIENCE"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MATHEMATICS"
+      ],
+      "t": "TECH_MILITARY_TACTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [],
+      "t": "TECH_MINING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_COMPOSITES"
+      ],
+      "t": "TECH_NANOTECHNOLOGY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ADVANCED_BALLISTICS",
+        "TECH_COMBINED_ARMS"
+      ],
+      "t": "TECH_NUCLEAR_FISSION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_LASERS"
+      ],
+      "t": "TECH_NUCLEAR_FUSION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_COMBUSTION"
+      ],
+      "t": "TECH_PLASTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [],
+      "t": "TECH_POTTERY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MACHINERY"
+      ],
+      "t": "TECH_PRINTING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_FLIGHT",
+        "TECH_STEAM_POWER"
+      ],
+      "t": "TECH_RADIO"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_RIFLING"
+      ],
+      "t": "TECH_REFINING"
+    },
+    {
+      "can_research": true,
+      "requires": [
+        "TECH_ECONOMICS"
+      ],
+      "t": "TECH_REPLACEABLE_PARTS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_BALLISTICS",
+        "TECH_MILITARY_SCIENCE"
+      ],
+      "t": "TECH_RIFLING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_COMPUTERS",
+        "TECH_GUIDANCE_SYSTEMS",
+        "TECH_LASERS",
+        "TECH_SATELLITES"
+      ],
+      "t": "TECH_ROBOTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CHEMISTRY",
+        "TECH_RADIO"
+      ],
+      "t": "TECH_ROCKETRY"
+    },
+    {
+      "can_research": false,
+      "requires": [],
+      "t": "TECH_SAILING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_SCIENTIFIC_THEORY"
+      ],
+      "t": "TECH_SANITATION"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ADVANCED_FLIGHT",
+        "TECH_ROCKETRY"
+      ],
+      "t": "TECH_SATELLITES"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_ASTRONOMY",
+        "TECH_BANKING"
+      ],
+      "t": "TECH_SCIENTIFIC_THEORY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_SAILING"
+      ],
+      "t": "TECH_SHIPBUILDING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CASTLES"
+      ],
+      "t": "TECH_SIEGE_TACTICS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_CARTOGRAPHY"
+      ],
+      "t": "TECH_SQUARE_RIGGING"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_SYNTHETIC_MATERIALS"
+      ],
+      "t": "TECH_STEALTH_TECHNOLOGY"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_INDUSTRIALIZATION"
+      ],
+      "t": "TECH_STEAM_POWER"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_RIFLING"
+      ],
+      "t": "TECH_STEEL"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_APPRENTICESHIP",
+        "TECH_HORSEBACK_RIDING"
+      ],
+      "t": "TECH_STIRRUPS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_PLASTICS"
+      ],
+      "t": "TECH_SYNTHETIC_MATERIALS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_COMPUTERS"
+      ],
+      "t": "TECH_TELECOMMUNICATIONS"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_MINING"
+      ],
+      "t": "TECH_THE_WHEEL"
+    },
+    {
+      "can_research": false,
+      "requires": [
+        "TECH_POTTERY"
+      ],
+      "t": "TECH_WRITING"
+    }
+  ],
+  "research_quotes": [
+    {
+      "c": 120,
+      "p": 71,
+      "t": "TECH_MACHINERY"
+    },
+    {
+      "c": 156,
+      "p": 77,
+      "t": "TECH_CASTLES"
+    },
+    {
+      "c": 240,
+      "p": 95,
+      "t": "TECH_PRINTING"
+    },
+    {
+      "c": 292,
+      "p": 0,
+      "t": "TECH_SIEGE_TACTICS"
+    },
+    {
+      "c": 372,
+      "p": 0,
+      "t": "TECH_BALLISTICS"
+    },
+    {
+      "c": 372,
+      "p": 185,
+      "t": "TECH_MILITARY_SCIENCE"
+    },
+    {
+      "c": 428,
+      "p": 255,
+      "t": "TECH_RIFLING"
+    },
+    {
+      "c": 625,
+      "p": 298,
+      "t": "TECH_FLIGHT"
+    },
+    {
+      "c": 625,
+      "p": 0,
+      "t": "TECH_REPLACEABLE_PARTS"
+    },
+    {
+      "c": 625,
+      "p": 298,
+      "t": "TECH_STEEL"
+    },
+    {
+      "c": 685,
+      "p": 0,
+      "t": "TECH_ELECTRICITY"
+    },
+    {
+      "c": 685,
+      "p": 0,
+      "t": "TECH_RADIO"
+    },
+    {
+      "c": 685,
+      "p": 0,
+      "t": "TECH_CHEMISTRY"
+    },
+    {
+      "c": 685,
+      "p": 0,
+      "t": "TECH_COMBUSTION"
+    },
+    {
+      "c": 888,
+      "p": 0,
+      "t": "TECH_ADVANCED_FLIGHT"
+    },
+    {
+      "c": 888,
+      "p": 0,
+      "t": "TECH_ROCKETRY"
+    },
+    {
+      "c": 888,
+      "p": 0,
+      "t": "TECH_ADVANCED_BALLISTICS"
+    },
+    {
+      "c": 888,
+      "p": 0,
+      "t": "TECH_COMBINED_ARMS"
+    },
+    {
+      "c": 888,
+      "p": 0,
+      "t": "TECH_PLASTICS"
+    },
+    {
+      "c": 996,
+      "p": 396,
+      "t": "TECH_COMPUTERS"
+    },
+    {
+      "c": 996,
+      "p": 0,
+      "t": "TECH_NUCLEAR_FISSION"
+    },
+    {
+      "c": 996,
+      "p": 0,
+      "t": "TECH_SYNTHETIC_MATERIALS"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_TELECOMMUNICATIONS"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_SATELLITES"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_GUIDANCE_SYSTEMS"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_LASERS"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_COMPOSITES"
+    },
+    {
+      "c": 1110,
+      "p": 0,
+      "t": "TECH_STEALTH_TECHNOLOGY"
+    },
+    {
+      "c": 1293,
+      "p": 0,
+      "t": "TECH_ROBOTICS"
+    },
+    {
+      "c": 1293,
+      "p": 0,
+      "t": "TECH_NANOTECHNOLOGY"
+    },
+    {
+      "c": 1293,
+      "p": 0,
+      "t": "TECH_NUCLEAR_FUSION"
+    },
+    {
+      "c": 625,
+      "p": 0,
+      "t": "TECH_REFINING"
+    },
+    {
+      "c": 1380,
+      "p": 0,
+      "t": "TECH_SEASTEADS"
+    },
+    {
+      "c": 1380,
+      "p": 0,
+      "t": "TECH_ADVANCED_AI"
+    },
+    {
+      "c": 1320,
+      "p": 0,
+      "t": "TECH_ADVANCED_POWER_CELLS"
+    },
+    {
+      "c": 1320,
+      "p": 0,
+      "t": "TECH_CYBERNETICS"
+    },
+    {
+      "c": 1320,
+      "p": 0,
+      "t": "TECH_SMART_MATERIALS"
+    },
+    {
+      "c": 1380,
+      "p": 0,
+      "t": "TECH_PREDICTIVE_SYSTEMS"
+    },
+    {
+      "c": 1500,
+      "p": 0,
+      "t": "TECH_OFFWORLD_MISSION"
+    },
+    {
+      "c": 1560,
+      "p": 0,
+      "t": "TECH_FUTURE_TECH"
+    }
+  ],
+  "why_sha256": "8b871f1caa6e74c811027a6e4d7dc47b522d623addd5bb611c653dd46e9a0467",
+  "why_lines": [
+    "[why] t129 Research/Decision Researching machinery | worth 18 to the science plan, ahead of ballistics at 8"
+  ],
+  "canonical_record_sha256": "f11aea10715063ce4edf752a61ef6226bc308b6ce7302267600243711ee33fcb",
+  "scope": "Verified native legality, known techs, emitted Machinery order and exact source rolling-window bounds. Native prerequisite ancestry used. Does not assert the full forced-goal state or alternative outcome. No executable or game launched."
+}

@@ -2138,6 +2138,7 @@ impl AdvancedAi {
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
         /// Prioritize usable labs and nearby Rocketry during a Science posture.
         science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
+        science_chain_crosses_window => enable_science_chain_crosses_window, disable_science_chain_crosses_window;
         /// Replace an obsolete native research path with a revealed launch milestone.
         revealed_launch_tech_takes_the_slot => enable_revealed_launch_tech_takes_the_slot, disable_revealed_launch_tech_takes_the_slot;
         /// Ask the native market for Coal serving ready research power.

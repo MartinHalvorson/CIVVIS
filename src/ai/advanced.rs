@@ -8807,6 +8807,8 @@ pub struct AdvancedAi {
     spy_loss_turns: Vec<u32>,
     /// Finish usable labs and nearby Rocketry before advanced backlog. Opt-in.
     science_foundation_before_backlog: bool,
+    /// Explicit Science routing admits legal prerequisite steps beyond the era window.
+    science_chain_crosses_window: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10886,6 +10888,7 @@ mod revealed_launch_research;
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
 mod saved_work_is_seen;
+mod science_chain_crosses_window;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -12516,6 +12519,7 @@ impl AdvancedAi {
             settler_shelters_from_the_war_2: false,
             spy_loss_turns: Vec::new(),
             science_foundation_before_backlog: false,
+            science_chain_crosses_window: false,
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
             science_writing_before_the_luxury: false,
