@@ -103,6 +103,7 @@ local function unitObject(u)
 		GetFortifyTurns = function() return 0 end,
 		GetFormationUnitCount = function() return 1 end,
 		GetAttacksRemaining = function() return u.attacks or 1 end,
+		IsEmbarked = function() return u.embarked == true end,
 		GetActivityType = function() return u.activity end,
 	}
 end
@@ -864,6 +865,174 @@ debug.setupvalue(queue.onUiPulse, pulseUpvalues.finished, false)
 Game.GetLocalPlayer = function() return -1 end
 queue.onUiPulse()
 check("no local seat cannot be woken", pulseCalls, 2)
+
+-- A currently refused ranged shot may depend on another unit's already
+-- planned departure. Use the production dispatcher and drain, not a copy of
+-- their scheduling. The fake eligibility answer is controlled explicitly;
+-- these cases do not assert that stacking universally forbids real shots.
+do
+	local oldUnits, oldCan, oldLocal = GameInfo.Units, UnitManager.CanStartOperation, Game.GetLocalPlayer
+	local oldAwake = ActivityTypes.ACTIVITY_AWAKE
+	ActivityTypes.ACTIVITY_AWAKE = "awake"
+	-- Clock tests above planted a synthetic pending sentinel without rows.
+	queue.pending = {}
+	GameInfo.Units = {
+		UNIT_ARCHER = {UnitType = "UNIT_ARCHER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 15, RangedCombat = 25},
+		UNIT_WARRIOR = {UnitType = "UNIT_WARRIOR", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_LAND_COMBAT", Combat = 20, RangedCombat = 0},
+		UNIT_SETTLER = {UnitType = "UNIT_SETTLER", Domain = "DOMAIN_LAND", FormationClass = "FORMATION_CLASS_CIVILIAN", Combat = 0, RangedCombat = 0},
+		UNIT_GALLEY = {UnitType = "UNIT_GALLEY", Domain = "DOMAIN_SEA", FormationClass = "FORMATION_CLASS_NAVAL", Combat = 30, RangedCombat = 0},
+	}
+	Game.GetLocalPlayer = function() return PID end
+	local shotCan = false
+	UnitManager.CanStartOperation = function(unit, hash, ...)
+		if hash == "UNITOPERATION_RANGE_ATTACK" then
+			assert(select('#', ...) == 2, "ranged eligibility uses nil plus the actual params")
+			if shotCan == "throw" then error("unavailable native query") end
+			return shotCan
+		end
+		return oldCan(unit, hash, ...)
+	end
+	local function fresh()
+		reset(); LOG = {}; shotCan = false
+		host.units[1441803] = {id = 1441803, kind = "UNIT_ARCHER", x = 3, y = 26, moves = 2, activity = "awake"}
+		host.units[1310732] = {id = 1310732, kind = "UNIT_WARRIOR", x = 3, y = 26, moves = 2}
+	end
+	local shot = function() return row(1441803, "RANGE_ATTACK", 2, 26) end
+	local leave = function() return row(1310732, "MOVE_TO", 2, 25) end
+	local held = function() return lastEvent("queue_ranged_departure_wait") ~= nil end
+
+	fresh()
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: opening refused shot is queued without an operation", ops(1441803), "")
+	check("departure: planner's existing move is requested unchanged", ops(1310732), "UNITOPERATION_MOVE_TO")
+	check("departure: wait is observed", held(), true)
+	queue.drain(player, PID, 7)
+	check("departure: shot waits for actual separation", ops(1441803), "")
+	host.arrive(1310732); shotCan = true
+	queue.drain(player, PID, 7)
+	check("departure: separated shot uses the ordinary native handler", ops(1441803), "UNITOPERATION_RANGE_ATTACK")
+	check("departure: release drains both dependencies", queue.pendingCount(), 0)
+	check("departure: no initial refusal poisons the planner pair", lastEvent("range_attack_refused"), nil)
+	check("departure: release is observed", lastEvent("queue_ranged_departure_released") ~= nil, true)
+
+	fresh(); shotCan = true
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: currently legal shot stays first", host.ops[1].op, "UNITOPERATION_RANGE_ATTACK")
+	check("departure: legal co-located shot is not delayed", held(), false)
+
+	fresh()
+	host.units[1310733] = {id = 1310733, kind = "UNIT_WARRIOR", x = 3, y = 26, moves = 2}
+	applyOrders(player, PID, 7, {shot(), leave(), row(1310733, "MOVE_TO", 4, 26)})
+	host.arrive(1310732); shotCan = true
+	queue.drain(player, PID, 7)
+	check("departure: all planned combat peers must leave", ops(1441803), "")
+	host.arrive(1310733); queue.drain(player, PID, 7)
+	check("departure: final peer releases one shot", ops(1441803), "UNITOPERATION_RANGE_ATTACK")
+	fresh()
+	host.units[1114118] = {id = 1114118, kind = "UNIT_SETTLER", x = 3, y = 26, moves = 2}
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: civilian beside a planned combat departure does not block it", held(), true)
+	host.arrive(1310732); shotCan = true; queue.drain(player, PID, 7)
+	check("departure: civilian may stay while the shot proceeds", ops(1441803), "UNITOPERATION_RANGE_ATTACK")
+
+	fresh()
+	applyOrders(player, PID, 7, {shot(), leave(), row(1441803, "FORTIFY")})
+	host.arrive(1310732); shotCan = true
+	queue.drain(player, PID, 7); queue.drain(player, PID, 7)
+	check("departure: shooter's own follow-up order stays after its shot", ops(1441803),
+		"UNITOPERATION_RANGE_ATTACK,UNITOPERATION_FORTIFY")
+
+	fresh()
+	applyOrders(player, PID, 7, {shot(), leave()})
+	for _ = 1, 31 do queue.drain(player, PID, 7) end
+	check("departure: a failed move cannot pin the queue past grace", queue.pendingCount(), 0)
+	check("departure: stalled move never fires a still-declined shot", ops(1441803), "")
+	check("departure: unresolved dependency is named", (lastEvent("orders_queue") or ""):find("queue_ranged_departure_not_clear", 1, true) ~= nil, true)
+
+	fresh()
+	applyOrders(player, PID, 7, {shot(), leave()})
+	host.arrive(1310732) -- The host may still decline for LOS or another reason.
+	queue.drain(player, PID, 7)
+	check("departure: clearing overlap never bypasses native eligibility", ops(1441803), "")
+	check("departure: a remaining host refusal is emitted normally", lastEvent("range_attack_refused") ~= nil, true)
+	fresh(); applyOrders(player, PID, 7, {shot(), leave()})
+	host.units[1310732].gone = true; shotCan = true; queue.drain(player, PID, 7)
+	check("departure: a vanished peer no longer pins the shot", ops(1441803), "UNITOPERATION_RANGE_ATTACK")
+	fresh(); applyOrders(player, PID, 7, {shot(), leave()})
+	host.units[1441803].gone = true; queue.drain(player, PID, 7)
+	check("departure: a vanished shooter is removed safely", queue.pending[1441803], nil)
+	check("departure: a vanished shooter issues no operation", ops(1441803), "")
+	fresh()
+	applyOrders(player, PID, 7, {row(1441803, "MOVE_TO", 3, 27), shot(), leave()})
+	check("departure: a shooter's own earlier move keeps its existing barrier", queue.pending[1441803].departure_wait, nil)
+	fresh(); applyOrders(player, PID, 7, {shot(), leave()})
+	host.arrive(1310732); shotCan = true; host.units[1441803].activity = "operation"
+	queue.drain(player, PID, 7)
+	check("departure: an intervening native operation must settle", ops(1441803), "")
+	host.deactivate(1441803); queue.drain(player, PID, 7)
+	check("departure: settled shooter resumes through ordinary eligibility", ops(1441803), "UNITOPERATION_RANGE_ATTACK")
+
+	for _, verb in ipairs({"FORTIFY", "ATTACK", "SWAP"}) do
+		fresh()
+		applyOrders(player, PID, 7, {shot(), row(1310732, verb, 2, 25), leave()})
+		check("departure: a peer's first " .. verb .. " is not a promised departure", held(), false)
+	end
+	fresh(); applyOrders(player, PID, 7, {shot()})
+	check("departure: an unmentioned holder does not cause a wait", held(), false)
+	fresh(); applyOrders(player, PID, 7, {shot(), row(1310732, "MOVE_TO", 3, 26)})
+	check("departure: a move onto the origin is not a departure", held(), false)
+	fresh(); applyOrders(player, PID, 7, {leave(), shot()})
+	check("departure: earlier requests retain the existing scheduling", held(), false)
+	fresh(); host.units[1310732].kind = "UNIT_SETTLER"
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: a civilian alone creates no combat dependency", held(), false)
+	fresh(); host.units[1310732].kind = "UNIT_GALLEY"
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: a ship creates no land combat dependency", held(), false)
+	fresh(); host.units[1310732].embarked = true
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: an embarked peer is not assumed to block a land shot", held(), false)
+	fresh(); host.units[1441803].embarked = true
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: embarked shooters retain existing behavior", held(), false)
+	fresh(); host.units[1310732].kind = "UNIT_UNKNOWN"
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: unknown unit definitions do not create dependencies", held(), false)
+	fresh(); shotCan = "throw"
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: a throwing eligibility query is not a known decline", held(), false)
+	fresh(); shotCan = nil
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: missing eligibility is not a known decline", held(), false)
+	fresh(); host.units[1441803].moves = 0
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: a spent shooter creates no dependency", held(), false)
+	fresh(); host.units[1441803].attacks = 0
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: no remaining attack creates no dependency", held(), false)
+	fresh(); host.units[1310732].moves = 0
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: a spent peer cannot promise departure", held(), false)
+	fresh(); host.units[1441803].activity = "operation"
+	applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: initially busy shooter retains existing behavior", held(), false)
+	fresh(); applyOrders(player, PID, 7, {shot(), row(1310732, "MOVE_TO", 2.5, 25)})
+	check("departure: an invalid destination creates no dependency", held(), false)
+
+	local cfgForTest
+	for i = 1, 60 do
+		local name, value = debug.getupvalue(applyOrders, i)
+		if name == nil then break end
+		if name == "cfg" then cfgForTest = value; break end
+	end
+	assert(type(cfgForTest) == "table")
+	local oldQueue = cfgForTest.OrderQueue; cfgForTest.OrderQueue = false
+	fresh(); applyOrders(player, PID, 7, {shot(), leave()})
+	check("departure: disabled order queue keeps existing behavior", held(), false)
+	cfgForTest.OrderQueue = oldQueue
+	ActivityTypes.ACTIVITY_AWAKE = oldAwake
+	GameInfo.Units, UnitManager.CanStartOperation, Game.GetLocalPlayer = oldUnits, oldCan, oldLocal
+end
 
 -- 11. `StalledOperationRelease` (off everywhere above). With the switch on,
 -- a leg the probe marks as a stalled operation takes the early no-op answer at

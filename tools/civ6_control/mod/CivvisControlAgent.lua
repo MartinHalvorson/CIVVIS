@@ -19225,6 +19225,79 @@ CivvisQueue.condemnWarPending = function(player, pid, row, turn)
 	end, nil);
 end;
 
+-- Native 131233 t68: an awake Archer shared its city with a Warrior whose
+-- MOVE_TO came later in the same batch. Its opening shot was refused; it
+-- moved and fired on the next frame. Do not infer a universal stacking rule:
+-- wait only when the host currently DECLINES this exact shot and every other
+-- land-combat occupant already has a first MOVE_TO later in this batch.
+-- Civ6Common.lua:148 asks the same four-argument ranged eligibility question;
+-- Units.xml gives Warrior/Archer FORMATION_CLASS_LAND_COMBAT. No move is added.
+CivvisQueue.rangedDepartureWait = function(player, pid, row, rows, index)
+	if tostring(row.kind or "") ~= "unit" or tostring(row.verb or "") ~= "RANGE_ATTACK"
+			or tonumber(row.x) == nil or tonumber(row.y) == nil then return nil; end
+	return try(function()
+		local subject = tonumber(row.subject);
+		local unit = liveUnit(pid, subject or -1);
+		if unit == nil or unit:IsEmbarked() ~= false
+				or unit:GetMovesRemaining() <= 0 or unit:GetAttacksRemaining() <= 0 then return nil; end
+		if ActivityTypes == nil or ActivityTypes.ACTIVITY_AWAKE == nil
+				or UnitManager.GetActivityType(unit) ~= ActivityTypes.ACTIVITY_AWAKE then return nil; end
+		local spec = GameInfo.Units[unit:GetUnitType()];
+		if spec == nil or spec.Domain ~= "DOMAIN_LAND"
+				or spec.FormationClass ~= "FORMATION_CLASS_LAND_COMBAT" then return nil; end
+		local x, y = unit:GetX(), unit:GetY();
+		local peers = {};
+		for _, other in player:GetUnits():Members() do
+			if other:GetID() ~= subject and other:GetX() == x and other:GetY() == y then
+				local info = GameInfo.Units[other:GetUnitType()];
+				if info == nil or info.FormationClass == nil then return nil; end
+				if info.FormationClass == "FORMATION_CLASS_LAND_COMBAT" then
+					if info.Domain ~= "DOMAIN_LAND" or other:IsEmbarked() ~= false
+							or other:GetMovesRemaining() <= 0 then return nil; end
+					local departure;
+					for i, planned in ipairs(rows) do
+						if tostring(planned.kind or "") == "unit" and tonumber(planned.subject) == other:GetID() then
+							local px, py = tonumber(planned.x), tonumber(planned.y);
+							if i > index and tostring(planned.verb or "") == "MOVE_TO"
+									and px ~= nil and py ~= nil and px >= 0 and py >= 0
+									and px % 1 == 0 and py % 1 == 0
+									and (px ~= x or py ~= y) then departure = true; end
+							break;
+						end
+					end
+					if not departure then return nil; end
+					peers[#peers + 1] = other:GetID();
+				end
+			end
+		end
+		if #peers == 0 or OP["UNITOPERATION_RANGE_ATTACK"] == nil then return nil; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X], params[UnitOperationTypes.PARAM_Y] = tonumber(row.x), tonumber(row.y);
+		local ok, can = pcall(function()
+			return UnitManager.CanStartOperation(unit, OP["UNITOPERATION_RANGE_ATTACK"], nil, params);
+		end);
+		-- Unknown API answers preserve the normal handler. In particular, never
+		-- hold a currently legal shot just because another unit shares its tile.
+		if not ok or can ~= false then return nil; end
+		return { x = x, y = y, peers = peers };
+	end, nil);
+end;
+
+CivvisQueue.rangedDeparturePending = function(pid, unit, dependency)
+	return try(function()
+		-- If the shooter itself moved, the old co-location is no longer the
+		-- dependency. The ordinary native eligibility gate still decides.
+		if unit:GetX() ~= dependency.x or unit:GetY() ~= dependency.y then return false; end
+		for _, id in ipairs(dependency.peers) do
+			local other = liveUnit(pid, id);
+			if other ~= nil and other:GetX() == dependency.x and other:GetY() == dependency.y then
+				return true;
+			end
+		end
+		return false;
+	end, true);
+end;
+
 -- The position an order should leave its unit at, when the next order must
 -- be issued from there. A melee ATTACK ends on the target only if the
 -- defender dies, so it carries no expectation and relies on the host's
@@ -19582,6 +19655,19 @@ CivvisQueue.drain = function(player, pid, turn)
 						emit("queue_war_wait_released", { turn = turn, unit = subject,
 							waited = entry.war_wait });
 						entry.war_wait = nil;
+					end
+				end
+				if ready and entry.departure_wait ~= nil then
+					if CivvisQueue.rangedDeparturePending(pid, unit, entry.departure_wait) then
+						if entry.wait >= grace then
+							CivvisQueue.refuseRest(subject, entry, "queue_ranged_departure_not_clear");
+						end
+						ready = false;
+					else
+						emit("queue_ranged_departure_released", {
+							turn = turn, unit = subject, waited = entry.wait,
+						});
+						entry.departure_wait = nil;
 					end
 				end
 				-- A path can report its destination before Civ VI has finished
@@ -22045,6 +22131,10 @@ local function applyOrders(player, pid, turn, rows)
 		if not ordered[index] then
 			local subject = tonumber(row.subject);
 			local isUnit = tostring(row.kind or "") == "unit" and subject ~= nil;
+			local departureWait;
+			if queueOn and isUnit and firstRun[subject] == nil then
+				departureWait = CivvisQueue.rangedDepartureWait(player, pid, row, rows, index);
+			end
 			if queueOn and isUnit and firstRun[subject] then
 				ordered[index] = true;
 				if firstRefused[subject] then
@@ -22052,6 +22142,15 @@ local function applyOrders(player, pid, turn, rows)
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
+			elseif departureWait ~= nil then
+				ordered[index] = true;
+				CivvisQueue.push(subject, row, nil);
+				CivvisQueue.pending[subject].departure_wait = departureWait;
+				firstRun[subject] = { expect = nil };
+				emit("queue_ranged_departure_wait", {
+					turn = turn, unit = subject, at = { departureWait.x, departureWait.y },
+					departures = #departureWait.peers,
+				});
 			elseif queueOn and isUnit
 					and CivvisQueue.condemnWarPending(player, pid, row, turn) ~= nil then
 				-- No earlier unit order is needed for this dependency: the war
