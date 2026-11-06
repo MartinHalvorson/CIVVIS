@@ -32,8 +32,8 @@
 //!
 //! Two `impl` blocks. The first is one `toggles!` entry per gene whose pair
 //! does nothing but set one flag — most of them. A new gene of that kind adds
-//! one entry at the end of that block: its doc comment, then
-//! `flag => enable_flag, disable_flag;`. The second holds every toggle that
+//! one entry under the append marker for its flag's first letter: its doc
+//! comment, then `flag => enable_flag, disable_flag;`. The second holds every toggle that
 //! does more, written out by hand. Until 2026-11-04 the plain pairs were
 //! written out too: about 4,500 of the file's 9,600 lines.
 //!
@@ -75,6 +75,20 @@ macro_rules! toggles {
 }
 
 impl AdvancedAi {
+    // New plain toggles go here, under the marker for the flag's first letter,
+    // so that gene pull requests in different ranges do not meet on one line.
+    // `tools/test_treatment_append_points.py` holds the block below to its size.
+    toggles! {
+        // ---- append: a-b --------------------------------------------
+        // ---- append: c-d --------------------------------------------
+        // ---- append: e-f --------------------------------------------
+        // ---- append: g-k --------------------------------------------
+        // ---- append: l-o --------------------------------------------
+        // ---- append: p-r --------------------------------------------
+        // ---- append: s-s --------------------------------------------
+        // ---- append: t-z --------------------------------------------
+    }
+
     toggles! {
         /// Enable `victory-deadline-budget` for measurement.
         victory_deadline_budget => enable_victory_deadline_budget, disable_victory_deadline_budget;
@@ -2146,6 +2160,7 @@ impl AdvancedAi {
         first_launch_keeps_research => enable_first_launch_keeps_research, disable_first_launch_keeps_research;
         /// Prioritize usable labs and nearby Rocketry during a Science posture.
         science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
+        science_chain_crosses_window => enable_science_chain_crosses_window, disable_science_chain_crosses_window;
         /// Replace an obsolete native research path with a revealed launch milestone.
         revealed_launch_tech_takes_the_slot => enable_revealed_launch_tech_takes_the_slot, disable_revealed_launch_tech_takes_the_slot;
         /// Ask the native market for Coal serving ready research power.
