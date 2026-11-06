@@ -2277,6 +2277,9 @@ impl AdvancedAi {
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;
         /// Prefer a safe legal site for a new native Science Campus.
         campus_above_the_sea => enable_campus_above_the_sea, disable_campus_above_the_sea;
+        /// Opt-in gene `nusantara-settles-the-shore`; see
+        /// `advanced/nusantara_settles_the_shore.rs`.
+        nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
     }
 }
 

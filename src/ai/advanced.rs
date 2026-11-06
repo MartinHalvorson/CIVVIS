@@ -7686,6 +7686,10 @@ pub struct AdvancedAi {
     /// step, rebuilt when the visible hostiles at war change.
     group_step_field: group_steps_read_the_field::GroupStepField,
     // ---- append: l-o ------------------------------------------------
+    /// `nusantara-settles-the-shore`: an Indonesian seat's site score prices
+    /// the Coast. See `advanced/nusantara_settles_the_shore.rs`. Off by
+    /// default.
+    nusantara_settles_the_shore: bool,
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
     /// threatened. See `advanced/outmatched_war_prices_the_army.rs`. Off by
@@ -10868,6 +10872,9 @@ mod nuclear_launcher;
 /// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
 /// Coast. See `advanced/nusantara_reads_the_coast.rs`.
 mod nusantara_reads_the_coast;
+/// `nusantara-settles-the-shore`: Indonesia's site score prices the Coast.
+/// See `advanced/nusantara_settles_the_shore.rs`.
+mod nusantara_settles_the_shore;
 /// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
 /// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
 mod old_techs_before_the_beeline;
@@ -12326,6 +12333,7 @@ impl AdvancedAi {
             group_steps_read_the_field: false,
             group_step_field: Default::default(),
             // ---- append: l-o ----------------------------------------
+            nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
             luxury_asks_pay_in_strategics_2: false,
             luxury_barter_shorts: Vec::new(),
@@ -26254,6 +26262,9 @@ impl AdvancedAi {
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         value += self.coastal_city_site_bonus(g, pos, &positions);
+        // `nusantara-settles-the-shore`: zero with the gene off and for any
+        // other civilization. See `advanced/nusantara_settles_the_shore.rs`.
+        value += self.nusantara_shore_site_bonus(g, pid, pos);
         value += self.wonder_footprint_value(g, &positions);
         value += self.water_science_wonder_site_value(g, pid, pos);
         value += Self::early_city_water_adjustment(g, pid, pos);

@@ -5332,6 +5332,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
     // A fresh native Science Campus chooses safe legal land before coastal lowland.
     Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
+    // Gitarja's +2 Faith beside Coast or Lake and Great Nusantara's district
+    // adjacency are absent from the site score, so Indonesia ranked sites as
+    // if landlocked: 43 of 97 live foundings were inland and 27 of those had
+    // a legal shore plot within two tiles. Under the gene a shore seat gains
+    // +16, but a coast-only seat only with no fresh water within two tiles,
+    // so it does not pull a city off fresh water. Indonesia only. See
+    // `nusantara_settles_the_shore.rs`.
+    Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

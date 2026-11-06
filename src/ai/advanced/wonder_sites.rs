@@ -143,6 +143,7 @@ impl AdvancedAi {
     pub(super) fn settlement_prefilter_score_for(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let score = Self::settlement_prefilter_score(g, pid, pos)
             + self.coastal_city_site_prefilter_bonus(g, pid, pos)
+            + self.nusantara_shore_site_bonus(g, pid, pos)
             + Self::early_city_water_adjustment(g, pid, pos);
         if !self.wonder_adjacent_sites_on() {
             return score;
