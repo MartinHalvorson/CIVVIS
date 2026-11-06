@@ -41,6 +41,9 @@ window.Worker = class {
     let answer;
     if (message.path === "/runtime") {
       answer = { commit: new URL(location.href).searchParams.get("build") || "test" };
+    } else if (message.path.startsWith("/state") && message.path.includes("seat=1")) {
+      answer = { seed: 9, turn: 42, winner: null, spectate: false, difficulty: "king",
+        players: [{ civ: "Rome" }] };
     } else if (message.path.startsWith("/state") && message.path.includes("have=priced")) {
       answer = { seed: 7, turn: 3, winner: null, frame_budget_ms: 700 };
     } else if (message.path.startsWith("/state")) {
@@ -55,6 +58,12 @@ window.Worker = class {
       answer = { between_game_countdown_ms: window.betweenGameCountdownMs };
     } else if (message.path === "/next-game") {
       answer = { seed: 8, turn: 1, winner: null };
+    } else if (message.path === "/save") {
+      // Bigger than localStorage's whole quota, which is the point: a long
+      // game must still fit. The envelope is the shape the engine answers.
+      answer = { format: "civvis", game: { turn: 42, padding: "x".repeat(6 * 1024 * 1024) } };
+    } else if (message.path === "/load") {
+      answer = { turn: JSON.parse(message.body).game.game.turn, error: null };
     } else {
       answer = {};
     }
@@ -287,6 +296,36 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert immediate["seed"] == 8 and immediate["turn"] == 1, immediate
         assert calls.count("/next-game") == 2, calls
+
+        # A save from before IndexedDB moves across on first use, and the
+        # listing carries what the Continue button shows without loading a
+        # game. The new save is over the size localStorage could ever hold.
+        saves = dev.evaluate(
+            """(async () => {
+              localStorage.setItem('civvis.save.legacy', JSON.stringify(
+                {game: {turn: 12, difficulty: 'prince', players: [{civ: 'Mali'}]}}));
+              const post = (path, body) => fetch(path, {method: 'POST', body: JSON.stringify(body)})
+                .then(r => r.json());
+              const moved = (await (await fetch('/saves')).json()).saves;
+              await fetch('/state?seat=1');
+              const written = await post('/save', {name: 'long-game'});
+              const listed = (await (await fetch('/saves')).json()).saves;
+              const loaded = await post('/load', {name: 'long-game'});
+              const missing = await post('/load', {name: 'nothing'});
+              return {moved, written, listed, loaded, missing,
+                legacyLeft: localStorage.getItem('civvis.save.legacy')};
+            })()"""
+        )
+        assert saves["legacyLeft"] is None, saves["legacyLeft"]
+        moved = {save["name"]: save for save in saves["moved"]}
+        assert moved["legacy"]["turn"] == 12 and moved["legacy"]["civ"] == "Mali", saves["moved"]
+        assert saves["written"]["error"] is None, saves["written"]
+        listed = {save["name"]: save for save in saves["listed"]}
+        assert listed["long-game"]["civ"] == "Rome", saves["listed"]
+        assert listed["long-game"]["turn"] == 42, saves["listed"]
+        assert listed["long-game"]["bytes"] > 6 * 1024 * 1024, saves["listed"]
+        assert saves["loaded"]["turn"] == 42 and saves["loaded"]["error"] is None, saves["loaded"]
+        assert "no save called" in saves["missing"]["error"], saves["missing"]
 
         # A paired desktop refresh replaces the static bundle while the old
         # module finishes its current game. At the next finale it must load the

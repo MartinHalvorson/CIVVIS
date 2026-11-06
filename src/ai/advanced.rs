@@ -2388,9 +2388,10 @@ pub struct AdvancedAi {
     pub settlement_safety: bool,
     /// Price a settle site's district adjacency potential — what a Campus,
     /// Commercial Hub or Harbor would earn at its best plot within two rings
-    /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
-    /// `advanced_v1` rating anchor keeps scoring sites exactly as it always
-    /// has; `promoted_policy_envoy` turns it on for the live controller.
+    /// — via `Game::settlement_adjacency_summary_from_positions`.  Gated so
+    /// the frozen `advanced_v1` rating anchor keeps scoring sites exactly as
+    /// it always has; `promoted_policy_envoy` turns it on for the live
+    /// controller.
     pub adjacency_site_planning: bool,
     /// Hold a settler's chosen site across a turn it could not move, instead
     /// of forgetting it.
@@ -6646,6 +6647,9 @@ pub struct AdvancedAi {
     /// The ransom pays in Diplomatic Favor beside Gold. See
     /// `advanced/captives_come_home.rs`. Off by default.
     captives_come_home_2: bool,
+    /// Keep an assigned Defend formation within two tiles of its threatened city.
+    /// See `advanced/defense_formation.rs`. Off by default.
+    defenders_keep_the_city_in_reach: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -7356,6 +7360,10 @@ pub struct AdvancedAi {
     /// Off by default.
     early_cities_keep_their_distance: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `government-reach-pays-the-switch`: a seat holding its listed
+    /// government takes `government-capacity-fallback`'s reach only for a
+    /// real gain in slots. See `advanced/government_reach.rs`. Off by default.
+    government_reach_pays_the_switch: bool,
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
     /// `advanced/gold_buys_the_opening_builder.rs`. Off by default.
@@ -10334,6 +10342,7 @@ mod war_target_walls;
 
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+mod defense_formation;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;
 
@@ -10712,6 +10721,8 @@ mod expansion_scales_with_difficulty;
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
 mod government_ladder;
+/// `government-reach-pays-the-switch`: see `advanced/government_reach.rs`.
+mod government_reach;
 mod governor_dividends;
 mod higher_level_strategy;
 /// `land-grab-outlasts-the-opening`: see `advanced/land_grab_outlasts.rs`.
@@ -12173,6 +12184,7 @@ impl AdvancedAi {
             denounce_only_to_declare: false,
             districts_price_the_improvement: false,
             captives_come_home_2: false,
+            defenders_keep_the_city_in_reach: false,
             // ---- append: e-f ----------------------------------------
             embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
@@ -12276,6 +12288,7 @@ impl AdvancedAi {
             fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
+            government_reach_pays_the_switch: false,
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
@@ -17112,6 +17125,12 @@ impl AdvancedAi {
                 .filter(|name| unlocked(name))
                 .map(|name| (capacity(name), name.to_string()))
                 .filter(|(slots, _)| *slots > listed)
+                // `government-reach-pays-the-switch`: a seat in its listed
+                // pick stays for a small gain. See
+                // `advanced/government_reach.rs`.
+                .filter(|(slots, _)| {
+                    !self.government_reach_holds(g, pid, choice.as_deref(), *slots, listed)
+                })
                 // Keys iterate in sorted order; the reversed name keeps the
                 // first of an equal-capacity pair, so the pick is stable.
                 .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
