@@ -3245,7 +3245,7 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
     // `dvp * 5`, so 22 points reads as a finished race and 14 reads 70 --
     // under every bar in `urgent_victory_threat`, which is why the shipped
     // seat sat on 847 unspent Favor while the game ended.
-    let planner = crate::ai::AdvancedAi::default();
+    let planner = crate::ai::AdvancedAi::new();
     assert_eq!(planner.rival_pressure(&rebuilt.game, 4).1, 100);
     assert!(
         planner.denial_is_urgent(&rebuilt.game, 4),

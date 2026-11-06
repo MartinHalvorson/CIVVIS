@@ -128,6 +128,18 @@ check("lane gate on", CivvisDiploRacer({ VictoryLane = "diplomatic" }), true)
 check("lane gate other lane", CivvisDiploRacer({ VictoryLane = "culture" }), false)
 check("lane gate off switch", CivvisDiploRacer({ VictoryLane = "diplomatic", DiploRacer = false }), false)
 check("lane gate no config", CivvisDiploRacer(nil), false)
+-- `science-seat-races-the-congress`: the ballot's gate widens, the lane's
+-- does not, so `CivvisPublicWorksVote` still runs on a Science seat.
+local science = { VictoryLane = "science", ScienceCongressRacer = true }
+check("congress gate reads the Diplomatic lane", CivvisCongressRacer({ VictoryLane = "diplomatic" }), true)
+check("congress gate on under the tag", CivvisCongressRacer(science), true)
+check("congress gate leaves the lane gate", CivvisDiploRacer(science), false)
+check("congress gate off without the tag", CivvisCongressRacer({ VictoryLane = "science" }), false)
+check("congress gate is Science only",
+    CivvisCongressRacer({ VictoryLane = "culture", ScienceCongressRacer = true }), false)
+check("congress gate off switch", CivvisCongressRacer({ VictoryLane = "science",
+    ScienceCongressRacer = true, DiploRacer = false }), false)
+check("congress gate no config", CivvisCongressRacer(nil), false)
 local v, p = CivvisRacerResolutionVotes("WC_RES_BORDER_CONTROL", 100, costs, {})
 check("border control buys 2", v, 2); check("border control costs 4", p, 4)
 v, p = CivvisRacerResolutionVotes("WC_RES_TRADE_TREATY", 200, costs, {})
@@ -302,6 +314,92 @@ config.VictoryLane = "culture"
 spent, mode = run(300, 8, 6, 6)
 check("culture lane probes", mode, "probe")
 config.VictoryLane = "diplomatic"
+
+-- `science-seat-races-the-congress`: a Science seat keeps its old ballot...
+config.VictoryLane = "science"
+spent, mode = run(300, 8, 6, 6)
+check("science lane probes without the tag", mode, "probe")
+check("science lane keeps the PR ban option", requests[3].option, 2)
+check("science lane leaves border control free", requests[2].votes, 1)
+-- ...and under the tag casts the same ballot the Diplomatic lane casts.
+config.ScienceCongressRacer = true
+spent, mode = run(300, 8, 6, 6)
+local raced = { spent = spent, mode = mode, votes = requests[1].votes, option = requests[1].option,
+    selection = requests[1].selection, border = requests[2].votes, pr = requests[3].option }
+check("science seat races under the tag", mode, "race")
+check("science seat claims option A", raced.option, 1)
+config.VictoryLane = "diplomatic"
+config.ScienceCongressRacer = nil
+spent, mode = run(300, 8, 6, 6)
+check("the same claim as the lane", raced.votes, requests[1].votes)
+check("the same target as the lane", raced.selection, requests[1].selection)
+check("the same spend as the lane", raced.spent, spent)
+check("the same border votes as the lane", raced.border, requests[2].votes)
+check("the same PR option as the lane", raced.pr, requests[3].option)
+-- Short of a claim above the denial floor, a Science racer banks: a paid B
+-- never decided a session. The Diplomatic lane keeps its denial.
+config.VictoryLane = "science"
+config.ScienceCongressRacer = true
+spent, mode = run(120, 14, 6, 12)
+check("science racer short of a claim casts the free vote", mode, "free")
+check("science racer banks the Favor", requests[1].votes, 1)
+check("science racer's free vote stays on B", requests[1].option, 2)
+-- With the rivals' gang on a leader past 16: the same free vote beside them.
+spent, mode = run(300, 17, 6, 8)
+check("science racer joins the gang free", mode, "free")
+check("science racer spends nothing on the gang's vote", requests[1].votes, 1)
+check("science racer votes with the gang", requests[1].option, 2)
+config.VictoryLane = "science"
+config.ScienceCongressRacer = nil
+spent, mode = run(120, 14, 6, 12)
+check("without the tag the denial still pays", mode, "deny")
+check("without the tag it casts the bank", requests[1].votes > 1, true)
+config.VictoryLane = "diplomatic"
+spent, mode = run(120, 14, 6, 12)
+check("the Diplomatic lane keeps its denial", mode, "deny")
+-- A Public Works vote stands: the racer's buying branch leaves its count.
+GameInfo.Resolutions.WC_RES_PUBLIC_WORKS = { ResolutionType = "WC_RES_PUBLIC_WORKS", Hash = 6 }
+config.VictoryLane = "science"
+config.ScienceCongressRacer = true
+local spaceStage = CivvisSpaceStage
+CivvisSpaceStage = function(id) return id == 3 and 2 or 0 end
+local rtypeTargets = wc.GetResolutions
+wc.GetResolutions = function()
+    local list = rtypeTargets()
+    for _, r in ipairs(list) do
+        if r.Type == "WC_RES_PUBLIC_WORKS" then
+            r.TargetType = "ProjectType"
+            r.PossibleTargets = { "LOC_PROJECT_LAUNCH_EARTH_SATELLITE_NAME",
+                "LOC_PROJECT_LAUNCH_MOON_LANDING_NAME", "LOC_PROJECT_LAUNCH_MARS_BASE_NAME",
+                "LOC_PROJECT_LAUNCH_EXOPLANET_EXPEDITION_NAME" }
+        end
+    end
+    return list
+end
+session = { "WC_RES_DIPLOVICTORY", "WC_RES_PUBLIC_WORKS", "WC_RES_PUBLIC_RELATIONS" }
+spent, mode = run(300, 8, 6, 6)
+local pw
+for _, q in ipairs(requests) do if q.type == 6 then pw = q end end
+check("public works is on the ballot", pw ~= nil, true)
+check("public works still slows the racer", pw and pw.option, 2)
+check("public works keeps its own vote count", pw and pw.votes > 1, true)
+-- With a cap that lets the racer's buying branch reach this resolution, that
+-- branch still leaves the count alone.
+spent, mode = run(900, 8, 6, 6)
+pw = nil
+for _, q in ipairs(requests) do if q.type == 6 then pw = q end end
+local slowed = pw and pw.votes
+config.DiploRacerResolutionCap = 400
+spent, mode = run(900, 8, 6, 6)
+pw = nil
+for _, q in ipairs(requests) do if q.type == 6 then pw = q end end
+check("a higher cap leaves the public works votes", pw and pw.votes, slowed)
+config.DiploRacerResolutionCap = nil
+wc.GetResolutions = rtypeTargets
+CivvisSpaceStage = spaceStage
+session = { "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL", "WC_RES_PUBLIC_RELATIONS" }
+config.VictoryLane = "diplomatic"
+config.ScienceCongressRacer = nil
 
 if failures > 0 then
     print(failures .. " failure(s)")
