@@ -5348,6 +5348,15 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // `sea-scout-claims-the-queue-2`: version 2 of `sea-scout-claims-the-queue`
+    // (carrying 1). The claim leaves other claims' work alone and stands off from
+    // a city that took the hull back. See `advanced/contact_fleet.rs`.
+    Gene { tag: "sea-scout-claims-the-queue-2", field: "sea_scout_claims_the_queue_2", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue_2, disable: AdvancedAi::disable_sea_scout_claims_the_queue_2 },
+    // `space-people-call-the-projects`: while a Great Person who speeds the space
+    // race is on offer, a Science seat's Industrial Zones or Campuses run the
+    // district project that earns that class's points. See
+    // `advanced/space_people_call_the_projects.rs`.
+    Gene { tag: "space-people-call-the-projects", field: "space_people_call_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_space_people_call_the_projects, disable: AdvancedAi::disable_space_people_call_the_projects },
     // A fresh native Science Campus chooses safe legal land before coastal lowland.
     Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
     // The site score paid fresh water +12 and a coast-only seat +10 (housing
@@ -5404,6 +5413,8 @@ pub const GENES: &[Gene] = &[
     // tile, within its range of the old one, counts. See
     // `advanced/battle_planner.rs`.
     Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
+    // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
+    Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
     // `science-seat-builds-the-statue`: a seat aiming at Science claims a Harbor
     // from t120 and the Statue of Liberty for its four Diplomatic Victory
     // Points, which step over the Congress gang wall at about 16. See

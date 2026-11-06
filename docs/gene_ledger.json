@@ -5197,6 +5197,15 @@
           "science-victory-drive-2": null
         }
       },
+      "sea-scout-claims-the-queue": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "sea-scout-claims-the-queue": null,
+          "sea-scout-claims-the-queue-2": null
+        }
+      },
       "second-front-kept-when-winning": {
         "rule_on": [
           "second-front-kept-when-winning"

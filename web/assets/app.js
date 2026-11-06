@@ -33013,6 +33013,9 @@ function refreshTileTip(reveal = false) {
   tip.style.top = (clientY + 16) + "px";
 }
 function queueTileTip(clientX, clientY) {
+  // A tap arrives as a mouse move too, and a tooltip that opens on every tap
+  // sits on the panels the next tap is aimed at, with no hover to dismiss it.
+  if (mapPointerType === "touch") return;
   const pointer = tileTipPointer = {clientX, clientY};
   hideTileTip();
   clearTimeout(tileTipTimer);

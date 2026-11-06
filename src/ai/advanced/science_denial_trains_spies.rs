@@ -133,9 +133,7 @@ impl AdvancedAi {
             let refused_everywhere = city_ids.iter().all(|cid| !g.can_produce(pid, *cid, &spy));
             self.racer_spy_note_held_slots(g, pid, held, needed, refused_everywhere);
         }
-        candidates.sort_by(|(left, left_city), (right, right_city)| {
-            right.total_cmp(left).then(left_city.cmp(right_city))
-        });
+        self.rank_spy_producers(g, &mut candidates);
         let rival = racers
             .iter()
             .next()
