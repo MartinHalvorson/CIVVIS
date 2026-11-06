@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "parallel-library-backlog",
+  "scope": "Repeated chronological later-program offline proposals: 1390 successful requests over two actual native histories. Two OFF runs match the positive native prefix through80; two ON runs first differ at66/frame0, swapping only the Builder and Library producers. Negative history unchanged in all four runs. Exact archived read sequences, one effective gene bit and successful EOF exits. Original positive launch setup reconstructed; no original kernel identity, treatment host execution, actual completion improvement or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-06-parallel-library-backlog.native-queries.tar.xz",
+    "sha256": "8c3adaa1854a7a236fbfa885594dbf6ab9d4a63b394deb02fe75330e597745ea"
+  },
+  "members": [
+    "pairs/positive-repeat-1.json",
+    "pairs/positive-repeat-2.json",
+    "pairs/negative-repeat-1.json",
+    "pairs/negative-repeat-2.json"
+  ]
+}
