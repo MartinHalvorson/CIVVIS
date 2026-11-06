@@ -9552,6 +9552,8 @@ pub struct AdvancedAi {
     /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
     /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
     sea_scout_claims_the_queue: bool,
+    /// Rank Spy producers by native turns, sparing science on ties. Off by default.
+    spies_price_the_science_head: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10964,6 +10966,7 @@ mod siege_tier_before_the_beeline;
 mod siege_under_the_wing;
 mod spaceport_above_sea;
 mod spears_answer_the_horse;
+mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
@@ -11730,6 +11733,7 @@ impl AdvancedAi {
             science_chain_crosses_window: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
+            spies_price_the_science_head: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,
