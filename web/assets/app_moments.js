@@ -8,7 +8,7 @@
 // block the map, and the rail keeps its record of everything.
 const MOMENT_LIFE_MS = 5000;
 const MOMENT_BIG_LIFE_MS = 7500;
-const MOMENT_STACK = 3;      // on screen at once; the rest wait their turn
+const MOMENT_STACK = 2;      // on screen at once; the rest wait their turn
 const MOMENT_PER_TURN = 5;   // a late-game turn can finish a dozen things
 const SOUND_PREFERENCE_KEY = "civvis-sound-v1";
 
