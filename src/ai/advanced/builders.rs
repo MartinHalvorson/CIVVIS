@@ -14,6 +14,8 @@
 
 use super::*;
 
+mod diagnostics;
+
 impl AdvancedAi {
     pub(super) fn improvement_value(
         &self,
