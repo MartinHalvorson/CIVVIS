@@ -2303,6 +2303,9 @@ impl AdvancedAi {
         /// Opt-in gene `wounded-ship-sails-on`; see
         /// `advanced/wounded_ship_sails_on.rs`.
         wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
+        /// Opt-in gene `nusantara-settles-the-shore`; see
+        /// `advanced/nusantara_settles_the_shore.rs`.
+        nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
     }
 }
 
