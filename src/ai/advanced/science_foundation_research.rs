@@ -99,8 +99,15 @@ impl AdvancedAi {
             // left. Live Deity took Chemistry at t128-146 with Universities
             // already standing, Scientific Theory 10-28 turns behind it; the
             // parent test below kept this goal closed on those boards.
+            //
+            // A coastal seat waits for Cartography, which it reaches at a
+            // median t91: Scientific city-states earn 13% of Science from
+            // t100, late contact costs 5%, and hulls need Cartography to
+            // cross. The walk took it from t91 to t125 on a journal seed.
             if self.chemistry_follows_the_university {
-                return Some("chemistry");
+                let waits_for_the_sea = BasicAi::empire_is_coastal(g, pid)
+                    && !known.contains(&crate::name!("cartography"));
+                return (!waits_for_the_sea).then_some("chemistry");
             }
             "chemistry"
         } else if self.science_foundation_before_backlog {

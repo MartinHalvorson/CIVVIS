@@ -261,3 +261,21 @@ fn only_warriors_and_archers_hold_chemistry_back() {
     ai.enable_chemistry_follows_the_university();
     assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
 }
+
+#[test]
+fn a_coastal_seat_keeps_its_cartography_first() {
+    let (mut g, mut ai, plan, _) = two_steps_out();
+    ai.enable_chemistry_follows_the_university();
+    let city = g.player_city_ids(0)[0];
+    let home = g.cities[&city].pos;
+    let shore = g.nbrs(home)[0];
+    g.map.tiles.get_mut(&shore).unwrap().terrain = crate::name!("coast");
+    assert!(BasicAi::empire_is_coastal(&g, 0), "the fixture is coastal");
+    g.players[0].techs.remove(&crate::name!("cartography"));
+    assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
+    g.players[0].techs.insert(crate::name!("cartography"));
+    assert_eq!(
+        ai.science_foundation_research_goal(&g, 0, &plan),
+        Some("chemistry")
+    );
+}
