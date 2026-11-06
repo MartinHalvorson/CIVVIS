@@ -358,7 +358,7 @@ fn the_sea_scout_claims_a_working_queue_only_with_the_gene() {
     let (mut game, city) = working_city();
     diplomat(true).claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     assert!(!head_is_a_ship(&game, city), "off: the queue is untouched");
-    assert!(game.players[0].counters.get("sea_scout_claims").is_none());
+    assert!(!game.players[0].counters.contains_key("sea_scout_claims"));
 
     claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     assert!(head_is_a_ship(&game, city), "on: the hull takes the head");
@@ -427,5 +427,5 @@ fn a_city_too_slow_to_finish_the_hull_keeps_its_queue() {
     }];
     claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
     assert!(!head_is_a_ship(&game, city));
-    assert!(game.players[0].counters.get("sea_scout_claims").is_none());
+    assert!(!game.players[0].counters.contains_key("sea_scout_claims"));
 }
