@@ -200,6 +200,7 @@ impl Game {
         }
         // Ranged Strength is what a unit attacks with.
         rs + self.government_combat_bonus(u, true)
+            + self.mongolian_cavalry_strength(u)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u)

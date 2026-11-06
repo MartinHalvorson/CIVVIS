@@ -1147,10 +1147,9 @@
     "unique_unit": "keshig",
     "agenda": "horde",
     "effects": {
-      "unit_production_pct": 15,
-      "combat_strength": 3
+      "unit_production_pct": 15
     },
-    "note": "Yam Riders: +15% production toward units and +3 combat strength",
+    "note": "Legacy unit production proxy: +15%. Combat models Ortoo's additional +3 per positive diplomatic visibility level and Genghis Khan's +3 for light/heavy cavalry and Keshigs; a host alternate leader does not inherit Genghis's bonus.",
     "traits": [
       "aggressive_military"
     ]

@@ -71,6 +71,32 @@ impl Game {
         }
     }
 
+    /// Expansion1_Leaders.xml: TRAIT_COMBAT_BONUS_FOR_CAVALRY grants
+    /// GENGHIS_KHAN_CAVALRY_BONUS (Amount=3) to light/heavy cavalry or the
+    /// CLASS_MONGOLIAN_KESHIG tag. Other ranged cavalry do not qualify.
+    pub(super) fn mongolian_cavalry_strength(&self, u: &Unit) -> f64 {
+        if !self.owns_civ_unique(u.owner, "Mongolia")
+            || self
+                .observed_leader_types
+                .get(&u.owner)
+                .is_some_and(|leader| leader != "LEADER_GENGHIS_KHAN")
+        {
+            return 0.0;
+        }
+        // Without a host leader reading, the rules roster's Mongolian leader
+        // is Genghis Khan. A host reading overrides that default on clones too.
+        let spec = &self.rules.units[u.kind];
+        if matches!(
+            spec.promotion_class.as_str(),
+            "light_cavalry" | "heavy_cavalry"
+        ) || u.kind == "keshig"
+        {
+            3.0
+        } else {
+            0.0
+        }
+    }
+
     pub(super) fn unit_unembarked_strength(&self, u: &Unit) -> f64 {
         let mut s = self.rules.units[u.kind].strength.max(1.0)
             + self.government_combat_bonus(u, true)
@@ -90,6 +116,7 @@ impl Game {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
         s += self.civ_effect(u.owner, "combat_strength");
+        s += self.mongolian_cavalry_strength(u);
         // Preslav arms cavalry for the high ground, attacking and defending
         // alike -- the shipped modifier is a plain strength bonus keyed on the
         // tile the unit is fighting on, not on who started the fight.
