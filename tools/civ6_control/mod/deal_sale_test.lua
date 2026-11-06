@@ -119,8 +119,11 @@ GameInfo = {
 	-- description id a possible-items entry carries (`ForTypeDescriptionID`),
 	-- the way the shipped deal screen reads the same table both ways.
 	GreatWorks = (function()
-		local poe = { GreatWorkType = "GREATWORK_POE_1", Index = 61 }
-		return { GREATWORK_POE_1 = poe, [61] = poe }
+		local poe = { GreatWorkType = "GREATWORK_POE_1", Index = 61,
+			GreatWorkObjectType = "GREATWORKOBJECT_WRITING" }
+		local music = { GreatWorkType = "GREATWORK_MUSIC_1", Index = 62,
+			GreatWorkObjectType = "GREATWORKOBJECT_MUSIC" }
+		return { GREATWORK_POE_1 = poe, [61] = poe, [62] = music }
 	end)(),
 }
 Game = {
@@ -1582,6 +1585,78 @@ resourceRows.RESOURCE_SILK.ResourceClassType = nil
 	} })
 	onIncoming(3, 7, DealProposalAction.ADJUSTED)
 	check("more Favor than offered is declined", greedy.sends, nil)
+end)()
+
+;(function()
+	local originalSurvey = CivvisGreatWorks.survey
+	local slots = { { accepts = { GREATWORKOBJECT_WRITING = true } } }
+	CivvisGreatWorks.survey = function() return { slots = slots } end
+	local function askWork()
+		reset()
+		local state, player = fixture({ possibleWorks = {
+			{ ForTypeDescriptionID = 61 }, -- not an actual work instance
+			{ ForType = 8000, ForTypeDescriptionID = 62 }, -- no Music slot
+			{ ForType = 8001, ForTypeDescriptionID = 61, IsValid = false },
+			{ ForType = 4009, ForTypeDescriptionID = 61 },
+		} })
+		local ok, why = applyOrder(player, 7,
+			{ kind = "buy", subject = "3", verb = "GREATWORK_ANY", x = 300, y = 0 }, 200)
+		check("work purchase is submitted", ok, true)
+		check("work purchase asks for a price", why, "buy_asked")
+		return state
+	end
+	local ask = askWork()
+	local item = itemOfKind(ask, DealItemTypes.GREATWORK)
+	check("work catalogue reads the rival's inventory", table.concat(ask.possibleArgs, ":"), "3:7")
+	check("purchased work belongs to rival", item and item.owner, 3)
+	check("purchase uses the compatible valid instance", item and item.valueType, 4009)
+	check("purchase uses the corresponding description subtype", item and item.subType, 61)
+	check("work has no invented amount", item and item.amount, nil)
+	check("purchase registers exact work instance", trade.pending[3].want, "GREATWORK:4009")
+	check("purchase uses EQUALIZE", ask.sends and ask.sends[1][1], DealProposalAction.EQUALIZE)
+
+	local fair = fixture({ incoming = {
+		{ kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+		{ kind = DealItemTypes.GOLD, from = 7, amount = 250 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("exact purchased work within ceiling is accepted", fair.sends and fair.sends[1][1], DealProposalAction.ACCEPTED)
+
+	askWork()
+	local overpriced = fixture({ incoming = {
+		{ kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+		{ kind = DealItemTypes.GOLD, from = 7, amount = 50 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 9 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("work purchase includes ongoing Gold in ceiling", overpriced.sends, nil)
+
+	askWork()
+	local swapped = fixture({ incoming = {
+		{ kind = DealItemTypes.GREATWORK, from = 3, valueType = 4010 },
+		{ kind = DealItemTypes.GOLD, from = 7, amount = 100 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("a substituted work instance is rejected", swapped.sends, nil)
+
+	askWork()
+	local collateral = fixture({ incoming = {
+		{ kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+		{ kind = DealItemTypes.GOLD, from = 7, amount = 100 },
+		{ kind = DealItemTypes.FAVOR, from = 7, amount = 50 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check("work purchase does not give away unoffered assets", collateral.sends, nil)
+
+	reset()
+	slots = {}
+	local full, fullPlayer = fixture({ possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } } })
+	local ok, why = applyOrder(fullPlayer, 7,
+		{ kind = "buy", subject = "3", verb = "GREATWORK_ANY", x = 300, y = 0 }, 200)
+	check("no room means no work request", ok, false)
+	check("no room is explained", why, "buy_no_great_work")
+	check("no room submits no deal", full.sends, nil)
+	CivvisGreatWorks.survey = originalSurvey
 end)()
 
 realPrint("\nall surplus-sale checks passed")

@@ -5767,6 +5767,40 @@ fn decide(
     let (host_legal, deferred_peace_retries) =
         defer_host_peace_retries(orders, state, host_peace_retries);
     orders = host_legal;
+    // The AI chooses whether/where to buy; the host quotes a tradeable work.
+    // Keep higher-priority resource, passage and amenity purchases first.
+    if !orders.iter().any(|order| order.kind == "buy") {
+        let cultural_activation_pending = state.units.iter().any(|unit| {
+            unit.great_person.as_ref().is_some_and(|person| {
+                person.can_activate
+                    && matches!(
+                        person.class.as_deref(),
+                        Some(
+                            "GREAT_PERSON_CLASS_WRITER"
+                                | "GREAT_PERSON_CLASS_ARTIST"
+                                | "GREAT_PERSON_CLASS_MUSICIAN"
+                        )
+                    )
+            })
+        });
+        if let Some((seller, ceiling)) = ai.culture_work_purchase_ask(
+            &mirror_state.game,
+            0,
+            planned_game.players[0].gold,
+            state.gold_per_turn,
+            cultural_activation_pending,
+        ) {
+            if let Some(rival) = civvis::mirror::host_rival_for_seat(state, seller, 0) {
+                orders.push(Order {
+                    kind: "buy",
+                    subject: Some(rival.player as i64),
+                    verb: Some("GREATWORK_ANY".to_string()),
+                    pos: Some((ceiling, 0)),
+                });
+                note_bits.push("culture_work_buy=1".to_string());
+            }
+        }
+    }
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {
         note_bits.push(format!(
