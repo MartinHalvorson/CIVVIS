@@ -200,6 +200,9 @@ impl Game {
         }
         // Ranged Strength is what a unit attacks with.
         rs + self.government_combat_bonus(u, true)
+            // Leaders.xml:1463-1465 adjusts unit combat, with no weapon-class
+            // restriction. The same difficulty bonus already reaches melee.
+            + self.handicap_combat_strength(u.owner)
             + self.mongolian_cavalry_strength(u)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
@@ -228,6 +231,7 @@ impl Game {
         }
             // Bombarding a city is an attack.
             + self.government_combat_bonus(u, true)
+            + self.handicap_combat_strength(u.owner)
             + self.unit_formation_bonus(u)
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u)
