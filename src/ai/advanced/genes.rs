@@ -5366,6 +5366,10 @@ pub const GENES: &[Gene] = &[
     // reach, and the Factory claim, which named Coal alone, takes the plant
     // the fuel can run. See `advanced/plant_reads_the_grid.rs`.
     Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
+    // `sea-scout-claims-the-queue`: the contact gap's sea scout claims a working
+    // coastal queue once a hull can cross Ocean, instead of waiting for an idle
+    // one. See `advanced/contact_fleet.rs`.
+    Gene { tag: "sea-scout-claims-the-queue", field: "sea_scout_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue, disable: AdvancedAi::disable_sea_scout_claims_the_queue },
     // Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp Heavy Chariot
     // one tile, reading "danger 69 where it stood, -0 where it stands"; the
     // Galley beside it stepped into the tile it left and killed it. With
