@@ -6507,6 +6507,38 @@ fn translate(
             verb: Some("PILLAGE".to_string()),
             pos: None,
         }),
+        Action::ContributeProject { unit, city } => {
+            // Expansion2/Data/Expansion1_UnitCommands.xml:11 defines the
+            // parameterless PROJECT_PRODUCTION command. Preserve the intended
+            // district as a position guard: the native command acts where the
+            // Builder stands, never on a city id supplied as a parameter.
+            let actor = own_unit(state, *civ6_of.get(unit)?)?;
+            let native_city = mirror_state
+                .cid_of
+                .iter()
+                .find(|(_, cid)| **cid == *city)
+                .and_then(|(id, _)| state.cities.iter().find(|c| c.id == *id))?;
+            if actor.kind != "UNIT_BUILDER"
+                || actor.charges <= 0
+                || !native_city
+                    .producing
+                    .as_deref()
+                    .is_some_and(|head| head.starts_with("PROJECT_"))
+                || !native_city.districts.iter().any(|district| {
+                    district.complete
+                        && !district.pillaged
+                        && (district.x, district.y) == (actor.x, actor.y)
+                })
+            {
+                return None;
+            }
+            Some(Order {
+                kind: "unit",
+                subject: Some(actor.id),
+                verb: Some("PROJECT_PRODUCTION".to_string()),
+                pos: Some((actor.x, actor.y)),
+            })
+        }
         Action::UpgradeUnit { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -7208,6 +7240,10 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
 /// covers every espionage mission: they run for many turns and the frame
 /// carries no mission state.
 const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
+    (
+        "PROJECT_PRODUCTION",
+        "no per-command project-production attribution; builder disappearance alone is not proof of contribution",
+    ),
     (
         "SKIP_TURN",
         "a skipped turn changes nothing the frame exports",

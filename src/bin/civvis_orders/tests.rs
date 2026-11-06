@@ -21,6 +21,99 @@ fn startup_genome_keeps_default_and_forced_identity_without_withholds() {
 }
 
 #[test]
+fn royal_society_contribution_reaches_the_native_command_at_its_intended_district() {
+    use civvis::mirror::StateDistrict;
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 150,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|x| (0..8).map(move |y| grass(x, y)))
+            .collect(),
+    }]);
+    let state = StateSnapshot {
+        turn: 150,
+        cities: vec![StateCity {
+            id: 65536,
+            x: 2,
+            y: 2,
+            pop: 8,
+            capital: true,
+            producing: Some("PROJECT_LAUNCH_EARTH_SATELLITE".into()),
+            districts: vec![StateDistrict {
+                kind: "DISTRICT_SPACEPORT".into(),
+                x: 4,
+                y: 4,
+                complete: true,
+                ..StateDistrict::default()
+            }],
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 131073,
+            kind: "UNIT_BUILDER".into(),
+            x: 4,
+            y: 4,
+            charges: 3,
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 3, 1, 250, 0);
+    let unit = *mirror
+        .civ6_of
+        .iter()
+        .find(|(_, id)| **id == 131073)
+        .unwrap()
+        .0;
+    let city = mirror.cid_of[&65536];
+    let action = Action::ContributeProject { unit, city };
+    // The planning apply consumes the Builder. Translation needs the observed
+    // native actor, rather than a unit that no longer exists in the simulation.
+    mirror.game.units.remove(&unit);
+    let order = translate(&action, &mirror, &state).expect("mapped contribution");
+    assert_eq!(
+        (order.kind, order.subject, order.verb.as_deref(), order.pos),
+        (
+            "unit",
+            Some(131073),
+            Some("PROJECT_PRODUCTION"),
+            Some((4, 4))
+        )
+    );
+    assert!(
+        unverifiable_unit_verb("PROJECT_PRODUCTION"),
+        "request acceptance or a missing builder is not a verified production gain"
+    );
+    for variant in 0..7 {
+        let mut bad = state.clone();
+        match variant {
+            0 => bad.units.clear(),
+            1 => bad.units[0].x = 5,
+            2 => bad.units[0].charges = 0,
+            3 => bad.units[0].kind = "UNIT_ENGINEER".into(),
+            4 => bad.cities[0].districts[0].pillaged = true,
+            5 => bad.cities[0].districts[0].complete = false,
+            _ => bad.cities[0].producing = Some("BUILDING_RESEARCH_LAB".into()),
+        }
+        assert!(
+            translate(&action, &mirror, &bad).is_none(),
+            "unsafe variant {variant}"
+        );
+    }
+    assert!(translate(
+        &Action::ContributeProject {
+            unit,
+            city: u32::MAX
+        },
+        &mirror,
+        &state
+    )
+    .is_none());
+}
+
+#[test]
 fn startup_genome_tracks_multiple_repeated_host_withholds_without_forcing() {
     let withheld = vec![
         "counter-in-lane".to_string(),
