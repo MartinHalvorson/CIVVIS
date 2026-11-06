@@ -1214,6 +1214,55 @@ def vsync_ab_turns(path: Path | None = None) -> int | None:
     return turns
 
 
+# Attribute, mod config key, and actual seat readback for optional timing studies.
+ORDER_QUEUE_TIMINGS = (
+    ("order_queue_idle_probe_ticks", "OrderQueueIdleProbeTicks", "order_queue_idle_probe_ticks"),
+    ("order_queue_noop_probe_ticks", "OrderQueueNoopProbeTicks", "order_queue_noop_probe_ticks"),
+    ("order_queue_grace_ticks", "OrderQueueGraceTicks", "order_queue_grace_ticks"),
+)
+
+
+def positive_queue_ticks(value: str) -> int:
+    try:
+        ticks = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("queue timing must be a positive integer") from exc
+    if ticks <= 0:
+        raise argparse.ArgumentTypeError("queue timing must be a positive integer")
+    return ticks
+
+
+def order_queue_timing_config(args: argparse.Namespace) -> dict:
+    """Omit absent overrides so existing mod defaults and old callers survive."""
+    result = {}
+    for attribute, key, _ in ORDER_QUEUE_TIMINGS:
+        value = getattr(args, attribute, None)
+        if value is None:
+            continue
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"{attribute} must be a positive integer")
+        result[key] = value
+    if result and getattr(args, "order_queue", True) is False:
+        raise ValueError("order queue timing overrides require the order queue")
+    return result
+
+
+def order_queue_timing_drift(event: dict, args: argparse.Namespace) -> list[str]:
+    """Explicit experiments need numeric receiver readback, including on old mods."""
+    drift = []
+    requested = order_queue_timing_config(args)
+    if requested and event.get("order_queue") is not True:
+        drift.append("order queue not enabled in receiver readback")
+    for _, key, field in ORDER_QUEUE_TIMINGS:
+        if key not in requested:
+            continue
+        value = event.get(field)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or value != requested[key]):
+            drift.append(f"{field} {value!r} != requested {requested[key]}")
+    return drift
+
+
 def build_config(args: argparse.Namespace) -> dict:
     dialogue_seconds = getattr(args, "dialogue_seconds", 0.25)
     if dialogue_seconds is None:
@@ -1455,6 +1504,7 @@ def build_config(args: argparse.Namespace) -> dict:
         # explicitly held by the mod; the host never chooses its route.
         "OrderQueue": args.order_queue,
         "OrderQueueMaxTicks": args.order_queue_max_ticks,
+        **order_queue_timing_config(args),
         # The ledger's per-strike host preview (`CombatManager.SimulateAttackInto`)
         # is one host call per strike; this switch exists so a run can be played
         # without it if the call ever proves unsafe, and so the ledger can say
@@ -5123,6 +5173,10 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             state["seat"] = event
             configured, modes_match, ruleset_match = seat_matches_requested(event, args)
             state["configured"] = configured
+            timing_drift = order_queue_timing_drift(event, args)
+            if timing_drift:
+                print("[agent] queue timing override unverified: " + "; ".join(timing_drift),
+                      file=sys.stderr, flush=True)
             state["modes"] = event.get("modes")
             state["mode_mismatch"] = not modes_match
             state["ruleset"] = event.get("ruleset")
@@ -5387,6 +5441,7 @@ def seat_matches_requested(
         and event.get("speed") == args.speed
         and event.get("map") == args.map
         and not setup_drift(event, args)
+        and not order_queue_timing_drift(event, args)
         and (args.leader is None or event.get("leader") == args.leader)
         and modes_match
         and (not getattr(args, "action_transitions", False) or event.get("action_transitions") is True)
@@ -5507,6 +5562,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "ProbeCitizens": getattr(args, "probe_citizens", None),
             "CampusSpecialist": getattr(args, "campus_specialist", None),
             "OrderQueue": getattr(args, "order_queue", None),
+            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
             "CapMovesToReach": getattr(args, "cap_moves_to_reach", None),
             "SettlerEscortCapSync": getattr(args, "settler_escort_cap_sync", None),
             "CancelQueuedPaths": getattr(args, "cancel_queued_paths", None),
@@ -6094,6 +6150,10 @@ def _play(args: argparse.Namespace) -> int:
             # is `summary_reason` that decides what counts as a refusal.
             state["ruleset_match"] = ruleset_match
             state["configured"] = configured
+            timing_drift = order_queue_timing_drift(event, args)
+            if timing_drift:
+                print("[agent] queue timing override unverified: " + "; ".join(timing_drift),
+                      file=sys.stderr, flush=True)
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
@@ -6931,6 +6991,7 @@ def _play(args: argparse.Namespace) -> int:
             # §9). Each is an A/B axis: a row that does not say which were on
             # cannot be compared with one that does.
             "OrderQueue": args.order_queue,
+            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
             "CapMovesToReach": args.cap_moves_to_reach,
             "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
@@ -7487,6 +7548,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--order-queue-max-ticks", type=int, default=240,
                     help="ticks the turn is held for queued unit orders before the "
                          "rest are refused as queue_stalled")
+    for attribute, _, _ in ORDER_QUEUE_TIMINGS:
+        ap.add_argument("--" + attribute.replace("_", "-"), type=positive_queue_ticks,
+                        default=None, metavar="TICKS",
+                        help="override this mod queue threshold; omitted preserves its "
+                             "existing default; requires queue enabled and matching seat readback")
     ap.add_argument("--no-strike-preview", dest="strike_preview",
                     action="store_false", default=True,
                     help="do not ask the host for its combat preview before a strike "
@@ -7618,6 +7684,10 @@ def main(argv: list[str] | None = None) -> int:
                          "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(raw_argv)
+    try:
+        order_queue_timing_config(args)
+    except ValueError as exc:
+        ap.error(str(exc))
     apply_tree_mod_arms(args)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
