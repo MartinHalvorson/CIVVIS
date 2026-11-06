@@ -2293,6 +2293,12 @@ impl AdvancedAi {
         /// Opt-in gene `plant-reads-the-grid`; see
         /// `advanced/plant_reads_the_grid.rs`.
         plant_reads_the_grid => enable_plant_reads_the_grid, disable_plant_reads_the_grid;
+        /// Opt-in gene `sea-scout-claims-the-queue`; see
+        /// `advanced/contact_fleet.rs`.
+        sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
+        /// Opt-in gene `wounded-ship-sails-on`; see
+        /// `advanced/wounded_ship_sails_on.rs`.
+        wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
         /// Opt-in gene `nusantara-settles-the-shore`; see
         /// `advanced/nusantara_settles_the_shore.rs`.
         nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
@@ -5301,6 +5307,16 @@ impl AdvancedAi {
     /// The twin of `enable_nusantara_reads_the_coast`.
     pub fn disable_nusantara_reads_the_coast(&mut self) {
         self.nusantara_reads_the_coast = false;
+    }
+
+    /// Opt-in committed launch relocation; see `governor_dividends/pingala_launch`.
+    pub fn enable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = true;
+    }
+
+    /// Withhold the committed launch relocation.
+    pub fn disable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = false;
     }
 
     // ---- append: a-b ------------------------------------------------

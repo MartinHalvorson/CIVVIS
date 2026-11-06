@@ -2540,6 +2540,22 @@ impl AdvancedAi {
             if !(wounded || exposed) {
                 continue;
             }
+            // `wounded-ship-sails-on`: neutral water heals a ship nothing, so
+            // one with no friendly water in reach would wait here forever.
+            // See `advanced/wounded_ship_sails_on.rs`.
+            if wounded && here <= NO_DANGER && self.wounded_ship_sails_on(g, pid, uid) {
+                self.battle_planner_recovering.remove(&uid);
+                *g.players[pid]
+                    .counters
+                    .entry("wounded_ships_sailed_on".to_string())
+                    .or_insert(0) += 1;
+                think!(self.journal(), Military, Decision,
+                    "Battle plan: the {} at {:?} sails on", unit.kind, unit.pos;
+                    "wounded-ship-sails-on: {} hp, no danger here, and no water in reach heals a \
+                     ship, so it charts rather than wait for health that cannot come",
+                    unit.hp);
+                continue;
+            }
             let healing_pillage = wounded
                 && here <= NO_DANGER
                 && g.pillageable_at(pid, unit.pos)

@@ -8564,6 +8564,8 @@ pub struct AdvancedAi {
     pingala_follows_research: bool,
     /// Independently measured Pingala launch-job version; preserves version one.
     pingala_follows_research_2: bool,
+    /// Price a committed launch against establishment and displaced dividends. Opt-in.
+    pingala_earns_the_launch: bool,
     /// Native governor establishment is a lower bound, not total tenure.
     /// Keep observed post clocks across fresh boards; city coordinates survive
     /// the bridge's city-id remapping. See `governor_dividends`.
@@ -9530,11 +9532,20 @@ pub struct AdvancedAi {
     /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
     /// by default.
     science_heads_keep_their_queue: bool,
+    /// `sea-scout-claims-the-queue`: once a hull can cross Ocean and the
+    /// contact gap is open, the coastal city that finishes it soonest lays down
+    /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
+    /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
     /// for it. See `advanced/world_religion_condemns.rs`. Off by default.
     world_religion_condemns_the_faith: bool,
+    /// `wounded-ship-sails-on`: a wounded sea scout with no healing water in
+    /// reach keeps charting instead of fortifying where it can never recover.
+    /// See `advanced/wounded_ship_sails_on.rs`. Off by default.
+    wounded_ship_sails_on: bool,
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
     /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
@@ -10813,6 +10824,8 @@ mod wonder_clearance;
 /// unseen ring of a natural wonder near home before it picks a frontier. Two
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
+/// `wounded-ship-sails-on`: see `advanced/wounded_ship_sails_on.rs`.
+mod wounded_ship_sails_on;
 
 /// `amphibious-siege-train`: a water-locked siege objective's guns and
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
@@ -12512,6 +12525,7 @@ impl AdvancedAi {
             reyna_follows_revenue: false,
             pingala_follows_research: false,
             pingala_follows_research_2: false,
+            pingala_earns_the_launch: false,
             remembered_governor_posts: BTreeMap::new(),
             research_building_catchup: false,
             research_building_catchup_2: false,
@@ -12687,8 +12701,10 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
+            sea_scout_claims_the_queue: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
+            wounded_ship_sails_on: false,
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,
@@ -29069,8 +29085,12 @@ impl AdvancedAi {
         }
         // Spend Governor Titles against the same strategic plan before the
         // baseline ancillary pass can dilute them across empty cities.
-        self.strategic_governors(g, pid, &plan);
-        self.relocate_governors_for_dividends(g, pid, &plan);
+        // A launch exchange must precede title operations: the native bridge
+        // retains a reciprocal assignment pair only before any title operation.
+        if !self.relocate_pingala_for_launch(g, pid, &plan) {
+            self.strategic_governors(g, pid, &plan);
+            self.relocate_governors_for_dividends(g, pid, &plan);
+        }
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
@@ -29412,6 +29432,9 @@ impl AdvancedAi {
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
+            // `sea-scout-claims-the-queue`: the same eye, from a working queue
+            // once it can cross Ocean. Exact no-op while the gene is off.
+            self.claim_queue_for_the_sea_scout(g, pid, &plan);
             self.reserve_idle_naval_recon(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for
