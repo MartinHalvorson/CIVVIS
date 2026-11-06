@@ -6576,6 +6576,7 @@ async function send(action) {
   const advancing = action.type === "end_turn";
   if (advancing) {
     turnAdvancePending = true;
+    playSound("endTurn");
     drawTurnLoop();
   }
   try {
@@ -26023,9 +26024,12 @@ function drawCivTop() {
       soloEraChip(me) +
       `<span class="civtop-turn" title="${escapeAttr(turnTitle)}">` +
         `<small>Turn</small><b>${state.turn}</b>${cap ? `<small>/${cap}</small>` : ""}</span>` +
+      `<button class="civtop-btn" type="button" onclick="toggleSound()" ` +
+        `title="${soundButtonLabel()}" aria-label="${soundButtonLabel()}" ` +
+        `aria-pressed="${soundEnabled}">${soundEnabled ? "♪" : "∅"}</button>` +
       `<button class="civtop-btn" type="button" onclick="openPedia()" ` +
         `title="Civilopedia — P" aria-label="Civilopedia">?</button>` +
-      `<button class="civtop-btn" type="button" onclick="togglePanel()" ` +
+      `<button class="civtop-btn" type="button" onclick="openGameMenu() || togglePanel()" ` +
         `title="Game menu — setup, display settings, saves and logs" aria-label="Game menu">☰</button>` +
     `</div>`;
   if (html === civTopHtml) return;
@@ -33079,6 +33083,7 @@ const NOTICE_TONES = { War: "bad", World: "warn", Diplomacy: "warn" };
 function captureTurnNotices() {
   const fresh = (state.events || []).filter(e => e.turn > noticeSeenTurn);
   noticeSeenTurn = state.turn;
+  announceMoments(fresh);
   for (const event of fresh) {
     const kind = `ev:${event.turn}:${event.text}`;
     if (noticeDismissed.has(kind)) continue;
@@ -33398,6 +33403,7 @@ function openTurnIfNew() {
   const first = loopTurn === null;
   loopTurn = state.turn;
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
+  if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
   drawTurnLoop();
   resumeAllTravel();
@@ -33905,6 +33911,9 @@ document.addEventListener("keydown", ev => {
     if (clearUnitIntel()) { modeline(); draw(); return; }
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
+    // The last Escape in the unwinding is the game's own: nothing is selected
+    // and no mode is on, so the only thing left to leave is the game.
+    if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;
     sel = null; selCity = null; mapLens = null; tackMode = false;
     syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();

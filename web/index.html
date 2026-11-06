@@ -5090,6 +5090,46 @@
     background: linear-gradient(180deg, #f3d995, #c9a24f); box-shadow: 0 6px 28px #d7b66a38;
   }
   #fd-begin:hover, #fd-begin:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  #frontdoor.fd-centered { background: #050b09b8; align-items: center; justify-content: center; }
+  .fd-pause, .fd-begin-card {
+    display: flex; flex-direction: column; gap: 10px; width: min(420px, calc(100% - 32px)); box-sizing: border-box;
+    padding: 26px; border-radius: 16px; border: 1px solid #d7b66a55; background: #0a1512f7;
+    box-shadow: 0 30px 90px #000c; animation: fd-rise .22s ease-out both;
+  }
+  .fd-pause[hidden], .fd-begin-card[hidden] { display: none; }
+  .fd-pause h2 { margin: 0 0 8px; text-align: center; font: 600 26px/1 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-pause .fd-entry:hover { transform: none; }
+  .fd-begin-card { align-items: center; text-align: center; gap: 8px; }
+  .fd-intro-kicker { margin: 8px 0 0; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; }
+  .fd-begin-card h2 { margin: 0; font: 600 30px/1.1 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .fd-intro-ability { margin: 6px 0 0; font-size: 15px; line-height: 1.45; color: #dbe5e0; }
+  .fd-intro-ability b { display: block; color: var(--gold-bright); }
+  .fd-intro-goal { margin: 6px 0 10px; font-size: 13px; line-height: 1.45; color: #a9bbb4; }
+  #fd-intro-go {
+    padding: 12px 34px; border-radius: 10px; cursor: pointer; font-size: 15px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #1a1407; border: 1px solid #f0d28c;
+    background: linear-gradient(180deg, #f3d995, #c9a24f);
+  }
+  #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  /* Payoffs: what a turn delivered, across the top and clear of the panels. */
+  #moments {
+    position: fixed; top: 112px; left: 50%; z-index: 40; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    width: min(440px, calc(100% - 24px)); pointer-events: none;
+  }
+  .moment {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 10px 18px;
+    pointer-events: auto; cursor: pointer; color: #edf3f0; text-align: center; font: inherit;
+    background: #0a1512f2; border: 1px solid #d7b66a66; border-radius: 12px;
+    box-shadow: 0 14px 38px #000a; animation: moment-in .32s cubic-bezier(.2,.9,.3,1.2) both;
+  }
+  .moment:hover { border-color: var(--gold-bright); transform: none; }
+  @keyframes moment-in { from { opacity: 0; transform: translateY(-12px) scale(.97); } to { opacity: 1; transform: none; } }
+  .moment-kicker { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; }
+  .moment-name { font: 600 21px/1.15 Georgia, "Times New Roman", serif; color: var(--gold-bright); }
+  .moment-note { font-size: 13px; color: #cfdad5; }
+  .moment-big { padding: 16px 22px; border-color: var(--gold); box-shadow: 0 14px 44px #000a, 0 0 34px #d7b66a33; }
+  .moment-big .moment-name { font-size: 27px; }
   @media (max-width: 760px) {
     #frontdoor { background: #050b09e6; }
     .fd-menu { padding: 24px; width: 100%; }
@@ -5098,7 +5138,7 @@
     #fd-leaders { max-height: 42vh; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .fd-menu, .fd-create { animation: none; }
+    .fd-menu, .fd-create, .fd-pause, .fd-begin-card, .moment { animation: none; }
     .fd-entry { transition: none; }
     .fd-entry:hover { transform: none; }
   }
@@ -5141,6 +5181,7 @@
 </script>
 </head>
 <body aria-busy="false">
+<div id="moments" aria-live="polite"></div>
 <div id="frontdoor" role="dialog" aria-modal="true" aria-label="CIVVIS main menu" hidden>
   <section class="fd-menu" id="fd-menu">
     <header>
@@ -5153,6 +5194,22 @@
       <button type="button" class="fd-entry" id="fd-watch"><b>Watch the AIs</b><small>This game is live: four AIs playing right now</small></button>
       <a class="fd-entry" href="/home"><b>About CIVVIS</b><small>What this is and how it was built</small></a>
     </nav>
+  </section>
+  <section class="fd-pause" id="fd-pause" aria-label="Game menu" hidden>
+    <h2>Game menu</h2>
+    <button type="button" class="fd-entry fd-primary" id="fd-resume"><b>Back to the game</b></button>
+    <button type="button" class="fd-entry" id="fd-save"><b>Save game</b><small id="fd-save-note">Your game also saves itself every turn</small></button>
+    <button type="button" class="fd-entry" id="fd-settings"><b>Settings and logs</b></button>
+    <button type="button" class="fd-entry" id="fd-sound"><b id="fd-sound-label">Sound</b></button>
+    <button type="button" class="fd-entry" id="fd-exit"><b>Main menu</b><small>This game is kept: Continue brings you back</small></button>
+  </section>
+  <section class="fd-begin-card" id="fd-intro" aria-live="polite" hidden>
+    <div id="fd-intro-crest"></div>
+    <p class="fd-intro-kicker" id="fd-intro-kicker"></p>
+    <h2 id="fd-intro-leader"></h2>
+    <p class="fd-intro-ability" id="fd-intro-ability"></p>
+    <p class="fd-intro-goal" id="fd-intro-goal"></p>
+    <button type="button" id="fd-intro-go">Begin your journey</button>
   </section>
   <section class="fd-create" id="fd-create" aria-label="Create a game" hidden>
     <div class="fd-create-head">
@@ -6263,6 +6320,7 @@
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/app_setup.js"></script>
+<script src="/assets/app_moments.js"></script>
 <script src="/assets/app_frontdoor.js"></script>
 </body>
 </html>
