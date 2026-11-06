@@ -27,6 +27,44 @@
 /// So it is checked instead. The bundle's own source is the input: a
 /// treatment added to `enable_live_bridge` without a registry row fails
 /// here, naming itself.
+/// `AdvancedAi::default()` is the blank `configured` fills in, with every gene
+/// off. It meant `new()` until 2026-11-06, and either way it compiles, so an old
+/// habit here would quietly build an agent that plays nothing like the live
+/// one. The scan walks the tree, so a new file joins it by existing, and the
+/// floor fails if the walk ever stops seeing the crate.
+#[test]
+fn nothing_plays_the_blank_default() {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("a readable source directory") {
+            let path = entry.expect("a readable directory entry").path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for dir in ["src", "tests", "experiments"] {
+        let dir = root.join(dir);
+        if dir.is_dir() {
+            walk(&dir, &mut files);
+        }
+    }
+    assert!(files.len() > 500, "the walk saw only {} files", files.len());
+    // Split so this test does not find itself.
+    let blank = concat!("AdvancedAi", "::default()");
+    let offenders: Vec<_> = files
+        .iter()
+        .filter(|path| std::fs::read_to_string(path).is_ok_and(|source| source.contains(blank)))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "use `AdvancedAi::new()` for a playing agent: {offenders:?}"
+    );
+}
+
 /// ★★★★ THE REGISTRY'S PRODUCTION ROWS ARE REAL: a `Kind::Production` gene
 /// names a behaviour `promoted_policy_envoy` really turns on, so withholding
 /// it withholds something; a `Kind::OptIn` gene names one production ships
