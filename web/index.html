@@ -2027,7 +2027,7 @@
   }
   .leader.at-war { border-color: #6b3f3c; background: #1c1312bb; }
   .leader.allied { border-color: #4a805d; background: #14261fbb; }
-  .leader-head { display: flex; align-items: baseline; gap: 9px; }
+  .leader-head { display: flex; align-items: center; gap: 9px; }
   .leader-name { color: var(--gold-bright); font: 600 17px Georgia, serif; }
   .leader-civ { color: var(--muted); font-size: var(--type-secondary); }
   .leader-stance {
@@ -4992,6 +4992,8 @@
   body.frontdoor-open #side,
   body.frontdoor-open #buildmark,
   body.frontdoor-open #maparea > :not(#map) { visibility: hidden; }
+  /* Space is pure black. A page any other shade drew the map's box around it. */
+  body.frontdoor-open { background: #000; }
   #frontdoor {
     position: fixed; inset: 0; z-index: 9000; display: flex; color: #edf3f0;
     background: linear-gradient(90deg, #050b09f5 0, #050b09d9 28%, #050b0940 58%, #050b0900 100%);
@@ -5064,6 +5066,7 @@
   }
   .fd-crest-random { background: radial-gradient(circle at 35% 30%, #5c6f68, #1c2a25); }
   .fd-crest-large { width: 84px; height: 84px; font-size: 30px; }
+  .fd-crest-small { width: 30px; height: 30px; font-size: 12px; }
   .fd-side { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; padding-right: 4px; }
   #fd-dossier { display: flex; gap: 16px; padding: 14px; border-radius: 12px; background: #0c1a16; border: 1px solid #2b4138; }
   .fd-dossier-text { min-width: 0; }
