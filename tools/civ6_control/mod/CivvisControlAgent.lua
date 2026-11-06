@@ -25684,6 +25684,14 @@ local function onTeamVictory(team, victoryType, eventID)
 	local ourTeam = try(function()
 		return (pid ~= nil and pid >= 0) and Players[pid]:GetTeam() or -1;
 	end, -1);
+	-- TeamVictory can arrive between turns, after the last decision export.
+	-- Capture the post-resolution counters before stopping the controller.
+	local exported, exportError = pcall(function()
+		if pid ~= nil and pid >= 0 and Players[pid] ~= nil then
+			exportState(Players[pid], pid, Game.GetCurrentGameTurn(), 0);
+		end
+	end);
+	if not exported then emit("final_state_error", {error = tostring(exportError)}); end
 	finished = true;
 	emit("victory", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),

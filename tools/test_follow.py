@@ -793,3 +793,18 @@ class PaintedTurnReportTest(unittest.TestCase):
         self.assertTrue(all(call.args[0] <= follow.FAST_POLL_SECONDS
                             for call in sleep.call_args_list))
         self.assertEqual(report.call_count, 2)
+
+
+class VictoryRefreshTest(unittest.TestCase):
+    def test_victory_alone_refreshes_the_board_and_advances_the_turn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            path.write_text('{"kind":"state","turn":172}\n')
+            with mock.patch.object(follow, "_EVENT_CACHE", None):
+                lines, *_ = follow.read_events(directory)
+                revision = lines.board_revision
+                with path.open("a") as handle:
+                    handle.write('{"kind":"victory","turn":173,"won":true}\n')
+                lines, turn, *_ = follow.read_events(directory)
+                self.assertEqual(turn, 173)
+                self.assertEqual(lines.board_revision, revision + 1)

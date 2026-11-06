@@ -44,6 +44,7 @@ import urllib.error
 import urllib.request
 
 from civ6_control import game_speed, live_pause, mirror_sync
+from victory_state import apply_game_result
 
 RIG = os.environ.get(
     "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -231,9 +232,9 @@ def read_events(run_dir):
         # Only these records alter the reconstructed board.  Orders, refusals,
         # and UI diagnostics remain in `lines` for the next rebuild, but do not
         # by themselves justify launching another throwaway CIVVIS process.
-        if kind in ("state", "tiles"):
+        if kind in ("state", "tiles", "victory"):
             cache["lines"].board_revision += 1
-        if kind in ("state", "turn") and isinstance(event.get("turn"), int):
+        if kind in ("state", "turn", "victory") and isinstance(event.get("turn"), int):
             cache["turn"] = event["turn"]
         return True
 
@@ -651,7 +652,8 @@ def rebuild(run_dir, players):
             and isinstance(value.get("game"), dict)
         ):
             value = value["game"]
-        return value, summary
+        outcomes = [json.loads(line) for line in lines if b'"victory"' in line]
+        return apply_game_result(value, outcomes), summary
     finally:
         try:
             process.send_signal(signal.SIGTERM)
@@ -727,6 +729,12 @@ def start_visible_server(run_dir, players, keep_reporting=None):
     )
     for _ in range(60):
         if server_alive(PORT):
+            # A follower restarted after the win must publish the result too;
+            # the binary's startup mirror only reconstructs state snapshots.
+            if any(b'"victory"' in line for line in lines or []):
+                game, _ = rebuild(run_dir, players)
+                if game is not None:
+                    http_post(PORT, "/load", mirror_frame_body(game))
             hold_the_frame()
             refresh_mirror_page(process.pid)
             # Chrome reconnects after the server answers and may restore its
