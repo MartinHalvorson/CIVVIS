@@ -175,3 +175,63 @@ fn appointed_breakthrough_stays_above_foundation() {
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("rifling"));
 }
+
+#[test]
+fn chemistry_follows_the_university_ships_off() {
+    opt_in_off_in_both_controllers("chemistry-follows-the-university", |ai| {
+        ai.chemistry_follows_the_university
+    });
+}
+
+/// `board()` with Chemistry two steps out: its parent Sanitation also missing
+/// a parent of its own.
+fn two_steps_out() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, ai, plan, city) = board();
+    let sanitation = g.rules.techs[&crate::name!("sanitation")].requires.clone();
+    for parent in sanitation {
+        g.players[0].techs.remove(&parent);
+    }
+    (g, ai, plan, city)
+}
+
+#[test]
+fn the_university_opens_the_whole_path_where_the_last_step_gene_stays_shut() {
+    let (g, mut ai, plan, _) = two_steps_out();
+    ai.enable_science_foundation_before_backlog();
+    assert_eq!(
+        ai.science_foundation_research_goal(&g, 0, &plan),
+        None,
+        "the older gene needs every parent of Chemistry legal now"
+    );
+    let (g, mut ai, plan, _) = two_steps_out();
+    ai.enable_chemistry_follows_the_university();
+    assert_eq!(
+        ai.science_foundation_research_goal(&g, 0, &plan),
+        Some("chemistry")
+    );
+}
+
+#[test]
+fn the_new_gene_stops_at_chemistry_and_keeps_every_gate() {
+    let (mut g, mut ai, plan, city) = two_steps_out();
+    ai.enable_chemistry_follows_the_university();
+    // Without a University there is no Lab to open.
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .retain(|building| *building != crate::name!("university"));
+    assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
+
+    // A threatened city and a rush keep their research.
+    let (g, mut ai, mut plan, city) = two_steps_out();
+    ai.enable_chemistry_follows_the_university();
+    plan.threatened_city = Some(city);
+    assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
+
+    // Chemistry known: the Rocketry step stays with the older gene.
+    let (mut g, mut ai, plan, _) = board();
+    ai.enable_chemistry_follows_the_university();
+    g.players[0].techs.insert(crate::name!("chemistry"));
+    assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
+}

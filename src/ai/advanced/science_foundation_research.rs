@@ -6,6 +6,9 @@
 //! cities and pre-Modern army upgrades retain their research. The match in
 //! `research.rs` also retains walls, committed breakthroughs, siege packages,
 //! barbarian emergencies, fuel and named production technology.
+//!
+//! `chemistry-follows-the-university` opens the same goal for Chemistry alone
+//! and without the last-step test, under the same gates.
 
 use super::*;
 
@@ -17,7 +20,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<&'static str> {
         let known = &g.players[pid].techs;
-        if !self.science_foundation_before_backlog
+        if !(self.science_foundation_before_backlog || self.chemistry_follows_the_university)
             || self.space_race_excluded()
             || !g.victory_conditions.science
             || self.raced_target() != Some(VictoryTarget::Science)
@@ -75,9 +78,19 @@ impl AdvancedAi {
             if !ready {
                 return None;
             }
+            // `chemistry-follows-the-university`: a standing University opens
+            // the whole path to the Research Lab, however many parents are
+            // left. Live Deity took Chemistry at t128-146 with Universities
+            // already standing, Scientific Theory 10-28 turns behind it; the
+            // parent test below kept this goal closed on those boards.
+            if self.chemistry_follows_the_university {
+                return Some("chemistry");
+            }
             "chemistry"
-        } else {
+        } else if self.science_foundation_before_backlog {
             "rocketry"
+        } else {
+            return None;
         };
         // No long new beeline: every missing parent must itself be legal now.
         // This closes again if the empire is still several generations away.

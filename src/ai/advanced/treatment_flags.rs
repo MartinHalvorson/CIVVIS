@@ -2303,6 +2303,9 @@ impl AdvancedAi {
         /// Opt-in gene `wounded-ship-sails-on`; see
         /// `advanced/wounded_ship_sails_on.rs`.
         wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
+        /// Opt-in gene `chemistry-follows-the-university`; see
+        /// [`Self::chemistry_follows_the_university`].
+        chemistry_follows_the_university => enable_chemistry_follows_the_university, disable_chemistry_follows_the_university;
     }
 }
 
