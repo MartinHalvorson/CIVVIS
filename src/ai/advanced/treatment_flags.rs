@@ -80,6 +80,7 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         // ---- append: c-d --------------------------------------------
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------

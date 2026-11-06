@@ -5109,6 +5109,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Research parity compares wounded land units against field targets.
+    barbarian_research_prices_the_field: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
@@ -10941,6 +10943,7 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 
+mod barbarian_research_prices_the_field;
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -11744,6 +11747,7 @@ impl AdvancedAi {
             // pull requests merging cleanly. A gene needs no line here; they go in
             // a follow-up once those have landed.
             // ---- append: a-b ----------------------------------------
+            barbarian_research_prices_the_field: false,
             // ---- append: c-d ----------------------------------------
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
