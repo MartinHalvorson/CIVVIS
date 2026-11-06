@@ -5347,6 +5347,8 @@ pub const GENES: &[Gene] = &[
     // fresh-water plot within two tiles. Under the gene a fresh-water seat
     // gains +12 more. See `fresh_water_site.rs`.
     Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
+    // An assigned Defend formation keeps its combat slots near its threatened city.
+    Gene { tag: "defenders-keep-the-city-in-reach", field: "defenders_keep_the_city_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_keep_the_city_in_reach, disable: AdvancedAi::disable_defenders_keep_the_city_in_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
