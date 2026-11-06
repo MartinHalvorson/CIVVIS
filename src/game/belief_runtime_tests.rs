@@ -1098,8 +1098,8 @@ fn the_pantheon_charges_exactly_what_it_asked_for() {
 #[test]
 fn every_pantheon_price_reads_the_same_helper() {
     // ⚠⚠⚠ ONE TABLE, ONE FORMATTER. This rule had THREE spellings — the
-    // legality gate and the affordability check in this file, and the AI's own
-    // decision gate in `ai.rs` — and #1044 fixed one of them. The two that were
+    // legality gate and the affordability check in the game, and the AI's own
+    // decision gate — and #1044 fixed one of them. The two that were
     // missed are exactly the ones that decide and charge, so the fix looked
     // merged and changed nothing live: on `civvis-20260803T231038Z` the AI was
     // still waiting for 25 while Civilization VI charged ~12 and its own
@@ -1107,15 +1107,48 @@ fn every_pantheon_price_reads_the_same_helper() {
     //
     // Asserted on the SOURCE, because a behavioural test can pass while a fourth
     // spelling is added somewhere it does not reach.
-    for (path, source) in [
-        ("game.rs", include_str!("../game.rs")),
-        ("ai.rs", include_str!("../ai.rs")),
-    ] {
+    //
+    // Discovered, never listed. This scan used to name `game.rs` and `ai.rs`,
+    // and the code it guards left both as they were split into modules: the
+    // legality gate is in `game/actions/legal.rs`, the charge in
+    // `game/religion.rs`, the AI's gates in `ai/empire_turn.rs` and
+    // `ai/advanced/policies.rs`. A scan for the ABSENCE of something cannot
+    // fail when its target moves away, so it passed while watching none of
+    // them. Now a new module joins this check by existing, and the floor below
+    // fails it if the walk ever stops seeing pantheon code.
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("a readable source directory") {
+            let path = entry.expect("a readable directory entry").path();
+            if path.is_dir() {
+                // A `tests` directory holds fixtures, not rules.
+                if path.file_name().is_none_or(|name| name != "tests") {
+                    walk(&path, out);
+                }
+            } else if path.extension().is_some_and(|end| end == "rs") {
+                let test_file = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem == "tests" || stem.ends_with("_tests"));
+                if !test_file {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    walk(&root, &mut files);
+    files.sort();
+    let mut pantheon_lines = 0;
+    for file in &files {
+        let source = std::fs::read_to_string(file).expect("a readable source file");
+        let path = file.strip_prefix(&root).unwrap_or(file).display();
         for (n, line) in source.lines().enumerate() {
             let code = line.split("//").next().unwrap_or("");
             if !code.contains("pantheon") && !code.contains("Pantheon") {
                 continue;
             }
+            pantheon_lines += 1;
             // ⚠ An assertion ABOUT the price is not a second spelling OF it —
             // `assert_eq!(pantheon_faith_cost(), 25.0)` is exactly the check
             // that pins Standard, and flagging it would make this scan
@@ -1130,6 +1163,12 @@ fn every_pantheon_price_reads_the_same_helper() {
             );
         }
     }
+    assert!(
+        pantheon_lines > 100,
+        "the scan saw only {pantheon_lines} lines of pantheon code in {} files; it has \
+         stopped seeing what it guards",
+        files.len()
+    );
 }
 
 #[test]

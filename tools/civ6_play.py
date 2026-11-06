@@ -714,6 +714,116 @@ def production_share_run(state: dict, reading: dict) -> int:
     return run
 
 
+# ★ OPERATOR 2026-11-04: "if we lose our capital or one of our first 3 cities
+# we should just restart the game".
+#
+# A third retire rule beside the two Production rules above, on the same
+# retire path, turned on by CIVVIS_RESTART_ON_EARLY_CITY_LOST in
+# ~/.civvis-verification-policy: the number of our first-founded cities it
+# guards (3 = the capital and the next two we found; 0, absent, or not a
+# whole number = off). It reads the `cities` list of every agent `state`
+# record. A city joins the guard when it first appears in that list founded by
+# us (`original_owner` is the owner of our original capital), in founding
+# order (city id), until the guard holds the count. A guarded city that is
+# missing from a later record -- captured, flipped by Loyalty, or razed -- is
+# a loss, and the game is retired once the loss has held across two game
+# turns, so one record taken while the export is partial does not end a game.
+# No turn floor and no race-lead spare: the operator asked to "just restart".
+EARLY_CITY_POLICY_KEY = "CIVVIS_RESTART_ON_EARLY_CITY_LOST"
+
+
+def parse_early_city_count(value: str | None) -> int:
+    """How many of our first-founded cities the rule guards, from `3`; 0 = off."""
+    if value is None or value == "":
+        return 0
+    try:
+        count = int(value)
+    except ValueError:
+        count = -1
+    if count < 0:
+        print(f"[policy] ignoring {EARLY_CITY_POLICY_KEY}={value!r}: "
+              "not a count of cities such as 3", flush=True)
+        return 0
+    return count
+
+
+def early_city_count_policy(path: Path | None = None) -> int:
+    """The policy's early-city guard size; 0 (off) when unset or invalid."""
+    return parse_early_city_count(read_policy_value(EARLY_CITY_POLICY_KEY, path))
+
+
+def _city_id(city: object) -> int | None:
+    if not isinstance(city, dict):
+        return None
+    ident = city.get("id")
+    if isinstance(ident, bool) or not isinstance(ident, int):
+        return None
+    return ident
+
+
+def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
+    """Fold one record into the early-city guard; a verdict once a loss holds.
+
+    `state` carries the guard between records (`early_cities`, the founder in
+    `early_city_owner`, a pending loss in `early_city_loss`). Returns None for
+    anything that is not a readable agent `state` record or calls nothing,
+    else `{"rule": "early_city_lost", "fires": True, ...}`.
+    """
+    if (not isinstance(count, int) or isinstance(count, bool) or count <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    cities = event.get("cities")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(cities, list) or not cities):
+        return None
+    held = {ident: city for city in cities
+            if (ident := _city_id(city)) is not None}
+    if not held:
+        return None
+    owner = state.get("early_city_owner")
+    if owner is None:
+        for city in held.values():
+            if city.get("original_capital") and city.get("capital"):
+                owner = city.get("original_owner")
+                break
+        if isinstance(owner, bool) or not isinstance(owner, int):
+            return None
+        state["early_city_owner"] = owner
+    guard = state.setdefault("early_cities", [])
+    guarded = {entry["id"] for entry in guard}
+    if len(guard) < count:
+        for ident in sorted(held):
+            if len(guard) >= count:
+                break
+            city = held[ident]
+            if ident in guarded or city.get("original_owner") != owner:
+                continue
+            guard.append({"id": ident, "name": city.get("name"), "turn": turn,
+                          "capital": bool(city.get("original_capital"))})
+            guarded.add(ident)
+    lost = [entry for entry in guard if entry["id"] not in held]
+    if not lost:
+        state.pop("early_city_loss", None)
+        return None
+    pending = state.get("early_city_loss")
+    if not pending:
+        state["early_city_loss"] = {"turn": turn,
+                                    "ids": [entry["id"] for entry in lost]}
+        return None
+    if turn <= pending["turn"]:
+        return None
+    return {
+        "rule": "early_city_lost",
+        "turn": turn,
+        "lost_turn": pending["turn"],
+        "lost": [dict(entry) for entry in lost],
+        "guarded": count,
+        "held": len(held),
+        "fires": True,
+    }
+
+
 # ★ A seat that leads a victory race is not retired on Production. Live 10-31
 # (6p Continents, Diplomatic lane): civvis-20261031T015208Z-cont2 was retired
 # at turn 187 on 19 Diplomatic Victory points against the best rival's 11
@@ -1293,6 +1403,15 @@ def build_config(args: argparse.Namespace) -> dict:
         # `science-seat-allies`: the same for a Science seat.
         "ScienceAllies": bool(args.civvis_decides
                               and "science-seat-allies" in (getattr(args, "civvis_with", []) or [])),
+        # `military-alliance-shield` (src/ai/advanced/military_alliance_shield.rs):
+        # its Military Alliance ask reaches the host on every lane. The live
+        # binary keeps only that desk's own ask while the tag is armed.
+        "MilitaryAllies": bool(args.civvis_decides
+                               and {"military-alliance-shield", "military-alliance-shield-2"}
+                               & set(getattr(args, "civvis_with", []) or [])),
+        # `military-alliance-shield-2`: version two's other alliance kinds too.
+        "ShieldAllies": bool(args.civvis_decides
+                             and "military-alliance-shield-2" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
@@ -2761,7 +2880,7 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
                          *, retries: int = 4, poll_s: float = 1.0,
                          board_ready=None, relay_s: float | None = None,
-                         defer_s: float = 0.0) -> bool:
+                         defer_s: float = 0.0, alive=None) -> bool:
     """Click the leader card's Begin Game control after visual confirmation.
 
     ``board_ready`` decides only after the screen has failed the exact intro
@@ -2823,6 +2942,15 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
             print(f"[setup] no live board within {defer_s:.0f}s; probing the "
                   "leader intro", flush=True)
         for retry in range(retries):
+            # ★ A GAME THAT DIED IN ITS LOAD WAS PROBED FOR FOUR MINUTES. Live
+            # 2026-11-05 003645Z: Civ VI segfaulted 2 s after Start and this
+            # loop took 120 screenshots of the desktop (~4.3 min) before the
+            # relaunch. Nothing on the screen can answer once the process is
+            # gone, so stop and let the caller's startup failure path run.
+            if alive is not None and not alive():
+                print("[setup] Civilization VI exited during the load; "
+                      "stopping the leader-intro probe", flush=True)
+                return False
             shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
             screenshot(shot)
             if _leader_intro_visible(shot, bounds, leader):
@@ -4179,13 +4307,17 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=1.0,
                              board_ready=board_is_ready, relay_s=0.05,
-                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
+                             defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0),
+                             alive=lambda: bool(env.game_pids()))
         if board_seen["value"]:
             # A direct host transition can open the board without ever drawing
             # the leader card.  Its state has already been relayed above, so do
             # not spend the entire normal startup budget waiting for a second
             # event that may not arrive until the brain has that state.
             return True
+        if not env.game_pids():
+            print("the game exited while loading", file=sys.stderr)
+            return False
         if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
                                                           patience, verify_s,
                                                           bounds)):
@@ -4300,6 +4432,20 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
                       flush=True)
             elif kind == "restart_called" and not event.get("called"):
                 failure = "the parked game could not call the restart"
+            elif kind == "restart_called" and mode == restart_handoff.MODE_MENU:
+                # ★ MODE 6: the parked game is leaving for the main menu. From
+                # here this run starts its game exactly as a launched one does,
+                # through the Create Game menus, minus the boot. A new game
+                # that loads the previous run's scripts never writes this run's
+                # tag, so the bootstrap fails and the caller relaunches.
+                left = round(time.monotonic() - start, 1)
+                print(f"[restart] the parked game left for the main menu after "
+                      f"{left:.1f}s; starting this run's game from the menus",
+                      flush=True)
+                note(result="menu", left_s=left)
+                tail.run = args.tag
+                setup_mark("restart_menu")
+                return bootstrap_game(tail, on_event, run_dir, args, verify_s=verify_s)
             elif (kind == "loaded" and event.get("ctx") == "agent"
                     and answered is not None):
                 failure = ("the restarted game loaded the previous run's scripts, "
@@ -4343,7 +4489,8 @@ def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
                     RESTART_INTRO_DEFER_S)
         advance_leader_intro(bounds, args.leader, run_dir, 1,
                              retries=max(8, min(120, int(verify_s))), poll_s=1.0,
-                             board_ready=board_is_ready, relay_s=0.05, defer_s=defer)
+                             board_ready=board_is_ready, relay_s=0.05, defer_s=defer,
+                             alive=lambda: bool(env.game_pids()))
     started = board_seen["value"] or wait_for_agent_start(
         tail, relay, verify_s, still_loading=lambda: bool(env.game_pids()))
     if seat:
@@ -4792,6 +4939,16 @@ def play(args: argparse.Namespace) -> int:
                              if production_share_from is None
                              else parse_production_share_from_turn(str(production_share_from)))
     args.restart_below_leader_production_from_turn = production_share_from
+    # Operator 2026-11-04: see `early_city_reading`. Same resolution as the
+    # Production rules: the flag wins over the host policy file.
+    early_city_count = getattr(args, "restart_on_early_city_lost", None)
+    early_city_count = (early_city_count_policy() if early_city_count is None
+                        else parse_early_city_count(str(early_city_count)))
+    args.restart_on_early_city_lost = early_city_count
+    if early_city_count > 0:
+        print(f"[policy] a game that loses its capital or one of the first "
+              f"{early_city_count} cities it founded is retired "
+              "(operator 2026-11-04)", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -5462,6 +5619,7 @@ def _play(args: argparse.Namespace) -> int:
     # scale them twice.
     production_share_from = online_turns(production_share_from, getattr(args, "speed", None))
     production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, getattr(args, "speed", None))
+    early_city_count = getattr(args, "restart_on_early_city_lost", None) or 0
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -5611,6 +5769,12 @@ def _play(args: argparse.Namespace) -> int:
         if not args.keep_game_options:
             apply_verification_options()
         launcher.clear_run_logs()
+        # No game holds the Hall of Fame here; a big one slows the boot ~10 s
+        # and the quit ~5 s (`launcher.rotate_hall_of_fame`).
+        archived = launcher.rotate_hall_of_fame()
+        if archived is not None:
+            print(f"[hall-of-fame] archived to {archived}; Civ VI starts a fresh one",
+                  flush=True)
         # Measured before the launch, so placing the window as it appears pays no
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
@@ -6171,6 +6335,18 @@ def _play(args: argparse.Namespace) -> int:
                           "retiring so the next game starts (operator 2026-10-26)",
                           flush=True)
                     return abandon_with_retire(reading)
+        # ★ OPERATOR 2026-11-04: "if we lose our capital or one of our first
+        # 3 cities we should just restart the game". See `early_city_reading`.
+        if early_city_count > 0:
+            reading = early_city_reading(state, event, early_city_count)
+            if reading is not None and reading.get("fires"):
+                names = ", ".join(str(entry.get("name") or entry["id"])
+                                  for entry in reading["lost"])
+                print(f"[abandon] turn {reading['turn']}: lost {names} (one of our "
+                      f"first {early_city_count} cities, held lost since turn "
+                      f"{reading['lost_turn']}) — retiring so the next game starts "
+                      "(operator 2026-11-04)", flush=True)
+                return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -7094,6 +7270,11 @@ def main(argv: list[str] | None = None) -> int:
                          f"{PRODUCTION_SHARE_FROM_POLICY_KEY} from the host's "
                          "verification policy file (operator 2026-10-26). Both "
                          "turn counts are Online turns, scaled to --speed")
+    ap.add_argument("--restart-on-early-city-lost", type=int, default=None,
+                    help="retire a game that loses its capital or one of the "
+                         "first N cities it founded (0 = off); unset reads "
+                         f"{EARLY_CITY_POLICY_KEY} from the host's verification "
+                         "policy file (operator 2026-11-04)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")

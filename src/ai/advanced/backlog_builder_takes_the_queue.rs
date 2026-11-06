@@ -135,8 +135,17 @@ impl AdvancedAi {
             0
         };
         let cover = BasicAi::builder_charge_cover(g, pid) - own;
-        backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES
-            && f64::from(cover) < backlog as f64 * BasicAi::WORKED_BACKLOG_COVER
+        // `prod-tiles-call-the-builders`: the quota the claim was made under,
+        // so a Builder claimed for the production ground is held too. Off,
+        // `wanted` is the stock `backlog x WORKED_BACKLOG_COVER`.
+        let (wanted, production) = self.base.worked_backlog_charges_wanted(g, pid, backlog);
+        let enough = match production {
+            None => backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES,
+            Some(_) => {
+                wanted >= BasicAi::WORKED_BACKLOG_MIN_TILES as f64 * BasicAi::WORKED_BACKLOG_COVER
+            }
+        };
+        enough && f64::from(cover) < wanted
     }
 
     /// See the module: while the worked backlog runs ahead of the charges,
@@ -160,6 +169,15 @@ impl AdvancedAi {
                 continue;
             };
             if self.early_settler_floor_holds(g, pid, cid, plan) {
+                continue;
+            }
+            // `science-heads-keep-their-queue`: science in progress keeps its
+            // queue; the claim goes to the next-fastest city, or waits.
+            if self.science_head_keeps_its_queue(g, cid) {
+                think!(self.journal(), Economy, Detail,
+                       "{} keeps its science ahead of the backlog Builder", g.cities[&cid].name;
+                       "science-heads-keep-their-queue: {} stays at the head of the queue",
+                       g.cities[&cid].queue.first().map_or_else(String::new, Self::plain_item));
                 continue;
             }
             // An idle city passed the gate (which already keeps a due
@@ -202,6 +220,10 @@ impl AdvancedAi {
                     {cover} charges, {turns:.1} turns, ahead of {}",
                    head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                        "{} (it keeps its progress)", Self::plain_item(&item))));
+            if let Some(note) = self.base.production_tile_quota_note(g, pid) {
+                think!(self.journal(), Economy, Detail,
+                       "{name}'s Builder answers the production ground"; "{note}");
+            }
         }
     }
 }

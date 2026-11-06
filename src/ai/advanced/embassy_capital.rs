@@ -74,8 +74,9 @@ impl AdvancedAi {
         pid: usize,
         target: Option<usize>,
     ) -> Vec<usize> {
-        if !self.embassy_finds_the_capital
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        let science = self.embassy_capital_reads_the_racers(g);
+        if !(self.embassy_finds_the_capital || self.embassy_finds_the_capital_2)
+            || !(self.active_victory_target(g) == Some(VictoryTarget::Domination) || science)
             || !g.players[pid]
                 .civics
                 .contains(&crate::name!("diplomatic_service"))
@@ -110,12 +111,35 @@ impl AdvancedAi {
             .collect();
         rivals.sort_by_key(|rival| {
             (
+                // `embassy-finds-the-capital-2`: under a Science aim the rival
+                // knowing the most technologies goes first.
+                std::cmp::Reverse(if science {
+                    g.players[*rival].techs.len()
+                } else {
+                    0
+                }),
                 Some(*rival) != target,
                 self.embassy_capital_asks.get(rival).copied(),
                 *rival,
             )
         });
         rivals
+    }
+
+    /// `embassy-finds-the-capital-2`: whether the Embassy runs under this
+    /// turn's Science aim. A Spy travels only to a city we have seen, and in
+    /// 22 of 30 live Deity technology games of 2026-11-05 the eventual winner's
+    /// capital was unknown when Diplomatic Service arrived (12 still at turn
+    /// 170, often with none of its cities known: Norway 0 of 12, Cree 0 of 12,
+    /// Zulu 0 of 12, Macedon 0 of 12). The one Deity win had 33 idle Spy-turns
+    /// with Disrupt Rocketry on the host's menu; the losses a median of about
+    /// six, with two thirds of their Spy-turns already in racers' cities that
+    /// held no pad. In 9 of the 22 the winner read Neutral or warmer and at
+    /// peace on some turn within 40 of Diplomatic Service, when an Embassy
+    /// would have been heard.
+    pub(super) fn embassy_capital_reads_the_racers(&self, g: &Game) -> bool {
+        self.embassy_finds_the_capital_2
+            && self.active_victory_target(g) == Some(VictoryTarget::Science)
     }
 
     /// `embassy-finds-the-capital`: send this turn's Embassy, if any rival
@@ -153,10 +177,17 @@ impl AdvancedAi {
             .get(&pid)
             .map(|state| state.to_lowercase())
             .unwrap_or_else(|| "not hostile".to_string());
-        crate::think!(self.journal(), Diplomacy, Decision,
-            "Sending a Resident Embassy to {}", g.players[rival].civ;
-            "embassy-finds-the-capital: Domination needs their original capital and we have never seen it; an Embassy reveals it; they read {standing} toward us{}",
-            if Some(rival) == target { ", and they are the plan's target" } else { "" });
+        if self.embassy_capital_reads_the_racers(g) {
+            crate::think!(self.journal(), Diplomacy, Decision,
+                "Sending a Resident Embassy to {}", g.players[rival].civ;
+                "embassy-finds-the-capital-2: our Spies can reach only a city we have seen and we have never seen their capital; an Embassy reveals it; they know {} technologies and read {standing} toward us",
+                g.players[rival].techs.len());
+        } else {
+            crate::think!(self.journal(), Diplomacy, Decision,
+                "Sending a Resident Embassy to {}", g.players[rival].civ;
+                "embassy-finds-the-capital: Domination needs their original capital and we have never seen it; an Embassy reveals it; they read {standing} toward us{}",
+                if Some(rival) == target { ", and they are the plan's target" } else { "" });
+        }
         true
     }
 }

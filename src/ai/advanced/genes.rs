@@ -3702,6 +3702,9 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // Native Indonesia Ternate70/0 chose industry with a legal University;
+    // this separate opt-in releases industrial claims for a short University.
+    Gene { tag: "universities-before-the-forge", field: "universities_before_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_universities_before_the_forge, disable: AdvancedAi::disable_universities_before_the_forge },
     // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
     // as its front from turn 146 to 192 and stood ten Dutch sieges down for
     // want of a land road while the Maya and Egypt, at war with us at 3-5x
@@ -3862,6 +3865,14 @@ pub const GENES: &[Gene] = &[
     // capitals would have been revealed and 16 a median 7 turns sooner. See
     // `advanced/embassy_capital.rs`.
     Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // Version two of `embassy-finds-the-capital`: a Science aim sends the
+    // capital-revealing Resident Embassy too, the rival knowing the most
+    // technologies first. A Spy travels only to a city we have seen; in 22 of
+    // 30 live Deity technology games (2026-11-05) the winner's capital was
+    // unknown at Diplomatic Service, and the losses had a median of ~6 idle
+    // Spy-turns with Disrupt Rocketry offered against the win's 33. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital-2", field: "embassy_finds_the_capital_2", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital_2, disable: AdvancedAi::disable_embassy_finds_the_capital_2 },
     // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
     // none, buy an unowned Aluminum tile a city can buy, above the reserve.
     // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of
@@ -4208,6 +4219,15 @@ pub const GENES: &[Gene] = &[
     // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
     // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
     Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `disrupt-waits-for-the-match-point`: live Deity/Immortal seats: Disrupt
+    // Rocketry killed 51 of 102 Spies (50%, re-IDs matched; -71's census)
+    // against 6-7% for Gain Sources / Listening Post, and no disruption
+    // visibly delayed a winner, whose 3rd -> 4th project took 5-10
+    // turns (Spain t168 -> t178, Zulu t157 -> t162, Phoenicia t155 -> t164).
+    // Disrupt only once the racer has landed three projects; before that the
+    // Spy steals, gains sources or listens. See
+    // `advanced/disrupt_waits_for_the_match_point.rs`.
+    Gene { tag: "disrupt-waits-for-the-match-point", field: "disrupt_waits_for_the_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_waits_for_the_match_point, disable: AdvancedAi::disable_disrupt_waits_for_the_match_point },
     // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
     // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
     // objective beyond the wing's reach, 120 of them with another city of
@@ -4551,6 +4571,12 @@ pub const GENES: &[Gene] = &[
     // leading science rival or a space racer. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // Version two of `science-seat-allies`: before Diplomatic Service the
+    // Science seat asks for a Military Alliance instead of waiting for a legal
+    // Research Alliance. Any alliance boosts Diplomatic Service 40%, the first
+    // civic Spy slot; in 35 live Deity games (2026-11-05) it was never boosted
+    // and no alliance stood before it. See `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies-2", field: "science_seat_allies_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies_2, disable: AdvancedAi::disable_science_seat_allies_2 },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live
@@ -4962,6 +4988,388 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // Live Lv 7 Immortal Standard (11-04 10:44Z on, -af's census): 5 of ~25
+    // games lost Bogota before turn 100, and in 4 of them the capital held no
+    // soldier of ours within a tile for the 1-4 turns before it fell. The
+    // board had its Defend row (190341Z t44: "Defend Bogota, value 60, need
+    // 76, no force") but ranked it under Maracaibo's under-fire row, a 280
+    // Escort and a Recon of a rival capital, and urgency holds back only
+    // offensive rows. Under the gene the capital's Defend row is urgent and
+    // ranks first. See `objective_board.rs` (`capital_defend_first`).
+    Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
+    // Preserve the original capital's Loyalty anchor; default OFF.
+    Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
+    // Live Immortal 11-03 21Z..11-04 21Z: in 42 of 79 games the Domination
+    // siege reservation took the backlog Builder's fresh queue the same turn
+    // `backlog-builder-takes-the-queue` set it (282 city-turns, up to 29 in a
+    // game). 204728Z: Bogota (8 production, 12 worked tiles unimproved, no
+    // charges) built two Catapults t154-182 for a war it held off. The
+    // reservation now spares that Builder as it spares the housing Granary.
+    // See `advanced/siege_production.rs`.
+    Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // Version three (live Lv 8 Deity Korea Online, 11-04, -af's sizing):
+    // barbarians outclass our line from turns 9-17, and the camps within
+    // eight of our cities stood 32-36 turns with no force on ~60% of their
+    // rows while their need rose 38 -> 70 as their units upgraded. A near
+    // camp now gets version two's premium and armed party in any era, so it
+    // is cleared while it is small. See `advanced/camps_close_the_age.rs`.
+    Gene { tag: "camps-close-the-age-3", field: "camps_close_the_age_3", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_3, disable: AdvancedAi::disable_camps_close_the_age_3 },
+    // `luxury-asks-pay-in-strategics`: live Lv 8 Deity Korea Online, 28 games
+    // 11-04/05: Amenities cost 6.7% of production at t90-110 (the retire
+    // gate's margin); the luxury swap held 74 times with a city short, 51 for
+    // want of any spare copy; Gold alone closed 0 of 16 luxury asks, barter
+    // 22; 56 of the 74 holds stocked 10+ of a strategic. With no spare that
+    // fits, the slot asks for a type we lack and pays in strategics the army
+    // does not need. See `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics", field: "luxury_asks_pay_in_strategics", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics },
+    // Version two of `luxury-asks-pay-in-strategics`: after version one's
+    // arming 29 of 61 strategic asks died in the Lua arm as barter_short,
+    // the same partners every time (24 of 27), mostly on Horses (22 of 42;
+    // Niter 2 of 10), and luxury swaps put the same refused copy up turn
+    // after turn (one Marble eight times to three partners). A partner whose
+    // strategic-paid ask shorted inside 30 standard turns is not asked again,
+    // Horses go only when nothing else is spare, and a luxury whose swap
+    // shorted stays home so the slot reaches the strategic ask. See
+    // `advanced/luxury_asks_pay_in_strategics.rs`.
+    Gene { tag: "luxury-asks-pay-in-strategics-2", field: "luxury_asks_pay_in_strategics_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_asks_pay_in_strategics_2, disable: AdvancedAi::disable_luxury_asks_pay_in_strategics_2 },
+    // Version two (live Lv 8 Deity Korea Online, 11-04 night, -af's trace,
+    // under the operator's early_city_lost restart: losing any of our first
+    // three cities ends the game). Version one moved the capital's Defend
+    // row above the early city that then fell in all three early-city
+    // losses (225111Z: Yangsan's row valued 726 against the capital's 445;
+    // the capital took 15-19 units and Yangsan fell at t93), while the
+    // capital itself fell in 0 of 19 Deity games. Version two ranks the
+    // early cities' rows first by risk, not the capital first, and gives an
+    // early city with a hostile in relief range its row before the pressure
+    // gate. See `objective_board.rs` (`early_cities_defend_first`).
+    Gene { tag: "capital-keeps-its-defender-2", field: "capital_keeps_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_2, disable: AdvancedAi::disable_capital_keeps_its_defender_2 },
+    // Live alliances were only ever of the lane's own kind, and never off the
+    // Diplomatic/Culture/Science lanes. Under the gene the seat holds a
+    // Military Alliance with the empire fighting our enemy (+5 combat strength
+    // against it) or the strongest neighbour at our border (no war with it,
+    // and the alliance's Defensive Pact against anyone else). See
+    // `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
+    // A new district pays for the Science lost at neighboring owned Seowons.
+    Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // Operator rule 11-04 (#4435): losing the capital or either of the next
+    // two cities restarts the game. Of 173 live second and third cities
+    // (Immortal and Deity, 11-03/04), those founded 5-6 tiles from a charted
+    // rival city were lost 56% of the time, 7-8 tiles 40%, 9-11 23%, 12 or
+    // more 8%; the site value priced only a border within three tiles. Under
+    // the gene, while the empire holds fewer than three cities, a site loses
+    // 8 a tile inside ten of the nearest charted rival city. See
+    // `advanced/early_city_distance.rs`.
+    Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
+    // `denial-spies-count-their-losses`: live Lv 8 Deity Korea Online,
+    // 11-04/05: every science seat past t100 fed 13-23 Spies to counter-
+    // espionage (lifetimes 1-16 turns), about 5.4-9.7% of all Production
+    // after the first, with the network still at 0-2 of 2-5 and no winner's
+    // launch visibly slowed. Three losses inside 30 standard turns pause new
+    // Spies (stock valuation and denial claim) until they age out.
+    // See `advanced/denial_spies_count_their_losses.rs`.
+    Gene { tag: "denial-spies-count-their-losses", field: "denial_spies_count_their_losses", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_count_their_losses, disable: AdvancedAi::disable_denial_spies_count_their_losses },
+    // Version three (live Lv 8 Deity Korea Online, 11-05, -af's traces):
+    // the surprise armies park at peace. 004454Z: Nubian soldiers stood 2-4
+    // tiles from Jinju t46-50, declared t51, Jinju fell t56; 011328Z: a
+    // Khmer rush sat 1-2 tiles from the capital t28-29 and took it t34;
+    // 232120Z: Gaul's chariot and catapults 3 tiles from Jeonju from t58,
+    // war t62. Version two counts only hostiles at war, so none of these
+    // raised a row. Under version three a stronger major's (garrison call
+    // ratio) visible soldier within SURPRISE_TILES of an early city does.
+    // See `objective_board.rs` (`surprise_strength_near`).
+    Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
+    // Live Lv 8 Deity Korea Online, 11-05 (play-it-out policy): 3 of 11
+    // games since 02:01Z ended in our elimination. In 033244Z, from turn
+    // 150, 29 of our units died, all healthy and none inside a city, 21 of
+    // them to Machine Guns, most from two tiles: the Defend force held a
+    // nine-unit ring around Seoul, and defenders-hold-the-walls keeps a
+    // threatened city's healthy defenders off the rotation, so Ancient
+    // Warriors and Archers stood where one blow removed them. A ring
+    // defender whose own tile is one-blow lethal at the top of the roll is
+    // no longer held. See `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "walls-release-the-one-blow", field: "walls_release_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_walls_release_the_one_blow, disable: AdvancedAi::disable_walls_release_the_one_blow },
+    // A Science seat's Spies steal Eurekas (Steal Tech Boost) from the rivals
+    // ahead instead of idling on Listening Posts or Gain Sources: in a space
+    // racer's city with no Disrupt Rocketry offered, in place of the green
+    // Spy's Gain Sources training step, and no longer withheld outside the
+    // racers' cities; before a racer exists the seat also trains Spies to its
+    // capacity while a rival knows 3+ technologies we lack. Live Deity: 6 of 8
+    // steals landed a Eureka (~250-430 Science each) while 131 other orders
+    // bought none. See `spies_steal_the_lead.rs`.
+    Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `spy-civics-come-first`: a Science aim researches Nationalism,
+    // Ideology and Cold War (each a Spy slot) sooner, their prerequisites at
+    // half the weight. The Deity win 122513Z reached slots 3 and 4 at t119
+    // and t152; the losses 125414Z at 158/174, 105753Z at 131/173. See
+    // `advanced/spy_civics_come_first.rs`.
+    Gene { tag: "spy-civics-come-first", field: "spy_civics_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_spy_civics_come_first, disable: AdvancedAi::disable_spy_civics_come_first },
+    // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
+    // the soonest unthreatened city queues one Settler while the plan wants
+    // more cities and a seat we can very likely hold lies in reach: the
+    // settler-site-gate verdict, nine tiles from charted rival cities, no
+    // stronger major's soldier within six, no raider within three, at peace
+    // with every major. Live Deity Korea Online: Settler starts fell from 70
+    // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
+    // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
+    Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
+    // The insolvency guard gave every queue to Commercial Hubs, Stock
+    // Exchanges and district projects whenever Gold per turn was negative and
+    // the treasury was under 100 + 25 per city. That held even with 100 turns
+    // of runway, while a major four times our power took the cities
+    // (civvis-20261105T033244Z, eliminated t203). Under the gene, a war against
+    // a major fielding 1.5x our power keeps its queues while the treasury
+    // covers the deficit for 15 turns. See `war_defense_spends_the_runway.rs`.
+    Gene { tag: "war-defense-spends-the-runway", field: "war_defense_spends_the_runway", kind: Kind::OptIn, enable: AdvancedAi::enable_war_defense_spends_the_runway, disable: AdvancedAi::disable_war_defense_spends_the_runway },
+    // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
+    // Production in its city, a free Builder per new city) and the
+    // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
+    // the Warlord's Throne (pays only on captures) and the Grand Master's
+    // Chapel. Live Deity: 9 of 17 Science games built Throne + Chapel, none the
+    // Agency. See `BasicAi::plaza_building_item_for`.
+    Gene { tag: "plaza-serves-the-scientist", field: "plaza_serves_the_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist, disable: AdvancedAi::disable_plaza_serves_the_scientist },
+    // `parity-upgrades-before-it-buys`: live Lv 8 Deity Korea Online, games
+    // played out: three eliminations since 11-05 02:01Z, all obsolete armies
+    // (044106Z capital at t103 with 10 Archers and 7 Warriors against Greece's
+    // 50) while border parity bought 80-Gold Warriors at t36-66 for an
+    // unreachable 237-595 power. Upgrades first, no unit two eras behind, no
+    // buy at twice our power. See `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys", field: "parity_upgrades_before_it_buys", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys, disable: AdvancedAi::disable_parity_upgrades_before_it_buys },
+    // Version two of `parity-upgrades-before-it-buys`: the base controller's
+    // wartime and declaration-window defender purchases bought Ancient
+    // bodies late (46 Heavy Chariots in 33 live Deity games, 34 after turn
+    // 100; 095229Z bought 16 from turn 142 to 174 against an Industrial
+    // army), each into a city with no military unit on its tile. No unit two
+    // or more eras behind the world is bought there. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
+    // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were
+    // taken by major empires, 13 of them in a war already running, with the
+    // captor's soldier within six tiles the turn before in all but two.
+    // Greece took three on t98-t100 of civvis-20261105T044106Z while each
+    // stepped between open tiles. Under the gene, a Settler in the open near
+    // an enemy major's soldier goes to the nearest city of ours, and one in a
+    // city stays. At peace, a non-friend's soldier within two tiles counts
+    // too (074444Z lost its first Settler that way at t31). See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war", field: "settler_shelters_from_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war, disable: AdvancedAi::disable_settler_shelters_from_the_war },
+    // The delegated governor's 1.0-a-city army floor is lifted to the war
+    // target only for a Domination seat. The live Science seat in
+    // civvis-20261105T033244Z, in Recovery at 577 power against the Aztecs'
+    // 3377, held "8 military for 6 cities against a target of 1.0 each" and
+    // started a Theater Festival, a Commercial Hub and a Market. It was
+    // eliminated at t203. Under the gene, every lane borrows the war target
+    // while at war with a major and a home city is threatened. See
+    // `threatened_lane_lends_the_army.rs`.
+    Gene { tag: "threatened-lane-lends-the-army", field: "threatened_lane_lends_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_lane_lends_the_army, disable: AdvancedAi::disable_threatened_lane_lends_the_army },
+    // Live Lv 8 Deity Korea 11-05: of 824 units killed in an enemy phase
+    // across 89 games, 135 had started that turn inside one of our cities
+    // and stepped out, 42 under an Anvil at that city (15 "nobody in the
+    // city"). 033244Z t151: Sangju's only soldier was posted from the City
+    // Center to the ring beside a Cavalry, a Machine Gun killed it and the
+    // city stood bare. Under the gene the Anvil keeps a soldier on the city
+    // tile and moves a post where one blow at the top of the roll removes
+    // its soldier. See `advanced/anvil_spares_the_one_blow.rs`.
+    Gene { tag: "anvil-spares-the-one-blow", field: "anvil_spares_the_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_spares_the_one_blow, disable: AdvancedAi::disable_anvil_spares_the_one_blow },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    // On the Science seat's losing-war turns, 309 of 664 queue decisions
+    // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
+    // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
+    // ahead of the governor that threatened-lane-lends-the-army arms. Under
+    // the gene those claims stand aside while a war with a major threatens a
+    // home city. See `threatened_war_holds_the_claims.rs`.
+    Gene { tag: "threatened-war-holds-the-claims", field: "threatened_war_holds_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_war_holds_the_claims, disable: AdvancedAi::disable_threatened_war_holds_the_claims },
+    // Live Lv 8 Deity Korea 044106Z t46-50 (-cf's repro): a barbarian
+    // Swordsman wore down and killed a Settler's Warrior escort and took the
+    // Settler while two of our Archers stood within range and never fired:
+    // one was the Settler's reserved guard (the kill search skips reserved
+    // guards) and the other was ruled doomed (three Spearmen near every
+    // stand). Their two shots, about 20 each on 38 hp, fell it at the centre
+    // but not at KILL_MARGIN. Under the gene a recovering, guarding or doomed
+    // shooter's ranged blow from its own tile joins the plan as kill-only.
+    // See `advanced/battle_planner.rs`.
+    Gene { tag: "ranged-kills-are-free", field: "ranged_kills_are_free", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_kills_are_free, disable: AdvancedAi::disable_ranged_kills_are_free },
+    // The strategic scorer prices a land unit at power x 4 + 58 per missing
+    // body, and only the one named threatened city adds a war term. So in
+    // civvis-20261105T033244Z t168 (Aztecs 3377 power to our 577) the capital
+    // chose a Stock Exchange at 104 over any defender at about 52, and the
+    // seat was eliminated at t203. Under the gene, a missing land unit gains
+    // 350 x the enemy-to-our power ratio (1.5 to 3) while that major is at war
+    // with us and a home city is threatened. See
+    // `outmatched_war_prices_the_army.rs`.
+    Gene { tag: "outmatched-war-prices-the-army", field: "outmatched_war_prices_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_outmatched_war_prices_the_army, disable: AdvancedAi::disable_outmatched_war_prices_the_army },
+    // Three Kingdoms pays +1 Science per Mine and +1 Food per Farm beside a
+    // Seowon (the live host's rule). The engine's data carries a flat
+    // per-city placeholder, so the Builder priced a Seowon-side Mine at its
+    // Production alone. Under the gene Korea's Builders price the adjacency,
+    // matching `korea-reads-three-kingdoms` on the district side. See
+    // `advanced/korea_mines_beside_the_seowon.rs`.
+    Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
+    // Live Lv 8 Deity Korea (11-05): consumed produce_next hints decide about
+    // a quarter of live production choices (the bridge's production_next_*
+    // counters: 50-75 consumed against 170-280 direct orders a game), and each
+    // hint came from `advanced_production` alone, so the idle-queue claims
+    // never saw those queues. Under the gene the hint's preview runs the same
+    // claim chain first. See `advanced/hint_runs_the_claims.rs`.
+    Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
+    // Version one of the drain fires below one turn of runway. Live Deity
+    // 111305Z t194 fell from +11.8 to -76.6 Gold a turn with 243 Gold (3.2
+    // turns), started a Bank, went bankrupt at t199, and lost science 352 to
+    // 151 to the amenity charge. Version two enters the drain below five
+    // turns and never disbands a unit within six tiles of an enemy soldier.
+    // See `solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
+    // `captives-come-home`: the live bridge buys our captured Spies back from
+    // their captors while the network is short of its capacity, so their
+    // slots fill again. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home", field: "captives_come_home", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home, disable: AdvancedAi::disable_captives_come_home },
+    // Version one's peace clause fired in the opening of 3 of the first 5
+    // live carriers, on roaming Warriors at peace, and held the second
+    // Settler up to ten turns (132817Z t16-23, 133505Z t13-18; both
+    // eliminated). Version two shelters only from a major at war with us. See
+    // `settler_shelters_from_the_war.rs`.
+    Gene { tag: "settler-shelters-from-the-war-2", field: "settler_shelters_from_the_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_shelters_from_the_war_2, disable: AdvancedAi::disable_settler_shelters_from_the_war_2 },
+    // Native 103825 t179: Smart Materials revealed; the earlier AI path still runs.
+    Gene { tag: "revealed-launch-tech-takes-the-slot", field: "revealed_launch_tech_takes_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_revealed_launch_tech_takes_the_slot, disable: AdvancedAi::disable_revealed_launch_tech_takes_the_slot },
+    // Independently price the first launch job without changing rated Pingala v1.
+    Gene { tag: "pingala-follows-research-2", field: "pingala_follows_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_follows_research_2, disable: AdvancedAi::disable_pingala_follows_research_2 },
+    // `plaza-serves-the-scientist-2`: version 2 of `plaza-serves-the-scientist`
+    // (which it carries). A Science seat's Plaza city takes its next tier
+    // building, the Ancestral Hall then the Intelligence Agency, ahead of
+    // routine work. See `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-2", field: "plaza_serves_the_scientist_2", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_2, disable: AdvancedAi::disable_plaza_serves_the_scientist_2 },
+    // From t40 to t120 the backlog Builder claim put a Builder ahead of a
+    // Library, University or Seowon 288 times in 87 live Deity Korea games
+    // (27% of its claims, 3.3 a game), in a seat that loses on rival
+    // Technology. Under the gene science in progress keeps its queue, and the
+    // claim goes to the next-fastest city or waits a turn. See
+    // `advanced/science_heads_keep_their_queue.rs`.
+    Gene { tag: "science-heads-keep-their-queue", field: "science_heads_keep_their_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_heads_keep_their_queue, disable: AdvancedAi::disable_science_heads_keep_their_queue },
+    // `denounce-only-to-declare`: the Science seat's threat rung no longer
+    // denounces the space racer; the war opening denounces when a war
+    // follows. Live Deity 11-04/05: a rival we denounced declared war on us
+    // 2.3x as often (stratified), and those wars cost 2.5 cities against
+    // 1.35. See `advanced/denounce_only_to_declare.rs`.
+    Gene { tag: "denounce-only-to-declare", field: "denounce_only_to_declare", kind: Kind::OptIn, enable: AdvancedAi::enable_denounce_only_to_declare, disable: AdvancedAi::disable_denounce_only_to_declare },
+    // Version two (live Lv 8 Deity Korea Online, 11-05, first armed games):
+    // three Military asks to declared friends, three refusals (152431Z t96,
+    // 154934Z t108, 155735Z t108), and asks to Neutral/Unfriendly rivals
+    // the agent never sent were remembered as refused (t87, t102, t105),
+    // barring those rivals from every desk for thirty turns. Version two asks
+    // only Friendly rivals and lets a taken or refused Military kind fall
+    // through to Economic, Cultural or Religious, under its own per-kind
+    // memory. See `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield-2", field: "military_alliance_shield_2", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield_2, disable: AdvancedAi::disable_military_alliance_shield_2 },
+    // Live Deity Indonesia (11-05): 24 of 53 Settlers lost in 49 games
+    // vanished within two tiles of a city of ours, and the capture lessons
+    // read any such city as the founding, so 13 captures beside a standing
+    // city left no scar. 173830Z lost one at t96 one tile from its city; the
+    // next Settler walked to a site three tiles from that spot and was taken
+    // at t102. Under the gene only a city new since the last resolve counts
+    // as the founding. See `advanced/civilian_safety.rs`.
+    Gene { tag: "capture-scar-reads-the-new-city", field: "capture_scar_reads_the_new_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_scar_reads_the_new_city, disable: AdvancedAi::disable_capture_scar_reads_the_new_city },
+    // `districts-price-the-improvement` (2026-11-04): 372 of 773 districts
+    // the live seat placed (42 games, 11-04) went onto an improved tile — 120
+    // on Farms, 61 on an improved Wheat/Rice/Maize/Cattle — because the
+    // planner charges a site only the edge of a tile a citizen works THIS
+    // turn. Under the gene any improved or bonus-resource site pays its tile
+    // as if worked. See `advanced/district_planning.rs`.
+    Gene { tag: "districts-price-the-improvement", field: "districts_price_the_improvement", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_price_the_improvement, disable: AdvancedAi::disable_districts_price_the_improvement },
+    // Live Lv 8 Deity Korea 11-05: of 90 full-health units killed in an
+    // enemy phase across the anvil-spares-the-one-blow carriers, 50 had moved
+    // that turn in the field and 52 have no journal line naming the move (the
+    // group step's signature); their killers (Line Infantry, Modern Armor, Jet
+    // Fighters, Machine Guns) out-reach the group step's one-approach-step
+    // forecast. Under the gene its danger checks read the larger of that
+    // forecast and the danger field. See
+    // `advanced/group_steps_read_the_field.rs`.
+    Gene { tag: "group-steps-read-the-field", field: "group_steps_read_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_group_steps_read_the_field, disable: AdvancedAi::disable_group_steps_read_the_field },
+    // `captives-come-home-2`: version 2 of `captives-come-home` (which it
+    // carries). The ransom of our captured Spies pays in Diplomatic Favor
+    // beside Gold. See `advanced/captives_come_home.rs`.
+    Gene { tag: "captives-come-home-2", field: "captives_come_home_2", kind: Kind::OptIn, enable: AdvancedAi::enable_captives_come_home_2, disable: AdvancedAi::disable_captives_come_home_2 },
+    // The operator moved the live seat to Indonesia (Gitarja), Science only,
+    // on 11-05. Great Nusantara (shipped TRAIT_CIVILIZATION_INDONESIA_NUSANTARA)
+    // gives a Campus, Holy Site, Industrial Zone and Theater Square +1 yield
+    // per two adjacent Coast tiles; data/civs.json carries a flat placeholder,
+    // so every district site picker ranks the Coast at nothing. Under the gene
+    // the seat's pickers rank by district_site_yields, which adds the Coast
+    // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
+    Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    // strongest neighbour at peace while it reads Unfriendly or Neutral, up
+    // to the opinion a Friendly rival holds, so the friendship ask (sent only
+    // to a Friendly rival, accepted 30 of 50 on Deity 11-04/05) can land. A
+    // favorable deal is worth +1 per 10 Gold to the AI, capped at +20
+    // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
+    // `advanced/tribute_buys_the_friendship.rs`.
+    Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // Live (11-01 to 11-05): option A in all 74 World Religion sessions, though
+    // option B lets anyone condemn a faith's units at peace for 25 Favor and
+    // the Deity median session reads 5 rival votes. 213449Z lost to Orthodoxy
+    // at t173 with 9 of 9 cities converted, no religious unit and 869 Faith.
+    // Under the gene the ballot buys B on the faith holding the most cities
+    // when Favor reaches it, and our soldiers condemn that faith at peace. See
+    // `advanced/world_religion_condemns.rs`.
+    Gene { tag: "world-religion-condemns-the-faith", field: "world_religion_condemns_the_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_world_religion_condemns_the_faith, disable: AdvancedAi::disable_world_religion_condemns_the_faith },
+    // Live Deity, 11-04 21Z to 11-05: into Communism Science rose 17 of 17
+    // (median +15%), into Corporate Libertarianism it fell 5 of 5 at t171-193
+    // (median -15%, worst -27%), on a two-slot gain the capacity fallback took
+    // in the seats closest to a win. Under the gene a seat holding its listed
+    // government reaches only for three slots or more. See
+    // `advanced/government_reach.rs`.
+    Gene { tag: "government-reach-pays-the-switch", field: "government_reach_pays_the_switch", kind: Kind::OptIn, enable: AdvancedAi::enable_government_reach_pays_the_switch, disable: AdvancedAi::disable_government_reach_pays_the_switch },
+    // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
+    // (carrying 1 and 2). The Science seat's Government Plaza district claims
+    // the capital's queue once its Campus stands. See
+    // `advanced/plaza_serves_the_scientist_2.rs`.
+    Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // A fresh native Science Campus chooses safe legal land before coastal lowland.
+    Gene { tag: "campus-above-the-sea", field: "campus_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_above_the_sea, disable: AdvancedAi::disable_campus_above_the_sea },
+    // The site score paid fresh water +12 and a coast-only seat +10 (housing
+    // +4, Harbor base +6), though live non-capital cities on fresh water held
+    // 6.8 citizens at t100 and 25% stood near their housing cap, against 6.1
+    // and 66% on the coast. 67 of 239 dry or coast-only foundings had a legal
+    // fresh-water plot within two tiles. Under the gene a fresh-water seat
+    // gains +12 more. See `fresh_water_site.rs`.
+    Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
+    // An assigned Defend formation keeps its combat slots near its threatened city.
+    Gene { tag: "defenders-keep-the-city-in-reach", field: "defenders_keep_the_city_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_keep_the_city_in_reach, disable: AdvancedAi::disable_defenders_keep_the_city_in_reach },
+    // Live Deity (11-05): from t150 the median science seat met half its Power
+    // demand; at t170, 9 of 32 such games held no plant and 7 of them could
+    // build one, five banking Oil beside dark Labs. The plant credit read 4
+    // Power for its own city and paid nothing against a Lab-and-Factory
+    // demand of 5, though the host burns as much fuel as each city in six
+    // tiles needs. Under the gene a plant is worth every city it can fuel in
+    // reach, and the Factory claim, which named Coal alone, takes the plant
+    // the fuel can run. See `advanced/plant_reads_the_grid.rs`.
+    Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
+    // `sea-scout-claims-the-queue`: the contact gap's sea scout claims a working
+    // coastal queue once a hull can cross Ocean, instead of waiting for an idle
+    // one. See `advanced/contact_fleet.rs`.
+    Gene { tag: "sea-scout-claims-the-queue", field: "sea_scout_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue, disable: AdvancedAi::disable_sea_scout_claims_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

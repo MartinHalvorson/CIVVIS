@@ -2104,10 +2104,9 @@ impl AdvancedAi {
         self.remap_amphibious_train(previous, next, units);
     }
 
-    /// Whether the siege has reserved this unit as its taker — the hook a
+    /// Whether the siege has reserved this unit as its taker — the hook the
     /// joint planner (`battle_planner`) reads so it does not spend the unit
-    /// that walks in. Published here; the planner's read is its own change.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// that walks in.
     pub(super) fn unit_is_reserved(&self, uid: u32) -> bool {
         self.reserved_units.contains(&uid)
     }
@@ -5935,6 +5934,7 @@ impl AdvancedAi {
             let heals = !g.is_arena() || g.tactics.heal;
             self.anvil_orders = anvil_orders_for(g, pid, &city, &group.units, &hostiles, heals);
             self.anvil_garrisons_melee(g, pid, cid, &group.units, &hostiles);
+            self.anvil_spares_the_one_blow_step(g, pid, cid, &group.units);
             self.anvil_orders_turn = Some((g.turn, cid));
             self.anvil_rotate(g, pid, &city);
             if self.journal().wants(crate::reasoning::Level::Decision) {

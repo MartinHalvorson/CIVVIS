@@ -335,6 +335,12 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
             encoding="utf-8"))
     toggles = set(re.findall(r"pub fn (?:enable|disable)_([a-z0-9_]+)\s*\(",
                              flags_source))
+    # A `toggles!` entry, `<flag> => enable_<name>, disable_<name>;`, defines
+    # both halves of a plain pair.
+    for enable, disable in re.findall(
+            r"=>\s*enable_([a-z0-9_]+)\s*,\s*disable_([a-z0-9_]+)\s*;",
+            flags_source):
+        toggles |= {enable, disable}
     if not toggles:
         raise ValueError(
             "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
@@ -590,13 +596,67 @@ def write_outputs(repo: Path, manifest: dict[str, Any]) -> None:
         (repo / name).write_text(content, encoding="utf-8")
 
 
-def check_outputs(repo: Path, manifest: dict[str, Any]) -> int:
-    failures = []
+#: The genome-coverage running totals, as both generated outputs spell them.
+#:
+#: Every gene PR bumps these same numbers by one, from its own base. Two PRs off
+#: one base both write `838`: git sees an identical edit on both sides, merges
+#: with no conflict, and `main` says 838 while the truth is 839. Neither PR was
+#: wrong and neither could have known, yet exact equality turned every PR in the
+#: repository red until the next gene landed, three times on 2026-11-05 alone.
+#: The next regeneration heals the count, so a small drift is not staleness.
+RUNNING_COUNTS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r'("capability_toggles": )(\d+)',
+        r'("reachable_as_a_gene": )(\d+)',
+        r'("measured_by_a_screen": )(\d+)',
+        r'("resolved_by_a_screen": )(\d+)',
+        r"(Capability toggles on the controller: \*\*)(\d+)",
+        r"(Reachable as a gene `gene_screen` can vary: \*\*)(\d+)",
+        r"(Measured by at least one screen: \*\*)(\d+)",
+        r"(Resolved by the ledger \(helps or hurts\): \*\*)(\d+)",
+    )
+)
+
+#: How far a running total may trail before it means nobody regenerated. Wide
+#: enough for a burst of parallel gene PRs, narrow enough that a forgotten
+#: `--write` still fails within a day's merges.
+RUNNING_COUNT_SLACK = 10
+
+
+def is_current(actual: str | None, expected: str) -> bool:
+    """Whether a committed output agrees with a fresh render.
+
+    Byte for byte, except that a running total may sit within
+    `RUNNING_COUNT_SLACK` of its true value.
+    """
+    if actual is None:
+        return False
+    for count in RUNNING_COUNTS:
+        committed = [int(value) for _, value in count.findall(actual)]
+        fresh = [int(value) for _, value in count.findall(expected)]
+        if len(committed) != len(fresh):
+            return False
+        if any(abs(a - b) > RUNNING_COUNT_SLACK for a, b in zip(committed, fresh)):
+            return False
+        actual = count.sub(r"\g<1>#", actual)
+        expected = count.sub(r"\g<1>#", expected)
+    return actual == expected
+
+
+def stale_outputs(repo: Path, manifest: dict[str, Any]) -> list[str]:
+    """The generated outputs that no longer agree with a fresh render."""
+    stale = []
     for name, expected in rendered_outputs(manifest).items():
         path = repo / name
         actual = path.read_text(encoding="utf-8") if path.exists() else None
-        if actual != expected:
-            failures.append(name)
+        if not is_current(actual, expected):
+            stale.append(name)
+    return stale
+
+
+def check_outputs(repo: Path, manifest: dict[str, Any]) -> int:
+    failures = stale_outputs(repo, manifest)
     if failures:
         print("stale generated evaluation outputs: " + ", ".join(failures), file=sys.stderr)
         print("run: python3 tools/eval_manifest.py --write", file=sys.stderr)

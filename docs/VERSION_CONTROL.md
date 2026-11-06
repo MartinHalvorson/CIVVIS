@@ -355,6 +355,20 @@ merge. The normal target is therefore roughly one CI run (currently about five
 minutes) from the final push to `main`, followed by the spectator's background
 build and checkpointed live cutover.
 
+Registry writers also take bounded integration turns. Before merging a change
+to `src/ai/advanced/genes.rs`, `ship` defers to an older ready registry PR whose
+required checks are pending or successful and whose GitHub activity is within
+45 minutes. Failed/cancelled checks, drafts, closed PRs and inactive PRs yield
+their turn. Other files do not join this queue. This includes registry metadata
+edits because they share the same contended file.
+
+Waiting preserves the task head and CI, and suspends an already armed
+auto-merge request until its turn arrives. Registry membership is cached by
+head; older PR status is refreshed once a minute. This courtesy applies to
+workers running this version of `ship`; direct GitHub merges and already
+running older helpers still need explicit coordination. It does not replace
+overlap agreements or any required validation.
+
 Use squash merge only. The squash commit is the atomic unit integrated into
 `main`; intermediate checkpoints and merge-from-main commits remain out of the
 trunk history. Delete the remote branch after merge. Then remove the worktree
@@ -626,7 +640,7 @@ one heading to the next is a whole number of functions. The `city helpers` and
 `action layer` sections now live in `src/game/city.rs` and
 `src/game/actions.rs` — a child module per seam, holding the same inherent
 `impl Game` under a `use super::*;` header — beside the topic modules already
-there (`adjacency`, `border_forecast`, `quests`, `city_names`). A descendant
+there (`adjacency`, `quests`, `city_names`). A descendant
 module sees every private item of its ancestors, so a moved function still
 reaches everything it used to call; the reverse direction is what a move
 breaks, so an item that was private in `game` is restated `pub(super)` in the

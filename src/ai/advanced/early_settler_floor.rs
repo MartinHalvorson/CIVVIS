@@ -56,14 +56,14 @@ pub(crate) const EARLY_SETTLER_FLOOR_STANDARD_TURN: u32 = 90;
 const EARLY_SETTLER_ATTACK_MEMORY: u32 = 4;
 
 impl AdvancedAi {
-    fn early_settler_item() -> Item {
+    pub(super) fn early_settler_item() -> Item {
         Item::Unit {
             unit: crate::name!("settler"),
         }
     }
 
     /// Walking Settlers, and cities whose queue head is a Settler.
-    fn early_settler_census(g: &Game, pid: usize) -> (usize, usize) {
+    pub(super) fn early_settler_census(g: &Game, pid: usize) -> (usize, usize) {
         let walkers = g
             .player_unit_ids(pid)
             .into_iter()
@@ -104,6 +104,11 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> bool {
+        // `holdable-land-keeps-settling`: the mid-game floor's Settler is
+        // kept the same way, by every claim that reads this.
+        if self.holdable_land_settler_holds(g, pid, cid, plan) {
+            return true;
+        }
         let floor = self.early_settler_floor(g, plan);
         if floor == 0
             || !matches!(
@@ -121,7 +126,7 @@ impl AdvancedAi {
     /// not enough: the controller's alarm reads one for as long as the camp
     /// stands, and in civvis-20261008T131421Z it held both cities from t24
     /// to t45 while no raider came, the Settler gate open in each.
-    fn early_settler_raider_near(g: &Game, home: Pos) -> bool {
+    pub(super) fn early_settler_raider_near(g: &Game, home: Pos) -> bool {
         g.units.values().any(|unit| {
             crate::ai::BasicAi::is_barbarian_raider(g, unit)
                 && g.wdist(unit.pos, home) <= crate::ai::HOME_THREAT_RADIUS
@@ -129,7 +134,7 @@ impl AdvancedAi {
     }
 
     /// Whether `cid`'s current queue head may give way to the floor's Settler.
-    fn early_settler_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
+    pub(super) fn early_settler_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
         let Some(item) = g.cities[&cid].queue.first() else {
             return true;
         };
@@ -206,6 +211,7 @@ impl AdvancedAi {
                 || (city.last_attacked > 0
                     && g.turn.saturating_sub(city.last_attacked) <= EARLY_SETTLER_ATTACK_MEMORY)
                 || Self::early_settler_raider_near(g, city.pos)
+                || self.short_seowon_holds_settler_floor(g, pid, cid)
                 || !Self::early_settler_may_displace(g, pid, cid)
                 || !g.can_produce(pid, cid, &item)
             {

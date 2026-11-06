@@ -229,3 +229,48 @@ fn a_board_without_the_hosts_reading_asks_any_rival_not_denouncing() {
     g.players[2].denounced_until.insert(0, g.turn + 10);
     assert_eq!(ai.embassy_capital_candidates(&g, 0, None), vec![1]);
 }
+
+/// `embassy-finds-the-capital-2`: a Science aim sends the Embassy too, the
+/// rival knowing the most technologies first; version one alone does not.
+#[test]
+fn a_science_aim_sends_the_embassy_to_the_leading_researcher_first() {
+    let mut g = board();
+    for tech in ["pottery", "mining", "writing"] {
+        g.players[2].techs.insert(crate::name::Name::new(tech));
+    }
+    assert!(g.players[2].techs.len() > g.players[1].techs.len());
+
+    let mut v1 = AdvancedAi::targeting(VictoryTarget::Science);
+    v1.enable_embassy_finds_the_capital();
+    assert!(
+        v1.embassy_capital_candidates(&g, 0, None).is_empty(),
+        "version one is Domination-only"
+    );
+
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Science);
+    v2.enable_embassy_finds_the_capital_2();
+    assert_eq!(v2.embassy_capital_candidates(&g, 0, None), vec![2, 1]);
+    let mut sent = g.clone();
+    assert!(v2.embassy_finds_the_capital_step(&mut sent, 0, None));
+    assert!(embassy(&sent, 2));
+    assert!(!embassy(&sent, 1));
+
+    // Version two keeps version one's Domination path.
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    domination.enable_embassy_finds_the_capital_2();
+    assert_eq!(
+        domination.embassy_capital_candidates(&g, 0, Some(1)),
+        vec![1, 2]
+    );
+}
+
+/// Under the Science aim the bridge's rule still holds: a denouncing rival is
+/// not asked.
+#[test]
+fn a_science_aim_still_skips_a_denouncing_rival() {
+    let mut g = board();
+    attitude(&mut g, 1, "DENOUNCED");
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Science);
+    v2.enable_embassy_finds_the_capital_2();
+    assert_eq!(v2.embassy_capital_candidates(&g, 0, None), vec![2]);
+}

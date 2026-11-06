@@ -96,7 +96,7 @@ impl Debt {
             (Self::Research, Item::District { district, pos }) => {
                 // Credit only the district's own yield. The future Library
                 // still needs its own construction and catch-up reservation.
-                g.district_yields(*district, *pos).science.max(0.0)
+                g.district_site_yields(*district, *pos).science.max(0.0)
             }
             _ => 1.0,
         }

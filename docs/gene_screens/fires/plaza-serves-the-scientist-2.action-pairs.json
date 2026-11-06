@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "plaza-serves-the-scientist-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 boards of four live Deity Korea Science (Online) games (civvis-20261105T131016Z, 124217Z, 100942Z, 103825Z), each the run's events.jsonl cut at frame 0 of a turn where the city holding our Government Plaza listed its next Science tier building (BUILDING_GOV_WIDE or BUILDING_GOV_SPIES) among the host's buildable items while producing routine work. Both arms run one frozen civvis_orders --resumed built from the branch at 7a194bb89 with the run's own requested genome (summary.json forced, each as --with); the on arm adds --with plaza-serves-the-scientist-2. Off arms with no produce order for the tier building: 8/8; on arms producing it in the Plaza city: 7/8 (the eighth, 131016Z t101, held behind a Settler the board wanted next, which the gene never displaces).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-plaza-serves-the-scientist-2.native-queries.tar.xz",
+    "sha256": "0943f8619d9172698e33d3128557a5f940e0572f0bec4cfc6de3b41288d1e497"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}

@@ -69,27 +69,6 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether `item`, at the head of a queue, is routine work a Spy may
-    /// displace.
-    fn denial_spy_displaces(g: &Game, item: &Item) -> bool {
-        match item {
-            Item::Building { building } => g
-                .rules
-                .buildings
-                .get(building)
-                .is_some_and(|spec| spec.outer_defense <= 0),
-            Item::District { .. } => true,
-            Item::Unit { unit } => g.rules.units.get(unit).is_some_and(|spec| {
-                spec.class != "military" && *unit != "settler" && *unit != "spy"
-            }),
-            Item::Formation { .. }
-            | Item::Wonder { .. }
-            | Item::Repair { .. }
-            | Item::Project { .. }
-            | Item::Product { .. } => false,
-        }
-    }
-
     /// See the module: claim queues for the Spies a decisive space race
     /// needs. Exact no-op while the gene is off.
     pub(super) fn claim_queues_for_denial_spies(
@@ -98,7 +77,9 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.science_denial_trains_spies {
+        // `denial-spies-count-their-losses`: the claim stands down while recent
+        // Spies keep dying.
+        if !self.science_denial_trains_spies || self.spy_losses_pause_training(g) {
             return;
         }
         let racers = self.denial_spy_racers(g, pid);
@@ -141,7 +122,7 @@ impl AdvancedAi {
                     && city
                         .queue
                         .first()
-                        .is_none_or(|head| Self::denial_spy_displaces(g, head))
+                        .is_none_or(|head| Self::spy_displaces(g, head))
                     && g.can_produce(pid, *cid, &spy)
             })
             .map(|cid| (g.city_yields(cid).production, cid))

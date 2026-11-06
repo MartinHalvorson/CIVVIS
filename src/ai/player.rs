@@ -134,11 +134,21 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
         let mut executed_movement = Vec::new();
+        // `districts-price-the-improvement`: like the live bridge, which sends
+        // the host only each city's last Produce of a batch, a city's earlier
+        // Produce orders this frame are dropped — so a District the planner
+        // re-sited before ending its turn never lands on (and bulldozes) the
+        // first site. Off, every logged action executes as before.
+        let ordinary: Vec<&(usize, Action)> = if ai.districts_price_the_improvement_on() {
+            final_production_only(view.log.since(ordinary_begin))
+        } else {
+            view.log.since(ordinary_begin).collect()
+        };
         let changed = execute_frame_recorded(
             game,
             pid,
             &finishing,
-            view.log.since(ordinary_begin),
+            ordinary.into_iter(),
             &mut executed_movement,
             &mut refused,
             &mut ai.refused_city_sites,
@@ -222,6 +232,40 @@ fn execute_frame<'a>(
         &mut Vec::new(),
         &mut BTreeSet::new(),
     )
+}
+
+/// `districts-price-the-improvement`: drop a city's earlier `Produce` of a
+/// District when a later `Produce` this frame re-sites the SAME District
+/// elsewhere, as the live bridge (which sends only each city's last Produce)
+/// effectively does. Nothing else is dropped: collapsing every earlier order
+/// left a city idle whenever the board refused its last one (the war-paced
+/// Deity read with the wholesale collapse lost 11.5 Production a turn at t100).
+fn final_production_only<'a>(
+    actions: impl Iterator<Item = &'a (usize, Action)>,
+) -> Vec<&'a (usize, Action)> {
+    let actions: Vec<&(usize, Action)> = actions.collect();
+    let superseded = |index: usize| -> bool {
+        let Action::Produce {
+            city,
+            item: Item::District { district, pos },
+        } = &actions[index].1
+        else {
+            return false;
+        };
+        actions[index + 1..].iter().any(|(_, later)| {
+            matches!(
+                later,
+                Action::Produce {
+                    city: later_city,
+                    item: Item::District { district: later_district, pos: later_pos },
+                } if later_city == city && later_district == district && later_pos != pos
+            )
+        })
+    };
+    (0..actions.len())
+        .filter(|&index| !superseded(index))
+        .map(|index| actions[index])
+        .collect()
 }
 
 fn execute_frame_recorded<'a>(

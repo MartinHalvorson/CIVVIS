@@ -2134,6 +2134,41 @@ fn present(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
+/// ⚠ AN UNKNOWN FLAG IS REFUSED, NOT IGNORED. Every flag this screen reads
+/// goes through `number`, `real`, `text` or `present` (or a direct match) by
+/// its literal name, so a flag this build does not know used to be skipped
+/// in silence and the run went ahead as a different screen. On 11-05 three
+/// reads of `capital-keeps-its-defender-2` passed `--rival-war-pace 200
+/// --rival-walls 55 --seat-civ Korea` to builds without #4429's harness:
+/// two ran the uncalibrated field and every seat was a shuffled civ, and
+/// their opposite-signed results were taken for noise.
+///
+/// The known set is every `"--…"` literal in this file's own source, so it
+/// cannot drift from what the screen reads.
+fn unknown_flags(args: &[String]) -> Vec<String> {
+    const FILE: &str = include_str!("gene_screen.rs");
+    // The tests name flags this screen does not read; only the screen's own
+    // code counts.
+    let source = FILE
+        .split("\n#[cfg(test)]\nmod tests")
+        .next()
+        .unwrap_or(FILE);
+    let known: std::collections::BTreeSet<&str> = source
+        .match_indices("\"--")
+        .filter_map(|(at, _)| {
+            let rest = &source[at + 1..];
+            let end = rest[2..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .map_or(rest.len(), |end| end + 2);
+            (end > 2).then(|| &rest[..end])
+        })
+        .collect();
+    args.iter()
+        .filter(|arg| arg.starts_with("--") && !known.contains(arg.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// ⭐ THE VERSION PICK (operator, 2026-08-24). A gene that is on plays its
 /// TOP version — the head by tracked wins, `best_version` — 60% of the time
 /// and one of its other versions — drawn uniformly among the rest — the
@@ -6748,6 +6783,15 @@ fn main() {
     if present(&args, "--help") || present(&args, "-h") {
         usage();
     }
+    let unknown = unknown_flags(&args);
+    if !unknown.is_empty() {
+        eprintln!(
+            "gene_screen: unknown flag(s) {}: this build does not read them, and \
+             ignoring them would run a different screen (see --help)",
+            unknown.join(" ")
+        );
+        std::process::exit(2);
+    }
     let mut genes = gene_table();
     // `--live-genome`: price genes against the genome the live seat plays.
     // The live seat forces some 300 tags beside the ledger's defaults, and a
@@ -7568,8 +7612,15 @@ fn main() {
             if !quiet {
                 let elapsed = started.elapsed().as_secs_f64();
                 let row = &game_rows[0];
+                // The measured seats' civs, so a reader can see what was
+                // measured (a shuffled civ or the one asked for).
+                let measured = game_rows
+                    .iter()
+                    .map(|row| format!("{} {}", row.seat, row.civ))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 println!(
-                    "[{finished:>5}/{games_to_play}] game {} seed {} ({} seats) · {} · t{} · {} · {:.0}s ({:.2} games/s, ~{:.0}s left)",
+                    "[{finished:>5}/{games_to_play}] game {} seed {} ({} seats; measured {measured}) · {} · t{} · {} · {:.0}s ({:.2} games/s, ~{:.0}s left)",
                     row.game,
                     row.seed,
                     game_rows.len(),
@@ -7599,6 +7650,47 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unknown_flag_is_refused_and_every_read_flag_is_known() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The flags the live screens pass, and values that only look like
+        // flags (a negative rung), are known or not flags at all.
+        assert!(unknown_flags(&args(&[
+            "--rivals",
+            "firaxis-faithful",
+            "--handicap",
+            "rivals",
+            "--rival-chairs",
+            "5",
+            "--rival-rung",
+            "-2",
+            "--rival-pace",
+            "--difficulty",
+            "deity",
+            "--live-genome",
+            "g.json",
+            "--speed",
+            "online",
+            "--games",
+            "12",
+            "--out",
+            "o.jsonl",
+        ]))
+        .is_empty());
+        // 11-05: a harness flag this build does not carry, and a misspelling.
+        assert_eq!(
+            unknown_flags(&args(&[
+                "--games",
+                "12",
+                "--seat-civ",
+                "Korea",
+                "--gams",
+                "3"
+            ])),
+            vec!["--seat-civ".to_string(), "--gams".to_string()]
+        );
+    }
 
     #[test]
     fn journal_keeps_research_decisions_and_advances_past_filtered_detail() {

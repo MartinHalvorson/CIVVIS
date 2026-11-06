@@ -104,6 +104,9 @@ impl AdvancedAi {
         {
             return None;
         }
+        if self.university_precedes_industry(g, pid, cid, plan) {
+            return None;
+        }
         let threatened = plan.threatened_city;
         let item = BasicAi::producer_workshop_item(g, pid, cid, n_cities, threatened)
             .or_else(|| BasicAi::producer_zone_item(g, pid, cid, n_cities, threatened))?;
@@ -144,6 +147,9 @@ impl AdvancedAi {
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
         {
+            return false;
+        }
+        if self.university_precedes_industry(g, pid, cid, plan) {
             return false;
         }
         let is_zone_build = match item {

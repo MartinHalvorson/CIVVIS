@@ -182,6 +182,104 @@ fn the_drain_disbands_the_cheapest_strength_and_spares_garrisons_and_guns() {
     assert_eq!(ours(&covered), before, "the treasury covers the deficit");
 }
 
+/// Native Indonesia 221304Z, 162/0: a Quadrireme's exported bill was 2,
+/// exactly covered by Levee en Masse. Deleting it and a 4-Gold Musketman
+/// reduced the native unit total by only 2, not the journal's claimed 6.
+#[test]
+fn the_drain_keeps_the_free_ship_and_uses_a_paying_unit() {
+    for version_two in [false, true] {
+        let (mut g, _, archers) = fixture();
+        let ship = g.spawn_test_unit("quadrireme", 0, (6, 6));
+        let musket = g.spawn_test_unit("musketman", 0, (6, 8));
+        g.players[0].policies = [crate::name!("levee_en_masse")].into_iter().collect();
+        g.players[0].gold = 0.0;
+        g.players[0].gold_per_turn = -1.0;
+        for (uid, bill) in [(ship, 2.0), (musket, 4.0)] {
+            std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+                uid,
+                crate::game::HostUnitFacts {
+                    maintenance: Some(bill),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut ai = AdvancedAi::new();
+        if version_two {
+            ai.enable_bankruptcy_exits_the_drain_2();
+        } else {
+            ai.enable_bankruptcy_exits_the_drain();
+        }
+        let before = g.unit_gold_maintenance(0);
+        ai.exit_the_drain(&mut g, 0);
+        assert!(
+            g.units.contains_key(&ship),
+            "the discounted ship costs nothing"
+        );
+        assert!(
+            !g.units.contains_key(&musket),
+            "the Musketman can relieve the deficit"
+        );
+        assert!(archers.iter().all(|uid| g.units.contains_key(uid)));
+        assert_eq!(before - g.unit_gold_maintenance(0), 2.0);
+    }
+}
+
+/// The number disbanded must cover the deficit with what the economy really
+/// stops charging. Check native bills (already formed), modeled formation
+/// bills, discounts, and Elite Forces' per-unit surcharge against the actual
+/// before/after treasury-maintenance calculation.
+#[test]
+fn the_drain_counts_effective_savings_until_the_deficit_is_covered() {
+    for formation in [0, 1, 2] {
+        for card in [None, Some("conscription"), Some("levee_en_masse")] {
+            for observed in [None, Some(2.0), Some(6.0)] {
+                for surcharge in [false, true] {
+                    let (mut g, _, _) = fixture();
+                    g.units.clear();
+                    g.players[0].policies = card.into_iter().map(Name::new).collect();
+                    if surcharge {
+                        g.players[0].policies.insert(crate::name!("elite_forces"));
+                    }
+                    for pos in [(6, 6), (6, 8), (8, 8)] {
+                        let uid = g.spawn_test_unit("musketman", 0, pos);
+                        g.units.get_mut(&uid).unwrap().formation = formation;
+                        if let Some(bill) = observed {
+                            std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+                                uid,
+                                crate::game::HostUnitFacts {
+                                    maintenance: Some(bill),
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+                    let before = g.unit_gold_maintenance(0);
+                    let cost = before / 3.0;
+                    let deficit = if cost > 0.0 { cost * 1.5 } else { 1.0 };
+                    g.players[0].gold = 0.0;
+                    g.players[0].gold_per_turn = -deficit;
+                    let mut ai = AdvancedAi::new();
+                    ai.enable_bankruptcy_exits_the_drain_2();
+                    ai.exit_the_drain(&mut g, 0);
+                    let after = g.unit_gold_maintenance(0);
+                    let remaining = g.player_unit_ids(0).len();
+                    if cost > 0.0 {
+                        assert_eq!(
+                            remaining, 1,
+                            "{formation:?}/{card:?}/{observed:?}/{surcharge}"
+                        );
+                        assert!(before - after >= deficit);
+                        assert!(cost < deficit, "one unit would not suffice");
+                    } else {
+                        assert_eq!(remaining, 3, "free units cannot cover a deficit");
+                        assert_eq!(before, after);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Drained, Caravansaries is worth 2 Gold a route; with the deficit covered
 /// or the gene off, no card is pushed.
 #[test]
@@ -430,4 +528,65 @@ fn upgrade_upkeep_is_zero_in_an_arena() {
         AdvancedAi::upgrade_upkeep_delta(&g, units[0], crate::name!("crossbowman")),
         0.0
     );
+}
+
+/// `bankruptcy-exits-the-drain-2` is a family version: opt-in, and enabling
+/// it turns version one off.
+#[test]
+fn bankruptcy_exits_the_drain_2_is_opt_in_and_replaces_version_one() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "bankruptcy-exits-the-drain-2",
+        |ai| ai.bankruptcy_exits_the_drain_2,
+    );
+    let mut ai = AdvancedAi::new();
+    ai.enable_bankruptcy_exits_the_drain();
+    ai.enable_bankruptcy_exits_the_drain_2();
+    assert!(ai.bankruptcy_exits_the_drain_2 && !ai.bankruptcy_exits_the_drain);
+}
+
+/// 111305Z t194: 243 Gold at -76.6 a turn is 3.2 turns of runway. Version
+/// one waits for under one turn; version two enters the drain below five.
+#[test]
+fn version_two_enters_the_drain_at_five_turns_of_runway() {
+    let (mut g, _, _) = fixture();
+    g.players[0].gold = 243.0;
+    g.players[0].gold_per_turn = -76.6;
+    let mut one = AdvancedAi::new();
+    one.enable_bankruptcy_exits_the_drain();
+    assert!(!one.drained(&g, 0));
+    let mut two = AdvancedAi::new();
+    two.enable_bankruptcy_exits_the_drain_2();
+    assert!(two.drained(&g, 0));
+    g.players[0].gold = 400.0;
+    assert!(!two.drained(&g, 0), "5.2 turns: the drain stands down");
+}
+
+/// Under version two the cheapest unit beside an enemy soldier stays, and the
+/// interior one goes in its place; version one takes the cheapest wherever it
+/// stands.
+#[test]
+fn version_two_spares_the_unit_holding_the_front() {
+    let (mut g, _, _) = fixture();
+    g.at_war.insert((0, 1));
+    let front_knight = g.spawn_test_unit("knight", 0, (14, 10));
+    let interior_knight = g.spawn_test_unit("knight", 0, (2, 12));
+    g.spawn_test_unit("warrior", 1, (16, 10));
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -2.0;
+
+    let mut two = AdvancedAi::new();
+    two.enable_bankruptcy_exits_the_drain_2();
+    assert!(two.drain_spares_the_front(&g, 0, front_knight));
+    assert!(!two.drain_spares_the_front(&g, 0, interior_knight));
+    let mut drained = g.clone();
+    two.exit_the_drain(&mut drained, 0);
+    assert!(drained.units.contains_key(&front_knight), "the front stays");
+    assert!(
+        !drained.units.contains_key(&interior_knight),
+        "the interior goes"
+    );
+
+    let mut one = AdvancedAi::new();
+    one.enable_bankruptcy_exits_the_drain();
+    assert!(!one.drain_spares_the_front(&g, 0, front_knight));
 }

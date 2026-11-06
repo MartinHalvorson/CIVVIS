@@ -151,21 +151,7 @@ impl BasicAi {
     /// Whether `cid` holds a Commercial Hub, its foundation, or has one first
     /// in its queue.
     fn commercial_hub_held_or_queued(g: &Game, cid: u32) -> bool {
-        let city = &g.cities[&cid];
-        g.city_has_district_family(city, crate::name!("commercial_hub"))
-            || city.owned_tiles.iter().any(|pos| {
-                g.map
-                    .get(*pos)
-                    .and_then(|tile| tile.district_foundation.as_ref())
-                    .is_some_and(|foundation| {
-                        g.district_family(foundation.district) == "commercial_hub"
-                    })
-            })
-            || matches!(
-                city.queue.first(),
-                Some(Item::District { district, .. })
-                    if g.district_family(*district) == "commercial_hub"
-            )
+        Self::district_family_held_or_queued(g, cid, crate::name!("commercial_hub"))
     }
 
     /// Whether a city of `pid` holds a Commercial Hub, its foundation, or has
@@ -209,7 +195,7 @@ impl BasicAi {
         let best_site = |city: u32| {
             g.district_sites(city, hub)
                 .into_iter()
-                .map(|pos| (pos, g.district_yields(hub, pos)))
+                .map(|pos| (pos, g.district_site_yields(hub, pos)))
                 .max_by(|a, b| {
                     a.1.gold
                         .total_cmp(&b.1.gold)

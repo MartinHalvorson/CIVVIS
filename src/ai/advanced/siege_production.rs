@@ -541,6 +541,19 @@ impl AdvancedAi {
                 if self.housing_bound_granary_queued(g, cid) {
                     continue;
                 }
+                // `breaker-spares-the-backlog-builder`: the Builder
+                // `backlog-builder-takes-the-queue` set at the head while the
+                // worked backlog still wants it is neither routine nor
+                // displaceable either; otherwise the two writers trade the
+                // queue every turn and the gun always wins it.
+                if self.breaker_spares_the_backlog_builder
+                    && g.cities[&cid]
+                        .queue
+                        .first()
+                        .is_some_and(|item| self.backlog_builder_holds(g, pid, cid, plan, item))
+                {
+                    continue;
+                }
                 // `counterweight-finishes-one-shrine`: the one sanctuary's
                 // Shrine is not a routine building to displace.
                 if self.counterweight_shrine_held(g, pid, cid) {

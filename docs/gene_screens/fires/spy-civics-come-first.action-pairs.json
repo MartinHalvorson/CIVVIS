@@ -1,0 +1,27 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "spy-civics-come-first",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Sixteen live Lv 8 Deity Online turns (2026-11-05 10:09Z-12:54Z runs) where the live seat chose a civic while The Enlightenment or Cold War was researchable and not chosen: Mercantilism over The Enlightenment at civvis-20261105T100942Z t121, 102328Z t163, 103825Z t108, 105753Z t108, 111305Z t111, 113105Z t138, 114422Z t109, 121129Z t115, 122513Z t99, 124217Z t149, 125414Z t112; Class Struggle over Cold War at 103825Z t168, 105753Z t173, 111305Z t160, 114422Z t174, 122513Z t152. Each is the run's events.jsonl through the turn's first state frame and nothing after it, queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live civic. 11 on arms change it: every Mercantilism choice becomes The Enlightenment (Nationalism's prerequisite; it also unlocks Rationalism). The five Class Struggle choices stand: the weight does not outrank Class Struggle over Cold War.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-spy-civics-come-first.native-queries.tar.xz",
+    "sha256": "b7597ed168dec4eaaaa1512a0f1f83ccefc344c6bda277c5eed3396509671086"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json"
+  ]
+}

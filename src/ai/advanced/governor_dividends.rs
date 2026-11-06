@@ -5,7 +5,82 @@ use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use crate::think;
 
+#[derive(Clone)]
+pub(super) struct ObservedGovernorPost {
+    city: crate::Pos,
+    owner: usize,
+    assignment_bound: u32,
+    last_seen: u32,
+    last_request: Option<u32>,
+}
+
 impl AdvancedAi {
+    /// The live mirror reports an established governor at only the minimum
+    /// establishment age on every fresh board. Preserve the earliest observed
+    /// assignment bound while its physical post stays unchanged. This is an
+    /// observation clock for our relocation cooldown, not a host tenure claim
+    /// or a change to the game's establishment timer.
+    fn observe_governor_posts(&mut self, g: &Game, pid: usize) {
+        let roster = &g.players[pid].governor_roster;
+        self.remembered_governor_posts
+            .retain(|name, _| roster.contains_key(name.as_str()));
+        for (name, state) in roster {
+            let key = name.to_string();
+            let city = state.city.and_then(|cid| g.cities.get(&cid));
+            let Some(city) = city.filter(|_| state.disabled_until <= g.turn) else {
+                self.remembered_governor_posts.remove(&key);
+                continue;
+            };
+            let Some(spec) = g.rules.governors.get(name.as_str()) else {
+                self.remembered_governor_posts.remove(&key);
+                continue;
+            };
+            let establish = g.standard_duration(spec.establish_turns);
+            let fresh = || ObservedGovernorPost {
+                city: city.pos,
+                owner: city.owner,
+                assignment_bound: state.assigned_turn.min(g.turn),
+                last_seen: g.turn,
+                last_request: None,
+            };
+            let post = self
+                .remembered_governor_posts
+                .entry(key)
+                .or_insert_with(fresh);
+            if post.city != city.pos
+                || post.owner != city.owner
+                || g.turn < post.last_seen
+                || g.turn.saturating_sub(state.assigned_turn) < establish
+            {
+                *post = fresh();
+            } else {
+                post.assignment_bound = post.assignment_bound.min(state.assigned_turn);
+                post.last_seen = g.turn;
+            }
+        }
+    }
+
+    fn governor_residence_age(&self, g: &Game, pid: usize, governor: &str) -> u32 {
+        let Some(state) = g.players[pid].governor_roster.get(governor) else {
+            return 0;
+        };
+        let age = g.turn.saturating_sub(state.assigned_turn);
+        if !self.live_governor_assignment_adapter {
+            return age;
+        }
+        let post = self.remembered_governor_posts.get(governor).filter(|post| {
+            state.disabled_until <= g.turn
+                && g.turn >= post.last_seen
+                && state
+                    .city
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| city.pos == post.city && city.owner == post.owner)
+        });
+        post.map_or(age, |post| {
+            age.max(g.turn.saturating_sub(post.assignment_bound))
+        })
+    }
+
     /// Enable this independently screenable governor relocation.
     pub fn enable_amani_follows_suzerainty(&mut self) {
         self.amani_follows_suzerainty = true;
@@ -32,6 +107,7 @@ impl AdvancedAi {
     }
     /// Enable this independently screenable governor relocation.
     pub fn enable_pingala_follows_research(&mut self) {
+        self.pingala_follows_research_2 = false;
         self.pingala_follows_research = true;
     }
     /// Withhold this governor relocation.
@@ -113,8 +189,14 @@ impl AdvancedAi {
             .max(1);
         let residence = g.standard_duration(20).max(settle);
         if state.disabled_until > g.turn
-            || g.turn.saturating_sub(state.assigned_turn) < residence
+            || self.governor_residence_age(g, pid, governor) < residence
+            || (self.live_governor_assignment_adapter
+                && self
+                    .remembered_governor_posts
+                    .get(governor)
+                    .is_some_and(|post| post.last_request == Some(g.turn)))
             || !self.governor_dividend_safe_city(g, pid, current, plan)
+            || !self.base.capital_governor_may_depart(g, pid, governor)
         {
             return None;
         }
@@ -252,17 +334,185 @@ impl AdvancedAi {
         best.map(|(_, cid)| cid)
     }
 
-    pub(super) fn relocate_governors_for_dividends(
+    /// Space Initiative is not priced by the ordinary yield-only relocation.
+    /// Move toward a committed first launch job, rather than freezing Pingala
+    /// in a city with no Spaceport simply because he has that promotion.
+    /// An ordinary Magnus may trade posts; specialist/defensive governors stay.
+    fn pingala_launch_posts(
         &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Option<Name>)> {
+        if !self.pingala_follows_research_2 || plan.strategy != GrandStrategy::Science {
+            return None;
+        }
+        let state = g.players[pid].governor_roster.get("pingala")?;
+        let old = state.city?;
+        let old_city = g.cities.get(&old)?;
+        let residence = g.standard_duration(20);
+        if !state.promotions.contains("space_initiative")
+            || state.disabled_until > g.turn
+            || self.governor_residence_age(g, pid, "pingala") < residence
+            || self
+                .remembered_governor_posts
+                .get("pingala")
+                .is_some_and(|post| post.last_request == Some(g.turn))
+            || !self.governor_dividend_safe_city(g, pid, old, plan)
+            || !self.base.capital_governor_may_depart(g, pid, "pingala")
+            || old_city
+                .districts
+                .keys()
+                .any(|d| g.district_family(*d) == "spaceport")
+            || matches!(old_city.queue.first(), Some(Item::Project { project }) if Game::is_space_project(project))
+            || (state.promotions.contains("curator")
+                && g.housed_great_works(pid)
+                    .get(&old)
+                    .is_some_and(|works| works.values().any(|count| *count > 0)))
+        {
+            return None;
+        }
+        // Native Online readback establishes ordinary governors in five turns.
+        // Keep the duration-table bound too (Online is also five there).
+        // Never budget less than the observed native interval.
+        let duration = g.rules.governors["pingala"].establish_turns;
+        let settle = if self.live_governor_assignment_adapter {
+            duration.max(g.standard_duration(duration))
+        } else {
+            g.standard_duration(duration)
+        }
+        .max(1);
+        let horizon = g
+            .turn_limit()
+            .map(|limit| limit.saturating_sub(g.turn))
+            .unwrap_or(g.standard_duration(40))
+            .min(g.standard_duration(40));
+        if horizon <= residence + settle {
+            return None;
+        }
+        let before = Self::governor_dividend_reading(g, pid, "pingala");
+        let mut best: Option<(f64, u32, Option<Name>)> = None;
+        for cid in g.player_city_ids(pid) {
+            if cid == old || !self.governor_dividend_safe_city(g, pid, cid, plan) {
+                continue;
+            }
+            let city = &g.cities[&cid];
+            let Some(item) = city.queue.first() else {
+                continue;
+            };
+            let pad = matches!(item, Item::District { district, .. } if g.district_family(*district) == "spaceport");
+            let launch =
+                matches!(item, Item::Project { project } if Game::is_space_project(project));
+            if !pad && !launch {
+                continue;
+            }
+            let turns = g
+                .host_production_turns(cid, item)
+                .filter(|n| n.is_finite() && *n >= 0.0)
+                .unwrap_or_else(|| self.production_build_turns(g, pid, cid, item))
+                .ceil();
+            if !turns.is_finite()
+                || turns <= 0.0
+                || (pad && turns + settle as f64 >= horizon as f64)
+                || (launch && turns <= (2 * settle) as f64)
+            {
+                continue;
+            }
+            let replacement = g.players[pid]
+                .governor_roster
+                .iter()
+                .find(|(_, other)| other.city == Some(cid))
+                .map(|(name, _)| Name::new(name));
+            if let Some(name) = replacement {
+                let other = &g.players[pid].governor_roster[name.as_str()];
+                if name != "magnus"
+                    || other.disabled_until > g.turn
+                    || self.governor_residence_age(g, pid, "magnus") < residence
+                    || !self.base.capital_governor_may_depart(g, pid, "magnus")
+                    || other.promotions.contains("industrialist")
+                    || other.promotions.contains("vertical_integration")
+                    || self
+                        .remembered_governor_posts
+                        .get("magnus")
+                        .is_some_and(|post| post.last_request == Some(g.turn))
+                {
+                    continue;
+                }
+            }
+            let mut probe = g.clone();
+            if probe
+                .apply(
+                    pid,
+                    &Action::ReassignGovernor {
+                        governor: Name::new("pingala"),
+                        city: cid,
+                    },
+                )
+                .is_err()
+            {
+                continue;
+            }
+            if let Some(name) = replacement {
+                if probe
+                    .apply(
+                        pid,
+                        &Action::ReassignGovernor {
+                            governor: name,
+                            city: old,
+                        },
+                    )
+                    .is_err()
+                {
+                    continue;
+                }
+            }
+            for governor in [Some(Name::new("pingala")), replacement]
+                .into_iter()
+                .flatten()
+            {
+                probe.players[pid]
+                    .governor_roster
+                    .get_mut(governor.as_str())
+                    .unwrap()
+                    .assigned_turn = g.turn.saturating_sub(
+                    g.standard_duration(g.rules.governors[governor.as_str()].establish_turns),
+                );
+            }
+            let after = Self::governor_dividend_reading(&probe, pid, "pingala");
+            // The launch benefit is additional: retain at least the established
+            // science/culture dividend, rather than buying production with it.
+            if !after.is_finite() || after + f64::EPSILON < before {
+                continue;
+            }
+            let score = g.city_yields(cid).production / (turns + settle as f64);
+            if best
+                .as_ref()
+                .is_none_or(|(value, old, _)| score > *value || (score == *value && cid < *old))
+            {
+                best = Some((score, cid, replacement));
+            }
+        }
+        best.map(|(_, cid, replacement)| (cid, replacement))
+    }
+
+    pub(super) fn relocate_governors_for_dividends(
+        &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !(self.pingala_follows_research
+        let enabled = self.pingala_follows_research
+            || self.pingala_follows_research_2
             || self.magnus_follows_settlers
             || self.liang_follows_builders
             || self.reyna_follows_revenue
-            || self.amani_follows_suzerainty)
+            || self.amani_follows_suzerainty;
+        if enabled && self.live_governor_assignment_adapter {
+            self.observe_governor_posts(g, pid);
+        } else {
+            self.remembered_governor_posts.clear();
+        }
+        if !enabled
             || self.base.minor
             || self.base.barb
             || !g.turn.is_multiple_of(g.standard_duration(16).max(1))
@@ -277,8 +527,40 @@ impl AdvancedAi {
         {
             return;
         }
+        if let Some((city, replacement)) = self.pingala_launch_posts(g, pid, plan) {
+            let old = g.players[pid].governor_roster["pingala"].city.unwrap();
+            let mut actions = vec![Action::ReassignGovernor {
+                governor: Name::new("pingala"),
+                city,
+            }];
+            if let Some(governor) = replacement {
+                actions.push(Action::ReassignGovernor {
+                    governor,
+                    city: old,
+                });
+            }
+            // The same ordered pair was checked on the analysis world above.
+            for action in actions {
+                let Action::ReassignGovernor { governor, .. } = &action else {
+                    unreachable!()
+                };
+                if g.apply(pid, &action).is_err() {
+                    return;
+                }
+                if let Some(post) = self.remembered_governor_posts.get_mut(governor.as_str()) {
+                    post.last_request = Some(g.turn);
+                }
+            }
+            think!(self.journal(), Government, Decision,
+                "Moving Pingala to {} for its launch job", g.cities[&city].name;
+                "Space Initiative follows a committed producer; any ordinary Magnus keeps a post");
+            return;
+        }
         for (governor, enabled) in [
-            ("pingala", self.pingala_follows_research),
+            (
+                "pingala",
+                self.pingala_follows_research || self.pingala_follows_research_2,
+            ),
             ("magnus", self.magnus_follows_settlers),
             ("liang", self.liang_follows_builders),
             ("reyna", self.reyna_follows_revenue),
@@ -297,6 +579,11 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    if let Some(post) = self.remembered_governor_posts.get_mut(governor) {
+                        // An asynchronous host assignment can still show
+                        // the old post on another frame of this turn.
+                        post.last_request = Some(g.turn);
+                    }
                     think!(self.journal(), Government, Decision,
                         "Moving {} to {}", governor, g.cities[&city].name;
                         "the governor-dividend gene found a safe, timely replacement job");

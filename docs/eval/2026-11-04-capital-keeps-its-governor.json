@@ -1,0 +1,229 @@
+{
+  "recorded_utc": "2026-11-04T20:48:12.931183+00:00",
+  "tag": "capital-keeps-its-governor",
+  "default_off_and_unarmed": true,
+  "candidate_build": {
+    "recorded_utc": "2026-11-04T20:34:51.825035+00:00",
+    "revision": "f088c8e7f6715397ed72dd203938fbf294190343",
+    "source": "local-checkpoint-build",
+    "native_observed": false,
+    "sha256": "9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997",
+    "profile": "ci",
+    "local_overrides": {
+      "CARGO_PROFILE_CI_LTO": "off",
+      "CARGO_BUILD_JOBS": "4"
+    },
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+    "source_files_sha256": {
+      "src/ai.rs": "490aedbb652267b8c7748799378ab0d21a908879908a793a74f337669afc0d2f",
+      "src/ai/capital_keeps_its_governor.rs": "503c2fae38dc5714768cb33919cf0409393efa91ebcf6822aa917c770b7398c9",
+      "src/ai/advanced.rs": "757d0f07574ae3a7253d6be4289c21711c1bcbfdd8d4e067d1dcd1c53d3e9088",
+      "src/ai/advanced/genes.rs": "bc1407c5b849edfa9920fc8609aff155c19264917beaa50c7f6d373d3f8fd6a4",
+      "src/ai/advanced/treatment_flags.rs": "530258f30655296959767a03731b5fc5a4d61a618ca36d0b43cbd2b66d708e56",
+      "src/ai/advanced/governor_dividends.rs": "c68787a6e114195f528b047c821108d997c6d71ca47b23a5d11cb04b4aa353d1",
+      "src/ai/capital_keeps_its_governor/tests.rs": "e0f6fca9a035bc2f8abb00d5fc1633336c0e620627fe446ca48a7f2f503b9269",
+      "Cargo.toml": "b85c234acd866cadf94dc31e054d42a92ad7e26031590dbcd4e411696a4fdc72",
+      "Cargo.lock": "e69430762a4ef3fa82e44ff2776d64d420bdd3d7d9caa9f3ff7dbefc1632e57b"
+    },
+    "computer": "MacBook Pro",
+    "scope": "Frozen constructed candidate for native captured-input queries; not an observed native process. Own build processes restored from Darwin background scheduling, with the same four-job cap."
+  },
+  "original_source_run": "civvis-20261104T192352Z",
+  "original_controls": {
+    "repetitions": 2,
+    "requests_each": 225
+  },
+  "corrected_reference_queries": {
+    "repetitions": 2,
+    "second_matches_first_full_payload": true,
+    "requests_each": 225
+  },
+  "candidate_off_full_controls": {
+    "repetitions": 2,
+    "requests_each": 225
+  },
+  "first_difference": [
+    69,
+    0
+  ],
+  "prefix_requests": 164,
+  "successful_pair_repetitions": 2,
+  "removed_orders": [
+    {
+      "kind": "governor_assign",
+      "subject": 196609,
+      "verb": "GOVERNOR_THE_RESOURCE_MANAGER",
+      "x": 0,
+      "y": -1
+    }
+  ],
+  "added_orders": [],
+  "isolated_governor_only_change": true,
+  "safe_control": {
+    "passed": true,
+    "source_run": "civvis-20261104T193444Z",
+    "requests_per_arm": 344,
+    "successful_pair_repetitions": 2,
+    "actual_eof_exits": 0,
+    "complete_off_and_on_payloads_match_corrected_reference": true,
+    "actual_read_sequences_identical": true,
+    "genome_and_argv_only_new_gene_differs": true,
+    "safe_governor_transfer_request": [
+      106,
+      0
+    ],
+    "retained_governor_orders": [
+      {
+        "kind": "governor_assign",
+        "subject": 262147,
+        "verb": "GOVERNOR_THE_RESOURCE_MANAGER",
+        "x": 0,
+        "y": -1
+      }
+    ],
+    "scope": "Negative control on authentic native history: the new opt-in bit leaves all orders/decision payloads unchanged through130/2, including the safe capital Governor transfer. No continued counterfactual game or strength claim."
+  },
+  "independent_verification": {
+    "independently_verified": true,
+    "source_run": "civvis-20261104T192352Z",
+    "original_controls": {
+      "repetitions": 2,
+      "requests_each": 225
+    },
+    "corrected_reference_queries": {
+      "repetitions": 2,
+      "second_matches_first_full_payload": true,
+      "requests_each": 225
+    },
+    "candidate_off_full_controls": {
+      "repetitions": 2,
+      "requests_each": 225
+    },
+    "first_difference": [
+      69,
+      0
+    ],
+    "prefix_requests": 164,
+    "successful_prefix_pairs": 2,
+    "actual_eof_exits": 0,
+    "removed_orders": [
+      {
+        "kind": "governor_assign",
+        "subject": 196609,
+        "verb": "GOVERNOR_THE_RESOURCE_MANAGER",
+        "x": 0,
+        "y": -1
+      }
+    ],
+    "added_orders": [],
+    "isolated_governor_only_change": true,
+    "native_pre_state_bound_to_actual_captured_last_read": true,
+    "native_governor_moves_and_later_free_city_identity_verified": true,
+    "safe_native_control": {
+      "passed": true,
+      "source_run": "civvis-20261104T193444Z",
+      "requests_per_arm": 344,
+      "successful_pair_repetitions": 2,
+      "actual_eof_exits": 0,
+      "complete_off_and_on_payloads_match_corrected_reference": true,
+      "actual_read_sequences_identical": true,
+      "genome_and_argv_only_new_gene_differs": true,
+      "safe_governor_transfer_request": [
+        106,
+        0
+      ],
+      "retained_governor_orders": [
+        {
+          "kind": "governor_assign",
+          "subject": 262147,
+          "verb": "GOVERNOR_THE_RESOURCE_MANAGER",
+          "x": 0,
+          "y": -1
+        }
+      ],
+      "scope": "Negative control on authentic native history: the new opt-in bit leaves all orders/decision payloads unchanged through130/2, including the safe capital Governor transfer. No continued counterfactual game or strength claim."
+    },
+    "scope": "Actual original native loss plus captured-input proposal intervention; no continued ON world, saved-capital or strength claim."
+  },
+  "archive": {
+    "archive": "2026-11-04-capital-keeps-its-governor.native.tar.xz",
+    "sha256": "6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c",
+    "bytes": 3242756,
+    "members": 168,
+    "exact_duplicate_hardlinks": 66
+  },
+  "local_validation": {
+    "rust_passed": 6854,
+    "unit_tests_ignored": 53,
+    "doctests_ignored": 4,
+    "new_focused_passed": 6,
+    "rust_quality": "changed lines formatted and warning-free",
+    "log_sha256": {
+      "focused-rust-tests.log": "a3bab2f8113a42d7dc149e20241bbf1019c1de6a0108a618007226738c0d99ac",
+      "full-rust-suite.log": "afc3b1ea9c7cb5d26c54ca4fbb1caf90c899a61379148395261102e49162471f",
+      "rust-quality.log": "8661f12617f302f27c4d495b8186187eca5edc0957bb3a131001daaf4473e41e"
+    }
+  },
+  "scope": "Proposal activation and preserved safe transfer; no continued ON world, saved capital or win-rate evidence.",
+  "fresh_archive_verification": {
+    "fresh_archive_verified": true,
+    "archive_sha256": "6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c",
+    "archive_bytes": 3242756,
+    "manifest_files_verified": 167,
+    "independent_verifier_exit": 0,
+    "positive_and_negative_controls_verified": true,
+    "source_export_hashes_verified": true,
+    "scope": "Fresh extraction of the shipped evidence archive; all manifest bytes and the independent captured-input verifier checked. No strength inference."
+  },
+  "gene_fires_ratchet": {
+    "exit": 0,
+    "genes": 769,
+    "shown_to_fire": 733,
+    "waived": 36,
+    "unproven": 0,
+    "new_waiver": false
+  },
+  "layout_repair": {
+    "qualification_source": "f088c8e7f6715397ed72dd203938fbf294190343",
+    "repair_scope": "Only append-marker comment lines move. Every remaining source byte, including Rust token order and documentation, is identical. No registry entry or field is reordered.",
+    "files": {
+      "src/ai/advanced.rs": {
+        "old_sha256": "757d0f07574ae3a7253d6be4289c21711c1bcbfdd8d4e067d1dcd1c53d3e9088",
+        "new_sha256": "1bfd2018fc7ad3849d638251513f6178df1012d813b1460cd8bab12b72bc1bfe",
+        "marker_stripped_sha256": "9adf9589c984eeb43587e15c00959bb247bf71369e794e1edf78f3aedfb78198",
+        "all_non_marker_bytes_identical": true
+      },
+      "src/ai/advanced/genes.rs": {
+        "old_sha256": "bc1407c5b849edfa9920fc8609aff155c19264917beaa50c7f6d373d3f8fd6a4",
+        "new_sha256": "830192f47d3a9b33d50ca99a9496b61d1a7a9c6c966bf97c402d1f7773de4daf",
+        "marker_stripped_sha256": "688f10d1212011e6eee03587018ade0c6a6f1a502663e48bf1d4adcb59610ac5",
+        "all_non_marker_bytes_identical": true
+      },
+      "src/ai/advanced/treatment_flags.rs": {
+        "old_sha256": "530258f30655296959767a03731b5fc5a4d61a618ca36d0b43cbd2b66d708e56",
+        "new_sha256": "fd40a55126ff3e9b0dd65ce9ff962bc0351942ca36821904505f7d347c273112",
+        "marker_stripped_sha256": "7e19acfb5ed0763fca0a368285a21fc919558466356300b0a927d6875ad0eee9",
+        "all_non_marker_bytes_identical": true
+      }
+    },
+    "repair_commit": "9f7e3522e350718cd9dc2011e2705fa8eeef535c",
+    "qualified_executable_sha256": "9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997",
+    "rebuilt_executable_sha256": "9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997",
+    "rebuilt_executable_byte_identical": true,
+    "append_point_tests_passed": 14,
+    "rust_quality": "changed lines formatted and warning-free",
+    "log_sha256": {
+      "layout-append-tests.log": "80f815b7c25380983fec3582f3cd8fd98151ae6a3940e08c250f8479d77aa04d",
+      "layout-native-build.log": "a0cb8932f3cd0ccc3ae6ab0c529f97dd92c9327e5911b11470ee9703a19eb3d4",
+      "layout-rust-quality.log": "8661f12617f302f27c4d495b8186187eca5edc0957bb3a131001daaf4473e41e"
+    },
+    "raw_evidence_archive_unchanged_sha256": "6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c"
+  },
+  "post_merge_requalification": {
+    "report": "docs/eval/2026-11-04-capital-keeps-its-governor.post-merge.json",
+    "sha256": "721b974a80c39973f4cca1db1dcf50315ff868d5006684560b9db2fc9177a45f",
+    "source_revision": "ff86613495432b0ead5c36ec6df3ccf36d7250cc",
+    "executable_sha256": "5629bd2114abb55add8647e6a92d62c541aad99d47c1c224eea0fb9de480f00f",
+    "archive_sha256": "e3c3691fbf75ff4306fc1e8a8fe85808d43cb95d217318ecc7e884ff05f32209"
+  }
+}

@@ -1285,7 +1285,7 @@ function animateDiff(prev, next) {
         // step. Carrying both endpoints lets the shift ease across the move.
         const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
-                                mapPoints, steps,
+                                mapPoints, steps, positions,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
@@ -1294,8 +1294,9 @@ function animateDiff(prev, next) {
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
-      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
-      anim.sparks.push({ x, y, t0: now });
+      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now,
+                         pos: nu.pos, rise: 16 });
+      anim.sparks.push({ x, y, t0: now, pos: nu.pos });
     }
   }
   for (const pu of prev.units) {
@@ -1307,8 +1308,9 @@ function animateDiff(prev, next) {
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
                          embarked: pu.embarked, t0: deathAt,
-                         dur:320 });
-      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt });
+                         dur:320, pos: pu.pos });
+      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt,
+                         pos: pu.pos, rise: 16 });
     }
   }
   const prevC = new Map((prev.cities || []).map(c => [c.id, c]));
@@ -1320,12 +1322,14 @@ function animateDiff(prev, next) {
     if (hpDrop > 0 || wallDrop > 0) {
       const [x, y] = worldXY(nc.pos);
       if (hpDrop > 0) {
-        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now });
+        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now,
+                           pos: nc.pos, rise: 20 });
       }
       if (wallDrop > 0) {
-        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now });
+        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now,
+                           pos: nc.pos, rise: 29 });
       }
-      anim.sparks.push({ x, y, t0: now });
+      anim.sparks.push({ x, y, t0: now, pos: nc.pos });
     }
     // A city gaining a citizen is the slowest important thing that happens on
     // this map and it passed silently: the settlement quietly gains a house and
@@ -1334,7 +1338,7 @@ function animateDiff(prev, next) {
     if (nc.pop > pc.pop) {
       const [x, y] = worldXY(nc.pos);
       anim.floats.push({ x, y: y + 20, txt: `+${nc.pop - pc.pop} pop`,
-                         col: "#8fe0a0", t0: now });
+                         col: "#8fe0a0", t0: now, pos: nc.pos, rise: -20 });
     }
   }
   // Territory changing hands is the clearest sign a strategy map is moving —
@@ -1370,7 +1374,8 @@ function animateDiff(prev, next) {
     const a = nextU.get(pendingStrike.id) || prevU.get(pendingStrike.id);
     if (a) {
       const [sx, sy] = worldXY(a.pos), [tx, ty] = worldXY(pendingStrike.to);
-      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now };
+      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now,
+                      from: a.pos, to: pendingStrike.to };
     }
     pendingStrike = null;
   }
@@ -6084,7 +6089,38 @@ let finaleCountdownResult = null;
 // must never turn that old finale into a restart of the new, active world.
 let finaleCountdownWorld = null;
 
+// On the public site a result screen is somebody reading how their game ended,
+// so it stays until they move on: nobody here is running an unattended display.
+// How the player's own game went. A result that names only the winner tells
+// somebody who lost nothing about the two hundred turns they just played.
+function reignSummary(st) {
+  const me = st.players?.[0];
+  if (SPEC || !me) return "";
+  const majors = st.players.filter(player => !player.is_minor && !player.is_barbarian)
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rank = majors.findIndex(player => player.id === me.id) + 1;
+  const stat = (value, label) =>
+    `<span class="reign-stat"><b>${escapeAttr(value)}</b><small>${escapeAttr(label)}</small></span>`;
+  return `<span class="reign" aria-label="Your reign">` +
+    stat(Math.round(me.score || 0).toLocaleString(), `Score · ${rank} of ${majors.length}`) +
+    stat(me.cities ?? 0, me.cities === 1 ? "City" : "Cities") +
+    stat(me.population ?? 0, "Population") +
+    stat((st.me?.techs || []).length, "Technologies") +
+    stat(me.wonder_count ?? 0, "Wonders") + `</span>`;
+}
+// A new game on the public site starts from choosing a civilization, the same
+// way the first one did, not by re-rolling this world's settings unasked.
+function settleResultActions() {
+  const again = document.getElementById("finale-restart");
+  if (!again || !finaleHoldsForTheReader() || typeof openFrontDoor !== "function") return;
+  again.onclick = () => openFrontDoor("create");
+  again.removeAttribute("title");
+}
+function finaleHoldsForTheReader() {
+  return !SPEC && !!window.CIVVIS_PUBLISHED_BUILD;
+}
 function armFinaleCountdown(signature) {
+  if (finaleHoldsForTheReader()) return;
   if (SPEC || finaleCountdownResult === signature) return;
   cancelFinaleCountdown();
   finaleCountdownResult = signature;
@@ -6545,6 +6581,7 @@ async function send(action) {
   const advancing = action.type === "end_turn";
   if (advancing) {
     turnAdvancePending = true;
+    playSound("endTurn");
     drawTurnLoop();
   }
   try {
@@ -7611,7 +7648,7 @@ function syncFinaleCountdownChoice() {
 // so the two can never disagree about what is on offer.
 function finaleCountdownChoiceMarkup() {
   const source = document.getElementById("between-game-countdown");
-  if (!source) return "";
+  if (!source || finaleHoldsForTheReader()) return "";
   const options = [...source.options].map(option =>
     `<option value="${escapeAttr(option.value)}"${option.selected ? " selected" : ""}>` +
     `${escapeAttr(option.textContent)}</option>`).join("");
@@ -8342,10 +8379,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <strong class="winner-title">${st.players[0].civ} is no more</strong>
         <span class="winner-verdict">Your last city has fallen</span>
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
+        ${reignSummary(st)}
         <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       armFinaleCountdown(signature);
     }
   }
@@ -8423,15 +8462,17 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.innerHTML = `<div class="winner-content">
         <span class="winner-kicker">${kicker}</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${winnerName}</strong>
+        <strong class="winner-title">${winnerName}${!SPEC && !winnerIds.includes(0) ? " wins" : ""}</strong>
         <span class="winner-verdict">${verdict}</span>
         <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${reignSummary(st)}
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
           ${winnerActions}
         </span>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      settleResultActions();
       recordSimulationResult(st, signature, winnerIds);
       armFinaleCountdown(signature);
     }
@@ -12925,6 +12966,138 @@ function faithColor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) | 0;
   return FAITH_COLORS[Math.abs(h) % FAITH_COLORS.length];
+}
+
+// The city plate: population, name, governor, health, walls and what is being
+// built. Both map renderers draw this one function, because the plate is the
+// main thing a player reads on a map: until it was shared, the default globe
+// worlds showed a bare name and everything else lived behind a click.
+let cityPlateBoxes = [];
+function cityPlateAt(sx, sy) {
+  return cityPlateBoxes.findLast(box => sx >= box.x && sx <= box.x + box.width &&
+    sy >= box.y && sy <= box.y + box.height) || null;
+}
+function drawCityNameplate(c, x, y, S) {
+  cx.save();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  // Major-city plates carry both jersey colours, a larger type scale and a
+  // soft colour key. City-states keep a compact single-colour plate. The
+  // difference survives terrain, zoom and colour-blind viewing because it
+  // is expressed in size, line weight and silhouette as well as hue.
+  const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
+  const bannerColor = cityBannerColor(c.owner);
+  const cityOwner = state.players[c.owner];
+  const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
+  const governor = cityGovernor(c);
+  const bannerHeight = minorPlate ? 16 : 21;
+  const popWidth = minorPlate ? 14 : 19;
+  cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
+  const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
+                      minorPlate ? 48 : 62);
+  const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
+  // The plate sits above the city's own tile, so a click on it would land on
+  // the neighbour. Keep its box in page pixels for the map click to find.
+  const toPage = cx.getTransform();
+  cityPlateBoxes.push({city: c.id,
+    x: (toPage.a * bx + toPage.c * by + toPage.e) / DPR,
+    y: (toPage.b * bx + toPage.d * by + toPage.f) / DPR,
+    width: tw * toPage.a / DPR, height: bannerHeight * toPage.d / DPR});
+  cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
+  if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
+  cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
+  cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
+  cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
+  cx.shadowBlur = 0;
+  if (!minorPlate) {
+    cx.strokeStyle = bannerColor; cx.lineWidth = 1;
+    cx.beginPath();
+    cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
+    cx.stroke();
+  }
+  cx.fillStyle = bannerColor;
+  cx.beginPath();
+  cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
+  cx.fill();
+  cx.fillStyle = "#10151d";
+  cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
+  cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
+  cx.fillStyle = cityNameInk(c.owner, minorPlate ? "#d8ddd9" : "#fff3cf");
+  cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
+  cx.textAlign = "left";
+  cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
+  cx.textAlign = "center";
+  if (governor) {
+    const waiting = governor.status === "established"
+      ? "" : ` · ${governor.turns_remaining}T`;
+    const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
+    cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+    cx.strokeText(posting, x, by - 5);
+    cx.fillStyle = governor.status === "disabled" ? "#f08b82"
+      : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
+    cx.fillText(posting, x, by - 5);
+  }
+  let statusY = by + bannerHeight + 1;
+  if (c.hp < 200) {
+    const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
+    cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
+    cx.fillStyle = hpFraction > .6 ? "#65bd66" : hpFraction > .3 ? "#e2b347" : "#f05a50";
+    cx.fillRect(bx, statusY, tw * hpFraction, 3);
+    statusY += 4;
+  }
+  if ((c.wall_max || 0) > 0) {
+    const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
+    // Civ VI puts its double-shield marker directly beside this blue outer
+    // defense meter. Reserving its own seat means the marker explains the
+    // bar without extending a city banner into its faith or spy markers.
+    const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
+    const wallBarX = bx + wallIconWidth + 2;
+    const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
+    drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
+                                  statusY + 1.5, wallIconWidth);
+    cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
+    cx.fillStyle = "#59aee1";
+    cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
+    statusY += 4;
+  }
+  // Production lives in the medallion alone — one circle on the plate's
+  // right edge carries both what is being built (glyph) and how far along
+  // it is (ring). The old bar under the plate said the same thing a second
+  // time and crowded the health/wall bars, which are the only strips left.
+  // Keyed off data presence, not seat 0 — spectate frames rotate the
+  // observed seat, and an owner gate makes it blink with them.
+  if (c.queue && c.queue.length && c.queue_cost) {
+    const it = c.queue[0];
+    const mx = bx + tw + (minorPlate ? 8 : 10.5);
+    const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
+    cx.fillStyle = "#1c2418f2";
+    cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
+    cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
+    cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
+    const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
+    if (frac > 0) {
+      cx.strokeStyle = "#e09050"; cx.lineCap = "round";
+      cx.beginPath();
+      cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
+      cx.stroke();
+      cx.lineCap = "butt";
+    }
+    // The exhaustive base-game table keeps every district's queue glyph in
+    // the same exact color as its map counter.
+    if (it.unit) {
+      // The medallion is a ring, so it seats its glyph the way a round
+      // counter does whatever is being built inside it.
+      const seat = strategicUnitGlyphSeat(mx, my, mr);
+      drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
+    } else if (it.wonder) {
+      drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
+    } else {
+      cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
+      cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
+      cx.fillText(prodGlyph(it), mx, my + 0.5);
+    }
+  }
+  cx.restore();
 }
 
 // How wide a town of this size sprawls. Anything that has to stand clear of a
@@ -20218,6 +20391,8 @@ function drawPlanetLensGroupLabels(cells) {
 // the two levels hand off without a gap: small entities up close, empires at
 // survey distance.
 const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
+const PLANET_CITY_PLATE_SCALE = 1.1;
+const PLANET_CITY_STATE_PLATE_SCALE = 1.6;
 const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
 function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
@@ -21155,7 +21330,127 @@ function drawPlanetChartMarginalia() {
   }
 }
 
+// The globe's half of the map's animation. `animateDiff` has always filled the
+// queues, but only the flat renderer drew and drained them, so on a globe (the
+// default world) a unit teleported, a blow landed with no number, and the
+// queues sat full for ever, which kept the page repainting as if something were
+// moving and held the GPU path off. A played game gets all of it; a watched one
+// stays still at this scale, as it always has, and only its queues are emptied.
+function drawCasualtyToken(d, x, y) {
+  const r = 10.5, tokenInk = unitTokenInk(d.owner), style = civ6UnitFlagStyle(d);
+  drawStrategicUnitCounter(x, y, r, style, pcol(d.owner), tokenInk, 1.6);
+  const seat = strategicUnitGlyphSeat(x, y, r, style);
+  drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+}
+function planetEffectsShown() {
+  return !SPEC && mapLens !== "empire";
+}
+function planetUnitWalk(unit, cellByKey, onSheet, now) {
+  const move = anim.moves.get(unit.id);
+  if (!move || !move.positions) return null;
+  const sample = sampleUnitMove(move, now);
+  if (sample.e >= 1) return null;
+  const from = cellByKey.get(key(move.positions[sample.leg]));
+  const to = cellByKey.get(key(move.positions[sample.leg + 1]));
+  const horizon = onSheet ?? .025;
+  if (!from || !to || from.center.z < horizon || to.center.z < horizon) return null;
+  return {
+    x: from.center.x + (to.center.x - from.center.x) * sample.local,
+    y: from.center.y + (to.center.y - from.center.y) * sample.local
+      - Math.abs(Math.sin(sample.local * Math.PI)) * 2.4,
+  };
+}
+function planetStrikeLunge(unit, cellByKey, onSheet, now) {
+  const strike = anim.strike;
+  if (!strike || strike.id !== unit.id) return null;
+  const from = cellByKey.get(key(strike.from)), to = cellByKey.get(key(strike.to));
+  if (!from || !to) return null;
+  const out = Math.sin(Math.min(1, (now - strike.t0) / 220) * Math.PI) * 0.42;
+  return {x: (to.center.x - from.center.x) * out, y: (to.center.y - from.center.y) * out};
+}
+// Land changing hands, drawn under the units.
+function drawPlanetClaims(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  for (const claim of anim.claims) {
+    const e = (now - claim.t0) / (claim.big ? 1500 : 1050);
+    const cell = cellByKey.get(key(claim.pos));
+    if (e >= 1 || !cell || cell.center.z < (onSheet ?? .02)) continue;
+    const color = pcol(claim.owner);
+    cx.save();
+    cx.globalAlpha = (1 - e) * (claim.big ? 0.42 : 0.28);
+    cx.fillStyle = color;
+    planetPath(cx, cell.points); cx.fill();
+    cx.globalAlpha = (1 - e) * (claim.big ? 1 : 0.8);
+    cx.strokeStyle = color; cx.lineWidth = claim.big ? 3.4 : 2.2;
+    cx.stroke();
+    cx.restore();
+  }
+}
+// Casualties, sparks and numbers, above the units and tied to their tiles so a
+// camera moving under them carries them along.
+function drawPlanetCombatEffects(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  const at = pos => {
+    const cell = cellByKey.get(key(pos));
+    return cell && cell.center.z >= (onSheet ?? .02) ? cell.center : null;
+  };
+  for (const death of anim.deaths) {
+    const e = Math.max(0, (now - death.t0) / death.dur);
+    const spot = at(death.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.translate(spot.x, spot.y + e * 5);
+    cx.rotate((death.owner % 2 ? 1 : -1) * e * 1.2);
+    drawCasualtyToken(death, 0, 0);
+    cx.restore();
+  }
+  for (const spark of anim.sparks) {
+    const e = (now - spark.t0) / 200;
+    const spot = at(spark.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.strokeStyle = "#ffd977"; cx.lineWidth = 2.2;
+    for (let a = 0; a < 6; a++) {
+      const angle = a * 1.047 + 0.3, r1 = 4 + e * 12, r2 = 8 + e * 15;
+      cx.beginPath();
+      cx.moveTo(spot.x + Math.cos(angle) * r1, spot.y + Math.sin(angle) * r1 * 0.7);
+      cx.lineTo(spot.x + Math.cos(angle) * r2, spot.y + Math.sin(angle) * r2 * 0.7);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+  cx.font = "bold 13px sans-serif"; cx.textAlign = "center";
+  for (const float of anim.floats) {
+    const e = (now - float.t0) / 700;
+    const spot = float.pos ? at(float.pos) : null;
+    if (e < 0 || e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = e < 0.75 ? 1 : (1 - e) * 4;
+    const y = spot.y - (float.rise ?? 16) - e * 16;
+    cx.lineWidth = 3; cx.strokeStyle = "#10151d";
+    cx.strokeText(float.txt, spot.x, y);
+    cx.fillStyle = float.col; cx.fillText(float.txt, spot.x, y);
+    cx.restore();
+  }
+}
+// Whatever has run its time goes, drawn or not: a tile behind the planet still
+// finishes its pulse, and a watched world must not fill these for ever.
+function retirePlanetEffects(now) {
+  for (const [id, move] of anim.moves) if (now - move.t0 >= move.dur) anim.moves.delete(id);
+  const live = (list, life) => {
+    for (let i = list.length - 1; i >= 0; i--)
+      if (now - list[i].t0 >= life(list[i])) list.splice(i, 1);
+  };
+  live(anim.claims, claim => claim.big ? 1500 : 1050);
+  live(anim.deaths, death => death.dur);
+  live(anim.sparks, () => 200);
+  live(anim.floats, () => 700);
+  if (anim.strike && now - anim.strike.t0 >= 220) anim.strike = null;
+}
 function drawPlanetMap() {
+  cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
     planetGpuHide();
@@ -21378,7 +21673,12 @@ function drawPlanetMap() {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
       cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
     }
-    if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
+    // Up close there is room for the whole plate, sat above the hex so the unit
+    // garrisoned in the city cannot cover it. Further out a name is all that
+    // fits, and at survey distance the empire labels take over.
+    if (scale >= (cityState ? PLANET_CITY_STATE_PLATE_SCALE : PLANET_CITY_PLATE_SCALE)) {
+      drawCityNameplate(city, cell.center.x, cell.center.y, planetCellInradius(cell));
+    } else if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -21404,26 +21704,33 @@ function drawPlanetMap() {
   }
   const visibleUnits = empireLens ? [] : state.units;
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  drawPlanetClaims(cellByKey, onSheet, now);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
-  // Use the same stable tile layout as the flat command map. The globe has no
-  // in-flight unit animation, so every overview marker on a cell belongs here.
-  const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
+  // Use the same stable tile layout as the flat command map. A unit on the
+  // move is left out of the stacks, and a played game walks it along its route.
+  const showEffects = planetEffectsShown();
+  const planetUnitStacks = strategicUnitStackSlots(visibleUnits,
+    showEffects ? anim.moves : undefined);
   for (const unit of visibleUnits) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const outline = sel?.id === unit.id ? 2.3 : 1.2;
+    const walking = showEffects ? planetUnitWalk(unit, cellByKey, onSheet, now) : null;
     let stack = strategicUnitStackPlacement(
       planetUnitStacks, unit, planetCellInradius(cell), outline);
-    stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
+    if (!walking)
+      stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
     const r = stack.r;
     // A singleton stays centred; a stack takes stable, gently overlapping
     // seats around it. Let stacked tokens cross the individual face edge a
     // little instead of cutting their already-reduced silhouettes flat.
-    const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
+    const lunge = showEffects ? planetStrikeLunge(unit, cellByKey, onSheet, now) : null;
+    const ux = (walking?.x ?? cell.center.x) + stack.x + (lunge?.x ?? 0);
+    const uy = (walking?.y ?? cell.center.y) + stack.y + (lunge?.y ?? 0);
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
-    const commandTokenClip = !stack.stacked;
+    const commandTokenClip = !stack.stacked && !walking && !lunge;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     const style = civ6UnitFlagStyle(unit);
     drawStrategicUnitCounter(ux, uy, r, style, pcol(unit.owner),
@@ -21435,6 +21742,7 @@ function drawPlanetMap() {
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
+  drawPlanetCombatEffects(cellByKey, onSheet, now);
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
@@ -21469,6 +21777,7 @@ function drawPlanetMap() {
   // Last, and in screen space: a detonation's flash washes the frame itself,
   // exactly as it does over the flat board.
   drawNuclearFlash(now);
+  retirePlanetEffects(now);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -22235,118 +22544,7 @@ function drawScene() {
       cx.fillText(c.religion[0].toUpperCase(), fx, fy + 0.4 * k);
       cx.restore();
     }
-    {
-      // Major-city plates carry both jersey colours, a larger type scale and a
-      // soft colour key. City-states keep a compact single-colour plate. The
-      // difference survives terrain, zoom and colour-blind viewing because it
-      // is expressed in size, line weight and silhouette as well as hue.
-      const name = (c.is_capital ? "★ " : "") + c.name.toUpperCase();
-      const bannerColor = cityBannerColor(c.owner);
-      const cityOwner = state.players[c.owner];
-      const minorPlate = Boolean(cityOwner && cityOwner.is_minor);
-      const governor = cityGovernor(c);
-      const bannerHeight = minorPlate ? 16 : 21;
-      const popWidth = minorPlate ? 14 : 19;
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
-      const tw = Math.max(cx.measureText(name).width + (minorPlate ? 27 : 38),
-                          minorPlate ? 48 : 62);
-      const bx = x - tw / 2, by = y - S - (minorPlate ? 3 : 8);
-      cx.fillStyle = shade(bannerColor, minorPlate ? .43 : .31);
-      if (!minorPlate) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
-      cx.beginPath(); cx.roundRect(bx, by, tw, bannerHeight, bannerHeight / 2); cx.fill();
-      cx.strokeStyle = minorPlate ? bannerColor : pcol2(c.owner);
-      cx.lineWidth = minorPlate ? 1 : 2.5; cx.stroke();
-      cx.shadowBlur = 0;
-      if (!minorPlate) {
-        cx.strokeStyle = bannerColor; cx.lineWidth = 1;
-        cx.beginPath();
-        cx.roundRect(bx + 2, by + 2, tw - 4, bannerHeight - 4, (bannerHeight - 4) / 2);
-        cx.stroke();
-      }
-      cx.fillStyle = bannerColor;
-      cx.beginPath();
-      cx.roundRect(bx + 2, by + 2, popWidth, bannerHeight - 4, (bannerHeight - 4) / 2);
-      cx.fill();
-      cx.fillStyle = "#10151d";
-      cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
-      cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
-      cx.fillStyle = cityNameInk(c.owner, minorPlate ? "#d8ddd9" : "#fff3cf");
-      cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
-      cx.textAlign = "left";
-      cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
-      cx.textAlign = "center";
-      if (governor) {
-        const waiting = governor.status === "established"
-          ? "" : ` · ${governor.turns_remaining}T`;
-        const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;
-        cx.font = `800 ${minorPlate ? 9 : 10}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
-        cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
-        cx.strokeText(posting, x, by - 5);
-        cx.fillStyle = governor.status === "disabled" ? "#f08b82"
-          : governor.status === "establishing" ? "#8ed9ec" : "#f5d27a";
-        cx.fillText(posting, x, by - 5);
-      }
-      let statusY = by + bannerHeight + 1;
-      if (c.hp < 200) {
-        const hpFraction = Math.max(0, Math.min(1, c.hp / 200));
-        cx.fillStyle = "#2b0908"; cx.fillRect(bx, statusY, tw, 3);
-        cx.fillStyle = hpFraction > .6 ? "#65bd66" : hpFraction > .3 ? "#e2b347" : "#f05a50";
-        cx.fillRect(bx, statusY, tw * hpFraction, 3);
-        statusY += 4;
-      }
-      if ((c.wall_max || 0) > 0) {
-        const wallFraction = Math.max(0, Math.min(1, (c.wall_hp || 0) / c.wall_max));
-        // Civ VI puts its double-shield marker directly beside this blue outer
-        // defense meter. Reserving its own seat means the marker explains the
-        // bar without extending a city banner into its faith or spy markers.
-        const wallIconWidth = Math.min(15 * UI_K(), Math.max(10, tw * .24));
-        const wallBarX = bx + wallIconWidth + 2;
-        const wallBarWidth = Math.max(1, tw - wallIconWidth - 2);
-        drawCiv6CityBannerWallShields(cx, bx + wallIconWidth / 2,
-                                      statusY + 1.5, wallIconWidth);
-        cx.fillStyle = "#071b2b"; cx.fillRect(wallBarX, statusY, wallBarWidth, 3);
-        cx.fillStyle = "#59aee1";
-        cx.fillRect(wallBarX, statusY, wallBarWidth * wallFraction, 3);
-        statusY += 4;
-      }
-      // Production lives in the medallion alone — one circle on the plate's
-      // right edge carries both what is being built (glyph) and how far along
-      // it is (ring). The old bar under the plate said the same thing a second
-      // time and crowded the health/wall bars, which are the only strips left.
-      // Keyed off data presence, not seat 0 — spectate frames rotate the
-      // observed seat, and an owner gate makes it blink with them.
-      if (c.queue && c.queue.length && c.queue_cost) {
-        const it = c.queue[0];
-        const mx = bx + tw + (minorPlate ? 8 : 10.5);
-        const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
-        cx.fillStyle = "#1c2418f2";
-        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
-        cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
-        cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.stroke();
-        const frac = Math.max(0, Math.min(1, c.production / c.queue_cost));
-        if (frac > 0) {
-          cx.strokeStyle = "#e09050"; cx.lineCap = "round";
-          cx.beginPath();
-          cx.arc(mx, my, mr, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI);
-          cx.stroke();
-          cx.lineCap = "butt";
-        }
-        // The exhaustive base-game table keeps every district's queue glyph in
-        // the same exact color as its map counter.
-        if (it.unit) {
-          // The medallion is a ring, so it seats its glyph the way a round
-          // counter does whatever is being built inside it.
-          const seat = strategicUnitGlyphSeat(mx, my, mr);
-          drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
-        } else if (it.wonder) {
-          drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
-        } else {
-          cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
-          cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
-          cx.fillText(prodGlyph(it), mx, my + 0.5);
-        }
-      }
-    }
+    drawCityNameplate(c, x, y, S);
     if (selCity && selCity.id === c.id) {
       hexPath(x, y); cx.strokeStyle = "#f0c674"; cx.lineWidth = 3; cx.stroke();
     }
@@ -22506,12 +22704,7 @@ function drawScene() {
     cx.translate(d.x, d.y + e * 5);
     cx.rotate((d.owner % 2 ? 1 : -1) * e * 1.2);
     cx.translate(-d.x, -d.y);
-    const r = 10.5;
-    const tokenInk = unitTokenInk(d.owner);
-    const style = civ6UnitFlagStyle(d);
-    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
-    drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+    drawCasualtyToken(d, d.x, d.y);
     cx.restore();
     cx.globalAlpha = 1;
   }
@@ -25959,9 +26152,12 @@ function drawCivTop() {
       soloEraChip(me) +
       `<span class="civtop-turn" title="${escapeAttr(turnTitle)}">` +
         `<small>Turn</small><b>${state.turn}</b>${cap ? `<small>/${cap}</small>` : ""}</span>` +
+      `<button class="civtop-btn" type="button" onclick="toggleSound()" ` +
+        `title="${soundButtonLabel()}" aria-label="${soundButtonLabel()}" ` +
+        `aria-pressed="${soundEnabled}">${soundEnabled ? "♪" : "∅"}</button>` +
       `<button class="civtop-btn" type="button" onclick="openPedia()" ` +
         `title="Civilopedia — P" aria-label="Civilopedia">?</button>` +
-      `<button class="civtop-btn" type="button" onclick="togglePanel()" ` +
+      `<button class="civtop-btn" type="button" onclick="openGameMenu() || togglePanel()" ` +
         `title="Game menu — setup, display settings, saves and logs" aria-label="Game menu">☰</button>` +
     `</div>`;
   if (html === civTopHtml) return;
@@ -26015,6 +26211,7 @@ function soloTrackerCard(kind) {
       `<span class="wt-bar"><i style="width:${pct}%"></i></span>` +
       `<span class="wt-sub">${Math.round(progress)}/${Math.round(total)} · ${soloRate(perTurn)} per turn</span>` +
       (wants ? `<span class="wt-boostwant" title="${escapeAttr(`Boost: ${wants}`)}">⚡ ${escapeAttr(wants)}</span>` : "") +
+      (studyPlan(tree)[0] ? `<span class="wt-next">Next: ${escapeAttr(titleCase(studyPlan(tree)[0]))}</span>` : "") +
     `</span>` +
     `<span class="wt-turns">${eta ?? "∞"}<small>turn${eta === 1 ? "" : "s"}</small></span></button>`;
 }
@@ -26865,7 +27062,8 @@ function drawDiplomacy() {
           meter("Cities", player.cities) +
           meter("Military", Math.round(player.military));
       return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}">` +
-        `<div class="leader-head"><span class="leader-name">${player.leader || player.civ}</span>` +
+        `<div class="leader-head">${player.is_minor ? "" : fdCrest(player.civ, "fd-crest-small")}` +
+        `<span class="leader-name">${player.leader || player.civ}</span>` +
         `<span class="leader-civ">${player.is_minor
           ? `${titleCase(player.cs_type || "city")}-state` : player.civ}</span>` +
         `<span class="leader-stance ${stance}">${stanceWord}</span></div>` +
@@ -27218,6 +27416,7 @@ function unitPlaque(u, {linked, escortName}) {
     (notes.length ? `<div class="ubar-notes">${notes.join(" · ")}</div>` : "");
 }
 function drawUbar() {
+  syncSettlerLens();
   const bar = document.getElementById("ubar");
   // Published from here rather than watched: the bar is `display:none`
   // whenever nothing is selected, and an element with no CSS box gives a
@@ -29355,6 +29554,18 @@ function openTree(kind) {
   const cols = ERA_NAMES.map(() => []);
   for (const n of Object.keys(specs)) (cols[specs[n].era] || (cols[specs[n].era] = [])).push(n);
   cols.forEach(col => col.sort((a, b) => specs[a].cost - specs[b].cost || a.localeCompare(b)));
+  // Each column sits as near as it can to the column it grows from, so the
+  // lines between them read as branches and not as a tangle.
+  const treeRow = new Map();
+  for (const col of cols) {
+    const score = new Map(col.map((n, row) => {
+      const rows = specs[n].requires.map(r => treeRow.get(r)).filter(r => r !== undefined);
+      return [n, rows.length ? rows.reduce((sum, r) => sum + r, 0) / rows.length : row];
+    }));
+    col.sort((a, b) => score.get(a) - score.get(b));
+    col.forEach((n, row) => treeRow.set(n, row));
+  }
+  const plan = studyPlan(kind);
   // Civ 6 prices a tree node in turns, not in beakers: what a player is
   // choosing between is how long each one takes at the rate this empire is
   // actually running. The raw cost stays in the tooltip, because a tree read
@@ -29385,6 +29596,7 @@ function openTree(kind) {
       const cls = completed ? "done" : (n === current ? "cur" : (avail ? "avail" : "locked"));
       if (completed) { doneHere++; tally.done++; } else if (avail) tally.avail++;
       const canPick = avail && !current;
+      const planned = plan.indexOf(n);
       const turns = completed ? null : nodeTurns(s.cost, n);
       const unlocks = (s.unlocks || []).map(u => titleCase(u.id));
       const why = completed
@@ -29394,14 +29606,14 @@ function openTree(kind) {
           : canPick
             ? `Start this${turns ? ` — ${turnsText(turns)} at the current rate` : ""}`
             : avail
-              ? `Available, but ${heldBy} is under way — this game studies one at a time`
-              : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+              ? `Click to study this after ${heldBy}`
+              : `Click to plan the path here. Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
       const tip = `${titleCase(n)} — ${why}. Cost ${Math.round(s.cost * speed)}` +
         (unlocks.length ? `. Unlocks ${unlocks.join(", ")}` : "");
       // Studied nodes fold to one line: late in a game they are most of the
       // tree, and what is worth the room is what is still to come.
       if (completed)
-        return `<div class="tnode done" title="${escapeAttr(tip)}">` +
+        return `<div class="tnode done" data-n="${n}" title="${escapeAttr(tip)}">` +
           `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}</b>` +
           `<span class="tn-when">${boosted.has(n) ? "⚡" : ""}✓</span></div></div>`;
       // Civ 6 prints the eureka on every node, because planning around them is
@@ -29409,10 +29621,11 @@ function openTree(kind) {
       // has landed says it at the one moment it is worthless.
       const wants = boosted.has(n) ? "" : boostRequirement(s);
       const missing = avail ? [] : s.requires.filter(r => !known.has(r));
-      return `<div class="tnode ${cls}" title="${escapeAttr(tip)}"` +
-        (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
+      return `<div class="tnode ${cls}${planned >= 0 ? " planned" : ""}" data-n="${n}" title="${escapeAttr(tip)}"` +
+        (n === current ? "" : ` onclick='pickTree("${kind}","${n}")'`) + `>` +
         `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}` +
         (s.repeatable ? ` <span class="boost">↻</span>` : "") + `</b>` +
+        (planned >= 0 ? `<span class="tn-plan" aria-label="Step ${planned + 1} of the plan">${planned + 1}</span>` : "") +
         `<span class="tn-when">${n === current ? `${studied}%` : escapeAttr(turnsText(turns))}</span></div>` +
         (n === current ? `<div class="tn-bar"><i style="width:${studied}%"></i></div>` : "") +
         (boosted.has(n) ? `<div class="tn-boost got">⚡ ${techs ? "Eureka" : "Inspiration"} earned</div>`
@@ -29433,7 +29646,12 @@ function openTree(kind) {
       ? `${verb} <b>${escapeAttr(titleCase(current))}</b> · ${studied}%` +
         (nodeTurns(specs[current].cost, current) ? ` · ${turnsText(nodeTurns(specs[current].cost, current))}` : "")
       : (tally.avail ? `Nothing under way — pick a gold node` : `Nothing under way`)) +
-    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span></small>`;
+    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span>` +
+    (plan.length
+      ? `<span class="tree-plan">Then ${escapeAttr(plan.map(titleCase).join(" › "))}` +
+        ` <button type="button" onclick='clearStudyPlan("${kind}")'>Clear path</button></span>`
+      : `<span class="tree-tally">Click any node to plan a path to it</span>`) +
+    `</small>`;
   const holder = document.getElementById("treecols");
   const tree = document.getElementById("tree");
   const reopening = tree.classList.contains("open") && tree.dataset.kind === kind;
@@ -29441,6 +29659,7 @@ function openTree(kind) {
   holder.innerHTML = columns.join("");
   tree.dataset.kind = kind;
   tree.classList.add("open");
+  drawTreeLines(holder, specs, known, current, plan);
   treeSignature = treeStateSignature(kind);
   if (kept) { holder.scrollLeft = kept.left; holder.scrollTop = kept.top; return; }
   // Open where the decisions are: the column holding the current study, or
@@ -29456,6 +29675,7 @@ function treeStateSignature(kind) {
   if (!state || !state.me) return "";
   const techs = kind === "techs";
   return [kind, state.turn, techs ? state.me.research : state.me.civic,
+    studyPlan(kind).join(","),
     Math.round(Number(techs ? state.me.research_progress : state.me.civic_progress) || 0),
     ((techs ? state.me.techs : state.me.civics) || []).length,
     ((techs ? state.me.boosted_techs : state.me.boosted_civics) || []).length,
@@ -29466,9 +29686,136 @@ function refreshOpenTree() {
   if (!tree || !tree.classList.contains("open") || !treeKind) return;
   if (treeStateSignature(treeKind) !== treeSignature) openTree(treeKind);
 }
+// The lines of the tree. A node's own box gives the ends of each curve, so the
+// layout stays with the stylesheet; the gutters between the era columns are
+// where the lines show, and the nodes sit above them. Hovering a node lights
+// the whole chain still standing between the player and it.
+const SVG_NS = "http://www.w3.org/2000/svg";
+function drawTreeLines(holder, specs, known, current, plan) {
+  const nodes = new Map([...holder.querySelectorAll(".tnode[data-n]")]
+    .map(node => [node.dataset.n, node]));
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "tlines");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("width", holder.scrollWidth);
+  svg.setAttribute("height", holder.scrollHeight);
+  const onPath = n => n === current || plan.includes(n);
+  for (const [name, node] of nodes) {
+    for (const need of specs[name].requires) {
+      const from = nodes.get(need);
+      if (!from) continue;
+      const x1 = from.offsetLeft + from.offsetWidth, y1 = from.offsetTop + from.offsetHeight / 2;
+      const y2 = node.offsetTop + node.offsetHeight / 2;
+      // Two nodes of one era stack in one column, so that line bows out into
+      // the gutter and comes back rather than running through the column.
+      const sameColumn = from.parentElement === node.parentElement;
+      const x2 = sameColumn ? x1 : node.offsetLeft;
+      const bend = sameColumn ? 18 : Math.max(16, (x2 - x1) / 2);
+      const line = document.createElementNS(SVG_NS, "path");
+      line.setAttribute("d", sameColumn
+        ? `M${x1} ${y1}C${x1 + bend} ${y1} ${x1 + bend} ${y2} ${x2} ${y2}`
+        : `M${x1} ${y1}C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`);
+      line.setAttribute("class", onPath(name) && (onPath(need) || known.has(need)) ? "on-path"
+        : known.has(name) ? "studied" : known.has(need) ? "open" : "");
+      line.dataset.from = need;
+      line.dataset.to = name;
+      svg.append(line);
+    }
+  }
+  holder.append(svg);
+  holder.onmouseover = event => {
+    const node = event.target.closest?.(".tnode[data-n]");
+    const chain = new Set(node ? [node.dataset.n] : []);
+    for (const name of chain)
+      if (!known.has(name)) for (const need of specs[name].requires) chain.add(need);
+    for (const line of svg.children)
+      line.classList.toggle("lit", chain.has(line.dataset.to) && chain.has(line.dataset.from) &&
+        !known.has(line.dataset.to));
+  };
+}
+// A plan is what to study next, in order, for each tree. The game studies one
+// thing at a time, so the page holds the rest and starts the next step itself
+// when the last one lands. It lives with this world's seed: a plan for another
+// world means nothing.
+const STUDY_PLAN_KEY = "civvis-study-plan-v1";
+let studyPlans = null;
+function studyPlanStore() {
+  const seed = state?.seed ?? null;
+  if (studyPlans && studyPlans.seed === seed) return studyPlans;
+  studyPlans = {seed, techs: [], civics: []};
+  try {
+    const held = JSON.parse(localStorage.getItem(STUDY_PLAN_KEY) || "null");
+    if (held && held.seed === seed) studyPlans = held;
+  } catch (_) {}
+  return studyPlans;
+}
+function studyTaken(kind) {
+  const techs = kind === "techs";
+  return {known: new Set((techs ? state.me.techs : state.me.civics) || []),
+    current: techs ? state.me.research : state.me.civic,
+    specs: techs ? RULES.techs : RULES.civics};
+}
+// What is left to do of a plan: anything already studied or under way is gone.
+function studyPlan(kind) {
+  if (!state?.me || !RULES) return [];
+  const {known, current, specs} = studyTaken(kind);
+  return (studyPlanStore()[kind] || [])
+    .filter(n => specs[n] && !(known.has(n) && !specs[n].repeatable) && n !== current);
+}
+function setStudyPlan(kind, steps) {
+  const plans = studyPlanStore();
+  plans[kind] = steps;
+  try { localStorage.setItem(STUDY_PLAN_KEY, JSON.stringify(plans)); } catch (_) {}
+}
+// Every step still needed to reach a node, prerequisites first and the cheaper
+// branch first where there is a choice.
+function studyPathTo(kind, target) {
+  const {known, current, specs} = studyTaken(kind);
+  const path = [];
+  const visit = name => {
+    if (path.includes(name) || name === current || (known.has(name) && !specs[name].repeatable)) return;
+    for (const need of [...specs[name].requires].sort((a, b) => specs[a].cost - specs[b].cost))
+      visit(need);
+    path.push(name);
+  };
+  visit(target);
+  return path;
+}
+function clearStudyPlan(kind) {
+  setStudyPlan(kind, []);
+  openTree(kind);
+  drawTurnLoop();
+}
+function studyAction(kind, name) {
+  return state.legal_actions.find(action => kind === "techs"
+    ? action.type === "research" && action.tech === name
+    : action.type === "civic" && action.civic === name);
+}
+// Start the next step of each plan that has nothing under way. The rest of the
+// turn must not wait on this, and a step the engine will not take yet (a boost
+// reordered things, say) stays in the plan rather than stopping it.
+async function followStudyPlan() {
+  if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;
+  for (const kind of ["techs", "civics"]) {
+    if (studyTaken(kind).current) continue;
+    for (const name of studyPlan(kind)) {
+      const action = studyAction(kind, name);
+      if (action) { await send(action); break; }
+    }
+  }
+}
 function pickTree(kind, n) {
-  document.getElementById("tree").classList.remove("open");
-  send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+  const path = studyPathTo(kind, n);
+  setStudyPlan(kind, path);
+  // One step that can start now is an ordinary choice, and the tree gets out
+  // of the way. A longer plan stays on screen so the path can be seen.
+  if (path.length === 1 && !studyTaken(kind).current) {
+    document.getElementById("tree").classList.remove("open");
+    setStudyPlan(kind, []);
+    send(kind === "techs" ? {type: "research", tech: n} : {type: "civic", civic: n});
+    return;
+  }
+  followStudyPlan().then(() => { openTree(kind); drawTurnLoop(); });
 }
 
 // ---------------------------------------------------------------- lens/tacks
@@ -30401,6 +30748,7 @@ function syncMapLensControls() {
   const exit = document.getElementById("map-lens-exit");
   if (exit) exit.hidden = !mapLens;
   syncDistrictLensControls();
+  drawLensPicker();
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -30410,6 +30758,53 @@ function setMapLens(next) {
 }
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
+// The same lenses from the map's own controls. The dock above lives in the
+// command deck, which a played game keeps closed, so during play the lenses
+// could only be reached by anyone who already knew the Settler lens's key.
+function drawLensPicker() {
+  const picker = document.getElementById("lens-picker");
+  if (!picker || picker.hidden) return;
+  const choice = (attributes, icon, label, pressed, extra = "") =>
+    `<button type="button" class="lens-choice${extra}" ${attributes} aria-pressed="${pressed}">` +
+    `<span aria-hidden="true">${icon}</span>${escapeAttr(label)}</button>`;
+  picker.innerHTML = [...document.querySelectorAll("#map-lens-strip [data-map-lens]")]
+    .filter(button => !button.hidden)
+    .map(button => choice(`data-lens="${escapeAttr(button.dataset.mapLens)}"`,
+      button.querySelector(".map-lens-icon")?.textContent || "◎",
+      button.querySelector(".map-lens-label")?.textContent || button.dataset.mapLens,
+      mapLens === button.dataset.mapLens)).join("") +
+    choice(`data-lens-yields`, "⛁", "Tile yields", SHOW_YIELDS, " lens-choice-all");
+}
+function toggleLensPicker(open) {
+  const picker = document.getElementById("lens-picker");
+  const button = document.getElementById("lenspicker-toggle");
+  if (!picker || !button) return;
+  picker.hidden = !(open ?? picker.hidden);
+  button.setAttribute("aria-expanded", String(!picker.hidden));
+  drawLensPicker();
+}
+document.getElementById("lenspicker-toggle").onclick = () => toggleLensPicker();
+document.getElementById("lens-picker").onclick = event => {
+  const choice = event.target.closest(".lens-choice");
+  if (!choice) return;
+  if (choice.dataset.lens) setMapLens(choice.dataset.lens);
+  else setShowYields(!SHOW_YIELDS);
+  drawLensPicker();
+};
+// Selecting a Settler brings its map up, and deselecting puts it away, because
+// where to found is the only question a Settler asks. It offers once per unit:
+// a player who closes the lens has answered, and a lens they chose themselves
+// is left alone.
+let settlerLensUnit = null, settlerLensOpened = false;
+function syncSettlerLens() {
+  if (SPEC) return;
+  const unit = sel && sel.type === "settler" ? sel.id : null;
+  if (unit === settlerLensUnit) return;
+  if (settlerLensOpened && mapLens === "settler") setMapLens(null);
+  settlerLensUnit = unit;
+  settlerLensOpened = unit !== null && !mapLens;
+  if (settlerLensOpened) setMapLens("settler");
+}
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 // What the hatching over the board is saying. Worth a line because the
 // reading follows its unit as the unit moves, so a viewer who looked away
@@ -32023,6 +32418,19 @@ cv.addEventListener("click", ev => {
     const target = skyArrivalHit(sx, sy);
     if (target) { skyGoToWorld(target.id); return; }
   }
+  // A plate is a button: your own opens that city, wherever the plate has
+  // drifted relative to the tiles under it.
+  if (!tackMode && !interfaceMode && !SPEC && state) {
+    const plate = cityPlateAt(sx, sy);
+    const city = plate && state.cities.find(candidate => candidate.id === plate.city);
+    if (city && city.owner === 0) {
+      selCity = city; sel = null;
+      clearUnitIntel();
+      openCityScreen(city.id);
+      draw(); drawSide(); drawUbar();
+      return;
+    }
+  }
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
@@ -32059,14 +32467,22 @@ cv.addEventListener("click", ev => {
   }
   const here = state.units.filter(u => u.owner === 0 && key(u.pos) === k);
   const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
-  if (here.length) {
-    const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
-    sel = here[idx];
-    if (city && city.owner === 0) selCity = city;
+  const ours = city && city.owner === 0 ? city : null;
+  // Clicking your city opens it. A garrison does not get in the way: the click
+  // takes each unit on the tile in turn, and the one after the last is the city.
+  const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
+  if (ours && here.length && held === here.length - 1) {
+    selCity = ours; sel = null;
     clearUnitIntel();
-  } else if (city && city.owner === 0) {
-    selCity = city; sel = null;
+    openCityScreen(ours.id);
+  } else if (here.length) {
+    sel = here[(held + 1) % here.length];
+    if (ours) selCity = ours;
     clearUnitIntel();
+  } else if (ours) {
+    selCity = ours; sel = null;
+    clearUnitIntel();
+    openCityScreen(ours.id);
   } else {
     sel = null; selCity = null;
     // Nothing of yours here. If somebody else's unit is, this press is the
@@ -32487,15 +32903,94 @@ function queueTileTip(clientX, clientY) {
     if (tileTipPointer === pointer) refreshTileTip(true);
   }, TILE_TIP_DELAY_MS);
 }
+// ----------------------------------------------------------- the combat forecast
+// Hovering what the selected unit can strike shows what the blow would do,
+// before it is struck. The numbers are the engine's (`POST /forecast`), read
+// once per unit, target and turn: a mouse crossing the map asks only about the
+// tiles that can be hit, and an old answer never lands on a newer hover.
+const forecastCache = new Map();
+let forecastShown = null;
+function strikeAt(pos) {
+  if (!state || SPEC || !sel || !pos) return null;
+  const k = key(pos);
+  return state.legal_actions.find(action => action.unit === sel.id &&
+    (action.type === "attack" || action.type === "ranged") &&
+    action.target && key(action.target) === k) || null;
+}
+function hideForecast() {
+  forecastShown = null;
+  const card = document.getElementById("combat-forecast");
+  if (card) card.hidden = true;
+}
+function forecastSide(name, strength, hp, damage, low, high, maximum) {
+  const left = Math.max(0, hp - damage);
+  const pct = value => Math.max(0, Math.min(100, 100 * value / maximum));
+  return `<div class="cf-side"><div class="cf-name">${escapeAttr(titleCase(name))}</div>` +
+    `<div class="cf-strength">${Math.round(strength)}</div>` +
+    `<div class="cf-bar" role="img" aria-label="${left} of ${maximum} health after the blow">` +
+      `<i class="cf-left" style="width:${pct(left)}%"></i>` +
+      `<i class="cf-lost" style="width:${pct(hp) - pct(left)}%"></i></div>` +
+    `<div class="cf-hp">${damage > 0 ? `${hp} → ${left}` : `${hp}`}` +
+      (damage > 0 ? ` <small>${low === high ? low : `${low}–${high}`}</small>` : "") + `</div></div>`;
+}
+function paintForecast(answer) {
+  const card = document.getElementById("combat-forecast");
+  const forecast = answer?.forecast;
+  if (!card || !forecast || !sel) { hideForecast(); return; }
+  const dealt = Math.round(forecast.damage_dealt), taken = Math.round(forecast.damage_taken);
+  const defenderMax = forecast.defender_is_city ? 200 : 100;
+  const deadly = !forecast.defender_is_city && forecast.dealt_low >= forecast.defender_hp;
+  const lethal = !forecast.defender_is_city && forecast.dealt_high >= forecast.defender_hp;
+  const fatal = forecast.taken_low >= sel.hp, risky = forecast.taken_high >= sel.hp;
+  const verdict = fatal ? ["bad", "This would cost you the unit"]
+    : deadly ? ["good", "This kills it"]
+    : risky ? ["warn", "Your unit could die here"]
+    : lethal ? ["good", "This could kill it"]
+    : forecast.defender_is_city && forecast.defender_walls > 0
+      ? ["warn", `Walls stand: ${forecast.defender_walls} to break first`]
+      : forecast.ranged ? ["good", "Nothing can answer a shot"]
+      : dealt > taken ? ["good", "You should win this exchange"]
+      : dealt < taken ? ["warn", "You should lose this exchange"]
+      : ["warn", "An even exchange"];
+  card.innerHTML = `<div class="cf-head">${forecast.ranged ? "Ranged attack" : "Attack"}</div>` +
+    `<div class="cf-sides">` +
+    forecastSide(sel.type, forecast.attacker_strength, sel.hp, taken,
+      forecast.taken_low, forecast.taken_high, 100) +
+    `<div class="cf-versus" aria-hidden="true">⚔</div>` +
+    forecastSide(forecast.defender_name, forecast.defender_strength, forecast.defender_hp, dealt,
+      forecast.dealt_low, forecast.dealt_high, defenderMax) +
+    `</div><div class="cf-verdict tone-${verdict[0]}">${escapeAttr(verdict[1])}</div>`;
+  card.hidden = false;
+}
+async function showForecastAt(pos) {
+  const strike = strikeAt(pos);
+  if (!strike) { hideForecast(); return; }
+  const ask = `${sel.id}|${key(pos)}|${strike.type}|${state.turn}|${sel.hp}`;
+  if (forecastShown === ask) return;
+  forecastShown = ask;
+  if (!forecastCache.has(ask)) {
+    if (forecastCache.size > 64) forecastCache.clear();
+    forecastCache.set(ask, fetchJSON("/forecast", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({unit: sel.id, target: pos, ranged: strike.type === "ranged"})})
+      .catch(() => null));
+  }
+  const answer = await forecastCache.get(ask);
+  if (forecastShown === ask) paintForecast(answer);
+}
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
   // gesture is happening *now*, or the first pan of the game kills the tooltip
   // for good.
   queueTileTip(ev.clientX, ev.clientY);
+  if (sel && !SPEC) {
+    const r = cv.getBoundingClientRect();
+    showForecastAt(pixelToHex(ev.clientX - r.left, ev.clientY - r.top));
+  } else if (forecastShown) hideForecast();
 });
-cv.addEventListener("mouseleave", () => hideTileTip(true));
-window.addEventListener("blur", () => hideTileTip(true));
+cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); });
+window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -32845,6 +33340,7 @@ const NOTICE_TONES = { War: "bad", World: "warn", Diplomacy: "warn" };
 function captureTurnNotices() {
   const fresh = (state.events || []).filter(e => e.turn > noticeSeenTurn);
   noticeSeenTurn = state.turn;
+  announceMoments(fresh);
   for (const event of fresh) {
     const kind = `ev:${event.turn}:${event.text}`;
     if (noticeDismissed.has(kind)) continue;
@@ -33164,10 +33660,14 @@ function openTurnIfNew() {
   const first = loopTurn === null;
   loopTurn = state.turn;
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
+  if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
   drawTurnLoop();
   resumeAllTravel();
   if (!sel && !selCity) advanceToNextActionUnit(true);
+  // After this tick: a turn opens inside the End Turn request, and `send`
+  // refuses anything else until that request has finished.
+  setTimeout(followStudyPlan);
 }
 function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();
@@ -33668,6 +34168,9 @@ document.addEventListener("keydown", ev => {
     if (clearUnitIntel()) { modeline(); draw(); return; }
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
+    // The last Escape in the unwinding is the game's own: nothing is selected
+    // and no mode is on, so the only thing left to leave is the game.
+    if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;
     sel = null; selCity = null; mapLens = null; tackMode = false;
     syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();

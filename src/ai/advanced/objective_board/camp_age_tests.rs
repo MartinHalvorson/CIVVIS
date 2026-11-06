@@ -14,13 +14,16 @@ fn camp_row(gene: bool, short: i64, countdown_end: Option<u32>) -> Objective {
     camp_row_version(u8::from(gene), short, countdown_end)
 }
 
-/// `camp_row` under version 0 (off), 1 or 2 of the family.
+/// `camp_row` under version 0 (off), 1, 2 or 3 of the family.
 fn camp_row_version(version: u8, short: i64, countdown_end: Option<u32>) -> Objective {
+    camp_row_at(version, short, countdown_end, at(15, 8))
+}
+
+/// The same board with the camp at `camp`.
+fn camp_row_at(version: u8, short: i64, countdown_end: Option<u32>, camp: Pos) -> Objective {
     let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
-    let camp = at(15, 8);
     g.barb_camps.insert(camp, g.turn);
     assert!(g.wdist(camp, at(6, 8)) <= CAMP_RADIUS);
-    assert!(g.wdist(camp, at(6, 8)) > CAMP_NEAR_RADIUS, "a far camp");
     g.spawn_test_unit("warrior", 0, at(7, 8));
     g.spawn_test_unit("warrior", 0, at(7, 9));
     g.players[0].normal_age_threshold = 11;
@@ -30,6 +33,7 @@ fn camp_row_version(version: u8, short: i64, countdown_end: Option<u32>) -> Obje
     match version {
         1 => ai.enable_camps_close_the_age(),
         2 => ai.enable_camps_close_the_age_2(),
+        3 => ai.enable_camps_close_the_age_3(),
         _ => {}
     }
     let plan = conquest(&g, None);
@@ -161,4 +165,67 @@ fn version_two_arms_the_age_closing_party() {
     let idle = camp_row_version(2, 0, Some(40));
     assert_eq!(idle.requirement.ranged, plain.requirement.ranged);
     assert!((idle.requirement.strength - plain.requirement.strength).abs() < 1e-9);
+}
+
+#[test]
+fn version_three_ships_off_and_turns_the_others_off() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.camps_close_the_age_3, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "camps_close_the_age_3"));
+    super::super::test_support::opt_in_off_in_both_controllers("camps-close-the-age-3", |ai| {
+        ai.camps_close_the_age_3
+    });
+    let mut on = AdvancedAi::new();
+    on.enable_camps_close_the_age();
+    on.enable_camps_close_the_age_2();
+    on.enable_camps_close_the_age_3();
+    assert_eq!(
+        (
+            on.camps_close_the_age,
+            on.camps_close_the_age_2,
+            on.camps_close_the_age_3
+        ),
+        (false, false, true),
+        "one version of the family plays"
+    );
+}
+
+/// At or over the Age bar, a near camp is still raised and armed under
+/// version three, and only under version three; a far camp is not.
+#[test]
+fn version_three_clears_a_near_camp_in_any_era() {
+    let near = at(12, 8);
+    {
+        let g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+        assert!(g.wdist(near, at(6, 8)) <= CAMP_NEAR_RADIUS, "a near camp");
+    }
+    let v2 = camp_row_at(2, 0, Some(40), near);
+    let v3 = camp_row_at(3, 0, Some(40), near);
+    assert!(
+        (v3.value - v2.value - super::super::camps_close_the_age::CAMP_AGE_PREMIUM).abs() < 1e-9,
+        "{} vs {}",
+        v3.value,
+        v2.value
+    );
+    assert_eq!(v2.requirement.ranged, 0, "version two waits for an Age gap");
+    assert_eq!(
+        v3.requirement.ranged,
+        super::super::camps_close_the_age::CAMP_AGE_SHOOTERS
+    );
+    assert!(
+        (v3.requirement.strength
+            - v2.requirement.strength * super::super::camps_close_the_age::CAMP_AGE_MARGIN)
+            .abs()
+            < 1e-9
+    );
+    assert!(v3.deadline.is_none(), "no Age to date it to");
+    let far_v2 = camp_row_version(2, 0, Some(40));
+    let far_v3 = camp_row_version(3, 0, Some(40));
+    assert!(
+        (far_v3.value - far_v2.value).abs() < 1e-9,
+        "a far camp keeps the plain row"
+    );
+    assert_eq!(far_v3.requirement.ranged, far_v2.requirement.ranged);
 }

@@ -1427,7 +1427,7 @@ BUILDING_ALIASES = {
 
 
 # Eureka/Inspiration triggers: the game's BoostClass rows spelled in the
-# trigger vocabulary CIVVIS' engine evaluates (game.rs boost_met).
+# trigger vocabulary CIVVIS' engine evaluates (game/boosts.rs boost_met).
 def boost_spec(row) -> dict | None:
     def named(game_type, prefix, aliases=None):
         entry = slug(game_type, prefix)
@@ -1777,7 +1777,7 @@ ENGINE_PARAMETERS = {
     "LOYALTY_MAXIMUM": 100,
     "LOYALTY_START": 100,
     "DISTRICT_POPULATION_REQUIRED_PER": 3,  # one specialty per three Population
-    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game.rs record_war_unit_loss
+    "WAR_WEARINESS_PER_UNIT_KILLED": 3,  # game/war_log.rs record_war_unit_loss
     "WAR_WEARINESS_PER_COMBAT_IN_ALLIED_LANDS": 1,  # accrue_combat_weariness
     "WAR_WEARINESS_PER_COMBAT_IN_FOREIGN_LANDS": 2,
     "WAR_WEARINESS_PER_WMD_LAUNCHED": 10,  # game.rs Action::WmdStrike
@@ -2399,6 +2399,28 @@ def handicap_amount(argument: dict, ladder: list[str], rung: str) -> float:
     return value + number(argument.get("Extra")) * (ladder.index(rung) - ladder.index(origin))
 
 
+def projected_handicap_amount(modifier: str, argument: dict,
+                              ladder: list[str], rung: str) -> float:
+    """Keep raw scaling separate from a demonstrated native runtime result.
+
+    Leaders.xml's Deity combat row projects to 3, but the native preview
+    explicitly reports +4. See docs/fidelity/native-deity-combat-2026-11-05.json.
+    Calibrate only that observed rung and unchanged source-row form. Other
+    rungs, modifiers, explicit origins or changed arguments retain their raw
+    projection; this readback does not establish their DLL interpretation.
+    """
+    raw = handicap_amount(argument, ladder, rung)
+    if (modifier == "HIGH_DIFFICULTY_COMBAT_SCALING"
+            and rung == "DIFFICULTY_DEITY"
+            and argument.get("Type") == "LinearScaleFromDefaultHandicap"
+            and number(argument.get("Value")) == -1
+            and number(argument.get("Extra")) == 1
+            and not argument.get("SecondExtra")
+            and ladder.index(rung) - ladder.index(DEFAULT_HANDICAP) == 4):
+        return 4.0
+    return raw
+
+
 def rung_satisfies(database: Database, requirement_set: str | None, ladder: list[str], rung: str) -> bool:
     """Whether a rung passes every handicap requirement in a set.
 
@@ -2469,7 +2491,7 @@ def project_difficulties(database: Database) -> dict[str, dict]:
         for rung in ladder:
             applies = rung_satisfies(database, requirement_set, ladder, rung)
             projected[slug(rung, "DIFFICULTY_")][field] = (
-                handicap_amount(amount, ladder, rung) if applies else 0
+                projected_handicap_amount(modifier_id, amount, ladder, rung) if applies else 0
             )
     # The AI's extra start units: `Quantity` at `MinDifficulty`, plus
     # `DifficultyDelta` per rung above it, floored (Emperor's 1.5 Builders is
@@ -2986,6 +3008,14 @@ def report(results: list[dict], install: Path) -> str:
         f"{len(GATHERING_STORM_SENTINELS)} expansion sentinels)."
     )
     lines.append("")
+    if any(result["table"] == "Difficulties" for result in results):
+        lines.append(
+            "Difficulty projection: the unchanged Deity combat scaling row uses "
+            "the native +4 readback in "
+            "`docs/fidelity/native-deity-combat-2026-11-05.json`; its raw XML "
+            "projection is 3. Other combat rungs remain uncalibrated."
+        )
+        lines.append("")
     lines.append("| Table | Compared | Divergent | Waived | Only in CIVVIS | Only in Civ VI |")
     lines.append("|---|---:|---:|---:|---:|---:|")
     for result in results:
