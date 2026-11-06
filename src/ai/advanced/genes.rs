@@ -5196,6 +5196,9 @@ pub const GENES: &[Gene] = &[
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
     Gene { tag: "science-chain-crosses-window", field: "science_chain_crosses_window", kind: Kind::OptIn, enable: AdvancedAi::enable_science_chain_crosses_window, disable: AdvancedAi::disable_science_chain_crosses_window },
+    // Native Indonesia offered a five-turn first Campus while a repeated
+    // Settler needed eight turns and another was walking. Unpriced opt-in.
+    Gene { tag: "science-campus-before-repeat-settler", field: "science_campus_before_repeat_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_science_campus_before_repeat_settler, disable: AdvancedAi::disable_science_campus_before_repeat_settler },
     // On the Science seat's losing-war turns, 309 of 664 queue decisions
     // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
     // buildings, Builders, Granaries, Industrial Zones and Theaters. They run

@@ -298,7 +298,7 @@ impl AdvancedAi {
             // Settler at t46-49 while another Settler was already walking.
             // Let this first Campus briefly precede the repeated Settler;
             // keep the first expansion, emergencies and finishing queues.
-            let campus_before_settler = floor_holds
+            let campus_before_settler = (floor_holds
                 && self.early_settler_floor(g, plan) > 0
                 && n_cities >= 2
                 && Self::early_settler_census(g, pid).0 > 0
@@ -312,7 +312,9 @@ impl AdvancedAi {
                 && self.short_korean_science_campus(g, pid, cid, &campus)
                 && matches!(g.cities[&cid].queue.first(), Some(Item::Unit { unit }) if *unit == "settler")
                 && g.host_production_turns(cid, &Self::early_settler_item())
-                    .is_some_and(|remaining| remaining.is_finite() && remaining > turns);
+                    .is_some_and(|remaining| remaining.is_finite() && remaining > turns))
+                || (floor_holds
+                    && self.science_campus_precedes_repeat_settler(g, pid, cid, plan, &campus));
             if floor_holds && !campus_before_settler {
                 self.explain_free_slot_campus_hold(g, cid, turns, "early Settler floor");
                 continue;

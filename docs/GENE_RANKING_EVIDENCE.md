@@ -355,6 +355,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
+| `science-campus-before-repeat-settler` | off (unmeasured) | A host-quoted short first Science Campus before a longer repeated Settler. | 1 \| 1 |
 | `science-chain-crosses-window` | off (unmeasured) | Explicit Science routing admits legal prerequisite steps beyond the era window. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
 | `science-drive-answers-from-the-pad` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad`; see `Self::science_drive_answers_from_the_pad`. | — \| 2 |
