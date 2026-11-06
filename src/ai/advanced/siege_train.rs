@@ -2104,10 +2104,9 @@ impl AdvancedAi {
         self.remap_amphibious_train(previous, next, units);
     }
 
-    /// Whether the siege has reserved this unit as its taker — the hook a
+    /// Whether the siege has reserved this unit as its taker — the hook the
     /// joint planner (`battle_planner`) reads so it does not spend the unit
-    /// that walks in. Published here; the planner's read is its own change.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// that walks in.
     pub(super) fn unit_is_reserved(&self, uid: u32) -> bool {
         self.reserved_units.contains(&uid)
     }

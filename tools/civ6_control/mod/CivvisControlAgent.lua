@@ -14360,7 +14360,11 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local key = "aid_gift:" .. verb .. ":" .. subject;
 		local asked = peaceAsked[key];
-		if asked ~= nil and (turn - asked) < (cfg.AidGiftRetryTurns or 2) then
+		-- A tribute is one whole gift: a second to the same rival inside this
+		-- window bought about +2 for 80 or 120 Gold on the live Deity lane.
+		local retry = verb == "TRIBUTE" and (cfg.TributeRetryTurns or 30)
+			or (cfg.AidGiftRetryTurns or 2);
+		if asked ~= nil and (turn - asked) < retry then
 			return false, "aid_gift_cooldown";
 		end
 		local ran, submitted, paid, reason = pcall(submitAidGift, subject, amount);
@@ -17886,6 +17890,50 @@ CivvisReligionMajorityCounts = function()
 		end
 	end
 	return counts;
+end
+
+-- ★★ WORLD RELIGION'S OPTION B IS THE PEACETIME ANSWER TO A MISSIONARY.
+--
+-- Option B on a religion: "All players may condemn units of the chosen
+-- Religion, and doing so grants 25 Diplomatic Favor" (ANYONE_CONDEMNS_FOR_FAVOR,
+-- Expansion2_Congress.xml). We cast A in all 74 recorded sessions, 11-01 to
+-- 11-05, and rivals' free votes read 5 at the Deity median. Under
+-- `world-religion-condemns-the-faith` (`WORLD_RELIGION_CONDEMNS` sets
+-- `WorldReligionCondemns`) a seat with no faith of its own votes B on the faith
+-- holding the most majority cities, with one vote more than last session's A
+-- total, 5 when none is recorded. B wins or the ballot is not worth its price,
+-- so a bank that cannot pay leaves the old A vote standing. A Diplomatic racer
+-- keeps its participation vote. `WorldReligionCondemnMaxVotes` (9) caps it.
+-- Returns the target index, votes and price, or nil. Bare global: the chunk is
+-- at the register cap.
+CivvisWorldReligionCondemn = function(rtype, targets, pid, favor, costs, lastA, config, counts, own)
+	config = type(config) == "table" and config or {};
+	if config.WorldReligionCondemns ~= true or rtype ~= "WC_RES_WORLD_RELIGION"
+		or type(targets) ~= "table" or type(costs) ~= "table"
+		or CivvisDiploRacer(config) then
+		return nil;
+	end
+	if own == nil then
+		own = (tonumber(try(function()
+			return Players[pid]:GetReligion():GetReligionTypeCreated();
+		end, -1)) or -1) >= 0;
+	end
+	if own then return nil; end
+	counts = counts or CivvisReligionMajorityCounts();
+	local idx, top = nil, 0;
+	for i, t in pairs(targets) do
+		local n = type(i) == "number" and tonumber(counts[tostring(t)]) or 0;
+		if n > top or (idx ~= nil and n == top and i < idx) then idx, top = i, n; end
+	end
+	if idx == nil then return nil; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 5) + 1;
+	if want > math.min(tonumber(config.WorldReligionCondemnMaxVotes) or 9, tonumber(costs.MaxVotes) or 1) then
+		return nil;
+	end
+	local price = tonumber(costs[want - 1]);
+	if price == nil or price > (tonumber(favor) or 0) then return nil; end
+	return idx, want, price;
 end
 
 CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
@@ -21601,6 +21649,15 @@ local function applyOrders(player, pid, turn, rows)
 				policy = "CONGRESS_GUARDS_THE_LEADER",
 			});
 			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "WORLD_RELIGION_CONDEMNS" then
+			-- `world-religion-condemns-the-faith` (opt-in): the same lease. See
+			-- `CivvisWorldReligionCondemn`.
+			cfg.WorldReligionCondemns = true;
+			emit("combat_policy_applied", {
+				turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+				policy = "WORLD_RELIGION_CONDEMNS",
+			});
+			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,
 			-- but its cavalry still needs a decision from the settled board.
@@ -24375,8 +24432,19 @@ local function tick()
 							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
 						end
 					elseif rtype == "WC_RES_WORLD_RELIGION" then
-						-- See `CivvisWorldReligionTarget`: A, never on the leader.
-						selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
+						-- See `CivvisWorldReligionCondemn`: B on the leading faith
+						-- when the bank carries it.
+						local wrIdx, wrVotes, wrPrice = CivvisWorldReligionCondemn(rtype, targets,
+							pid, favor, costs, envoyTally.wc_last_a, cfg);
+						if wrIdx ~= nil then
+							option, selection, votes = 2, wrIdx, wrVotes;
+							favor = favor - wrPrice;
+							spent = spent + wrPrice;
+							racerSlowed = true;
+						else
+							-- See `CivvisWorldReligionTarget`: A, never on the leader.
+							selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
+						end
 					elseif rtype == "WC_RES_HERITAGE_ORG" then
 						-- See `CivvisHeritageDenial`.
 						local hIdx, hVotes, hPrice = CivvisHeritageDenial(rtype, targets,

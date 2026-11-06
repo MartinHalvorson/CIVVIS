@@ -73,7 +73,7 @@ impl AdvancedAi {
             && city
                 .queue
                 .first()
-                .is_none_or(|head| Self::steal_spy_displaces(g, head))
+                .is_none_or(|head| Self::spy_displaces(g, head))
     }
 
     /// Version 3 (see the module): the Government Plaza district claims the
@@ -169,7 +169,7 @@ impl AdvancedAi {
                 && city
                     .queue
                     .first()
-                    .is_none_or(|head| Self::steal_spy_displaces(g, head))
+                    .is_none_or(|head| Self::spy_displaces(g, head))
                 && g.can_produce(pid, cid, &item))
             .then_some((cid, item))
         });

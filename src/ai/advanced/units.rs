@@ -1035,7 +1035,8 @@ impl AdvancedAi {
             game.units_at(at).into_iter().find(|target| {
                 let target = &game.units[target];
                 target.owner != pid
-                    && game.is_at_war(pid, target.owner)
+                    && (game.is_at_war(pid, target.owner)
+                        || self.world_religion_condemns(game, target))
                     && game.rules.units[target.kind].class == "religious"
                     && !self.preserve_competing_faith(game, pid, target)
             })

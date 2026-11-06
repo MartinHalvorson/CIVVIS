@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "campus-above-the-sea",
+  "scope": "Twelve fixed-input OFF/ON/ON/OFF queries in three native states, fresh private controller per query; 204 actual registered reads independently verified. The fresh42/0Campus order changes only coordinates from known lowland17,29 to originally legal safe15,29; foundation43/0 and flooded-repair138/0 orders remain equal. Complete payload repeats and exactly one effective genotype difference verified. Source d66b7cf2dd20abb7fea2e9ebc5de58a0e25b6118, executable SHA256 27d98df06b4b6193f93d6dee6f62a38a292e95007f939a79515ccfdf9400751b. Recaptured bytes deduplicated losslessly against identical input blobs, with exact per-query index hashes. Proposal firing only: no original controller-history reproduction, host execution, avoided flooding, saved-turn or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-campus-above-sea.native-action-pairs.tar.xz",
+    "sha256": "d4e4501c2c04cd57b795855e5af484cc7f3421b67b2a1cc38757c3ac56b49837"
+  },
+  "members": [
+    "pairs/42-0-repeat-1.json",
+    "pairs/42-0-repeat-2.json",
+    "pairs/43-0-repeat-1.json",
+    "pairs/43-0-repeat-2.json",
+    "pairs/138-0-repeat-1.json",
+    "pairs/138-0-repeat-2.json"
+  ]
+}
