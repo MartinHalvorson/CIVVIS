@@ -5370,6 +5370,21 @@ pub const GENES: &[Gene] = &[
     // coastal queue once a hull can cross Ocean, instead of waiting for an idle
     // one. See `advanced/contact_fleet.rs`.
     Gene { tag: "sea-scout-claims-the-queue", field: "sea_scout_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue, disable: AdvancedAi::disable_sea_scout_claims_the_queue },
+    // Space Initiative stayed away from Indonesia's actual launch producer.
+    // Price a current project against establishment and displaced dividends.
+    Gene { tag: "pingala-earns-the-launch", field: "pingala_earns_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_earns_the_launch, disable: AdvancedAi::disable_pingala_earns_the_launch },
+    // `wounded-ship-sails-on`: a wounded sea scout with no healing water in reach
+    // keeps charting instead of fortifying where it can never recover. See
+    // `advanced/wounded_ship_sails_on.rs`.
+    Gene { tag: "wounded-ship-sails-on", field: "wounded_ship_sails_on", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_ship_sails_on, disable: AdvancedAi::disable_wounded_ship_sails_on },
+    // `science-seat-races-the-congress`: a seat aiming at Science runs the
+    // Diplomatic racer's ballot (`CivvisCongressRacer`,
+    // `CivvisControlAgent.lua`): participation votes first, then A on itself
+    // instead of B against the leader. Deity 11-05, 51 games: median 293
+    // Favor at t150, 6 points at the end, 37 claims in 187 ballots, and 117 B
+    // votes that never decided a session. Live only; the simulator has no
+    // such Congress, so it cannot screen this.
+    Gene { tag: "science-seat-races-the-congress", field: "science_seat_races_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_races_the_congress, disable: AdvancedAi::disable_science_seat_races_the_congress },
     // Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp Heavy Chariot
     // one tile, reading "danger 69 where it stood, -0 where it stands"; the
     // Galley beside it stepped into the tile it left and killed it. With

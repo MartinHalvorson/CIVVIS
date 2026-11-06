@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "pingala-earns-the-launch",
+  "scope": "Offline repeated proposal activation only. Twelve target queries,32 declared prior-observation/production-ownership queries,780 actual registered reads. Fresh OFF/ON/ON/OFF processes per case; same-arm orders and full decisions repeat; warmup orders match across arms. Every read is reconstructed from archived raw snapshot bytes. Only153/0 adds Pingala assignment to native131073. The bridge retains the Magnus return leg pending native readback. No original private-history parity, host execution, return acknowledgment, actual completion gain, throughput or strength claim. Earlier sparse-prefix negative results remain retained and documented.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-pingala-launch.earned.native-queries.tar.xz",
+    "sha256": "3bafd7c13c76a441e356efcb25e21722222aa269066256f48d2adaac87a54c67"
+  },
+  "members": [
+    "pairs/134-0-repeat-1.json",
+    "pairs/134-0-repeat-2.json",
+    "pairs/142-0-repeat-1.json",
+    "pairs/142-0-repeat-2.json",
+    "pairs/153-0-repeat-1.json",
+    "pairs/153-0-repeat-2.json"
+  ]
+}

@@ -8,7 +8,7 @@
 // block the map, and the rail keeps its record of everything.
 const MOMENT_LIFE_MS = 5000;
 const MOMENT_BIG_LIFE_MS = 7500;
-const MOMENT_STACK = 3;      // on screen at once; the rest wait their turn
+const MOMENT_STACK = 2;      // on screen at once; the rest wait their turn
 const MOMENT_PER_TURN = 5;   // a late-game turn can finish a dozen things
 const SOUND_PREFERENCE_KEY = "civvis-sound-v1";
 
@@ -172,6 +172,27 @@ function rivalMoments() {
   }
   return moments;
 }
+// A boost lands mid-turn with no event of its own, and it is the best news a
+// study can get: a player's scout or quarry just saved them turns of research.
+// Each turn is compared with the last, like the rivals above, and the first
+// look at a world only takes attendance.
+let boostsSeen = null, boostsWorld = null;
+function boostMoments() {
+  const me = state.me;
+  if (!me) return [];
+  const held = new Set([...(me.boosted_techs || []).map(name => `tech:${name}`),
+    ...(me.boosted_civics || []).map(name => `civic:${name}`)]);
+  const before = boostsWorld === state.seed ? boostsSeen : null;
+  boostsWorld = state.seed;
+  boostsSeen = held;
+  if (!before) return [];
+  return [...held].filter(id => !before.has(id)).map(id => {
+    const [kind, name] = id.split(":");
+    return {rank: 4, kicker: kind === "tech" ? "Eureka!" : "Inspiration!",
+      sound: kind === "tech" ? "research" : "civic", big: false, name, pos: null,
+      note: kind === "tech" ? "A head start on this research" : "A head start on this civic"};
+  });
+}
 const momentQueue = [];
 let momentsShowing = 0;
 function showNextMoment() {
@@ -205,7 +226,7 @@ function showNextMoment() {
 // playing dozens of turns a minute, and a banner for each would be a blur.
 function announceMoments(events) {
   if (SPEC || autoplaying) return;
-  const moments = [...events.map(momentFrom).filter(Boolean), ...rivalMoments()]
+  const moments = [...events.map(momentFrom).filter(Boolean), ...rivalMoments(), ...boostMoments()]
     .sort((a, b) => a.rank - b.rank).slice(0, MOMENT_PER_TURN);
   momentQueue.push(...moments);
   showNextMoment();

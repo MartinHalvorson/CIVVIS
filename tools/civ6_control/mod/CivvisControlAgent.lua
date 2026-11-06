@@ -17766,6 +17766,20 @@ CivvisDiploRacer = function(config)
 		and config.DiploRacer ~= false;
 end
 
+-- `science-seat-races-the-congress`: the Diplomatic Victory ballot of a seat
+-- assigned Science runs the racer too, while `CivvisDiploRacer` keeps naming
+-- the Diplomatic lane, so `CivvisPublicWorksVote` still slows a space racer.
+-- Deity, 51 games from 11-05: the seat held a median 293 Favor at t150 and
+-- ended on 6 points against the top rival's 14 at t175. It claimed 37 of 187
+-- Diplomatic Victory ballots and won 24; its 117 B votes were never the votes
+-- that decided a session. Off unless the tag is armed.
+CivvisCongressRacer = function(config)
+	return CivvisDiploRacer(config) or (type(config) == "table"
+		and config.VictoryLane == "science"
+		and config.ScienceCongressRacer == true
+		and config.DiploRacer ~= false);
+end
+
 CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	config = type(config) == "table" and config or {};
 	if type(costs) ~= "table" then return 1, 0; end
@@ -24183,7 +24197,7 @@ local function tick()
 			end);
 			-- See `CivvisDiploRacer`: the cheap participation votes are funded
 			-- before the claim.
-			envoyTally.racer_reserve = CivvisDiploRacer(cfg)
+			envoyTally.racer_reserve = CivvisCongressRacer(cfg)
 				and CivvisRacerReserve(list, costs, cfg) or nil;
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
@@ -24360,10 +24374,10 @@ local function tick()
 						-- majors ("PlayerOrDiploLeader"): only a rival AHEAD of us
 						-- on the gang threshold keeps the denial. When we lead,
 						-- the gang is ours to brace for or to outrun.
-						local mine = CivvisDiploRacer(cfg) and tonumber(try(function()
+						local mine = CivvisCongressRacer(cfg) and tonumber(try(function()
 							return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
 						end, 0)) or 0;
-						if CivvisDiploRacer(cfg) and ourIdx ~= nil
+						if CivvisCongressRacer(cfg) and ourIdx ~= nil
 								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
 								mine, CivvisRacerClaimBlock(envoyTally.wc_rival_block,
@@ -24429,7 +24443,7 @@ local function tick()
 							end
 							-- A racer takes Public Relations' option A on itself:
 							-- it won 37 of 55 recorded sessions, B on us 2.
-							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
+							if BAN_FIRST[rtype] and not CivvisCongressRacer(cfg) then option = 2; end
 						end
 					elseif rtype == "WC_RES_WORLD_RELIGION" then
 						-- See `CivvisWorldReligionCondemn`: B on the leading faith
@@ -24478,7 +24492,7 @@ local function tick()
 					-- player-target resolution option B names the leader.
 					-- A racer's own participation point is worth more than the
 					-- leader's predicted one: it buys the outcome instead.
-					local deny = (not racerSlowed and not CivvisDiploRacer(cfg))
+					local deny = (not racerSlowed and not CivvisCongressRacer(cfg))
 						and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
 					-- See `CivvisCongressTargetIndex`: no option B naming a leader
@@ -24510,7 +24524,8 @@ local function tick()
 							favor = favor - price;
 							spent = spent + price;
 						end
-					elseif rtype ~= "WC_RES_DIPLOVICTORY" and CivvisDiploRacer(cfg) then
+					elseif rtype ~= "WC_RES_DIPLOVICTORY" and CivvisCongressRacer(cfg)
+							and not racerSlowed then
 						-- See `CivvisRacerResolutionVotes`.
 						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
 						if want > 1 then

@@ -84,12 +84,15 @@ and a list of function indices.
 
 ### What a visitor lands on
 
-An AI-only simulation on the stock Small map: six free-for-all majors and nine
-city-states on a 74×46 flat Continents world, with a hot equator and cold poles,
-an Ancient start, Online game speed, Blitz watch pace, and every victory
-condition enabled. It is the shape of game the desktop launchers open too, and
-the one that asks nothing of somebody who has just arrived. The lobby is right
-there for anyone who wants to play a seat instead.
+An AI-only simulation on the stock opening world: four free-for-all majors on
+the Tiny Tennis Ball planet, its heat scattered rather than banded by latitude,
+with an Ancient start, Online game speed, and every victory condition enabled.
+It is the world the desktop launchers open too, and the one that asks nothing
+of somebody who has just arrived. `stock_opening_params` in `src/server.rs`
+describes it. The site opens at Lightning watch pace, where the desktop builds
+open at Blitz; a pace the visitor picked by hand is remembered and wins, and a
+Tactics battle still opens at Blitz. The lobby is right there for anyone who
+wants to play a seat instead.
 
 The lower-left build marker names the pinned revision and its commit time, then
 ages the exact artifact in the browser. Source and packaging time stay visibly

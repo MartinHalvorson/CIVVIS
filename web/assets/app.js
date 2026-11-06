@@ -1285,7 +1285,7 @@ function animateDiff(prev, next) {
         // step. Carrying both endpoints lets the shift ease across the move.
         const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
-                                mapPoints, steps,
+                                mapPoints, steps, positions,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
@@ -1294,8 +1294,9 @@ function animateDiff(prev, next) {
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
-      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
-      anim.sparks.push({ x, y, t0: now });
+      anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now,
+                         pos: nu.pos, rise: 16 });
+      anim.sparks.push({ x, y, t0: now, pos: nu.pos });
     }
   }
   for (const pu of prev.units) {
@@ -1307,8 +1308,9 @@ function animateDiff(prev, next) {
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
                          embarked: pu.embarked, t0: deathAt,
-                         dur:320 });
-      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt });
+                         dur:320, pos: pu.pos });
+      anim.floats.push({ x, y: y - 16, txt: "☠", col: "#ffd0c0", t0: deathAt,
+                         pos: pu.pos, rise: 16 });
     }
   }
   const prevC = new Map((prev.cities || []).map(c => [c.id, c]));
@@ -1320,12 +1322,14 @@ function animateDiff(prev, next) {
     if (hpDrop > 0 || wallDrop > 0) {
       const [x, y] = worldXY(nc.pos);
       if (hpDrop > 0) {
-        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now });
+        anim.floats.push({ x, y: y - 20, txt: `-${hpDrop} HP`, col: "#ff7468", t0: now,
+                           pos: nc.pos, rise: 20 });
       }
       if (wallDrop > 0) {
-        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now });
+        anim.floats.push({ x, y: y - 29, txt: `-${wallDrop} walls`, col: "#73b9e6", t0: now,
+                           pos: nc.pos, rise: 29 });
       }
-      anim.sparks.push({ x, y, t0: now });
+      anim.sparks.push({ x, y, t0: now, pos: nc.pos });
     }
     // A city gaining a citizen is the slowest important thing that happens on
     // this map and it passed silently: the settlement quietly gains a house and
@@ -1334,7 +1338,7 @@ function animateDiff(prev, next) {
     if (nc.pop > pc.pop) {
       const [x, y] = worldXY(nc.pos);
       anim.floats.push({ x, y: y + 20, txt: `+${nc.pop - pc.pop} pop`,
-                         col: "#8fe0a0", t0: now });
+                         col: "#8fe0a0", t0: now, pos: nc.pos, rise: -20 });
     }
   }
   // Territory changing hands is the clearest sign a strategy map is moving —
@@ -1370,7 +1374,8 @@ function animateDiff(prev, next) {
     const a = nextU.get(pendingStrike.id) || prevU.get(pendingStrike.id);
     if (a) {
       const [sx, sy] = worldXY(a.pos), [tx, ty] = worldXY(pendingStrike.to);
-      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now };
+      anim.strike = { id: pendingStrike.id, sx, sy, tx, ty, t0: now,
+                      from: a.pos, to: pendingStrike.to };
     }
     pendingStrike = null;
   }
@@ -7512,7 +7517,8 @@ let paceRealigned = false;
 let paceDisagreed = 0;
 let paceChoice = null;   // the pace this world is being held at
 let paceAsserted = null; // the server pace we have already answered with a push
-// The viewer's own pace, null until they pick one. Distinct from paceChoice,
+// The viewer's own pace, null until they pick one, or on the published site
+// until its opening pace stands in for one. Distinct from paceChoice,
 // which is what the world on screen is being held at: the two differ exactly
 // while a Tactics battle borrows Blitz over a slower preference, and this is
 // what the next full game goes back to.
@@ -7540,14 +7546,20 @@ function rememberPace(ms) {
   paceDisagreed = 0;
   try { localStorage.setItem(PACE_KEY, String(ms)); } catch (e) {}
 }
+// The published site opens at Lightning; a desktop build opens on whatever its
+// server reports. Soft in the same way as the Tactics default below: paceChoice
+// tells the module on its first frame and nothing reaches localStorage, so a
+// pace the viewer picked by hand still wins.
+const PUBLISHED_SITE_PACE_MS = 0;
 function restorePace() {
   const select = document.getElementById("specspeed");
   if (!select) return;
   let stored = null;
   try { stored = localStorage.getItem(PACE_KEY); } catch (e) {}
-  if (stored === null || stored === "") return;
-  const ms = +stored;
-  if (!Number.isFinite(ms) || !paceOffered(select, ms)) return;
+  const picked = stored === null || stored === "" ? NaN : +stored;
+  const ms = Number.isFinite(picked) && paceOffered(select, picked) ? picked
+    : window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;
+  if (ms === null) return;
   paceChoice = ms;
   pacePreference = ms;
   select.value = String(ms);
@@ -21325,6 +21337,125 @@ function drawPlanetChartMarginalia() {
   }
 }
 
+// The globe's half of the map's animation. `animateDiff` has always filled the
+// queues, but only the flat renderer drew and drained them, so on a globe (the
+// default world) a unit teleported, a blow landed with no number, and the
+// queues sat full for ever, which kept the page repainting as if something were
+// moving and held the GPU path off. A played game gets all of it; a watched one
+// stays still at this scale, as it always has, and only its queues are emptied.
+function drawCasualtyToken(d, x, y) {
+  const r = 10.5, tokenInk = unitTokenInk(d.owner), style = civ6UnitFlagStyle(d);
+  drawStrategicUnitCounter(x, y, r, style, pcol(d.owner), tokenInk, 1.6);
+  const seat = strategicUnitGlyphSeat(x, y, r, style);
+  drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+}
+function planetEffectsShown() {
+  return !SPEC && mapLens !== "empire";
+}
+function planetUnitWalk(unit, cellByKey, onSheet, now) {
+  const move = anim.moves.get(unit.id);
+  if (!move || !move.positions) return null;
+  const sample = sampleUnitMove(move, now);
+  if (sample.e >= 1) return null;
+  const from = cellByKey.get(key(move.positions[sample.leg]));
+  const to = cellByKey.get(key(move.positions[sample.leg + 1]));
+  const horizon = onSheet ?? .025;
+  if (!from || !to || from.center.z < horizon || to.center.z < horizon) return null;
+  return {
+    x: from.center.x + (to.center.x - from.center.x) * sample.local,
+    y: from.center.y + (to.center.y - from.center.y) * sample.local
+      - Math.abs(Math.sin(sample.local * Math.PI)) * 2.4,
+  };
+}
+function planetStrikeLunge(unit, cellByKey, onSheet, now) {
+  const strike = anim.strike;
+  if (!strike || strike.id !== unit.id) return null;
+  const from = cellByKey.get(key(strike.from)), to = cellByKey.get(key(strike.to));
+  if (!from || !to) return null;
+  const out = Math.sin(Math.min(1, (now - strike.t0) / 220) * Math.PI) * 0.42;
+  return {x: (to.center.x - from.center.x) * out, y: (to.center.y - from.center.y) * out};
+}
+// Land changing hands, drawn under the units.
+function drawPlanetClaims(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  for (const claim of anim.claims) {
+    const e = (now - claim.t0) / (claim.big ? 1500 : 1050);
+    const cell = cellByKey.get(key(claim.pos));
+    if (e >= 1 || !cell || cell.center.z < (onSheet ?? .02)) continue;
+    const color = pcol(claim.owner);
+    cx.save();
+    cx.globalAlpha = (1 - e) * (claim.big ? 0.42 : 0.28);
+    cx.fillStyle = color;
+    planetPath(cx, cell.points); cx.fill();
+    cx.globalAlpha = (1 - e) * (claim.big ? 1 : 0.8);
+    cx.strokeStyle = color; cx.lineWidth = claim.big ? 3.4 : 2.2;
+    cx.stroke();
+    cx.restore();
+  }
+}
+// Casualties, sparks and numbers, above the units and tied to their tiles so a
+// camera moving under them carries them along.
+function drawPlanetCombatEffects(cellByKey, onSheet, now) {
+  if (!planetEffectsShown()) return;
+  const at = pos => {
+    const cell = cellByKey.get(key(pos));
+    return cell && cell.center.z >= (onSheet ?? .02) ? cell.center : null;
+  };
+  for (const death of anim.deaths) {
+    const e = Math.max(0, (now - death.t0) / death.dur);
+    const spot = at(death.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.translate(spot.x, spot.y + e * 5);
+    cx.rotate((death.owner % 2 ? 1 : -1) * e * 1.2);
+    drawCasualtyToken(death, 0, 0);
+    cx.restore();
+  }
+  for (const spark of anim.sparks) {
+    const e = (now - spark.t0) / 200;
+    const spot = at(spark.pos);
+    if (e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = 1 - e;
+    cx.strokeStyle = "#ffd977"; cx.lineWidth = 2.2;
+    for (let a = 0; a < 6; a++) {
+      const angle = a * 1.047 + 0.3, r1 = 4 + e * 12, r2 = 8 + e * 15;
+      cx.beginPath();
+      cx.moveTo(spot.x + Math.cos(angle) * r1, spot.y + Math.sin(angle) * r1 * 0.7);
+      cx.lineTo(spot.x + Math.cos(angle) * r2, spot.y + Math.sin(angle) * r2 * 0.7);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+  cx.font = "bold 13px sans-serif"; cx.textAlign = "center";
+  for (const float of anim.floats) {
+    const e = (now - float.t0) / 700;
+    const spot = float.pos ? at(float.pos) : null;
+    if (e < 0 || e >= 1 || !spot) continue;
+    cx.save();
+    cx.globalAlpha = e < 0.75 ? 1 : (1 - e) * 4;
+    const y = spot.y - (float.rise ?? 16) - e * 16;
+    cx.lineWidth = 3; cx.strokeStyle = "#10151d";
+    cx.strokeText(float.txt, spot.x, y);
+    cx.fillStyle = float.col; cx.fillText(float.txt, spot.x, y);
+    cx.restore();
+  }
+}
+// Whatever has run its time goes, drawn or not: a tile behind the planet still
+// finishes its pulse, and a watched world must not fill these for ever.
+function retirePlanetEffects(now) {
+  for (const [id, move] of anim.moves) if (now - move.t0 >= move.dur) anim.moves.delete(id);
+  const live = (list, life) => {
+    for (let i = list.length - 1; i >= 0; i--)
+      if (now - list[i].t0 >= life(list[i])) list.splice(i, 1);
+  };
+  live(anim.claims, claim => claim.big ? 1500 : 1050);
+  live(anim.deaths, death => death.dur);
+  live(anim.sparks, () => 200);
+  live(anim.floats, () => 700);
+  if (anim.strike && now - anim.strike.t0 >= 220) anim.strike = null;
+}
 function drawPlanetMap() {
   cityPlateBoxes = [];
   if (!planetMap()) { planetGpuHide(); return false; }
@@ -21580,26 +21711,34 @@ function drawPlanetMap() {
   }
   const visibleUnits = empireLens ? [] : state.units;
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  drawPlanetClaims(cellByKey, onSheet, now);
+  drawSitePicksPlanet(cellByKey, onSheet);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
-  // Use the same stable tile layout as the flat command map. The globe has no
-  // in-flight unit animation, so every overview marker on a cell belongs here.
-  const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
+  // Use the same stable tile layout as the flat command map. A unit on the
+  // move is left out of the stacks, and a played game walks it along its route.
+  const showEffects = planetEffectsShown();
+  const planetUnitStacks = strategicUnitStackSlots(visibleUnits,
+    showEffects ? anim.moves : undefined);
   for (const unit of visibleUnits) {
     const cell = cellByKey.get(key(unit.pos));
     if (!cell || cell.center.z < (onSheet ?? .025)) continue;
     const outline = sel?.id === unit.id ? 2.3 : 1.2;
+    const walking = showEffects ? planetUnitWalk(unit, cellByKey, onSheet, now) : null;
     let stack = strategicUnitStackPlacement(
       planetUnitStacks, unit, planetCellInradius(cell), outline);
-    stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
+    if (!walking)
+      stack = strategicResourceUnitPlacement(cell.tile, stack, planetCellInradius(cell));
     const r = stack.r;
     // A singleton stays centred; a stack takes stable, gently overlapping
     // seats around it. Let stacked tokens cross the individual face edge a
     // little instead of cutting their already-reduced silhouettes flat.
-    const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
+    const lunge = showEffects ? planetStrikeLunge(unit, cellByKey, onSheet, now) : null;
+    const ux = (walking?.x ?? cell.center.x) + stack.x + (lunge?.x ?? 0);
+    const uy = (walking?.y ?? cell.center.y) + stack.y + (lunge?.y ?? 0);
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
-    const commandTokenClip = !stack.stacked;
+    const commandTokenClip = !stack.stacked && !walking && !lunge;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     const style = civ6UnitFlagStyle(unit);
     drawStrategicUnitCounter(ux, uy, r, style, pcol(unit.owner),
@@ -21611,6 +21750,7 @@ function drawPlanetMap() {
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
+  drawPlanetCombatEffects(cellByKey, onSheet, now);
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
@@ -21645,6 +21785,7 @@ function drawPlanetMap() {
   // Last, and in screen space: a detonation's flash washes the frame itself,
   // exactly as it does over the flat board.
   drawNuclearFlash(now);
+  retirePlanetEffects(now);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -22225,6 +22366,7 @@ function drawScene() {
     hexPath(cx2, cy2, S * (0.7 + e * (grow + 0.3))); cx.stroke();
     cx.globalAlpha = 1;
   }
+  drawSitePicksFlat();
   // --- movement / attack highlights
   for (const k in hl) {
     const [q, r] = k.split(",").map(Number);
@@ -22571,12 +22713,7 @@ function drawScene() {
     cx.translate(d.x, d.y + e * 5);
     cx.rotate((d.owner % 2 ? 1 : -1) * e * 1.2);
     cx.translate(-d.x, -d.y);
-    const r = 10.5;
-    const tokenInk = unitTokenInk(d.owner);
-    const style = civ6UnitFlagStyle(d);
-    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
-    drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
+    drawCasualtyToken(d, d.x, d.y);
     cx.restore();
     cx.globalAlpha = 1;
   }
@@ -26979,6 +27116,73 @@ function openCityScreen(id) {
 function closeCityScreen() {
   document.getElementById("cityscreen").classList.remove("open");
 }
+// Choosing a tile on the map. Where a district goes decides what it is worth,
+// and a list of coordinates says nothing about that: the map does. The city
+// screen steps aside, the district's own lens shows what each tile would give,
+// and the tiles this city could use are outlined. Anything else clicked is
+// ignored, and Escape goes back to the city.
+let sitePick = null;
+function beginSitePick(cityId, itemId) {
+  const actions = state.legal_actions.filter(action => action.type === "produce" &&
+    action.city === cityId && action.item.pos && itemKey(action.item) === itemId);
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  if (!actions.length || !city) return;
+  const item = actions[0].item;
+  sitePick = {cityId, lens: mapLens,
+    sites: new Map(actions.map(action => [key(action.item.pos), action]))};
+  closeCityScreen();
+  sel = null; selCity = city;
+  if (item.district) { mapLens = districtLensId(item.district); syncMapLensControls(); }
+  document.getElementById("site-pick-text").textContent =
+    `Place ${itemPlainName(item)}: choose a tile`;
+  document.getElementById("site-pick").hidden = false;
+  document.body.classList.add("site-picking");
+  centerOn(city.pos);
+  modeline(); draw(); drawUbar();
+}
+function endSitePick() {
+  if (!sitePick) return;
+  mapLens = sitePick.lens;
+  sitePick = null;
+  document.getElementById("site-pick").hidden = true;
+  document.body.classList.remove("site-picking");
+  syncMapLensControls(); modeline(); draw();
+}
+function cancelSitePick() {
+  const cityId = sitePick?.cityId;
+  endSitePick();
+  if (cityId !== undefined) openCityScreen(cityId);
+}
+function chooseSite(pos) {
+  const action = sitePick.sites.get(key(pos));
+  if (!action) return;
+  endSitePick();
+  send(action);
+}
+document.getElementById("site-pick-cancel").onclick = cancelSitePick;
+function outlineSitePick() {
+  cx.fillStyle = "#f0d28c33"; cx.fill();
+  cx.strokeStyle = "#f0d28c"; cx.lineWidth = 2.6; cx.stroke();
+}
+function drawSitePicksPlanet(cellByKey, onSheet) {
+  if (!sitePick) return;
+  for (const site of sitePick.sites.keys()) {
+    const cell = cellByKey.get(site);
+    if (!cell || cell.center.z < (onSheet ?? .02)) continue;
+    planetPaintPath(cx, cell, .15);
+    outlineSitePick();
+  }
+}
+function drawSitePicksFlat() {
+  if (!sitePick) return;
+  for (const site of sitePick.sites.keys()) {
+    const [q, r] = site.split(",").map(Number);
+    const tile = TMAP.get(site);
+    const [x, y] = hexXY(q, r);
+    hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
+    outlineSitePick();
+  }
+}
 async function sendFromCity(action) {
   await send(action);
   if (cityScreenOpen()) drawCityScreen();
@@ -27184,12 +27388,13 @@ function drawCityScreen() {
         const isCurrent = itemKey(entry.item) === currentKey;
         const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
         const note = itemNote(entry.item);
-        // One site: a plain Produce. Several: name the tiles, because where a
-        // district goes decides what it is worth.
+        // One site: a plain Produce. Several: the choice is made on the map,
+        // because where a district goes decides what it is worth.
         const sites = entry.sites.length > 1
-          ? `<div class="build-sites">` + entry.sites.map(action =>
-              cityAct(action, `@ ${action.item.pos.join(",")}`, "",
-                "Found it on this tile")).join("") + `</div>`
+          ? `<div class="build-actions"><button class="primary" type="button" ` +
+            `title="See where it could go and what each tile would give" ` +
+            `onclick='beginSitePick(${city.id},${JSON.stringify(itemKey(entry.item))})'>` +
+            `Choose a tile · ${entry.sites.length} sites</button></div>`
           : entry.sites.length === 1
             ? `<div class="build-actions">` +
               cityAct(entry.sites[0], isCurrent ? "Producing" : "Produce",
@@ -27201,7 +27406,8 @@ function drawCityScreen() {
                 "Pay for it outright")).join("") + `</div>`
           : "";
         return `<div class="build-item ${isCurrent ? "current" : ""}">` +
-          `<div class="build-row"><span class="build-name">${titleCase(itemName(entry.item))}</span>` +
+          `<div class="build-row"><span class="build-name">${entry.sites.length > 1
+            ? itemPlainName(entry.item) : titleCase(itemName(entry.item))}</span>` +
           `<span class="build-cost">${Math.round(cost)} ⚙ · ` +
           `${turns === Infinity ? "—" : `${turns}t`}</span></div>` +
           (note ? `<div class="build-note">${note}</div>` : "") +
@@ -27370,6 +27576,11 @@ function drawUbar() {
     if (a.type === "convert_barbarians")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
+  // The verb a new player looks for. Right-click is the fast way, and nothing
+  // on screen would ever tell them so.
+  if (u.moves_left > 0)
+    h += `<button title="Click where this unit should go. Right-click a tile does the same." ` +
+      `onclick='setInterfaceMode("move_to")'>➜ Move</button>`;
   // Standing orders close the loop: a unit the player has answered for stops
   // asking, and the End Turn button stops counting it.
   const standing = unitOrder(u);
@@ -27424,6 +27635,10 @@ function itemName(it) {
     return (it.unit + " " + formationName(it.unit, it.formation)).replaceAll("_", " ");
   }
   return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
+}
+// A name with no tile in it, for when the tile is the thing being chosen.
+function itemPlainName(it) {
+  return titleCase(it.wonder || it.district || itemName(it));
 }
 function prodGlyph(it) {
   if (it.building) return BLDG_ICON[it.building] || "🏛";
@@ -32292,7 +32507,7 @@ cv.addEventListener("click", ev => {
   }
   // A plate is a button: your own opens that city, wherever the plate has
   // drifted relative to the tiles under it.
-  if (!tackMode && !interfaceMode && !SPEC && state) {
+  if (!tackMode && !interfaceMode && !sitePick && !SPEC && state) {
     const plate = cityPlateAt(sx, sy);
     const city = plate && state.cities.find(candidate => candidate.id === plate.city);
     if (city && city.owner === 0) {
@@ -32306,6 +32521,7 @@ cv.addEventListener("click", ev => {
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
+  if (sitePick) { chooseSite(pos); return; }
   if (tackMode) {
     const i = tacks.findIndex(t => t[0] === pos[0] && t[1] === pos[1]);
     if (i >= 0) tacks.splice(i, 1); else tacks.push([pos[0], pos[1]]);
@@ -32342,6 +32558,19 @@ cv.addEventListener("click", ev => {
   const ours = city && city.owner === 0 ? city : null;
   // Clicking your city opens it. A garrison does not get in the way: the click
   // takes each unit on the tile in turn, and the one after the last is the city.
+  // A tile the selected unit could go to or strike, clicked. A mouse orders
+  // with the right button, as Civ 6 does, so a stray click cannot march an army;
+  // it keeps the selection and says how. A touch screen has no right button, so
+  // a tap there is the order.
+  if (sel && !here.length && !ours && unitCanBeOrderedTo(k)) {
+    if (mapPointerType === "touch") {
+      clearUnitIntel();
+      issueSelectedUnitOrder(pos);
+    } else {
+      showMapHint(ev.clientX, ev.clientY, strikeAt(pos) ? "Right-click to attack" : "Right-click to move here");
+    }
+    return;
+  }
   const held = sel ? here.findIndex(u => u.id === sel.id) : -1;
   if (ours && here.length && held === here.length - 1) {
     selCity = ours; sel = null;
@@ -32367,6 +32596,23 @@ cv.addEventListener("click", ev => {
 
 // A right/secondary press previews the destination, and release commits the
 // move or attack. Left click remains a selection gesture unless a map verb is armed.
+let mapPointerType = "mouse";
+cv.addEventListener("pointerdown", event => { mapPointerType = event.pointerType || "mouse"; });
+function unitCanBeOrderedTo(tile) {
+  return (sel.reachable || []).some(reachable => key(reachable) === tile) ||
+    state.legal_actions.some(action => action.unit === sel.id && action.target &&
+      ["attack", "ranged", "theological_attack"].includes(action.type) && key(action.target) === tile);
+}
+let mapHintTimer = null;
+function showMapHint(x, y, text) {
+  const hint = document.getElementById("map-hint");
+  hint.textContent = text;
+  hint.style.left = `${x}px`;
+  hint.style.top = `${y}px`;
+  hint.hidden = false;
+  clearTimeout(mapHintTimer);
+  mapHintTimer = setTimeout(() => { hint.hidden = true; }, 1600);
+}
 function issueSelectedUnitOrder(pos) {
   if (!sel || SPEC || !state) return false;
   const k = key(pos);
@@ -33400,17 +33646,18 @@ function actionOptionsFor(next) {
       seen.get(key).sites.push(action);
     }
     const entries = [...seen.values()].sort((a, b) => itemCost(a.item) - itemCost(b.item));
-    const screen = `openCityScreen(${cityId})`;
     return entries.slice(0, ACTION_OPTION_CAP).map(entry => {
+      const key = itemKey(entry.item);
       const cost = itemCost(entry.item);
       const turns = turnsFor(cost, perTurn, 0);
       const several = entry.sites.length > 1;
-      const name = titleCase(itemName(entry.item));
+      const name = several ? itemPlainName(entry.item) : titleCase(itemName(entry.item));
       return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
         name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
         note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
-        onclick: several ? screen : `send(${JSON.stringify(entry.sites[0])})`,
-        title: several ? "Several tiles could take it — choose one in the city screen"
+        onclick: several ? `beginSitePick(${cityId},${JSON.stringify(key)})`
+          : `send(${JSON.stringify(entry.sites[0])})`,
+        title: several ? "Several tiles could take it — choose one on the map"
           : `Produce ${name} in ${city ? city.name : "this city"}`});
     }).join("") + actionMore(entries.length, screen, `${city ? city.name : "City"} — city screen`);
   }
@@ -33531,6 +33778,7 @@ function openTurnIfNew() {
   refreshSaves();
   const first = loopTurn === null;
   loopTurn = state.turn;
+  if (sitePick) endSitePick();
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
   if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
@@ -34007,6 +34255,7 @@ document.addEventListener("keydown", ev => {
   // and the one the person meant is the one they had just tabbed to.
   if ((ev.key === " " || ev.key === "Enter") && (tag === "BUTTON" || tag === "A" ||
       (document.activeElement || {}).getAttribute?.("role") === "button")) return;
+  if (ev.key === "Escape" && sitePick) { cancelSitePick(); ev.preventDefault(); return; }
   // A modal screen owns the keyboard while it is up. Escape closes the
   // topmost one before any global action is considered.
   if (ev.key === "Escape" && closeTopmostScreen()) { ev.preventDefault(); return; }

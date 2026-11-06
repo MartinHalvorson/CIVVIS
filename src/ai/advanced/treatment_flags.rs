@@ -2066,6 +2066,10 @@ impl AdvancedAi {
         /// Opt-in gene `science-seat-allies-2`; see
         /// `advanced/culture_seat_allies.rs`.
         science_seat_allies_2 => enable_science_seat_allies_2, disable_science_seat_allies_2;
+        /// Opt-in gene `science-seat-races-the-congress`: a live-only ballot
+        /// change; see `CivvisCongressRacer` in `CivvisControlAgent.lua`.
+        science_seat_races_the_congress => enable_science_seat_races_the_congress,
+            disable_science_seat_races_the_congress;
         /// Opt-in gene `capital-walls-at-any-ratio`; see
         /// [`Self::capital_walls_at_any_ratio`].
         capital_walls_at_any_ratio => enable_capital_walls_at_any_ratio, disable_capital_walls_at_any_ratio;
@@ -2296,6 +2300,9 @@ impl AdvancedAi {
         /// Opt-in gene `sea-scout-claims-the-queue`; see
         /// `advanced/contact_fleet.rs`.
         sea_scout_claims_the_queue => enable_sea_scout_claims_the_queue, disable_sea_scout_claims_the_queue;
+        /// Opt-in gene `wounded-ship-sails-on`; see
+        /// `advanced/wounded_ship_sails_on.rs`.
+        wounded_ship_sails_on => enable_wounded_ship_sails_on, disable_wounded_ship_sails_on;
     }
 }
 
@@ -5301,6 +5308,16 @@ impl AdvancedAi {
     /// The twin of `enable_nusantara_reads_the_coast`.
     pub fn disable_nusantara_reads_the_coast(&mut self) {
         self.nusantara_reads_the_coast = false;
+    }
+
+    /// Opt-in committed launch relocation; see `governor_dividends/pingala_launch`.
+    pub fn enable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = true;
+    }
+
+    /// Withhold the committed launch relocation.
+    pub fn disable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = false;
     }
 
     /// Opt-in gene `field-reads-the-tile-it-leaves`; see

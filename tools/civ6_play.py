@@ -1403,6 +1403,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # `science-seat-allies`: the same for a Science seat.
         "ScienceAllies": bool(args.civvis_decides
                               and "science-seat-allies" in (getattr(args, "civvis_with", []) or [])),
+        # `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
+        # ballot runs the racer (`CivvisCongressRacer`, CivvisControlAgent.lua).
+        "ScienceCongressRacer": bool(args.civvis_decides
+                                     and "science-seat-races-the-congress"
+                                     in (getattr(args, "civvis_with", []) or [])),
         # `military-alliance-shield` (src/ai/advanced/military_alliance_shield.rs):
         # its Military Alliance ask reaches the host on every lane. The live
         # binary keeps only that desk's own ask while the tag is armed.

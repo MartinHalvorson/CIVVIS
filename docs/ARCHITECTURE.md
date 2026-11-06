@@ -69,7 +69,8 @@ CLI / HTTP server / browser / WASM / evaluation tools
   rendering edits. Native, beta, and WASM delivery all serve the same pair,
   plus `web/assets/app_moments.js` (sound and payoff banners, which only read
   the turn's events) and `web/assets/app_frontdoor.js`, the main menu, Create
-  Game and game menu screens that only the published site shows. The front door
+  Game and game menu screens that only the published site shows. The site lands
+  on the live AI game: the menu opens only at `?menu` or from inside a game. It
   holds no game logic of its own: it writes the same setup controls and calls
   the same start.
   The same Rust engine is compiled for native and WASM use.

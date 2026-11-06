@@ -50,6 +50,18 @@ fn front_door_starts_games_through_the_setup_path_and_only_on_the_published_site
     assert!(EMBEDDED_APP_FRONTDOOR_JS.contains("window.CIVVIS_PUBLISHED_BUILD"));
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST"));
+    // civvis.ai lands on the AI game: at load, only `?menu` opens this screen.
+    let wanted = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("function frontDoorWanted() {")
+        .unwrap()
+        .1
+        .split_once("\n}\n")
+        .unwrap()
+        .0;
+    assert_eq!(
+        wanted.trim(),
+        r#"return frontDoorHost() && new URLSearchParams(location.search).has("menu");"#
+    );
     // It loads last, because it reads what the other scripts declare, and the
     // address it is served from is the one the page asks for.
     let setup = EMBEDDED_INDEX_HTML.find("/assets/app_setup.js").unwrap();
@@ -3554,6 +3566,31 @@ fn a_battlefield_request_is_flat_bounded_and_without_city_states() {
 /// ordered smallest-first and why this is pinned: reordering the rows
 /// would silently move every such caller onto a different world, and a
 /// diameter-8 sweep would quietly become a diameter-20 one.
+#[test]
+fn a_globe_draws_and_drains_everything_the_map_animates() {
+    // `animateDiff` fills the queues on every world and only the flat renderer
+    // read them. On a globe, the default world, units teleported, blows landed
+    // with no number, and the full queues kept the page repainting for ever.
+    let planet = EMBEDDED_APP_JS
+        .split_once("function drawPlanetMap() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("drawPlanetMap is a top-level function")
+        .0;
+    for pass in [
+        "drawPlanetClaims(cellByKey, onSheet, now);",
+        "planetUnitWalk(unit, cellByKey, onSheet, now)",
+        "planetStrikeLunge(unit, cellByKey, onSheet, now)",
+        "drawPlanetCombatEffects(cellByKey, onSheet, now);",
+        "retirePlanetEffects(now);",
+    ] {
+        assert!(planet.contains(pass), "the globe lost {pass}");
+    }
+    // Screen points mean nothing on a turning world: each effect keeps its tile.
+    assert!(EMBEDDED_APP_JS.contains("mapPoints, steps, positions,"));
+    assert_eq!(EMBEDDED_APP_JS.matches("t0: now, pos: nu.pos").count(), 1);
+    assert_eq!(EMBEDDED_APP_JS.matches("pos: nc.pos, rise: 20").count(), 1);
+}
+
 #[test]
 fn a_tactics_globe_request_without_dimensions_gets_the_smallest_of_its_ladder() {
     let planet = new_game_params(
@@ -7362,7 +7399,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // Strategic combat stays diagrammatic: damage labels and compact hit
     // sparks, without a second cinematic effects renderer.
     assert!(EMBEDDED_INDEX.contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
-    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
+    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now, pos: nu.pos });"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
     assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
     assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
@@ -7855,18 +7892,18 @@ fn the_deck_menu_holds_its_place_while_a_section_scrolls() {
 }
 
 /// The first world a civvis.ai visitor ever waits on is the smallest
-/// stock one: four majors on the Tiny Lakes globe, sized by the shipped
-/// table, its heat scattered rather than banded by latitude, spectated,
-/// at Online speed, one seat at a time. The browser build's
+/// stock one: four majors on the Tiny Tennis Ball globe, sized by the
+/// shipped table, its heat scattered rather than banded by latitude,
+/// spectated, at Online speed, one seat at a time. The browser build's
 /// `wasm::opening_params` is this function with the page's seed, so the
 /// contract is tested here, where the suite actually runs.
 #[test]
-fn the_stock_opening_world_is_the_tiny_lakes_exhibition() {
+fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     let params = stock_opening_params(7);
     let size = MapSize::for_players(params.num_players);
 
     assert_eq!(params.num_players, 4);
-    assert_eq!(params.map_script, MapScript::Lakes);
+    assert_eq!(params.map_script, MapScript::TeninsBall);
     assert_eq!(params.map_topology, MapTopology::Planet);
     assert_eq!(params.map_poles, MapPoles::Randomized);
     assert!(!params.map_poles.has_poles());
@@ -7880,6 +7917,30 @@ fn the_stock_opening_world_is_the_tiny_lakes_exhibition() {
     assert_eq!(params.turn_structure, TurnStructure::Sequential);
     assert_eq!(params.mercy_rule, None);
     assert_eq!(params.seed, 7);
+}
+
+/// civvis.ai opens at Lightning without a desktop build moving: the choice
+/// is the viewer's, gated to the hosts that serve the published site, and it
+/// never reaches `localStorage`, so a pace somebody picked by hand still wins.
+/// The markup's own Blitz is what a desktop page shows before its server
+/// reports in.
+#[test]
+fn the_published_site_opens_at_lightning_as_a_soft_choice() {
+    assert!(EMBEDDED_INDEX.contains(
+        "window.CIVVIS_PUBLISHED_SITE = /(^|\\.)civvis\\.ai$|\\.pages\\.dev$/.test(location.hostname);"
+    ));
+    assert!(EMBEDDED_INDEX.contains("const PUBLISHED_SITE_PACE_MS = 0;"));
+    assert!(
+        EMBEDDED_INDEX.contains(": window.CIVVIS_PUBLISHED_SITE ? PUBLISHED_SITE_PACE_MS : null;")
+    );
+    assert!(EMBEDDED_INDEX.contains("<option value=\"500\" selected>Blitz</option>"));
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches("localStorage.setItem(PACE_KEY")
+            .count(),
+        1,
+        "only a hand-picked pace is remembered"
+    );
 }
 
 /// The product is hard-committed to sequential turns: the stock world
@@ -8868,6 +8929,37 @@ fn hovering_a_target_forecasts_the_blow_through_every_build() {
     assert!(client.contains("const strike = strikeAt(pos);"));
     assert!(client.contains("if (!strike) { hideForecast(); return; }"));
     assert!(EMBEDDED_INDEX.contains("id=\"combat-forecast\""));
+}
+
+#[test]
+fn a_choice_of_tiles_is_made_on_the_map() {
+    // Where a district goes decides what it is worth, and the screen offered
+    // coordinates. Both renderers outline the sites, because the default world
+    // is a globe and a flat-only pass would reach nobody.
+    assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
+    assert!(EMBEDDED_APP_JS.contains("onclick='beginSitePick(${city.id},"));
+    assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
+    assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
+    // A click belongs to the picker before anything else reads it, and a turn
+    // that opens underneath it ends it rather than leaving stale actions armed.
+    assert!(EMBEDDED_APP_JS.contains("if (sitePick) { chooseSite(pos); return; }"));
+    assert!(EMBEDDED_APP_JS.contains("loopTurn = state.turn;\n  if (sitePick) endSitePick();"));
+    assert!(EMBEDDED_INDEX.contains("id=\"site-pick\""));
+}
+
+#[test]
+fn a_player_can_find_out_how_to_move() {
+    // Right-click was the only way to move, and nothing said so. The unit panel
+    // carries the verb, a mouse is told, and a touch screen, which has no right
+    // button, orders with the tap.
+    assert!(EMBEDDED_APP_JS.contains("onclick='setInterfaceMode(\"move_to\")'>➜ Move</button>"));
+    assert!(EMBEDDED_APP_JS.contains("if (mapPointerType === \"touch\") {"));
+    assert!(EMBEDDED_APP_JS.contains("\"Right-click to move here\""));
+    assert!(EMBEDDED_INDEX.contains("id=\"map-hint\""));
+    // A click on your own unit or city stays a selection.
+    assert!(
+        EMBEDDED_APP_JS.contains("if (sel && !here.length && !ours && unitCanBeOrderedTo(k)) {")
+    );
 }
 
 #[test]
@@ -14552,7 +14644,7 @@ fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
         .find("const plate = cityPlateAt(sx, sy);")
         .expect("the map click looks for a plate");
     let tile = EMBEDDED_APP_JS
-        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (tackMode)")
+        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (sitePick)")
         .expect("the map click reads its tile");
     assert!(plate < tile);
     assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));
@@ -14579,4 +14671,18 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
     assert!(EMBEDDED_APP_JS
         .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
+}
+
+#[test]
+fn a_boost_is_announced_once_and_not_on_a_loaded_game() {
+    let boosts = EMBEDDED_APP_MOMENTS_JS
+        .split_once("function boostMoments() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("boostMoments is a top-level function")
+        .0;
+    // The first look at a world takes attendance, or every load would replay
+    // every boost the save holds.
+    assert!(boosts.contains("if (!before) return [];"));
+    assert!(boosts.contains("filter(id => !before.has(id))"));
+    assert!(EMBEDDED_APP_MOMENTS_JS.contains("...boostMoments()]"));
 }
