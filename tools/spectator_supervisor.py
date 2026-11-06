@@ -67,7 +67,6 @@ OPERATOR_HALT_POLL_SECONDS = 5.0
 
 MAP_TYPES = (
     "land_only",
-    # The stock opening world's own map, and so the default below.
     "lakes",
     "inland_sea",
     "pangaea",
@@ -76,8 +75,9 @@ MAP_TYPES = (
     "islands",
     "water_world",
     "true_start_earth",
-    # Listed so the exhibition can roll it at all: leaving a world out of this
-    # tuple is the one way it becomes unreachable from here.
+    # The stock opening world's own map, and so the default below. Listed so
+    # the exhibition can roll it at all: leaving a world out of this tuple is
+    # the one way it becomes unreachable from here.
     "tenins_ball",
 )
 MAP_SHAPES = ("flat", "planet")
@@ -1708,7 +1708,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--map",
         choices=MAP_TYPES,
-        default="lakes",
+        default="tenins_ball",
     )
     parser.add_argument("--shape", choices=MAP_SHAPES, default="planet")
     # These defaults are not free choices: `verify_default_contract` in
