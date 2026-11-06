@@ -7357,6 +7357,10 @@ pub struct AdvancedAi {
     /// Off by default.
     early_cities_keep_their_distance: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `government-reach-pays-the-switch`: a seat holding its listed
+    /// government takes `government-capacity-fallback`'s reach only for a
+    /// real gain in slots. See `advanced/government_reach.rs`. Off by default.
+    government_reach_pays_the_switch: bool,
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
     /// `advanced/gold_buys_the_opening_builder.rs`. Off by default.
@@ -10711,6 +10715,8 @@ mod expansion_scales_with_difficulty;
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
 mod government_ladder;
+/// `government-reach-pays-the-switch`: see `advanced/government_reach.rs`.
+mod government_reach;
 mod governor_dividends;
 mod higher_level_strategy;
 /// `land-grab-outlasts-the-opening`: see `advanced/land_grab_outlasts.rs`.
@@ -12274,6 +12280,7 @@ impl AdvancedAi {
             fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
+            government_reach_pays_the_switch: false,
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
@@ -17109,6 +17116,12 @@ impl AdvancedAi {
                 .filter(|name| unlocked(name))
                 .map(|name| (capacity(name), name.to_string()))
                 .filter(|(slots, _)| *slots > listed)
+                // `government-reach-pays-the-switch`: a seat in its listed
+                // pick stays for a small gain. See
+                // `advanced/government_reach.rs`.
+                .filter(|(slots, _)| {
+                    !self.government_reach_holds(g, pid, choice.as_deref(), *slots, listed)
+                })
                 // Keys iterate in sorted order; the reversed name keeps the
                 // first of an equal-capacity pair, so the pick is stable.
                 .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
