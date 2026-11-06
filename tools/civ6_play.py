@@ -5562,7 +5562,6 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "ProbeCitizens": getattr(args, "probe_citizens", None),
             "CampusSpecialist": getattr(args, "campus_specialist", None),
             "OrderQueue": getattr(args, "order_queue", None),
-            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
             "CapMovesToReach": getattr(args, "cap_moves_to_reach", None),
             "SettlerEscortCapSync": getattr(args, "settler_escort_cap_sync", None),
             "CancelQueuedPaths": getattr(args, "cancel_queued_paths", None),
@@ -5577,6 +5576,7 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": getattr(args, "tile_delta", None),
+            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         "city_two_turn": (sorted(state.get("founds") or [])[1]
                           if len(state.get("founds") or []) >= 2 else None),
@@ -6991,7 +6991,6 @@ def _play(args: argparse.Namespace) -> int:
             # §9). Each is an A/B axis: a row that does not say which were on
             # cannot be compared with one that does.
             "OrderQueue": args.order_queue,
-            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
             "CapMovesToReach": args.cap_moves_to_reach,
             "SettlerEscortCapSync": args.settler_escort_cap_sync,
             "CancelQueuedPaths": args.cancel_queued_paths,
@@ -7006,6 +7005,7 @@ def _play(args: argparse.Namespace) -> int:
             "ActionTransitions": getattr(args, "action_transitions", False),
             "IsolatedActionProbes": getattr(args, "isolated_action_probes", False),
             "TileDelta": args.tile_delta,
+            **{key: getattr(args, attr, None) for attr, key, _ in ORDER_QUEUE_TIMINGS},
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -7684,11 +7684,11 @@ def main(argv: list[str] | None = None) -> int:
                          "and placement live; setup/recovery may still use the GUI")
     ap.add_argument("--status", action="store_true")
     args = ap.parse_args(raw_argv)
+    apply_tree_mod_arms(args)
     try:
         order_queue_timing_config(args)
     except ValueError as exc:
         ap.error(str(exc))
-    apply_tree_mod_arms(args)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
     GAME_VFRACTION = args.window_vfrac
