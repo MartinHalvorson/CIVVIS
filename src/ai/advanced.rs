@@ -5109,6 +5109,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Research parity compares wounded land units against field targets.
+    barbarian_research_prices_the_field: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
@@ -8850,8 +8852,6 @@ pub struct AdvancedAi {
     science_chain_crosses_window: bool,
     /// A host-quoted short first Science Campus before a longer repeated Settler.
     science_campus_before_repeat_settler: bool,
-    /// Research parity compares wounded land units against field targets.
-    barbarian_research_prices_the_field: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -11747,6 +11747,7 @@ impl AdvancedAi {
             // pull requests merging cleanly. A gene needs no line here; they go in
             // a follow-up once those have landed.
             // ---- append: a-b ----------------------------------------
+            barbarian_research_prices_the_field: false,
             // ---- append: c-d ----------------------------------------
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
@@ -11766,7 +11767,6 @@ impl AdvancedAi {
             science_foundation_before_backlog: false,
             science_chain_crosses_window: false,
             science_campus_before_repeat_settler: false,
-            barbarian_research_prices_the_field: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,

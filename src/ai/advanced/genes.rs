@@ -5199,8 +5199,6 @@ pub const GENES: &[Gene] = &[
     // Native Indonesia offered a five-turn first Campus while a repeated
     // Settler needed eight turns and another was walking. Unpriced opt-in.
     Gene { tag: "science-campus-before-repeat-settler", field: "science_campus_before_repeat_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_science_campus_before_repeat_settler, disable: AdvancedAi::disable_science_campus_before_repeat_settler },
-    // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
-    Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
     // On the Science seat's losing-war turns, 309 of 664 queue decisions
     // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
     // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
@@ -5426,6 +5424,8 @@ pub const GENES: &[Gene] = &[
     // `advanced/diplo_statue_harbor.rs`.
     Gene { tag: "science-seat-builds-the-statue", field: "science_seat_builds_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_builds_the_statue, disable: AdvancedAi::disable_science_seat_builds_the_statue },
     // ---- append: a-b ------------------------------------------------
+    // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
+    Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
