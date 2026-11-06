@@ -2162,6 +2162,7 @@ impl AdvancedAi {
         science_foundation_before_backlog => enable_science_foundation_before_backlog, disable_science_foundation_before_backlog;
         science_chain_crosses_window => enable_science_chain_crosses_window, disable_science_chain_crosses_window;
         science_campus_before_repeat_settler => enable_science_campus_before_repeat_settler, disable_science_campus_before_repeat_settler;
+        barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         /// Replace an obsolete native research path with a revealed launch milestone.
         revealed_launch_tech_takes_the_slot => enable_revealed_launch_tech_takes_the_slot, disable_revealed_launch_tech_takes_the_slot;
         /// Ask the native market for Coal serving ready research power.

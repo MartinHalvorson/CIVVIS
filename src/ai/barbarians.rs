@@ -356,6 +356,13 @@ impl BasicAi {
     /// are skipped so the AI does not beeline toward a unit it cannot field.
     pub(crate) fn barbarian_military_research_goal(g: &Game, pid: usize) -> Option<String> {
         Self::barbarian_strength_gap(g, pid)?;
+        Self::barbarian_military_upgrade_goal(g, pid)
+    }
+
+    /// Choose the upgrade after the caller establishes its quality alarm.
+    /// Keeping this separate lets an opt-in research alarm price the current
+    /// field army without changing production or Gold reserve decisions.
+    pub(crate) fn barbarian_military_upgrade_goal(g: &Game, pid: usize) -> Option<String> {
         let player = &g.players[pid];
         let mut goals: BTreeMap<Name, (f64, f64, usize)> = BTreeMap::new();
         for unit in g.units.values().filter(|unit| {

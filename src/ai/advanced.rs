@@ -8850,6 +8850,8 @@ pub struct AdvancedAi {
     science_chain_crosses_window: bool,
     /// A host-quoted short first Science Campus before a longer repeated Settler.
     science_campus_before_repeat_settler: bool,
+    /// Research parity compares wounded land units against field targets.
+    barbarian_research_prices_the_field: bool,
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
     spears_answer_the_horse: bool,
@@ -10941,6 +10943,7 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 
+mod barbarian_research_prices_the_field;
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -11763,6 +11766,7 @@ impl AdvancedAi {
             science_foundation_before_backlog: false,
             science_chain_crosses_window: false,
             science_campus_before_repeat_settler: false,
+            barbarian_research_prices_the_field: false,
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,
