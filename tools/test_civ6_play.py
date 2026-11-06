@@ -5178,7 +5178,7 @@ class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
 
     def test_a_win_keeps_the_full_hold(self) -> None:
         self.assertEqual(civ6_play.end_game_hold_seconds(
-            {"kind": "victory", "won": True}, 10.0), 10.0)
+            {"kind": "victory", "won": True}, 10.0), civ6_play.VICTORY_MOVIE_FALLBACK_S)
 
     def test_a_loss_or_elimination_is_a_short_look(self) -> None:
         for outcome in ({"kind": "victory", "won": False}, {"kind": "defeat"}, {}):
@@ -5194,6 +5194,47 @@ class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
         self.assertIn('hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)',
                       source)
         self.assertIn("time.sleep(hold)", source)
+
+
+class NativeVictoryMovieHold(unittest.TestCase):
+    def run_hold(self, start_at=None, finish_at=None, requested=10):
+        clock = [0.0]
+        sent = set()
+        rows = []
+        class Tail:
+            def poll(self):
+                events = []
+                for kind, instant in (("victory_movie_started", start_at),
+                                      ("victory_movie_finished", finish_at)):
+                    if instant is not None and clock[0] >= instant and kind not in sent:
+                        sent.add(kind); events.append(dict(kind=kind))
+                return events
+        with mock.patch.object(civ6_play.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(civ6_play.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds)):
+            civ6_play.hold_native_victory(Tail(), dict(kind="victory", won=True, turn=173), requested, rows.append)
+        return clock[0], rows
+
+    def test_movie_finishes_naturally_before_the_native_result_hold(self):
+        elapsed, rows = self.run_hold(start_at=2, finish_at=39)
+        self.assertGreaterEqual(elapsed, 42)
+        self.assertLess(elapsed, 43)
+        self.assertTrue(rows[-1]["complete"])
+        self.assertEqual(rows[-1]["kind"], "victory_presentation_complete")
+
+    def test_all_wins_play_the_movie_even_with_a_zero_screen_hold(self):
+        elapsed, rows = self.run_hold(start_at=1, finish_at=36.5, requested=0)
+        self.assertGreaterEqual(elapsed, 39.5)
+        self.assertTrue(rows[-1]["complete"])
+
+    def test_a_missing_movie_callback_cannot_claim_a_complete_recording(self):
+        elapsed, rows = self.run_hold()
+        self.assertGreaterEqual(elapsed, civ6_play.VICTORY_MOVIE_FALLBACK_S)
+        self.assertFalse(rows[-1]["complete"])
+
+    def test_a_stuck_movie_is_bounded_and_marked_incomplete(self):
+        elapsed, rows = self.run_hold(start_at=1)
+        self.assertGreaterEqual(elapsed, civ6_play.VICTORY_MOVIE_TIMEOUT_S)
+        self.assertFalse(rows[-1]["complete"])
 
 
 class DeitySetupLabelReadback(unittest.TestCase):

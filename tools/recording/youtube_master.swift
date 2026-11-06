@@ -441,7 +441,7 @@ if !hudItems.isEmpty && total > 0 && !existingMaster {
 // End card: the victory banner fades in over the panels for the last few
 // seconds, so the video ends on the result (the game's own victory screen is
 // not in frame by then).
-if !banner.isEmpty {
+if !banner.isEmpty && CommandLine.arguments.contains("--victory-banner") {
     let bw = Int(W * 0.78), bh = 420
     if let bctx = CGContext(data: nil, width: bw, height: bh, bitsPerComponent: 8, bytesPerRow: 0,
                             space: CGColorSpaceCreateDeviceRGB(),
@@ -476,7 +476,8 @@ if !banner.isEmpty {
     }
 }
 // Confirmed final result: hide the stale pre-victory board and its counters.
-if let result = hudItems.last, result["confirmed_result"] as? Bool == true {
+if CommandLine.arguments.contains("--confirmed-result-card"),
+   let result = hudItems.last, result["confirmed_result"] as? Bool == true {
     let resultAt = result["t"] as? Double ?? total
     let detail = result["result_detail"] as? String ?? ""
     let resultTitle = (result["race"] as? String ?? "Victory").components(separatedBy: " · ").first ?? "Victory"

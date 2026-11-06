@@ -63,21 +63,9 @@ local ERA_SCREENS = {
 	HistoricMoments = true, EraProgressPanel = true,
 };
 
--- ⚠⚠ THE ONE SCREEN THAT MUST NOT BE RUSHED, AND IT WAS THE MOST RUSHED OF ALL.
---
--- `EndGameMenu` is the victory/defeat screen — the only screen in a whole run
--- that states the OUTCOME. It had no clock of its own, so it took the general
--- announcement one, and `civ6_civvis_climb` sets that to 0.05s deliberately (a
--- popup must not sit on a map the operator is comparing against CIVVIS). The
--- result the run existed to produce was on screen for a twentieth of a second.
---
--- The operator's standing brief asks for ten seconds on the final screen, and the
--- reasoning that makes the other screens fast is exactly why this one is slow:
--- nothing is waiting behind it. The game is over.
---
--- ⚠ Held, not left open. The harness needs the screen CLOSED to tear the attempt
--- down and start the next one, and `reached_end_screen` keys on this very
--- `autoclose` event — so this changes when it fires, never whether it fires.
+-- EndGameMenu owns the native victory movie and result. The harness waits for
+-- its completion callback before shutting down; the ordinary popup close ladder
+-- must never skip that movie. The clock remains available for legacy config.
 local END_SECONDS = tonumber(cfg.EndGameSeconds) or 10.0;
 local END_SCREENS = { EndGameMenu = true };
 -- ⚠ The era clock is applied further down, AFTER `NAME` is declared. It used to
@@ -342,6 +330,42 @@ end
 -- file this replacement stands in front of.
 if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
 if not haveScreen() then pcall(function() include(NAME); end); end
+
+-- ReplaceUIScript bypasses the expansion add-ons unless we chain them too.
+-- Expansion2's Styles["VICTORY_DIPLOMATIC"] selects XP2Victory_Diplomatic.bk2.
+if END_SCREENS[NAME] then
+    if type(OnHistoricMoments) ~= "function" then
+        pcall(function() include("EndGameMenu_Expansion1"); end);
+    end
+    if type(Styles) == "table" and Styles["VICTORY_DIPLOMATIC"] == nil then
+        pcall(function() include("EndGameMenu_Expansion2"); end);
+    end
+end
+
+-- EndGameMenu.lua:1328 owns the natural movie-finished callback. Keep its
+-- handler and report the boundary so the harness can wait for the full movie.
+-- A result screen is never an ordinary popup to dismiss or Escape through.
+if END_SCREENS[NAME] and Controls ~= nil and Controls.Movie ~= nil then
+    local nativeMovieFinished = OnMovieExitOrFinished;
+    if type(nativeMovieFinished) == "function" then
+        Controls.Movie:SetMovieFinishedCallback(function()
+            report("victory_movie_finished");
+            nativeMovieFinished();
+        end);
+    end
+    local nativeReplay = OnReplayMovie;
+    if type(nativeReplay) == "function" then
+        OnReplayMovie = function(...)
+            nativeReplay(...);
+            if Controls.MovieFill ~= nil and Controls.MovieFill:IsVisible() then
+                report("victory_movie_started");
+            end
+        end;
+        if Controls.ReplayMovieButton ~= nil then
+            Controls.ReplayMovieButton:RegisterCallback(Mouse.eLClick, OnReplayMovie);
+        end
+    end
+end
 
 -- First contact is an information decision. Capture the actual, filtered
 -- selections through the shipped handler (DiplomacyActionView.lua:566-605).
@@ -1251,6 +1275,7 @@ else
 			dealForceClose = false;
 			return;
 		end
+		if END_SCREENS[NAME] then return; end -- the harness owns native victory playback
 		-- A leader screen can hide TopPanel while its own UI clock continues.
 		-- Use the same guarded agent wakeup here; keep deal holds and native
 		-- close handling below intact. One long frame produces only one pulse.

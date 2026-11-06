@@ -87,7 +87,7 @@ def repair(video, renderer, joiner):
     print("repairing", video.name, detail, flush=True)
     subprocess.run([str(renderer), "--in", str(video), "--out", str(tail),
                     "--start", str(cut), "--end", str(duration), "--existing-master",
-                    "--hold-final", "5", "--hud", str(hud)], check=True)
+                    "--hold-final", "5", "--confirmed-result-card", "--hud", str(hud)], check=True)
     subprocess.run([str(joiner), str(video), str(tail), str(cut), str(candidate)], check=True)
     result = gate.media_info(candidate)
     if (abs(result["duration_seconds"] - (duration + 5)) > .1

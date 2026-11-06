@@ -1,3 +1,9 @@
+Normal exports retain the native victory movie and the final CivVis board.
+The harness records the natural movie-finished callback and the export ends
+after the native result hold. Incomplete or missing movie completion is kept
+for review. Replacement result cards and large victory banners are opt-in
+renderer flags, not part of the ordinary export.
+
 These are the versioned sources for the macOS recording install at
 `~/.local/share/civvis-clip-recorder`. The story and publisher use the existing
 installed keeper, video quality gate, and upload helpers. `victory_state.py`
