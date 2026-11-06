@@ -501,7 +501,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        let enabled = self.pingala_follows_research
+        let enabled = self.pingala_earns_the_launch
+            || self.pingala_follows_research
             || self.pingala_follows_research_2
             || self.magnus_follows_settlers
             || self.liang_follows_builders
@@ -593,6 +594,9 @@ impl AdvancedAi {
         }
     }
 }
+
+#[path = "governor_dividends/pingala_launch.rs"]
+mod pingala_launch;
 
 #[cfg(test)]
 mod tests;

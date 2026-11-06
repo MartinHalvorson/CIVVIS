@@ -5306,6 +5306,16 @@ impl AdvancedAi {
         self.nusantara_reads_the_coast = false;
     }
 
+    /// Opt-in committed launch relocation; see `governor_dividends/pingala_launch`.
+    pub fn enable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = true;
+    }
+
+    /// Withhold the committed launch relocation.
+    pub fn disable_pingala_earns_the_launch(&mut self) {
+        self.pingala_earns_the_launch = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

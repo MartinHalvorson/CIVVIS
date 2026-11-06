@@ -5370,6 +5370,9 @@ pub const GENES: &[Gene] = &[
     // coastal queue once a hull can cross Ocean, instead of waiting for an idle
     // one. See `advanced/contact_fleet.rs`.
     Gene { tag: "sea-scout-claims-the-queue", field: "sea_scout_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue, disable: AdvancedAi::disable_sea_scout_claims_the_queue },
+    // Space Initiative stayed away from Indonesia's actual launch producer.
+    // Price a current project against establishment and displaced dividends.
+    Gene { tag: "pingala-earns-the-launch", field: "pingala_earns_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_pingala_earns_the_launch, disable: AdvancedAi::disable_pingala_earns_the_launch },
     // `wounded-ship-sails-on`: a wounded sea scout with no healing water in reach
     // keeps charting instead of fortifying where it can never recover. See
     // `advanced/wounded_ship_sails_on.rs`.
