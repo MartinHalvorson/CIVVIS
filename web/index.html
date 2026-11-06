@@ -5122,6 +5122,30 @@
   .lens-choice:hover, .lens-choice:focus-visible { border-color: var(--gold); outline: none; transform: none; }
   .lens-choice[aria-pressed="true"] { color: #1a1407; background: var(--gold-bright); }
   .lens-choice-all { grid-column: 1 / -1; border-top: 1px solid #d7b66a33; border-radius: 0 0 8px 8px; }
+
+  /* The combat forecast: what a blow would do, above the unit panel. */
+  #combat-forecast {
+    position: fixed; left: 50%; bottom: 118px; z-index: 28; transform: translateX(-50%);
+    width: min(420px, calc(100% - 24px)); padding: 10px 14px 11px; color: #edf3f0; pointer-events: none;
+    background: #0a1512f5; border: 1px solid #d7b66a66; border-radius: 12px; box-shadow: 0 14px 38px #000a;
+  }
+  #combat-forecast[hidden] { display: none; }
+  .cf-head { font: 700 11px/1.2 var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: #a9bbb4; text-align: center; }
+  .cf-sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; margin-top: 6px; }
+  .cf-side { min-width: 0; text-align: center; }
+  .cf-name { font: 700 13px/1.2 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-strength { font: 700 26px/1.1 Georgia, serif; color: var(--gold-bright); }
+  .cf-versus { font-size: 18px; color: var(--gold); }
+  .cf-bar { display: flex; height: 7px; margin-top: 4px; overflow: hidden; background: #24110f; border-radius: 4px; }
+  .cf-bar i { display: block; height: 100%; }
+  .cf-left { background: #65bd66; }
+  .cf-lost { background: #f05a50; }
+  .cf-hp { margin-top: 3px; font: 700 12px/1.2 var(--font-ui); font-variant-numeric: tabular-nums; }
+  .cf-hp small { color: var(--muted); font-weight: 600; }
+  .cf-verdict { margin-top: 7px; text-align: center; font: 700 13px/1.25 var(--font-ui); }
+  .cf-verdict.tone-good { color: #8fe0a0; }
+  .cf-verdict.tone-warn { color: #f0d28c; }
+  .cf-verdict.tone-bad { color: #ff8a7c; }
 </style>
 <script>
   // Read this before the replacement document can paint. The old page writes
@@ -5237,6 +5261,7 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="lens-picker" aria-label="Map lenses" hidden></div>
+  <div id="combat-forecast" aria-live="polite" hidden></div>
   <div id="map-controls-dock">
     <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
          zoom out, let the world turn, and dismiss. The spin sits past the zoom

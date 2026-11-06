@@ -8802,6 +8802,24 @@ fn a_played_game_reaches_its_lenses_from_the_map() {
 }
 
 #[test]
+fn hovering_a_target_forecasts_the_blow_through_every_build() {
+    // A route missing from one router is a feature that works everywhere except
+    // that build, and the shim only forwards the paths it lists.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/forecast\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/forecast\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/forecast\""));
+    // Only a strike the seat could order is asked about.
+    let client = EMBEDDED_APP_JS
+        .split_once("async function showForecastAt(pos) {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("showForecastAt is a top-level function")
+        .0;
+    assert!(client.contains("const strike = strikeAt(pos);"));
+    assert!(client.contains("if (!strike) { hideForecast(); return; }"));
+    assert!(EMBEDDED_INDEX.contains("id=\"combat-forecast\""));
+}
+
+#[test]
 fn city_icons_are_shared_by_flat_globe_and_minimaps() {
     let icon = EMBEDDED_INDEX
         .split("function drawCityIcon")

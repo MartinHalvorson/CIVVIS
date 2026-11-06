@@ -4733,6 +4733,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             drop(session);
             respond_json(stream, &answer);
         }
+        // What a blow would do, read before it is struck.
+        ("POST", "/forecast") => {
+            let session = lock_or_recover(&sh.session);
+            let answer = crate::routes::forecast(&session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
+        }
         // What one unit affords, asked one unit at a time because the
         // observation cannot afford to carry it for all of them. The viewer
         // points at somebody else's unit and gets the two things standing
