@@ -14636,3 +14636,17 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
         .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
 }
+
+#[test]
+fn a_boost_is_announced_once_and_not_on_a_loaded_game() {
+    let boosts = EMBEDDED_APP_MOMENTS_JS
+        .split_once("function boostMoments() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("boostMoments is a top-level function")
+        .0;
+    // The first look at a world takes attendance, or every load would replay
+    // every boost the save holds.
+    assert!(boosts.contains("if (!before) return [];"));
+    assert!(boosts.contains("filter(id => !before.has(id))"));
+    assert!(EMBEDDED_APP_MOMENTS_JS.contains("...boostMoments()]"));
+}
