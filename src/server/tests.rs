@@ -6,9 +6,10 @@ use super::{
     staged_next_game_params, strategy_roster, tile_mark, valid_between_game_countdown_ms,
     viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
-    EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
+    EMBEDDED_APP_FRONTDOOR_JS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
     EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-    EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+    EMBEDDED_INDEX, EMBEDDED_INDEX_HTML, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL,
+    VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -36,6 +37,65 @@ fn served_index_tags_the_app_script_with_its_server_instance() {
     assert!(!served.contains(r#"<script src="/assets/app.js"></script>"#));
     assert!(served.contains(r#"<script src="/assets/app_setup.js?instance=4242"></script>"#));
     assert!(!served.contains(r#"<script src="/assets/app_setup.js"></script>"#));
+}
+
+#[test]
+fn front_door_starts_games_through_the_setup_path_and_only_on_the_published_site() {
+    // One way to build a game: the menu writes the sidebar's selects and calls
+    // the same start, so it cannot drift from what Game setup would have done.
+    assert!(EMBEDDED_APP_FRONTDOOR_JS.starts_with("\"use strict\";"));
+    assert!(EMBEDDED_APP_FRONTDOOR_JS.contains("startNewSimulation()"));
+    assert!(!EMBEDDED_APP_FRONTDOOR_JS.contains("\"/new\""));
+    // The desktop app and the exhibition tabs never see it: the shim says so.
+    assert!(EMBEDDED_APP_FRONTDOOR_JS.contains("window.CIVVIS_PUBLISHED_BUILD"));
+    let shim = include_str!("../../beta/shim.js");
+    assert!(shim.contains("window.CIVVIS_PUBLISHED_BUILD = !LOCAL_DESKTOP_HOST"));
+    // It loads last, because it reads what the other scripts declare, and the
+    // address it is served from is the one the page asks for.
+    let setup = EMBEDDED_INDEX_HTML.find("/assets/app_setup.js").unwrap();
+    let door = EMBEDDED_INDEX_HTML
+        .find("/assets/app_frontdoor.js")
+        .unwrap();
+    assert!(setup < door);
+    let served = String::from_utf8(index_with_app_instance(EMBEDDED_INDEX_HTML, 7)).unwrap();
+    assert!(served.contains(r#"<script src="/assets/app_frontdoor.js?instance=7"></script>"#));
+    // Every id the script binds at load exists in the page: a missing one is a
+    // TypeError that would take the whole script with it.
+    for id in [
+        "frontdoor",
+        "fd-menu",
+        "fd-create",
+        "fd-play",
+        "fd-watch",
+        "fd-back",
+        "fd-begin",
+        "fd-continue",
+        "fd-continue-sub",
+        "fd-advanced",
+        "fd-leaders",
+        "fd-difficulty",
+        "fd-difficulty-note",
+        "fd-map",
+        "fd-size",
+        "fd-speed",
+        "fd-search",
+        "fd-dossier",
+    ] {
+        assert!(
+            EMBEDDED_INDEX_HTML.contains(&format!("id=\"{id}\"")),
+            "the front door binds #{id}, which the page does not have"
+        );
+    }
+}
+
+#[test]
+fn browser_saves_are_listed_from_the_game_inside_the_envelope() {
+    // `/save` answers `{format, game, ...}`. Reading `.turn` off the envelope
+    // listed every saved game as turn 0, with no civilization, in the one
+    // place a returning player looks for what they were playing.
+    let shim = include_str!("../../beta/shim.js");
+    assert!(shim.contains("const game = held.game ?? held;"));
+    assert!(!shim.contains("turn: held.turn"));
 }
 
 #[test]
@@ -5487,7 +5547,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find(">Single player<")
+        .find("<option value=\"single\">Single player</option>")
         .expect("single player mode");
     let multiplayer_mode = EMBEDDED_INDEX
         .find("Multiplayer · later")
@@ -12010,6 +12070,12 @@ fn a_human_finale_counts_itself_down_to_the_next_game() {
     // The supervisor owns the exhibition's handoff, so a spectated finale
     // never arms this one on top of the countdown it already publishes.
     assert!(EMBEDDED_INDEX.contains("if (SPEC || finaleCountdownResult === signature) return;"));
+    // The public site is somebody reading how their game ended, not an
+    // unattended display, so nothing replaces their result under them.
+    assert!(EMBEDDED_INDEX.contains(
+        "function armFinaleCountdown(signature) {\n  if (finaleHoldsForTheReader()) return;"
+    ));
+    assert!(EMBEDDED_INDEX.contains("return !SPEC && !!window.CIVVIS_PUBLISHED_BUILD;"));
     // All three human endings count down: a victory, a last city lost,
     // and a Tactics draw.
     assert_eq!(
@@ -12610,6 +12676,25 @@ fn browser_runs_a_civ_six_turn_loop() {
 /// it. One class carries all of it — `body.civ6-frame` — and the two ways
 /// in keep a class each: `playing-solo` for a seat somebody is holding,
 /// `watching-world` for a simulation being watched.
+#[test]
+fn a_study_plan_starts_its_next_step_as_each_turn_opens() {
+    // The engine studies one thing at a time, so a plan is the page's to carry
+    // out: it has to start the next step without being asked.
+    let open_turn = EMBEDDED_APP_JS
+        .split_once("function openTurnIfNew() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("openTurnIfNew is a top-level function")
+        .0;
+    assert!(open_turn.contains("setTimeout(followStudyPlan);"));
+    // A plan never outlives its world, and an agent holding the seat is not
+    // overruled by a plan the player made before handing it over.
+    assert!(EMBEDDED_APP_JS.contains("if (held && held.seed === seed) studyPlans = held;"));
+    assert!(EMBEDDED_APP_JS
+        .contains("if (!state?.me || SPEC || autoplaying || gameFinished(state)) return;"));
+    // Every node in the tree is a click, because any node can be planned to.
+    assert!(EMBEDDED_APP_JS.contains("(n === current ? \"\" : ` onclick='pickTree"));
+}
+
 #[test]
 fn browser_seats_a_person_in_the_civ_six_arrangement() {
     for piece in [
