@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-chain-crosses-window",
+  "archive": {
+    "path": "docs/eval/2026-11-06-science-chain-window.action-pairs.tar.xz",
+    "sha256": "52cebd261de3e8782b18732d1d72e3f80410930ae0f3dca504ee543181bcc95a"
+  },
+  "members": [
+    "pair-0.json",
+    "pair-1.json"
+  ],
+  "scope": "Post-outcome mechanism exploration on one exact native final-read prefix. It does not replay the original changing read sequence, reproduce the historical persistent agent or native full payload, measure applied orders, saved turns, win strength, or native counterfactual behavior. No native game, queue, waiting harness, UI/config or force-file mutation."
+}
