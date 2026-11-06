@@ -153,6 +153,53 @@ fn the_strongest_coastal_city_claims_the_statues_harbor() {
     );
 }
 
+/// `science-seat-builds-the-statue`: a Science seat claims the Harbor from
+/// t120, not before, and only under the tag.
+#[test]
+fn a_science_seat_waits_for_the_statues_harbor() {
+    let (mut game, ranked) = coastal_empire();
+    let harbor_city = *ranked
+        .iter()
+        .find(|cid| AdvancedAi::statue_harbor_site(&game, 0, **cid).is_some())
+        .unwrap();
+    let mut on = seat(VictoryTarget::Science, true);
+    on.enable_science_seat_builds_the_statue();
+    let off = seat(VictoryTarget::Science, true);
+
+    game.turn = SCIENCE_STATUE_HARBOR_TURN - 1;
+    let mut early = game.clone();
+    claim(&on, &mut early);
+    assert!(
+        early.cities[&harbor_city].queue.is_empty(),
+        "before the turn the first Campus keeps the city"
+    );
+
+    game.turn = SCIENCE_STATUE_HARBOR_TURN;
+    let mut untagged = game.clone();
+    claim(&off, &mut untagged);
+    assert!(
+        untagged.cities[&harbor_city].queue.is_empty(),
+        "without the tag a Science seat claims nothing"
+    );
+    let mut tagged = game.clone();
+    claim(&on, &mut tagged);
+    let head = tagged.cities[&harbor_city].queue.first().cloned();
+    assert!(is_harbor(&tagged, head.as_ref()), "the Harbor goes first");
+}
+
+/// The tag reaches only a Science seat: a Culture seat claims nothing.
+#[test]
+fn the_tag_leaves_a_culture_seat_alone() {
+    let (mut game, ranked) = coastal_empire();
+    game.turn = SCIENCE_STATUE_HARBOR_TURN;
+    let mut ai = seat(VictoryTarget::Culture, true);
+    ai.enable_science_seat_builds_the_statue();
+    claim(&ai, &mut game);
+    for cid in &ranked {
+        assert!(game.cities[cid].queue.is_empty());
+    }
+}
+
 /// Once the Statue stands anywhere, no Harbor is claimed for it.
 #[test]
 fn a_built_statue_claims_nothing() {

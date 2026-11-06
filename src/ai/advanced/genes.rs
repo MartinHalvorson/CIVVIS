@@ -5415,6 +5415,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
     // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
     Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
+    // `science-seat-builds-the-statue`: a seat aiming at Science claims a Harbor
+    // from t120 and the Statue of Liberty for its four Diplomatic Victory
+    // Points, which step over the Congress gang wall at about 16. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "science-seat-builds-the-statue", field: "science_seat_builds_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_builds_the_statue, disable: AdvancedAi::disable_science_seat_builds_the_statue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

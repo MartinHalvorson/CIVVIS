@@ -8811,6 +8811,10 @@ pub struct AdvancedAi {
     /// back. See `AdvancedAi::queue_claim_open`.
     queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
+    /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
+    /// Victory Points. See `advanced/diplo_statue_harbor.rs`.
+    science_seat_builds_the_statue: bool,
     /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
     /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
     /// tag and the agent's `CivvisCongressRacer` casts the ballot, so the
@@ -11750,6 +11754,7 @@ impl AdvancedAi {
             pillaged_districts_repair_first: false,
             queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            science_seat_builds_the_statue: false,
             science_seat_races_the_congress: false,
             science_seat_allies_2: false,
             science_foundation_before_backlog: false,
