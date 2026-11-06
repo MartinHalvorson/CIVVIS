@@ -8978,6 +8978,12 @@ fn a_phone_keeps_the_map() {
 }
 
 #[test]
+fn a_banner_stays_under_an_open_screen() {
+    // The full screens start at z-index 14, and the map's panels end at 9.
+    assert!(EMBEDDED_INDEX.contains("position: fixed; top: 112px; left: 50%; z-index: 12;"));
+}
+
+#[test]
 fn city_icons_are_shared_by_flat_globe_and_minimaps() {
     let icon = EMBEDDED_INDEX
         .split("function drawCityIcon")
