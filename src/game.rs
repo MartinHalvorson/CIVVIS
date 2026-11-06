@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::leader_roster;
 use crate::name::{AsName, Name};
 use crate::parallel::WorkPool;
+use crate::pedia::title as pretty;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
@@ -5921,20 +5922,6 @@ pub const EVENT_CATEGORIES: [&str; 11] = [
     "Diplomacy",
     "CityState",
 ];
-
-/// Ruleset identifiers are snake_case; event text is for people.
-fn pretty(id: &str) -> String {
-    id.split('_')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
 
 /// Events older than this are dropped, oldest first. Long games are long.
 const EVENT_LIMIT: usize = 2_000;
