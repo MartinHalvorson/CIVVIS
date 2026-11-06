@@ -21705,6 +21705,7 @@ function drawPlanetMap() {
   const visibleUnits = empireLens ? [] : state.units;
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   drawPlanetClaims(cellByKey, onSheet, now);
+  drawSitePicksPlanet(cellByKey, onSheet);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
   // Use the same stable tile layout as the flat command map. A unit on the
   // move is left out of the stacks, and a played game walks it along its route.
@@ -22358,6 +22359,7 @@ function drawScene() {
     hexPath(cx2, cy2, S * (0.7 + e * (grow + 0.3))); cx.stroke();
     cx.globalAlpha = 1;
   }
+  drawSitePicksFlat();
   // --- movement / attack highlights
   for (const k in hl) {
     const [q, r] = k.split(",").map(Number);
@@ -27107,6 +27109,73 @@ function openCityScreen(id) {
 function closeCityScreen() {
   document.getElementById("cityscreen").classList.remove("open");
 }
+// Choosing a tile on the map. Where a district goes decides what it is worth,
+// and a list of coordinates says nothing about that: the map does. The city
+// screen steps aside, the district's own lens shows what each tile would give,
+// and the tiles this city could use are outlined. Anything else clicked is
+// ignored, and Escape goes back to the city.
+let sitePick = null;
+function beginSitePick(cityId, itemId) {
+  const actions = state.legal_actions.filter(action => action.type === "produce" &&
+    action.city === cityId && action.item.pos && itemKey(action.item) === itemId);
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  if (!actions.length || !city) return;
+  const item = actions[0].item;
+  sitePick = {cityId, lens: mapLens,
+    sites: new Map(actions.map(action => [key(action.item.pos), action]))};
+  closeCityScreen();
+  sel = null; selCity = city;
+  if (item.district) { mapLens = districtLensId(item.district); syncMapLensControls(); }
+  document.getElementById("site-pick-text").textContent =
+    `Place ${itemPlainName(item)}: choose a tile`;
+  document.getElementById("site-pick").hidden = false;
+  document.body.classList.add("site-picking");
+  centerOn(city.pos);
+  modeline(); draw(); drawUbar();
+}
+function endSitePick() {
+  if (!sitePick) return;
+  mapLens = sitePick.lens;
+  sitePick = null;
+  document.getElementById("site-pick").hidden = true;
+  document.body.classList.remove("site-picking");
+  syncMapLensControls(); modeline(); draw();
+}
+function cancelSitePick() {
+  const cityId = sitePick?.cityId;
+  endSitePick();
+  if (cityId !== undefined) openCityScreen(cityId);
+}
+function chooseSite(pos) {
+  const action = sitePick.sites.get(key(pos));
+  if (!action) return;
+  endSitePick();
+  send(action);
+}
+document.getElementById("site-pick-cancel").onclick = cancelSitePick;
+function outlineSitePick() {
+  cx.fillStyle = "#f0d28c33"; cx.fill();
+  cx.strokeStyle = "#f0d28c"; cx.lineWidth = 2.6; cx.stroke();
+}
+function drawSitePicksPlanet(cellByKey, onSheet) {
+  if (!sitePick) return;
+  for (const site of sitePick.sites.keys()) {
+    const cell = cellByKey.get(site);
+    if (!cell || cell.center.z < (onSheet ?? .02)) continue;
+    planetPaintPath(cx, cell, .15);
+    outlineSitePick();
+  }
+}
+function drawSitePicksFlat() {
+  if (!sitePick) return;
+  for (const site of sitePick.sites.keys()) {
+    const [q, r] = site.split(",").map(Number);
+    const tile = TMAP.get(site);
+    const [x, y] = hexXY(q, r);
+    hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
+    outlineSitePick();
+  }
+}
 async function sendFromCity(action) {
   await send(action);
   if (cityScreenOpen()) drawCityScreen();
@@ -27312,12 +27381,13 @@ function drawCityScreen() {
         const isCurrent = itemKey(entry.item) === currentKey;
         const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
         const note = itemNote(entry.item);
-        // One site: a plain Produce. Several: name the tiles, because where a
-        // district goes decides what it is worth.
+        // One site: a plain Produce. Several: the choice is made on the map,
+        // because where a district goes decides what it is worth.
         const sites = entry.sites.length > 1
-          ? `<div class="build-sites">` + entry.sites.map(action =>
-              cityAct(action, `@ ${action.item.pos.join(",")}`, "",
-                "Found it on this tile")).join("") + `</div>`
+          ? `<div class="build-actions"><button class="primary" type="button" ` +
+            `title="See where it could go and what each tile would give" ` +
+            `onclick='beginSitePick(${city.id},${JSON.stringify(itemKey(entry.item))})'>` +
+            `Choose a tile · ${entry.sites.length} sites</button></div>`
           : entry.sites.length === 1
             ? `<div class="build-actions">` +
               cityAct(entry.sites[0], isCurrent ? "Producing" : "Produce",
@@ -27329,7 +27399,8 @@ function drawCityScreen() {
                 "Pay for it outright")).join("") + `</div>`
           : "";
         return `<div class="build-item ${isCurrent ? "current" : ""}">` +
-          `<div class="build-row"><span class="build-name">${titleCase(itemName(entry.item))}</span>` +
+          `<div class="build-row"><span class="build-name">${entry.sites.length > 1
+            ? itemPlainName(entry.item) : titleCase(itemName(entry.item))}</span>` +
           `<span class="build-cost">${Math.round(cost)} ⚙ · ` +
           `${turns === Infinity ? "—" : `${turns}t`}</span></div>` +
           (note ? `<div class="build-note">${note}</div>` : "") +
@@ -27557,6 +27628,10 @@ function itemName(it) {
     return (it.unit + " " + formationName(it.unit, it.formation)).replaceAll("_", " ");
   }
   return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
+}
+// A name with no tile in it, for when the tile is the thing being chosen.
+function itemPlainName(it) {
+  return titleCase(it.wonder || it.district || itemName(it));
 }
 function prodGlyph(it) {
   if (it.building) return BLDG_ICON[it.building] || "🏛";
@@ -32425,7 +32500,7 @@ cv.addEventListener("click", ev => {
   }
   // A plate is a button: your own opens that city, wherever the plate has
   // drifted relative to the tiles under it.
-  if (!tackMode && !interfaceMode && !SPEC && state) {
+  if (!tackMode && !interfaceMode && !sitePick && !SPEC && state) {
     const plate = cityPlateAt(sx, sy);
     const city = plate && state.cities.find(candidate => candidate.id === plate.city);
     if (city && city.owner === 0) {
@@ -32439,6 +32514,7 @@ cv.addEventListener("click", ev => {
   const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
+  if (sitePick) { chooseSite(pos); return; }
   if (tackMode) {
     const i = tacks.findIndex(t => t[0] === pos[0] && t[1] === pos[1]);
     if (i >= 0) tacks.splice(i, 1); else tacks.push([pos[0], pos[1]]);
@@ -33563,17 +33639,18 @@ function actionOptionsFor(next) {
       seen.get(key).sites.push(action);
     }
     const entries = [...seen.values()].sort((a, b) => itemCost(a.item) - itemCost(b.item));
-    const screen = `openCityScreen(${cityId})`;
     return entries.slice(0, ACTION_OPTION_CAP).map(entry => {
+      const key = itemKey(entry.item);
       const cost = itemCost(entry.item);
       const turns = turnsFor(cost, perTurn, 0);
       const several = entry.sites.length > 1;
-      const name = titleCase(itemName(entry.item));
+      const name = several ? itemPlainName(entry.item) : titleCase(itemName(entry.item));
       return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
         name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
         note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
-        onclick: several ? screen : `send(${JSON.stringify(entry.sites[0])})`,
-        title: several ? "Several tiles could take it — choose one in the city screen"
+        onclick: several ? `beginSitePick(${cityId},${JSON.stringify(key)})`
+          : `send(${JSON.stringify(entry.sites[0])})`,
+        title: several ? "Several tiles could take it — choose one on the map"
           : `Produce ${name} in ${city ? city.name : "this city"}`});
     }).join("") + actionMore(entries.length, screen, `${city ? city.name : "City"} — city screen`);
   }
@@ -33694,6 +33771,7 @@ function openTurnIfNew() {
   refreshSaves();
   const first = loopTurn === null;
   loopTurn = state.turn;
+  if (sitePick) endSitePick();
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
   if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
@@ -34170,6 +34248,7 @@ document.addEventListener("keydown", ev => {
   // and the one the person meant is the one they had just tabbed to.
   if ((ev.key === " " || ev.key === "Enter") && (tag === "BUTTON" || tag === "A" ||
       (document.activeElement || {}).getAttribute?.("role") === "button")) return;
+  if (ev.key === "Escape" && sitePick) { cancelSitePick(); ev.preventDefault(); return; }
   // A modal screen owns the keyboard while it is up. Escape closes the
   // topmost one before any global action is considered.
   if (ev.key === "Escape" && closeTopmostScreen()) { ev.preventDefault(); return; }

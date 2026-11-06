@@ -8896,6 +8896,22 @@ fn hovering_a_target_forecasts_the_blow_through_every_build() {
 }
 
 #[test]
+fn a_choice_of_tiles_is_made_on_the_map() {
+    // Where a district goes decides what it is worth, and the screen offered
+    // coordinates. Both renderers outline the sites, because the default world
+    // is a globe and a flat-only pass would reach nobody.
+    assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
+    assert!(EMBEDDED_APP_JS.contains("onclick='beginSitePick(${city.id},"));
+    assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
+    assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
+    // A click belongs to the picker before anything else reads it, and a turn
+    // that opens underneath it ends it rather than leaving stale actions armed.
+    assert!(EMBEDDED_APP_JS.contains("if (sitePick) { chooseSite(pos); return; }"));
+    assert!(EMBEDDED_APP_JS.contains("loopTurn = state.turn;\n  if (sitePick) endSitePick();"));
+    assert!(EMBEDDED_INDEX.contains("id=\"site-pick\""));
+}
+
+#[test]
 fn a_player_can_find_out_how_to_move() {
     // Right-click was the only way to move, and nothing said so. The unit panel
     // carries the verb, a mouse is told, and a touch screen, which has no right
@@ -14592,7 +14608,7 @@ fn clicking_your_city_opens_it_and_a_garrison_does_not_get_in_the_way() {
         .find("const plate = cityPlateAt(sx, sy);")
         .expect("the map click looks for a plate");
     let tile = EMBEDDED_APP_JS
-        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (tackMode)")
+        .find("const pos = pixelToHex(sx, sy);\n  if (!pos || !state) return;\n  const k = key(pos);\n  if (sitePick)")
         .expect("the map click reads its tile");
     assert!(plate < tile);
     assert!(EMBEDDED_APP_JS.contains("function drawPlanetMap() {\n  cityPlateBoxes = [];"));

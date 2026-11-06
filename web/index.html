@@ -5190,6 +5190,21 @@
   .cf-verdict.tone-warn { color: #f0d28c; }
   .cf-verdict.tone-bad { color: #ff8a7c; }
 
+  /* Choosing a tile on the map. */
+  #site-pick {
+    position: fixed; top: 52px; left: 50%; z-index: 32; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px; padding: 8px 10px 8px 16px; white-space: nowrap;
+    color: var(--gold-bright); background: #0a1512f5; border: 1px solid #d7b66a88; border-radius: 12px;
+    box-shadow: 0 12px 34px #000a; font: 600 16px/1.2 Georgia, serif;
+  }
+  #site-pick[hidden] { display: none; }
+  /* The tiles being chosen between are the whole of what matters now. */
+  body.site-picking #moments { display: none; }
+  #site-pick button {
+    padding: 6px 10px; color: #dbe5e0; background: none; border: 1px solid #536c63; border-radius: 8px;
+    font: 600 12px/1.2 var(--font-ui); cursor: pointer;
+  }
+  #site-pick button:hover { color: var(--gold-bright); border-color: var(--gold); transform: none; }
   /* Says how to do the thing just attempted, where the attempt was made. */
   #map-hint {
     position: fixed; z-index: 34; transform: translate(-50%, -160%); padding: 6px 11px; pointer-events: none;
@@ -5329,6 +5344,7 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="lens-picker" aria-label="Map lenses" hidden></div>
+  <div id="site-pick" role="status" hidden><span id="site-pick-text"></span><button type="button" id="site-pick-cancel">Back to the city</button></div>
   <div id="map-hint" role="status" hidden></div>
   <div id="combat-forecast" aria-live="polite" hidden></div>
   <div id="map-controls-dock">
