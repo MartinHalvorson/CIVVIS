@@ -8,7 +8,8 @@
 //! barbarian emergencies, fuel and named production technology.
 //!
 //! `chemistry-follows-the-university` opens the same goal for Chemistry alone
-//! and without the last-step test, under the same gates.
+//! and without the last-step test, under the same gates, except that only
+//! Warriors and Archers hold it back.
 
 use super::*;
 
@@ -35,6 +36,15 @@ impl AdvancedAi {
         let chemistry = g.rules.techs.get(&crate::name!("chemistry"))?;
         // Preserve the operator's Warrior/Archer modernization requirement,
         // including a minority of old units hidden by a larger modern stack.
+        //
+        // `chemistry-follows-the-university` reads that requirement as the
+        // operator gave it (11-02: "...that we can't upgrade archers or
+        // warriors"): only those two lines and their uniques hold Chemistry
+        // back. Any older land unit held it on 84% of live boards with a
+        // University standing (291 of 347), mostly a Horseman waiting on
+        // Castles or a Musketman on Military Science.
+        let warriors_and_archers_only =
+            self.chemistry_follows_the_university && !self.science_foundation_before_backlog;
         if g.units
             .values()
             .filter(|unit| unit.owner == pid)
@@ -42,6 +52,12 @@ impl AdvancedAi {
                 let Some(held) = g.rules.units.get(&unit.kind) else {
                     return false;
                 };
+                if warriors_and_archers_only {
+                    let line = held.replaces.unwrap_or(unit.kind);
+                    if line != "warrior" && line != "archer" {
+                        return false;
+                    }
+                }
                 if held.class != "military"
                     || held.promotion_class == "recon"
                     || matches!(held.domain.as_deref(), Some("sea" | "air"))

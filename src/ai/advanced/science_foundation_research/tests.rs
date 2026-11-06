@@ -235,3 +235,29 @@ fn the_new_gene_stops_at_chemistry_and_keeps_every_gate() {
     g.players[0].techs.insert(crate::name!("chemistry"));
     assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
 }
+
+#[test]
+fn only_warriors_and_archers_hold_chemistry_back() {
+    let unknown = |g: &mut Game, tech: &str| {
+        g.players[0].techs.remove(&Name::new(tech));
+    };
+    // A Horseman waiting on Castles does not hold the new gene back, and
+    // does hold the older one.
+    let (mut g, mut ai, plan, city) = two_steps_out();
+    let home = g.cities[&city].pos;
+    g.spawn_test_unit("horseman", 0, home);
+    unknown(&mut g, "castles");
+    ai.enable_chemistry_follows_the_university();
+    assert_eq!(
+        ai.science_foundation_research_goal(&g, 0, &plan),
+        Some("chemistry")
+    );
+
+    // An Archer waiting on Machinery does.
+    let (mut g, mut ai, plan, city) = two_steps_out();
+    let home = g.cities[&city].pos;
+    g.spawn_test_unit("archer", 0, home);
+    unknown(&mut g, "machinery");
+    ai.enable_chemistry_follows_the_university();
+    assert_eq!(ai.science_foundation_research_goal(&g, 0, &plan), None);
+}
