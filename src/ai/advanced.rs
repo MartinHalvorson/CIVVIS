@@ -2388,9 +2388,10 @@ pub struct AdvancedAi {
     pub settlement_safety: bool,
     /// Price a settle site's district adjacency potential — what a Campus,
     /// Commercial Hub or Harbor would earn at its best plot within two rings
-    /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
-    /// `advanced_v1` rating anchor keeps scoring sites exactly as it always
-    /// has; `promoted_policy_envoy` turns it on for the live controller.
+    /// — via `Game::settlement_adjacency_summary_from_positions`.  Gated so
+    /// the frozen `advanced_v1` rating anchor keeps scoring sites exactly as
+    /// it always has; `promoted_policy_envoy` turns it on for the live
+    /// controller.
     pub adjacency_site_planning: bool,
     /// Hold a settler's chosen site across a turn it could not move, instead
     /// of forgetting it.
