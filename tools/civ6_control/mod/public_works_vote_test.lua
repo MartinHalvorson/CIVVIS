@@ -224,6 +224,16 @@ requests = {}
 ballot(0)
 check("with the switch off, the old first target", requests[1].selection, 0)
 
+-- `science-seat-races-the-congress`: the Congress racer on a Science seat
+-- keeps slowing a space racer; only the Diplomatic lane stands this vote down.
+idx, option, votes, price = vote(RTYPE, targets, rivals, 0, 400, costs,
+    { VictoryLane = "science", ScienceCongressRacer = true }, stages({ [1] = 2 }))
+check("science racer still slows the space racer", targets[idx], MARS)
+check("science racer keeps option B", option, 2)
+idx = vote(RTYPE, targets, rivals, 0, 400, costs,
+    { VictoryLane = "diplomatic" }, stages({ [1] = 2 }))
+check("the Diplomatic lane still stands down", idx, nil)
+
 if failures > 0 then
     error(failures .. " failure(s)")
 end
