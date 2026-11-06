@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "modernization-prices-the-path",
+  "archive": {
+    "path": "docs/eval/2026-11-06-modernization-path.action-pairs.tar.xz",
+    "sha256": "1704b3c690c8be03bdedd90cd2d8d6d3f97ad2acab9d101a4aee1b51ce76c6b2"
+  },
+  "members": [
+    "pair-0.json",
+    "pair-1.json"
+  ],
+  "scope": "New candidate, cold fixed final-read proposal probe. NOT original changing-read/history reproduction, applied orders, native strength or saved turns."
+}

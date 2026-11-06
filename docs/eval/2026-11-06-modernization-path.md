@@ -28,8 +28,27 @@ The flag adds no stockpile requirement: a technology may reveal its own
 strategic material, and trade or improvements can also supply it. It does not
 price Gold, material acquisition, production, positioning or survival.
 
-Validation is in progress. The synthetic routing fixture uses the observed
-known technologies, army counts and four quotes, with model map/positions and
-other fields. It is not a complete native-board reconstruction. A fixed-input
-native-read proposal probe and full local validation remain pending. No native
-application, saved turns or victory improvement is established.
+The routing fixture uses the observed known technologies, army counts and
+four quotes, with model map/positions and other fields. It is not a complete
+native-board reconstruction. Complete suite results are recorded in the PR.
+
+The candidate's fixed-input proposal probe uses the original68/0 final-read
+prefix,9,049,888bytes. OFF/ON/ON/OFF gives Apprenticeship/Engineering/Engineering/
+Apprenticeship, with17 independently verified actual reads and exit0 for each
+query. Observed genomes and arguments differ only by this option. Both replies
+have13actions; only the research action/order changes. Repeated canonical
+payloads match within each arm. The adjacent raw archive retains the driver,
+source/binary hashes, stdout/stderr, exact commands, captures and both pairs.
+
+This is a cold fixed-prefix proposal comparison on the new candidate, not the
+original changing-read history or persistent agent. It proves no native
+application, saved turns, survival or victory benefit. The option remains
+unpriced and off.
+
+Reconstruct the actual reads and repeat controls independently with:
+
+```sh
+python3 docs/eval/2026-11-06-modernization-path.verify.py \
+  docs/eval/2026-11-06-modernization-path.action-pairs.tar.xz
+python3 tools/gene_fires.py --max 0
+```
