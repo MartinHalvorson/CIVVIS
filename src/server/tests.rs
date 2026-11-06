@@ -14674,6 +14674,28 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
 }
 
 #[test]
+fn continue_goes_back_to_the_game_on_the_table() {
+    // From a game, the main menu's Continue used to load a save, which at best
+    // lost a turn's moves and at worst was a different game.
+    let refresh = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("async function fdRefreshContinue() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("fdRefreshContinue is a top-level function")
+        .0;
+    let on_the_table = refresh.find("if (state && !SPEC) {").unwrap();
+    let saves = refresh.find("\"/saves\"").unwrap();
+    assert!(on_the_table < saves);
+    assert!(refresh.contains("delete button.dataset.save;"));
+    // The engine's identifiers stay out of what a player reads. They live in
+    // the note, whose file the ruleset fingerprint covers, so the screen strips
+    // them rather than the data.
+    assert!(include_str!("../../data/civs.json").contains("(TRAIT_FREE_TRADING_POSTS"));
+    assert!(
+        EMBEDDED_APP_FRONTDOOR_JS.contains(".replace(/\\s*\\((?=[^)]*_)[A-Z0-9_ +]+\\)/g, \"\")")
+    );
+}
+
+#[test]
 fn a_boost_is_announced_once_and_not_on_a_loaded_game() {
     let boosts = EMBEDDED_APP_MOMENTS_JS
         .split_once("function boostMoments() {")
