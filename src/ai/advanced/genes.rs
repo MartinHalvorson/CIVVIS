@@ -5404,6 +5404,8 @@ pub const GENES: &[Gene] = &[
     // tile, within its range of the old one, counts. See
     // `advanced/battle_planner.rs`.
     Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
+    // Existing Royal Society credit belongs in its Plaza city as empire support.
+    Gene { tag: "royal-society-serves-the-launch", field: "royal_society_serves_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_royal_society_serves_the_launch, disable: AdvancedAi::disable_royal_society_serves_the_launch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

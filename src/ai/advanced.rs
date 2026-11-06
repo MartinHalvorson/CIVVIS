@@ -8806,6 +8806,9 @@ pub struct AdvancedAi {
     /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
+    /// Price existing Royal Society support in the Science Plaza city.
+    /// Independent opt-in; see `royal_society_serves_the_launch`.
+    royal_society_serves_the_launch: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
     /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
@@ -10933,6 +10936,8 @@ mod nusantara_settles_the_shore;
 mod old_techs_before_the_beeline;
 mod peacetime_republic;
 mod revealed_launch_research;
+/// Royal Society supports a committed Space Race from its Plaza city.
+mod royal_society_serves_the_launch;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
 /// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.

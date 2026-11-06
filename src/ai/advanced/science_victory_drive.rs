@@ -763,6 +763,9 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
     ) -> f64 {
+        if let Some(value) = self.royal_society_serves_the_launch_bonus(g, pid, cid, item) {
+            return value;
+        }
         if self.science_victory_drive_2 {
             return self.science_drive_production_bonus_v2(g, pid, cid, item);
         }
@@ -919,7 +922,7 @@ impl AdvancedAi {
 
     /// Earliest observable flight deadline; unmet rivals never supply private
     /// progress. Missing launch evidence leaves the configured turn limit.
-    fn science_support_horizon(g: &Game, pid: usize) -> f64 {
+    pub(super) fn science_support_horizon(g: &Game, pid: usize) -> f64 {
         let limit = if g.max_turns == 0 {
             f64::INFINITY
         } else {

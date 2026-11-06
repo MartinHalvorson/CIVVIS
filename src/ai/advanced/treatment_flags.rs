@@ -2321,6 +2321,8 @@ impl AdvancedAi {
         /// Opt-in gene `nusantara-settles-the-shore`; see
         /// `advanced/nusantara_settles_the_shore.rs`.
         nusantara_settles_the_shore => enable_nusantara_settles_the_shore, disable_nusantara_settles_the_shore;
+        /// Price Royal Society as empire support for an assigned Science race.
+        royal_society_serves_the_launch => enable_royal_society_serves_the_launch, disable_royal_society_serves_the_launch;
     }
 }
 
