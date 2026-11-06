@@ -1,6 +1,6 @@
 # Royal Society contribution command bridge
 
-The planner already chooses `Action::ContributeProject` and consumes the Builder in its reconstructed game. The native translator previously returned `None` for that action; the mod also had no `PROJECT_PRODUCTION` command dispatch. This change sends that existing intent to Civilization VI. It does not increase Royal Society's production valuation, create Builder jobs or change any gene, rules data, lane setting or default.
+The planner already chooses `Action::ContributeProject` and consumes the Builder in its reconstructed game. The native translator previously returned `None` for that action; the mod also had no contribution command dispatch. This change sends that existing intent to Civilization VI. It does not increase Royal Society's production valuation, create Builder jobs or change any gene, rules data, lane setting or default.
 
 The native contract is shipped `DLC/Expansion2/Data/Expansion1_UnitCommands.xml:11`: `CommandType="UNITCOMMAND_PROJECT_PRODUCTION"`, with no interface mode. `Base/Assets/UI/Panels/UnitPanel.lua:2513` requests a no-mode command using `UnitManager.RequestCommand( pSelectedUnit, actionHash );`. The mod uses its existing strict command gate and that two-argument request; it never guesses a city-id parameter. The building's player-level modifier is `MODIFIER_PLAYER_ADJUST_UNIT_PROJECT_PERCENT` (`DLC/Expansion2/Data/Expansion1_Buildings.xml:318`), with amount2 at623. These are installed game files inspected on this host, not inferred rules.
 

@@ -55,7 +55,7 @@ fn royal_society_contribution_reaches_the_native_command_at_its_intended_distric
             kind: "UNIT_BUILDER".into(),
             x: 4,
             y: 4,
-            charges: 3,
+            build_charges: Some(3),
             ..StateUnit::default()
         }],
         ..StateSnapshot::default()
@@ -78,24 +78,26 @@ fn royal_society_contribution_reaches_the_native_command_at_its_intended_distric
         (
             "unit",
             Some(131073),
-            Some("PROJECT_PRODUCTION"),
+            Some("CONTRIBUTE_PROJECT"),
             Some((4, 4))
         )
     );
     assert!(
-        unverifiable_unit_verb("PROJECT_PRODUCTION"),
+        unverifiable_unit_verb("CONTRIBUTE_PROJECT"),
         "request acceptance or a missing builder is not a verified production gain"
     );
-    for variant in 0..7 {
+    for variant in 0..9 {
         let mut bad = state.clone();
         match variant {
             0 => bad.units.clear(),
             1 => bad.units[0].x = 5,
-            2 => bad.units[0].charges = 0,
-            3 => bad.units[0].kind = "UNIT_ENGINEER".into(),
+            2 => bad.units[0].build_charges = Some(0),
+            3 => bad.units[0].kind = "UNIT_SCOUT".into(),
             4 => bad.cities[0].districts[0].pillaged = true,
             5 => bad.cities[0].districts[0].complete = false,
-            _ => bad.cities[0].producing = Some("BUILDING_RESEARCH_LAB".into()),
+            6 => bad.cities[0].producing = Some("BUILDING_RESEARCH_LAB".into()),
+            7 => bad.units[0].build_charges = None,
+            _ => bad.units[0].build_charges = Some(-1),
         }
         assert!(
             translate(&action, &mirror, &bad).is_none(),

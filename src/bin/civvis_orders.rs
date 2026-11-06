@@ -6519,7 +6519,7 @@ fn translate(
                 .find(|(_, cid)| **cid == *city)
                 .and_then(|(id, _)| state.cities.iter().find(|c| c.id == *id))?;
             if actor.kind != "UNIT_BUILDER"
-                || actor.charges <= 0
+                || !actor.build_charges.is_some_and(|charges| charges > 0)
                 || !native_city
                     .producing
                     .as_deref()
@@ -6535,7 +6535,7 @@ fn translate(
             Some(Order {
                 kind: "unit",
                 subject: Some(actor.id),
-                verb: Some("PROJECT_PRODUCTION".to_string()),
+                verb: Some("CONTRIBUTE_PROJECT".to_string()),
                 pos: Some((actor.x, actor.y)),
             })
         }
@@ -7241,7 +7241,7 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
 /// carries no mission state.
 const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
     (
-        "PROJECT_PRODUCTION",
+        "CONTRIBUTE_PROJECT",
         "no per-command project-production attribution; builder disappearance alone is not proof of contribution",
     ),
     (

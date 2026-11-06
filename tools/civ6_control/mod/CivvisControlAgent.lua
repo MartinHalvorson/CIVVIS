@@ -17236,7 +17236,7 @@ local function applyOrder(player, pid, row, turn)
 		-- two arguments. Its native gate owns Royal Society eligibility, charges,
 		-- the active district project and the once-per-city/turn restriction.
 		-- x/y only guard against a stale position; they are not command params.
-		if verb == "PROJECT_PRODUCTION" then
+		if verb == "CONTRIBUTE_PROJECT" then
 			if x == nil or y == nil then return false, "no_project_position"; end
 			if unit:GetX() ~= x or unit:GetY() ~= y then return false, "project_position_changed"; end
 			local hash = CMD["UNITCOMMAND_PROJECT_PRODUCTION"];

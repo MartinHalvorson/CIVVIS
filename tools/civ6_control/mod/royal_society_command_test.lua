@@ -116,7 +116,7 @@ UnitManager.RequestCommand = function(...)
  requests[#requests+1] = {unit=unit:GetID(), hash=hash}
 end
 host.units["0:41"] = {player=0,id=41,x=4,y=4,kind="UNIT_BUILDER"}
-local row = {kind="unit",subject=41,verb="PROJECT_PRODUCTION",x=4,y=4}
+local row = {kind="unit",subject=41,verb="CONTRIBUTE_PROJECT",x=4,y=4}
 local hash = hashFor("UNITCOMMAND_PROJECT_PRODUCTION")
 local player = stub()
 local ok, why = applyOrder(player,PID,row,118)
@@ -143,5 +143,5 @@ GameInfo.UnitCommands = setmetatable({}, {__index=function(_, name)
 end})
 rawget(_G, "CivvisResolveActions")()
 ok, why = applyOrder(player,PID,row,118)
-assert(not ok and why == "unknown_cmd_PROJECT_PRODUCTION" and #requests == 1)
+assert(not ok and why == "unknown_cmd_CONTRIBUTE_PROJECT" and #requests == 1)
 print("Royal Society command: strict refusal, two-argument request, stale/missing positions, missing command and request errors pass")
