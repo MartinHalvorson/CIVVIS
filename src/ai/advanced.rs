@@ -9528,6 +9528,11 @@ pub struct AdvancedAi {
     /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
     /// by default.
     science_heads_keep_their_queue: bool,
+    /// `sea-scout-claims-the-queue`: once a hull can cross Ocean and the
+    /// contact gap is open, the coastal city that finishes it soonest lays down
+    /// the sea scout `contact-fleet` holds, instead of waiting for a queue to
+    /// fall idle. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12682,6 +12687,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
+            sea_scout_claims_the_queue: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             threatened_war_holds_the_claims: false,
@@ -29408,6 +29414,9 @@ impl AdvancedAi {
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
+            // `sea-scout-claims-the-queue`: the same eye, from a working queue
+            // once it can cross Ocean. Exact no-op while the gene is off.
+            self.claim_queue_for_the_sea_scout(g, pid, &plan);
             self.reserve_idle_naval_recon(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for

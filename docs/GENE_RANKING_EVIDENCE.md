@@ -365,6 +365,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-allies-2` | off (unmeasured) | Opt-in gene `science-seat-allies-2`; see `advanced/culture_seat_allies.rs`. | — \| 2 |
 | `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `science-writing-before-the-luxury` | off (unmeasured) | Opt-in Science Writing priority before optional research detours. | 1 \| 1 |
+| `sea-scout-claims-the-queue` | off (unmeasured) | Opt-in gene `sea-scout-claims-the-queue`; see `advanced/contact_fleet.rs`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `settler-shelters-from-the-war` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
 | `settler-shelters-from-the-war-2` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war-2`, version two of `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |

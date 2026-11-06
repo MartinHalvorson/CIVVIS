@@ -3555,6 +3555,31 @@ fn a_battlefield_request_is_flat_bounded_and_without_city_states() {
 /// would silently move every such caller onto a different world, and a
 /// diameter-8 sweep would quietly become a diameter-20 one.
 #[test]
+fn a_globe_draws_and_drains_everything_the_map_animates() {
+    // `animateDiff` fills the queues on every world and only the flat renderer
+    // read them. On a globe, the default world, units teleported, blows landed
+    // with no number, and the full queues kept the page repainting for ever.
+    let planet = EMBEDDED_APP_JS
+        .split_once("function drawPlanetMap() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("drawPlanetMap is a top-level function")
+        .0;
+    for pass in [
+        "drawPlanetClaims(cellByKey, onSheet, now);",
+        "planetUnitWalk(unit, cellByKey, onSheet, now)",
+        "planetStrikeLunge(unit, cellByKey, onSheet, now)",
+        "drawPlanetCombatEffects(cellByKey, onSheet, now);",
+        "retirePlanetEffects(now);",
+    ] {
+        assert!(planet.contains(pass), "the globe lost {pass}");
+    }
+    // Screen points mean nothing on a turning world: each effect keeps its tile.
+    assert!(EMBEDDED_APP_JS.contains("mapPoints, steps, positions,"));
+    assert_eq!(EMBEDDED_APP_JS.matches("t0: now, pos: nu.pos").count(), 1);
+    assert_eq!(EMBEDDED_APP_JS.matches("pos: nc.pos, rise: 20").count(), 1);
+}
+
+#[test]
 fn a_tactics_globe_request_without_dimensions_gets_the_smallest_of_its_ladder() {
     let planet = new_game_params(
         &current(),
@@ -7362,7 +7387,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // Strategic combat stays diagrammatic: damage labels and compact hit
     // sparks, without a second cinematic effects renderer.
     assert!(EMBEDDED_INDEX.contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
-    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
+    assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now, pos: nu.pos });"));
     assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
     assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
     assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
