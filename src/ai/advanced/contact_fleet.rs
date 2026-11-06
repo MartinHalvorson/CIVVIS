@@ -218,7 +218,7 @@ impl AdvancedAi {
             && city
                 .queue
                 .first()
-                .is_none_or(|head| Self::steal_spy_displaces(g, head))
+                .is_none_or(|head| Self::spy_displaces(g, head))
     }
 
     /// `sea-scout-claims-the-queue`: lay down the sea scout the contact gap is

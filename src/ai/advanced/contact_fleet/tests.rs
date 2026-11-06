@@ -403,13 +403,17 @@ fn a_threatened_city_keeps_its_queue() {
 
 #[test]
 fn a_wonder_or_a_soldier_keeps_the_head() {
-    for head in [
-        Item::Wonder {
-            wonder: Name::new("great_library"),
-        },
-        unit("warrior"),
-    ] {
-        let (mut game, city) = city_working_on(head.clone());
+    for wonder in [true, false] {
+        let (mut game, city) = working_city();
+        let head = if wonder {
+            Item::Wonder {
+                wonder: Name::new("great_library"),
+                pos: game.cities[&city].pos,
+            }
+        } else {
+            unit("warrior")
+        };
+        game.cities.get_mut(&city).unwrap().queue = vec![head.clone()];
         claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(80));
         assert_eq!(game.cities[&city].queue.first(), Some(&head));
     }
