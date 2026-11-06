@@ -1850,3 +1850,62 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
     let (sequence, _) = search_kill_sequence(&shooters, &targets, &alone, &mut field, false);
     assert!(sequence.is_empty());
 }
+
+#[test]
+fn field_reads_the_tile_it_leaves_ships_off_and_is_registered() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.field_reads_the_tile_it_leaves, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "field_reads_the_tile_it_leaves"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "field-reads-the-tile-it-leaves",
+        |ai| ai.field_reads_the_tile_it_leaves,
+    );
+}
+
+/// Live 045954Z t87 on the live constructor: with `strike-reach` the field's
+/// reach stops at the tile our unit holds, so the only approach to the tile
+/// it steps back to reads no danger. Under the gene the hostile stepping into
+/// the tile it left is priced, for that unit and no other: a unit elsewhere
+/// opens nothing.
+#[test]
+fn the_field_reads_a_hostile_stepping_into_the_tile_the_unit_leaves() {
+    let mut g = open_field();
+    let corridor = [at(10, 4), at(10, 5), at(10, 6), at(10, 7)];
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = if corridor.contains(&tile.pos) {
+            crate::name!("coast")
+        } else {
+            crate::name!("plains")
+        };
+    }
+    g.spawn_test_unit("galley", 1, at(10, 4));
+    let ours = g.spawn_test_unit("heavy_chariot", 0, at(10, 6));
+    wound(&mut g, ours, 40);
+    let other = g.spawn_test_unit("warrior", 0, at(13, 7));
+    let back = at(10, 7);
+    let mut off = DangerField::with_reach(&g, 0, true);
+    assert!(
+        !off.reaches_tile(back),
+        "the strike reach stops at our tile"
+    );
+    assert!(
+        off.danger(back, ours) <= NO_DANGER,
+        "the miss the gene closes"
+    );
+    let mut on = DangerField::with_reach(&g, 0, true);
+    on.reads_the_tile_it_leaves = true;
+    assert!(
+        on.danger(back, ours) > 0.0,
+        "the Galley steps into the tile left"
+    );
+    assert!(
+        on.danger(back, other) <= NO_DANGER,
+        "another unit opens nothing"
+    );
+    assert!(
+        on.danger(at(10, 6), ours) > 0.0,
+        "where it stands the blow reads as it always did"
+    );
+}

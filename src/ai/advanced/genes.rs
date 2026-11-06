@@ -38,10 +38,11 @@
 //!
 //! ⚠ Existing rows are never re-ordered: the screen writes genes in this
 //! order, and `tools/genes.py` re-derives a batch's gene set from this file
-//! at the commit the batch names. Add a row below the tail append marker for
-//! its tag's first-letter range. Every marker follows the existing rows, so
-//! the distinct append points let concurrent gene PRs merge without moving a
-//! positional bit that a running screen already wrote.
+//! at the commit the batch names. Add a row at the end of the tail append
+//! marker's range for its tag's first letter, so concurrent gene PRs merge.
+//! A row under an earlier marker does shift the rows filed below it by one,
+//! and that is harmless: a run's bits are read against the gene list in its
+//! own header, and `gene_screen` refuses to merge runs whose lists differ.
 //!
 //! Every row's comment is the note its old table row or its old bundle line
 //! carried — the reason the gene exists and the measurement that motivated
@@ -5194,6 +5195,7 @@ pub const GENES: &[Gene] = &[
     // Native 002152 legacy t133: five Universities, no Chemistry, while the
     // tank path held research through t142. Bounded foundation experiment.
     Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
+    Gene { tag: "science-chain-crosses-window", field: "science_chain_crosses_window", kind: Kind::OptIn, enable: AdvancedAi::enable_science_chain_crosses_window, disable: AdvancedAi::disable_science_chain_crosses_window },
     // On the Science seat's losing-war turns, 309 of 664 queue decisions
     // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
     // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
@@ -5393,6 +5395,15 @@ pub const GENES: &[Gene] = &[
     // so it does not pull a city off fresh water. Indonesia only. See
     // `nusantara_settles_the_shore.rs`.
     Gene { tag: "nusantara-settles-the-shore", field: "nusantara_settles_the_shore", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_settles_the_shore, disable: AdvancedAi::disable_nusantara_settles_the_shore },
+    // Live Lv 8 Deity 045954Z t87: the rotation moved a 40-hp Heavy Chariot
+    // one tile, reading "danger 69 where it stood, -0 where it stands"; the
+    // Galley beside it stepped into the tile it left and killed it. With
+    // `strike-reach` on the field's reach stops at tiles our units hold, so
+    // it never stands a hostile on a tile the unit is leaving. Under the gene
+    // a hostile that can strike the unit's tile and whose flood holds the new
+    // tile, within its range of the old one, counts. See
+    // `advanced/battle_planner.rs`.
+    Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
     // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
     Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
     // ---- append: a-b ------------------------------------------------

@@ -264,6 +264,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-is-no-front` | off (unmeasured) | Keep a faith war from choosing the campaign front. | — \| 2 |
 | `faith-war-is-no-front-2` | off (unmeasured) | Version 2 of `faith-war-is-no-front`. | — \| 2 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
+| `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
@@ -354,6 +355,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
+| `science-chain-crosses-window` | off (unmeasured) | Explicit Science routing admits legal prerequisite steps beyond the era window. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
 | `science-drive-answers-from-the-pad` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad`; see `Self::science_drive_answers_from_the_pad`. | — \| 2 |
 | `science-drive-answers-from-the-pad-2` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad-2`; see `Self::science_drive_answers_from_the_pad_2`. | — \| 2 |
