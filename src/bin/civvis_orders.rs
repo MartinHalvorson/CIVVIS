@@ -5775,7 +5775,7 @@ fn decide(
                 (person.can_activate
                     || orders.iter().any(|order| {
                         order.kind == "unit"
-                            && order.subject == Some(unit.id as i64)
+                            && order.subject == Some(unit.id)
                             && order.verb.as_deref() == Some("ACTIVATE_GREAT_PERSON")
                     }))
                     && matches!(
