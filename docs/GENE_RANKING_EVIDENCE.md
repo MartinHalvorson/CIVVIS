@@ -331,6 +331,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `parallel-library-backlog` | off (unmeasured) | Coordinate a quoted opening Library and backlog Builder. | 1 \| 1 |
 | `parity-upgrades-before-it-buys` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
 | `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
+| `paused-district-spares-the-launch` | off (unmeasured) | Keep a committed Science launch or laser ahead of paused districts. | 1 \| 1 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-earns-the-launch` | off (unmeasured) | Opt-in committed launch relocation; see `governor_dividends/pingala_launch`. | 1 \| 1 |
 | `pingala-follows-research-2` | off (unmeasured) | Pingala version two retains ordinary dividends and joins a committed launch producer. | 1 \| 2 |

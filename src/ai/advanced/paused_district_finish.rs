@@ -30,6 +30,16 @@
 //! city-state cities (Bogotá's 65536 maps to a city-state in a fresh-board
 //! replay of G054318Z), so a paused foundation's `pr` often never reaches
 //! `production_progress`. The host menu is keyed through our own city ids.
+//!
+//! `paused-district-spares-the-launch` (independent opt-in) preserves a legal,
+//! committed Science launch or laser at the head instead. In native Deity
+//! Indonesia civvis-20261106T101921Z, Palembang started Mars at t178, then this
+//! pass restored its two-turn Neighborhood at t178/1, t178/2 and t179/0;
+//! the journal explicitly said "launch mars colony waits". The host had Mars
+//! at the head through t179/0 before the Neighborhood returned and Mars moved
+//! to Majapahit. This observation motivates the guard, not a saved-turn or
+//! victory claim. Ordinary queues and the existing defence handoffs retain
+//! their rules; the new switch is off by default.
 
 use super::{AdvancedAi, CITY_MAX_HP};
 use crate::game::{Action, Game, Item};
@@ -58,6 +68,14 @@ impl AdvancedAi {
             return None;
         }
         let head = city.queue.first();
+        if self.paused_district_spares_the_launch
+            && head.is_some_and(|item| {
+                self.science_endgame_queue_authoritative(g, pid, item)
+                    && Self::production_commitment_is_legal(g, pid, cid, item)
+            })
+        {
+            return None;
+        }
         let mut best: Option<(Item, f64, Option<f64>)> = None;
         for pos in &city.owned_tiles {
             let Some(foundation) = g

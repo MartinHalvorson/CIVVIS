@@ -86,6 +86,8 @@ impl AdvancedAi {
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------
         // ---- append: p-r --------------------------------------------
+        /// Keep a committed Science launch or laser ahead of paused districts.
+        paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
         // ---- append: s-s --------------------------------------------
