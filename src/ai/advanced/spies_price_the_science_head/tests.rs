@@ -120,12 +120,29 @@ fn both_claims_use_the_same_earliest_native_completion() {
         install_test_district(&mut g, rival, "spaceport");
         g.record_contact(0, 1);
         g.players[0].explored.insert(site);
+        let district_tiles: Vec<_> = g.cities[&rival]
+            .districts
+            .iter()
+            .map(|(_, pos)| pos)
+            .collect();
+        g.players[0].explored.extend(district_tiles);
+        assert_eq!(
+            AdvancedAi::steal_targets(&g, 0).len(),
+            0,
+            "rival technologies are added below"
+        );
         for tech in ["education", "astronomy", "mathematics", "printing"] {
             g.players[1].techs.insert(Name::new(tech));
         }
         for civic in ["diplomatic_service", "nationalism"] {
             g.players[0].civics.insert(Name::new(civic));
         }
+        assert!(
+            AdvancedAi::steal_targets(&g, 0).contains(&1),
+            "fixture has a visible Campus and technologies to steal"
+        );
+        assert!(g.spy_capacity(0) > 0);
+        assert!(g.can_produce(0, cities[1], &spy()));
         quote(&mut g, cities[0], 12.0);
         quote(&mut g, cities[1], 5.0);
         let mut plan = ai.assess(&g, 0);
