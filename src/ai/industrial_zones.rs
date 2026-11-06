@@ -67,21 +67,7 @@ impl BasicAi {
     /// Whether `cid` holds an Industrial Zone, its foundation, or has one
     /// first in its queue.
     fn industrial_zone_held_or_queued(g: &Game, cid: u32) -> bool {
-        let city = &g.cities[&cid];
-        g.city_has_district_family(city, crate::name!("industrial_zone"))
-            || city.owned_tiles.iter().any(|pos| {
-                g.map
-                    .get(*pos)
-                    .and_then(|tile| tile.district_foundation.as_ref())
-                    .is_some_and(|foundation| {
-                        g.district_family(foundation.district) == "industrial_zone"
-                    })
-            })
-            || matches!(
-                city.queue.first(),
-                Some(Item::District { district, .. })
-                    if g.district_family(*district) == "industrial_zone"
-            )
+        Self::district_family_held_or_queued(g, cid, crate::name!("industrial_zone"))
     }
 
     /// Turns `cid` needs for `item`: the host's figure where it gave one.

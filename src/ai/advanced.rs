@@ -9574,6 +9574,9 @@ pub struct AdvancedAi {
     /// defender the city could train, and keeps the Gold otherwise. Runs the
     /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
     threatened_city_buys_its_defender_2: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -10862,6 +10865,7 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -10920,6 +10924,7 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
@@ -12658,6 +12663,7 @@ impl AdvancedAi {
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
+            universities_before_the_forge: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
@@ -25917,18 +25923,6 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
-        if headroom >= 2.0 {
-            1.0
-        } else if headroom >= 1.0 {
-            0.5
-        } else if headroom > -4.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
     fn settlement_output_value(total: Yields, population: usize) -> f64 {
         let surplus = total.food - 2.0 * population as f64;
         total.production * 2.6
@@ -26074,8 +26068,8 @@ impl AdvancedAi {
                     }
 
                     let surplus = branch.total.food - 2.0 * population as f64;
-                    let growth_rate = surplus.max(0.0)
-                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                    let growth_rate =
+                        surplus.max(0.0) * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate
