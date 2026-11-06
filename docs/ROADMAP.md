@@ -194,14 +194,21 @@ Everything the old roadmap called planned has shipped and then some:
    appending a row to one file conflict wherever that file lives, and sorting
    it only narrows the collision to neighbouring names.
 
-   **Still open, in the order the measurement ranks them:** removing the
-   `fn configured` anchor outright rather than dividing it — its 143
-   `flag: false,` lines are all the derived default, but `impl Default for
-   AdvancedAi` already means `Self::new()`, so the derive is a semantic change
-   to a public trait impl and 83 of those lines are less than a week old;
-   `src/elo.rs`'s four registries and two `ArmKind` match tables (ANCHOR, 15
-   of 18); and the size half of `advanced.rs` and `tests.rs`, 31.7k lines
-   each, which is the only one of these that splitting answers.
+   **The `fn configured` anchor is gone (2026-11-06).** It had grown to 1,102
+   lines, 1,049 of them restating a type's default, and it was the one line
+   every gene had to add that said nothing. `AdvancedAi` now derives `Default`,
+   and `configured` needs only the 17 fields that differ, so a gene that ships
+   off needs no line there. The cost named here earlier was that
+   `AdvancedAi::default()` meant `Self::new()`; by then one test called it.
+   It now means the blank, and `nothing_plays_the_blank_default` fails if
+   anything reaches for it. The markers and a few `false` lines stay in the
+   literal only so the gene pull requests open that day still merge cleanly;
+   a follow-up removes them.
+
+   **Still open, in the order the measurement ranks them:** `src/elo.rs`'s four
+   registries and two `ArmKind` match tables (ANCHOR, 15 of 18); and the size
+   half of `advanced.rs` and `tests.rs`, which is the only one of these that
+   splitting answers.
 
    **`advanced.rs` had both problems, and its shared-anchor half is done
    (2026-08-18).** It is the most contended file in the repository *and* the
