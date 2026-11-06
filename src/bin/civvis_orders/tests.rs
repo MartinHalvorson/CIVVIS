@@ -10385,9 +10385,10 @@ fn captive_ransom_offers_favor_beside_the_gold() {
 }
 
 /// `tribute-buys-the-friendship`: the strongest neighbour at peace, stronger
-/// than us and too cold for the friendship ask, is sent the Gold that closes
-/// its opinion gap to the Friendly median, on its cadence turn, inside the
-/// favorable-deal cap and the treasury reserve.
+/// than us and too cold for the friendship ask, is sent one whole gift that
+/// closes its opinion gap to the Friendly median, on its cadence turn. A gap
+/// one gift cannot close, a rival already paid, or a treasury that cannot meet
+/// the whole gift sends nothing.
 #[test]
 fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
     let reason = |text: &str, score: f64| civvis::mirror::StateOpinionModifier {
@@ -10410,8 +10411,8 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
         gold: 400,
         military: 200.0,
         rivals: vec![
-            rival(1, 300.0, "UNFRIENDLY", -20.0),
-            rival(3, 600.0, "UNFRIENDLY", -8.0),
+            rival(1, 300.0, "UNFRIENDLY", -2.0),
+            rival(3, 600.0, "UNFRIENDLY", -3.0),
             at_war,
         ],
         ..StateSnapshot::default()
@@ -10429,8 +10430,8 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
     assert_eq!(gift.verb.as_deref(), Some("TRIBUTE"));
     assert_eq!(
         gift.pos,
-        Some((130, 0)),
-        "13 points from -8 to +5, ten Gold a point"
+        Some((80, 0)),
+        "8 points from -3 to +5, ten Gold a point"
     );
 
     // Any other order to that rival this frame holds the gift.
@@ -10440,27 +10441,34 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
     );
     assert_eq!(orders.len(), 1);
 
-    // The favorable-deal modifier holds at most +20: what is already held
-    // is room spent.
-    state.rivals[1].opinion_modifiers = Some(vec![
-        reason("Unknown Reason", -25.0),
-        reason("Favorable trade deals to them", 12.0),
-    ]);
+    // A gap of exactly one gift is sent; one point more is out of reach.
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -5.0)]);
     let mut orders = Vec::new();
     append_tribute_order(&state, &mut orders);
+    assert_eq!(orders[0].pos, Some((100, 0)));
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Different Governments", -20.0)]);
+    let mut orders = Vec::new();
     assert_eq!(
-        orders[0].pos,
-        Some((80, 0)),
-        "8 points of room left under the cap"
+        append_tribute_order(&state, &mut orders),
+        Some("tribute_hold:out_of_reach")
+    );
+    assert!(orders.is_empty());
+
+    // A rival already holding a favorable deal is not paid again.
+    state.rivals[1].opinion_modifiers = Some(vec![
+        reason("Unknown Reason", -6.0),
+        reason("Favorable trade deals to them", 3.0),
+    ]);
+    assert_eq!(
+        append_tribute_order(&state, &mut Vec::new()),
+        Some("tribute_hold:already_paid")
     );
 
-    // The treasury keeps its reserve, and too small a gift is not sent.
-    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -8.0)]);
-    state.gold = TRIBUTE_GOLD_RESERVE + 70;
-    let mut orders = Vec::new();
-    append_tribute_order(&state, &mut orders);
-    assert_eq!(orders[0].pos, Some((70, 0)));
-    state.gold = TRIBUTE_GOLD_RESERVE + i64::from(TRIBUTE_MIN_GOLD) - 1;
+    // The gift is whole or not at all, over the reserve.
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -3.0)]);
+    state.gold = TRIBUTE_GOLD_RESERVE + 80;
+    assert_eq!(append_tribute_order(&state, &mut Vec::new()), None);
+    state.gold = TRIBUTE_GOLD_RESERVE + 79;
     let mut orders = Vec::new();
     assert_eq!(
         append_tribute_order(&state, &mut orders),
@@ -10468,6 +10476,13 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
     );
     assert!(orders.is_empty());
     state.gold = 400;
+
+    // A point short still sends the smallest gift.
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", 4.0)]);
+    let mut orders = Vec::new();
+    append_tribute_order(&state, &mut orders);
+    assert_eq!(orders[0].pos, Some((TRIBUTE_MIN_GOLD as i32, 0)));
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -3.0)]);
 
     // Off its cadence turn nothing goes out.
     state.turn = 14;
@@ -10484,7 +10499,7 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
         append_tribute_order(&state, &mut Vec::new()),
         Some("tribute_hold:no_gap")
     );
-    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -8.0)]);
+    state.rivals[1].opinion_modifiers = Some(vec![reason("Unknown Reason", -3.0)]);
     state.rivals[1].diplomatic_state = Some("DIPLO_STATE_FRIENDLY".to_string());
     assert_eq!(
         append_tribute_order(&state, &mut Vec::new()),

@@ -1,0 +1,36 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "plant-reads-the-grid",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 25 cases: live Deity 034948Z and 105753Z (Korea) and 165539Z (Indonesia) at t157-173, each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from 50ff698451. Both arms carry the run's requested genome; the on arm adds the gene. 19 of 25 reads changed. Off, idle or deferrable queues take a Builder, Shipyard, Commercial Hub, Submarine, Market, Spy, Sewer or Art Museum while Oil is banked or earning and no plant stands. On, one city claims its Oil plant through the Factory claim ('claims its oil power plant for the region's industry ... reaches 2 more of our cities'); an item two turns from done finishes first and the plant follows (034948Z t163, t167; 105753Z t165). A Spaceport at the head is left alone (034948Z t160). An earlier build with the scorer credit alone changed 0 of 25 reads, which is why the claim exists.",
+  "archive": {
+    "path": "docs/eval/2026-11-06-plant-reads-the-grid.native-queries.tar.xz",
+    "sha256": "493452bac33f651e404e280a90dce615e0976818b046b626e4536b115cb65ec8"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json",
+    "native-queries-01/0014/result.json",
+    "native-queries-01/0015/result.json",
+    "native-queries-01/0016/result.json",
+    "native-queries-01/0017/result.json",
+    "native-queries-01/0018/result.json",
+    "native-queries-01/0019/result.json",
+    "native-queries-01/0020/result.json",
+    "native-queries-01/0021/result.json",
+    "native-queries-01/0022/result.json",
+    "native-queries-01/0023/result.json",
+    "native-queries-01/0024/result.json"
+  ]
+}

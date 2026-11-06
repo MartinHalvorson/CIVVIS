@@ -87,7 +87,7 @@ fn the_empire_fighting_our_enemy_is_asked_for_a_military_alliance() {
         let mut off = AdvancedAi::new();
         assert!(!off.military_alliance_shield_step(&mut game, 0, &plan(strategy, None), None));
         assert!(asks(&game).is_empty());
-        assert_eq!(off.military_alliance_shield_partner(), None);
+        assert_eq!(off.military_alliance_shield_ask(), None);
 
         let mut ai = shield();
         assert!(ai.military_alliance_shield_step(&mut game, 0, &plan(strategy, None), None));
@@ -96,7 +96,11 @@ fn the_empire_fighting_our_enemy_is_asked_for_a_military_alliance() {
             vec![(1, Some("military".to_string()), true)],
             "{strategy:?}"
         );
-        assert_eq!(ai.military_alliance_shield_partner(), Some(1));
+        assert_eq!(
+            ai.military_alliance_shield_ask()
+                .map(|(partner, _)| partner),
+            Some(1)
+        );
         assert_eq!(counter(&game, "military_alliance_shield:asked"), Some(1));
         assert_eq!(
             counter(&game, "military_alliance_shield:asked_common_enemy"),
@@ -115,7 +119,7 @@ fn the_empire_fighting_our_enemy_is_asked_for_a_military_alliance() {
         );
         game.turn += 1;
         assert!(!ai.military_alliance_shield_step(&mut game, 0, &plan(strategy, None), None));
-        assert_eq!(ai.military_alliance_shield_partner(), None);
+        assert_eq!(ai.military_alliance_shield_ask(), None);
     }
 }
 
