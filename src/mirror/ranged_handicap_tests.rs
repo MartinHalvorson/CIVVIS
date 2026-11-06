@@ -63,7 +63,10 @@ fn ranged_handicap_native_base_stats_and_difficulty_cross_rebuild_sync_and_clone
     assert_native_base_is_not_a_total(&mirror.game, 4.0);
     assert_native_base_is_not_a_total(&mirror.game.clone(), 4.0);
     state.turn += 1;
-    state.seat.difficulty = "DIFFICULTY_PRINCE".into();
     mirror.sync(&snapshot, &state, 0);
-    assert_native_base_is_not_a_total(&mirror.game, 0.0);
+    assert_native_base_is_not_a_total(&mirror.game, 4.0);
+    // Difficulty is a REBUILD-only game constant, not a per-turn reading.
+    state.seat.difficulty = "DIFFICULTY_PRINCE".into();
+    let prince = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+    assert_native_base_is_not_a_total(&prince.game, 0.0);
 }

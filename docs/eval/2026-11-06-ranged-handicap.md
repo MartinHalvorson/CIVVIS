@@ -64,8 +64,9 @@ human branch; both sides of a public ranged exchange; city and air forecasts;
 and a host base-stat/difficulty fixture through rebuild, sync and clones.
 The fixture imports native base Field Cannon strength 60 with Deity and
 expects modeled attack strength 64, while the local human Archer stays 25.
-A later Prince readback clears the modeled bonus. These are synthetic
-fixtures; no actual historical state is mislabeled as a counterfactual win.
+A fresh Prince reconstruction has no bonus; a same-game sync preserves the
+fixed Deity setting. These are synthetic fixtures; no actual historical
+state is mislabeled as a counterfactual win.
 
 No native game, harness, lock waiter, force file, lane setting, difficulty
 number, gene default or native control-mod behavior changes in this work.
