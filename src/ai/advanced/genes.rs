@@ -5349,6 +5349,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "fresh-water-prices-the-site", field: "fresh_water_prices_the_site", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_water_prices_the_site, disable: AdvancedAi::disable_fresh_water_prices_the_site },
     // An assigned Defend formation keeps its combat slots near its threatened city.
     Gene { tag: "defenders-keep-the-city-in-reach", field: "defenders_keep_the_city_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_keep_the_city_in_reach, disable: AdvancedAi::disable_defenders_keep_the_city_in_reach },
+    // Live Deity (11-05): from t150 the median science seat met half its Power
+    // demand; at t170, 9 of 32 such games held no plant and 7 of them could
+    // build one, five banking Oil beside dark Labs. The plant credit read 4
+    // Power for its own city and paid nothing against a Lab-and-Factory
+    // demand of 5, though the host burns as much fuel as each city in six
+    // tiles needs. Under the gene a plant is worth every city it can fuel in
+    // reach, and the Factory claim, which named Coal alone, takes the plant
+    // the fuel can run. See `advanced/plant_reads_the_grid.rs`.
+    Gene { tag: "plant-reads-the-grid", field: "plant_reads_the_grid", kind: Kind::OptIn, enable: AdvancedAi::enable_plant_reads_the_grid, disable: AdvancedAi::disable_plant_reads_the_grid },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

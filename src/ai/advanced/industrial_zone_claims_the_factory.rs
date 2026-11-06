@@ -164,6 +164,10 @@ impl AdvancedAi {
         }
         let (item, reach) = if let Some(factory) = BasicAi::civ_building(g, pid, cid, "factory") {
             (factory, Self::factory_new_reach(g, pid, cid))
+        } else if let Some(plant) = self.grid_plant_claim(g, pid, cid) {
+            // `plant-reads-the-grid`: the plant our fuel can run, Oil included.
+            // See `advanced/plant_reads_the_grid.rs`.
+            plant
         } else {
             // See `diplomatic_lane_refuses_fossil_power`: this claim builds
             // the plant outside both the strategic scorer and the delegated
@@ -220,7 +224,10 @@ impl AdvancedAi {
             return false;
         }
         let industry = matches!(item, Item::Building { building }
-            if is_factory(g, building) || is_coal_plant(g, building));
+            if is_factory(g, building)
+                || is_coal_plant(g, building)
+                || (self.plant_reads_the_grid
+                    && matches!(building.as_str(), "oil_power_plant" | "nuclear_power_plant")));
         industry && g.can_produce(pid, cid, item)
     }
 

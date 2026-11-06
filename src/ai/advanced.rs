@@ -8313,6 +8313,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `plant-reads-the-grid`: a fuel-burning plant is credited the powered
+    /// yields of every city it can fuel in reach, not 4 Power for its own
+    /// city. See `advanced/plant_reads_the_grid.rs`. Off by default.
+    plant_reads_the_grid: bool,
     /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
     revealed_launch_tech_takes_the_slot: bool,
     /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
@@ -10955,6 +10959,9 @@ mod parity_upgrades_before_it_buys;
 mod paused_district_finish;
 /// `pillaged-districts-repair-first`: see `advanced/pillaged_repairs_first.rs`.
 mod pillaged_repairs_first;
+/// `plant-reads-the-grid`: a fuel plant is worth every city it can fuel in
+/// reach. See `advanced/plant_reads_the_grid.rs`.
+mod plant_reads_the_grid;
 /// `plaza-serves-the-scientist-2`: the Science Plaza's tier buildings claim
 /// its city's queue. See `advanced/plaza_serves_the_scientist_2.rs`.
 mod plaza_serves_the_scientist_2;
@@ -12434,6 +12441,7 @@ impl AdvancedAi {
             outclassed_sieges: BTreeMap::new(),
             nusantara_reads_the_coast: false,
             // ---- append: p-r ----------------------------------------
+            plant_reads_the_grid: false,
             revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
             parity_upgrades_before_it_buys_2: false,
@@ -24807,7 +24815,10 @@ impl AdvancedAi {
                     // price of a beaker.
                     // See `power_the_laboratory`: the Research Lab's larger
                     // half is switched off until something generates power.
-                    let power_unlock = if self.power_the_laboratory_on() && !spec.wonder {
+                    let power_unlock = if self.plant_reads_the_grid && !spec.wonder {
+                        self.yield_value(self.plant_grid_yields(g, city, spec), plan.strategy)
+                            * 42.0
+                    } else if self.power_the_laboratory_on() && !spec.wonder {
                         self.yield_value(Self::power_switched_on(g, city, spec), plan.strategy)
                             * 42.0
                     } else {
