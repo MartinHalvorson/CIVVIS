@@ -767,6 +767,10 @@ def main(argv: list[str] | None = None) -> int:
             # ran only half of itself. On 2026-11-06 a sound function named
             # `tone` replaced the renderer's colour helper: this check passed,
             # and every real visitor's game froze at their first click.
+            #
+            # Nothing here builds an AudioContext to prove the flag took: on a
+            # Linux runner with no sound device that call hung the page for the
+            # whole 60-second answer window and failed every deploy.
             "--autoplay-policy=no-user-gesture-required",
             url,
         ],
@@ -861,16 +865,6 @@ def main(argv: list[str] | None = None) -> int:
         dev.alive = False
 
         print()
-        # What the flag above is for. A browser that ignored it would pass this
-        # check for the old reason, so say which kind of pass this was.
-        audio = dev.evaluate(
-            "(async () => { const context = new AudioContext();"
-            " await Promise.race([context.resume(),"
-            " new Promise(done => setTimeout(done, 2000))]);"
-            " const state = context.state; context.close(); return state; })()"
-        )
-        print(f"    audio       {audio}")
-
         problems = []
         if not report.get("ready"):
             problems.append("the engine never answered")
