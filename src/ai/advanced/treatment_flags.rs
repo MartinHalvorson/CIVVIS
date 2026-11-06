@@ -2274,6 +2274,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `world-religion-condemns-the-faith`; see
+        /// `advanced/world_religion_condemns.rs`.
+        world_religion_condemns_the_faith => enable_world_religion_condemns_the_faith, disable_world_religion_condemns_the_faith;
         /// Opt-in gene `government-reach-pays-the-switch`; see
         /// `advanced/government_reach.rs`.
         government_reach_pays_the_switch => enable_government_reach_pays_the_switch, disable_government_reach_pays_the_switch;

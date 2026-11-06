@@ -399,6 +399,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `war-defense-spends-the-runway` | off (unmeasured) | Opt-in gene `war-defense-spends-the-runway`; see `advanced/war_defense_spends_the_runway.rs`. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
+| `world-religion-condemns-the-faith` | off (unmeasured) | Opt-in gene `world-religion-condemns-the-faith`; see `advanced/world_religion_condemns.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

@@ -5326,6 +5326,14 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // Live (11-01 to 11-05): option A in all 74 World Religion sessions, though
+    // option B lets anyone condemn a faith's units at peace for 25 Favor and
+    // the Deity median session reads 5 rival votes. 213449Z lost to Orthodoxy
+    // at t173 with 9 of 9 cities converted, no religious unit and 869 Faith.
+    // Under the gene the ballot buys B on the faith holding the most cities
+    // when Favor reaches it, and our soldiers condemn that faith at peace. See
+    // `advanced/world_religion_condemns.rs`.
+    Gene { tag: "world-religion-condemns-the-faith", field: "world_religion_condemns_the_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_world_religion_condemns_the_faith, disable: AdvancedAi::disable_world_religion_condemns_the_faith },
     // Live Deity, 11-04 21Z to 11-05: into Communism Science rose 17 of 17
     // (median +15%), into Corporate Libertarianism it fell 5 of 5 at t171-193
     // (median -15%, worst -27%), on a two-slot gain the capacity fallback took
