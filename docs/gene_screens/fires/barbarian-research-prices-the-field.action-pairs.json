@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "barbarian-research-prices-the-field",
+  "archive": {
+    "path": "docs/eval/2026-11-06-barbarian-research-prices-the-field.action-pairs.tar.xz",
+    "sha256": "a9313a2757fd59a33aa51f7a1264cd2d36483f984230beba87eabbd2af734a05"
+  },
+  "members": [
+    "pair-0.json",
+    "pair-1.json"
+  ],
+  "scope": "Recorded fixed native70/0 snapshot, defaultdeployment+explicitIndonesiaScience, two freshqueries/arm, onegene bit. Proves proposalactivation only; not original nativeforceprofile/persistentcontrol, nativeapplication, savedturns, militarysuccess or victorystrength."
+}
