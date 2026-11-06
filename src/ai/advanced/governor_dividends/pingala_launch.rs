@@ -230,6 +230,11 @@ impl AdvancedAi {
         if self.live_governor_assignment_adapter {
             self.observe_governor_posts(g, pid);
         }
+        think!(self.journal(), Government, Detail,
+            "Checking the earned launch policy";
+            "pingala-earns-the-launch entry: target {:?}; posture {:?}; governors {:?}",
+            self.active_victory_target(g), plan.strategy,
+            g.players[pid].governor_roster.keys().collect::<Vec<_>>());
         let Some(proposal) = self.earned_launch_move(g, pid, plan) else {
             return false;
         };
