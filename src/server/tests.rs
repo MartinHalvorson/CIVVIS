@@ -6,10 +6,10 @@ use super::{
     staged_next_game_params, strategy_roster, tile_mark, valid_between_game_countdown_ms,
     viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
-    EMBEDDED_APP_FRONTDOOR_JS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
-    EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-    EMBEDDED_INDEX, EMBEDDED_INDEX_HTML, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL,
-    VIEWER_ACTIVE,
+    EMBEDDED_APP_FRONTDOOR_JS, EMBEDDED_APP_JS, EMBEDDED_APP_MOMENTS_JS, EMBEDDED_APP_SETUP_JS,
+    EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
+    EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, EMBEDDED_INDEX_HTML,
+    MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -8780,6 +8780,57 @@ fn unit_health_bars_only_label_damage() {
         3,
         "the shared damage-only health renderer should serve the flat map and globe"
     );
+}
+
+#[test]
+fn a_game_has_a_start_a_pause_and_its_payoffs() {
+    // The moments script ships to every host, and every id the front door binds
+    // at load exists: one missing id is a TypeError that loses the whole script.
+    assert!(EMBEDDED_APP_MOMENTS_JS.starts_with("\"use strict\";"));
+    let served = String::from_utf8(index_with_app_instance(EMBEDDED_INDEX_HTML, 7)).unwrap();
+    assert!(served.contains(r#"<script src="/assets/app_moments.js?instance=7"></script>"#));
+    for id in [
+        "moments",
+        "fd-pause",
+        "fd-resume",
+        "fd-save",
+        "fd-save-note",
+        "fd-settings",
+        "fd-sound",
+        "fd-sound-label",
+        "fd-exit",
+        "fd-intro",
+        "fd-intro-crest",
+        "fd-intro-kicker",
+        "fd-intro-leader",
+        "fd-intro-ability",
+        "fd-intro-goal",
+        "fd-intro-go",
+    ] {
+        assert!(
+            EMBEDDED_INDEX_HTML.contains(&format!("id=\"{id}\"")),
+            "the page is missing #{id}"
+        );
+    }
+    // Sound is synthesised: the bundle carries no audio, and a muted player
+    // never builds a context.
+    assert!(EMBEDDED_APP_MOMENTS_JS.contains("if (!soundEnabled) return null;"));
+    // An agent holding the seat plays dozens of turns a minute.
+    assert!(EMBEDDED_APP_MOMENTS_JS.contains("if (SPEC || autoplaying) return;"));
+    assert!(EMBEDDED_APP_JS.contains("announceMoments(fresh);"));
+    // A new game from the menu is a new map: the form refills its seed from the
+    // running world, so without this every game was the same one.
+    let frontdoor = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("async function fdBegin() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("fdBegin is a top-level function")
+        .0;
+    assert!(frontdoor.contains("fdSet(\"mapseed\", \"\");"));
+    assert!(frontdoor.contains("await startNewSimulation();"));
+    // Escape reaches the game menu last, after everything it used to unwind.
+    assert!(EMBEDDED_APP_JS.contains(
+        "if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;"
+    ));
 }
 
 #[test]
