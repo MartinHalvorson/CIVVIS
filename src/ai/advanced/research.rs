@@ -205,6 +205,9 @@ impl AdvancedAi {
         if !self.battlefront_observation {
             return true;
         }
+        if self.barbarian_research_prices_the_field {
+            return Self::barbarian_field_attack_is_imminent(g, pid);
+        }
         let visible = g.player_vision_frame(pid);
         g.player_city_ids(pid)
             .into_iter()
@@ -344,7 +347,7 @@ impl AdvancedAi {
                 && (objective != GrandStrategy::Science
                     || self.barbarian_research_is_urgent(g, pid))
             {
-                BasicAi::barbarian_military_research_goal(g, pid)
+                self.barbarian_research_upgrade_goal(g, pid)
             } else {
                 None
             };

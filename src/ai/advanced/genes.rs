@@ -5424,6 +5424,8 @@ pub const GENES: &[Gene] = &[
     // `advanced/diplo_statue_harbor.rs`.
     Gene { tag: "science-seat-builds-the-statue", field: "science_seat_builds_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_builds_the_statue, disable: AdvancedAi::disable_science_seat_builds_the_statue },
     // ---- append: a-b ------------------------------------------------
+    // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
+    Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
