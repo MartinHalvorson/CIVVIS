@@ -34736,6 +34736,15 @@ function animationRefreshInterval(now = performance.now()) {
 // multiplier, so the scheduling promise and the arithmetic cannot drift apart.
 const MAX_ANIMATION_PAINT_SHARE = .5;
 const MAX_GPU_OVERLAY_PAINT_SHARE = .6;
+const MAX_SPINNING_PAINT_SHARE = .75;
+function animationPaintInterval(now, spinning, gpuOverlay = false) {
+  // Do not miss alternate refreshes because rAF arrives a fraction earlier
+  // than its measured median. Only a turning world gets that small margin.
+  const refresh = animationRefreshInterval(now) * (spinning ? .9 : 1);
+  const share = gpuOverlay ? MAX_GPU_OVERLAY_PAINT_SHARE
+    : spinning ? MAX_SPINNING_PAINT_SHARE : MAX_ANIMATION_PAINT_SHARE;
+  return Math.max(refresh, drawCost / share);
+}
 function animTick(now) {
   requestAnimationFrame(animTick);
   recordPerformanceFrame(now);
@@ -34743,6 +34752,7 @@ function animTick(now) {
   const userCameraMoving = advanceUserCameraMotion(now);
   const followCameraMoving = advanceCameraFollow(now);
   const cameraMoving = userCameraMoving || followCameraMoving;
+  const spinning = spinRunning();
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
@@ -34753,8 +34763,7 @@ function animTick(now) {
   // cost allows, so a city label never steals the surface's smooth rotation.
   if (cameraMoving && planetGpuCanAnimate()) {
     gpuNeedsSettledPaint = true;
-    const overlayCadence = Math.max(animationRefreshInterval(now),
-      drawCost / MAX_GPU_OVERLAY_PAINT_SHARE);
+    const overlayCadence = animationPaintInterval(now, spinning, true);
     if (now - lastIdleDraw > overlayCadence) {
       lastIdleDraw = now;
       const t0 = performance.now();
@@ -34775,11 +34784,10 @@ function animTick(now) {
     drawMini(); lastMiniDraw = now;
     return;
   }
-  // Never spend more than about half the wall clock rendering. Measured cost
-  // decides: a 60ms Canvas frame is asked for every 120ms; a cheap frame on a
+  // Still worlds keep half the main thread free; turning may use three quarters.
+  // Measured cost decides: an idle 60ms Canvas frame gets 120ms; a cheap frame on a
   // high-refresh panel is allowed to use its actual 4.17/6.94/8.33ms slot.
-  const cadence = Math.max(animationRefreshInterval(now),
-                           drawCost / MAX_ANIMATION_PAINT_SHARE);
+  const cadence = animationPaintInterval(now, spinning);
   if (active && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();

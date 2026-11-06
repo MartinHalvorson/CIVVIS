@@ -450,3 +450,51 @@ class TheDedicatedDisplayFollowsTheActiveArea(unittest.TestCase):
         )
         self.assertEqual(done.returncode, 0, done.stderr.strip())
         self.assertIn("active area checks passed", done.stdout)
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class PublishedViewingDefaults(unittest.TestCase):
+    def test_fresh_visitors_spin_with_two_turn_trails_and_saved_choices_win(self):
+        source = (REPO / "beta/shim.js").read_text(encoding="utf-8")
+        start = source.index("  function applyPublishedViewDefaults(storage)")
+        block = source[start:source.index("\n  if (!LOCAL_DESKTOP_HOST)", start)]
+        scenarios = r'''
+const values = new Map();
+const storage = {getItem:k => values.has(k) ? values.get(k) : null,
+                 setItem:(k,v) => values.set(k,v)};
+applyPublishedViewDefaults(storage);
+if (values.get("civvis-world-spin") !== "1" || values.get("civvis-unit-tail-turns") !== "2")
+  throw Error("fresh public visitor does not get spin and two-turn trails");
+values.set("civvis-world-spin", "0"); values.set("civvis-unit-tail-turns", "0");
+applyPublishedViewDefaults(storage);
+if (values.get("civvis-world-spin") !== "0" || values.get("civvis-unit-tail-turns") !== "0")
+  throw Error("saved off preferences were overwritten");
+values.set("civvis-unit-tail-turns", "4"); applyPublishedViewDefaults(storage);
+if (values.get("civvis-unit-tail-turns") !== "4") throw Error("saved trail length changed");
+'''
+        done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_turning_can_use_each_refresh_and_a_higher_canvas_budget(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("const MAX_ANIMATION_PAINT_SHARE =")
+        block = source[start:source.index("function animTick(now)", start)]
+        scenarios = r'''
+let drawCost = 2;
+function animationRefreshInterval() { return 1000 / 60; }
+function paints(spinning) {
+  let previous = 0, count = 0;
+  for (let frame = 1; frame <= 120; frame++) {
+    const now = frame * (1000 / 60) + (frame % 2 ? -.02 : .02);
+    if (now - previous > animationPaintInterval(now, spinning)) { previous = now; count++; }
+  }
+  return count;
+}
+if (paints(true) !== 120 || paints(false) >= paints(true)) throw Error("turning skips browser refreshes");
+drawCost = 20;
+if (paints(true) <= paints(false)) throw Error("busy Canvas rotation did not get smoother");
+if (animationPaintInterval(0, false) !== 40) throw Error("normal paint budget changed");
+if (animationPaintInterval(0, true, true) !== drawCost / .6) throw Error("GPU overlay stole terrain frame budget");
+'''
+        done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
