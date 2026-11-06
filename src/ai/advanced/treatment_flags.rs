@@ -5300,6 +5300,17 @@ impl AdvancedAi {
         self.nusantara_reads_the_coast = false;
     }
 
+    /// Opt-in gene `field-reads-the-tile-it-leaves`; see
+    /// [`Self::field_reads_the_tile_it_leaves`].
+    pub fn enable_field_reads_the_tile_it_leaves(&mut self) {
+        self.field_reads_the_tile_it_leaves = true;
+    }
+
+    /// The twin of `enable_field_reads_the_tile_it_leaves`.
+    pub fn disable_field_reads_the_tile_it_leaves(&mut self) {
+        self.field_reads_the_tile_it_leaves = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

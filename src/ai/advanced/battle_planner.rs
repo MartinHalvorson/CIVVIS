@@ -453,6 +453,11 @@ pub(super) struct DangerField {
     /// land units inside its reach. Empty with the gene off, and then every
     /// reading below is the full field.
     shares: BTreeMap<u32, f64>,
+    /// `field-reads-the-tile-it-leaves`: each hostile's movement flood, kept
+    /// beside its strike reach. Empty without `strike-reach`.
+    floods: BTreeMap<u32, Vec<Pos>>,
+    /// `field-reads-the-tile-it-leaves`: see `steps_into_the_tile_left`.
+    pub(super) reads_the_tile_it_leaves: bool,
 }
 
 impl DangerField {
@@ -494,6 +499,7 @@ impl DangerField {
     pub(super) fn with_reach(g: &Game, pid: usize, strike_reach: bool) -> Self {
         let mut probe = g.speculative_clone();
         let mut reaches = Vec::new();
+        let mut floods = BTreeMap::new();
         let mut widened = 0u32;
         for unit in g.units.values() {
             let spec = &g.rules.units[unit.kind];
@@ -511,6 +517,7 @@ impl DangerField {
                 if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
                     widened += 1;
                 }
+                floods.insert(unit.id, flood);
                 strike
             } else {
                 flood
@@ -527,7 +534,28 @@ impl DangerField {
             cache: BTreeMap::new(),
             widened,
             shares: BTreeMap::new(),
+            floods,
+            reads_the_tile_it_leaves: false,
         }
+    }
+
+    /// `field-reads-the-tile-it-leaves`: whether `enemy`, which cannot strike
+    /// `tile` as the board stands, could once the unit asked about has left
+    /// `left`. The strike reach stops at tiles our units hold, so it never
+    /// stands a hostile on the tile a unit is about to vacate, and a unit that
+    /// steps back one tile reads no danger from the attacker beside it. Only
+    /// that unit's own tile opens: the hostile must already strike `left`, its
+    /// flood (which reads through units) must hold `tile`, and `tile` must lie
+    /// within its range of `left`.
+    fn steps_into_the_tile_left(&self, enemy: u32, reach: &[Pos], left: Pos, tile: Pos) -> bool {
+        self.reads_the_tile_it_leaves
+            && left != tile
+            && reach.binary_search(&left).is_ok()
+            && self
+                .floods
+                .get(&enemy)
+                .is_some_and(|flood| flood.binary_search(&tile).is_ok())
+            && self.probe.wdist(left, tile) <= self.probe.unit_attack_range(enemy).max(1)
     }
 
     /// `shared-danger`: a hostile strikes once a turn, so its blow lands on
@@ -683,7 +711,9 @@ impl DangerField {
                 unit.hp = hp;
             }
             for (enemy, reach) in &self.reaches {
-                if reach.binary_search(&tile).is_err() {
+                if reach.binary_search(&tile).is_err()
+                    && !self.steps_into_the_tile_left(*enemy, reach, saved.pos, tile)
+                {
                     continue;
                 }
                 let Some(attacker) = self.probe.units.get(enemy) else {
@@ -1461,6 +1491,7 @@ impl AdvancedAi {
             })
         });
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
         if self.shared_danger {
             field.share(g);
         }
@@ -1490,6 +1521,7 @@ impl AdvancedAi {
         }
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
+            field.reads_the_tile_it_leaves = self.field_reads_the_tile_it_leaves;
             if self.shared_danger {
                 field.share(g);
             }

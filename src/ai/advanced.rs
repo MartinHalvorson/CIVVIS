@@ -7359,6 +7359,10 @@ pub struct AdvancedAi {
     /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
     /// Off by default.
     early_cities_keep_their_distance: bool,
+    /// `field-reads-the-tile-it-leaves`: the battle planner's danger field
+    /// counts a hostile stepping into the tile the unit asked about leaves.
+    /// See `advanced/battle_planner.rs`. Off by default.
+    field_reads_the_tile_it_leaves: bool,
     // ---- append: g-k ------------------------------------------------
     /// `government-reach-pays-the-switch`: a seat holding its listed
     /// government takes `government-capacity-fallback`'s reach only for a
@@ -12298,6 +12302,7 @@ impl AdvancedAi {
             friendship_refuses_the_racer: false,
             fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
+            field_reads_the_tile_it_leaves: false,
             // ---- append: g-k ----------------------------------------
             government_reach_pays_the_switch: false,
             gold_buys_the_opening_builder: false,
