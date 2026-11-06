@@ -11682,6 +11682,27 @@ impl AdvancedAi {
             city_strategy_pressure: true,
             deny_leaders: true,
             volley_chain: true,
+            // These markers and the `false` lines beside them only keep open gene
+            // pull requests merging cleanly. A gene needs no line here; they go in
+            // a follow-up once those have landed.
+            // ---- append: a-b ----------------------------------------
+            // ---- append: c-d ----------------------------------------
+            // ---- append: e-f ----------------------------------------
+            early_cities_keep_their_distance: false,
+            // ---- append: g-k ----------------------------------------
+            // ---- append: l-o ----------------------------------------
+            outmatched_war_prices_the_army: false,
+            // ---- append: p-r ----------------------------------------
+            parity_upgrades_before_it_buys_2: false,
+            pillaged_districts_repair_first: false,
+            // ---- append: s-s ----------------------------------------
+            science_seat_allies_2: false,
+            science_foundation_before_backlog: false,
+            spears_answer_the_horse: false,
+            sea_scout_claims_the_queue: false,
+            // ---- append: t-z ----------------------------------------
+            world_religion_condemns_the_faith: false,
+            threatened_war_holds_the_claims: false,
             ..Default::default()
         }
     }

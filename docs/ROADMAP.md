@@ -197,11 +197,13 @@ Everything the old roadmap called planned has shipped and then some:
    **The `fn configured` anchor is gone (2026-11-06).** It had grown to 1,102
    lines, 1,049 of them restating a type's default, and it was the one line
    every gene had to add that said nothing. `AdvancedAi` now derives `Default`,
-   and `configured` names only the 17 fields that differ, so a gene that ships
+   and `configured` needs only the 17 fields that differ, so a gene that ships
    off needs no line there. The cost named here earlier was that
    `AdvancedAi::default()` meant `Self::new()`; by then one test called it.
    It now means the blank, and `nothing_plays_the_blank_default` fails if
-   anything reaches for it.
+   anything reaches for it. The markers and a few `false` lines stay in the
+   literal only so the gene pull requests open that day still merge cleanly;
+   a follow-up removes them.
 
    **Still open, in the order the measurement ranks them:** `src/elo.rs`'s four
    registries and two `ArmKind` match tables (ANCHOR, 15 of 18); and the size
