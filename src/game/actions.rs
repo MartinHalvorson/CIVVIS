@@ -974,9 +974,19 @@ impl Game {
     }
 
     fn visibility_combat_bonus(&self, owner: usize, opponent: usize) -> f64 {
-        3.0 * (self.diplomatic_visibility(owner, opponent)
-            - self.diplomatic_visibility(opponent, owner))
-        .max(0.0)
+        // Expansion1_Civilizations_Major.xml:186-187,636-643: Ortoo adds
+        // another Amount=3, DeltaWithOpponent=true modifier to the major
+        // civilization's ordinary +3. It belongs to Mongolia, including
+        // Kublai, rather than to Genghis's cavalry-only leader ability.
+        let per_level = if self.owns_civ_unique(owner, "Mongolia") {
+            6.0
+        } else {
+            3.0
+        };
+        per_level
+            * (self.diplomatic_visibility(owner, opponent)
+                - self.diplomatic_visibility(opponent, owner))
+            .max(0.0)
     }
 
     /// Melee attacks pay the movement cost of entering the defender's tile.

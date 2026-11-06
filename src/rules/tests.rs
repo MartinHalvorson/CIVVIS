@@ -335,9 +335,13 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // The installed Gathering Storm audit agrees across all 29 tables.
     // Deity combat then moved from3 to the native preview's explicit +4;
     // docs/fidelity/native-deity-combat-2026-11-05.json preserves the readback.
+    // Mongolia's flat combat_strength=3 proxy is removed in favor of Ortoo
+    // visibility and Genghis-only cavalry strength in the combat code; the
+    // native Kublai Bombard preview confirms +12 intel separately from +4
+    // difficulty. Older ledgers retain the pre-correction rules fingerprint.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:7aeef1c59df82201"
+        "fnv1a64:14ea36e072881139"
     );
 }
 

@@ -10211,3 +10211,6 @@ mod native_combat_kind_hint_tests;
 
 #[cfg(test)]
 mod latest_state_selection_tests;
+
+#[cfg(test)]
+mod mongolia_combat_tests;
