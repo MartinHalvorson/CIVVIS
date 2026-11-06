@@ -5930,8 +5930,6 @@ impl BasicAi {
     /// open while retaining the mature-empire brake.
     pub(crate) const SETTLER_BACKLOG_V2_MIN_CITIES: usize = 6;
 
-    }
-
     fn cities(&mut self, g: &mut Game, pid: usize) {
         self.refresh_settler_idle(g, pid);
         let mut settlers: usize = 0;
