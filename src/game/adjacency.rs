@@ -173,17 +173,12 @@ impl Game {
     }
 
     /// The settle-scoring digest: for each adjacency-bearing district family,
-    /// the adjacency its best plot within `radius` would pay, summed into one
-    /// figure.  No ledgers are allocated — this is the hot path under
+    /// the adjacency its best plot among `positions` would pay, summed into
+    /// one figure.  No ledgers are allocated — this is the hot path under
     /// `AdvancedAi::settle_value`, which may sweep every land tile on the
     /// map.  A family whose best plot is negative (a hemmed-in Seowon)
     /// contributes nothing rather than a penalty: the planner simply would
     /// not build it there.
-    pub fn settlement_adjacency_summary(&self, pid: usize, center: Pos, radius: i32) -> Yields {
-        let positions = self.wdisk(center, radius);
-        self.settlement_adjacency_summary_from_positions(pid, center, &positions)
-    }
-
     pub(crate) fn settlement_adjacency_summary_from_positions(
         &self,
         pid: usize,
@@ -250,8 +245,8 @@ impl Game {
     /// plot each one would actually get and the adjacency it would pay
     /// there.
     ///
-    /// This differs from [`Self::settlement_adjacency_summary`] in the two
-    /// ways that matter to a settler choosing between sites:
+    /// This differs from [`Self::settlement_adjacency_summary_from_positions`]
+    /// in the two ways that matter to a settler choosing between sites:
     ///
     /// - It prices only the districts the planner is going to ask for, not
     ///   every adjacency-bearing family the ruleset knows. A Science seat's

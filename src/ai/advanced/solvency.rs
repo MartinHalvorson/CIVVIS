@@ -344,7 +344,24 @@ impl AdvancedAi {
                     2.. => 2.0,
                     _ => 1.0,
                 };
-                let upkeep = spec.maintenance * formation;
+                // ReportScreen.lua:306,314-341 charges the per-type/formation
+                // bill, then subtracts GetMaintDiscountPerUnit with a zero
+                // floor. The native bill already includes formation. Price
+                // the same effective cost as Game::unit_gold_maintenance_cost:
+                // a free unit cannot relieve a deficit by being disbanded.
+                let base = g
+                    .host_unit_facts
+                    .get(&uid)
+                    .and_then(|facts| facts.maintenance)
+                    .unwrap_or(spec.maintenance * formation)
+                    .max(0.0);
+                let discount = g.policy_effect(pid, "unit_maintenance_discount");
+                let surcharge = if spec.class == "military" {
+                    g.policy_effect(pid, "unit_maintenance_surcharge")
+                } else {
+                    0.0
+                };
+                let upkeep = (base - discount).max(0.0) + surcharge;
                 let garrison = g
                     .city_at(unit.pos)
                     .is_some_and(|cid| g.cities[&cid].owner == pid);
