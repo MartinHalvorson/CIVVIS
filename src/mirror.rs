@@ -10214,3 +10214,6 @@ mod latest_state_selection_tests;
 
 #[cfg(test)]
 mod mongolia_combat_tests;
+
+#[cfg(test)]
+mod ranged_handicap_tests;

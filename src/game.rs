@@ -13425,3 +13425,6 @@ mod gran_colombia_traits_tests;
 
 #[cfg(test)]
 mod mongolia_combat_tests;
+
+#[cfg(test)]
+mod ranged_handicap_tests;
