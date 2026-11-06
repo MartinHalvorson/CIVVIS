@@ -13053,38 +13053,97 @@ end;
 -- parallel; only MODIFIER_IS_TARGET rows are offered ranged/air targets.
 -- Observe a refused shot without changing its verdict or issuing an order.
 CivvisLedger.annotateStrikeOffer = function(unit, operation, x, y, payload)
+	-- Read our roster at the refusal, not the preceding exported board. Domain
+	-- and base strengths describe occupants; sharing a domain alone does not
+	-- establish that two units occupy the same stacking layer. No foreign
+	-- roster or target units are read. UnitPanel.lua:3962-3972 walks Members;
+	-- Civ6Common.lua:139 reads Domain; WorldTracker.lua:544 reads activity.
+	local context = { tile_known = false, tile_reason = "read_error" };
+	payload.refusal_context = context;
+	context.activity = try(function() return UnitManager.GetActivityType(unit); end, nil);
+	context.activity_name = try(function()
+		return CivvisBoard.activityName(context.activity);
+	end, nil);
+	local occupants = try(function()
+		local function unknown(reason) context.tile_reason = reason; return nil; end
+		if unit == nil then return unknown("missing_unit"); end
+		local owner = unit:GetOwner();
+		if Game == nil or owner ~= Game.GetLocalPlayer() then return unknown("not_local_unit"); end
+		local player = Players and Players[owner];
+		if player == nil then return unknown("missing_player"); end
+		local units = player:GetUnits();
+		if units == nil or units.Members == nil then return unknown("missing_unit_collection"); end
+		local ux, uy, uid = unit:GetX(), unit:GetY(), unit:GetID();
+		if type(ux) ~= "number" or type(uy) ~= "number" or type(uid) ~= "number"
+				or ux < 0 or uy < 0 then return unknown("invalid_shooter"); end
+		local rows, seen = {}, {};
+		for _, other in units:Members() do
+			if other:GetX() == ux and other:GetY() == uy then
+				local id = other:GetID();
+				if type(id) ~= "number" or seen[id] or other:GetOwner() ~= owner then
+					return unknown("invalid_occupant");
+				end
+				local spec = GameInfo.Units[other:GetUnitType()];
+				if spec == nil or type(spec.Domain) ~= "string" then
+					return unknown("missing_unit_definition");
+				end
+				seen[id] = true;
+				rows[#rows + 1] = {
+					id = id, kind = spec.UnitType, domain = spec.Domain,
+					combat = spec.Combat, ranged = spec.RangedCombat, bombard = spec.Bombard,
+					embarked = try(function() return other:IsEmbarked(); end, nil),
+				};
+			end
+		end
+		if not seen[uid] then return unknown("shooter_not_in_roster"); end
+		if unit:GetX() ~= ux or unit:GetY() ~= uy then return unknown("shooter_moved"); end
+		table.sort(rows, function(a, b) return a.id < b.id; end);
+		return { x = ux, y = uy, units = rows };
+	end, nil);
+	if occupants ~= nil then
+		context.tile_known = true;
+		context.tile_reason = nil;
+		context.x, context.y, context.units = occupants.x, occupants.y, occupants.units;
+	end
 	payload.native_target_known = false;
+	payload.native_target_reason = "read_error";
+	payload.native_target_offered, payload.native_target_rows = nil, nil;
 	local offer = try(function()
-		if unit == nil or operation == nil or UnitManager == nil
-				or UnitManager.GetOperationTargets == nil or UnitOperationResults == nil
-				or UnitOperationResults.PLOTS == nil or UnitOperationResults.MODIFIERS == nil
-				or type(UnitOperationResults.MODIFIER_IS_TARGET) ~= "number"
-				or UnitOperationResults.MODIFIER_IS_TARGET % 1 ~= 0 then return nil; end
+		local function unknown(reason) payload.native_target_reason = reason; return nil; end
+		if unit == nil then return unknown("missing_unit"); end
+		if operation == nil then return unknown("missing_operation"); end
+		if UnitManager == nil or UnitManager.GetOperationTargets == nil then return unknown("missing_api"); end
+		if UnitOperationResults == nil or UnitOperationResults.PLOTS == nil
+				or UnitOperationResults.MODIFIERS == nil then return unknown("missing_result_enums"); end
+		if type(UnitOperationResults.MODIFIER_IS_TARGET) ~= "number"
+				or UnitOperationResults.MODIFIER_IS_TARGET % 1 ~= 0 then return unknown("invalid_target_enum"); end
 		local plot = Map.GetPlot(x, y);
 		local target = plot and plot:GetIndex();
-		if type(target) ~= "number" or target < 0 or target % 1 ~= 0 then return nil; end
-		local results = UnitManager.GetOperationTargets(unit, operation);
-		if type(results) ~= "table" then return nil; end
+		if type(target) ~= "number" or target < 0 or target % 1 ~= 0 then return unknown("invalid_target_plot"); end
+		local ok, results = pcall(UnitManager.GetOperationTargets, unit, operation);
+		if not ok then return unknown("query_error"); end
+		if type(results) ~= "table" then return unknown("non_table_results"); end
 		local plots = results[UnitOperationResults.PLOTS];
 		local modifiers = results[UnitOperationResults.MODIFIERS];
-		if type(plots) ~= "table" or type(modifiers) ~= "table"
-				or #plots ~= #modifiers then return nil; end
+		if type(plots) ~= "table" then return unknown("missing_plots"); end
+		if type(modifiers) ~= "table" then return unknown("missing_modifiers"); end
+		if #plots ~= #modifiers then return unknown("misaligned_rows"); end
 		local count = #plots;
 		-- Lua's length operator is ambiguous for sparse tables. Require dense,
 		-- aligned native rows before reporting a known absent target.
 		for index in pairs(plots) do
 			if type(index) ~= "number" or index < 1 or index > count
-					or index % 1 ~= 0 then return nil; end
+					or index % 1 ~= 0 then return unknown("sparse_plots"); end
 		end
 		for index in pairs(modifiers) do
 			if type(index) ~= "number" or index < 1 or index > count
-					or index % 1 ~= 0 then return nil; end
+					or index % 1 ~= 0 then return unknown("sparse_modifiers"); end
 		end
 		local offered, rows = false, 0;
 		for index = 1, count do
 			local nativePlot, modifier = plots[index], modifiers[index];
-			if type(nativePlot) ~= "number" or nativePlot < 0 or nativePlot % 1 ~= 0
-					or type(modifier) ~= "number" or modifier % 1 ~= 0 then return nil; end
+			if type(nativePlot) ~= "number" or nativePlot < 0 or nativePlot % 1 ~= 0 then return unknown("invalid_plot_row"); end
+			if type(modifier) ~= "number" or modifier % 1 ~= 0 then return unknown("invalid_modifier_row"); end
 			if modifier == UnitOperationResults.MODIFIER_IS_TARGET then
 				rows = rows + 1;
 				if nativePlot == target then offered = true; end
@@ -13094,6 +13153,7 @@ CivvisLedger.annotateStrikeOffer = function(unit, operation, x, y, payload)
 	end, nil);
 	if offer ~= nil then
 		payload.native_target_known = true;
+		payload.native_target_reason = nil;
 		payload.native_target_offered = offer.offered;
 		payload.native_target_rows = offer.rows;
 	end
@@ -16589,6 +16649,8 @@ local function applyOrder(player, pid, row, turn)
 					native_target_known = nativeOffer.native_target_known,
 					native_target_offered = nativeOffer.native_target_offered,
 					native_target_rows = nativeOffer.native_target_rows,
+					native_target_reason = nativeOffer.native_target_reason,
+					refusal_context = nativeOffer.refusal_context,
 				});
 			end
 			return accepted, verb;
@@ -16648,6 +16710,8 @@ local function applyOrder(player, pid, row, turn)
 						native_target_known = nativeOffer.native_target_known,
 						native_target_offered = nativeOffer.native_target_offered,
 						native_target_rows = nativeOffer.native_target_rows,
+						native_target_reason = nativeOffer.native_target_reason,
+						refusal_context = nativeOffer.refusal_context,
 					});
 				end
 				return false, "cannot_" .. string.lower(verb);

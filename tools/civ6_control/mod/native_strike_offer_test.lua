@@ -9,7 +9,7 @@ local last = assert(source:find('\t\tif verb == "IMPROVE"', first, true))
 local section = source:sub(first, last - 1)
 
 local function fixture(verb)
-    local state = { queries = 0, requests = 0, emitted = {}, allowed = false,
+    local state = { queries = 0, requests = 0, observations = 0, emitted = {}, allowed = false,
         target = 20, results = { plots = {10, 20, 30}, modifiers = {0, 7, 0} } }
     state.unit = {
         GetX = function() return 8 end, GetY = function() return 8 end,
@@ -51,7 +51,7 @@ local function fixture(verb)
         end,
     }
     env.UnitManager = {
-        GetActivityType = function() return "awake" end,
+        GetActivityType = function() state.observations = state.observations + 1; return "awake" end,
         GetOperationTargets = function(...)
             assert(select("#", ...) == 2, "use the shipped two-argument target-enumeration form")
             local unit, operation = ...
@@ -85,6 +85,8 @@ local function refused(state, apply, verb)
     assert(payload.unit == 77 and payload.turn == 180 and payload.x == 10 and payload.y == 8)
     assert(payload.unit_x == 8 and payload.unit_y == 8 and payload.moves == 2 and payload.attacks == 1)
     assert(payload.why == "can_start=false,no_reasons [p4r]", "retain the original refusal reason")
+    assert(type(payload.refusal_context) == "table", "both refusal handlers must emit the live observation")
+    assert(payload.refusal_context.activity == "awake", "emit the observation's actual values")
     return payload
 end
 
@@ -92,6 +94,8 @@ local function unknown(payload)
     assert(payload.native_target_known == false, "failed reads must be explicitly unknown")
     assert(payload.native_target_offered == nil and payload.native_target_rows == nil,
         "an unknown read must not claim a negative offer or zero targets")
+    assert(type(payload.native_target_reason) == "string" and #payload.native_target_reason > 0,
+        "an unavailable observation must explain which read failed")
 end
 
 local failures, cases = {}, 0
@@ -107,13 +111,14 @@ for _, verb in ipairs({"RANGE_ATTACK", "AIR_ATTACK"}) do
         local s, _, apply = fixture(verb)
         local p = refused(s, apply, verb)
         assert(p.native_target_known == true and p.native_target_offered == true)
+        assert(p.native_target_reason == nil, "known offers carry no unknown-read reason")
         assert(p.native_target_rows == 1 and s.queries == 1)
         assert(p.native_targets == nil and p.native_target_plots == nil, "do not export a target list")
     end)
     test(verb .. " accepted shot performs no diagnostic target query", function()
         local s, _, apply = fixture(verb); s.allowed = true
         assert(apply(verb, 10, 8))
-        assert(s.requests == 1 and s.queries == 0 and #s.emitted == 0)
+        assert(s.requests == 1 and s.queries == 0 and s.observations == 0 and #s.emitted == 0)
     end)
 end
 
@@ -200,7 +205,8 @@ end)
 test("a diplomatic refusal performs no diagnostic target query", function()
     local s, _, apply = fixture("RANGE_ATTACK"); s.war = "would_declare_war:2"
     local ok, why = apply("RANGE_ATTACK", 10, 8)
-    assert(not ok and why == s.war and s.queries == 0 and s.requests == 0 and #s.emitted == 0)
+    assert(not ok and why == s.war and s.queries == 0 and s.requests == 0
+        and s.observations == 0 and #s.emitted == 0)
 end)
 
 print("RESULT " .. cases .. " cases; " .. #failures .. " failed")
