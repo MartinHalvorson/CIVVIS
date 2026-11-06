@@ -2,8 +2,9 @@
 """Concurrent treatment and gene pull requests have to merge, so this merges them.
 
 Adding a treatment appends to several shared anchors — the flag field on
-`AdvancedAi`, its initialiser in `fn configured`, the `enable_*`/`disable_*`
-pair, a row in one of the tables in `advanced/treatments.rs`. Every one of
+`AdvancedAi`, the `enable_*`/`disable_*` pair, a row in one of the tables in
+`advanced/treatments.rs`. Its `fn configured` initialiser used to be one more,
+until `AdvancedAi` derived `Default` and that anchor went. Every one of
 those appends used to land on the anchor's LAST line, so any two treatment pull
 requests conflicted in every file they shared. Measured with
 `tools/conflict_hotspots.py --modes` over the 200 merges ending at `2c570f4f`
