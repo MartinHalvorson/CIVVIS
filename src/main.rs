@@ -786,379 +786,8 @@ fn main() {
     }
     refuse_unhonoured_entrant_flag(cmd, &args);
     match cmd {
-        "simulate" => {
-            let players = arg(&args, "--players", 4);
-            let g0 = Instant::now();
-            // The product is hard-committed to sequential turns, so every
-            // command defaults to the regime the shipped game plays;
-            // `--turn-structure simultaneous` remains the explicit research
-            // escape hatch into the retained driver.
-            let mut g = Game::new_with(game_options(
-                &args,
-                players,
-                arg(&args, "--seed", 0) as u64,
-                setup::TurnStructure::Sequential,
-            ));
-            // ⚠ Set here rather than carried in `GameOptions`, deliberately.
-            // This is a staged rules mechanism, not a setup-screen choice: it
-            // ships off, and either becomes unconditional on promotion — at
-            // which point the flag and this line both go — or is removed.
-            // Threading it through every `GameOptions` construction would be
-            // churn in four files that promotion has to undo. See
-            // `Game::native_competitions`.
-            g.native_competitions = args.iter().any(|a| a == "--native-competitions");
-            // The two regimes want opposite parallelism. Sequential seats
-            // cannot deliberate concurrently, so `--jobs` feeds the clone-
-            // heavy WorkPool frontiers inside one seat's turn, whose measured
-            // knee caps the default at four. Simultaneous seats deliberate
-            // independently by construction, so `--jobs` fans whole seats out
-            // instead — one clone buys a whole turn of deliberation, past the
-            // knee — and the AIs skip the inner pool rather than stack the
-            // two layers.
-            let census = if g.turn_structure == setup::TurnStructure::Simultaneous {
-                let jobs = jobs_arg(&args);
-                let mut ais = AdvancedAi::fleet(&g);
-                civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, jobs)
-            } else {
-                let jobs = single_simulation_jobs_arg(&args);
-                let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
-                civvis::simultaneous::run_structured(&mut g, &mut ais)
-            };
-            println!("[{:.3}s]", g0.elapsed().as_secs_f64());
-            if let Some(census) = census {
-                println!("{}", census.summary());
-            }
-            standings(&g);
-        }
-        "soak" => {
-            let players = arg(&args, "--players", 4);
-            let games = arg(&args, "--games", 10);
-            let start = arg(&args, "--start-seed", 0);
-            let jobs = jobs_arg(&args);
-            let simultaneous = turn_structure(&args, setup::TurnStructure::Sequential)
-                == setup::TurnStructure::Simultaneous;
-            // A sequential soak has only one useful frontier: independent
-            // games. Simultaneous games have a second one inside each game —
-            // every ready civilization can plan at once. Keep the total
-            // worker budget bounded by splitting it across the games that can
-            // be live at once, then hand each game's share to its persistent
-            // seat-planning fleet. With one large simultaneous game, this
-            // therefore reaches every requested core instead of treating the
-            // one outer job as a reason to run all of its seats serially.
-            let (concurrent_games, jobs_per_game, extra_seat_workers) = if simultaneous {
-                simultaneous_soak_job_split(games as usize, jobs)
-            } else {
-                (jobs, 1, 0)
-            };
-            // A Tactics match: the same two civilizations over a series of
-            // battles, sides swapped between them. `--games` is how many
-            // battles are actually played, so a best-of-5 run short of five
-            // games simply reports the score it reached.
-            let arena = map_script(&args).is_battlefield();
-            let match_rules = tactics_rules(&args);
-            let contenders = (arena && match_rules.best_of > 1)
-                .then(|| match_contenders(&args, players, &named_civs(&args)));
-            // Each game is played on an outer worker, then described on the
-            // main one, so a soak reads exactly as it did when it was serial.
-            let lines = civvis::parallel::map(games as usize, concurrent_games, |index| {
-                let seed = start + index as i64;
-                let t0 = Instant::now();
-                let contenders = contenders.clone();
-                let result = std::panic::catch_unwind(|| {
-                    let mut options = game_options(
-                        &args,
-                        players,
-                        seed as u64,
-                        setup::TurnStructure::Sequential,
-                    );
-                    if let Some(contenders) = contenders {
-                        // The sides change ends at half time, and every
-                        // battle after it. Otherwise a series measures the
-                        // corner one civilization kept sitting in as much as
-                        // it measures the civilization.
-                        options.civs = contenders;
-                        if index % 2 == 1 {
-                            options.civs.reverse();
-                        }
-                    }
-                    let mut g = Game::new_with(options);
-                    // ⚠ Set here rather than carried in `GameOptions`, for the
-                    // reason `simulate` gives above: this is a staged rules
-                    // mechanism, and a soak is how its effect on the victory
-                    // mix is measured before it is promoted.
-                    g.native_competitions = args.iter().any(|a| a == "--native-competitions");
-                    let mut ais = AdvancedAi::fleet(&g);
-                    let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
-                        // Spread a non-divisible budget across the first live
-                        // games; later replacements get the base share, so
-                        // the running total never exceeds `--jobs`.
-                        let seat_jobs = jobs_per_game + usize::from(index < extra_seat_workers);
-                        civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, seat_jobs)
-                    } else {
-                        civvis::simultaneous::run_structured(&mut g, &mut ais)
-                    };
-                    // Every major's turns, pooled: what the empires in this game
-                    // actually spent the game doing.
-                    let mut census = civvis::ai::StrategyCensus::default();
-                    for ai in ais
-                        .iter()
-                        .take(g.players.iter().filter(|p| !p.is_minor).count())
-                    {
-                        census.absorb(&ai.strategy_census());
-                    }
-                    (g, census, simultaneous)
-                });
-                match result {
-                    Ok((g, census, simultaneous)) => {
-                        let majors: Vec<_> = g.players.iter().filter(|p| !p.is_minor).collect();
-                        let minors: Vec<_> = g
-                            .players
-                            .iter()
-                            .filter(|p| p.is_minor && !p.is_barbarian)
-                            .collect();
-                        // A soak line describes a terminal result. Tactics
-                        // draws carry no winner but are finished battles.
-                        let w = g.winner.map(|winner| &g.players[winner]);
-                        let mut flags = String::new();
-                        if let Some(simultaneous) = &simultaneous {
-                            flags.push_str(&format!(
-                                " SIMUL drops={}/{}{}",
-                                simultaneous.dropped,
-                                simultaneous.planned,
-                                if simultaneous.aborted { " ABORTED" } else { "" }
-                            ));
-                        }
-                        if majors.iter().all(|p| p.techs.len() <= 2) {
-                            flags.push_str(" NO-TECH-PROGRESS");
-                        }
-                        if w.is_some_and(|w| w.is_minor) {
-                            flags.push_str(" MINOR-WINNER");
-                        }
-                        if g.is_draw() {
-                            flags.push_str(" DRAW");
-                        } else if w.is_none() {
-                            flags.push_str(" NO-WINNER");
-                        }
-                        // An army nobody ever modernizes is invisible in the
-                        // standings and obvious on the map. Count the units
-                        // still fielded after their owner retired them, and
-                        // the ones three eras behind the world besides.
-                        let unit_era = |kind: &str| -> usize {
-                            let spec = &g.rules.units[kind];
-                            let tech = spec
-                                .tech
-                                .as_deref()
-                                .and_then(|node| g.rules.techs.get(node))
-                                .map(|node| node.era);
-                            let civic = spec
-                                .civic
-                                .as_deref()
-                                .and_then(|node| g.rules.civics.get(node))
-                                .map(|node| node.era);
-                            tech.or(civic).unwrap_or(0)
-                        };
-                        let (obsolete, ancient, army) = majors
-                            .iter()
-                            .filter(|p| p.alive)
-                            .flat_map(|p| g.units.values().filter(move |unit| unit.owner == p.id))
-                            .filter(|unit| g.rules.units[unit.kind].class == "military")
-                            .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
-                                (
-                                    obsolete + g.unit_is_obsolete(unit.owner, unit.kind) as i32,
-                                    ancient
-                                        + (g.world_era.saturating_sub(unit_era(&unit.kind)) >= 3)
-                                            as i32,
-                                    army + 1,
-                                )
-                            });
-                        flags.push_str(&format!(
-                            " ARMY {army} obsolete={obsolete} ancient={ancient} era={}",
-                            g.world_era
-                        ));
-                        // A war nobody ever wins is as invisible as an army
-                        // nobody modernizes: the standings only show who was
-                        // left standing, so a game where every declaration
-                        // ended in a white peace reads exactly like a game of
-                        // uninterrupted peace. Count what the declarations
-                        // actually achieved.
-                        // `Game::wars` holds only the wars still running:
-                        // `close_war_record` removes a finished one and pushes
-                        // it to `concluded_wars`. Reading the live map alone
-                        // therefore hid every war that ended — which is every
-                        // war that was *won*, and every white peace this block
-                        // was written to make legible. Measured over eight
-                        // six-player games it saw 6 of 39 declarations, 96 of
-                        // 317 unit losses, and 0 of 13 city captures, while
-                        // `ended_in_peace` could not be anything but zero.
-                        let all_wars: Vec<&WarRecord> =
-                            g.wars.values().chain(g.concluded_wars.iter()).collect();
-                        let wars = all_wars.len();
-                        let (units_lost, cities_taken) =
-                            all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
-                                (
-                                    units + war.losses.values().map(|side| side.units).sum::<u32>(),
-                                    cities
-                                        + war.losses.values().map(|side| side.cities).sum::<u32>(),
-                                )
-                            });
-                        let capitals_taken = all_wars
-                            .iter()
-                            .flat_map(|war| war.highlights.iter())
-                            .filter(|highlight| highlight.kind == "capital_captured")
-                            .count();
-                        // How long the declarations lasted, because a war that
-                        // ends in a handful of turns cannot take a walled city
-                        // whatever army was pointed at it.
-                        let (turns_at_war, ended) =
-                            all_wars.iter().fold((0u32, 0usize), |(turns, ended), war| {
-                                let stop = war.ended.unwrap_or(g.turn);
-                                (
-                                    turns + stop.saturating_sub(war.started),
-                                    ended + war.ended.is_some() as usize,
-                                )
-                            });
-                        let mean_war = if wars > 0 {
-                            turns_at_war as f64 / wars as f64
-                        } else {
-                            0.0
-                        };
-                        // Every kind of thing the declarations produced, so a war
-                        // that only ever produces its own declaration is
-                        // legible as exactly that.
-                        let mut events: BTreeMap<&str, usize> = BTreeMap::new();
-                        for highlight in all_wars.iter().flat_map(|war| war.highlights.iter()) {
-                            *events.entry(highlight.kind.as_str()).or_default() += 1;
-                        }
-                        let events: Vec<String> = events
-                            .iter()
-                            .map(|(kind, count)| format!("{kind}:{count}"))
-                            .collect();
-                        flags.push_str(&format!(
-                            " WAR {wars} units_lost={units_lost} cities_taken={cities_taken} \
-                             capitals_taken={capitals_taken} mean_turns={mean_war:.0} \
-                             ended_in_peace={ended} events=[{}]",
-                            events.join(" ")
-                        ));
-                        // A war is only prosecuted if somebody chose to
-                        // prosecute it. Recovery is the defensive posture, so
-                        // turns spent there are turns nobody was besieging
-                        // anything.
-                        let total = census.total().max(1);
-                        let share = |turns: u32| 100 * turns / total;
-                        flags.push_str(&format!(
-                            " PLAN conquest={}% recovery={}% expansion={}% science={}% \
-                             culture={}% religion={}% diplomacy={}%",
-                            share(census.conquest),
-                            share(census.recovery),
-                            share(census.expansion),
-                            share(census.science),
-                            share(census.culture),
-                            share(census.religion),
-                            share(census.diplomacy),
-                        ));
-                        let posture_total = census.posture_total().max(1);
-                        let pshare = |turns: u32| 100 * turns / posture_total;
-                        flags.push_str(&format!(
-                            " FORCE engage={}% advance={}% hold={}% muster={}% recover={}%",
-                            pshare(census.engage),
-                            pshare(census.advance),
-                            pshare(census.hold),
-                            pshare(census.muster),
-                            pshare(census.recover),
-                        ));
-                        flags.push_str(&format!(
-                            " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
-                             left_depleted={} taker_ready={} melee_was_there={}",
-                            g.siege.blows,
-                            g.siege.damage,
-                            g.siege.walls_breached,
-                            g.siege.cities_reduced,
-                            g.siege.left_depleted,
-                            g.siege.depleted_with_a_taker_ready,
-                            g.siege.reduced_with_melee_adjacent,
-                        ));
-                        // ⚠ The diplomatic lane is the one that steals most
-                        // live games and the one a native game has never been
-                        // able to finish, and the victory column alone cannot
-                        // say whether it came close or was nowhere near.
-                        // `DIPLOMATIC_VICTORY_POINTS` is 20; this is how far
-                        // the best empire actually got.
-                        let best_dvp = majors.iter().map(|p| p.dvp).max().unwrap_or(0);
-                        flags.push_str(&format!(
-                            " DVP best={best_dvp}/{} reached={}",
-                            civvis::game::DIPLOMATIC_VICTORY_POINTS,
-                            majors
-                                .iter()
-                                .filter(|p| p.dvp >= civvis::game::DIPLOMATIC_VICTORY_POINTS)
-                                .count(),
-                        ));
-                        let held = (census.hold_threatened + census.hold_weak).max(1);
-                        flags.push_str(&format!(
-                            " HELD_BY threatened_city={}% locally_weak={}%",
-                            100 * census.hold_threatened / held,
-                            100 * census.hold_weak / held,
-                        ));
-                        Some((w.map(|w| w.civ.clone()), format!(
-                            "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
-                            seed,
-                            g.reported_turn(),
-                            g.victory_type.clone().unwrap_or_default(),
-                            w.map_or("-", |w| w.civ.as_str()),
-                            majors.iter().filter(|p| p.alive).count(),
-                            majors.len(),
-                            g.cities.len(),
-                            minors.iter().filter(|p| p.alive).count(),
-                            minors.len(),
-                            t0.elapsed().as_secs_f64(),
-                            flags
-                        )))
-                    }
-                    Err(_) => None,
-                }
-            });
-            let mut fails = 0;
-            let mut series =
-                contenders.map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
-            for (index, line) in lines.into_iter().enumerate() {
-                match line {
-                    Some((winner, line)) => {
-                        println!("{line}");
-                        if let Some(series) = series.as_mut() {
-                            // A match stops at the battle that settles it;
-                            // the rest of `--games` is a dead rubber and is
-                            // reported as unplayed rather than counted.
-                            if !series.decided() {
-                                series.record(winner.as_deref());
-                            }
-                        }
-                    }
-                    None => {
-                        fails += 1;
-                        println!("seed {:3}  CRASH (panic)", start + index as i64);
-                    }
-                }
-            }
-            println!("\n{}/{} games completed", games - fails, games);
-            if let Some(series) = series {
-                let verdict = match series.winner() {
-                    Some(civ) => format!("{civ} takes the match"),
-                    None if series.played() >= series.best_of => "match drawn".to_string(),
-                    None => format!(
-                        "match unfinished: {} of {} battles played",
-                        series.played(),
-                        series.best_of
-                    ),
-                };
-                println!(
-                    "best of {}: {} — {verdict}",
-                    series.best_of,
-                    series.scoreline()
-                );
-            }
-            if fails > 0 {
-                std::process::exit(1);
-            }
-        }
+        "simulate" => simulate_command(args),
+        "soak" => soak_command(args),
         // Would ending decided games early change who wins? 62% of audited
         // league games ran to the turn cap, where the winner is whoever is
         // biggest — most of that tail is compute spent on a settled outcome.
@@ -1171,313 +800,12 @@ fn main() {
         // measured exactly rather than estimated. It changes no outcome and
         // is the pre-registered evidence gate for enabling adjudication in
         // any loop (docs/ADJUDICATION.md).
-        "odds-audit" => {
-            let players = arg(&args, "--players", 6);
-            let games = arg(&args, "--games", 40);
-            let start = arg(&args, "--start-seed", 0);
-            let jobs = jobs_arg(&args);
-            let start_turn = arg(&args, "--adjudicate-start", 100) as u32;
-            let every = (arg(&args, "--every", 5).max(1)) as u32;
-            let thresholds: Vec<f64> = arg_text(&args, "--thresholds", "0.90,0.95,0.98,0.995")
-                .split(',')
-                .map(|t| t.trim().parse::<f64>().expect("--thresholds wants numbers"))
-                .collect();
-            println!(
-                "odds-audit: {games} games, {players} players, sampling from turn \
-                 {start_turn} every {every}, thresholds {thresholds:?}"
-            );
-            type GameAudit = (
-                Option<usize>,
-                Option<String>,
-                u32,
-                Vec<Option<(usize, u32)>>,
-            );
-            let results: Vec<Option<GameAudit>> =
-                civvis::parallel::map(games as usize, jobs, |index| {
-                    let seed = start + index as i64;
-                    std::panic::catch_unwind(|| {
-                        let mut g = Game::new_with(game_options(
-                            &args,
-                            players,
-                            seed as u64,
-                            setup::TurnStructure::Sequential,
-                        ));
-                        let mut ais = AdvancedAi::fleet(&g);
-                        // Same display-state elisions as `run_game`: this is a
-                        // headless rollout and the odds read none of them.
-                        g.set_fog_memory(false);
-                        g.set_war_ledger(false);
-                        let mut crossings: Vec<Option<(usize, u32)>> = vec![None; thresholds.len()];
-                        let mut last_turn = g.turn;
-                        while g.winner.is_none() && g.turn <= g.max_turns {
-                            let pid = g.current;
-                            ais[pid].take_turn(&mut g, pid);
-                            if g.winner.is_none() && g.current == pid {
-                                let _ = g.apply(pid, &civvis::game::Action::EndTurn);
-                            }
-                            if g.turn == last_turn {
-                                continue;
-                            }
-                            last_turn = g.turn;
-                            let due =
-                                g.turn >= start_turn && (g.turn - start_turn).is_multiple_of(every);
-                            if !due || g.winner.is_some() || crossings.iter().all(Option::is_some) {
-                                continue;
-                            }
-                            // A flat 1500 prior for every seat: the audit runs
-                            // stock fleets with no roster, so only the board
-                            // terms — score, military, cities, victory races,
-                            // and the clock — separate the table.
-                            let table = civvis::odds::table(&g, |_pid| 1500.0f64);
-                            let Some((leader, seat)) =
-                                table.iter().max_by(|a, b| a.1.now.total_cmp(&b.1.now))
-                            else {
-                                continue;
-                            };
-                            for (slot, threshold) in thresholds.iter().enumerate() {
-                                if crossings[slot].is_none() && seat.now >= *threshold {
-                                    crossings[slot] = Some((*leader, g.turn));
-                                }
-                            }
-                        }
-                        let end_turn = g.turn.min(g.max_turns);
-                        (g.winner, g.victory_type.clone(), end_turn, crossings)
-                    })
-                    .ok()
-                });
-            let mut crashes = 0;
-            let mut finished: Vec<(i64, GameAudit)> = Vec::new();
-            for (index, result) in results.into_iter().enumerate() {
-                let seed = start + index as i64;
-                match result {
-                    Some(audit) => finished.push((seed, audit)),
-                    None => {
-                        crashes += 1;
-                        println!("seed {seed:4}  CRASH (panic)");
-                    }
-                }
-            }
-            for (seed, (winner, victory, end_turn, crossings)) in &finished {
-                let victory = victory.as_deref().unwrap_or("none");
-                let verdicts: Vec<String> = crossings
-                    .iter()
-                    .zip(&thresholds)
-                    .map(|(crossing, threshold)| match crossing {
-                        Some((pid, turn)) => format!(
-                            "{threshold}:t{turn}{}",
-                            if Some(*pid) == *winner { "=" } else { "!" }
-                        ),
-                        None => format!("{threshold}:-"),
-                    })
-                    .collect();
-                println!(
-                    "seed {seed:4}  t{end_turn:<4} {victory:<10} {}",
-                    verdicts.join(" ")
-                );
-            }
-            // The turn cap awards the score victory, so `score` endings are
-            // truncations of an undecided board and every other ending is a
-            // game the rules finished. Agreement is reported for both because
-            // they answer different questions: natural endings are ground
-            // truth, cap endings are agreement with the truncation rule that
-            // adjudication would replace.
-            println!(
-                "\nthreshold  crossed  agree-all      agree-natural  agree-cap      \
-                 mean-saved  saved-share"
-            );
-            for (slot, threshold) in thresholds.iter().enumerate() {
-                let (mut crossed, mut agree, mut nat, mut nat_agree, mut cap, mut cap_agree) =
-                    (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
-                let (mut saved, mut total) = (0u64, 0u64);
-                for (_, (winner, victory, end_turn, crossings)) in &finished {
-                    total += u64::from(*end_turn);
-                    let Some((pid, turn)) = crossings[slot] else {
-                        continue;
-                    };
-                    crossed += 1;
-                    saved += u64::from(end_turn.saturating_sub(turn));
-                    let hit = *winner == Some(pid);
-                    agree += u32::from(hit);
-                    if victory.as_deref() == Some("score") {
-                        cap += 1;
-                        cap_agree += u32::from(hit);
-                    } else {
-                        nat += 1;
-                        nat_agree += u32::from(hit);
-                    }
-                }
-                let pct = |num: u32, den: u32| {
-                    if den == 0 {
-                        "     -".to_string()
-                    } else {
-                        format!("{:5.1}%", 100.0 * f64::from(num) / f64::from(den))
-                    }
-                };
-                println!(
-                    "{threshold:<9}  {crossed:3}/{:<3}  {}({agree:3}/{crossed:<3})  \
-                     {}({nat_agree:2}/{nat:<2})  {}({cap_agree:2}/{cap:<2})  {:8.1}    {:5.1}%",
-                    finished.len(),
-                    pct(agree, crossed),
-                    pct(nat_agree, nat),
-                    pct(cap_agree, cap),
-                    if crossed == 0 {
-                        0.0
-                    } else {
-                        saved as f64 / f64::from(crossed)
-                    },
-                    if total == 0 {
-                        0.0
-                    } else {
-                        100.0 * saved as f64 / total as f64
-                    },
-                );
-            }
-            if crashes > 0 {
-                println!("\n{crashes} of {games} games crashed");
-                std::process::exit(1);
-            }
-        }
-        "benchmark" => {
-            let games = arg(&args, "--games", 50);
-            let turns = arg(&args, "--turns", 100) as u32;
-            let jobs = jobs_arg(&args);
-            let t0 = Instant::now();
-            let played = civvis::parallel::map(games as usize, jobs, |seed| {
-                let mut g = Game::new(2, 20, 14, seed as u64, turns, 0);
-                let mut ais = AdvancedAi::fleet(&g);
-                run_game(&mut g, &mut ais);
-                g.turn as u64
-            });
-            let total_turns: u64 = played.iter().sum();
-            let dt = t0.elapsed().as_secs_f64();
-            println!(
-                "{} games, {} turns in {:.2}s = {:.0} turns/sec \
-                 (2 players, 20x14, {jobs} at a time)",
-                games,
-                total_turns,
-                dt,
-                total_turns as f64 / dt
-            );
-        }
+        "odds-audit" => odds_audit_command(args),
+        "benchmark" => benchmark_command(args),
         // What an agent that searches actually does: take a position and roll
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
-        "rollouts" => {
-            let players = arg(&args, "--players", 6);
-            let warmup = arg(&args, "--turns", 150) as u32;
-            let samples = arg(&args, "--samples", 5000) as usize;
-            let mut g = Game::new_with(game_options(
-                &args,
-                players,
-                arg(&args, "--seed", 0) as u64,
-                setup::TurnStructure::Sequential,
-            ));
-            let mut ais = AdvancedAi::fleet(&g);
-            // Play in to the requested turn first: an empty map clones far
-            // faster than a settled one, and a settled one is what an agent
-            // searches from.
-            while g.turn < warmup && g.winner.is_none() {
-                let pid = g.current;
-                ais[pid].take_turn(&mut g, pid);
-                if g.winner.is_none() && g.current == pid {
-                    let _ = g.apply(pid, &civvis::game::Action::EndTurn);
-                }
-            }
-            let clone_start = Instant::now();
-            let mut sink = 0usize;
-            for _ in 0..samples {
-                sink += g.clone().units.len();
-            }
-            let clone_us = clone_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
-            let speculative_start = Instant::now();
-            for _ in 0..samples {
-                sink += g.speculative_clone().units.len();
-            }
-            let speculative_us = speculative_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
-            // A searching agent mostly applies ordinary moves and only
-            // occasionally ends a turn, and the two cost wildly different
-            // amounts, so both are reported.
-            let seat = g.current;
-            let mut mover = None;
-            for action in g.legal_actions(seat) {
-                if let civvis::game::Action::Move { .. } = action {
-                    mover = Some(action);
-                    break;
-                }
-            }
-            let move_us = mover.as_ref().map(|action| {
-                let start = Instant::now();
-                for _ in 0..samples {
-                    let mut branch = g.clone();
-                    let _ = branch.apply(seat, action);
-                    sink += branch.units.len();
-                }
-                start.elapsed().as_secs_f64() / samples as f64 * 1e6
-            });
-            let fast = g.speculative_clone();
-            let end_start = Instant::now();
-            for _ in 0..samples {
-                let mut branch = g.clone();
-                let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
-                sink += branch.units.len();
-            }
-            let end_us = end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
-            let fast_end_start = Instant::now();
-            for _ in 0..samples {
-                let mut branch = fast.speculative_clone();
-                let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
-                sink += branch.units.len();
-            }
-            let fast_end_us = fast_end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
-            // The same move on a position that is not maintaining fogged
-            // memory — what a search that never observes mid-rollout pays.
-            let fast_us = mover.as_ref().map(|action| {
-                let start = Instant::now();
-                for _ in 0..samples {
-                    let mut branch = fast.speculative_clone();
-                    let _ = branch.apply(seat, action);
-                    sink += branch.units.len();
-                }
-                start.elapsed().as_secs_f64() / samples as f64 * 1e6
-            });
-            println!(
-                "turn {} · {} seats · {} cities · {} units",
-                g.turn,
-                g.players.len(),
-                g.cities.len(),
-                g.units.len(),
-            );
-            println!(
-                "clone            {clone_us:8.1} us  = {:.0}/sec",
-                1e6 / clone_us
-            );
-            println!(
-                "speculative clone {speculative_us:7.1} us  = {:.0}/sec",
-                1e6 / speculative_us
-            );
-            match move_us {
-                Some(us) => println!(
-                    "clone + move     {us:8.1} us  = {:.0} rollouts/sec",
-                    1e6 / us
-                ),
-                None => println!("clone + move          n/a  (no legal move for this seat)"),
-            }
-            println!(
-                "clone + end turn {end_us:8.1} us  = {:.0}/sec",
-                1e6 / end_us
-            );
-            if let Some(us) = fast_us {
-                println!(
-                    "clone + move (no fog){us:6.1} us  = {:.0} rollouts/sec",
-                    1e6 / us
-                );
-            }
-            println!(
-                "clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec",
-                1e6 / fast_end_us
-            );
-            let _ = sink;
-        }
+        "rollouts" => rollouts_command(args),
         #[cfg(not(feature = "closed-experiments"))]
         "selfplay" => {
             eprintln!(
@@ -1487,388 +815,1085 @@ fn main() {
             std::process::exit(1);
         }
         #[cfg(feature = "closed-experiments")]
-        "selfplay" => {
-            let players = arg(&args, "--players", 4).max(2);
-            let options = game_options(
+        "selfplay" => selfplay_command(args),
+        "evolve" => evolve_command(args),
+        "play" => play_command(args),
+        "pedia" => pedia_command(args),
+        "validate" => validate_command(args),
+        _ => print_usage(),
+    }
+}
+
+/// `civvis simulate`: play one game and print the standings.
+fn simulate_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 4);
+    let g0 = Instant::now();
+    // The product is hard-committed to sequential turns, so every
+    // command defaults to the regime the shipped game plays;
+    // `--turn-structure simultaneous` remains the explicit research
+    // escape hatch into the retained driver.
+    let mut g = Game::new_with(game_options(
+        &args,
+        players,
+        arg(&args, "--seed", 0) as u64,
+        setup::TurnStructure::Sequential,
+    ));
+    // ⚠ Set here rather than carried in `GameOptions`, deliberately.
+    // This is a staged rules mechanism, not a setup-screen choice: it
+    // ships off, and either becomes unconditional on promotion — at
+    // which point the flag and this line both go — or is removed.
+    // Threading it through every `GameOptions` construction would be
+    // churn in four files that promotion has to undo. See
+    // `Game::native_competitions`.
+    g.native_competitions = args.iter().any(|a| a == "--native-competitions");
+    // The two regimes want opposite parallelism. Sequential seats
+    // cannot deliberate concurrently, so `--jobs` feeds the clone-
+    // heavy WorkPool frontiers inside one seat's turn, whose measured
+    // knee caps the default at four. Simultaneous seats deliberate
+    // independently by construction, so `--jobs` fans whole seats out
+    // instead — one clone buys a whole turn of deliberation, past the
+    // knee — and the AIs skip the inner pool rather than stack the
+    // two layers.
+    let census = if g.turn_structure == setup::TurnStructure::Simultaneous {
+        let jobs = jobs_arg(&args);
+        let mut ais = AdvancedAi::fleet(&g);
+        civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, jobs)
+    } else {
+        let jobs = single_simulation_jobs_arg(&args);
+        let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
+        civvis::simultaneous::run_structured(&mut g, &mut ais)
+    };
+    println!("[{:.3}s]", g0.elapsed().as_secs_f64());
+    if let Some(census) = census {
+        println!("{}", census.summary());
+    }
+    standings(&g);
+}
+
+/// `civvis soak`: play many games and report what they did.
+fn soak_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 4);
+    let games = arg(&args, "--games", 10);
+    let start = arg(&args, "--start-seed", 0);
+    let jobs = jobs_arg(&args);
+    let simultaneous = turn_structure(&args, setup::TurnStructure::Sequential)
+        == setup::TurnStructure::Simultaneous;
+    // A sequential soak has only one useful frontier: independent
+    // games. Simultaneous games have a second one inside each game —
+    // every ready civilization can plan at once. Keep the total
+    // worker budget bounded by splitting it across the games that can
+    // be live at once, then hand each game's share to its persistent
+    // seat-planning fleet. With one large simultaneous game, this
+    // therefore reaches every requested core instead of treating the
+    // one outer job as a reason to run all of its seats serially.
+    let (concurrent_games, jobs_per_game, extra_seat_workers) = if simultaneous {
+        simultaneous_soak_job_split(games as usize, jobs)
+    } else {
+        (jobs, 1, 0)
+    };
+    // A Tactics match: the same two civilizations over a series of
+    // battles, sides swapped between them. `--games` is how many
+    // battles are actually played, so a best-of-5 run short of five
+    // games simply reports the score it reached.
+    let arena = map_script(&args).is_battlefield();
+    let match_rules = tactics_rules(&args);
+    let contenders = (arena && match_rules.best_of > 1)
+        .then(|| match_contenders(&args, players, &named_civs(&args)));
+    // Each game is played on an outer worker, then described on the
+    // main one, so a soak reads exactly as it did when it was serial.
+    let lines = civvis::parallel::map(games as usize, concurrent_games, |index| {
+        let seed = start + index as i64;
+        let t0 = Instant::now();
+        let contenders = contenders.clone();
+        let result = std::panic::catch_unwind(|| {
+            let mut options = game_options(
                 &args,
                 players,
-                arg(&args, "--seed", 0) as u64,
+                seed as u64,
                 setup::TurnStructure::Sequential,
             );
-            let counterfactual = args.iter().any(|arg| arg == "--counterfactual");
-            let cfg = civvis::selfplay::SelfPlayCfg {
-                games: arg(&args, "--games", 20) as usize,
-                players: players as usize,
-                width: options.width,
-                height: options.height,
-                city_states: options.city_states,
-                max_turns: options.max_turns,
-                seed: arg(&args, "--seed", 0) as u64,
-                every: arg(&args, "--every", if counterfactual { 40 } else { 10 }).max(1) as u32,
-                ai: arg_text(
-                    &args,
-                    "--ai",
-                    if counterfactual {
-                        "strategic_score"
-                    } else {
-                        "advanced"
-                    },
-                ),
-                out: arg_text(&args, "--out", "selfplay"),
-                scalar_only: args.iter().any(|arg| arg == "--scalar-only"),
-                counterfactual,
-                counterfactual_roots: arg(&args, "--counterfactual-roots", 0).max(0) as usize,
-                decision_features: args.iter().any(|arg| arg == "--decision-features"),
-                jobs: jobs_arg(&args),
-            };
-            match civvis::selfplay::export(&cfg) {
-                Ok(stats) => println!(
-                    "
-{} samples from {} games ({} decisive) -> {}",
-                    stats.samples, stats.games, stats.decisive, cfg.out
-                ),
-                Err(error) => {
-                    eprintln!("selfplay export failed: {error}");
-                    std::process::exit(1);
+            if let Some(contenders) = contenders {
+                // The sides change ends at half time, and every
+                // battle after it. Otherwise a series measures the
+                // corner one civilization kept sitting in as much as
+                // it measures the civilization.
+                options.civs = contenders;
+                if index % 2 == 1 {
+                    options.civs.reverse();
                 }
             }
-        }
-        "evolve" => {
-            let players = arg(&args, "--players", 4);
-            civvis::evolve::evolve(&civvis::evolve::EvoCfg {
-                generations: arg(&args, "--generations", 1_000_000) as u32,
-                pop: arg(&args, "--pop", 16) as usize,
-                games: arg(&args, "--games", 8) as usize,
-                players: players as usize,
-                width: auto_dimension(&args, "--width", players, true),
-                height: auto_dimension(&args, "--height", players, false),
-                // Selection reads continuous score and combat shares, but the
-                // separate promotion SPRT still decides on outright wins. At
-                // 160 turns almost nothing reaches a victory, so confirmation
-                // would judge arbitrary cutoffs rather than completed games.
-                // See `stock_turns`.
-                max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
-                seed: arg(&args, "--seed", 1) as u64,
-                threads: arg(&args, "--threads", 8) as usize,
-                dir: arg_text(&args, "--dir", "evolved"),
-                // `--turns` already resolves through `stock_turns(&args)`,
-                // which reads this flag; until now the game itself did not,
-                // so `--speed online` bred truncated Standard games.
-                speed: arg_text(&args, "--speed", &default_speed()),
-            });
-        }
-        "play" => {
-            // The stock game: four civilizations on a Tiny world, which is
-            // `MapSize::for_players(4)`. The map script default lives in
-            // `game_options` so the headless arms open the same world.
-            let players = arg(&args, "--players", 4);
-            // `--mirror <run-dir>`: show the board a Civilization VI seat can
-            // actually see, rebuilt as a CIVVIS game, instead of generating one.
-            //
-            // This is what makes the two windows one game rather than two. The
-            // control mod exports only revealed plots, so what appears here is
-            // what the seat has earned and nothing more.
-            //
-            // Unrevealed ground remains explicit `unknown` terrain underneath
-            // the fog; see `mirror::rebuild_game` for the separate traversable
-            // frontier prior used by the live decider.
-            let mirrored: Option<Game> = args
-                .iter()
-                .position(|value| value == "--mirror")
-                .and_then(|index| args.get(index + 1))
-                .map(|dir| {
-                    let events = std::path::Path::new(dir).join("events.jsonl");
-                    let snapshot =
-                        civvis::mirror::snapshot_from_events(&events).unwrap_or_else(|error| {
-                            eprintln!("cannot read {}: {error}", events.display());
-                            std::process::exit(2);
-                        });
-                    if snapshot.revealed_count() == 0 {
-                        eprintln!(
-                            "{} has no tiles to mirror — the run needs --export-state, \
-                             and before the PlayersVisibility fix the export emitted nothing",
-                            events.display()
-                        );
-                        std::process::exit(2);
-                    }
-                    println!(
-                        "mirroring {} revealed plots of a {}x{} world at turn {}",
-                        snapshot.revealed_count(),
-                        snapshot.width,
-                        snapshot.height,
-                        snapshot.turn
-                    );
-                    // ★★★★ MIRROR THE EMPIRE, NOT JUST THE GROUND. `rebuild_game`
-                    // returns terrain only, so this window read "Ancient Age TURN 1"
-                    // with an empty world while Civilization VI sat at turn 7 with a
-                    // revealed continent, two cities and an army. Side by side that is
-                    // worse than no mirror: the operator is asked to verify the two
-                    // match and shown a board that cannot match by construction.
-                    //
-                    // `rebuild_from_state` places both empires' cities, our units and
-                    // every visible rival unit, and sets the turn — the same
-                    // reconstruction `civvis-orders` decides from, so what is on screen
-                    // is what CIVVIS is actually reasoning about.
-                    // ★ MOCK MODE. `--dump-state <file>` writes the observed board out
-                    // as JSON; `--state <file>` merges a file back over it before the
-                    // reconstruction runs. Together they give a round trip — capture the
-                    // real Civilization VI position, edit anything, replay it — which is
-                    // what makes a disagreement between the two screens reproducible
-                    // instead of a thing you have to catch live.
-                    let flag = |name: &str| {
-                        args.iter()
-                            .position(|value| value == name)
-                            .and_then(|at| args.get(at + 1))
-                            .cloned()
-                    };
-                    let mut observed = civvis::mirror::state_value_from_events(&events, None);
-                    // ⚠ DUMP BEFORE MERGE. Writing the file after the override records
-                    // the mock, not the observation, so using both flags at once would
-                    // overwrite the very board you were trying to capture — and the
-                    // second run would silently start from the edit.
-                    if let (Some(state), Some(path)) = (observed.as_ref(), flag("--dump-state")) {
-                        match serde_json::to_string_pretty(state)
-                            .map_err(|e| e.to_string())
-                            .and_then(|text| std::fs::write(&path, text).map_err(|e| e.to_string()))
-                        {
-                            Ok(()) => println!("  observed state written to {path}"),
-                            Err(why) => println!("  ⚠ could not write --dump-state {path}: {why}"),
-                        }
-                    }
-                    if let (Some(state), Some(path)) = (observed.as_mut(), flag("--state")) {
-                        match std::fs::read_to_string(&path)
-                            .ok()
-                            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-                        {
-                            Some(patch) => {
-                                civvis::mirror::merge_state(state, &patch);
-                                println!("  state overridden from {path}");
-                            }
-                            // Loud, because silently mirroring the real board when the
-                            // operator asked for a mocked one is a wrong answer that
-                            // looks exactly like a right one.
-                            None => {
-                                println!("  ⚠ could not read --state {path}: using observed board")
-                            }
-                        }
-                    }
-                    let from_value = observed.as_ref().and_then(|v| {
-                        serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok()
-                    });
-                    match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
-                        Some(state) => {
-                            // The page prints TURN n/<limit>, so take the limit the game
-                            // was created with, as `civvis-orders` does, else the speed's
-                            // own. A fixed 250 was only Online's: a Standard game read
-                            // "TURN 300/250". Online is the guess only for a seat that
-                            // names neither.
-                            let turn_limit = civvis::mirror::host_turn_limit(&state)
-                                .unwrap_or(civvis::setup::GameSpeed::Online.turn_limit());
-                            let rebuilt = civvis::mirror::rebuild_from_state(
-                                &snapshot,
-                                &state,
-                                players as usize,
-                                1,
-                                turn_limit,
-                                6,
-                            );
-                            println!(
-                                "  empire: {} cities, {} units, {} rival cities, \
-                                 {} rival units at turn {}",
-                                rebuilt.placed_cities,
-                                rebuilt.placed_units,
-                                rebuilt.placed_rival_cities,
-                                rebuilt.placed_rival_units,
-                                state.turn
-                            );
-                            if !rebuilt.unmapped.is_empty() {
-                                println!("  untranslatable: {}", rebuilt.unmapped.join(","));
-                            }
-                            rebuilt.game
-                        }
-                        // No `state` event means the run is not exporting one; terrain
-                        // alone is still worth showing, and saying so beats implying
-                        // the empty empire is real.
-                        None => {
-                            println!("  no `state` event: terrain only, no cities or units");
-                            civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
-                        }
-                    }
-                });
-            let resumed: Option<Game> = args
-                .iter()
-                .position(|value| value == "--resume")
-                .and_then(|index| args.get(index + 1))
-                .map(|path| {
-                    let raw = std::fs::read_to_string(path).unwrap_or_else(|error| {
-                        eprintln!("cannot read checkpoint {path}: {error}");
-                        std::process::exit(2);
-                    });
-                    let value: serde_json::Value =
-                        serde_json::from_str(&raw).unwrap_or_else(|error| {
-                            eprintln!("cannot load checkpoint {path}: {error}");
-                            std::process::exit(2);
-                        });
-                    let game: Game =
-                        civvis::protocol::game_from_save(value).unwrap_or_else(|error| {
-                            eprintln!("cannot load checkpoint {path}: {error}");
-                            std::process::exit(2);
-                        });
-                    // A save records the mods it was played under. Resuming
-                    // under a different set silently changes the rules
-                    // mid-game, so say so rather than pretend otherwise.
-                    let active = civvis::mods::active_names();
-                    if game.mods != active {
-                        eprintln!(
-                            "warning: {path} was played with mods {:?} but this process has {:?}",
-                            game.mods, active
-                        );
-                    }
-                    // Stepping a simultaneous save one seat at a time would
-                    // silently change its regime mid-game; say so instead. A
-                    // spectated table plays whole planned turns, so only a
-                    // resume that seats a human refuses it.
-                    if game.turn_structure == setup::TurnStructure::Simultaneous
-                        && !args.iter().any(|a| a == "--spectate" || a == "--watch")
-                    {
-                        eprintln!(
-                            "{path} is a simultaneous-turns game; a played game is \
-                             sequential by construction — resume it with --spectate"
-                        );
-                        std::process::exit(2);
-                    }
-                    game
-                });
-            let seed = {
-                let s = arg(&args, "--seed", -1);
-                if s >= 0 {
-                    s as u64
-                } else {
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .subsec_nanos() as u64
-                }
+            let mut g = Game::new_with(options);
+            // ⚠ Set here rather than carried in `GameOptions`, for the
+            // reason `simulate` gives above: this is a staged rules
+            // mechanism, and a soak is how its effect on the victory
+            // mix is measured before it is promoted.
+            g.native_competitions = args.iter().any(|a| a == "--native-competitions");
+            let mut ais = AdvancedAi::fleet(&g);
+            let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
+                // Spread a non-divisible budget across the first live
+                // games; later replacements get the base share, so
+                // the running total never exceeds `--jobs`.
+                let seat_jobs = jobs_per_game + usize::from(index < extra_seat_workers);
+                civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, seat_jobs)
+            } else {
+                civvis::simultaneous::run_structured(&mut g, &mut ais)
             };
-            // A played game consults the human seat live, one seat at a
-            // time, which is the sequential regime by construction. A
-            // spectated table has nobody at the keyboard, so it plays the
-            // simultaneous regime as one whole planned turn per pace tick —
-            // and defaults to it, like the rest of the automated surfaces.
-            // Refuse the combination that cannot be honoured rather than
-            // quietly playing a different game than the flag asked for;
-            // `simulate` and `soak` play it headless either way.
-            let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
-            let play_options = game_options(&args, players, seed, setup::TurnStructure::Sequential);
-            if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
+            // Every major's turns, pooled: what the empires in this game
+            // actually spent the game doing.
+            let mut census = civvis::ai::StrategyCensus::default();
+            for ai in ais
+                .iter()
+                .take(g.players.iter().filter(|p| !p.is_minor).count())
+            {
+                census.absorb(&ai.strategy_census());
+            }
+            (g, census, simultaneous)
+        });
+        match result {
+            Ok((g, census, simultaneous)) => {
+                let majors: Vec<_> = g.players.iter().filter(|p| !p.is_minor).collect();
+                let minors: Vec<_> = g
+                    .players
+                    .iter()
+                    .filter(|p| p.is_minor && !p.is_barbarian)
+                    .collect();
+                // A soak line describes a terminal result. Tactics
+                // draws carry no winner but are finished battles.
+                let w = g.winner.map(|winner| &g.players[winner]);
+                let mut flags = String::new();
+                if let Some(simultaneous) = &simultaneous {
+                    flags.push_str(&format!(
+                        " SIMUL drops={}/{}{}",
+                        simultaneous.dropped,
+                        simultaneous.planned,
+                        if simultaneous.aborted { " ABORTED" } else { "" }
+                    ));
+                }
+                if majors.iter().all(|p| p.techs.len() <= 2) {
+                    flags.push_str(" NO-TECH-PROGRESS");
+                }
+                if w.is_some_and(|w| w.is_minor) {
+                    flags.push_str(" MINOR-WINNER");
+                }
+                if g.is_draw() {
+                    flags.push_str(" DRAW");
+                } else if w.is_none() {
+                    flags.push_str(" NO-WINNER");
+                }
+                // An army nobody ever modernizes is invisible in the
+                // standings and obvious on the map. Count the units
+                // still fielded after their owner retired them, and
+                // the ones three eras behind the world besides.
+                let unit_era = |kind: &str| -> usize {
+                    let spec = &g.rules.units[kind];
+                    let tech = spec
+                        .tech
+                        .as_deref()
+                        .and_then(|node| g.rules.techs.get(node))
+                        .map(|node| node.era);
+                    let civic = spec
+                        .civic
+                        .as_deref()
+                        .and_then(|node| g.rules.civics.get(node))
+                        .map(|node| node.era);
+                    tech.or(civic).unwrap_or(0)
+                };
+                let (obsolete, ancient, army) = majors
+                    .iter()
+                    .filter(|p| p.alive)
+                    .flat_map(|p| g.units.values().filter(move |unit| unit.owner == p.id))
+                    .filter(|unit| g.rules.units[unit.kind].class == "military")
+                    .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
+                        (
+                            obsolete + g.unit_is_obsolete(unit.owner, unit.kind) as i32,
+                            ancient
+                                + (g.world_era.saturating_sub(unit_era(&unit.kind)) >= 3) as i32,
+                            army + 1,
+                        )
+                    });
+                flags.push_str(&format!(
+                    " ARMY {army} obsolete={obsolete} ancient={ancient} era={}",
+                    g.world_era
+                ));
+                // A war nobody ever wins is as invisible as an army
+                // nobody modernizes: the standings only show who was
+                // left standing, so a game where every declaration
+                // ended in a white peace reads exactly like a game of
+                // uninterrupted peace. Count what the declarations
+                // actually achieved.
+                // `Game::wars` holds only the wars still running:
+                // `close_war_record` removes a finished one and pushes
+                // it to `concluded_wars`. Reading the live map alone
+                // therefore hid every war that ended — which is every
+                // war that was *won*, and every white peace this block
+                // was written to make legible. Measured over eight
+                // six-player games it saw 6 of 39 declarations, 96 of
+                // 317 unit losses, and 0 of 13 city captures, while
+                // `ended_in_peace` could not be anything but zero.
+                let all_wars: Vec<&WarRecord> =
+                    g.wars.values().chain(g.concluded_wars.iter()).collect();
+                let wars = all_wars.len();
+                let (units_lost, cities_taken) =
+                    all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
+                        (
+                            units + war.losses.values().map(|side| side.units).sum::<u32>(),
+                            cities + war.losses.values().map(|side| side.cities).sum::<u32>(),
+                        )
+                    });
+                let capitals_taken = all_wars
+                    .iter()
+                    .flat_map(|war| war.highlights.iter())
+                    .filter(|highlight| highlight.kind == "capital_captured")
+                    .count();
+                // How long the declarations lasted, because a war that
+                // ends in a handful of turns cannot take a walled city
+                // whatever army was pointed at it.
+                let (turns_at_war, ended) =
+                    all_wars.iter().fold((0u32, 0usize), |(turns, ended), war| {
+                        let stop = war.ended.unwrap_or(g.turn);
+                        (
+                            turns + stop.saturating_sub(war.started),
+                            ended + war.ended.is_some() as usize,
+                        )
+                    });
+                let mean_war = if wars > 0 {
+                    turns_at_war as f64 / wars as f64
+                } else {
+                    0.0
+                };
+                // Every kind of thing the declarations produced, so a war
+                // that only ever produces its own declaration is
+                // legible as exactly that.
+                let mut events: BTreeMap<&str, usize> = BTreeMap::new();
+                for highlight in all_wars.iter().flat_map(|war| war.highlights.iter()) {
+                    *events.entry(highlight.kind.as_str()).or_default() += 1;
+                }
+                let events: Vec<String> = events
+                    .iter()
+                    .map(|(kind, count)| format!("{kind}:{count}"))
+                    .collect();
+                flags.push_str(&format!(
+                    " WAR {wars} units_lost={units_lost} cities_taken={cities_taken} \
+                     capitals_taken={capitals_taken} mean_turns={mean_war:.0} \
+                     ended_in_peace={ended} events=[{}]",
+                    events.join(" ")
+                ));
+                // A war is only prosecuted if somebody chose to
+                // prosecute it. Recovery is the defensive posture, so
+                // turns spent there are turns nobody was besieging
+                // anything.
+                let total = census.total().max(1);
+                let share = |turns: u32| 100 * turns / total;
+                flags.push_str(&format!(
+                    " PLAN conquest={}% recovery={}% expansion={}% science={}% \
+                     culture={}% religion={}% diplomacy={}%",
+                    share(census.conquest),
+                    share(census.recovery),
+                    share(census.expansion),
+                    share(census.science),
+                    share(census.culture),
+                    share(census.religion),
+                    share(census.diplomacy),
+                ));
+                let posture_total = census.posture_total().max(1);
+                let pshare = |turns: u32| 100 * turns / posture_total;
+                flags.push_str(&format!(
+                    " FORCE engage={}% advance={}% hold={}% muster={}% recover={}%",
+                    pshare(census.engage),
+                    pshare(census.advance),
+                    pshare(census.hold),
+                    pshare(census.muster),
+                    pshare(census.recover),
+                ));
+                flags.push_str(&format!(
+                    " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
+                     left_depleted={} taker_ready={} melee_was_there={}",
+                    g.siege.blows,
+                    g.siege.damage,
+                    g.siege.walls_breached,
+                    g.siege.cities_reduced,
+                    g.siege.left_depleted,
+                    g.siege.depleted_with_a_taker_ready,
+                    g.siege.reduced_with_melee_adjacent,
+                ));
+                // ⚠ The diplomatic lane is the one that steals most
+                // live games and the one a native game has never been
+                // able to finish, and the victory column alone cannot
+                // say whether it came close or was nowhere near.
+                // `DIPLOMATIC_VICTORY_POINTS` is 20; this is how far
+                // the best empire actually got.
+                let best_dvp = majors.iter().map(|p| p.dvp).max().unwrap_or(0);
+                flags.push_str(&format!(
+                    " DVP best={best_dvp}/{} reached={}",
+                    civvis::game::DIPLOMATIC_VICTORY_POINTS,
+                    majors
+                        .iter()
+                        .filter(|p| p.dvp >= civvis::game::DIPLOMATIC_VICTORY_POINTS)
+                        .count(),
+                ));
+                let held = (census.hold_threatened + census.hold_weak).max(1);
+                flags.push_str(&format!(
+                    " HELD_BY threatened_city={}% locally_weak={}%",
+                    100 * census.hold_threatened / held,
+                    100 * census.hold_weak / held,
+                ));
+                Some((w.map(|w| w.civ.clone()), format!(
+                    "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
+                    seed,
+                    g.reported_turn(),
+                    g.victory_type.clone().unwrap_or_default(),
+                    w.map_or("-", |w| w.civ.as_str()),
+                    majors.iter().filter(|p| p.alive).count(),
+                    majors.len(),
+                    g.cities.len(),
+                    minors.iter().filter(|p| p.alive).count(),
+                    minors.len(),
+                    t0.elapsed().as_secs_f64(),
+                    flags
+                )))
+            }
+            Err(_) => None,
+        }
+    });
+    let mut fails = 0;
+    let mut series = contenders.map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
+    for (index, line) in lines.into_iter().enumerate() {
+        match line {
+            Some((winner, line)) => {
+                println!("{line}");
+                if let Some(series) = series.as_mut() {
+                    // A match stops at the battle that settles it;
+                    // the rest of `--games` is a dead rubber and is
+                    // reported as unplayed rather than counted.
+                    if !series.decided() {
+                        series.record(winner.as_deref());
+                    }
+                }
+            }
+            None => {
+                fails += 1;
+                println!("seed {:3}  CRASH (panic)", start + index as i64);
+            }
+        }
+    }
+    println!("\n{}/{} games completed", games - fails, games);
+    if let Some(series) = series {
+        let verdict = match series.winner() {
+            Some(civ) => format!("{civ} takes the match"),
+            None if series.played() >= series.best_of => "match drawn".to_string(),
+            None => format!(
+                "match unfinished: {} of {} battles played",
+                series.played(),
+                series.best_of
+            ),
+        };
+        println!(
+            "best of {}: {} — {verdict}",
+            series.best_of,
+            series.scoreline()
+        );
+    }
+    if fails > 0 {
+        std::process::exit(1);
+    }
+}
+
+/// `civvis odds-audit`.
+fn odds_audit_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 6);
+    let games = arg(&args, "--games", 40);
+    let start = arg(&args, "--start-seed", 0);
+    let jobs = jobs_arg(&args);
+    let start_turn = arg(&args, "--adjudicate-start", 100) as u32;
+    let every = (arg(&args, "--every", 5).max(1)) as u32;
+    let thresholds: Vec<f64> = arg_text(&args, "--thresholds", "0.90,0.95,0.98,0.995")
+        .split(',')
+        .map(|t| t.trim().parse::<f64>().expect("--thresholds wants numbers"))
+        .collect();
+    println!(
+        "odds-audit: {games} games, {players} players, sampling from turn \
+         {start_turn} every {every}, thresholds {thresholds:?}"
+    );
+    type GameAudit = (
+        Option<usize>,
+        Option<String>,
+        u32,
+        Vec<Option<(usize, u32)>>,
+    );
+    let results: Vec<Option<GameAudit>> = civvis::parallel::map(games as usize, jobs, |index| {
+        let seed = start + index as i64;
+        std::panic::catch_unwind(|| {
+            let mut g = Game::new_with(game_options(
+                &args,
+                players,
+                seed as u64,
+                setup::TurnStructure::Sequential,
+            ));
+            let mut ais = AdvancedAi::fleet(&g);
+            // Same display-state elisions as `run_game`: this is a
+            // headless rollout and the odds read none of them.
+            g.set_fog_memory(false);
+            g.set_war_ledger(false);
+            let mut crossings: Vec<Option<(usize, u32)>> = vec![None; thresholds.len()];
+            let mut last_turn = g.turn;
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                ais[pid].take_turn(&mut g, pid);
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &civvis::game::Action::EndTurn);
+                }
+                if g.turn == last_turn {
+                    continue;
+                }
+                last_turn = g.turn;
+                let due = g.turn >= start_turn && (g.turn - start_turn).is_multiple_of(every);
+                if !due || g.winner.is_some() || crossings.iter().all(Option::is_some) {
+                    continue;
+                }
+                // A flat 1500 prior for every seat: the audit runs
+                // stock fleets with no roster, so only the board
+                // terms — score, military, cities, victory races,
+                // and the clock — separate the table.
+                let table = civvis::odds::table(&g, |_pid| 1500.0f64);
+                let Some((leader, seat)) = table.iter().max_by(|a, b| a.1.now.total_cmp(&b.1.now))
+                else {
+                    continue;
+                };
+                for (slot, threshold) in thresholds.iter().enumerate() {
+                    if crossings[slot].is_none() && seat.now >= *threshold {
+                        crossings[slot] = Some((*leader, g.turn));
+                    }
+                }
+            }
+            let end_turn = g.turn.min(g.max_turns);
+            (g.winner, g.victory_type.clone(), end_turn, crossings)
+        })
+        .ok()
+    });
+    let mut crashes = 0;
+    let mut finished: Vec<(i64, GameAudit)> = Vec::new();
+    for (index, result) in results.into_iter().enumerate() {
+        let seed = start + index as i64;
+        match result {
+            Some(audit) => finished.push((seed, audit)),
+            None => {
+                crashes += 1;
+                println!("seed {seed:4}  CRASH (panic)");
+            }
+        }
+    }
+    for (seed, (winner, victory, end_turn, crossings)) in &finished {
+        let victory = victory.as_deref().unwrap_or("none");
+        let verdicts: Vec<String> = crossings
+            .iter()
+            .zip(&thresholds)
+            .map(|(crossing, threshold)| match crossing {
+                Some((pid, turn)) => format!(
+                    "{threshold}:t{turn}{}",
+                    if Some(*pid) == *winner { "=" } else { "!" }
+                ),
+                None => format!("{threshold}:-"),
+            })
+            .collect();
+        println!(
+            "seed {seed:4}  t{end_turn:<4} {victory:<10} {}",
+            verdicts.join(" ")
+        );
+    }
+    // The turn cap awards the score victory, so `score` endings are
+    // truncations of an undecided board and every other ending is a
+    // game the rules finished. Agreement is reported for both because
+    // they answer different questions: natural endings are ground
+    // truth, cap endings are agreement with the truncation rule that
+    // adjudication would replace.
+    println!(
+        "\nthreshold  crossed  agree-all      agree-natural  agree-cap      \
+         mean-saved  saved-share"
+    );
+    for (slot, threshold) in thresholds.iter().enumerate() {
+        let (mut crossed, mut agree, mut nat, mut nat_agree, mut cap, mut cap_agree) =
+            (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+        let (mut saved, mut total) = (0u64, 0u64);
+        for (_, (winner, victory, end_turn, crossings)) in &finished {
+            total += u64::from(*end_turn);
+            let Some((pid, turn)) = crossings[slot] else {
+                continue;
+            };
+            crossed += 1;
+            saved += u64::from(end_turn.saturating_sub(turn));
+            let hit = *winner == Some(pid);
+            agree += u32::from(hit);
+            if victory.as_deref() == Some("score") {
+                cap += 1;
+                cap_agree += u32::from(hit);
+            } else {
+                nat += 1;
+                nat_agree += u32::from(hit);
+            }
+        }
+        let pct = |num: u32, den: u32| {
+            if den == 0 {
+                "     -".to_string()
+            } else {
+                format!("{:5.1}%", 100.0 * f64::from(num) / f64::from(den))
+            }
+        };
+        println!(
+            "{threshold:<9}  {crossed:3}/{:<3}  {}({agree:3}/{crossed:<3})  \
+             {}({nat_agree:2}/{nat:<2})  {}({cap_agree:2}/{cap:<2})  {:8.1}    {:5.1}%",
+            finished.len(),
+            pct(agree, crossed),
+            pct(nat_agree, nat),
+            pct(cap_agree, cap),
+            if crossed == 0 {
+                0.0
+            } else {
+                saved as f64 / f64::from(crossed)
+            },
+            if total == 0 {
+                0.0
+            } else {
+                100.0 * saved as f64 / total as f64
+            },
+        );
+    }
+    if crashes > 0 {
+        println!("\n{crashes} of {games} games crashed");
+        std::process::exit(1);
+    }
+}
+
+/// `civvis benchmark`.
+fn benchmark_command(args: Vec<String>) {
+    let games = arg(&args, "--games", 50);
+    let turns = arg(&args, "--turns", 100) as u32;
+    let jobs = jobs_arg(&args);
+    let t0 = Instant::now();
+    let played = civvis::parallel::map(games as usize, jobs, |seed| {
+        let mut g = Game::new(2, 20, 14, seed as u64, turns, 0);
+        let mut ais = AdvancedAi::fleet(&g);
+        run_game(&mut g, &mut ais);
+        g.turn as u64
+    });
+    let total_turns: u64 = played.iter().sum();
+    let dt = t0.elapsed().as_secs_f64();
+    println!(
+        "{} games, {} turns in {:.2}s = {:.0} turns/sec \
+         (2 players, 20x14, {jobs} at a time)",
+        games,
+        total_turns,
+        dt,
+        total_turns as f64 / dt
+    );
+}
+
+/// `civvis rollouts`.
+fn rollouts_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 6);
+    let warmup = arg(&args, "--turns", 150) as u32;
+    let samples = arg(&args, "--samples", 5000) as usize;
+    let mut g = Game::new_with(game_options(
+        &args,
+        players,
+        arg(&args, "--seed", 0) as u64,
+        setup::TurnStructure::Sequential,
+    ));
+    let mut ais = AdvancedAi::fleet(&g);
+    // Play in to the requested turn first: an empty map clones far
+    // faster than a settled one, and a settled one is what an agent
+    // searches from.
+    while g.turn < warmup && g.winner.is_none() {
+        let pid = g.current;
+        ais[pid].take_turn(&mut g, pid);
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &civvis::game::Action::EndTurn);
+        }
+    }
+    let clone_start = Instant::now();
+    let mut sink = 0usize;
+    for _ in 0..samples {
+        sink += g.clone().units.len();
+    }
+    let clone_us = clone_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+    let speculative_start = Instant::now();
+    for _ in 0..samples {
+        sink += g.speculative_clone().units.len();
+    }
+    let speculative_us = speculative_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+    // A searching agent mostly applies ordinary moves and only
+    // occasionally ends a turn, and the two cost wildly different
+    // amounts, so both are reported.
+    let seat = g.current;
+    let mut mover = None;
+    for action in g.legal_actions(seat) {
+        if let civvis::game::Action::Move { .. } = action {
+            mover = Some(action);
+            break;
+        }
+    }
+    let move_us = mover.as_ref().map(|action| {
+        let start = Instant::now();
+        for _ in 0..samples {
+            let mut branch = g.clone();
+            let _ = branch.apply(seat, action);
+            sink += branch.units.len();
+        }
+        start.elapsed().as_secs_f64() / samples as f64 * 1e6
+    });
+    let fast = g.speculative_clone();
+    let end_start = Instant::now();
+    for _ in 0..samples {
+        let mut branch = g.clone();
+        let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
+        sink += branch.units.len();
+    }
+    let end_us = end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+    let fast_end_start = Instant::now();
+    for _ in 0..samples {
+        let mut branch = fast.speculative_clone();
+        let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
+        sink += branch.units.len();
+    }
+    let fast_end_us = fast_end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+    // The same move on a position that is not maintaining fogged
+    // memory — what a search that never observes mid-rollout pays.
+    let fast_us = mover.as_ref().map(|action| {
+        let start = Instant::now();
+        for _ in 0..samples {
+            let mut branch = fast.speculative_clone();
+            let _ = branch.apply(seat, action);
+            sink += branch.units.len();
+        }
+        start.elapsed().as_secs_f64() / samples as f64 * 1e6
+    });
+    println!(
+        "turn {} · {} seats · {} cities · {} units",
+        g.turn,
+        g.players.len(),
+        g.cities.len(),
+        g.units.len(),
+    );
+    println!(
+        "clone            {clone_us:8.1} us  = {:.0}/sec",
+        1e6 / clone_us
+    );
+    println!(
+        "speculative clone {speculative_us:7.1} us  = {:.0}/sec",
+        1e6 / speculative_us
+    );
+    match move_us {
+        Some(us) => println!(
+            "clone + move     {us:8.1} us  = {:.0} rollouts/sec",
+            1e6 / us
+        ),
+        None => println!("clone + move          n/a  (no legal move for this seat)"),
+    }
+    println!(
+        "clone + end turn {end_us:8.1} us  = {:.0}/sec",
+        1e6 / end_us
+    );
+    if let Some(us) = fast_us {
+        println!(
+            "clone + move (no fog){us:6.1} us  = {:.0} rollouts/sec",
+            1e6 / us
+        );
+    }
+    println!(
+        "clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec",
+        1e6 / fast_end_us
+    );
+    let _ = sink;
+}
+
+/// `civvis selfplay`.
+#[cfg(feature = "closed-experiments")]
+fn selfplay_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 4).max(2);
+    let options = game_options(
+        &args,
+        players,
+        arg(&args, "--seed", 0) as u64,
+        setup::TurnStructure::Sequential,
+    );
+    let counterfactual = args.iter().any(|arg| arg == "--counterfactual");
+    let cfg = civvis::selfplay::SelfPlayCfg {
+        games: arg(&args, "--games", 20) as usize,
+        players: players as usize,
+        width: options.width,
+        height: options.height,
+        city_states: options.city_states,
+        max_turns: options.max_turns,
+        seed: arg(&args, "--seed", 0) as u64,
+        every: arg(&args, "--every", if counterfactual { 40 } else { 10 }).max(1) as u32,
+        ai: arg_text(
+            &args,
+            "--ai",
+            if counterfactual {
+                "strategic_score"
+            } else {
+                "advanced"
+            },
+        ),
+        out: arg_text(&args, "--out", "selfplay"),
+        scalar_only: args.iter().any(|arg| arg == "--scalar-only"),
+        counterfactual,
+        counterfactual_roots: arg(&args, "--counterfactual-roots", 0).max(0) as usize,
+        decision_features: args.iter().any(|arg| arg == "--decision-features"),
+        jobs: jobs_arg(&args),
+    };
+    match civvis::selfplay::export(&cfg) {
+        Ok(stats) => println!(
+            "
+{} samples from {} games ({} decisive) -> {}",
+            stats.samples, stats.games, stats.decisive, cfg.out
+        ),
+        Err(error) => {
+            eprintln!("selfplay export failed: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `civvis evolve`.
+fn evolve_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 4);
+    civvis::evolve::evolve(&civvis::evolve::EvoCfg {
+        generations: arg(&args, "--generations", 1_000_000) as u32,
+        pop: arg(&args, "--pop", 16) as usize,
+        games: arg(&args, "--games", 8) as usize,
+        players: players as usize,
+        width: auto_dimension(&args, "--width", players, true),
+        height: auto_dimension(&args, "--height", players, false),
+        // Selection reads continuous score and combat shares, but the
+        // separate promotion SPRT still decides on outright wins. At
+        // 160 turns almost nothing reaches a victory, so confirmation
+        // would judge arbitrary cutoffs rather than completed games.
+        // See `stock_turns`.
+        max_turns: arg(&args, "--turns", stock_turns(&args)) as u32,
+        seed: arg(&args, "--seed", 1) as u64,
+        threads: arg(&args, "--threads", 8) as usize,
+        dir: arg_text(&args, "--dir", "evolved"),
+        // `--turns` already resolves through `stock_turns(&args)`,
+        // which reads this flag; until now the game itself did not,
+        // so `--speed online` bred truncated Standard games.
+        speed: arg_text(&args, "--speed", &default_speed()),
+    });
+}
+
+/// `civvis play`.
+fn play_command(args: Vec<String>) {
+    // The stock game: four civilizations on a Tiny world, which is
+    // `MapSize::for_players(4)`. The map script default lives in
+    // `game_options` so the headless arms open the same world.
+    let players = arg(&args, "--players", 4);
+    // `--mirror <run-dir>`: show the board a Civilization VI seat can
+    // actually see, rebuilt as a CIVVIS game, instead of generating one.
+    //
+    // This is what makes the two windows one game rather than two. The
+    // control mod exports only revealed plots, so what appears here is
+    // what the seat has earned and nothing more.
+    //
+    // Unrevealed ground remains explicit `unknown` terrain underneath
+    // the fog; see `mirror::rebuild_game` for the separate traversable
+    // frontier prior used by the live decider.
+    let mirrored: Option<Game> = args
+        .iter()
+        .position(|value| value == "--mirror")
+        .and_then(|index| args.get(index + 1))
+        .map(|dir| {
+            let events = std::path::Path::new(dir).join("events.jsonl");
+            let snapshot = civvis::mirror::snapshot_from_events(&events).unwrap_or_else(|error| {
+                eprintln!("cannot read {}: {error}", events.display());
+                std::process::exit(2);
+            });
+            if snapshot.revealed_count() == 0 {
                 eprintln!(
-                    "a played game is sequential by construction; simultaneous \
-                     turns need --spectate, or `civvis simulate --turn-structure \
-                     simultaneous`"
+                    "{} has no tiles to mirror — the run needs --export-state, \
+                     and before the PlayersVisibility fix the export emitted nothing",
+                    events.display()
                 );
                 std::process::exit(2);
             }
-            let map_script = play_options.map_script;
-            let map_topology = play_options.map_topology;
-            let map_poles = play_options.map_poles;
-            let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
-            // Only the mirror `tools/follow.py` keeps beside the live game asks
-            // for this: its page then carries the Pause / Resume that holds
-            // the Civilization VI game itself (`civ6::live_pause_status`).
-            if args.iter().any(|a| a == "--live-pause") {
-                civvis::civ6::enable_live_pause_control();
-            }
-            civvis::server::serve_with_game(
-                arg(&args, "--port", 8765) as u16,
-                !args.iter().any(|a| a == "--no-open"),
-                civvis::server::Params {
-                    num_players: players as usize,
-                    width: auto_dimension(&args, "--width", players, true),
-                    height: auto_dimension(&args, "--height", players, false),
-                    seed,
-                    base_ruleset: play_options.base_ruleset,
-                    start_era: play_options.start_era,
-                    future_era: play_options.future_era,
-                    turn_structure: play_options.turn_structure,
-                    map_script,
-                    map_topology,
-                    map_poles,
-                    game_speed,
-                    max_turns: play_options.max_turns,
-                    victory_conditions: victory_conditions(&args),
-                    // The engine's stock setup leaves mercy off. The lobby
-                    // can still opt into any listed threshold after launch.
-                    mercy_rule: play_options.mercy_rule,
-                    required_victory_types: 1,
-                    // The lobby can still change these mid-session; this is
-                    // what the launch itself asked for.
-                    tactics: tactics_rules(&args),
-                    num_city_states: auto_cs(&args, players),
-                    spectate,
-                    difficulty: play_options.difficulty,
-                    speed: play_options.speed,
-                    teams: play_options.teams,
-                    leader_pool: play_options.leader_pool,
-                    civs: play_options.civs,
-                    supervised: args.iter().any(|a| a == "--supervised"),
-                },
-                mirrored.or(resumed),
-                args.iter().any(|a| a == "--paused"),
-            );
-        }
-        "pedia" => {
-            // Everything after the command that is not a flag is the query.
-            let query = args
-                .iter()
-                .skip(1)
-                .take_while(|arg| !arg.starts_with("--"))
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(" ");
-            let rules = Rules::embedded();
-            let found = civvis::pedia::search(&rules, &query);
-            if found.is_empty() {
-                println!("nothing in the ruleset matches {query:?}");
-                std::process::exit(1);
-            }
-            print!("{}", civvis::pedia::render(&found));
             println!(
-                "
-{} entries",
-                found.len()
+                "mirroring {} revealed plots of a {}x{} world at turn {}",
+                snapshot.revealed_count(),
+                snapshot.width,
+                snapshot.height,
+                snapshot.turn
             );
-        }
-        "validate" => {
-            let findings = civvis::validate::validate(&Rules::embedded());
-            let (text, clean) = civvis::validate::report(&findings);
-            print!("{text}");
-            let strict = args.iter().any(|a| a == "--strict");
-            if !clean || (strict && !findings.is_empty()) {
-                std::process::exit(1);
+            // ★★★★ MIRROR THE EMPIRE, NOT JUST THE GROUND. `rebuild_game`
+            // returns terrain only, so this window read "Ancient Age TURN 1"
+            // with an empty world while Civilization VI sat at turn 7 with a
+            // revealed continent, two cities and an army. Side by side that is
+            // worse than no mirror: the operator is asked to verify the two
+            // match and shown a board that cannot match by construction.
+            //
+            // `rebuild_from_state` places both empires' cities, our units and
+            // every visible rival unit, and sets the turn — the same
+            // reconstruction `civvis-orders` decides from, so what is on screen
+            // is what CIVVIS is actually reasoning about.
+            // ★ MOCK MODE. `--dump-state <file>` writes the observed board out
+            // as JSON; `--state <file>` merges a file back over it before the
+            // reconstruction runs. Together they give a round trip — capture the
+            // real Civilization VI position, edit anything, replay it — which is
+            // what makes a disagreement between the two screens reproducible
+            // instead of a thing you have to catch live.
+            let flag = |name: &str| {
+                args.iter()
+                    .position(|value| value == name)
+                    .and_then(|at| args.get(at + 1))
+                    .cloned()
+            };
+            let mut observed = civvis::mirror::state_value_from_events(&events, None);
+            // ⚠ DUMP BEFORE MERGE. Writing the file after the override records
+            // the mock, not the observation, so using both flags at once would
+            // overwrite the very board you were trying to capture — and the
+            // second run would silently start from the edit.
+            if let (Some(state), Some(path)) = (observed.as_ref(), flag("--dump-state")) {
+                match serde_json::to_string_pretty(state)
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| std::fs::write(&path, text).map_err(|e| e.to_string()))
+                {
+                    Ok(()) => println!("  observed state written to {path}"),
+                    Err(why) => println!("  ⚠ could not write --dump-state {path}: {why}"),
+                }
             }
+            if let (Some(state), Some(path)) = (observed.as_mut(), flag("--state")) {
+                match std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                {
+                    Some(patch) => {
+                        civvis::mirror::merge_state(state, &patch);
+                        println!("  state overridden from {path}");
+                    }
+                    // Loud, because silently mirroring the real board when the
+                    // operator asked for a mocked one is a wrong answer that
+                    // looks exactly like a right one.
+                    None => {
+                        println!("  ⚠ could not read --state {path}: using observed board")
+                    }
+                }
+            }
+            let from_value = observed.as_ref().and_then(|v| {
+                serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok()
+            });
+            match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
+                Some(state) => {
+                    // The page prints TURN n/<limit>, so take the limit the game
+                    // was created with, as `civvis-orders` does, else the speed's
+                    // own. A fixed 250 was only Online's: a Standard game read
+                    // "TURN 300/250". Online is the guess only for a seat that
+                    // names neither.
+                    let turn_limit = civvis::mirror::host_turn_limit(&state)
+                        .unwrap_or(civvis::setup::GameSpeed::Online.turn_limit());
+                    let rebuilt = civvis::mirror::rebuild_from_state(
+                        &snapshot,
+                        &state,
+                        players as usize,
+                        1,
+                        turn_limit,
+                        6,
+                    );
+                    println!(
+                        "  empire: {} cities, {} units, {} rival cities, \
+                         {} rival units at turn {}",
+                        rebuilt.placed_cities,
+                        rebuilt.placed_units,
+                        rebuilt.placed_rival_cities,
+                        rebuilt.placed_rival_units,
+                        state.turn
+                    );
+                    if !rebuilt.unmapped.is_empty() {
+                        println!("  untranslatable: {}", rebuilt.unmapped.join(","));
+                    }
+                    rebuilt.game
+                }
+                // No `state` event means the run is not exporting one; terrain
+                // alone is still worth showing, and saying so beats implying
+                // the empty empire is real.
+                None => {
+                    println!("  no `state` event: terrain only, no cities or units");
+                    civvis::mirror::rebuild_game(&snapshot, players as usize, 1)
+                }
+            }
+        });
+    let resumed: Option<Game> = args
+        .iter()
+        .position(|value| value == "--resume")
+        .and_then(|index| args.get(index + 1))
+        .map(|path| {
+            let raw = std::fs::read_to_string(path).unwrap_or_else(|error| {
+                eprintln!("cannot read checkpoint {path}: {error}");
+                std::process::exit(2);
+            });
+            let value: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|error| {
+                eprintln!("cannot load checkpoint {path}: {error}");
+                std::process::exit(2);
+            });
+            let game: Game = civvis::protocol::game_from_save(value).unwrap_or_else(|error| {
+                eprintln!("cannot load checkpoint {path}: {error}");
+                std::process::exit(2);
+            });
+            // A save records the mods it was played under. Resuming
+            // under a different set silently changes the rules
+            // mid-game, so say so rather than pretend otherwise.
+            let active = civvis::mods::active_names();
+            if game.mods != active {
+                eprintln!(
+                    "warning: {path} was played with mods {:?} but this process has {:?}",
+                    game.mods, active
+                );
+            }
+            // Stepping a simultaneous save one seat at a time would
+            // silently change its regime mid-game; say so instead. A
+            // spectated table plays whole planned turns, so only a
+            // resume that seats a human refuses it.
+            if game.turn_structure == setup::TurnStructure::Simultaneous
+                && !args.iter().any(|a| a == "--spectate" || a == "--watch")
+            {
+                eprintln!(
+                    "{path} is a simultaneous-turns game; a played game is \
+                     sequential by construction — resume it with --spectate"
+                );
+                std::process::exit(2);
+            }
+            game
+        });
+    let seed = {
+        let s = arg(&args, "--seed", -1);
+        if s >= 0 {
+            s as u64
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos() as u64
         }
-        _ => {
-            println!(
-                "usage: civvis <simulate|soak|odds-audit|benchmark|play|evolve|validate|pedia> \
-                      [--players N] [--seed N] [--turns N] [--width N] [--height N] \
-                      [--city-states N] [--games N] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
-                      [--shape flat|planet] [--poles poles|randomized] \
-                      [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
-                      [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, emperor by default>] \
-                      [--speed online|quick|standard|epic|marathon] \
-                      [--disasters 0|1|2|3|4] [--barbarians on|off] \
-                      [--turn-structure sequential|simultaneous (everything defaults to \
-                       sequential; simultaneous is a research regime)] \
-                      [--game-modes apocalypse,secret_societies] \
-                      [--leader-pool civ6|historical|today] \
-                      [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
-                      [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
-                      [--generations N] [--pop N]"
-            );
-        }
+    };
+    // A played game consults the human seat live, one seat at a
+    // time, which is the sequential regime by construction. A
+    // spectated table has nobody at the keyboard, so it plays the
+    // simultaneous regime as one whole planned turn per pace tick —
+    // and defaults to it, like the rest of the automated surfaces.
+    // Refuse the combination that cannot be honoured rather than
+    // quietly playing a different game than the flag asked for;
+    // `simulate` and `soak` play it headless either way.
+    let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
+    let play_options = game_options(&args, players, seed, setup::TurnStructure::Sequential);
+    if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
+        eprintln!(
+            "a played game is sequential by construction; simultaneous \
+             turns need --spectate, or `civvis simulate --turn-structure \
+             simultaneous`"
+        );
+        std::process::exit(2);
     }
+    let map_script = play_options.map_script;
+    let map_topology = play_options.map_topology;
+    let map_poles = play_options.map_poles;
+    let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
+    // Only the mirror `tools/follow.py` keeps beside the live game asks
+    // for this: its page then carries the Pause / Resume that holds
+    // the Civilization VI game itself (`civ6::live_pause_status`).
+    if args.iter().any(|a| a == "--live-pause") {
+        civvis::civ6::enable_live_pause_control();
+    }
+    civvis::server::serve_with_game(
+        arg(&args, "--port", 8765) as u16,
+        !args.iter().any(|a| a == "--no-open"),
+        civvis::server::Params {
+            num_players: players as usize,
+            width: auto_dimension(&args, "--width", players, true),
+            height: auto_dimension(&args, "--height", players, false),
+            seed,
+            base_ruleset: play_options.base_ruleset,
+            start_era: play_options.start_era,
+            future_era: play_options.future_era,
+            turn_structure: play_options.turn_structure,
+            map_script,
+            map_topology,
+            map_poles,
+            game_speed,
+            max_turns: play_options.max_turns,
+            victory_conditions: victory_conditions(&args),
+            // The engine's stock setup leaves mercy off. The lobby
+            // can still opt into any listed threshold after launch.
+            mercy_rule: play_options.mercy_rule,
+            required_victory_types: 1,
+            // The lobby can still change these mid-session; this is
+            // what the launch itself asked for.
+            tactics: tactics_rules(&args),
+            num_city_states: auto_cs(&args, players),
+            spectate,
+            difficulty: play_options.difficulty,
+            speed: play_options.speed,
+            teams: play_options.teams,
+            leader_pool: play_options.leader_pool,
+            civs: play_options.civs,
+            supervised: args.iter().any(|a| a == "--supervised"),
+        },
+        mirrored.or(resumed),
+        args.iter().any(|a| a == "--paused"),
+    );
+}
+
+/// `civvis pedia`.
+fn pedia_command(args: Vec<String>) {
+    // Everything after the command that is not a flag is the query.
+    let query = args
+        .iter()
+        .skip(1)
+        .take_while(|arg| !arg.starts_with("--"))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let rules = Rules::embedded();
+    let found = civvis::pedia::search(&rules, &query);
+    if found.is_empty() {
+        println!("nothing in the ruleset matches {query:?}");
+        std::process::exit(1);
+    }
+    print!("{}", civvis::pedia::render(&found));
+    println!(
+        "
+{} entries",
+        found.len()
+    );
+}
+
+/// `civvis validate`.
+fn validate_command(args: Vec<String>) {
+    let findings = civvis::validate::validate(&Rules::embedded());
+    let (text, clean) = civvis::validate::report(&findings);
+    print!("{text}");
+    let strict = args.iter().any(|a| a == "--strict");
+    if !clean || (strict && !findings.is_empty()) {
+        std::process::exit(1);
+    }
+}
+
+/// The usage line, for `help` and anything unrecognised.
+fn print_usage() {
+    println!(
+        "usage: civvis <simulate|soak|odds-audit|benchmark|play|evolve|validate|pedia> \
+              [--players N] [--seed N] [--turns N] [--width N] [--height N] \
+              [--city-states N] [--games N] [--port N] [--no-open] \
+              [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
+              [--shape flat|planet] [--poles poles|randomized] \
+              [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
+              [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, emperor by default>] \
+              [--speed online|quick|standard|epic|marathon] \
+              [--disasters 0|1|2|3|4] [--barbarians on|off] \
+              [--turn-structure sequential|simultaneous (everything defaults to \
+               sequential; simultaneous is a research regime)] \
+              [--game-modes apocalypse,secret_societies] \
+              [--leader-pool civ6|historical|today] \
+              [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
+              [--victories science,culture,religious,diplomatic,domination,score] \
+              [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+              [--generations N] [--pop N]"
+    );
 }
 
 #[cfg(test)]
