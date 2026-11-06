@@ -5346,6 +5346,10 @@ pub const GENES: &[Gene] = &[
     // the capital's queue once its Campus stands. See
     // `advanced/plaza_serves_the_scientist_2.rs`.
     Gene { tag: "plaza-serves-the-scientist-3", field: "plaza_serves_the_scientist_3", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_serves_the_scientist_3, disable: AdvancedAi::disable_plaza_serves_the_scientist_3 },
+    // `sea-scout-claims-the-queue-2`: version 2 of `sea-scout-claims-the-queue`
+    // (carrying 1). The claim leaves other claims' work alone and stands off from
+    // a city that took the hull back. See `advanced/contact_fleet.rs`.
+    Gene { tag: "sea-scout-claims-the-queue-2", field: "sea_scout_claims_the_queue_2", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_scout_claims_the_queue_2, disable: AdvancedAi::disable_sea_scout_claims_the_queue_2 },
     // `space-people-call-the-projects`: while a Great Person who speeds the space
     // race is on offer, a Science seat's Industrial Zones or Campuses run the
     // district project that earns that class's points. See

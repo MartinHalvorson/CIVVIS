@@ -103,7 +103,7 @@ fn von_braun_on_offer_calls_logistics_only_with_the_gene() {
 #[test]
 fn a_running_project_is_not_claimed_twice() {
     let (mut g, _) = seat(monument(), 300.0);
-    let ai = scientist();
+    let mut ai = scientist();
     ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
     ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
     assert_eq!(g.players[0].counters["space_person_project_claims"], 1);
@@ -161,6 +161,12 @@ fn the_science_lanes_own_work_keeps_the_head() {
         Item::Building {
             building: crate::name!("coal_power_plant"),
         },
+        Item::Building {
+            building: crate::name!("intelligence_agency"),
+        },
+        Item::Unit {
+            unit: crate::name!("builder"),
+        },
         Item::Unit {
             unit: crate::name!("warrior"),
         },
@@ -180,4 +186,39 @@ fn the_hold_stands_with_the_call_and_ends_with_it() {
 
     g.players[0].live_great_person_offer_individuals.clear();
     assert!(!ai.space_person_project_holds(&g, 0, city, &plan(), &logistics()));
+}
+
+#[test]
+fn a_city_that_took_the_project_back_is_left_alone_for_a_while() {
+    let (mut g, city) = seat(monument(), 300.0);
+    let mut ai = scientist();
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    assert_eq!(g.players[0].counters["space_person_project_claims"], 1);
+
+    // Another claim retakes the head, as 015754Z's did every frame.
+    g.cities.get_mut(&city).unwrap().queue = vec![monument()];
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    g.turn += 1;
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    assert_eq!(
+        g.cities[&city].queue.first(),
+        Some(&monument()),
+        "stood off"
+    );
+    assert_eq!(g.players[0].counters["space_person_project_claims"], 1);
+
+    g.turn += QUEUE_CLAIM_RETRY;
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    assert_eq!(g.cities[&city].queue.first(), Some(&logistics()), "retried");
+}
+
+#[test]
+fn a_finished_project_frees_the_city_at_once() {
+    let (mut g, city) = seat(monument(), 300.0);
+    let mut ai = scientist();
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    g.cities.get_mut(&city).unwrap().queue.clear();
+    g.turn += 1;
+    ai.claim_queues_for_the_space_people(&mut g, 0, &plan());
+    assert_eq!(g.cities[&city].queue.first(), Some(&logistics()));
 }

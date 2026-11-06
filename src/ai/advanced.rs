@@ -8798,6 +8798,10 @@ pub struct AdvancedAi {
     /// once its Campus stands. See `advanced/plaza_serves_the_scientist_2.rs`.
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
+    /// The turn each queue claim last took each city, by city and claim. Live
+    /// across frames, so a claim can stand off from a city that took its item
+    /// back. See `AdvancedAi::queue_claim_open`.
+    queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
     /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
@@ -9547,6 +9551,10 @@ pub struct AdvancedAi {
     /// class's points. See `advanced/space_people_call_the_projects.rs`. Off by
     /// default.
     space_people_call_the_projects: bool,
+    /// `sea-scout-claims-the-queue-2`: version 2, carrying 1. The sea scout's
+    /// claim leaves other claims' work alone and stands off from a city that
+    /// took the hull back. See `advanced/contact_fleet.rs`. Off by default.
+    sea_scout_claims_the_queue_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11715,6 +11723,7 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
             pillaged_districts_repair_first: false,
+            queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
             science_seat_races_the_congress: false,
             science_seat_allies_2: false,
@@ -11722,6 +11731,7 @@ impl AdvancedAi {
             spears_answer_the_horse: false,
             sea_scout_claims_the_queue: false,
             space_people_call_the_projects: false,
+            sea_scout_claims_the_queue_2: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,

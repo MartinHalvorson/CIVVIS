@@ -27,11 +27,23 @@
 //! the nearest first, and only within [`SPACE_PERSON_MAX_MISSING`] points. Up to
 //! [`SPACE_PERSON_CITIES`] of the most productive cities that can run it take it
 //! at the head of their queue, no more than the points still missing call for.
-//! A city must be safe, and its head must be routine work: what a steal Spy
-//! would displace, less Campus buildings and power plants, which are the science
-//! lane's own debts. [`AdvancedAi::space_person_project_holds`] keeps the project
-//! against the governor's rescoring while the call stands. The call ends when
-//! the person is recruited, by us or a rival. Off, nothing changes.
+//! A city must be safe, and its head must be work no other claim wants
+//! ([`AdvancedAi::queue_claim_may_displace`]), and it must not have taken this
+//! claim's item away lately ([`AdvancedAi::queue_claim_open`]).
+//! [`AdvancedAi::space_person_project_holds`] keeps the project against the
+//! governor's rescoring while the call stands. The call ends when the person is
+//! recruited, by us or a rival. Off, nothing changes.
+//!
+//! **Why the two queue rules.** The first live carrier of
+//! `sea-scout-claims-the-queue`, civvis-20261106T015754Z, claimed 37 times in a
+//! game. At Tuban the Campus building, the Plaza tier, the backlog Builder and
+//! the sea scout each retook the head about three times a turn. A claim runs
+//! every frame and none of them knows of the others, and "it keeps its progress"
+//! takes the loser out of the queue, so it reads as missing and claims again.
+//! The Quadrireme never finished and the Intelligence Agency slipped. So a claim
+//! leaves other claims' work alone, and a city that took a claim's item away is
+//! left alone for [`QUEUE_CLAIM_RETRY`] turns, unless its queue has run dry. A
+//! one-frame replay cannot show this: judge carriers on claims per game.
 
 use super::*;
 
@@ -62,6 +74,14 @@ const SPACE_PERSON_MAX_MISSING: f64 = 720.0;
 
 /// The attack memory a claiming city must be clear of, as the other claims.
 const SPACE_PERSON_ATTACK_MEMORY: u32 = 4;
+
+/// How long a city stays out of a claim that it took back, in turns. Long enough
+/// for whatever displaced the item to finish, so the claim moves to another city
+/// or waits instead of fighting for the head every frame.
+const QUEUE_CLAIM_RETRY: u32 = 6;
+
+/// This gene's name in [`AdvancedAi::note_queue_claim`].
+const SPACE_PERSON_CLAIM: &str = "space-person";
 
 /// One live call for a space-race person.
 struct SpacePersonCall {
@@ -110,27 +130,48 @@ impl AdvancedAi {
             .map(|(_, _, call)| call)
     }
 
-    /// Whether a head of queue is routine enough to give way: what a steal Spy
-    /// would displace, less the science lane's own Campus work and power.
-    fn space_person_may_displace(g: &Game, head: &Item) -> bool {
+    /// Whether a queue claim may take the head from `head`: what a steal Spy
+    /// would displace, less the work other claims keep there every frame. That
+    /// is the Plaza's tiers and the Intelligence Agency above all, the Campus
+    /// chain, power, the Spaceport and the backlog Builder. See the module.
+    pub(super) fn queue_claim_may_displace(g: &Game, head: &Item) -> bool {
         if !Self::spy_displaces(g, head) {
             return false;
         }
+        let claimed_family = |family: Name| {
+            family == crate::name!("campus")
+                || family == crate::name!("spaceport")
+                || family == crate::name!("government_plaza")
+        };
         match head {
             Item::Building { building } => {
                 !building.as_str().contains("power_plant")
                     && g.rules.buildings.get(building).is_none_or(|spec| {
-                        spec.district.is_none_or(|district| {
-                            g.district_family(district) != crate::name!("campus")
-                        })
+                        spec.district
+                            .is_none_or(|district| !claimed_family(g.district_family(district)))
                     })
             }
-            Item::District { district, .. } => {
-                let family = g.district_family(*district);
-                family != crate::name!("campus") && family != crate::name!("spaceport")
-            }
+            Item::District { district, .. } => !claimed_family(g.district_family(*district)),
+            Item::Unit { unit } => *unit != "builder",
             _ => true,
         }
+    }
+
+    /// Whether `claim` may take `cid` now: it has not claimed there, or
+    /// [`QUEUE_CLAIM_RETRY`] turns have passed, or the queue has since run dry.
+    /// Never twice in a turn, whatever the queue reads. See the module.
+    pub(super) fn queue_claim_open(&self, g: &Game, claim: &'static str, cid: u32) -> bool {
+        self.queue_claim_turns
+            .get(&(cid, claim))
+            .is_none_or(|turn| {
+                g.turn >= turn + QUEUE_CLAIM_RETRY
+                    || (g.turn > *turn && g.cities[&cid].queue.is_empty())
+            })
+    }
+
+    /// Remember that `claim` took `cid` this turn.
+    pub(super) fn note_queue_claim(&mut self, g: &Game, claim: &'static str, cid: u32) {
+        self.queue_claim_turns.insert((cid, claim), g.turn);
     }
 
     /// Whether `cid` is safe and can run `item`.
@@ -150,7 +191,7 @@ impl AdvancedAi {
     /// Put the called project at the head of the most productive clear cities,
     /// no more of them than the missing points need. See the module.
     pub(super) fn claim_queues_for_the_space_people(
-        &self,
+        &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
@@ -176,7 +217,8 @@ impl AdvancedAi {
             .filter(|cid| {
                 let head = g.cities[cid].queue.first();
                 head != Some(&item)
-                    && head.is_none_or(|head| Self::space_person_may_displace(g, head))
+                    && head.is_none_or(|head| Self::queue_claim_may_displace(g, head))
+                    && self.queue_claim_open(g, SPACE_PERSON_CLAIM, *cid)
                     && Self::space_person_city_is_clear(g, pid, plan, *cid, &item)
             })
             .map(|cid| (g.city_yields(cid).production, cid))
@@ -197,6 +239,7 @@ impl AdvancedAi {
             )
             .is_ok()
             {
+                self.note_queue_claim(g, SPACE_PERSON_CLAIM, city);
                 *g.players[pid]
                     .counters
                     .entry("space_person_project_claims".to_string())

@@ -75,6 +75,10 @@
 //! that finishes it soonest puts it at the head of its queue, if nothing there
 //! outranks it ([`AdvancedAi::claim_queue_for_the_sea_scout`]). Off, nothing
 //! changes.
+//!
+//! **`sea-scout-claims-the-queue-2`** carries that claim and stops it fighting
+//! the others for a head: it leaves their work alone and stands off from a city
+//! that took the hull back. See `advanced/space_people_call_the_projects.rs`.
 
 use super::*;
 
@@ -87,6 +91,9 @@ pub(crate) const CONTACT_FLEET_FAST_HULL_MAX_STANDARD: u32 = 12;
 /// standard turns. The soonest city is chosen, so this only stops a seat whose
 /// every coast makes a couple of Production from giving up a district for it.
 const SEA_SCOUT_CLAIM_MAX_STANDARD: u32 = 24;
+
+/// This claim's name in [`AdvancedAi::note_queue_claim`].
+const SEA_SCOUT_CLAIM: &str = "sea-scout";
 
 impl BasicAi {
     /// Whether `pid` knows a city of `rival`: one on the board on a tile it
@@ -209,16 +216,23 @@ impl AdvancedAi {
 
     /// `sea-scout-claims-the-queue`: whether `cid` may give its queue head to
     /// the sea scout: safe, and holding nothing a steal Spy would not displace
-    /// either (no Wonder, Project, walls, Settler, Spy or soldier).
+    /// either (no Wonder, Project, walls, Settler, Spy or soldier). Version 2
+    /// also leaves other claims' work alone and stands off a city that took
+    /// the hull back.
     fn sea_scout_may_claim(&self, g: &Game, plan: &StrategicPlan, cid: u32) -> bool {
         let city = &g.cities[&cid];
         let attacked = city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4;
+        let careful = self.sea_scout_claims_the_queue_2;
         plan.threatened_city != Some(cid)
             && !attacked
-            && city
-                .queue
-                .first()
-                .is_none_or(|head| Self::spy_displaces(g, head))
+            && city.queue.first().is_none_or(|head| {
+                if careful {
+                    Self::queue_claim_may_displace(g, head)
+                } else {
+                    Self::spy_displaces(g, head)
+                }
+            })
+            && (!careful || self.queue_claim_open(g, SEA_SCOUT_CLAIM, cid))
     }
 
     /// `sea-scout-claims-the-queue`: lay down the sea scout the contact gap is
@@ -229,12 +243,12 @@ impl AdvancedAi {
     /// keeps it from there, which is why `contact-fleet` is required. See the
     /// module.
     pub(super) fn claim_queue_for_the_sea_scout(
-        &self,
+        &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.sea_scout_claims_the_queue
+        if !(self.sea_scout_claims_the_queue || self.sea_scout_claims_the_queue_2)
             || !self.base.contact_fleet
             || !BasicAi::naval_recon_can_cross_ocean(g, pid)
             || !BasicAi::contact_fleet_gap(g, pid)
@@ -280,6 +294,7 @@ impl AdvancedAi {
         )
         .is_ok()
         {
+            self.note_queue_claim(g, SEA_SCOUT_CLAIM, city);
             *g.players[pid]
                 .counters
                 .entry("sea_scout_claims".to_string())
