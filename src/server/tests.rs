@@ -14571,3 +14571,12 @@ fn css_font_shorthands_name_a_family() {
         .count();
     assert_eq!(invalid, 0);
 }
+
+#[test]
+fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
+    // One crest for a civilization wherever it appears, and a city-state has
+    // none: the crests are the fifty leaders of Create Game.
+    assert!(EMBEDDED_APP_JS
+        .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
+    assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
+}
