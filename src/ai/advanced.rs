@@ -8313,6 +8313,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `plant-reads-the-grid`: a fuel-burning plant is credited the powered
+    /// yields of every city it can fuel in reach, not 4 Power for its own
+    /// city. See `advanced/plant_reads_the_grid.rs`. Off by default.
+    plant_reads_the_grid: bool,
     /// Replace an obsolete native path with the revealed launch milestone. Opt-in.
     revealed_launch_tech_takes_the_slot: bool,
     /// `parity-upgrades-before-it-buys`: border parity upgrades the army we
@@ -9529,6 +9533,10 @@ pub struct AdvancedAi {
     /// by default.
     science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
+    /// World Religion's option B names, at peace, and the agent's ballot asks
+    /// for it. See `advanced/world_religion_condemns.rs`. Off by default.
+    world_religion_condemns_the_faith: bool,
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
     /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
@@ -10961,6 +10969,9 @@ mod parity_upgrades_before_it_buys;
 mod paused_district_finish;
 /// `pillaged-districts-repair-first`: see `advanced/pillaged_repairs_first.rs`.
 mod pillaged_repairs_first;
+/// `plant-reads-the-grid`: a fuel plant is worth every city it can fuel in
+/// reach. See `advanced/plant_reads_the_grid.rs`.
+mod plant_reads_the_grid;
 /// `plaza-serves-the-scientist-2`: the Science Plaza's tier buildings claim
 /// its city's queue. See `advanced/plaza_serves_the_scientist_2.rs`.
 mod plaza_serves_the_scientist_2;
@@ -11081,6 +11092,9 @@ mod worked_production;
 /// `builders-cover-the-worked-backlog`: the backlog's Builder claims an idle
 /// queue ahead of the routine claims. See `advanced/worked_backlog_claim.rs`.
 mod worked_backlog_claim;
+/// `world-religion-condemns-the-faith`: see
+/// `advanced/world_religion_condemns.rs`.
+mod world_religion_condemns;
 
 /// Masonry, the capital's Walls and a bought defender before a stronger
 /// neighbour at peace can surprise the original capital. Opt-in gene
@@ -12440,6 +12454,7 @@ impl AdvancedAi {
             outclassed_sieges: BTreeMap::new(),
             nusantara_reads_the_coast: false,
             // ---- append: p-r ----------------------------------------
+            plant_reads_the_grid: false,
             revealed_launch_tech_takes_the_slot: false,
             parity_upgrades_before_it_buys: false,
             parity_upgrades_before_it_buys_2: false,
@@ -12669,6 +12684,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
+            world_religion_condemns_the_faith: false,
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,
@@ -24814,7 +24830,10 @@ impl AdvancedAi {
                     // price of a beaker.
                     // See `power_the_laboratory`: the Research Lab's larger
                     // half is switched off until something generates power.
-                    let power_unlock = if self.power_the_laboratory_on() && !spec.wonder {
+                    let power_unlock = if self.plant_reads_the_grid && !spec.wonder {
+                        self.yield_value(self.plant_grid_yields(g, city, spec), plan.strategy)
+                            * 42.0
+                    } else if self.power_the_laboratory_on() && !spec.wonder {
                         self.yield_value(Self::power_switched_on(g, city, spec), plan.strategy)
                             * 42.0
                     } else {

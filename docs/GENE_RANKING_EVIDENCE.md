@@ -329,6 +329,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-follows-research-2` | off (unmeasured) | Pingala version two retains ordinary dividends and joins a committed launch producer. | 1 \| 2 |
+| `plant-reads-the-grid` | off (unmeasured) | Opt-in gene `plant-reads-the-grid`; see `advanced/plant_reads_the_grid.rs`. | 1 \| 1 |
 | `plaza-serves-the-scientist` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist`; see `BasicAi::plaza_building_item_for`. | — \| 3 |
 | `plaza-serves-the-scientist-2` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-2` (version 2 of `plaza-serves-the-scientist`, which it carries); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
 | `plaza-serves-the-scientist-3` | off (unmeasured) | Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1 and 2); see `advanced/plaza_serves_the_scientist_2.rs`. | — \| 3 |
@@ -399,6 +400,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `war-defense-spends-the-runway` | off (unmeasured) | Opt-in gene `war-defense-spends-the-runway`; see `advanced/war_defense_spends_the_runway.rs`. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |
+| `world-religion-condemns-the-faith` | off (unmeasured) | Opt-in gene `world-religion-condemns-the-faith`; see `advanced/world_religion_condemns.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

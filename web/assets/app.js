@@ -6576,6 +6576,7 @@ async function send(action) {
   const advancing = action.type === "end_turn";
   if (advancing) {
     turnAdvancePending = true;
+    playSound("endTurn");
     drawTurnLoop();
   }
   try {
@@ -26023,9 +26024,12 @@ function drawCivTop() {
       soloEraChip(me) +
       `<span class="civtop-turn" title="${escapeAttr(turnTitle)}">` +
         `<small>Turn</small><b>${state.turn}</b>${cap ? `<small>/${cap}</small>` : ""}</span>` +
+      `<button class="civtop-btn" type="button" onclick="toggleSound()" ` +
+        `title="${soundButtonLabel()}" aria-label="${soundButtonLabel()}" ` +
+        `aria-pressed="${soundEnabled}">${soundEnabled ? "♪" : "∅"}</button>` +
       `<button class="civtop-btn" type="button" onclick="openPedia()" ` +
         `title="Civilopedia — P" aria-label="Civilopedia">?</button>` +
-      `<button class="civtop-btn" type="button" onclick="togglePanel()" ` +
+      `<button class="civtop-btn" type="button" onclick="openGameMenu() || togglePanel()" ` +
         `title="Game menu — setup, display settings, saves and logs" aria-label="Game menu">☰</button>` +
     `</div>`;
   if (html === civTopHtml) return;
@@ -32770,15 +32774,94 @@ function queueTileTip(clientX, clientY) {
     if (tileTipPointer === pointer) refreshTileTip(true);
   }, TILE_TIP_DELAY_MS);
 }
+// ----------------------------------------------------------- the combat forecast
+// Hovering what the selected unit can strike shows what the blow would do,
+// before it is struck. The numbers are the engine's (`POST /forecast`), read
+// once per unit, target and turn: a mouse crossing the map asks only about the
+// tiles that can be hit, and an old answer never lands on a newer hover.
+const forecastCache = new Map();
+let forecastShown = null;
+function strikeAt(pos) {
+  if (!state || SPEC || !sel || !pos) return null;
+  const k = key(pos);
+  return state.legal_actions.find(action => action.unit === sel.id &&
+    (action.type === "attack" || action.type === "ranged") &&
+    action.target && key(action.target) === k) || null;
+}
+function hideForecast() {
+  forecastShown = null;
+  const card = document.getElementById("combat-forecast");
+  if (card) card.hidden = true;
+}
+function forecastSide(name, strength, hp, damage, low, high, maximum) {
+  const left = Math.max(0, hp - damage);
+  const pct = value => Math.max(0, Math.min(100, 100 * value / maximum));
+  return `<div class="cf-side"><div class="cf-name">${escapeAttr(titleCase(name))}</div>` +
+    `<div class="cf-strength">${Math.round(strength)}</div>` +
+    `<div class="cf-bar" role="img" aria-label="${left} of ${maximum} health after the blow">` +
+      `<i class="cf-left" style="width:${pct(left)}%"></i>` +
+      `<i class="cf-lost" style="width:${pct(hp) - pct(left)}%"></i></div>` +
+    `<div class="cf-hp">${damage > 0 ? `${hp} → ${left}` : `${hp}`}` +
+      (damage > 0 ? ` <small>${low === high ? low : `${low}–${high}`}</small>` : "") + `</div></div>`;
+}
+function paintForecast(answer) {
+  const card = document.getElementById("combat-forecast");
+  const forecast = answer?.forecast;
+  if (!card || !forecast || !sel) { hideForecast(); return; }
+  const dealt = Math.round(forecast.damage_dealt), taken = Math.round(forecast.damage_taken);
+  const defenderMax = forecast.defender_is_city ? 200 : 100;
+  const deadly = !forecast.defender_is_city && forecast.dealt_low >= forecast.defender_hp;
+  const lethal = !forecast.defender_is_city && forecast.dealt_high >= forecast.defender_hp;
+  const fatal = forecast.taken_low >= sel.hp, risky = forecast.taken_high >= sel.hp;
+  const verdict = fatal ? ["bad", "This would cost you the unit"]
+    : deadly ? ["good", "This kills it"]
+    : risky ? ["warn", "Your unit could die here"]
+    : lethal ? ["good", "This could kill it"]
+    : forecast.defender_is_city && forecast.defender_walls > 0
+      ? ["warn", `Walls stand: ${forecast.defender_walls} to break first`]
+      : forecast.ranged ? ["good", "Nothing can answer a shot"]
+      : dealt > taken ? ["good", "You should win this exchange"]
+      : dealt < taken ? ["warn", "You should lose this exchange"]
+      : ["warn", "An even exchange"];
+  card.innerHTML = `<div class="cf-head">${forecast.ranged ? "Ranged attack" : "Attack"}</div>` +
+    `<div class="cf-sides">` +
+    forecastSide(sel.type, forecast.attacker_strength, sel.hp, taken,
+      forecast.taken_low, forecast.taken_high, 100) +
+    `<div class="cf-versus" aria-hidden="true">⚔</div>` +
+    forecastSide(forecast.defender_name, forecast.defender_strength, forecast.defender_hp, dealt,
+      forecast.dealt_low, forecast.dealt_high, defenderMax) +
+    `</div><div class="cf-verdict tone-${verdict[0]}">${escapeAttr(verdict[1])}</div>`;
+  card.hidden = false;
+}
+async function showForecastAt(pos) {
+  const strike = strikeAt(pos);
+  if (!strike) { hideForecast(); return; }
+  const ask = `${sel.id}|${key(pos)}|${strike.type}|${state.turn}|${sel.hp}`;
+  if (forecastShown === ask) return;
+  forecastShown = ask;
+  if (!forecastCache.has(ask)) {
+    if (forecastCache.size > 64) forecastCache.clear();
+    forecastCache.set(ask, fetchJSON("/forecast", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({unit: sel.id, target: pos, ranged: strike.type === "ranged"})})
+      .catch(() => null));
+  }
+  const answer = await forecastCache.get(ask);
+  if (forecastShown === ask) paintForecast(answer);
+}
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
   // gesture is happening *now*, or the first pan of the game kills the tooltip
   // for good.
   queueTileTip(ev.clientX, ev.clientY);
+  if (sel && !SPEC) {
+    const r = cv.getBoundingClientRect();
+    showForecastAt(pixelToHex(ev.clientX - r.left, ev.clientY - r.top));
+  } else if (forecastShown) hideForecast();
 });
-cv.addEventListener("mouseleave", () => hideTileTip(true));
-window.addEventListener("blur", () => hideTileTip(true));
+cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); });
+window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -33128,6 +33211,7 @@ const NOTICE_TONES = { War: "bad", World: "warn", Diplomacy: "warn" };
 function captureTurnNotices() {
   const fresh = (state.events || []).filter(e => e.turn > noticeSeenTurn);
   noticeSeenTurn = state.turn;
+  announceMoments(fresh);
   for (const event of fresh) {
     const kind = `ev:${event.turn}:${event.text}`;
     if (noticeDismissed.has(kind)) continue;
@@ -33447,6 +33531,7 @@ function openTurnIfNew() {
   const first = loopTurn === null;
   loopTurn = state.turn;
   if (first) noticeSeenTurn = Math.max(0, state.turn - 1);
+  if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
   drawTurnLoop();
   resumeAllTravel();
@@ -33954,6 +34039,9 @@ document.addEventListener("keydown", ev => {
     if (clearUnitIntel()) { modeline(); draw(); return; }
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
+    // The last Escape in the unwinding is the game's own: nothing is selected
+    // and no mode is on, so the only thing left to leave is the game.
+    if (!SPEC && !sel && !selCity && !mapLens && !tackMode && openGameMenu()) return;
     sel = null; selCity = null; mapLens = null; tackMode = false;
     syncMapLensControls();
     modeline(); draw(); drawSide(); drawUbar();

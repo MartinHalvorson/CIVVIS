@@ -640,7 +640,7 @@ one heading to the next is a whole number of functions. The `city helpers` and
 `action layer` sections now live in `src/game/city.rs` and
 `src/game/actions.rs` — a child module per seam, holding the same inherent
 `impl Game` under a `use super::*;` header — beside the topic modules already
-there (`adjacency`, `border_forecast`, `quests`, `city_names`). A descendant
+there (`adjacency`, `quests`, `city_names`). A descendant
 module sees every private item of its ancestors, so a moved function still
 reaches everything it used to call; the reverse direction is what a move
 breaks, so an item that was private in `game` is restated `pub(super)` in the
