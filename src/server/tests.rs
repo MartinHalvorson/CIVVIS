@@ -14620,3 +14620,20 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
         .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
 }
+
+#[test]
+fn continue_goes_back_to_the_game_on_the_table() {
+    // From a game, the main menu's Continue used to load a save, which at best
+    // lost a turn's moves and at worst was a different game.
+    let refresh = EMBEDDED_APP_FRONTDOOR_JS
+        .split_once("async function fdRefreshContinue() {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("fdRefreshContinue is a top-level function")
+        .0;
+    let on_the_table = refresh.find("if (state && !SPEC) {").unwrap();
+    let saves = refresh.find("\"/saves\"").unwrap();
+    assert!(on_the_table < saves);
+    assert!(refresh.contains("delete button.dataset.save;"));
+    // The engine's identifiers stay out of what a player reads.
+    assert!(!include_str!("../../data/civs.json").contains("TRAIT_"));
+}

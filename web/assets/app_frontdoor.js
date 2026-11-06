@@ -68,8 +68,9 @@ function fdCivRules(civ) {
 function fdAbility(civ) {
   const note = fdCivRules(civ)?.note || "";
   const colon = note.indexOf(":");
-  return colon < 0 ? {name: "", text: note}
-    : {name: note.slice(0, colon), text: note.slice(colon + 1).trim()};
+  const sentence = text => text.charAt(0).toUpperCase() + text.slice(1);
+  return colon < 0 ? {name: "", text: sentence(note)}
+    : {name: note.slice(0, colon), text: sentence(note.slice(colon + 1).trim())};
 }
 function fdDifficultyNote(id) {
   const rules = RULES?.difficulties?.[id];
@@ -174,11 +175,21 @@ function fdRenderCreate() {
 async function fdRefreshContinue() {
   const button = fdElement("fd-continue");
   if (!button) return;
+  // A game on the table is what Continue means, and it goes straight back to
+  // it. Only an AI game in the background sends a player to their saves.
+  if (state && !SPEC) {
+    const me = state.players?.[0];
+    delete button.dataset.save;
+    button.hidden = false;
+    fdElement("fd-continue-sub").textContent = `${me?.civ || "Your game"} · Turn ${state.turn}` +
+      (state.difficulty ? ` · ${titleCase(state.difficulty)}` : "");
+    return;
+  }
   let saves = [];
   try { saves = (await fetchJSON("/saves", {}, 4000)).saves || []; } catch (_) { saves = []; }
-  // Prefer the autosave: it is the seat they last left. The list itself is
-  // ordered by turn, which says nothing about which game was played last.
-  const latest = saves.find(save => save.name === "autosave") || saves[0];
+  // The list comes newest first, so this is the seat they last left, whether
+  // the game saved itself or they did.
+  const latest = saves[0];
   button.hidden = !latest;
   if (!latest) return;
   button.dataset.save = latest.name;
