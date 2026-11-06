@@ -1718,6 +1718,8 @@ impl AdvancedAi {
         /// Opt-in gene `industrial-zone-claims-the-producer-queue`; see
         /// `AdvancedAi::claim_producer_zone`.
         industrial_zone_claims_the_producer_queue => enable_industrial_zone_claims_the_producer_queue, disable_industrial_zone_claims_the_producer_queue;
+        /// Opt-in Science University priority before industrial claims.
+        universities_before_the_forge => enable_universities_before_the_forge, disable_universities_before_the_forge;
         /// Move a one-war front cut off from every land road to an enemy the
         /// army can walk to. Opt-in gene `sea-locked-front-moves-on`; see
         /// `advanced/sea_locked_front.rs`.
@@ -2272,6 +2274,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-buys-the-friendship`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
+        /// Opt-in gene `government-reach-pays-the-switch`; see
+        /// `advanced/government_reach.rs`.
+        government_reach_pays_the_switch => enable_government_reach_pays_the_switch, disable_government_reach_pays_the_switch;
         /// Opt-in gene `plaza-serves-the-scientist-3` (version 3, carrying 1
         /// and 2); see `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_3 => enable_plaza_serves_the_scientist_3, disable_plaza_serves_the_scientist_3;

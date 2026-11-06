@@ -3702,6 +3702,9 @@ pub const GENES: &[Gene] = &[
     // or Workshop now claims its city's queue over a deferrable head. See
     // `advanced/industrial_zone_claims_the_producer_queue.rs`.
     Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // Native Indonesia Ternate70/0 chose industry with a legal University;
+    // this separate opt-in releases industrial claims for a short University.
+    Gene { tag: "universities-before-the-forge", field: "universities_before_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_universities_before_the_forge, disable: AdvancedAi::disable_universities_before_the_forge },
     // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
     // as its front from turn 146 to 192 and stood ten Dutch sieges down for
     // want of a land road while the Maya and Egypt, at war with us at 3-5x
@@ -5224,13 +5227,11 @@ pub const GENES: &[Gene] = &[
     // matching `korea-reads-three-kingdoms` on the district side. See
     // `advanced/korea_mines_beside_the_seowon.rs`.
     Gene { tag: "korea-mines-beside-the-seowon", field: "korea_mines_beside_the_seowon", kind: Kind::OptIn, enable: AdvancedAi::enable_korea_mines_beside_the_seowon, disable: AdvancedAi::disable_korea_mines_beside_the_seowon },
-    // Live Lv 8 Deity Korea (11-05): the bridge's produce_next hints answer
-    // about two thirds of live production prompts (480 vs 230 direct orders
-    // in 072215Z), and each hint came from `advanced_production` alone. The
-    // idle-queue claims (Settler floors, Granary, Builder, Aqueduct,
-    // Industrial Zone, Campus...) never saw those queues, so the sim seat
-    // reached 7.5 cities at t100 against 5 live, and 3 Industrial Zones at
-    // t80 against 0.5. Under the gene the hint's preview runs the same
+    // Live Lv 8 Deity Korea (11-05): consumed produce_next hints decide about
+    // a quarter of live production choices (the bridge's production_next_*
+    // counters: 50-75 consumed against 170-280 direct orders a game), and each
+    // hint came from `advanced_production` alone, so the idle-queue claims
+    // never saw those queues. Under the gene the hint's preview runs the same
     // claim chain first. See `advanced/hint_runs_the_claims.rs`.
     Gene { tag: "hint-runs-the-claims", field: "hint_runs_the_claims", kind: Kind::OptIn, enable: AdvancedAi::enable_hint_runs_the_claims, disable: AdvancedAi::disable_hint_runs_the_claims },
     // Version one of the drain fires below one turn of runway. Live Deity
@@ -5325,6 +5326,13 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // Live Deity, 11-04 21Z to 11-05: into Communism Science rose 17 of 17
+    // (median +15%), into Corporate Libertarianism it fell 5 of 5 at t171-193
+    // (median -15%, worst -27%), on a two-slot gain the capacity fallback took
+    // in the seats closest to a win. Under the gene a seat holding its listed
+    // government reaches only for three slots or more. See
+    // `advanced/government_reach.rs`.
+    Gene { tag: "government-reach-pays-the-switch", field: "government_reach_pays_the_switch", kind: Kind::OptIn, enable: AdvancedAi::enable_government_reach_pays_the_switch, disable: AdvancedAi::disable_government_reach_pays_the_switch },
     // `plaza-serves-the-scientist-3`: version 3 of `plaza-serves-the-scientist`
     // (carrying 1 and 2). The Science seat's Government Plaza district claims
     // the capital's queue once its Campus stands. See

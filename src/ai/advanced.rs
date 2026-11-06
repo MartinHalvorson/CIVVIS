@@ -2388,9 +2388,10 @@ pub struct AdvancedAi {
     pub settlement_safety: bool,
     /// Price a settle site's district adjacency potential — what a Campus,
     /// Commercial Hub or Harbor would earn at its best plot within two rings
-    /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
-    /// `advanced_v1` rating anchor keeps scoring sites exactly as it always
-    /// has; `promoted_policy_envoy` turns it on for the live controller.
+    /// — via `Game::settlement_adjacency_summary_from_positions`.  Gated so
+    /// the frozen `advanced_v1` rating anchor keeps scoring sites exactly as
+    /// it always has; `promoted_policy_envoy` turns it on for the live
+    /// controller.
     pub adjacency_site_planning: bool,
     /// Hold a settler's chosen site across a turn it could not move, instead
     /// of forgetting it.
@@ -7356,6 +7357,10 @@ pub struct AdvancedAi {
     /// Off by default.
     early_cities_keep_their_distance: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `government-reach-pays-the-switch`: a seat holding its listed
+    /// government takes `government-capacity-fallback`'s reach only for a
+    /// real gain in slots. See `advanced/government_reach.rs`. Off by default.
+    government_reach_pays_the_switch: bool,
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
     /// `advanced/gold_buys_the_opening_builder.rs`. Off by default.
@@ -9578,6 +9583,9 @@ pub struct AdvancedAi {
     /// defender the city could train, and keeps the Gold otherwise. Runs the
     /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
     threatened_city_buys_its_defender_2: bool,
+    /// Science cities may finish a short University before industrial claims.
+    /// See `advanced/universities_before_the_forge.rs`. Off by default.
+    universities_before_the_forge: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -10711,6 +10719,8 @@ mod expansion_scales_with_difficulty;
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
 mod expansion_schedule;
 mod government_ladder;
+/// `government-reach-pays-the-switch`: see `advanced/government_reach.rs`.
+mod government_reach;
 mod governor_dividends;
 mod higher_level_strategy;
 /// `land-grab-outlasts-the-opening`: see `advanced/land_grab_outlasts.rs`.
@@ -10866,6 +10876,7 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+
 /// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
 mod launch_commits_endgame;
 mod launcher_war;
@@ -10924,6 +10935,7 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
@@ -12275,6 +12287,7 @@ impl AdvancedAi {
             fresh_water_prices_the_site: false,
             early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
+            government_reach_pays_the_switch: false,
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
@@ -12666,6 +12679,7 @@ impl AdvancedAi {
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
+            universities_before_the_forge: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
@@ -17110,6 +17124,12 @@ impl AdvancedAi {
                 .filter(|name| unlocked(name))
                 .map(|name| (capacity(name), name.to_string()))
                 .filter(|(slots, _)| *slots > listed)
+                // `government-reach-pays-the-switch`: a seat in its listed
+                // pick stays for a small gain. See
+                // `advanced/government_reach.rs`.
+                .filter(|(slots, _)| {
+                    !self.government_reach_holds(g, pid, choice.as_deref(), *slots, listed)
+                })
                 // Keys iterate in sorted order; the reversed name keeps the
                 // first of an equal-capacity pair, so the pick is stable.
                 .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
@@ -25928,18 +25948,6 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
-        if headroom >= 2.0 {
-            1.0
-        } else if headroom >= 1.0 {
-            0.5
-        } else if headroom > -4.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
     fn settlement_output_value(total: Yields, population: usize) -> f64 {
         let surplus = total.food - 2.0 * population as f64;
         total.production * 2.6
@@ -26085,8 +26093,8 @@ impl AdvancedAi {
                     }
 
                     let surplus = branch.total.food - 2.0 * population as f64;
-                    let growth_rate = surplus.max(0.0)
-                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                    let growth_rate =
+                        surplus.max(0.0) * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate
