@@ -66,7 +66,9 @@ function fdCivRules(civ) {
 }
 // "Royal Road: +1 gold and +2 combat strength" reads better split.
 function fdAbility(civ) {
-  const note = fdCivRules(civ)?.note || "";
+  // A note can end by citing the engine's trait ids, which are for the audit
+  // and not for a player. They stay in the data: its fingerprint is audited.
+  const note = (fdCivRules(civ)?.note || "").replace(/\s*\((?=[^)]*_)[A-Z0-9_ +]+\)/g, "");
   const colon = note.indexOf(":");
   const sentence = text => text.charAt(0).toUpperCase() + text.slice(1);
   return colon < 0 ? {name: "", text: sentence(note)}

@@ -14634,6 +14634,11 @@ fn continue_goes_back_to_the_game_on_the_table() {
     let saves = refresh.find("\"/saves\"").unwrap();
     assert!(on_the_table < saves);
     assert!(refresh.contains("delete button.dataset.save;"));
-    // The engine's identifiers stay out of what a player reads.
-    assert!(!include_str!("../../data/civs.json").contains("TRAIT_"));
+    // The engine's identifiers stay out of what a player reads. They live in
+    // the note, whose file the ruleset fingerprint covers, so the screen strips
+    // them rather than the data.
+    assert!(include_str!("../../data/civs.json").contains("(TRAIT_FREE_TRADING_POSTS"));
+    assert!(
+        EMBEDDED_APP_FRONTDOOR_JS.contains(".replace(/\\s*\\((?=[^)]*_)[A-Z0-9_ +]+\\)/g, \"\")")
+    );
 }
