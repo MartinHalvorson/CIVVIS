@@ -5407,6 +5407,8 @@ pub const GENES: &[Gene] = &[
     // tile, within its range of the old one, counts. See
     // `advanced/battle_planner.rs`.
     Gene { tag: "field-reads-the-tile-it-leaves", field: "field_reads_the_tile_it_leaves", kind: Kind::OptIn, enable: AdvancedAi::enable_field_reads_the_tile_it_leaves, disable: AdvancedAi::disable_field_reads_the_tile_it_leaves },
+    // `advanced/spies_price_the_science_head.rs`: coordinate both Spy claims.
+    Gene { tag: "spies-price-the-science-head", field: "spies_price_the_science_head", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_price_the_science_head, disable: AdvancedAi::disable_spies_price_the_science_head },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

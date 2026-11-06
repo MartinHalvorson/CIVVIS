@@ -383,6 +383,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
 | `spears-answer-the-horse` | off (unmeasured) | Prefer a timely anti-cavalry defender against a visible mounted threat. | 1 \| 1 |
+| `spies-price-the-science-head` | off (unmeasured) | Rank Spy producers by native turns, sparing science on ties. | 1 \| 1 |
 | `spies-steal-the-lead` | off (unmeasured) | Opt-in gene `spies-steal-the-lead`; see `advanced/spies_steal_the_lead.rs`. | 1 \| 1 |
 | `spy-civics-come-first` | off (unmeasured) | Opt-in gene `spy-civics-come-first`; see `advanced/spy_civics_come_first.rs`. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
