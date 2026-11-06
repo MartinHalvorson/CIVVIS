@@ -222,9 +222,23 @@ fn midgame_settler_claim_also_respects_the_first_city_campus_commitment() {
     let (mut g, mut ai, cid, mut plan, campus) = board();
     ai.claim_free_slot_campus(&mut g, 0, &plan);
     g.cities.get_mut(&cid).unwrap().production = 0.0;
-    g.turn = 50;
+    g.turn = g
+        .standard_duration(super::super::early_settler_floor::EARLY_SETTLER_FLOOR_STANDARD_TURN)
+        + 1;
     plan.assessed_turn = g.turn;
     ai.enable_holdable_land_keeps_settling();
+    // Make a new settlement a real alternative for the control. The walker
+    // has left the pipeline and the empire has explored the nearby land.
+    for id in g.player_unit_ids(0) {
+        g.remove_unit(id);
+    }
+    g.players[0].explored.extend(g.map.tiles.keys().copied());
+    let threats = AdvancedAi::holdable_land_threats(&g, 0);
+    let site = ai.holdable_land_seat(&g, 0, g.cities[&cid].pos, 0, &threats);
+    assert!(
+        site.is_ok(),
+        "the control needs an actual holdable seat: {site:?}"
+    );
     let other = g
         .player_city_ids(0)
         .into_iter()
@@ -236,11 +250,23 @@ fn midgame_settler_claim_also_respects_the_first_city_campus_commitment() {
     let mut control = g.clone();
     let mut off = ai.clone();
     off.disable_science_campus_before_repeat_settler();
+    assert!(off.holdable_land_window(&control));
+    assert_eq!(AdvancedAi::early_settler_census(&control, 0), (0, 0));
+    assert!(control.can_produce(0, cid, &settler()));
+    assert!(
+        control.host_production_turns(cid, &settler()).unwrap()
+            <= control.standard_duration(super::super::early_settler_floor::EARLY_SETTLER_MAX_BUILD)
+                as f64
+    );
+    let journal = crate::reasoning::Journal::recording();
+    journal.begin_turn(control.turn, 0);
+    off.attach_journal(journal.handle());
     off.claim_holdable_land_settler(&mut control, 0, &plan);
     assert_eq!(
         control.cities[&cid].queue.first(),
         Some(&settler()),
-        "the unprotected midgame claim would actually replace this Campus"
+        "the unprotected midgame claim would actually replace this Campus: {:?}",
+        journal.since(0)
     );
     ai.claim_holdable_land_settler(&mut g, 0, &plan);
     assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
