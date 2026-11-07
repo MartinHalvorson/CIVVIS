@@ -428,13 +428,25 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
         if not firstMeet then
             -- Match the displayed, enabled options and their own callback.
             -- Prefer answering a request to leaving it pending via EXIT.
-            -- This preserves the existing conservative decline policy.
+            -- Welcome the two visitor offers the shipped game identifies by
+            -- these exact labels (DiplomacyStatements_Delegation.xml:198-203,
+            -- DiplomacyStatements_Embassy.xml:198-203). Live Pericles 151846Z
+            -- otherwise refused both while trying to keep a peaceful Culture
+            -- lane. Other requests keep the conservative decline policy.
             dialogueObserved = true;
             local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
+            local visitorText = statementType == "DIPLOMATIC_DELEGATION"
+                and "LOC_DIPLO_DELEGATION_CHOICE_POSITIVE"
+                or statementType == "RESIDENT_EMBASSY"
+                and "LOC_DIPLO_EMBASSY_CHOICE_POSITIVE" or nil;
             local best = 0;
             local noWar = dialogueNoWar();
             for _, selection in ipairs(parsed.Selections or {}) do
                 local score = rank[selection.Key] or 0;
+                if visitorText ~= nil and selection.Key == "CHOICE_POSITIVE"
+                        and selection.Text == visitorText and not declaresWar(selection) then
+                    score = 4;
+                end
                 if noWar and score > 0 and not selection.IsDisabled and declaresWar(selection) then
                     dialogueWarWithheld = true;
                 elseif not selection.IsDisabled and score > best then
