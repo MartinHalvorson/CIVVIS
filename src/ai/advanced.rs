@@ -22519,7 +22519,19 @@ impl AdvancedAi {
                     .values()
                     .any(|unit| unit.owner == pid && unit.kind == "archaeologist");
                 let sites = g.excavation_sites(pid).len();
-                if plan.strategy == GrandStrategy::Culture && !active && sites > 0 {
+                // A rival counterplan can temporarily be Science while the
+                // assigned Culture lane remains open. Its empty Museums still
+                // need artifacts; do not make that posture erase excavation.
+                let culture = plan.strategy == GrandStrategy::Culture
+                    || (!self.lane_lost
+                        && self.active_victory_target(g) == Some(VictoryTarget::Culture));
+                let queued_elsewhere = g.player_city_ids(pid).into_iter().any(|other| {
+                    other != cid
+                        && g.cities[&other].queue.iter().any(
+                            |item| matches!(item, Item::Unit { unit } if unit == "archaeologist"),
+                        )
+                });
+                if culture && !active && !queued_elsewhere && sites > 0 {
                     2_700.0 + sites.min(3) as f64 * 180.0
                 } else {
                     -10_000.0
