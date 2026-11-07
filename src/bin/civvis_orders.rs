@@ -7333,6 +7333,7 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "artifact_extraction_pending",
     "condemn_removed",
     "combat_policy_applied",
     "strike_survival_refused",
@@ -8363,7 +8364,8 @@ fn verify_unit_order(
         // wants in `arg`; `DESIGNATE_PARK` names none, and what the plot must
         // show is the park itself. `EXCAVATE` leaves no improvement at all —
         // it lifts the artifact and clears the site — so it rests on the
-        // charge, the unit and the `improved` event.
+        // charge, the unit, an `improved` event, or the native pending-artifact
+        // witness identifying the extracting Archaeologist and its artifact.
         "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" | "REMOVE_FEATURE"
         | "HARVEST_RESOURCE" | "PLANT_FOREST" => {
             let charges_spent = match (
@@ -8389,7 +8391,22 @@ fn verify_unit_order(
                         && event.get("y").and_then(|y| y.as_i64()) == Some(i64::from(u.y))
                 })
             });
-            if now.is_none() || charges_spent || tile_shows || improved_event {
+            // Native Archaeologists report zero Builder charges and leave no
+            // improvement. The artifact-choice API identifies the extracting
+            // unit and its actual artifact, without relying on unrelated work
+            // trades or another Archaeologist's inventory change.
+            let extraction_pending = op == "EXCAVATE"
+                && was.is_some_and(|u| u.kind == "UNIT_ARCHAEOLOGIST")
+                && before.seat.local_player >= 0
+                && evidence.iter().any(|event| {
+                    event["kind"] == "artifact_extraction_pending"
+                        && event["player"].as_i64() == Some(i64::from(before.seat.local_player))
+                        && event["unit"].as_i64() == Some(id)
+                        && event["artifact"].as_i64().is_some_and(|index| index >= 0)
+                        && event["turn"].as_u64() == Some(u64::from(turn))
+                });
+            if now.is_none() || charges_spent || tile_shows || improved_event || extraction_pending
+            {
                 Verdict::Verified
             } else if op == "REPAIR" {
                 // A repair spends no charge and raises no `improved` event: the
