@@ -71,6 +71,9 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, u8, f64)> {
+        if self.culture_releases_science_claims(g, pid) {
+            return None;
+        }
         if !self.campus_building_claims_the_queue {
             return None;
         }

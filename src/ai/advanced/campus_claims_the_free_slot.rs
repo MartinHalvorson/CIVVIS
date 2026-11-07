@@ -167,6 +167,9 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
+        if self.culture_releases_science_claims(g, pid) {
+            return None;
+        }
         if !self.campus_claims_the_free_slot
             && !self.campus_claims_the_free_slot_2
             && !self.science_campus_pause_safe(g, pid, cid, plan)
@@ -248,6 +251,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
+        if self.culture_releases_science_claims(g, pid) {
+            return false;
+        }
         if !self.campus_claims_the_free_slot
             && !self.campus_claims_the_free_slot_2
             && !(self.science_campus_pause_safe(g, pid, cid, plan)

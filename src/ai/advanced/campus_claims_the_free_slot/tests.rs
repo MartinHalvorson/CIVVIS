@@ -143,6 +143,74 @@ fn the_one_citizen_seowon_keeps_native_budget_and_existing_picker_guards() {
     }
 }
 
+#[test]
+fn culture_releases_first_campus_claims_after_its_tourism_technologies() {
+    let (mut game, ranked) = campus_less_empire(95_120, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    for tech in ["flight", "radio", "computers"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let campus = BasicAi::first_campus_item(&game, 0, ranked[0]).unwrap();
+    assert!(game.can_produce(0, ranked[0], &campus));
+    for version_two in [false, true] {
+        let mut ai = armed();
+        ai.victory_target = Some(VictoryTarget::Culture);
+        if version_two {
+            ai.enable_campus_claims_the_free_slot_2();
+        }
+        let mut other = game.clone();
+        let plan = ai.assess(&other, 0);
+        assert!(ai
+            .free_slot_campus_item(&other, 0, ranked[0], &plan)
+            .is_none());
+        ai.claim_free_slot_campus(&mut other, 0, &plan);
+        assert!(ranked
+            .iter()
+            .all(|cid| head(&other, *cid) == Some(unit("knight"))));
+        other.cities.get_mut(&ranked[0]).unwrap().queue = vec![campus.clone()];
+        assert!(!ai.free_slot_campus_holds(&other, 0, ranked[0], &plan, &campus));
+        assert!(other.can_produce(0, ranked[0], &campus));
+    }
+}
+
+#[test]
+fn earlier_culture_and_other_targets_keep_their_campus_claims() {
+    let (mut game, ranked) = campus_less_empire(95_121, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    for tech in ["flight", "radio", "computers"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    for missing in ["flight", "radio", "computers"] {
+        let mut other = game.clone();
+        other.players[0].techs.remove(&Name::new(missing));
+        let mut ai = armed();
+        ai.victory_target = Some(VictoryTarget::Culture);
+        let plan = ai.assess(&other, 0);
+        ai.claim_free_slot_campus(&mut other, 0, &plan);
+        assert!(
+            is_campus(&other, &head(&other, ranked[0])),
+            "missing {missing}"
+        );
+    }
+    for target in VictoryTarget::ALL {
+        if target == VictoryTarget::Culture {
+            continue;
+        }
+        let mut other = game.clone();
+        let mut ai = armed();
+        ai.victory_target = Some(target);
+        let plan = ai.assess(&other, 0);
+        ai.claim_free_slot_campus(&mut other, 0, &plan);
+        assert!(is_campus(&other, &head(&other, ranked[0])), "{target:?}");
+    }
+    game.victory_conditions.culture = false;
+    let mut ai = armed();
+    ai.victory_target = Some(VictoryTarget::Culture);
+    let plan = ai.assess(&game, 0);
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    assert!(is_campus(&game, &head(&game, ranked[0])));
+}
+
 fn armed() -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     ai.enable_campus_claims_the_free_slot();
