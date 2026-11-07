@@ -1,0 +1,225 @@
+//! Faith for Culture's Naturalists and Rock Bands is useful after the Prophet
+//! race closes. Native Pericles 20261107T023905Z had Theology at turn 56 but
+//! no Holy Sites across nine cities at 170. The religion-oriented governor
+//! cannot supply this economy. Once the first writing slots stand, reserve
+//! one safe faith item at a time, developing at most one Holy Site per three
+//! cities (three total), and stop once observed Faith income meets the budget.
+
+use super::*;
+
+impl AdvancedAi {
+    fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || self.lane_lost
+        {
+            return None;
+        }
+        let city_ids = g.player_city_ids(pid);
+        let cities = city_ids.len();
+        if cities < 3
+            || !city_ids.iter().any(|cid| {
+                g.cities[cid]
+                    .buildings
+                    .iter()
+                    .any(|building| g.building_is_family(*building, crate::name!("amphitheater")))
+            })
+        {
+            return None;
+        }
+        let income = city_ids
+            .into_iter()
+            .map(|cid| g.city_yields(cid).faith)
+            .sum::<f64>()
+            + g.player_yield_extras(pid).faith
+            + g.arena_side_yields(pid).faith
+            + g.observed_yield_adjustments
+                .get(&pid)
+                .map_or(0.0, |yield_| yield_.faith);
+        if !income.is_finite()
+            || income >= (cities as f64 * 8.0).min(80.0)
+            || (g.players[pid].gold_per_turn < 0.0
+                && g.players[pid].gold < 100.0 + 25.0 * cities as f64)
+        {
+            return None;
+        }
+        Some((cities / 3).min(3))
+    }
+
+    fn culture_faith_item(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::District { district, .. } => g.district_family(*district) == "holy_site",
+            Item::Building { building } => [crate::name!("shrine"), crate::name!("temple")]
+                .into_iter()
+                .any(|family| g.building_is_family(*building, family)),
+            _ => false,
+        }
+    }
+
+    fn culture_faith_site_held(g: &Game, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        g.city_has_district_family(city, crate::name!("holy_site"))
+            || city.queue.iter().any(|item| {
+                matches!(item, Item::District { district, .. }
+                    if g.district_family(*district) == "holy_site")
+            })
+            || city.owned_tiles.iter().any(|pos| {
+                g.map
+                    .get(*pos)
+                    .and_then(|tile| tile.district_foundation.as_ref())
+                    .is_some_and(|foundation| g.district_family(foundation.district) == "holy_site")
+            })
+    }
+
+    fn culture_faith_city_safe(g: &Game, pid: usize, cid: u32, plan: &StrategicPlan) -> bool {
+        let city = &g.cities[&cid];
+        city.owner == pid
+            && plan.threatened_city != Some(cid)
+            && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            && !g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[&unit.kind].class == "military"
+                    && g.wdist(city.pos, unit.pos) <= 6
+            })
+    }
+
+    pub(super) fn culture_faith_source_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        if !Self::culture_faith_item(g, item) {
+            return false;
+        }
+        let Some(limit) = self.culture_faith_source_budget(g, pid) else {
+            return false;
+        };
+        if !Self::culture_faith_city_safe(g, pid, cid, plan)
+            || g.cities[&cid].queue.first() != Some(item)
+            || !Self::production_commitment_is_legal(g, pid, cid, item)
+        {
+            return false;
+        }
+        !matches!(item, Item::District { .. })
+            || g.player_city_ids(pid)
+                .into_iter()
+                .filter(|city| Self::culture_faith_site_held(g, *city))
+                .count()
+                <= limit
+    }
+
+    pub(super) fn culture_faith_source_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item, f64)> {
+        let limit = self.culture_faith_source_budget(g, pid)?;
+        let cities = g.player_city_ids(pid);
+        // Keep one existing commitment before admitting another queue.
+        for &cid in &cities {
+            if let Some(item) = g.cities[&cid].queue.first() {
+                if self.culture_faith_source_holds(g, pid, cid, plan, item) {
+                    return Some((cid, item.clone(), 0.0));
+                }
+            }
+        }
+        let sites = cities
+            .iter()
+            .filter(|cid| Self::culture_faith_site_held(g, **cid))
+            .count();
+        let at_war = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        });
+        let mut best: Option<(u32, Item, f64)> = None;
+        for cid in cities {
+            let city = &g.cities[&cid];
+            if !Self::culture_faith_city_safe(g, pid, cid, plan)
+                || !g.city_has_district_family(city, crate::name!("theater_square"))
+            {
+                continue;
+            }
+            if let Some(head) = city.queue.first() {
+                if self.culture_theater_holds(g, pid, cid, plan, head)
+                    || self.early_settler_floor_holds(g, pid, cid, plan)
+                    || self.bound_granary_holds(g, pid, cid, plan, head)
+                    || self.capital_monument_holds(g, pid, cid, plan, head)
+                    || self.deterrence_unit_holds(g, pid, head)
+                    || self.idle_route_trader_holds(g, pid, cid, plan, head)
+                    || self.backlog_builder_holds(g, pid, cid, plan, head)
+                    || self.capped_aqueduct_holds(g, pid, cid, plan, head)
+                    || !Self::culture_theater_may_defer(g, pid, cid, head, at_war)
+                {
+                    continue;
+                }
+            }
+            let item = if g.city_has_district_family(city, crate::name!("holy_site")) {
+                BasicAi::civ_building(g, pid, cid, "shrine")
+                    .or_else(|| BasicAi::civ_building(g, pid, cid, "temple"))
+            } else if sites < limit {
+                BasicAi::first_district_item(g, pid, cid, "holy_site")
+            } else {
+                None
+            };
+            let Some(item) = item else {
+                continue;
+            };
+            let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                (g.item_cost_for_city(pid, cid, &item) - g.item_invested_production(cid, &item))
+                    .max(0.0)
+                    / g.city_yields(cid).production.max(0.5)
+            });
+            let cap = g.standard_duration(20) as f64;
+            if !turns.is_finite()
+                || turns > cap
+                || g.max_turns.saturating_sub(g.turn) as f64 <= turns + cap * 2.0
+            {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(old_city, _, old_turns)| {
+                turns.total_cmp(old_turns).then(cid.cmp(old_city)).is_lt()
+            }) {
+                best = Some((cid, item, turns));
+            }
+        }
+        best
+    }
+
+    pub(super) fn claim_culture_faith_source(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        let Some((city, item, turns)) = self.culture_faith_source_target(g, pid, plan) else {
+            return;
+        };
+        if g.cities[&city].queue.first() == Some(&item) {
+            return;
+        }
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
+        {
+            think!(self.journal(), Cities, Decision,
+                "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
+                "one safe source at a time, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

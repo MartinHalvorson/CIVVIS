@@ -219,6 +219,12 @@ impl AdvancedAi {
         if self.culture_theater_item(g, pid, cid, plan).is_some() {
             return None;
         }
+        if self
+            .culture_faith_source_target(g, pid, plan)
+            .is_some_and(|(source, _, _)| source == cid)
+        {
+            return None;
+        }
         let item = BasicAi::first_campus_item_with_budget(
             g,
             pid,

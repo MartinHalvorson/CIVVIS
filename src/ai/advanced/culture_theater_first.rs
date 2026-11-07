@@ -140,6 +140,9 @@ impl AdvancedAi {
         {
             return false;
         }
+        if self.culture_faith_source_holds(g, pid, cid, plan, item) {
+            return true;
+        }
         match item {
             Item::Building { building } => {
                 [crate::name!("amphitheater"), crate::name!("art_museum")]
@@ -263,6 +266,7 @@ impl AdvancedAi {
         for building in [crate::name!("amphitheater"), crate::name!("art_museum")] {
             self.claim_first_culture_building(g, pid, plan, at_major_war, building);
         }
+        self.claim_culture_faith_source(g, pid, plan);
     }
 
     fn culture_needs_first_building(&self, g: &Game, pid: usize, family: Name) -> bool {
