@@ -476,6 +476,66 @@ fn a_rival_close_to_winning_outranks_the_lanes_expansion_only_with_the_gene() {
         "the denial is answered ahead of the lane"
     );
 }
+fn only_launched_science_threat_board() -> Game {
+    let mut game = launched_science_threat_board();
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .get_mut(&1)
+        .unwrap()
+        .foreign_tourists = Some(0);
+    game
+}
+
+fn targeted_science_counter(target: VictoryTarget) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(target);
+    ai.stock_denial_lead_time = true;
+    ai.enable_deny_while_targeted();
+    ai.enable_denial_outranks_expansion();
+    ai.enable_counter_in_lane();
+    ai
+}
+
+#[test]
+fn a_science_race_counter_does_not_replace_an_assigned_culture_goal() {
+    let game = only_launched_science_threat_board();
+    let ai = targeted_science_counter(VictoryTarget::Culture);
+    assert_eq!(
+        ai.actionable_victory_denial(&game, 0),
+        Some((3, GrandStrategy::Science)),
+        "the launch threat remains visible to the denial machinery"
+    );
+    assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Culture);
+}
+
+#[test]
+fn a_direct_army_counter_still_interrupts_an_assigned_culture_goal() {
+    let game = only_launched_science_threat_board();
+    let mut ai = targeted_science_counter(VictoryTarget::Culture);
+    ai.disable_counter_in_lane();
+    assert_eq!(
+        ai.actionable_victory_denial(&game, 0),
+        Some((3, GrandStrategy::Conquest))
+    );
+    let plan = ai.assess(&game, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(3));
+}
+
+#[test]
+fn science_and_adaptive_seats_keep_their_science_race_counter() {
+    let game = only_launched_science_threat_board();
+    let science = targeted_science_counter(VictoryTarget::Science);
+    let mut adaptive = AdvancedAi::new();
+    adaptive.stock_denial_lead_time = true;
+    adaptive.enable_counter_in_lane();
+    for ai in [science, adaptive] {
+        assert_eq!(
+            ai.actionable_victory_denial(&game, 0),
+            Some((3, GrandStrategy::Science))
+        );
+        assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Science);
+    }
+}
+
 // -----------------------------------------------------------------
 // `counter-culture-by-conquest`
 // -----------------------------------------------------------------
