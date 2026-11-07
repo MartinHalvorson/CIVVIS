@@ -1463,10 +1463,6 @@ check("the buy arm never proposes blind",
 check("the export carries the received-borders fact",
 	src:find("diplomacy:HasOpenBordersFrom(otherId);", 1, true) ~= nil, true)
 
-if failures > 0 then
-	realPrint(string.format("\n%d check(s) failed", failures))
-	os.exit(1)
-end
 -- The last copy of a luxury is never sold: each distinct luxury gives four
 -- cities an Amenity, and run civvis-20260829T040540Z sold its only Mercury
 -- three times because the planner counted a suzerain's copy. The host's own
@@ -1626,7 +1622,7 @@ end)()
 	local overpriced = fixture({ incoming = {
 		{ kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
 		{ kind = DealItemTypes.GOLD, from = 7, amount = 50 },
-		{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 9 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 11 },
 	} })
 	onIncoming(3, 7, DealProposalAction.ADJUSTED)
 	check("work purchase includes ongoing Gold in ceiling", overpriced.sends, nil)
@@ -1658,5 +1654,10 @@ end)()
 	check("no room submits no deal", full.sends, nil)
 	CivvisGreatWorks.survey = originalSurvey
 end)()
+
+if failures > 0 then
+	realPrint(string.format("\n%d check(s) failed", failures))
+	os.exit(1)
+end
 
 realPrint("\nall surplus-sale checks passed")
