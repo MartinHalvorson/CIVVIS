@@ -1984,15 +1984,13 @@ impl Game {
         band: Option<&Unit>,
         position: Pos,
     ) -> Option<(f64, i32, u32)> {
+        let native_plots = band
+            .and_then(|unit| self.host_unit_facts.get(&unit.id))
+            .and_then(|facts| facts.concert_plots.as_ref());
+        if native_plots.is_some_and(|plots| !plots.contains(&position)) {
+            return None;
+        }
         if let Some(unit) = band {
-            if self
-                .host_unit_facts
-                .get(&unit.id)
-                .and_then(|facts| facts.concert_plots.as_ref())
-                .is_some_and(|plots| !plots.contains(&position))
-            {
-                return None;
-            }
             if self.players[pid]
                 .counters
                 .get(&format!(
@@ -2056,6 +2054,26 @@ impl Game {
                     .copied()
             })
             .fold(0.0_f64, f64::max);
+        // SelectedUnit_Expansion2.lua:65-70 uses the RockBand component's
+        // activation highlights. An affirmative native venue remains usable
+        // when public foreign-city data omits its buildings. Estimate its
+        // unknown tier with the least valuable compatible modeled building;
+        // do not invent buildings or discard a known higher-tier value.
+        let building_tourism = if building_tourism <= 0.0 && native_plots.is_some() {
+            self.rules
+                .buildings
+                .values()
+                .filter(|spec| {
+                    spec.district
+                        .is_some_and(|required| self.district_is_family(district, required))
+                })
+                .filter_map(|spec| spec.effects.get("rock_concert_tourism").copied())
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .min_by(f64::total_cmp)
+                .unwrap_or(0.0)
+        } else {
+            building_tourism
+        };
         let (base, level_bonus) = match family.as_str() {
             "entertainment_complex" if building_tourism > 0.0 => {
                 (building_tourism, effect("rock_entertainment_levels"))
@@ -6444,7 +6462,6 @@ impl Game {
                         && deal.request.open_borders)
             })
     }
-
 }
 
 #[cfg(test)]
