@@ -214,8 +214,22 @@ fn culture_faith_leaves_other_lanes_and_disabled_claims_alone() {
 }
 
 #[test]
-fn only_the_selected_faith_factory_yields_its_campus_slot() {
+fn first_art_museum_keeps_priority_over_the_faith_factory() {
     let (mut g, mut ai, plan, cities) = fixture(3);
+    let museum = Item::Building {
+        building: crate::name!("art_museum"),
+    };
+    assert!(g.can_produce(0, cities[0], &museum));
+    ai.claim_culture_theaters(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cities[0]].queue.first(), Some(&museum));
+    ai.advanced_production(&mut g, 0, &plan, false);
+    assert_eq!(g.cities[&cities[0]].queue.first(), Some(&museum));
+}
+
+#[test]
+fn only_the_selected_faith_factory_yields_its_campus_slot() {
+    // The ordinary Campus claim waits for the six-city expansion floor.
+    let (mut g, mut ai, plan, cities) = fixture(6);
     ai.enable_campus_claims_the_free_slot_2();
     let (source, _, _) = ai.culture_faith_source_target(&g, 0, &plan).unwrap();
     ai.claim_free_slot_campus(&mut g, 0, &plan);

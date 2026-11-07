@@ -9,9 +9,25 @@ use super::*;
 
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
-        let cities = g.player_city_ids(pid).len();
-        let income = g
-            .player_city_ids(pid)
+        if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || self.lane_lost
+        {
+            return None;
+        }
+        let city_ids = g.player_city_ids(pid);
+        let cities = city_ids.len();
+        if cities < 3
+            || !city_ids.iter().any(|cid| {
+                g.cities[cid]
+                    .buildings
+                    .iter()
+                    .any(|building| g.building_is_family(*building, crate::name!("amphitheater")))
+            })
+        {
+            return None;
+        }
+        let income = city_ids
             .into_iter()
             .map(|cid| g.city_yields(cid).faith)
             .sum::<f64>()
@@ -20,20 +36,10 @@ impl AdvancedAi {
             + g.observed_yield_adjustments
                 .get(&pid)
                 .map_or(0.0, |yield_| yield_.faith);
-        if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
-            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
-            || self.lane_lost
-            || cities < 3
-            || !income.is_finite()
+        if !income.is_finite()
             || income >= (cities as f64 * 8.0).min(80.0)
             || (g.players[pid].gold_per_turn < 0.0
                 && g.players[pid].gold < 100.0 + 25.0 * cities as f64)
-            || !g.player_city_ids(pid).into_iter().any(|cid| {
-                g.cities[&cid]
-                    .buildings
-                    .iter()
-                    .any(|building| g.building_is_family(*building, crate::name!("amphitheater")))
-            })
         {
             return None;
         }
