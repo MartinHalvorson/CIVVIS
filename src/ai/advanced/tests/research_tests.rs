@@ -1946,16 +1946,109 @@ fn culture_unlocks_bands_before_the_late_government_ladder() {
     plan.strategy = GrandStrategy::Recovery;
     let mut recovery = game.clone();
     ai.advanced_research(&mut recovery, 0, &plan);
-    assert_eq!(
-        recovery.players[0].civic.as_deref(),
-        Some("professional_sports")
-    );
+    assert_eq!(recovery.players[0].civic.as_deref(), Some("cold_war"));
     plan.strategy = GrandStrategy::Culture;
     ai.culture_cold_war_window = false;
     ai.advanced_research(&mut game, 0, &plan);
     assert_eq!(
         game.players[0].civic.as_deref(),
         Some("professional_sports")
+    );
+}
+
+#[test]
+fn assigned_culture_unlocks_faith_units_through_counterplans_after_six_slots() {
+    let (mut game, _, _) = empire_with_a_capital(79_175);
+    game.at_war.clear();
+    game.turn = 150;
+    game.max_turns = 500;
+    game.game_speed = crate::setup::GameSpeed::Online;
+    let withheld = [
+        "cold_war",
+        "professional_sports",
+        "cultural_heritage",
+        "space_race",
+        "environmentalism",
+        "social_media",
+        "suffrage",
+        "class_struggle",
+        "totalitarianism",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    game.players[0].civics = game
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    game.players[0].government = Some("monarchy".into());
+    game.players[0].civic = None;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_government_ladder_2();
+    ai.government_capacity_fallback = false;
+    ai.enable_culture_cold_war_window();
+    assert!(ai
+        .government_ladder_goal(&game, 0, GrandStrategy::Culture)
+        .is_some());
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    for posture in [
+        GrandStrategy::Recovery,
+        GrandStrategy::Science,
+        GrandStrategy::Expansion,
+    ] {
+        plan.strategy = posture;
+        let mut bands = game.clone();
+        ai.advanced_research(&mut bands, 0, &plan);
+        assert_eq!(
+            bands.players[0].civic.as_deref(),
+            Some("cold_war"),
+            "{posture:?}"
+        );
+        let mut parks = game.clone();
+        parks.players[0]
+            .civics
+            .remove(&crate::name!("conservation"));
+        ai.advanced_research(&mut parks, 0, &plan);
+        assert_eq!(
+            parks.players[0].civic.as_deref(),
+            Some("conservation"),
+            "{posture:?}"
+        );
+    }
+    let mut unlocked = game.clone();
+    unlocked.players[0].civics.insert(crate::name!("cold_war"));
+    ai.advanced_research(&mut unlocked, 0, &plan);
+    assert_eq!(
+        unlocked.players[0].civic.as_deref(),
+        Some("suffrage"),
+        "resume government capacity after the Culture unlocks"
+    );
+    let mut opening = game.clone();
+    opening.players[0].government = Some("classical_republic".into());
+    ai.advanced_research(&mut opening, 0, &plan);
+    assert_ne!(
+        opening.players[0].civic.as_deref(),
+        Some("cold_war"),
+        "fewer than six slots retain the capacity priority"
+    );
+    ai.disable_culture_cold_war_window();
+    let mut off = game;
+    ai.advanced_research(&mut off, 0, &plan);
+    assert_ne!(
+        off.players[0].civic.as_deref(),
+        Some("cold_war"),
+        "the disabled policy retains its old ordering"
     );
 }
 
