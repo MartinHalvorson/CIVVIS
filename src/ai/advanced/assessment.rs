@@ -606,8 +606,15 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "the rival's original capital completes Domination before its victory clock",
             )
-        } else if let Some((_, counter)) = actionable_denial.filter(|(rival, _)| {
-            self.denial_outranks_expansion || self.domination_counter_target(g, pid, *rival)
+        } else if let Some((_, counter)) = actionable_denial.filter(|(rival, counter)| {
+            (self.denial_outranks_expansion || self.domination_counter_target(g, pid, *rival))
+                // Native Pericles 141453Z kept Culture as its target but
+                // answered a launch clock with its own Spaceport. Racing for
+                // Science does not deny that clock or serve the Culture goal.
+                // Keep the threat and direct military counters; only this
+                // empire-wide change to a competing victory yields the lane.
+                && !(active_victory_target == Some(VictoryTarget::Culture)
+                    && *counter == GrandStrategy::Science)
         }) {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A
