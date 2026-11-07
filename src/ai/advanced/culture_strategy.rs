@@ -39,6 +39,37 @@ impl AdvancedAi {
         .then_some("natural_history")
     }
 
+    /// Once the Faith unlock and eight policy slots are secured, a museum's
+    /// worth of housed art/artifacts should earn Heritage Tourism before a
+    /// later government. Native 080217Z had nine works of art at turn 170,
+    /// but Corporate Libertarianism's route left Cultural Heritage unlearned.
+    pub(super) fn culture_heritage_unlock_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<&'static str> {
+        let player = &g.players[pid];
+        let slots = g.gov_slots(pid);
+        if !self.culture_cold_war_window
+            || self.lane_lost
+            || !g.victory_conditions.culture
+            || !player.civics.contains(&crate::name!("cold_war"))
+            || player.civics.contains(&crate::name!("cultural_heritage"))
+            || slots.military + slots.economic + slots.diplomatic + slots.wildcard < 8
+        {
+            return None;
+        }
+        let works: usize = g
+            .housed_great_works(pid)
+            .values()
+            .map(|housed| {
+                housed.get("art").copied().unwrap_or(0)
+                    + housed.get("artifact").copied().unwrap_or(0)
+            })
+            .sum();
+        (works >= 3).then_some("cultural_heritage")
+    }
+
     /// `culture-cold-war-window` changes only the order of the Culture civic
     /// milestones. Cold War is otherwise reached through the later Space Race
     /// goal. It does not bypass government, survival, or Great Person goals in
