@@ -646,6 +646,60 @@ fn a_native_quoted_hill_opens_the_acropolis_only_after_the_next_build_menu() {
 }
 
 #[test]
+fn a_slow_native_owned_acropolis_site_does_not_buy_another_hill() {
+    let (mut game, city, _) = quoted_acropolis_hill();
+    let owned = *game.cities[&city]
+        .owned_tiles
+        .iter()
+        .find(|pos| **pos != game.cities[&city].pos && game.map.tiles[*pos].district.is_none())
+        .unwrap();
+    game.map.tiles.get_mut(&owned).unwrap().hills = true;
+    let acropolis = crate::name!("acropolis");
+    Arc::make_mut(&mut game.host_buildable)
+        .get_mut(&city)
+        .unwrap()
+        .insert(
+            "district:acropolis".into(),
+            crate::game::HostMenuEntry {
+                cost: Some(73.0),
+                turns: Some(28.0),
+            },
+        );
+    Arc::make_mut(&mut game.host_district_plots)
+        .entry(city)
+        .or_default()
+        .insert(acropolis, [owned].into_iter().collect());
+    let district = Item::District {
+        district: acropolis,
+        pos: owned,
+    };
+    assert!(game.can_produce(0, city, &district));
+    assert!(BasicAi::first_theater_item(&game, 0, city).is_none());
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&game, 0);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut game, 0, &plan)
+        .is_none());
+    assert_eq!(game.players[0].gold, 250.0);
+}
+
+#[test]
+fn an_empty_native_acropolis_site_offer_still_allows_the_first_quoted_hill() {
+    let (mut game, city, pos) = quoted_acropolis_hill();
+    Arc::make_mut(&mut game.host_district_plots)
+        .entry(city)
+        .or_default()
+        .insert(crate::name!("acropolis"), BTreeSet::new());
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&game, 0);
+    let held = ai.culture_acropolis_site_purchase(&mut game, 0, &plan);
+    assert!(held.is_some());
+    assert_eq!(game.players[0].gold, 190.0);
+    assert_eq!(game.map.tiles[&pos].owner_city, Some(city));
+    AdvancedAi::release_culture_acropolis_site(&mut game, held);
+}
+
+#[test]
 fn acropolis_site_purchases_require_native_suitability_and_prices() {
     let (game, city, _) = quoted_acropolis_hill();
     for suitability in [None, Some(false)] {
