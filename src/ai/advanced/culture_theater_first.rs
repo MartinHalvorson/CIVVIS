@@ -52,7 +52,7 @@
 //! first Amphitheater, leaving settlers, defenses and imminent completions
 //! under the same protections as the district claim. Additional Amphitheaters
 //! are completed one at a time after the first: a safe, solvent city must
-//! finish within ten Online turns, with at least twenty more turns to use it.
+//! finish within fourteen Online turns, with at least twenty-eight more turns to use it.
 //! Native Deity 20261107T040449Z and 044901Z had five/four Acropoleis
 //! at turn 100 but only one Amphitheater through 125; infrastructure kept
 //! displacing the remaining writing slots, Culture income and Writer points.
