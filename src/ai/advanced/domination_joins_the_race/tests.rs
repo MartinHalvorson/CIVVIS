@@ -113,6 +113,7 @@ fn culture_does_not_build_a_spaceport_to_activate_an_idle_scientist() {
         if target == VictoryTarget::Culture {
             assert!(!changed);
             assert!(candidate.cities[&city].queue.is_empty());
+            assert!(!ai.science_endgame_lane_committed(&candidate, 0));
         } else {
             assert!(
                 changed,

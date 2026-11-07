@@ -15,8 +15,20 @@ const LAUNCHES: [&str; 4] = [
 const LASERS: [&str; 2] = ["lagrange_laser_station", "terrestrial_laser_station"];
 
 impl AdvancedAi {
-    pub(super) fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
+    /// A Culture target does not start a space program for an idle person.
+    /// An expedition already committed before a target switch still needs
+    /// its existing research and acceleration support.
+    fn science_endgame_allowed(&self, g: &Game, pid: usize) -> bool {
         !self.space_race_excluded()
+            || (self.victory_target == Some(VictoryTarget::Culture)
+                && (g.players[pid]
+                    .science_projects
+                    .contains("exoplanet_expedition")
+                    || Self::science_project_is_queued(g, pid, "exoplanet_expedition")))
+    }
+
+    pub(super) fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
+        self.science_endgame_allowed(g, pid)
             && self.victory_planning
             && g.victory_conditions.science
             && (self.raced_target() == Some(VictoryTarget::Science)
@@ -73,7 +85,7 @@ impl AdvancedAi {
     /// the endgame lane alive until the flight can be accelerated.
     pub(super) fn science_endgame_lane_committed(&self, g: &Game, pid: usize) -> bool {
         let live_controller = self.victory_planning || self.victory_target.is_some();
-        !self.space_race_excluded()
+        self.science_endgame_allowed(g, pid)
             && g.victory_conditions.science
             && (self.science_endgame_committed(g, pid)
                 || (live_controller
