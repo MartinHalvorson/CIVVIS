@@ -600,7 +600,7 @@ fn a_native_quoted_hill_opens_the_acropolis_only_after_the_next_build_menu() {
     assert!(BasicAi::first_theater_item(&game, 0, city).is_none());
     let campus = Item::District {
         district: crate::name!("campus"),
-        pos: game.district_sites(city, "campus")[0],
+        pos: game.district_sites(city, crate::name!("campus"))[0],
     };
     assert!(game.can_produce(0, city, &campus));
     let native_menu = Arc::clone(&game.host_buildable);

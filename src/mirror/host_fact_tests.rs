@@ -2288,11 +2288,11 @@ fn native_plot_quotes_price_the_purchase_and_refresh_without_stale_sites() {
         "an old quote cannot buy an owned tile again"
     );
     state.cities[0].plot_purchases = Some(Vec::new());
-    mirror.sync(&snapshot, &state);
+    mirror.sync(&snapshot, &state, 0);
     assert_eq!(mirror.game.plot_purchase_cost(0, city, pos), None);
     assert!(mirror.game.host_plot_purchases[&city].is_empty());
     state.cities[0].plot_purchases = None;
-    mirror.sync(&snapshot, &state);
+    mirror.sync(&snapshot, &state, 0);
     assert!(
         mirror.game.host_plot_purchases.is_empty(),
         "a missing later export cannot retain a stale native quote"
