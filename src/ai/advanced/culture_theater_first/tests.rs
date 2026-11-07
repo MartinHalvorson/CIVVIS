@@ -545,6 +545,7 @@ fn quoted_acropolis_hill() -> (Game, u32, Pos) {
     game.players[0].civ = "Greece".to_string();
     for tile in game.map.tiles.values_mut() {
         tile.terrain = crate::name!("plains");
+        tile.hills = false;
         tile.feature = None;
         tile.resource = None;
         tile.wonder = None;
@@ -562,7 +563,7 @@ fn quoted_acropolis_hill() -> (Game, u32, Pos) {
                     .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
         })
         .expect("an unowned border hill");
-    game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("plains_hills");
+    game.map.tiles.get_mut(&pos).unwrap().hills = true;
     game.players[0]
         .explored
         .extend(game.map.tiles.keys().copied());
