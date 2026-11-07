@@ -7451,33 +7451,41 @@ impl BasicAi {
         if g.rock_concert_tourism(pid, uid).is_some() {
             return g.apply(pid, &Action::PerformConcert { unit: uid }).is_ok();
         }
-        let current = g.units[&uid].pos;
-        let mut venues: Vec<(f64, i32, Pos)> = g
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .filter_map(|position| {
-                let tourism = g.rock_concert_ai_value(pid, uid, position)?;
-                g.route_step(uid, position, 0)?;
-                Some((tourism, g.wdist(current, position), position))
-            })
-            .collect();
-        venues.sort_by(|left, right| {
-            right
-                .0
-                .partial_cmp(&left.0)
-                .unwrap()
-                .then(left.1.cmp(&right.1))
-                .then(left.2.cmp(&right.2))
-        });
-        let Some((_, _, target)) = venues.first().copied() else {
+        let Some(target) = Self::rock_band_tour_destination(g, pid, uid) else {
             return false;
         };
         let Some(next) = g.route_step(uid, target, 0) else {
             return false;
         };
         self.path_move(g, pid, uid, next)
+    }
+
+    /// Rank a tour by its existing concert valuation and the time spent
+    /// reaching it. A distant premium venue must repay its longer journey.
+    /// Route length is an estimate in hex steps, divided by the band's actual
+    /// full movement allowance; it is not a terrain-exact arrival prediction.
+    fn rock_band_tour_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        let moves = g.unit_max_moves(uid).max(1.0);
+        let mut venues: Vec<(f64, usize, Pos)> = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter_map(|position| {
+                let value = g.rock_concert_ai_value(pid, uid, position)?;
+                let distance = g.route_distance(uid, position, 0)?;
+                let travel_turns = distance as f64 / moves;
+                Some((value / (1.0 + travel_turns), distance, position))
+            })
+            .collect();
+        venues.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then(left.1.cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+        });
+        venues.first().map(|(_, _, position)| *position)
     }
 
     /// The district a civilization builds in place of `family`: its unique
@@ -8019,3 +8027,6 @@ mod civilian_pursuit_tests;
 
 #[cfg(test)]
 mod settlement_site_tests;
+
+#[cfg(test)]
+mod rock_band_tour_tests;
