@@ -83,13 +83,20 @@ fn standing_hub_gets_market_then_open_capacity_gets_trader() {
 }
 
 #[test]
-fn original_busy_queues_and_later_survival_or_culture_claims_keep_their_place() {
+fn original_busy_queues_and_later_survival_claims_keep_their_place() {
     let (g, ai, cities) = fixture();
     let plan = ai.assess(&g, 0);
-    for kind in ["builder", "settler", "warrior"] {
+    for head in [
+        unit("builder"),
+        unit("settler"),
+        unit("warrior"),
+        Item::Building {
+            building: crate::name!("amphitheater"),
+        },
+    ] {
         let mut busy = g.clone();
         for cid in &cities {
-            busy.cities.get_mut(cid).unwrap().queue = vec![unit(kind)];
+            busy.cities.get_mut(cid).unwrap().queue = vec![head.clone()];
         }
         assert!(ai.culture_commerce_candidate(&busy, 0, &plan).is_none());
     }
@@ -103,9 +110,6 @@ fn original_busy_queues_and_later_survival_or_culture_claims_keep_their_place() 
         },
         Item::Building {
             building: crate::name!("shrine"),
-        },
-        Item::Building {
-            building: crate::name!("amphitheater"),
         },
     ] {
         let mut protected = g.clone();
@@ -259,4 +263,132 @@ fn paused_income_requires_a_bounded_legal_host_quote_and_safe_city() {
             "guard {mode}"
         );
     }
+}
+
+fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
+    let (mut g, mut ai, cities) = fixture();
+    let cid = cities[0];
+    g.players[0].civics.insert(crate::name!("drama_poetry"));
+    g.cities.get_mut(&cid).unwrap().pop = 7;
+    crate::game::install_test_district(&mut g, cid, "theater_square");
+    let plan = ai.assess(&g, 0);
+    let (chosen, hub) = ai.culture_commerce_candidate(&g, 0, &plan).unwrap();
+    assert_eq!(chosen, cid);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    // Native t101 quotes. Placement in this small synthetic empire has a
+    // cheaper model cost; below, load the foundation's observed locked cost
+    // as the native mirror does for an already-started district.
+    Arc::make_mut(&mut g.host_buildable).insert(
+        cid,
+        [
+            (
+                Game::production_block_key(&hub),
+                HostMenuEntry {
+                    cost: Some(102.0),
+                    turns: Some(11.0),
+                },
+            ),
+            (
+                Game::production_block_key(&amphitheater),
+                HostMenuEntry {
+                    cost: Some(75.0),
+                    turns: Some(7.0),
+                },
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: hub.clone(),
+        },
+    )
+    .unwrap();
+    let Item::District { pos, .. } = &hub else {
+        panic!("the fixture reserves a Hub foundation");
+    };
+    g.map
+        .tiles
+        .get_mut(pos)
+        .unwrap()
+        .district_foundation
+        .as_mut()
+        .unwrap()
+        .cost = 102.0;
+    assert_eq!(g.item_cost_for_city(0, cid, &hub), 102.0);
+    g.cities.get_mut(&cid).unwrap().production = 16.0;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .production_progress
+        .insert(Game::item_progress_key(&amphitheater), 21.0);
+    Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        cid,
+        crate::rules::Yields {
+            production: 8.0,
+            ..Default::default()
+        },
+    );
+    for other in cities.into_iter().filter(|other| *other != cid) {
+        g.cities.get_mut(&other).unwrap().queue = vec![unit("builder")];
+    }
+    ai.enable_culture_seat_theater_first();
+    assert!(g.can_produce(0, cid, &amphitheater));
+    assert!(
+        AdvancedAi::culture_theater_may_defer(&g, 0, cid, &hub, false),
+        "the host's unfinished Hub is not a one-turn completion"
+    );
+    (g, ai, cid, hub, plan)
+}
+
+#[test]
+fn committed_income_finishes_before_a_new_routine_amphitheater_claim() {
+    let (mut g, mut ai, cid, hub, plan) = income_and_followup_slots();
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let mut control = g.clone();
+    ai.claim_culture_theaters(&mut control, 0, &plan);
+    assert_eq!(
+        control.cities[&cid].queue.first(),
+        Some(&amphitheater),
+        "the real Culture claim reproduces the native interruption"
+    );
+    assert!(!AdvancedAi::live_gp_cultural_building_commitment(
+        &control,
+        0,
+        cid,
+        &amphitheater
+    ));
+    ai.run_idle_queue_claims(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&hub));
+    assert_eq!(g.item_invested_production(cid, &hub), 16.0);
+}
+
+#[test]
+fn a_waiting_writer_still_gets_the_new_activation_slots() {
+    let (mut g, mut ai, cid, _, plan) = income_and_followup_slots();
+    g.players[0].live_great_person_activation_needs.push(
+        crate::game::LiveGreatPersonActivationNeed {
+            kind: "writer".into(),
+            required_district: Some("theater_square".into()),
+            ..Default::default()
+        },
+    );
+    ai.run_idle_queue_claims(&mut g, 0, &plan);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    assert_eq!(g.cities[&cid].queue.first(), Some(&amphitheater));
+    assert!(AdvancedAi::live_gp_cultural_building_commitment(
+        &g,
+        0,
+        cid,
+        &amphitheater
+    ));
 }
