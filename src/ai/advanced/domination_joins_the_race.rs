@@ -30,88 +30,16 @@ impl AdvancedAi {
             && standing.own_techs + SCIENCE_DRIVE_TECH_SLACK >= standing.best_rival_techs
     }
 
-    /// Whether the Domination exclusions of the space race hold this turn:
-    /// a Domination seat, unless `domination-joins-the-race` has its answer
-    /// driving. Identical to `victory_target == Some(Domination)` with the
-    /// gene off.
+    /// An explicit Culture target spends production on its Culture finish,
+    /// including when an idle Scientist asks for a Spaceport. Domination
+    /// keeps its existing exclusion unless its opted-in answer is driving.
     pub(super) fn space_race_excluded(&self) -> bool {
-        self.victory_target == Some(VictoryTarget::Domination)
-            && !(self.domination_joins_the_race
-                && self.science_drive.is_some_and(|drive| drive.answering))
+        self.victory_target == Some(VictoryTarget::Culture)
+            || (self.victory_target == Some(VictoryTarget::Domination)
+                && !(self.domination_joins_the_race
+                    && self.science_drive.is_some_and(|drive| drive.answering)))
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::science_victory_drive::ScienceDrive;
-    use super::*;
-
-    #[test]
-    fn domination_joins_the_race_is_a_native_opt_in_off_in_both_controllers() {
-        super::super::test_support::opt_in_off_in_both_controllers(
-            "domination-joins-the-race",
-            |ai| ai.domination_joins_the_race,
-        );
-    }
-
-    fn standing(own_techs: usize, best_rival_techs: usize) -> ScienceStanding {
-        ScienceStanding {
-            own_science: 300.0,
-            best_rival_science: 400.0,
-            own_techs,
-            best_rival_techs,
-        }
-    }
-
-    /// 073004Z's readings: 62 to 67 at t210 stays out, 67 to 70 at t220
-    /// opens; 060258Z's 65 to 77 never does. Only a Domination seat, and only
-    /// with the gene.
-    #[test]
-    fn parity_opens_the_answer_for_a_domination_seat_only() {
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        assert!(!ai.domination_answers_at_parity(&standing(67, 70)));
-        ai.enable_domination_joins_the_race();
-        assert!(!ai.domination_answers_at_parity(&standing(62, 67)));
-        assert!(ai.domination_answers_at_parity(&standing(67, 70)));
-        assert!(!ai.domination_answers_at_parity(&standing(65, 77)));
-
-        let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
-        culture.enable_domination_joins_the_race();
-        assert!(!culture.domination_answers_at_parity(&standing(70, 70)));
-    }
-
-    /// The exclusions hold for a Domination seat until its answer drives, and
-    /// never apply to another lane.
-    #[test]
-    fn the_exclusions_lift_only_while_the_answer_drives() {
-        let drive = |answering| ScienceDrive {
-            since: 220,
-            reviewed: 220,
-            standing: standing(67, 70),
-            launch_city: None,
-            assigned: false,
-            answering,
-        };
-        let mut stock = AdvancedAi::targeting(VictoryTarget::Domination);
-        stock.science_drive = Some(drive(true));
-        assert!(
-            stock.space_race_excluded(),
-            "the gene off keeps the exclusion"
-        );
-
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        ai.enable_domination_joins_the_race();
-        assert!(ai.space_race_excluded(), "no drive, no race");
-        ai.science_drive = Some(drive(false));
-        assert!(ai.space_race_excluded(), "a drive that is not the answer");
-        ai.science_drive = Some(drive(true));
-        assert!(
-            !ai.space_race_excluded(),
-            "the answer drives: the race opens"
-        );
-
-        let mut science = AdvancedAi::targeting(VictoryTarget::Science);
-        science.enable_domination_joins_the_race();
-        assert!(!science.space_race_excluded());
-    }
-}
+mod tests;
