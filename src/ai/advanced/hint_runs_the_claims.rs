@@ -102,6 +102,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_trader_for_idle_route(g, pid, plan);
         }
+        // Remember idle opportunities before routine claims fill them.
+        let commerce = if !war_holds {
+            self.culture_commerce_candidate(g, pid, plan)
+        } else {
+            None
+        };
         // `backlog-builder-takes-the-queue`: the worked backlog's Builder,
         // after the Trader and ahead of the Prophet race and the routine
         // claims. Exact no-op while the gene is off. See
@@ -193,6 +199,9 @@ impl AdvancedAi {
         // `prophet-race-earns-its-points`: the race's Holy Site city
         // starts its Shrine. Exact no-op while the gene is off.
         self.reserve_race_shrine(g, pid, plan);
+        if let Some((city, item)) = commerce {
+            self.claim_culture_commerce(g, pid, plan, city, item);
+        }
         // `pillaged-districts-repair-first`: a pillaged district's repair,
         // after every claim above so none of them takes the queue back.
         // Exact no-op while the gene is off. See
