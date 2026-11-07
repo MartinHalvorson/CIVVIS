@@ -7,6 +7,8 @@
 use super::*;
 
 const CULTURE_ROUTE_FLOOR: i64 = 3;
+// Match the commercial step's maximum, in the host's actual build turns.
+const CULTURE_HUB_RESUME_MAX_TURNS: f64 = 20.0;
 
 impl AdvancedAi {
     /// Snapshot one opportunity after survival/expansion claims, before routine
@@ -68,10 +70,10 @@ impl AdvancedAi {
                 if held.is_none() && (head.is_some() || chain_in_flight) {
                     return None;
                 }
-                let item = held.cloned().or_else(|| {
-                    self.base
-                        .commercial_hub_step(g, pid, cid, n_cities, traders)
-                })?;
+                let item = held
+                    .cloned()
+                    .or_else(|| Self::culture_paused_hub(g, pid, cid))
+                    .or_else(|| self.base.commercial_hub_step(g, pid, cid, n_cities, traders))?;
                 let trader = matches!(&item, Item::Unit { unit } if *unit == "trader");
                 if capacity >= CULTURE_ROUTE_FLOOR && !trader {
                     return None;
@@ -91,7 +93,8 @@ impl AdvancedAi {
                         / g.city_yields(cid).production.max(0.5)
                 });
                 Some((
-                    if matches!(item, Item::District { .. }) {
+                    if matches!(&item, Item::District { pos, .. }
+                        if g.map.tiles.get(pos).is_some_and(|tile| tile.district_foundation.is_none())) {
                         1
                     } else {
                         0
@@ -103,6 +106,30 @@ impl AdvancedAi {
             })
             .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)))
             .map(|(_, _, cid, item)| (cid, item))
+    }
+
+    /// Native 111731Z: Ephesus's Hub was interrupted by the contact fleet at
+    /// turn 83; after that ship, industry took its idle queue at turn 90.
+    /// The basic new-Hub step excludes a city with a foundation, so explicitly
+    /// resume that foundation when the host quotes a legal, bounded finish.
+    /// The caller has already excluded busy queues and unsafe cities.
+    fn culture_paused_hub(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        g.cities[&cid].owned_tiles.iter().find_map(|pos| {
+            let foundation = g.map.tiles.get(pos)?.district_foundation.as_ref()?;
+            if g.district_family(foundation.district) != "commercial_hub" {
+                return None;
+            }
+            let item = Item::District {
+                district: foundation.district,
+                pos: *pos,
+            };
+            let turns = g.host_production_turns(cid, &item)?;
+            (turns.is_finite()
+                && turns > 0.0
+                && turns <= CULTURE_HUB_RESUME_MAX_TURNS
+                && g.can_produce(pid, cid, &item))
+            .then_some(item)
+        })
     }
 
     /// Routine claims may replace an originally idle opportunity; survival,
