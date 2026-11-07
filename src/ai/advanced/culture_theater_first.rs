@@ -111,6 +111,13 @@ impl AdvancedAi {
         let mut choice: Option<(f64, u32, Pos)> = None;
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
+            // The picker can reject a slow build despite a legal owned site.
+            // A positive native placement offer needs no additional hill.
+            let native_owned_site = g
+                .host_district_plots
+                .get(&cid)
+                .and_then(|plots| plots.get(&acropolis))
+                .is_some_and(|sites| !sites.is_empty());
             if plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
                 || !g.city_accepts_new_district_site(city, acropolis)
@@ -118,6 +125,7 @@ impl AdvancedAi {
                     matches!(item, Item::District { district, .. }
                     if g.district_family(*district) == "theater_square")
                 })
+                || native_owned_site
                 || BasicAi::first_theater_item(g, pid, cid).is_some()
             {
                 continue;
