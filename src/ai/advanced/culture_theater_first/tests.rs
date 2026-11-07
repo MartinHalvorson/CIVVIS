@@ -105,6 +105,9 @@ fn completed_writing_slots_admit_one_fast_followup_through_recovery() {
             .get_mut(&cities[2])
             .unwrap()
             .production = 30.0;
+        // This fast city's Warrior would finish this turn and is protected.
+        // Make it idle so the fixture tests selection of a faster free queue.
+        game.cities.get_mut(&cities[2]).unwrap().queue.clear();
         let mut ai = seat(VictoryTarget::Culture, true);
         if version_two {
             ai.enable_culture_seat_theater_first_2();
