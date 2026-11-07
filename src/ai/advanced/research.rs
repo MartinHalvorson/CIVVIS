@@ -1076,9 +1076,22 @@ impl AdvancedAi {
                 // The active Culture plan needs its Faith-to-tourism unlocks.
                 // A later government's cheapest path can postpone Conservation
                 // and take Professional Sports before Cold War.
+                // An assigned Culture lane keeps this priority through a
+                // temporary counterplan once it has six policy slots. Native
+                // 040449Z reached 121 Faith/turn but lost at 179 without Cold
+                // War after researching Class Struggle and then Suffrage.
                 GrandStrategy::Culture
                     if self.culture_cold_war_window
-                        && plan.strategy == GrandStrategy::Culture
+                        && (plan.strategy == GrandStrategy::Culture
+                            || (self.active_victory_target(g) == Some(VictoryTarget::Culture)
+                                && {
+                                    let slots = g.gov_slots(pid);
+                                    slots.military
+                                        + slots.economic
+                                        + slots.diplomatic
+                                        + slots.wildcard
+                                        >= 6
+                                }))
                         && !self.lane_lost
                         && matches!(
                             self.culture_civic_goal(g, pid),
