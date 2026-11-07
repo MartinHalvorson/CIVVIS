@@ -117,7 +117,13 @@ fn a_pillaged_museum_or_theater_is_not_a_prepared_music_path() {
             .buildings
             .push(crate::name!("art_museum"));
         if district_pillaged {
-            let pos = g.cities[&first].districts[&crate::name!("theater_square")];
+            let pos = g.cities[&first]
+                .districts
+                .iter()
+                .find_map(|(district, pos)| {
+                    (g.district_family(*district) == "theater_square").then_some(*pos)
+                })
+                .unwrap();
             g.map.tiles.get_mut(&pos).unwrap().pillaged = true;
         } else {
             g.cities
