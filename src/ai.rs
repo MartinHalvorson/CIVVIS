@@ -7456,8 +7456,8 @@ impl BasicAi {
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex
         // away. Rank the current venue at zero travel alongside the others.
-        if let Some(target) = Self::rock_band_tour_destination(g, pid, uid)
-            .filter(|target| *target != here)
+        if let Some(target) =
+            Self::rock_band_tour_destination(g, pid, uid).filter(|target| *target != here)
         {
             if let Some(next) = g.route_step(uid, target, 0) {
                 if self.path_move(g, pid, uid, next) {
