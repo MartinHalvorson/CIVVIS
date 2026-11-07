@@ -7333,6 +7333,7 @@ fn unverifiable_unit_verb(op: &str) -> bool {
 
 /// Ledger event kinds the checks read as evidence between two frames.
 const EVIDENCE_KINDS: &[&str] = &[
+    "artifact_extraction_pending",
     "condemn_removed",
     "combat_policy_applied",
     "strike_survival_refused",
@@ -8396,8 +8397,10 @@ fn verify_unit_order(
             // trades or another Archaeologist's inventory change.
             let extraction_pending = op == "EXCAVATE"
                 && was.is_some_and(|u| u.kind == "UNIT_ARCHAEOLOGIST")
+                && before.seat.local_player >= 0
                 && evidence.iter().any(|event| {
                     event["kind"] == "artifact_extraction_pending"
+                        && event["player"].as_i64() == Some(i64::from(before.seat.local_player))
                         && event["unit"].as_i64() == Some(id)
                         && event["artifact"].as_i64().is_some_and(|index| index >= 0)
                         && event["turn"].as_u64() == Some(u64::from(turn))
