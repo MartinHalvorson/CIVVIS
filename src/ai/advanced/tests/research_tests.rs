@@ -1961,6 +1961,8 @@ fn assigned_culture_unlocks_faith_units_through_counterplans_after_six_slots() {
     let (mut game, _, _) = empire_with_a_capital(79_175);
     game.at_war.clear();
     game.turn = 150;
+    game.max_turns = 500;
+    game.game_speed = crate::setup::GameSpeed::Online;
     let withheld = [
         "cold_war",
         "professional_sports",
@@ -1988,6 +1990,9 @@ fn assigned_culture_unlocks_faith_units_through_counterplans_after_six_slots() {
     ai.enable_government_ladder_2();
     ai.government_capacity_fallback = false;
     ai.enable_culture_cold_war_window();
+    assert!(ai
+        .government_ladder_goal(&game, 0, GrandStrategy::Culture)
+        .is_some());
     let mut plan = StrategicPlan {
         strategy: GrandStrategy::Recovery,
         target_player: None,
