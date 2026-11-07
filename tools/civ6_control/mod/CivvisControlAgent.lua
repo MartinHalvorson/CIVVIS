@@ -12381,7 +12381,8 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			return;
 		end
 	else
-		CivvisOnIncomingDeal(other, pid, dealAction);
+		-- A bounded Great Work re-proposal still awaits the rival's verdict.
+		if CivvisOnIncomingDeal(other, pid, dealAction) then return; end
 	end
 	CivvisTrade.close(pid, other, "answered");
 end;
@@ -12556,7 +12557,49 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		closable = closable,
 	});
 	if pending == nil then return; end
-	-- One answer settles one ask, whichever way it went.
+	-- The shipped UI proposes a rejected working quote before it can accept
+	-- it (DiplomacyDealView.lua:149-156, 530-544). EQUALIZE alone can return
+	-- an exact Great Work and an affordable Gold/GPT price as REJECTED:
+	-- native 233736Z t141 quoted 175 against our ceiling 184. Submit that
+	-- package once as PROPOSED, never as ACCEPTED; only the next accepted or
+	-- adjusted verdict may reach the existing closer below.
+	local activeSession = trade.sessions[fromPlayer];
+	if buying and type(pending.want) == "string"
+			and string.find(pending.want, "^GREATWORK:") ~= nil
+			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
+		local enginePending = try(function()
+			return DealManager.HasPendingDeal(pid, fromPlayer);
+		end, nil);
+		if pending.work_quote_proposed and action == DealProposalAction.REJECTED
+				and enginePending == true then
+			-- Incoming-deal and statement callbacks may describe the old
+			-- rejection while the core is still evaluating our new proposal.
+			emit("deal_proposal_wait", { turn = turn, from = fromPlayer,
+				want = pending.want, reason = "engine_pending" });
+			return true;
+		end
+		if not pending.work_quote_proposed and action == DealProposalAction.REJECTED
+				and matches and foreign == 0 and pay > 0
+				and pay <= (pending.ceiling or 0) and enginePending == false then
+			-- Mark and hold before sending: the engine may answer inside it.
+			pending.work_quote_proposed = true;
+			pending.turn = turn;
+			pcall(function()
+				LuaEvents.CivvisDealSession(fromPlayer, true, cfg.DealAnswerHoldSeconds or 30);
+			end);
+			local ok, sent = pcall(function()
+				DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
+				if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
+				DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, fromPlayer);
+				return true;
+			end);
+			emit("deal_reproposed", { turn = turn, from = fromPlayer, direction = "buy", action = "PROPOSED",
+				want = pending.want, pay = pay, ceiling = pending.ceiling,
+				sent = (ok and sent) and true or false, threw = not ok });
+			if ok and sent then return true; end
+		end
+	end
+	-- The final answer settles the ask, whichever way it went.
 	trade.pending[fromPlayer] = nil;
 	if not closable then
 		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);

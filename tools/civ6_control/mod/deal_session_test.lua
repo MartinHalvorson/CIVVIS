@@ -128,7 +128,7 @@ end
 local function fixture(opts)
 	opts = opts or {}
 	local state = { sends = {}, items = {}, atWar = opts.atWar or false,
-		dealsEqual = opts.dealsEqual ~= false }
+		dealsEqual = opts.dealsEqual ~= false, pending = opts.pending == true }
 	local nextId = 100
 	local function newItem(kind)
 		local item = { kind = kind, id = nextId }
@@ -172,7 +172,7 @@ local function fixture(opts)
 		end
 	end
 	DealManager = {
-		HasPendingDeal = function() return false end,
+		HasPendingDeal = function() return state.pending end,
 		ClearWorkingDeal = function(direction) state.cleared = direction end,
 		GetWorkingDeal = function(direction)
 			if direction == DealDirection.INCOMING then return incoming end
@@ -206,6 +206,135 @@ local function fixture(opts)
 	})
 	return state, player
 end
+
+-- A rejected equalized Great Work quote is proposed once, then waits for
+-- the engine's actual verdict. This drives the real session lifecycle.
+;(function()
+    local function resetWork()
+        trade.pending, trade.asked, trade.sessions = {}, {}, {};
+        trade.unanswered, trade.disabled, trade.turnHold = 0, false, nil;
+        sessions.requested, sessions.closed = {}, {};
+        events, holds = {}, {};
+    end
+    local function quote(work, gold, gpt, extra)
+        local items = {
+            { kind = DealItemTypes.GREATWORK, from = 3, valueType = work or 13 },
+            { kind = DealItemTypes.GOLD, from = 7, amount = gold or 50 },
+            { kind = DealItemTypes.GOLD, from = 7, amount = gpt or 5, duration = 30 },
+        };
+        if extra then items[#items + 1] = extra; end
+        return items;
+    end
+    local function answer(action)
+        onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901,
+            DealAction = action });
+    end
+    local function workSession(opts)
+        resetWork();
+        opts = opts or {};
+        opts.incoming = opts.incoming or quote();
+        local state = fixture(opts);
+        trade.pending[3] = { direction = "buy", want = "GREATWORK:13",
+            ceiling = 184, turn = TURN };
+        trade.ask(7, 3, "EQUALIZE", "buy", TURN);
+        onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
+        return state;
+    end
+
+    local fair = workSession();
+    answer(DealProposalAction.REJECTED);
+    check("a rejected exact affordable work quote is PROPOSED", fair.sends[2] and fair.sends[2][1], "proposed");
+    check("a quote is not accepted without the rival's verdict", #fair.sends, 2);
+    check("the proposal ledger names PROPOSED", eventField(lastEvent("deal_reproposed"), "action"), "PROPOSED");
+    check("the proposal preserves the pending purchase", trade.pending[3] ~= nil, true);
+    check("the proposal keeps the MAKE_DEAL session open", #sessions.closed, 0);
+    check("the proposal renews the answer hold", holds[#holds] and holds[#holds].seconds, 30);
+    check("the hold precedes the proposal", fair.sends[2] and fair.sends[2].holds, #holds);
+    fair.pending = true;
+    answer(DealProposalAction.REJECTED);
+    check("a duplicate old verdict sends no second proposal", #fair.sends, 2);
+    check("the engine's pending proposal keeps its session", #sessions.closed, 0);
+    fair.pending = false;
+    answer(DealProposalAction.ACCEPTED);
+    check("an accepted proposal reaches the existing closer", fair.sends[3] and fair.sends[3][1], "accepted");
+    check("acceptance settles the pending request", trade.pending[3], nil);
+    check("acceptance closes the session once", #sessions.closed, 1);
+
+    local refused = workSession();
+    answer(DealProposalAction.REJECTED);
+    answer(DealProposalAction.REJECTED);
+    check("a second rejection cannot loop proposals", #refused.sends, 2);
+    check("a second rejection clears the request", trade.pending[3], nil);
+    check("a second rejection closes the session", #sessions.closed, 1);
+
+    for name, incoming in pairs({
+        over_budget = quote(13, 60, 5),
+        substituted_work = quote(14, 50, 0),
+        collateral = quote(13, 50, 0, { kind = DealItemTypes.FAVOR, from = 7, amount = 20 }),
+        foreign_item = quote(13, 50, 0, { kind = DealItemTypes.RESOURCES, from = 3, amount = 1, valueType = 12 }),
+        no_price = quote(13, 0, 0),
+    }) do
+        local guarded = workSession({ incoming = incoming });
+        answer(DealProposalAction.REJECTED);
+        check(name .. " is not re-proposed", #guarded.sends, 1);
+        check(name .. " closes the session", #sessions.closed, 1);
+    end
+    local changedQuote = quote();
+    local changedPrice = workSession({ incoming = changedQuote });
+    answer(DealProposalAction.REJECTED);
+    changedQuote[2].amount, changedQuote[3].amount = 185, 0;
+    answer(DealProposalAction.ADJUSTED);
+    check("a later adjustment still respects the original ceiling", #changedPrice.sends, 2);
+    check("an over-budget adjustment clears the request", trade.pending[3], nil);
+
+    local changedItem = quote();
+    local substituted = workSession({ incoming = changedItem });
+    answer(DealProposalAction.REJECTED);
+    changedItem[1].valueType = 14;
+    answer(DealProposalAction.ACCEPTED);
+    check("an accepted response cannot substitute the purchased work", #substituted.sends, 2);
+
+    local passage = workSession({ incoming = {
+        { kind = DealItemTypes.AGREEMENTS, from = 3, subType = DealAgreementTypes.OPEN_BORDERS },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 50 },
+    } });
+    trade.pending[3].want = "OPEN_BORDERS";
+    answer(DealProposalAction.REJECTED);
+    check("other purchase protocols retain their existing behavior", #passage.sends, 1);
+
+    local unequal = workSession({ dealsEqual = false });
+    answer(DealProposalAction.REJECTED);
+    check("unequal copied working deals are not proposed", #unequal.sends, 1);
+    check("unequal working deals settle the request", trade.pending[3], nil);
+
+    local unavailable = workSession();
+    DealManager.HasPendingDeal = function() return nil; end;
+    answer(DealProposalAction.REJECTED);
+    check("unreadable pending state cannot propose", #unavailable.sends, 1);
+
+    local sync = workSession({ onSend = function(action)
+        if action == DealProposalAction.PROPOSED then answer(DealProposalAction.ACCEPTED); end
+    end });
+    answer(DealProposalAction.REJECTED);
+    check("a synchronous answer can accept once", sync.sends[3] and sync.sends[3][1], "accepted");
+    check("a synchronous answer closes once", #sessions.closed, 1);
+    check("a synchronous answer leaves no pending ask", trade.pending[3], nil);
+
+    local thrown = workSession({ onSend = function(action)
+        if action == DealProposalAction.PROPOSED then error("fixture send failure"); end
+    end });
+    answer(DealProposalAction.REJECTED);
+    check("a throwing proposal clears its request", trade.pending[3], nil);
+    check("a throwing proposal closes its session", #sessions.closed, 1);
+    check("a throwing proposal is never accepted", #thrown.sends, 2);
+
+    workSession();
+    answer(DealProposalAction.REJECTED);
+    onClosed(901);
+    check("a timed-out proposal releases the pending request", trade.pending[3], nil);
+    check("a timed-out proposal releases the session", trade.sessions[3], nil);
+    resetWork();
+end)()
 
 -- ── A sale: session first, question on our statement, close on theirs ──
 local sale, player = fixture({ incoming = {
