@@ -2126,7 +2126,8 @@ impl Game {
         if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
             return None;
         }
-        let (base, venue_levels, _) = self.rock_concert_venue_details(pid, Some(unit), position)?;
+        let (base, venue_levels, host_city) =
+            self.rock_concert_venue_details(pid, Some(unit), position)?;
         let effective_level = (unit.level + venue_levels).clamp(1, 6);
         let bombs = [-25.0, 100.0, -25.0, 150.0, 0.0, 200.0];
         let weights = Self::rock_performance_weights(effective_level);
@@ -2139,7 +2140,31 @@ impl Game {
             })
             .sum::<f64>();
         let survival = 1.0 - (weights[0] + weights[1]) / 100.0;
-        Some(base * (expected_multiplier + 2.0 * survival))
+        // Goes to 11 adds Tourism to each distinct nearby civilization. Price
+        // the known audience, as the concert below already does for its actual
+        // recipients; unrevealed cities must not inform an AI's venue choice.
+        let nearby_pct = self.promotion_effect(unit, "rock_nearby_tourism_pct") / 100.0;
+        let host = self.cities[&host_city].owner;
+        let nearby = if nearby_pct > 0.0 {
+            self.cities
+                .values()
+                .filter(|city| {
+                    city.owner != pid
+                        && city.owner != host
+                        && self.players[city.owner].alive
+                        && !self.players[city.owner].is_minor
+                        && !self.players[city.owner].is_barbarian
+                        && self.has_met(pid, city.owner)
+                        && self.players[pid].explored.contains(&city.pos)
+                        && self.wdist(position, city.pos) <= 10
+                })
+                .map(|city| city.owner)
+                .collect::<BTreeSet<_>>()
+                .len()
+        } else {
+            0
+        };
+        Some(base * (expected_multiplier * (1.0 + nearby_pct * nearby as f64) + 2.0 * survival))
     }
 
     pub(super) fn add_targeted_tourism(&mut self, pid: usize, target: usize, tourism: f64) {

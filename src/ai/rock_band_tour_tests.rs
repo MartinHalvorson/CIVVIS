@@ -3,7 +3,11 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 fn tour() -> (Game, u32, Pos, Pos) {
-    let mut game = Game::new_full(2, 40, 16, 472_501, 250, 0, false);
+    tour_with_players(2)
+}
+
+fn tour_with_players(players: usize) -> (Game, u32, Pos, Pos) {
+    let mut game = Game::new_full(players, 40, 16, 472_501, 250, 0, false);
     for uid in game.units.keys().copied().collect::<Vec<_>>() {
         game.remove_unit(uid);
     }
@@ -197,4 +201,97 @@ fn a_premium_venue_the_host_does_not_allow_cannot_delay_the_current_concert() {
         .counters
         .get(&format!("rock_concert:{band}:{},{}", theater.0, theater.1))
         .is_some_and(|count| *count > 0));
+}
+
+fn a_crowded_tour() -> (Game, u32, Pos, Pos, usize, Pos) {
+    let (mut game, band, isolated, crowded) = tour_with_players(3);
+    let near_city = game.map.tiles[&isolated].owner_city.unwrap();
+    let far_city = game.map.tiles[&crowded].owner_city.unwrap();
+    let buildings = game.cities[&near_city].buildings.clone();
+    game.cities.get_mut(&far_city).unwrap().buildings = buildings;
+    game.cities
+        .get_mut(&far_city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("theater_square"), crowded);
+    let tile = game.map.tiles.get_mut(&crowded).unwrap();
+    tile.wonder = None;
+    tile.district = Some(crate::name!("theater_square"));
+    let nearby = 2;
+    let city_position = (29, 10);
+    game.found_city_for(nearby, city_position, None);
+    game.record_contact(0, nearby);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    game.units.get_mut(&band).unwrap().pos = (16, 6);
+    assert!(game.wdist(crowded, city_position) <= 10);
+    assert!(game.wdist(isolated, city_position) > 10);
+    (game, band, isolated, crowded, nearby, city_position)
+}
+
+#[test]
+fn goes_to_11_can_repay_a_longer_trip_with_a_larger_known_audience() {
+    let (mut game, band, isolated, crowded, _, _) = a_crowded_tour();
+    assert_eq!(
+        game.rock_concert_ai_value(0, band, isolated),
+        game.rock_concert_ai_value(0, band, crowded)
+    );
+    assert_eq!(
+        BasicAi::rock_band_tour_destination(&game, 0, band),
+        Some(isolated)
+    );
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("goes_to_11"));
+    assert!(
+        game.rock_concert_ai_value(0, band, crowded).unwrap()
+            > game.rock_concert_ai_value(0, band, isolated).unwrap()
+    );
+    assert_eq!(
+        BasicAi::rock_band_tour_destination(&game, 0, band),
+        Some(crowded)
+    );
+}
+
+#[test]
+fn a_concert_audience_counts_civilizations_instead_of_cities() {
+    let (mut game, band, _, crowded, nearby, _) = a_crowded_tour();
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("goes_to_11"));
+    let before = game.rock_concert_ai_value(0, band, crowded).unwrap();
+    for (owner, position) in [(nearby, (31, 6)), (0, (22, 12)), (1, (18, 10))] {
+        game.found_city_for(owner, position, None);
+        game.players[0].explored.insert(position);
+    }
+    assert_eq!(game.rock_concert_ai_value(0, band, crowded), Some(before));
+}
+
+#[test]
+fn an_unrevealed_city_cannot_change_a_bands_concert_choice() {
+    let (mut game, band, isolated, crowded, _, city_position) = a_crowded_tour();
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("goes_to_11"));
+    game.players[0].explored.remove(&city_position);
+    assert_eq!(
+        game.rock_concert_ai_value(0, band, isolated),
+        game.rock_concert_ai_value(0, band, crowded)
+    );
+    assert_eq!(
+        BasicAi::rock_band_tour_destination(&game, 0, band),
+        Some(isolated)
+    );
+    game.players[0].explored.insert(city_position);
+    assert_eq!(
+        BasicAi::rock_band_tour_destination(&game, 0, band),
+        Some(crowded)
+    );
 }
