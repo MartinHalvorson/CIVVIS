@@ -148,9 +148,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let Some((cost, city, pos)) = choice else {
-            return None;
-        };
+        let (cost, city, pos) = choice?;
         if g.apply(pid, &Action::BuyPlot { city, pos, cost }).is_err() {
             return None;
         }
