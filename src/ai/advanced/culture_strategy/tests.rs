@@ -819,6 +819,7 @@ fn heritage_ready_board(kind: &str, count: usize) -> Game {
     g.players[0].government = Some("democracy".into());
     g.players[0].civic = None;
     let city = g.player_city_ids(0)[0];
+    crate::game::install_test_district(&mut g, city, "theater_square");
     g.cities.get_mut(&city).unwrap().buildings.extend([
         crate::name!("amphitheater"),
         Name::new(if kind == "artifact" {
