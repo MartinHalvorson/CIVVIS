@@ -333,3 +333,116 @@ fn version_two_returns_the_slot_to_the_campus() {
         .free_slot_campus_item(&game, 0, cities[1], &plan)
         .is_some());
 }
+
+fn theaters_ready_for_art() -> (Game, Vec<u32>, Item) {
+    let (mut game, cities, _) = theaters_without_writing_slots();
+    game.players[0].civics.insert(crate::name!("humanism"));
+    let museum = Item::Building {
+        building: crate::name!("art_museum"),
+    };
+    for cid in &cities {
+        game.cities
+            .get_mut(cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        assert!(game.can_produce(0, *cid, &museum));
+    }
+    // Fill the six Writing slots and the universal Palace slot, so the
+    // simulator cannot rearrange Writing to invent a spare art slot.
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 7);
+    (game, cities, museum)
+}
+
+#[test]
+fn the_first_art_museum_opens_slots_and_keeps_its_claim() {
+    let (game, cities, museum) = theaters_ready_for_art();
+    for ai in [seat(VictoryTarget::Culture, true), seat_two()] {
+        let mut claimed = game.clone();
+        let plan = ai.assess(&claimed, 0);
+        ai.claim_culture_theaters(&mut claimed, 0, &plan);
+        let selected: Vec<_> = cities
+            .iter()
+            .copied()
+            .filter(|cid| claimed.cities[cid].queue.first() == Some(&museum))
+            .collect();
+        assert_eq!(selected.len(), 1);
+        assert!(ai.culture_theater_holds(&claimed, 0, selected[0], &plan, &museum));
+        let queues: Vec<_> = cities
+            .iter()
+            .map(|cid| claimed.cities[cid].queue.clone())
+            .collect();
+        ai.claim_culture_theaters(&mut claimed, 0, &plan);
+        assert_eq!(
+            queues,
+            cities
+                .iter()
+                .map(|cid| claimed.cities[cid].queue.clone())
+                .collect::<Vec<_>>()
+        );
+        claimed
+            .cities
+            .get_mut(&selected[0])
+            .unwrap()
+            .buildings
+            .push(crate::name!("art_museum"));
+        for cid in &cities {
+            claimed.cities.get_mut(cid).unwrap().queue = vec![unit("warrior")];
+        }
+        ai.claim_culture_theaters(&mut claimed, 0, &plan);
+        assert!(cities
+            .iter()
+            .all(|cid| claimed.cities[cid].queue == vec![unit("warrior")]));
+        assert!(claimed.can_house_additional_great_work(0, "art"));
+    }
+}
+
+#[test]
+fn an_archaeological_museum_does_not_replace_the_first_art_slots() {
+    let (mut game, cities, museum) = theaters_ready_for_art();
+    game.cities
+        .get_mut(&cities[0])
+        .unwrap()
+        .buildings
+        .push(crate::name!("archaeological_museum"));
+    assert!(!game.can_produce(0, cities[0], &museum));
+    assert!(!game.can_house_additional_great_work(0, "art"));
+    claim(&seat(VictoryTarget::Culture, true), &mut game);
+    assert_ne!(game.cities[&cities[0]].queue.first(), Some(&museum));
+    assert_eq!(
+        cities
+            .iter()
+            .filter(|cid| game.cities[cid].queue.first() == Some(&museum))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn the_first_art_slots_preserve_defense_and_other_lanes() {
+    let (game, cities, museum) = theaters_ready_for_art();
+    for ai in [
+        seat(VictoryTarget::Culture, false),
+        seat(VictoryTarget::Science, true),
+    ] {
+        let mut other = game.clone();
+        claim(&ai, &mut other);
+        assert!(cities
+            .iter()
+            .all(|cid| other.cities[cid].queue == vec![unit("warrior")]));
+    }
+    let ai = seat(VictoryTarget::Culture, true);
+    let mut protected = game;
+    protected.cities.get_mut(&cities[0]).unwrap().queue = vec![unit("settler")];
+    protected.cities.get_mut(&cities[1]).unwrap().queue = vec![Item::Building {
+        building: crate::name!("walls"),
+    }];
+    let mut plan = ai.assess(&protected, 0);
+    plan.threatened_city = Some(cities[2]);
+    ai.claim_culture_theaters(&mut protected, 0, &plan);
+    assert!(cities
+        .iter()
+        .all(|cid| !protected.cities[cid].queue.contains(&museum)));
+}
