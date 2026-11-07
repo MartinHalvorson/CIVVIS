@@ -274,6 +274,33 @@ fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
     let plan = ai.assess(&g, 0);
     let (chosen, hub) = ai.culture_commerce_candidate(&g, 0, &plan).unwrap();
     assert_eq!(chosen, cid);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    // The native t101 quotes, installed before founding so the Hub locks
+    // the host's cost. The small synthetic empire otherwise has a cheaper
+    // district that the normal finish-this-turn guard may correctly retain.
+    Arc::make_mut(&mut g.host_buildable).insert(
+        cid,
+        [
+            (
+                Game::production_block_key(&hub),
+                HostMenuEntry {
+                    cost: Some(102.0),
+                    turns: Some(11.0),
+                },
+            ),
+            (
+                Game::production_block_key(&amphitheater),
+                HostMenuEntry {
+                    cost: Some(75.0),
+                    turns: Some(7.0),
+                },
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    );
     g.apply(
         0,
         &Action::Produce {
@@ -283,6 +310,11 @@ fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
     )
     .unwrap();
     g.cities.get_mut(&cid).unwrap().production = 16.0;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .production_progress
+        .insert(Game::item_progress_key(&amphitheater), 21.0);
     Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
         cid,
         crate::rules::Yields {
@@ -294,6 +326,11 @@ fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
         g.cities.get_mut(&other).unwrap().queue = vec![unit("builder")];
     }
     ai.enable_culture_seat_theater_first();
+    assert!(g.can_produce(0, cid, &amphitheater));
+    assert!(
+        AdvancedAi::culture_theater_may_defer(&g, 0, cid, &hub, false),
+        "the host's unfinished Hub is not a one-turn completion"
+    );
     (g, ai, cid, hub, plan)
 }
 
