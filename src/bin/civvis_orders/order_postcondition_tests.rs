@@ -64,6 +64,119 @@ fn failed(why: &str) -> Verdict {
     Verdict::Failed(why.to_string())
 }
 
+#[test]
+fn excavation_accepts_native_pending_artifact_without_builder_charges() {
+    let mut before = frame(166);
+    before.seat.local_player = 0;
+    let mut actor = unit(6_946_833, "UNIT_ARCHAEOLOGIST", 11, 27);
+    actor.build_charges = Some(0);
+    before.units.push(actor);
+    let mut after = before.clone();
+    after.turn = 167;
+    let dig = order("unit", Some(6_946_833), Some("EXCAVATE"), None);
+    assert_eq!(check(&dig, &before, &after, &[]), failed("no_improvement"));
+    let witness = serde_json::json!({
+        "kind": "artifact_extraction_pending", "unit": 6_946_833,
+        "artifact": 42, "turn": 166, "player": 0
+    });
+    assert_eq!(check(&dig, &before, &after, &[witness]), Verdict::Verified);
+}
+
+#[test]
+fn excavation_witness_cannot_credit_other_units_turns_or_operations() {
+    let mut before = frame(166);
+    before.seat.local_player = 0;
+    let mut actor = unit(6_946_833, "UNIT_ARCHAEOLOGIST", 11, 27);
+    actor.build_charges = Some(0);
+    before.units.push(actor);
+    let mut after = before.clone();
+    after.turn = 167;
+    let dig = order("unit", Some(6_946_833), Some("EXCAVATE"), None);
+    let witness = serde_json::json!({
+        "kind": "artifact_extraction_pending", "unit": 6_946_833,
+        "artifact": 42, "turn": 166, "player": 0
+    });
+    for (field, value) in [
+        ("unit", serde_json::json!(92)),
+        ("player", serde_json::json!(1)),
+        ("player", serde_json::json!(null)),
+        ("turn", serde_json::json!(165)),
+        ("turn", serde_json::json!(167)),
+        ("artifact", serde_json::json!(-1)),
+        ("artifact", serde_json::json!(null)),
+        ("artifact", serde_json::json!("42")),
+        ("kind", serde_json::json!("deal_closed")),
+    ] {
+        let mut unrelated = witness.clone();
+        unrelated[field] = value;
+        assert_eq!(
+            check(&dig, &before, &after, &[unrelated]),
+            failed("no_improvement"),
+            "must attribute the extraction: {field}"
+        );
+    }
+    let farm = order(
+        "unit",
+        Some(6_946_833),
+        Some("IMPROVE:IMPROVEMENT_FARM"),
+        None,
+    );
+    assert_eq!(
+        check(&farm, &before, &after, std::slice::from_ref(&witness)),
+        failed("no_improvement")
+    );
+    before.seat.local_player = -1;
+    assert_eq!(
+        check(&dig, &before, &after, std::slice::from_ref(&witness)),
+        failed("no_improvement")
+    );
+    before.seat.local_player = 0;
+    before.units[0].kind = "UNIT_BUILDER".into();
+    after.units[0].kind = "UNIT_BUILDER".into();
+    assert_eq!(
+        check(&dig, &before, &after, &[witness]),
+        failed("no_improvement")
+    );
+}
+
+#[test]
+fn excavation_pending_witness_reaches_live_order_settlement() {
+    let dir = std::env::temp_dir().join(format!("civvis-excavation-native-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let events = dir.join("events.jsonl");
+    std::fs::write(
+        &events,
+        "{\"kind\": \"artifact_extraction_pending\", \"unit\": 6946833, \"artifact\": 42, \"turn\": 166, \"player\": 0}\n",
+    )
+    .unwrap();
+    let mut before = frame(166);
+    before.seat.local_player = 0;
+    let mut actor = unit(6_946_833, "UNIT_ARCHAEOLOGIST", 11, 27);
+    actor.build_charges = Some(0);
+    before.units.push(actor);
+    let mut after = before.clone();
+    after.turn = 167;
+    let mut pending = vec![PendingOrders {
+        turn: 166,
+        frame: 0,
+        orders: vec![order("unit", Some(6_946_833), Some("EXCAVATE"), None)],
+        before,
+    }];
+    let rows = settle_pending_orders(
+        &mut pending,
+        &events,
+        &after,
+        &no_tiles(),
+        &mut HostOrderRefusals::default(),
+    );
+    assert!(pending.is_empty());
+    assert!(rows
+        .iter()
+        .any(|row| row.kind == "order_verified" && row.subject == Some(6_946_833)));
+    assert!(!rows.iter().any(|row| row.kind == "order_failed"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn event(json: &str) -> serde_json::Value {
     serde_json::from_str(json).expect("test event is JSON")
 }
