@@ -132,9 +132,9 @@ impl AdvancedAi {
         })
     }
 
-    /// Routine claims may replace an originally idle opportunity; survival,
-    /// faith and Culture buildings retain their place. Pillaged repairs and
-    /// the normal defensive writers run after this reservation.
+    /// Original busy Culture queues never receive a reservation. Later routine
+    /// slot claims yield to this bounded income chain; live-person slots,
+    /// survival and faith retain priority. Repairs and defensive writers follow.
     pub(super) fn claim_culture_commerce(
         &self,
         g: &mut Game,
@@ -151,11 +151,7 @@ impl AdvancedAi {
                 return;
             }
             let routine_builder = matches!(head, Item::Unit { unit } if *unit == "builder");
-            let culture = Self::live_gp_cultural_building_commitment(g, pid, cid, head)
-                || matches!(head, Item::Building { building } if matches!(building.as_str(),
-                    "monument" | "amphitheater" | "art_museum" | "archaeological_museum" | "broadcast_center"))
-                || matches!(head, Item::District { district, .. } if g.district_family(*district) == "theater_square");
-            if culture
+            if Self::live_gp_cultural_building_commitment(g, pid, cid, head)
                 || self.deterrence_unit_holds(g, pid, head)
                 || (!routine_builder && !Self::idle_route_trader_may_defer(g, pid, cid, head, true))
             {
