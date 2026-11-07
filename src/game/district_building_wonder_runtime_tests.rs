@@ -2182,3 +2182,136 @@ fn host_concert_plots_bound_destination_scoring_and_performance() {
         .apply(0, &Action::PerformConcert { unit: band })
         .is_ok());
 }
+
+fn foreign_concert_venue_without_building_details(
+    seed: u64,
+    district: &str,
+    building: &str,
+) -> (Game, u32, Pos, u32, f64) {
+    let (mut game, city, venue) = one_city(seed);
+    let rival = game.players.len();
+    game.players.push(Player::new(rival, "Venue Rival", false));
+    game.cities.get_mut(&city).unwrap().owner = rival;
+    if district == "water_park" {
+        let tile = game.map.tiles.get_mut(&venue).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        game.players[0].techs.insert(crate::name!("shipbuilding"));
+    }
+    install_district(&mut game, city, venue, district);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(Name::new(building));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    let known_tourism = game
+        .rock_concert_tourism(0, band)
+        .expect("known building supplies its venue");
+    game.cities.get_mut(&city).unwrap().buildings.clear();
+    (game, city, venue, band, known_tourism)
+}
+
+#[test]
+fn native_quoted_venues_remain_usable_without_foreign_building_details() {
+    for (index, (district, building)) in [
+        ("theater_square", "amphitheater"),
+        ("entertainment_complex", "arena"),
+        ("water_park", "ferris_wheel"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (mut game, city, venue, band, known_tourism) =
+            foreign_concert_venue_without_building_details(
+                774_4065 + index as u64,
+                district,
+                building,
+            );
+        assert_eq!(
+            game.rock_concert_ai_value(0, band, venue),
+            None,
+            "missing building data alone cannot manufacture a venue"
+        );
+        assert_eq!(game.rock_concert_tourism(0, band), None);
+        for plots in [BTreeSet::new(), BTreeSet::from([(venue.0 + 1, venue.1)])] {
+            Arc::make_mut(&mut game.host_unit_facts).insert(
+                band,
+                HostUnitFacts {
+                    concert_plots: Some(plots),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+            assert_eq!(game.rock_concert_tourism(0, band), None);
+        }
+        Arc::make_mut(&mut game.host_unit_facts)
+            .get_mut(&band)
+            .unwrap()
+            .concert_plots = Some(BTreeSet::from([venue]));
+        assert!(game.rock_concert_ai_value(0, band, venue).is_some());
+        assert_eq!(
+            game.rock_concert_tourism(0, band),
+            Some(known_tourism),
+            "an explicit native venue uses the minimum compatible tier estimate"
+        );
+        assert!(game
+            .apply(0, &Action::PerformConcert { unit: band })
+            .is_ok());
+        assert!(
+            game.cities[&city].buildings.is_empty(),
+            "the quote must not populate fictitious foreign buildings"
+        );
+    }
+}
+
+#[test]
+fn native_venue_quotes_preserve_known_higher_building_tiers() {
+    let (mut game, city, venue, band, minimum) =
+        foreign_concert_venue_without_building_details(774_4070, "theater_square", "amphitheater");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let known = game.rock_concert_tourism(0, band).unwrap();
+    assert!(known > minimum);
+    Arc::make_mut(&mut game.host_unit_facts).insert(
+        band,
+        HostUnitFacts {
+            concert_plots: Some(BTreeSet::from([venue])),
+            ..Default::default()
+        },
+    );
+    assert_eq!(game.rock_concert_tourism(0, band), Some(known));
+}
+
+#[test]
+fn native_venue_quotes_keep_ownership_pillage_and_repeat_guards() {
+    let (mut game, city, venue, band, _) =
+        foreign_concert_venue_without_building_details(774_4071, "theater_square", "amphitheater");
+    Arc::make_mut(&mut game.host_unit_facts).insert(
+        band,
+        HostUnitFacts {
+            concert_plots: Some(BTreeSet::from([venue])),
+            ..Default::default()
+        },
+    );
+    assert!(game.rock_concert_tourism(0, band).is_some());
+    let rival = game.cities[&city].owner;
+    game.cities.get_mut(&city).unwrap().owner = 0;
+    assert_eq!(game.rock_concert_tourism(0, band), None);
+    game.cities.get_mut(&city).unwrap().owner = rival;
+    game.map.tiles.get_mut(&venue).unwrap().pillaged = true;
+    assert_eq!(game.rock_concert_tourism(0, band), None);
+    game.map.tiles.get_mut(&venue).unwrap().pillaged = false;
+    game.players[0]
+        .counters
+        .insert(format!("rock_concert:{band}:{},{}", venue.0, venue.1), 1);
+    assert_eq!(game.rock_concert_tourism(0, band), None);
+}
