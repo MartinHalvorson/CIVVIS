@@ -104,6 +104,49 @@ fn the_musicians_missing_museum_rung_survives_the_claims_and_governor() {
     assert_eq!(g.cities[&cid].queue.first(), Some(&item));
 }
 
+fn prepare_another_music_city(g: &mut Game, except: u32) {
+    let other = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != except)
+        .unwrap();
+    install_test_district(g, other, "theater_square");
+    g.cities
+        .get_mut(&other)
+        .unwrap()
+        .buildings
+        .extend([crate::name!("amphitheater"), crate::name!("art_museum")]);
+}
+
+#[test]
+fn a_musician_releases_an_extra_museum_when_a_broadcast_city_is_prepared() {
+    let (mut g, cid, item, ai, plan) = fixture("musician");
+    prepare_another_music_city(&mut g, cid);
+    assert!(!AdvancedAi::live_gp_cultural_building_commitment(
+        &g, 0, cid, &item
+    ));
+    ai.claim_producer_zone(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&building("workshop")));
+}
+
+#[test]
+fn an_artists_own_museum_need_survives_a_prepared_music_path() {
+    let (mut g, cid, item, ai, plan) = fixture("artist");
+    prepare_another_music_city(&mut g, cid);
+    g.players[0]
+        .live_great_person_activation_needs
+        .push(LiveGreatPersonActivationNeed {
+            kind: "musician".into(),
+            required_district: Some("theater_square".into()),
+            ..Default::default()
+        });
+    assert!(AdvancedAi::live_gp_cultural_building_commitment(
+        &g, 0, cid, &item
+    ));
+    ai.claim_producer_zone(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&item));
+}
+
 #[test]
 fn the_artists_zero_investment_museum_survives_the_claims_and_governor() {
     let (mut g, cid, item, mut ai, plan) = fixture("artist");

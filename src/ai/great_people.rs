@@ -60,6 +60,41 @@ impl BasicAi {
         }
     }
 
+    /// A museum already prepares a city for its missing Broadcast Center.
+    /// While that target is unavailable, do not replicate its prerequisite
+    /// across the empire for the same waiting Musician.
+    pub(super) fn live_great_person_work_stage_needed(
+        g: &Game,
+        pid: usize,
+        work: &str,
+        family: &str,
+    ) -> bool {
+        if work != "music" || family == "broadcast_center" {
+            return true;
+        }
+        !g.player_city_ids(pid).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            let theater_ready = city.districts.iter().any(|(district, pos)| {
+                g.district_family(*district) == "theater_square"
+                    && g.map.tiles.get(pos).is_some_and(|tile| !tile.pillaged)
+            });
+            let museum_ready = city.buildings.iter().any(|building| {
+                !city.pillaged_buildings.contains(building)
+                    && [
+                        crate::name!("art_museum"),
+                        crate::name!("archaeological_museum"),
+                    ]
+                    .into_iter()
+                    .any(|family| g.building_is_family(*building, family))
+            });
+            let broadcast_ready = city.buildings.iter().any(|building| {
+                !city.pillaged_buildings.contains(building)
+                    && g.building_is_family(*building, crate::name!("broadcast_center"))
+            });
+            theater_ready && museum_ready && !broadcast_ready
+        })
+    }
+
     pub(super) fn live_great_person_cultural_item(
         &self,
         g: &Game,
@@ -99,13 +134,17 @@ impl BasicAi {
             matches!(
                 g.cities[&city].queue.first(),
                 Some(Item::Building { building })
-                    if chain.iter().any(|family| g.building_is_family(building, Name::new(family)))
+                    if chain.iter().any(|family| g.building_is_family(building, Name::new(family))
+                        && Self::live_great_person_work_stage_needed(g, pid, work, family))
             )
         });
         if already_queued {
             return None;
         }
         for family in chain {
+            if !Self::live_great_person_work_stage_needed(g, pid, work, family) {
+                continue;
+            }
             let buildable_somewhere = g
                 .player_city_ids(pid)
                 .into_iter()
@@ -403,7 +442,8 @@ impl BasicAi {
                 Self::live_great_person_work(need).is_some_and(|work| {
                     Self::live_great_person_work_chain(work)
                         .iter()
-                        .any(|family| g.building_is_family(building, Name::new(family)))
+                        .any(|family| g.building_is_family(building, Name::new(family))
+                            && Self::live_great_person_work_stage_needed(g, pid, work, family))
                 })
             }))
         {
@@ -711,3 +751,6 @@ impl BasicAi {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

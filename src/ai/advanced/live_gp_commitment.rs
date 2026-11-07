@@ -29,9 +29,14 @@ impl AdvancedAi {
                     matches!(need.kind.as_str(), "writer" | "artist" | "musician")
                         && BasicAi::live_great_person_work(need).is_some_and(|work| {
                             work != "artifact"
-                                && BasicAi::live_great_person_work_chain(work)
-                                    .iter()
-                                    .any(|family| g.building_is_family(building, Name::new(family)))
+                                && BasicAi::live_great_person_work_chain(work).iter().any(
+                                    |family| {
+                                        g.building_is_family(building, Name::new(family))
+                                            && BasicAi::live_great_person_work_stage_needed(
+                                                g, pid, work, family,
+                                            )
+                                    },
+                                )
                         })
                 })
             && Self::production_commitment_is_legal(g, pid, cid, item)
