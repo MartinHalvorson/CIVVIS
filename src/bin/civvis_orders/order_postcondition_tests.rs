@@ -64,6 +64,71 @@ fn failed(why: &str) -> Verdict {
     Verdict::Failed(why.to_string())
 }
 
+#[test]
+fn excavation_accepts_native_pending_artifact_without_builder_charges() {
+    let mut before = frame(166);
+    let mut actor = unit(6_946_833, "UNIT_ARCHAEOLOGIST", 11, 27);
+    actor.build_charges = Some(0);
+    before.units.push(actor);
+    let mut after = before.clone();
+    after.turn = 167;
+    let dig = order("unit", Some(6_946_833), Some("EXCAVATE"), None);
+    assert_eq!(check(&dig, &before, &after, &[]), failed("no_improvement"));
+    let witness = serde_json::json!({
+        "kind": "artifact_extraction_pending", "unit": 6_946_833,
+        "artifact": 42, "turn": 166, "player": 0
+    });
+    assert_eq!(check(&dig, &before, &after, &[witness]), Verdict::Verified);
+}
+
+#[test]
+fn excavation_witness_cannot_credit_other_units_turns_or_operations() {
+    let mut before = frame(166);
+    let mut actor = unit(6_946_833, "UNIT_ARCHAEOLOGIST", 11, 27);
+    actor.build_charges = Some(0);
+    before.units.push(actor);
+    let mut after = before.clone();
+    after.turn = 167;
+    let dig = order("unit", Some(6_946_833), Some("EXCAVATE"), None);
+    let witness = serde_json::json!({
+        "kind": "artifact_extraction_pending", "unit": 6_946_833,
+        "artifact": 42, "turn": 166, "player": 0
+    });
+    for (field, value) in [
+        ("unit", serde_json::json!(92)),
+        ("turn", serde_json::json!(165)),
+        ("turn", serde_json::json!(167)),
+        ("artifact", serde_json::json!(-1)),
+        ("artifact", serde_json::json!(null)),
+        ("artifact", serde_json::json!("42")),
+        ("kind", serde_json::json!("deal_closed")),
+    ] {
+        let mut unrelated = witness.clone();
+        unrelated[field] = value;
+        assert_eq!(
+            check(&dig, &before, &after, &[unrelated]),
+            failed("no_improvement"),
+            "must attribute the extraction: {field}"
+        );
+    }
+    let farm = order(
+        "unit",
+        Some(6_946_833),
+        Some("IMPROVE:IMPROVEMENT_FARM"),
+        None,
+    );
+    assert_eq!(
+        check(&farm, &before, &after, &[witness.clone()]),
+        failed("no_improvement")
+    );
+    before.units[0].kind = "UNIT_BUILDER".into();
+    after.units[0].kind = "UNIT_BUILDER".into();
+    assert_eq!(
+        check(&dig, &before, &after, &[witness]),
+        failed("no_improvement")
+    );
+}
+
 fn event(json: &str) -> serde_json::Value {
     serde_json::from_str(json).expect("test event is JSON")
 }

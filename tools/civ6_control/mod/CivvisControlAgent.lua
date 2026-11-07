@@ -5694,8 +5694,20 @@ CivvisChooseArtifactPlayer = function(pid)
 	return try(function()
 		local unit = Players[pid]:GetUnits():GetNextExtractingArchaeologist();
 		if unit == nil then return false; end
-		local artifact = Game.GetArtifactByIndex(unit:GetArchaeology():GetArtifactIndex());
+		local artifactIndex = unit:GetArchaeology():GetArtifactIndex();
+		local artifact = Game.GetArtifactByIndex(artifactIndex);
 		if artifact == nil or type(artifact.ActingPlayerID) ~= "number" then return false; end
+		-- The engine has already extracted this unit's artifact. This witnesses
+		-- EXCAVATE, independently of whether the civilization choice below succeeds.
+		-- Telemetry must never prevent the required choice from being answered.
+		pcall(function()
+			local id, turn = unit:GetID(), Game.GetCurrentGameTurn();
+			if type(id) == "number" and id >= 0 and id % 1 == 0
+				and type(turn) == "number" and turn >= 0 and turn % 1 == 0
+				and type(artifactIndex) == "number" and artifactIndex >= 0 and artifactIndex % 1 == 0 then
+				emit("artifact_extraction_pending", { unit = id, artifact = artifactIndex, turn = turn, player = pid });
+			end
+		end);
 		local params = {};
 		params[PlayerOperations.PARAM_PLAYER_ONE] = artifact.ActingPlayerID;
 		UI.RequestPlayerOperation(pid, PlayerOperations.CHOOSE_ARTIFACT_PLAYER, params);
