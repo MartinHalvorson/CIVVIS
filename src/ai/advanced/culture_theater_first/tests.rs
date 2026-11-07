@@ -539,3 +539,216 @@ fn the_first_art_slots_preserve_defense_and_other_lanes() {
         .iter()
         .all(|cid| !protected.cities[cid].queue.contains(&museum)));
 }
+
+fn quoted_acropolis_hill() -> (Game, u32, Pos) {
+    let (mut game, cities) = theater_less_empire();
+    game.players[0].civ = "Greece".to_string();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("plains");
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+        tile.wonder = None;
+    }
+    let city = cities[0];
+    let pos = game
+        .wdisk(game.cities[&city].pos, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(game.cities[&city].pos, *pos) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .any(|neighbor| game.map.tiles[&neighbor].owner_city == Some(city))
+        })
+        .expect("an unowned border hill");
+    game.map.tiles.get_mut(&pos).unwrap().hills = true;
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    game.players[0].gold = 250.0;
+    game.players[0].gold_per_turn = 20.0;
+    game.cities.get_mut(&city).unwrap().queue.clear();
+    Arc::make_mut(&mut game.host_plot_purchases).insert(
+        city,
+        vec![crate::game::HostPlotPurchaseEntry {
+            pos,
+            gold: 60.0,
+            can_have_acropolis: Some(true),
+        }],
+    );
+    Arc::make_mut(&mut game.host_buildable).insert(
+        city,
+        [(
+            "district:campus".into(),
+            crate::game::HostMenuEntry {
+                cost: Some(80.0),
+                turns: Some(13.0),
+            },
+        )]
+        .into_iter()
+        .collect(),
+    );
+    (game, city, pos)
+}
+
+#[test]
+fn a_native_quoted_hill_opens_the_acropolis_only_after_the_next_build_menu() {
+    let (mut game, city, pos) = quoted_acropolis_hill();
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&game, 0);
+    assert!(BasicAi::first_theater_item(&game, 0, city).is_none());
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: game.district_sites(city, crate::name!("campus"))[0],
+    };
+    assert!(game.can_produce(0, city, &campus));
+    let native_menu = Arc::clone(&game.host_buildable);
+    let original_production_blocks = Arc::clone(&game.blocked_production);
+    let original_district_blocks = Arc::clone(&game.blocked_districts);
+    let held = ai.culture_acropolis_site_purchase(&mut game, 0, &plan);
+    assert!(held.is_some());
+    assert_eq!(
+        game.players[0].gold, 190.0,
+        "spend the native60 quote, not the model ring price"
+    );
+    assert_eq!(game.map.tiles[&pos].owner_city, Some(city));
+    assert_eq!(
+        game.host_buildable, native_menu,
+        "a purchase must not invent district authorization"
+    );
+    assert!(BasicAi::first_theater_item(&game, 0, city).is_none());
+    assert!(
+        !game.can_produce(0, city, &campus),
+        "another district waits for the native refresh"
+    );
+    AdvancedAi::release_culture_acropolis_site(&mut game, held);
+    assert_eq!(game.blocked_production, original_production_blocks);
+    assert_eq!(game.blocked_districts, original_district_blocks);
+    assert!(game.can_produce(0, city, &campus));
+    Arc::make_mut(&mut game.host_buildable)
+        .get_mut(&city)
+        .unwrap()
+        .insert(
+            "district:acropolis".into(),
+            crate::game::HostMenuEntry {
+                cost: Some(48.0),
+                turns: Some(8.0),
+            },
+        );
+    Arc::make_mut(&mut game.host_district_sites)
+        .entry(city)
+        .or_default()
+        .insert(crate::name!("acropolis"), [pos].into_iter().collect());
+    ai.claim_culture_theaters(&mut game, 0, &plan);
+    assert!(is_theater(&game, game.cities[&city].queue.first()));
+}
+
+#[test]
+fn acropolis_site_purchases_require_native_suitability_and_prices() {
+    let (game, city, _) = quoted_acropolis_hill();
+    for suitability in [None, Some(false)] {
+        let mut other = game.clone();
+        Arc::make_mut(&mut other.host_plot_purchases)
+            .get_mut(&city)
+            .unwrap()[0]
+            .can_have_acropolis = suitability;
+        let ai = seat(VictoryTarget::Culture, true);
+        let plan = ai.assess(&other, 0);
+        assert!(ai
+            .culture_acropolis_site_purchase(&mut other, 0, &plan)
+            .is_none());
+        assert_eq!(other.players[0].gold, game.players[0].gold);
+    }
+    for cost in [-1.0, f64::INFINITY, f64::NAN, 300.0] {
+        let mut other = game.clone();
+        Arc::make_mut(&mut other.host_plot_purchases)
+            .get_mut(&city)
+            .unwrap()[0]
+            .gold = cost;
+        let ai = seat(VictoryTarget::Culture, true);
+        let plan = ai.assess(&other, 0);
+        assert!(ai
+            .culture_acropolis_site_purchase(&mut other, 0, &plan)
+            .is_none());
+    }
+    let mut unquoted = game.clone();
+    Arc::make_mut(&mut unquoted.host_plot_purchases).clear();
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&unquoted, 0);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut unquoted, 0, &plan)
+        .is_none());
+}
+
+#[test]
+fn an_acropolis_plot_does_not_spend_a_defensive_reserve_or_a_full_district_slot() {
+    let (game, city, _) = quoted_acropolis_hill();
+    let mut ai = seat(VictoryTarget::Culture, true);
+    ai.base.reserve_floor = 250.0;
+    let mut reserved = game.clone();
+    let plan = ai.assess(&reserved, 0);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut reserved, 0, &plan)
+        .is_none());
+    let ai = seat(VictoryTarget::Culture, true);
+    let mut threatened = game.clone();
+    let mut plan = ai.assess(&threatened, 0);
+    plan.threatened_city = Some(city);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut threatened, 0, &plan)
+        .is_none());
+    let mut full = game.clone();
+    Arc::make_mut(&mut full.host_district_capacity).insert(city, 0);
+    let plan = ai.assess(&full, 0);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut full, 0, &plan)
+        .is_none());
+}
+
+#[test]
+fn other_lanes_civilizations_and_disabled_theater_policy_do_not_buy_acropolis_sites() {
+    let (game, _, _) = quoted_acropolis_hill();
+    for ai in [
+        seat(VictoryTarget::Science, true),
+        seat(VictoryTarget::Culture, false),
+    ] {
+        let mut other = game.clone();
+        let plan = ai.assess(&other, 0);
+        assert!(ai
+            .culture_acropolis_site_purchase(&mut other, 0, &plan)
+            .is_none());
+    }
+    let mut other = game.clone();
+    other.players[0].civ = "Gran Colombia".into();
+    let ai = seat(VictoryTarget::Culture, true);
+    let plan = ai.assess(&other, 0);
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut other, 0, &plan)
+        .is_none());
+}
+
+#[test]
+fn balanced_theater_policy_does_not_buy_a_site_ahead_of_its_campus_gap() {
+    let (mut game, city, _) = quoted_acropolis_hill();
+    let other = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|id| *id != city)
+        .unwrap();
+    let position = game.cities[&other].pos;
+    game.cities
+        .get_mut(&other)
+        .unwrap()
+        .districts
+        .insert(crate::name!("theater_square"), position);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_culture_seat_theater_first_2();
+    let plan = ai.assess(&game, 0);
+    assert!(!AdvancedAi::theaters_trail_campuses(&game, 0));
+    assert!(ai
+        .culture_acropolis_site_purchase(&mut game, 0, &plan)
+        .is_none());
+    assert_eq!(game.players[0].gold, 250.0);
+}

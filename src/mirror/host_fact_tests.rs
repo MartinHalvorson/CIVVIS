@@ -2242,3 +2242,89 @@ fn culture_operation_budgets_are_not_builder_charges() {
         );
     }
 }
+
+#[test]
+fn native_plot_quotes_price_the_purchase_and_refresh_without_stale_sites() {
+    let mut hill = host_grass(5, 3);
+    hill.o = -1;
+    hill.t = Some("TERRAIN_PLAINS_HILLS".into());
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 67,
+        width: 10,
+        height: 8,
+        chunk: 1,
+        plots: vec![host_grass(3, 3), hill],
+    }]);
+    let mut state = state_from_json(r#"{"turn":67,"gold":200,"cities":[{"id":65536,"name":"Sparta","x":3,"y":3,"pop":6,"plot_purchases":[{"x":5,"y":3,"g":60,"can_have_acropolis":true}]}]}"#).unwrap();
+    assert!(
+        state.schema_gaps.is_empty(),
+        "new observations must not be discarded schema"
+    );
+    let mut mirror = LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let city = mirror.game.player_city_ids(0)[0];
+    let pos = crate::hex::offset_to_axial(5, 3);
+    assert_eq!(
+        mirror.game.host_plot_purchases[&city][0].can_have_acropolis,
+        Some(true)
+    );
+    assert_eq!(mirror.game.plot_purchase_cost(0, city, pos), Some(60.0));
+    let mut bought = mirror.game.clone();
+    let before = bought.players[0].gold;
+    bought
+        .apply(
+            0,
+            &crate::game::Action::BuyPlot {
+                city,
+                pos,
+                cost: 60.0,
+            },
+        )
+        .unwrap();
+    assert_eq!(bought.players[0].gold, before - 60.0);
+    assert_eq!(bought.map.tiles[&pos].owner_city, Some(city));
+    assert_eq!(
+        bought.plot_purchase_cost(0, city, pos),
+        None,
+        "an old quote cannot buy an owned tile again"
+    );
+    state.cities[0].plot_purchases = Some(Vec::new());
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.plot_purchase_cost(0, city, pos), None);
+    assert!(mirror.game.host_plot_purchases[&city].is_empty());
+    state.cities[0].plot_purchases = None;
+    mirror.sync(&snapshot, &state, 0);
+    assert!(
+        mirror.game.host_plot_purchases.is_empty(),
+        "a missing later export cannot retain a stale native quote"
+    );
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+    assert!(rebuilt.host_plot_purchases.is_empty());
+}
+
+#[test]
+fn malformed_and_duplicate_plot_prices_do_not_authorize_a_purchase() {
+    let mut hill = host_grass(5, 3);
+    hill.o = -1;
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 67,
+        width: 10,
+        height: 8,
+        chunk: 1,
+        plots: vec![host_grass(3, 3), hill],
+    }]);
+    let mut state = state_from_json(r#"{"turn":67,"gold":200,"cities":[{"id":65536,"name":"Sparta","x":3,"y":3,"pop":6,"plot_purchases":[{"x":5,"y":3,"g":60,"can_have_acropolis":true},{"x":5,"y":3,"g":70,"can_have_acropolis":true},{"x":4,"g":20},{"x":4,"y":3,"g":-1}]}]}"#).unwrap();
+    let game = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+    let city = game.player_city_ids(0)[0];
+    assert_eq!(
+        game.plot_purchase_cost(0, city, crate::hex::offset_to_axial(5, 3)),
+        None
+    );
+    state.cities[0].plot_purchases = Some(vec![StatePlotPurchaseItem {
+        x: Some(5),
+        y: Some(3),
+        g: Some(f64::NAN),
+        can_have_acropolis: Some(true),
+    }]);
+    let game = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+    assert!(game.host_plot_purchases[&city].is_empty());
+}

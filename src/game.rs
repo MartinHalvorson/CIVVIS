@@ -3662,6 +3662,15 @@ pub struct HostPurchaseEntry {
     pub faith: Option<f64>,
 }
 
+/// A native, currently legal plot purchase and the host's Acropolis-site test.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HostPlotPurchaseEntry {
+    pub pos: Pos,
+    pub gold: f64,
+    #[serde(default)]
+    pub can_have_acropolis: Option<bool>,
+}
+
 /// District placements owned by a city.
 ///
 /// Older saves encoded this as `{ "campus": [q, r] }`, which made it
@@ -7282,6 +7291,11 @@ pub struct Game {
     /// for sale.
     #[serde(default)]
     pub host_purchasable: Arc<BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>>,
+    /// Native plot-purchase prices and prospective Acropolis sites. A present
+    /// empty city menu supplies no purchase; absent observations retain the
+    /// ordinary model price. Refreshed independently of buildable districts.
+    #[serde(default)]
+    pub host_plot_purchases: Arc<BTreeMap<u32, Vec<HostPlotPurchaseEntry>>>,
     /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
     /// a city, kept only when the export carried the complete offer. A site
     /// outside it is not producible and `district_sites` drops it.
@@ -8058,6 +8072,7 @@ impl From<GameSer> for Game {
             host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
+            host_plot_purchases: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
             host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -8832,6 +8847,7 @@ impl Game {
             host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
+            host_plot_purchases: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
             host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: BTreeMap::new(),
@@ -10243,10 +10259,10 @@ impl Game {
         rounded * (1.0 - discount / 100.0)
     }
 
-    /// The live quote for annexing `pos` to `cid`, or `None` when that city
-    /// may not buy the plot. A purchase must extend this city's own connected
-    /// territory, remain inside the workable three-ring radius, and never
-    /// disclose an unexplored tile through the legal-action protocol.
+    /// The observed native price for annexing `pos` to `cid`, or the ordinary
+    /// connected, three-ring model price when no native menu was supplied.
+    /// A present native menu authorizes only its quoted plots. Ownership and
+    /// exploration checks apply in both cases.
     pub fn plot_purchase_cost(&self, pid: usize, cid: u32, pos: Pos) -> Option<f64> {
         let city = self.cities.get(&cid)?;
         let tile = self.map.get(pos)?;
@@ -10255,10 +10271,19 @@ impl Game {
             || !self.annexes_tiles_with_own_yields(pid)
             || tile.owner_city.is_some()
             || !self.players.get(pid)?.explored.contains(&pos)
-            || !self
-                .nbrs(pos)
-                .into_iter()
-                .any(|neighbor| self.map.tiles[&neighbor].owner_city == Some(cid))
+        {
+            return None;
+        }
+        if let Some(quotes) = self.host_plot_purchases.get(&cid) {
+            let mut matches = quotes.iter().filter(|quote| quote.pos == pos);
+            let quote = matches.next()?;
+            return (matches.next().is_none() && quote.gold.is_finite() && quote.gold >= 0.0)
+                .then_some(quote.gold);
+        }
+        if !self
+            .nbrs(pos)
+            .into_iter()
+            .any(|neighbor| self.map.tiles[&neighbor].owner_city == Some(cid))
         {
             return None;
         }

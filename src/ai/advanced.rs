@@ -26363,6 +26363,7 @@ impl AdvancedAi {
         if !emergency_city_defense && !surprise_defense_purchase {
             self.siege_breaker_purchase(g, pid);
         }
+        let mut held_acropolis_site = None;
         // A watched prewar capital can arm one healthy Slinger before the
         // peaceful portfolio spends. Then `gold-buys-the-idle-trader` fills
         // an empty route slot. Both preserve the city-saving purchase lane.
@@ -26372,6 +26373,7 @@ impl AdvancedAi {
             // before the route slot's Trader. See
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
+            held_acropolis_site = self.culture_acropolis_site_purchase(g, pid, &plan);
             // `gold-buys-the-production-tile`: then a border tile of two or
             // more Production beside a city working a poorer one. See
             // `advanced/gold_buys_the_production_tile.rs`.
@@ -26911,6 +26913,7 @@ impl AdvancedAi {
             );
             self.base.reserve_floor = 0.0;
         }
+        Self::release_culture_acropolis_site(g, held_acropolis_site);
         if self.victory_planning {
             self.advanced_command_actions(g, pid, &plan);
         }

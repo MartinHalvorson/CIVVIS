@@ -410,6 +410,19 @@ pub struct StatePurchaseItem {
     pub f: Option<f64>,
 }
 
+/// A native purchase target with its quoted Gold price and prospective site test.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StatePlotPurchaseItem {
+    #[serde(default)]
+    pub x: Option<i32>,
+    #[serde(default)]
+    pub y: Option<i32>,
+    #[serde(default)]
+    pub g: Option<f64>,
+    #[serde(default)]
+    pub can_have_acropolis: Option<bool>,
+}
+
 /// One entry of the build queue BEHIND the head (`StateCity::queue`): the type
 /// name, the formation tier of a Corps/Army, and the production already
 /// invested in it.
@@ -564,6 +577,10 @@ pub struct StateCity {
     /// unknown; an empty list is the host saying nothing is for sale.
     #[serde(default)]
     pub purchasable: Option<Vec<StatePurchaseItem>>,
+    /// Native legal plot purchases. None is unknown; an empty list is known
+    /// to contain no observed purchase. Suitability does not authorize building.
+    #[serde(default)]
+    pub plot_purchases: Option<Vec<StatePlotPurchaseItem>>,
     /// The build queue BEHIND `producing` (`BuildQueue:GetAt(i)`, i >= 1).
     /// Only the head ever crossed before.
     #[serde(default)]
