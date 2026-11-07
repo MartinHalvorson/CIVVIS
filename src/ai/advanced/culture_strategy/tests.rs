@@ -800,3 +800,135 @@ fn a_ready_culture_museum_unlocks_archaeology_before_another_government() {
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].civic.as_deref(), Some("civil_engineering"));
 }
+
+fn heritage_ready_board(kind: &str, count: usize) -> Game {
+    let mut g = board();
+    let withheld = [
+        "cultural_heritage",
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    g.players[0].civics = g
+        .rules
+        .civics
+        .keys()
+        .copied()
+        .filter(|civic| !withheld.contains(&civic.as_str()))
+        .collect();
+    g.players[0].government = Some("democracy".into());
+    g.players[0].civic = None;
+    let city = g.player_city_ids(0)[0];
+    crate::game::install_test_district(&mut g, city, "theater_square");
+    g.cities.get_mut(&city).unwrap().buildings.extend([
+        crate::name!("amphitheater"),
+        Name::new(if kind == "artifact" {
+            "archaeological_museum"
+        } else {
+            "art_museum"
+        }),
+    ]);
+    for _ in 0..count {
+        g.grant_great_work(0, kind, 4, "Heritage fixture");
+    }
+    g
+}
+
+#[test]
+fn housed_museum_works_unlock_heritage_before_a_later_government() {
+    for kind in ["art", "artifact"] {
+        let g = heritage_ready_board(kind, 3);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.enable_government_ladder_2();
+        ai.government_capacity_fallback = true;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: g.turn,
+            rush: false,
+        };
+        let mut baseline = g.clone();
+        ai.advanced_research(&mut baseline, 0, &plan);
+        assert_eq!(
+            baseline.players[0].civic.as_deref(),
+            Some("corporate_libertarianism")
+        );
+        ai.enable_culture_cold_war_window();
+        let mut treatment = g.clone();
+        ai.advanced_research(&mut treatment, 0, &plan);
+        assert_eq!(
+            treatment.players[0].civic.as_deref(),
+            Some("cultural_heritage")
+        );
+        treatment.players[0]
+            .civics
+            .insert(crate::name!("cultural_heritage"));
+        ai.strategic_policies(&mut treatment, 0, GrandStrategy::Culture);
+        assert!(treatment.players[0]
+            .policies
+            .contains(&crate::name!("heritage_tourism")));
+        treatment.players[0].civic = None;
+        ai.advanced_research(&mut treatment, 0, &plan);
+        assert_eq!(
+            treatment.players[0].civic.as_deref(),
+            Some("corporate_libertarianism")
+        );
+        let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+        science.enable_government_ladder_2();
+        science.government_capacity_fallback = true;
+        let mut control = g.clone();
+        science.advanced_research(&mut control, 0, &plan);
+        science.enable_culture_cold_war_window();
+        let mut enabled = g.clone();
+        science.advanced_research(&mut enabled, 0, &plan);
+        assert_eq!(control.players[0].civic, enabled.players[0].civic);
+    }
+}
+
+#[test]
+fn heritage_priority_requires_usable_works_and_existing_policy_capacity() {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_culture_cold_war_window();
+    for (kind, count) in [
+        ("art", 0),
+        ("art", 2),
+        ("writing", 3),
+        ("music", 3),
+        ("relic", 3),
+    ] {
+        let g = heritage_ready_board(kind, count);
+        assert_eq!(
+            ai.culture_heritage_unlock_goal(&g, 0),
+            None,
+            "{kind}/{count}"
+        );
+    }
+    let ready = heritage_ready_board("art", 3);
+    assert_eq!(
+        ai.culture_heritage_unlock_goal(&ready, 0),
+        Some("cultural_heritage")
+    );
+    let mut unhoused = ready.clone();
+    let city = unhoused.player_city_ids(0)[0];
+    unhoused.cities.get_mut(&city).unwrap().buildings.clear();
+    assert_eq!(ai.culture_heritage_unlock_goal(&unhoused, 0), None);
+    let mut early = ready.clone();
+    early.players[0].government = Some("monarchy".into());
+    assert_eq!(ai.culture_heritage_unlock_goal(&early, 0), None);
+    let mut no_band_unlock = ready.clone();
+    no_band_unlock.players[0]
+        .civics
+        .remove(&crate::name!("cold_war"));
+    assert_eq!(ai.culture_heritage_unlock_goal(&no_band_unlock, 0), None);
+    let mut disabled = ready.clone();
+    disabled.victory_conditions.culture = false;
+    assert_eq!(ai.culture_heritage_unlock_goal(&disabled, 0), None);
+    ai.lane_lost = true;
+    assert_eq!(ai.culture_heritage_unlock_goal(&ready, 0), None);
+    ai.lane_lost = false;
+    ai.disable_culture_cold_war_window();
+    assert_eq!(ai.culture_heritage_unlock_goal(&ready, 0), None);
+}

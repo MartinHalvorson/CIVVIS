@@ -1104,6 +1104,12 @@ impl AdvancedAi {
                 _ if self.domination_upgrade_civic_goal(g, pid).is_some() => {
                     self.domination_upgrade_civic_goal(g, pid)
                 }
+                // Filled museums can use this tourism card now; eight slots
+                // already provide room for it. Keep emergency and unit-window
+                // goals above this, and return to the ladder after the unlock.
+                GrandStrategy::Culture if self.culture_heritage_unlock_goal(g, pid).is_some() => {
+                    self.culture_heritage_unlock_goal(g, pid)
+                }
                 // See `government_ladder`: the same sentence one rung up. The
                 // tier-1 arm above exists because "a victory beeline cannot
                 // usefully precede the government's policy capacity"; tier 2
