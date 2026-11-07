@@ -78,8 +78,8 @@ fn first_writing_slots_do_not_override_survival_settlers_or_finished_work() {
 }
 
 #[test]
-fn a_completed_amphitheater_or_another_lane_leaves_routine_production_alone() {
-    let (game, cities, amphitheater) = theaters_without_writing_slots();
+fn other_lanes_and_disabled_gene_leave_routine_production_alone() {
+    let (game, cities, _) = theaters_without_writing_slots();
     for ai in [
         seat(VictoryTarget::Science, true),
         seat(VictoryTarget::Culture, false),
@@ -90,20 +90,110 @@ fn a_completed_amphitheater_or_another_lane_leaves_routine_production_alone() {
             .iter()
             .all(|cid| other.cities[cid].queue == vec![unit("warrior")]));
     }
-    let mut completed = game;
-    completed
-        .cities
+}
+
+#[test]
+fn completed_writing_slots_admit_one_fast_followup_through_recovery() {
+    for version_two in [false, true] {
+        let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+        game.cities
+            .get_mut(&cities[0])
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        Arc::make_mut(&mut game.observed_city_yield_adjustments)
+            .get_mut(&cities[2])
+            .unwrap()
+            .production = 30.0;
+        let mut ai = seat(VictoryTarget::Culture, true);
+        if version_two {
+            ai.enable_culture_seat_theater_first_2();
+        }
+        let mut plan = ai.assess(&game, 0);
+        plan.strategy = GrandStrategy::Recovery;
+        ai.claim_culture_theaters(&mut game, 0, &plan);
+        assert_eq!(game.cities[&cities[2]].queue.first(), Some(&amphitheater));
+        assert_eq!(
+            game.cities[&cities[1]].queue.first(),
+            Some(&unit("warrior"))
+        );
+        assert!(ai.culture_theater_holds(&game, 0, cities[2], &plan, &amphitheater));
+        ai.claim_culture_theaters(&mut game, 0, &plan);
+        assert_eq!(
+            game.cities[&cities[1]].queue.first(),
+            Some(&unit("warrior")),
+            "one queued followup at a time"
+        );
+        game.cities
+            .get_mut(&cities[2])
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.cities.get_mut(&cities[2]).unwrap().queue.clear();
+        ai.claim_culture_theaters(&mut game, 0, &plan);
+        assert_eq!(
+            game.cities[&cities[1]].queue.first(),
+            Some(&amphitheater),
+            "the next Theater is completed after the first followup stands"
+        );
+    }
+}
+
+#[test]
+fn followup_writing_slots_respect_slow_builds_survival_debt_and_remaining_clock() {
+    for why in ["slow", "attacked", "debt", "clock", "survival"] {
+        let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+        game.cities
+            .get_mut(&cities[0])
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        let ai = seat(VictoryTarget::Culture, true);
+        let mut plan = ai.assess(&game, 0);
+        plan.threatened_city = Some(cities[1]);
+        match why {
+            "slow" => {
+                Arc::make_mut(&mut game.observed_city_yield_adjustments)
+                    .get_mut(&cities[2])
+                    .unwrap()
+                    .production = -100.0
+            }
+            "attacked" => game.cities.get_mut(&cities[2]).unwrap().last_attacked = game.turn - 1,
+            "debt" => {
+                game.players[0].gold_per_turn = -10.0;
+                game.players[0].gold = 0.0;
+            }
+            "clock" => game.turn = game.max_turns - 10,
+            "survival" => game.cities.get_mut(&cities[2]).unwrap().queue = vec![unit("settler")],
+            _ => unreachable!(),
+        }
+        ai.claim_culture_theaters(&mut game, 0, &plan);
+        assert!(
+            cities
+                .iter()
+                .all(|cid| !game.cities[cid].queue.contains(&amphitheater)),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn a_queued_followup_releases_its_hold_when_threatened() {
+    let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+    game.cities
         .get_mut(&cities[0])
         .unwrap()
         .buildings
         .push(crate::name!("amphitheater"));
     let ai = seat(VictoryTarget::Culture, true);
-    claim(&ai, &mut completed);
-    assert!(cities
-        .iter()
-        .all(|cid| completed.cities[cid].queue == vec![unit("warrior")]));
-    let plan = ai.assess(&completed, 0);
-    assert!(!ai.culture_theater_holds(&completed, 0, cities[1], &plan, &amphitheater));
+    let mut plan = ai.assess(&game, 0);
+    game.cities.get_mut(&cities[1]).unwrap().queue = vec![amphitheater.clone()];
+    assert!(ai.culture_theater_holds(&game, 0, cities[1], &plan, &amphitheater));
+    plan.threatened_city = Some(cities[1]);
+    assert!(!ai.culture_theater_holds(&game, 0, cities[1], &plan, &amphitheater));
+    plan.threatened_city = None;
+    game.cities.get_mut(&cities[1]).unwrap().last_attacked = game.turn - 1;
+    assert!(!ai.culture_theater_holds(&game, 0, cities[1], &plan, &amphitheater));
 }
 
 /// Three cities of four citizens with Drama and Poetry and Writing in hand,

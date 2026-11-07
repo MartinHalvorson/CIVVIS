@@ -51,7 +51,11 @@
 //! Both versions therefore reserve one safe, fastest build for the empire's
 //! first Amphitheater, leaving settlers, defenses and imminent completions
 //! under the same protections as the district claim. Additional Amphitheaters
-//! keep their ordinary valuations.
+//! are completed one at a time after the first: a safe, solvent city must
+//! finish within ten Online turns, with at least twenty more turns to use it.
+//! Native Deity 20261107T040449Z and 044901Z had five/four Acropoleis
+//! at turn 100 but only one Amphitheater through 125; infrastructure kept
+//! displacing the remaining writing slots, Culture income and Writer points.
 //!
 //! The first Art Museum receives the same reservation after Humanism. Native
 //! Deity Pericles 20261106T233736Z still had no art slots at turn 162 despite
@@ -149,7 +153,12 @@ impl AdvancedAi {
                     .into_iter()
                     .any(|family| {
                         g.building_is_family(*building, family)
-                            && self.culture_needs_first_building(g, pid, family)
+                            && (self.culture_needs_first_building(g, pid, family)
+                                || (family == "amphitheater"
+                                    && Self::culture_followup_amphitheater_turns(
+                                        g, pid, cid, plan,
+                                    )
+                                    .is_some()))
                     })
                     && g.cities.get(&cid).is_some_and(|city| {
                         city.owner == pid
@@ -279,6 +288,44 @@ impl AdvancedAi {
         })
     }
 
+    /// Complete existing theaters without diverting slow, insolvent or
+    /// locally threatened cities from their ordinary recovery work.
+    fn culture_followup_amphitheater_turns(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<f64> {
+        let city = g.cities.get(&cid)?;
+        if city.owner != pid
+            || plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+            || (g.players[pid].gold_per_turn < 0.0
+                && g.players[pid].gold < 100.0 + 25.0 * g.player_city_ids(pid).len() as f64)
+            || g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[&unit.kind].class == "military"
+                    && g.wdist(city.pos, unit.pos) <= 6
+            })
+        {
+            return None;
+        }
+        let item = Item::Building {
+            building: crate::name!("amphitheater"),
+        };
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            (g.item_cost_for_city(pid, cid, &item) - g.item_invested_production(cid, &item))
+                .max(0.0)
+                / g.city_yields(cid).production.max(0.5)
+        });
+        let cap = g.standard_duration(20) as f64;
+        (turns.is_finite()
+            && turns <= cap
+            && g.max_turns.saturating_sub(g.turn) as f64 > turns + cap * 2.0)
+            .then_some(turns)
+    }
+
     fn claim_first_culture_building(
         &self,
         g: &mut Game,
@@ -287,7 +334,8 @@ impl AdvancedAi {
         at_major_war: bool,
         building: Name,
     ) {
-        if !self.culture_needs_first_building(g, pid, building) {
+        let first = self.culture_needs_first_building(g, pid, building);
+        if !first && building != "amphitheater" {
             return;
         }
         let item = Item::Building { building };
@@ -321,19 +369,24 @@ impl AdvancedAi {
                         return None;
                     }
                 }
-                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
-                    (g.item_cost_for_city(pid, cid, &item) - g.item_invested_production(cid, &item))
+                let turns = if first {
+                    g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                        (g.item_cost_for_city(pid, cid, &item)
+                            - g.item_invested_production(cid, &item))
                         .max(0.0)
-                        / g.city_yields(cid).production.max(0.5)
-                });
+                            / g.city_yields(cid).production.max(0.5)
+                    })
+                } else {
+                    Self::culture_followup_amphitheater_turns(g, pid, cid, plan)?
+                };
                 Some((turns, cid))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
         if let Some((turns, cid)) = choice {
             if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
                 think!(self.journal(), Cities, Decision,
-                    "{} claims the first {} for the Culture victory", g.cities[&cid].name, building;
-                    "culture-seat-theater-first: first compatible work slots in {turns:.1} turns");
+                    "{} claims {} for the Culture victory", g.cities[&cid].name, building;
+                    "culture-seat-theater-first: compatible work slots in {turns:.1} turns (first: {first})");
             }
         }
     }
