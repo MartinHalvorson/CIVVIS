@@ -6485,14 +6485,14 @@ fn translate(
         // ⚠ AXIAL IN, OFFSET OUT, like every other position this file sends —
         // Civilization VI reads offsets and CIVVIS keeps axial, and nothing complains
         // when they are mixed because both are pairs of small integers.
-        Action::BuyPlot { city, pos, .. } => mirror_state
+        Action::BuyPlot { city, pos, cost } => mirror_state
             .cid_of
             .iter()
             .find(|(_, cid)| **cid == *city)
             .map(|(civ6, _)| Order {
                 kind: "buy_plot",
                 subject: Some(*civ6),
-                verb: None,
+                verb: Some(format!("GOLD_CAP={cost:.6}")),
                 pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
         Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {

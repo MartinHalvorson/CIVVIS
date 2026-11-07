@@ -6741,6 +6741,57 @@ end;
 
 -- The queue BEHIND the head. The head crosses as `producing`; until this the
 -- rest of a real multi-item queue never did.
+-- PlotInfo.lua:278-298 asks for purchase targets, filters a prospective
+-- district with CanHaveDistrict, and reads CityGold:GetPlotPurchaseCost.
+-- This is an observation only; district production still needs its own menu.
+CivvisMenus.plot_purchases = function(city)
+    local purchase = try(function() return CityCommandTypes.PURCHASE; end);
+    local plotParameter = try(function() return CityCommandTypes.PARAM_PLOT_PURCHASE; end);
+    local plotResult = try(function() return CityCommandResults.PLOTS; end);
+    if purchase == nil or plotParameter == nil or plotResult == nil then return nil; end
+    local owner = try(function() return city:GetOwner(); end);
+    local cityID = try(function() return city:GetID(); end);
+    local wallet = try(function() return city:GetGold(); end);
+    local visibility = try(function() return PlayersVisibility[owner]; end);
+    if owner == nil or cityID == nil or wallet == nil or visibility == nil then return nil; end
+    local params = {};
+    params[plotParameter] = true;
+    local targets = try(function() return CityManager.GetCommandTargets(city, purchase, params); end);
+    if type(targets) ~= "table" then return nil; end
+    local plots = targets[plotResult];
+    if plots == nil then return {}; end
+    if type(plots) ~= "table" then return nil; end
+    local acropolis = try(function() return GameInfo.Districts["DISTRICT_ACROPOLIS"]; end);
+    local out, seen = {}, {};
+    for _, index in pairs(plots) do
+        local plot = try(function() return Map.GetPlotByIndex(index); end);
+        if not seen[index] and plot ~= nil
+            and try(function() return visibility:IsRevealed(index); end, false) == true
+            and try(function() return plot:GetOwner(); end, -2) == -1 then
+            seen[index] = true;
+            local x = try(function() return plot:GetX(); end);
+            local y = try(function() return plot:GetY(); end);
+            local command = {};
+            command[plotParameter] = true;
+            command[CityCommandTypes.PARAM_X] = x;
+            command[CityCommandTypes.PARAM_Y] = y;
+            local can = try(function() return CityManager.CanStartCommand(city, purchase, command); end);
+            local cost = try(function() return wallet:GetPlotPurchaseCost(index); end);
+            if can == true and type(x) == "number" and type(y) == "number"
+                and type(cost) == "number" and cost == cost and cost >= 0 and cost < math.huge then
+                local suitable = nil;
+                if acropolis ~= nil then
+                    suitable = try(function() return plot:CanHaveDistrict(acropolis.Index, owner, cityID); end);
+                end
+                if type(suitable) ~= "boolean" then suitable = nil; end
+                out[#out + 1] = { x = x, y = y, g = cost, can_have_acropolis = suitable };
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.y < b.y or (a.y == b.y and a.x < b.x); end);
+    return out;
+end
+
 CivvisMenus.queue = function(city)
 	local queue = city:GetBuildQueue();
 	if queue == nil then return nil; end
@@ -7990,6 +8041,11 @@ local function exportState(player, pid, turn, frame, eventKind)
 			purchasable = try(function()
 				local menu = CivvisMenus.purchasable(city);
 				CivvisExportClock.lap("purchasable");
+				return menu;
+			end),
+			plot_purchases = try(function()
+				local menu = CivvisMenus.plot_purchases(city);
+				CivvisExportClock.lap("plot_purchases");
 				return menu;
 			end),
 			queue = try(function()
@@ -16021,6 +16077,24 @@ local function applyOrder(player, pid, row, turn)
 		if not can then
 			emit("plot_refused", { turn = turn, x = x, y = y });
 			return false, "cannot_buy_plot";
+		end
+		if verb ~= nil and verb ~= "" then
+			local cap = type(verb) == "string" and tonumber(verb:match("^GOLD_CAP=([%d%.]+)$")) or nil;
+			if cap == nil or cap ~= cap or cap < 0 or cap >= math.huge then
+				return false, "invalid_plot_price_cap";
+			end
+			local currentCost = try(function()
+				local plot = Map.GetPlot(x, y);
+				return city:GetGold():GetPlotPurchaseCost(plot:GetIndex());
+			end);
+			if type(currentCost) ~= "number" or currentCost ~= currentCost
+				or currentCost < 0 or currentCost >= math.huge then
+				return false, "plot_price_unknown";
+			end
+			if currentCost > cap + 0.000001 then
+				emit("plot_refused", { turn = turn, x = x, y = y, reason = "price_changed", cost = currentCost, cap = cap });
+				return false, "plot_price_changed";
+			end
 		end
 		local ok = pcall(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);

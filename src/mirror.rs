@@ -2761,6 +2761,7 @@ const CITY_KEYS: &[&str] = &[
     // `host_menus_from` and `host_queue_tail`.
     "buildable",
     "purchasable",
+    "plot_purchases",
     "queue",
     "food",
     "loyalty_per_turn",
@@ -4747,6 +4748,7 @@ pub(crate) struct HostMenus {
     pub buildable: BTreeMap<u32, BTreeMap<String, crate::game::HostMenuEntry>>,
     pub unit_resource_prices: BTreeMap<u32, BTreeMap<String, f64>>,
     pub purchasable: BTreeMap<u32, BTreeMap<String, crate::game::HostPurchaseEntry>>,
+    pub plot_purchases: BTreeMap<u32, Vec<crate::game::HostPlotPurchaseEntry>>,
     pub district_plots: BTreeMap<u32, BTreeMap<crate::name::Name, BTreeSet<crate::Pos>>>,
     /// See [`crate::game::Game::host_saved_work`].
     pub saved_work: BTreeMap<u32, BTreeMap<String, f64>>,
@@ -4826,6 +4828,19 @@ fn host_menus_from(
             if !plots.is_empty() {
                 out.district_plots.insert(*cid, plots);
             }
+        }
+        if let Some(menu) = city.plot_purchases.as_deref() {
+            let translated = menu
+                .iter()
+                .filter_map(|row| {
+                    Some(crate::game::HostPlotPurchaseEntry {
+                        pos: crate::hex::offset_to_axial(row.x?, row.y?),
+                        gold: reading(row.g?)?,
+                        can_have_acropolis: row.can_have_acropolis,
+                    })
+                })
+                .collect();
+            out.plot_purchases.insert(*cid, translated);
         }
         if let Some(menu) = city.purchasable.as_deref() {
             let translated: BTreeMap<String, crate::game::HostPurchaseEntry> = menu
@@ -8532,6 +8547,7 @@ pub fn rebuild_from_state(
     let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
     game.replace_host_unit_resource_prices(menus.unit_resource_prices);
     game.replace_host_saved_work(menus.saved_work);
+    game.host_plot_purchases = std::sync::Arc::new(menus.plot_purchases);
     game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
     seat_live_spies(&mut game, state);
     block_live_spy_production(&mut game, state.spy_capacity);
@@ -9262,6 +9278,7 @@ impl LiveMirror {
         self.game
             .replace_host_unit_resource_prices(menus.unit_resource_prices);
         self.game.replace_host_saved_work(menus.saved_work);
+        self.game.host_plot_purchases = std::sync::Arc::new(menus.plot_purchases);
         self.game
             .replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
         let blocked_purchases = blocked_production_from(

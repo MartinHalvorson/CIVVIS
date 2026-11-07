@@ -65,7 +65,140 @@
 
 use super::*;
 
+pub(super) type CultureSiteReservation = (
+    Arc<BTreeMap<u32, BTreeSet<String>>>,
+    Arc<BTreeMap<u32, BTreeSet<Name>>>,
+);
+
 impl AdvancedAi {
+    /// Buy one native-quoted hill when ownership alone prevents a Greek
+    /// Culture city's first Acropolis. The next host frame, rather than this
+    /// suitability hint, must authorize district construction.
+    pub(super) fn culture_acropolis_site_purchase(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<CultureSiteReservation> {
+        if !self.theater_first_active()
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || (self.culture_seat_theater_first_2 && !Self::theaters_trail_campuses(g, pid))
+            || g.players[pid].civ != "Greece"
+            || !g.players[pid]
+                .civics
+                .contains(&crate::name!("drama_poetry"))
+            || g.players[pid].gold_per_turn < 0.0
+            || g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && !other.is_free_city
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        let reserve = self.purchase_upkeep_floor(
+            g,
+            pid,
+            self.base
+                .reserve_floor
+                .max(self.threatened_city_gold_floor(g, pid, plan)),
+        );
+
+        let acropolis = crate::name!("acropolis");
+        let mut choice: Option<(f64, u32, Pos)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                || !g.city_accepts_new_district_site(city, acropolis)
+                || city.queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. }
+                    if g.district_family(*district) == "theater_square")
+                })
+                || BasicAi::first_theater_item(g, pid, cid).is_some()
+            {
+                continue;
+            }
+            let Some(quotes) = g.host_plot_purchases.get(&cid) else {
+                continue;
+            };
+            for quote in quotes {
+                if quote.can_have_acropolis != Some(true) {
+                    continue;
+                }
+                let Some(cost) = g.plot_purchase_cost(pid, cid, quote.pos) else {
+                    continue;
+                };
+                if g.players[pid].gold - cost + f64::EPSILON < reserve {
+                    continue;
+                }
+                let candidate = (cost, cid, quote.pos);
+                if choice.is_none_or(|old| {
+                    candidate
+                        .0
+                        .total_cmp(&old.0)
+                        .then_with(|| candidate.1.cmp(&old.1))
+                        .then_with(|| candidate.2.cmp(&old.2))
+                        .is_lt()
+                }) {
+                    choice = Some(candidate);
+                }
+            }
+        }
+        let Some((cost, city, pos)) = choice else {
+            return None;
+        };
+        if g.apply(pid, &Action::BuyPlot { city, pos, cost }).is_err() {
+            return None;
+        }
+        think!(self.journal(), Cities, Decision,
+            "{} buys a native Acropolis site", g.cities[&city].name;
+            "culture-seat-theater-first: {cost:.0} Gold at {pos:?}; placement waits for the host's build menu");
+        let held = (
+            Arc::clone(&g.blocked_production),
+            Arc::clone(&g.blocked_districts),
+        );
+        let mut production = (*held.0).clone();
+        let mut districts = (*held.1).clone();
+        let actor = &g.cities[&city];
+        for (district, spec) in &g.rules.districts {
+            if !spec.specialty
+                || g.district_family(*district) == "theater_square"
+                || actor.owned_tiles.iter().any(|position| {
+                    g.map.tiles[position]
+                        .district_foundation
+                        .as_ref()
+                        .is_some_and(|foundation| {
+                            g.district_family(foundation.district) == g.district_family(*district)
+                        })
+                })
+            {
+                continue;
+            }
+            districts.entry(city).or_default().insert(*district);
+            production
+                .entry(city)
+                .or_default()
+                .insert(format!("district:{district}"));
+        }
+        g.blocked_districts = Arc::new(districts);
+        g.replace_blocked_production(production);
+        Some(held)
+    }
+
+    pub(super) fn release_culture_acropolis_site(
+        g: &mut Game,
+        held: Option<CultureSiteReservation>,
+    ) {
+        if let Some((production, districts)) = held {
+            g.blocked_districts = districts;
+            g.replace_blocked_production((*production).clone());
+        }
+    }
+
     /// Either version is on.
     fn theater_first_active(&self) -> bool {
         self.culture_seat_theater_first || self.culture_seat_theater_first_2
