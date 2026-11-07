@@ -31,6 +31,11 @@ fn tour() -> (Game, u32, Pos, Pos) {
         .unwrap()
         .buildings
         .push(crate::name!("amphitheater"));
+    game.cities
+        .get_mut(&nearby_city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("art_museum"));
     let tile = game.map.tiles.get_mut(&nearby).unwrap();
     tile.owner_city = Some(nearby_city);
     tile.district = Some(crate::name!("theater_square"));
