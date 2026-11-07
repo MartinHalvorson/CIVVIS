@@ -1,4 +1,5 @@
 use super::*;
+use crate::game::HostMenuEntry;
 use std::sync::Arc;
 
 fn fixture() -> (Game, AdvancedAi, Vec<u32>) {
@@ -163,4 +164,99 @@ fn lighthouse_does_not_reserve_a_second_capacity_building_in_the_same_city() {
     }
     let plan = ai.assess(&g, 0);
     assert!(ai.culture_commerce_candidate(&g, 0, &plan).is_none());
+}
+
+fn interrupted_hub() -> (Game, AdvancedAi, u32, Item) {
+    let (mut g, ai, _) = fixture();
+    let plan = ai.assess(&g, 0);
+    let (cid, hub) = ai.culture_commerce_candidate(&g, 0, &plan).unwrap();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: hub.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&cid).unwrap().production = 14.0;
+    // The urgent unit retains its busy queue. Its completion leaves the
+    // original foundation and its banked work available for resumption.
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: unit("warrior"),
+        },
+    )
+    .unwrap();
+    Arc::make_mut(&mut g.host_buildable).insert(
+        cid,
+        [(
+            Game::production_block_key(&hub),
+            HostMenuEntry {
+                cost: Some(92.0),
+                turns: Some(15.0),
+            },
+        )]
+        .into_iter()
+        .collect(),
+    );
+    (g, ai, cid, hub)
+}
+
+#[test]
+fn income_foundation_resumes_after_the_urgent_unit_finishes() {
+    let (mut g, mut ai, cid, hub) = interrupted_hub();
+    let plan = ai.assess(&g, 0);
+    assert!(
+        ai.culture_commerce_candidate(&g, 0, &plan)
+            .is_none_or(|(chosen, _)| chosen != cid),
+        "the busy military queue keeps priority"
+    );
+    g.cities.get_mut(&cid).unwrap().queue.clear();
+    assert!(g.can_produce(0, cid, &hub));
+    assert_eq!(
+        ai.culture_commerce_candidate(&g, 0, &plan),
+        Some((cid, hub.clone()))
+    );
+    ai.run_idle_queue_claims(&mut g, 0, &plan);
+    assert_eq!(g.cities[&cid].queue.first(), Some(&hub));
+    assert!(ai.base.commercial_hub_build_holds(&g, cid, &hub, None));
+    assert_eq!(g.item_invested_production(cid, &hub), 14.0);
+}
+
+#[test]
+fn paused_income_requires_a_bounded_legal_host_quote_and_safe_city() {
+    let (mut g, ai, cid, hub) = interrupted_hub();
+    g.cities.get_mut(&cid).unwrap().queue.clear();
+    let plan = ai.assess(&g, 0);
+    for mode in 0..4 {
+        let mut game = g.clone();
+        let mut guarded = plan.clone();
+        match mode {
+            0 => {
+                Arc::make_mut(&mut game.host_buildable).remove(&cid);
+            }
+            1 => {
+                Arc::make_mut(&mut game.host_buildable)
+                    .get_mut(&cid)
+                    .unwrap()
+                    .get_mut(&Game::production_block_key(&hub))
+                    .unwrap()
+                    .turns = Some(21.0);
+            }
+            2 => {
+                Arc::make_mut(&mut game.blocked_production)
+                    .entry(cid)
+                    .or_default()
+                    .insert(Game::production_block_key(&hub));
+            }
+            _ => guarded.threatened_city = Some(cid),
+        }
+        assert!(
+            ai.culture_commerce_candidate(&game, 0, &guarded)
+                .is_none_or(|(chosen, _)| chosen != cid),
+            "guard {mode}"
+        );
+    }
 }
