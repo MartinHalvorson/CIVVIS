@@ -10505,6 +10505,7 @@ mod parallel_library_backlog;
 /// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
 mod capital_walls_at_any_ratio;
 
+mod culture_faith_sources;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `diplo-match-point-beelines-the-points`; see
