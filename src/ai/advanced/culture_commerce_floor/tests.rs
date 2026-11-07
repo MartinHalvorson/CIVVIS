@@ -277,9 +277,9 @@ fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
     let amphitheater = Item::Building {
         building: crate::name!("amphitheater"),
     };
-    // The native t101 quotes, installed before founding so the Hub locks
-    // the host's cost. The small synthetic empire otherwise has a cheaper
-    // district that the normal finish-this-turn guard may correctly retain.
+    // Native t101 quotes. Placement in this small synthetic empire has a
+    // cheaper model cost; below, load the foundation's observed locked cost
+    // as the native mirror does for an already-started district.
     Arc::make_mut(&mut g.host_buildable).insert(
         cid,
         [
@@ -309,6 +309,18 @@ fn income_and_followup_slots() -> (Game, AdvancedAi, u32, Item, StrategicPlan) {
         },
     )
     .unwrap();
+    let Item::District { pos, .. } = &hub else {
+        panic!("the fixture reserves a Hub foundation");
+    };
+    g.map
+        .tiles
+        .get_mut(pos)
+        .unwrap()
+        .district_foundation
+        .as_mut()
+        .unwrap()
+        .cost = 102.0;
+    assert_eq!(g.item_cost_for_city(0, cid, &hub), 102.0);
     g.cities.get_mut(&cid).unwrap().production = 16.0;
     g.cities
         .get_mut(&cid)
