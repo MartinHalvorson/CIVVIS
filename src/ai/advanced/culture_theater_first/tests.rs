@@ -348,6 +348,11 @@ fn theaters_ready_for_art() -> (Game, Vec<u32>, Item) {
             .push(crate::name!("amphitheater"));
         assert!(game.can_produce(0, *cid, &museum));
     }
+    // Fill the six Writing slots and the universal Palace slot, so the
+    // simulator cannot rearrange Writing to invent a spare art slot.
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 7);
     (game, cities, museum)
 }
 
