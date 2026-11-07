@@ -235,7 +235,7 @@ end
         opts.incoming = opts.incoming or quote();
         local state = fixture(opts);
         trade.pending[3] = { direction = "buy", want = "GREATWORK:13",
-            ceiling = 184, turn = TURN };
+            ceiling = opts.ceiling or 184, gold_cap = opts.goldCap, gpt_cap = opts.gptCap, turn = TURN };
         trade.ask(7, 3, "EQUALIZE", "buy", TURN);
         onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
         return state;
@@ -259,6 +259,30 @@ end
     check("an accepted proposal reaches the existing closer", fair.sends[3] and fair.sends[3][1], "accepted");
     check("acceptance settles the pending request", trade.pending[3], nil);
     check("acceptance closes the session once", #sessions.closed, 1);
+
+    local financed = workSession({ ceiling = 500, goldCap = 227, gptCap = 20,
+        incoming = quote(13, 105, 12) });
+    answer(DealProposalAction.REJECTED);
+    check("an affordable financed quote is re-proposed", financed.sends[2] and financed.sends[2][1], "proposed");
+    answer(DealProposalAction.ACCEPTED);
+    check("its confirmed response can be accepted", financed.sends[3] and financed.sends[3][1], "accepted");
+
+    for name, spec in pairs({
+        cash = { cash = 228, gpt = 0, limit = 20 },
+        income = { cash = 0, gpt = 11, limit = 10 },
+        total = { cash = 200, gpt = 13, limit = 20 },
+    }) do
+        local excess = workSession({ ceiling = 500, goldCap = 227, gptCap = spec.limit,
+            incoming = quote(13, spec.cash, spec.gpt) });
+        answer(DealProposalAction.REJECTED);
+        check(name .. " limit also blocks re-proposal", #excess.sends, 1);
+    end
+    local laterIncome = quote();
+    local adjustedIncome = workSession({ ceiling = 500, goldCap = 227, gptCap = 10, incoming = laterIncome });
+    answer(DealProposalAction.REJECTED);
+    laterIncome[3].amount = 11;
+    answer(DealProposalAction.ADJUSTED);
+    check("a later adjustment cannot exceed the GPT cap", #adjustedIncome.sends, 2);
 
     local refused = workSession();
     answer(DealProposalAction.REJECTED);

@@ -5788,7 +5788,7 @@ fn decide(
                     )
             })
         });
-        if let Some((seller, ceiling)) = ai.culture_work_purchase_ask(
+        if let Some((seller, ceiling, max_gold, max_gpt)) = ai.culture_work_purchase_ask(
             &mirror_state.game,
             0,
             planned_game.players[0].gold,
@@ -5799,8 +5799,8 @@ fn decide(
                 orders.push(Order {
                     kind: "buy",
                     subject: Some(rival.player as i64),
-                    verb: Some("GREATWORK_ANY".to_string()),
-                    pos: Some((ceiling, 0)),
+                    verb: Some(format!("GREATWORK_ANY;GPT_CAP={max_gpt}")),
+                    pos: Some((ceiling, max_gold)),
                 });
                 note_bits.push("culture_work_buy=1".to_string());
             }

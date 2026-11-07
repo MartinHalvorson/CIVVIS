@@ -12533,10 +12533,12 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local session = try(function()
 		return DiplomacyManager.FindOpenSessionID(pid, fromPlayer);
 	end, nil);
+	local withinBudget = buying and pay <= (pending.ceiling or 0)
+		and (pending.gold_cap == nil or payGold <= pending.gold_cap)
+		and (pending.gpt_cap == nil or payGpt <= pending.gpt_cap);
 	local closable;
 	if buying then
-		closable = matches and foreign == 0
-			and pay <= (pending.ceiling or 0)
+		closable = matches and foreign == 0 and withinBudget
 			and (action == DealProposalAction.ACCEPTED or action == DealProposalAction.ADJUSTED);
 	else
 		closable = pending ~= nil and matches and foreign == 0 and offered > 0
@@ -12547,6 +12549,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		turn = turn, from = fromPlayer, action = action,
 		direction = buying and "buy" or "sell",
 		gold = gold, gold_per_turn = gpt, worth = worth, pay = pay, foreign = foreign,
+		pay_gold = payGold, pay_gpt = payGpt, within_budget = withinBudget,
+		gold_cap = pending and pending.gold_cap or nil, gpt_cap = pending and pending.gpt_cap or nil,
 		ours = table.concat(mineText, ","),
 		theirs = table.concat(theirsText, ","),
 		want = pending and pending.want or nil,
@@ -12580,7 +12584,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		end
 		if not pending.work_quote_proposed and action == DealProposalAction.REJECTED
 				and matches and foreign == 0 and pay > 0
-				and pay <= (pending.ceiling or 0) and enginePending == false then
+				and withinBudget and enginePending == false then
 			-- Mark and hold before sending: the engine may answer inside it.
 			pending.work_quote_proposed = true;
 			pending.turn = turn;
@@ -14755,6 +14759,15 @@ local function applyOrder(player, pid, row, turn)
 	-- handler closes at or under the ceiling when their side holds that much
 	-- or more and nothing else.
 	if kind == "buy" then
+		-- Explicit component budgets from the AI; y is the maximum lump Gold.
+		local workGptCap = tonumber(string.match(verb, "^GREATWORK_ANY;GPT_CAP=(%d+)$"));
+		local workGoldCap = nil;
+		if workGptCap ~= nil then
+			if workGptCap == math.huge or y == nil or y == math.huge or y < 0 or y ~= math.floor(y)
+					or y > (x or 0) then return false, "buy_invalid_budget"; end
+			workGoldCap = y;
+			verb = "GREATWORK_ANY";
+		end
 		-- `RESOURCE_X=N;RESOURCE_A=a,...` barters our spares for it
 		-- (`CivvisBarterGive`), Gold topping up to the ceiling.
 		local strategicName, strategicAsk, barter =
@@ -14982,6 +14995,7 @@ local function applyOrder(player, pid, row, turn)
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
 				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
 				gave = type(barter) == "table" and barter or nil,
+				gold_cap = workGoldCap, gpt_cap = workGptCap,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
@@ -15014,7 +15028,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		emit("deal_offer", {
 			turn = turn, target = subject, verb = verb, direction = "buy",
-			ceiling = ceiling, want = wantName,
+			ceiling = ceiling, want = wantName, gold_cap = workGoldCap, gpt_cap = workGptCap,
 			submitted = submitted and true or false, reason = reason,
 			threw = reason == "throw",
 		});

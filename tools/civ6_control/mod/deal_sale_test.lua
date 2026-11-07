@@ -1587,7 +1587,7 @@ end)()
 	local originalSurvey = CivvisGreatWorks.survey
 	local slots = { { accepts = { GREATWORKOBJECT_WRITING = true } } }
 	CivvisGreatWorks.survey = function() return { slots = slots } end
-	local function askWork()
+	local function askWork(gptCap, goldCap, total)
 		reset()
 		local state, player = fixture({ possibleWorks = {
 			{ ForTypeDescriptionID = 61 }, -- not an actual work instance
@@ -1596,7 +1596,9 @@ end)()
 			{ ForType = 4009, ForTypeDescriptionID = 61 },
 		} })
 		local ok, why = applyOrder(player, 7,
-			{ kind = "buy", subject = "3", verb = "GREATWORK_ANY", x = 300, y = 0 }, 200)
+			{ kind = "buy", subject = "3",
+                verb = gptCap ~= nil and ("GREATWORK_ANY;GPT_CAP=" .. tostring(gptCap)) or "GREATWORK_ANY",
+                x = total or 300, y = goldCap or 0 }, 200)
 		check("work purchase is submitted", ok, true)
 		check("work purchase asks for a price", why, "buy_asked")
 		return state
@@ -1644,6 +1646,56 @@ end)()
 	onIncoming(3, 7, DealProposalAction.ADJUSTED)
 	check("work purchase does not give away unoffered assets", collateral.sends, nil)
 
+
+    askWork(20, 227, 500)
+    check("financed work remembers its cash cap", trade.pending[3].gold_cap, 227)
+    check("financed work remembers its GPT cap", trade.pending[3].gpt_cap, 20)
+    local financed = fixture({ incoming = {
+        { kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 105 },
+        { kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 12 },
+    } })
+    onIncoming(3, 7, DealProposalAction.ADJUSTED)
+    check("a financed quote need not fit wholly in the cash cap", financed.sends and financed.sends[1][1], DealProposalAction.ACCEPTED)
+
+    askWork(20, 0, 500)
+    local incomeOnly = fixture({ incoming = {
+        { kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+        { kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 10 },
+    } })
+    onIncoming(3, 7, DealProposalAction.ADJUSTED)
+    check("an explicit zero cash cap permits a GPT-only quote", incomeOnly.sends and incomeOnly.sends[1][1], DealProposalAction.ACCEPTED)
+    askWork(20, 0, 500)
+    local oneCoin = fixture({ incoming = {
+        { kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+        { kind = DealItemTypes.GOLD, from = 7, amount = 1 },
+    } })
+    onIncoming(3, 7, DealProposalAction.ADJUSTED)
+    check("a zero cash cap cannot leak even one Gold", oneCoin.sends, nil)
+
+    for name, spec in pairs({
+        cash = { cash = 228, gpt = 0, gptCap = 20 },
+        income = { cash = 0, gpt = 11, gptCap = 10 },
+        total = { cash = 200, gpt = 13, gptCap = 20 },
+    }) do
+        askWork(spec.gptCap, 227, 500)
+        local tooMuch = fixture({ incoming = {
+            { kind = DealItemTypes.GREATWORK, from = 3, valueType = 4009 },
+            { kind = DealItemTypes.GOLD, from = 7, amount = spec.cash },
+            { kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = spec.gpt },
+        } })
+        onIncoming(3, 7, DealProposalAction.ADJUSTED)
+        check(name .. " limit independently blocks acceptance", tooMuch.sends, nil)
+        check(name .. " limit is visible in the response", eventField(lastEvent("deal_response"), "within_budget"), "false")
+    end
+
+    reset()
+    local malformed, malformedPlayer = fixture({ possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } } })
+    local valid, badReason = applyOrder(malformedPlayer, 7,
+        { kind = "buy", subject = "3", verb = "GREATWORK_ANY;GPT_CAP=20", x = 500, y = 501 }, 200)
+    check("malformed component limits are rejected", valid, false)
+    check("malformed limits are named", badReason, "buy_invalid_budget")
+    check("malformed limits do not send a deal", malformed.sends, nil)
 	reset()
 	slots = {}
 	local full, fullPlayer = fixture({ possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } } })
