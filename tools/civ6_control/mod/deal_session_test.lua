@@ -136,15 +136,10 @@ local function fixture(opts)
 		function item:SetValueType(v) self.valueType = v end
 		function item:SetSubType(v) self.subType = v end
 		function item:GetSubType() return self.subType end
-		function item:GetType() return self.kind end
-		function item:GetFromPlayerID() return self.owner end
-		function item:GetDuration() return self.duration or 0 end
-		function item:GetAmount() return self.amount or 0 end
-		function item:GetValueType() return self.valueType end
 		function item:SetDuration(v) self.duration = v end
 		function item:SetAmount(v) self.amount = v end
 		function item:SetLocked(v) self.locked = v end
-		function item:GetMaxAmount() return opts.maxPayment or 999 end
+		function item:GetMaxAmount() return 999 end
 		function item:IsValid() return true end
 		function item:GetID() return self.id end
 		return item
@@ -157,15 +152,7 @@ local function fixture(opts)
 	end
 	function outgoing:Validate() state.validated = (state.validated or 0) + 1 end
 	function outgoing:IsValid() return true end
-	function outgoing:RemoveItemByID(id)
-        for i, item in ipairs(state.items) do
-            if item.id == id then table.remove(state.items, i); return end
-        end
-    end
-    function outgoing:Items()
-        local i = 0
-        return function() i = i + 1; return state.items[i] end
-    end
+	function outgoing:RemoveItemByID() end
 	local incoming = {}
 	function incoming:Items()
 		local list = opts.incoming or {}
@@ -197,14 +184,7 @@ local function fixture(opts)
 			end
 			return {}
 		end,
-		CopyIncomingToOutgoingWorkingDeal = function()
-            state.copied = true; state.items = {};
-            for _, spec in ipairs(opts.incoming or {}) do
-                local item = outgoing:AddItemOfType(spec.kind, spec.from);
-                item:SetAmount(spec.amount or 0); item:SetDuration(spec.duration or 0);
-                item:SetValueType(spec.valueType); item:SetSubType(spec.subType);
-            end
-        end,
+		CopyIncomingToOutgoingWorkingDeal = function() state.copied = true end,
 		AreWorkingDealsEqual = function() return state.dealsEqual end,
 		SendWorkingDeal = function(action, pid, subject)
 			state.sends[#state.sends + 1] = { action, pid, subject, holds = #holds }
@@ -288,8 +268,8 @@ end
     check("its confirmed response can be accepted", financed.sends[3] and financed.sends[3][1], "accepted");
 
     for name, spec in pairs({
-        cash = { cash = 228, gpt = 0, limit = 0 },
-        income = { cash = 0, gpt = 20, limit = 10 },
+        cash = { cash = 228, gpt = 0, limit = 20 },
+        income = { cash = 0, gpt = 11, limit = 10 },
         total = { cash = 200, gpt = 13, limit = 20 },
     }) do
         local excess = workSession({ ceiling = 500, goldCap = 227, gptCap = spec.limit,
@@ -297,55 +277,19 @@ end
         answer(DealProposalAction.REJECTED);
         check(name .. " limit also blocks re-proposal", #excess.sends, 1);
     end
-    -- Native 060203Z t111: 66 cash + 8 GPT, cash reserve cap 42.
-    -- Inspect the actual outgoing package, then independently supply a verdict.
-    local nativeQuote = quote(13, 66, 8);
-    local rebalance = workSession({ ceiling = 500, goldCap = 42, gptCap = 20, incoming = nativeQuote });
+    -- Native 082733Z t99: proposing a changed 8 Gold + 9 GPT package
+    -- returned the original 58 Gold + 7 GPT quote, then repeatedly stalled.
+    -- Until that native protocol is understood, do not mutate the quote.
+    local constrained = workSession({ ceiling = 500, goldCap = 22, gptCap = 20,
+        incoming = quote(13, 58, 7) });
     answer(DealProposalAction.REJECTED);
-    check("cash-constrained work is proposed once", #rebalance.sends, 2);
-    local cash, income, duration, works = 0, 0, 0, 0;
-    for _, item in ipairs(rebalance.items) do
-        if item.kind == DealItemTypes.GOLD then
-            if item.duration == 0 then cash = cash + item.amount;
-            else income = income + item.amount; duration = item.duration; end
-        elseif item.kind == DealItemTypes.GREATWORK and item.valueType == 13 then works = works + 1; end
-    end
-    check("new cash stays below its reserve cap", cash, 41);
-    check("new GPT preserves the quoted modeled value", income, 9);
-    check("the native payment duration survives", duration, 30);
-    check("the exact work survives payment changes", works, 1);
-    check("the ledger identifies a changed payment", eventField(lastEvent("deal_reproposed"), "rebalanced"), "true");
-    nativeQuote[2].amount, nativeQuote[3].amount = cash, income;
-    answer(DealProposalAction.ACCEPTED);
-    check("a fresh accepted balanced quote closes", rebalance.sends[3] and rebalance.sends[3][1], "accepted");
-
-    local roundedQuote = quote(13, 38, 5);
-    local rounded = workSession({ ceiling = 175, goldCap = 0, gptCap = 7, incoming = roundedQuote });
-    answer(DealProposalAction.REJECTED);
-    check("a zero-cash quote may round up within the ceiling", rounded.sends[2] and rounded.sends[2][1], "proposed");
-    check("rounding is recorded as the actual proposed price", eventField(lastEvent("deal_reproposed"), "pay"), "175");
-    roundedQuote[2].amount, roundedQuote[3].amount = 0, 7;
+    check("a component-constrained work quote sends no changed proposal", #constrained.sends, 1);
+    check("a component-constrained work quote is never copied for mutation", constrained.copied, nil);
+    check("the constrained work ask releases its pending request", trade.pending[3], nil);
+    check("the constrained work session closes once", #sessions.closed, 1);
     answer(DealProposalAction.ADJUSTED);
-    check("a confirmed rounded price closes", rounded.sends[3] and rounded.sends[3][1], "accepted");
-
-    for name, opts in pairs({
-        rounding_over_ceiling = { ceiling = 174, goldCap = 0, gptCap = 7, incoming = quote(13, 38, 5) },
-        insufficient_gpt = { ceiling = 500, goldCap = 0, gptCap = 6, incoming = quote(13, 38, 5) },
-        native_payment_maximum = { ceiling = 500, goldCap = 42, gptCap = 20, maxPayment = 8, incoming = quote(13, 66, 8) },
-        balanced_collateral = { ceiling = 500, goldCap = 42, gptCap = 20, incoming = quote(13, 66, 8, {kind = DealItemTypes.FAVOR, from = 7, amount = 1}) },
-        balanced_wrong_work = { ceiling = 500, goldCap = 42, gptCap = 20, incoming = quote(14, 66, 8) },
-    }) do
-        local guarded = workSession(opts);
-        answer(DealProposalAction.REJECTED);
-        check(name .. " cannot submit a changed payment", #guarded.sends, 1);
-        check(name .. " releases its pending ask", trade.pending[3], nil);
-    end
-
-    local fresh = quote(13, 66, 8);
-    local reverted = workSession({ ceiling = 500, goldCap = 42, gptCap = 20, incoming = fresh });
-    answer(DealProposalAction.REJECTED);
-    answer(DealProposalAction.ACCEPTED);
-    check("acceptance of the old over-cash package is declined", #reverted.sends, 2);
+    check("a late counterquote cannot revive the declined work ask", #constrained.sends, 1);
+    check("a declined constrained quote cannot record a purchase", lastEvent("deal_closed"), nil);
 
     local laterIncome = quote();
     local adjustedIncome = workSession({ ceiling = 500, goldCap = 227, gptCap = 10, incoming = laterIncome });

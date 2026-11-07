@@ -12443,7 +12443,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- hold gold and nothing else, totalled into `pay`.
 	local buying = pending ~= nil and pending.direction == "buy";
 	local gold, gpt, foreign, mine, offered = 0, 0, 0, {}, 0;
-	local theirs, payGold, payGpt, payDuration = {}, 0, 0, nil;
+	local theirs, payGold, payGpt = {}, 0, 0;
 	local mineText, theirsText = {}, {};
 	if incoming ~= nil then
 		pcall(function()
@@ -12500,10 +12500,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 					end
 				else
 					if buying and kind == DealItemTypes.GOLD then
-						if duration == 0 then payGold = payGold + amount; else
-							payGpt = payGpt + amount;
-							payDuration = duration;
-						end
+						if duration == 0 then payGold = payGold + amount; else payGpt = payGpt + amount; end
 						mineText[#mineText + 1] = "GOLD=" .. tostring(amount) .. "x" .. tostring(duration);
 					else
 						local key, count = keyOf(item, kind, amount);
@@ -12597,22 +12594,9 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 				want = pending.want, reason = "engine_pending" });
 			return true;
 		end
-		-- Keep the existing reserves: only exchange cash for GPT (or back),
-		-- then ask the engine again. Integer GPT may round the modeled price
-		-- up by less than 25 Gold, still under the original total ceiling.
-		local quoteGold, quoteGpt = payGold, payGpt;
-		local fits = withinBudget;
-		if not fits and pay > 0 and pay <= (pending.ceiling or 0)
-				and pending.gold_cap ~= nil and pending.gpt_cap ~= nil then
-			quoteGpt = math.max(math.min(payGpt, pending.gpt_cap),
-				math.ceil(math.max(0, pay - pending.gold_cap) / 25));
-			quoteGold = math.max(0, pay - quoteGpt * 25);
-			fits = quoteGold <= pending.gold_cap and quoteGpt <= pending.gpt_cap
-				and quoteGold + quoteGpt * 25 <= pending.ceiling;
-		end
 		if not pending.work_quote_proposed and action == DealProposalAction.REJECTED
 				and matches and foreign == 0 and pay > 0
-				and fits and enginePending == false then
+				and withinBudget and enginePending == false then
 			-- Mark and hold before sending: the engine may answer inside it.
 			pending.work_quote_proposed = true;
 			pending.turn = turn;
@@ -12622,37 +12606,11 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			local ok, sent = pcall(function()
 				DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
 				if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
-				if not withinBudget then
-					local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer);
-					local remove = {};
-					for item in deal:Items() do
-						if item:GetFromPlayerID() == pid and item:GetType() == DealItemTypes.GOLD then
-							remove[#remove + 1] = item:GetID();
-						end
-					end
-					for _, id in ipairs(remove) do deal:RemoveItemByID(id); end
-					-- Firaxis DiplomacyDealView.lua:870-879, 936-946 sets
-					-- duration before checking the payment item's native maximum.
-					for _, payment in ipairs({ {quoteGold, 0}, {quoteGpt, payDuration or 30} }) do
-						if payment[1] > 0 then
-							local item = deal:AddItemOfType(DealItemTypes.GOLD, pid);
-							if item == nil then return false; end
-							item:SetDuration(payment[2]);
-							if payment[1] > item:GetMaxAmount() then return false; end
-							item:SetAmount(payment[1]);
-							if item:GetAmount() ~= payment[1] or item:GetDuration() ~= payment[2]
-									or not item:IsValid() then return false; end
-						end
-					end
-					deal:Validate();
-					if not deal:IsValid() then return false; end
-				end
 				DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, fromPlayer);
 				return true;
 			end);
 			emit("deal_reproposed", { turn = turn, from = fromPlayer, direction = "buy", action = "PROPOSED",
-				want = pending.want, pay = quoteGold + quoteGpt * 25, ceiling = pending.ceiling,
-				pay_gold = quoteGold, pay_gpt = quoteGpt, rebalanced = not withinBudget,
+				want = pending.want, pay = pay, ceiling = pending.ceiling,
 				sent = (ok and sent) and true or false, threw = not ok });
 			if ok and sent then return true; end
 		end
