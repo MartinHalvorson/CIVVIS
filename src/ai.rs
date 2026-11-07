@@ -7448,16 +7448,25 @@ impl BasicAi {
     }
 
     pub(crate) fn rock_band_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        if g.rock_concert_tourism(pid, uid).is_some() {
-            return g.apply(pid, &Action::PerformConcert { unit: uid }).is_ok();
+        let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
+            return false;
+        };
+        let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        // Passing through a legal venue must not abandon the better tour the
+        // same scorer selected on the approach. Native 111731Z's Album Cover
+        // Art band stopped at a Theater with a legal matching Wonder one hex
+        // away. Rank the current venue at zero travel alongside the others.
+        if let Some(target) = Self::rock_band_tour_destination(g, pid, uid)
+            .filter(|target| *target != here)
+        {
+            if let Some(next) = g.route_step(uid, target, 0) {
+                if self.path_move(g, pid, uid, next) {
+                    return true;
+                }
+            }
         }
-        let Some(target) = Self::rock_band_tour_destination(g, pid, uid) else {
-            return false;
-        };
-        let Some(next) = g.route_step(uid, target, 0) else {
-            return false;
-        };
-        self.path_move(g, pid, uid, next)
+        // Keep a concert when this venue wins, or a better trip cannot start.
+        can_perform_here && g.apply(pid, &Action::PerformConcert { unit: uid }).is_ok()
     }
 
     /// Rank a tour by its existing concert valuation and the time spent
