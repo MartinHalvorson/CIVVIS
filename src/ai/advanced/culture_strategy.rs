@@ -24,6 +24,20 @@ pub(super) const CULTURE_THREAT_PRESSURE: i32 = 50;
 pub(super) const CULTURE_THREAT_PRESSURE_EARLY: i32 = 30;
 
 impl AdvancedAi {
+    /// After the core tourism technologies, Culture stops compulsory Campus
+    /// investment. Ordinary production scoring can still choose science.
+    pub(super) fn culture_releases_science_claims(&self, g: &Game, pid: usize) -> bool {
+        g.victory_conditions.culture
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && [
+                crate::name!("flight"),
+                crate::name!("radio"),
+                crate::name!("computers"),
+            ]
+            .into_iter()
+            .all(|tech| g.players[pid].techs.contains(&tech))
+    }
+
     pub(super) fn culture_museum_unlock_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
         if g.players[pid]
             .civics

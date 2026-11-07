@@ -1,6 +1,66 @@
 use super::*;
 use crate::ai::industrial_zones::tests::producer_empire;
 
+#[test]
+fn culture_releases_campus_building_claims_after_its_tourism_technologies() {
+    let (mut game, ranked) = with_education("CULTURECAMPUS", 94_120, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    for tech in ["flight", "radio", "computers"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let mut ai = armed();
+    ai.victory_target = Some(VictoryTarget::Culture);
+    let plan = ai.assess(&game, 0);
+    assert!(ai
+        .campus_building_claim_item(&game, 0, ranked[0], &plan)
+        .is_none());
+    ai.claim_campus_building(&mut game, 0, &plan);
+    assert!(ranked
+        .iter()
+        .all(|cid| head(&game, *cid) == Some(unit("knight"))));
+    let university = building("university");
+    game.cities.get_mut(&ranked[0]).unwrap().queue = vec![university.clone()];
+    assert!(!ai.campus_building_claim_holds(&game, 0, ranked[0], &plan, &university));
+    assert!(game.can_produce(0, ranked[0], &university));
+}
+
+#[test]
+fn earlier_culture_and_other_targets_keep_their_campus_building_claims() {
+    let (mut game, ranked) = with_education("CULTURECAMPUS", 94_121, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    for tech in ["flight", "radio", "computers"] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    for missing in ["flight", "radio", "computers"] {
+        let mut other = game.clone();
+        other.players[0].techs.remove(&Name::new(missing));
+        let mut ai = armed();
+        ai.victory_target = Some(VictoryTarget::Culture);
+        let plan = ai.assess(&other, 0);
+        ai.claim_campus_building(&mut other, 0, &plan);
+        assert_eq!(
+            head(&other, ranked[0]),
+            Some(building("university")),
+            "missing {missing}"
+        );
+    }
+    for target in VictoryTarget::ALL {
+        if target == VictoryTarget::Culture {
+            continue;
+        }
+        let mut other = game.clone();
+        let mut ai = armed();
+        ai.victory_target = Some(target);
+        let plan = ai.assess(&other, 0);
+        ai.claim_campus_building(&mut other, 0, &plan);
+        assert_eq!(
+            head(&other, ranked[0]),
+            Some(building("university")),
+            "{target:?}"
+        );
+    }
+}
+
 fn armed() -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     ai.enable_campus_building_claims_the_queue();
