@@ -5408,7 +5408,15 @@ fn decide(
         if kept > 0 {
             note_bits.push(format!("army_material_sale_held={kept}"));
         }
-        let spares = ai.siege_barter_spares(&mirror_state.game, 0, &held);
+        // A model spare is not proof that the host can put that resource on
+        // our side of this rival's deal. Native 084123-cont1 t169 refused
+        // the whole Oil request as barter_short. Use the already bounded
+        // cash budget for native defensive materials; keep the upgrade bill.
+        let spares = if native_defense {
+            Vec::new()
+        } else {
+            ai.siege_barter_spares(&mirror_state.game, 0, &held)
+        };
         let worth = |resource: &str, amount: u32| {
             mirror_state.game.strategic_gold_value(0, resource, amount)
         };
