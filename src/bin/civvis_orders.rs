@@ -5418,7 +5418,15 @@ fn decide(
             ai.siege_barter_spares(&mirror_state.game, 0, &held)
         };
         let worth = |resource: &str, amount: u32| {
-            mirror_state.game.strategic_gold_value(0, resource, amount)
+            if native_defense {
+                // Ask the host for its price within the carried cash ceiling.
+                // The model valued native t169's 30 Oil at 891 Gold; no
+                // native quote existed. Zero selects the transport's existing
+                // unpriced-book path, retaining all native reply checks.
+                0.0
+            } else {
+                mirror_state.game.strategic_gold_value(0, resource, amount)
+            }
         };
         let give_worth = |seller: i64, resource: &str, amount: u32| {
             (1..mirror_state.game.players.len())
