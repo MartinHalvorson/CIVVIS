@@ -24,6 +24,7 @@ fn equipped() -> (Game, AdvancedAi, StrategicPlan, u32) {
             "irrigation",
             "currency",
             "mathematics",
+            "horseback_riding",
             "apprenticeship",
         ]
         .map(Name::new),
@@ -111,6 +112,8 @@ fn culture_education_preserves_committed_research_and_rush_priority() {
     assert_eq!(g.players[0].research_progress, 9.0);
     g.players[0].research = None;
     g.players[0].research_progress = 0.0;
+    g.players[0].techs.remove(&crate::name!("horseback_riding"));
+    g.players[0].techs.remove(&crate::name!("apprenticeship"));
     plan.rush = true;
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("horseback_riding"));
