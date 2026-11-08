@@ -97,6 +97,7 @@ impl AdvancedAi {
                     && other.alive
                     && !other.is_minor
                     && !other.is_barbarian
+                    && !other.is_free_city
                     && g.is_at_war(pid, other.id)
             })
     }
@@ -156,6 +157,77 @@ impl AdvancedAi {
         })
     }
 
+    /// A peaceful Culture seat funds two science foundations, then lets
+    /// ordinary production price further Campuses against its tourism economy.
+    fn culture_limits_campus_foundations(&self, g: &Game, pid: usize) -> bool {
+        g.victory_conditions.culture
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && (self.campus_claims_the_free_slot || self.campus_claims_the_free_slot_2)
+            && !g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+    }
+
+    fn culture_other_campuses_cover_foundation(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        self.culture_limits_campus_foundations(g, pid)
+            && g.player_city_ids(pid)
+                .into_iter()
+                .filter(|other| *other != cid)
+                .filter(|other| {
+                    let city = &g.cities[other];
+                    g.city_has_district_family(city, crate::name!("campus"))
+                        || city.queue.iter().any(|item| {
+                            matches!(item, Item::District { district, .. }
+                                if g.district_family(*district) == "campus")
+                        })
+                        || city.owned_tiles.iter().any(|pos| {
+                            g.map
+                                .get(*pos)
+                                .and_then(|tile| tile.district_foundation.as_ref())
+                                .is_some_and(|foundation| {
+                                    g.district_family(foundation.district) == "campus"
+                                })
+                        })
+                })
+                .take(2)
+                .count()
+                >= 2
+    }
+
+    /// The AdvancedAi claim owns the first two foundations. Do not let the
+    /// delegated governor force a Campus again through a different opening.
+    /// Building claims and ordinary scoring remain available.
+    pub(super) fn culture_budgeted_base_cities(&mut self, g: &mut Game, pid: usize) {
+        if !self.culture_limits_campus_foundations(g, pid) {
+            self.base.cities(g, pid);
+            return;
+        }
+        let saved = (
+            self.base.capital_campus_first,
+            self.base.campus_before_harbor,
+            self.base.campus_before_the_army,
+            self.base.campus_before_the_army_2,
+            self.base.campus_before_the_army_3,
+        );
+        self.base.capital_campus_first = false;
+        self.base.campus_before_harbor = false;
+        self.base.campus_before_the_army = false;
+        self.base.campus_before_the_army_2 = false;
+        self.base.campus_before_the_army_3 = false;
+        self.base.cities(g, pid);
+        (
+            self.base.capital_campus_first,
+            self.base.campus_before_harbor,
+            self.base.campus_before_the_army,
+            self.base.campus_before_the_army_2,
+            self.base.campus_before_the_army_3,
+        ) = saved;
+    }
+
     /// The Campus `cid` would claim and how long it takes: the first Campus
     /// (`BasicAi::first_campus_item`) of an unthreatened city of ours with
     /// [`FREE_SLOT_CAMPUS_MIN_POP`] citizens, none standing or queued, and
@@ -167,7 +239,9 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
-        if self.culture_releases_science_claims(g, pid) {
+        if self.culture_releases_science_claims(g, pid)
+            || self.culture_other_campuses_cover_foundation(g, pid, cid)
+        {
             return None;
         }
         if !self.campus_claims_the_free_slot
@@ -251,6 +325,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
+        // The Culture budget limits new reservations. Existing commitments,
+        // including ones admitted by ordinary scoring or during a war, keep
+        // their protection rather than all losing it when a third appears.
         if self.culture_releases_science_claims(g, pid) {
             return false;
         }

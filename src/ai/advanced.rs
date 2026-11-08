@@ -14516,7 +14516,7 @@ impl AdvancedAi {
             self.base.lent_military_floor_base = Some(restore_military);
         }
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
-            self.base.cities(g, pid);
+            self.culture_budgeted_base_cities(g, pid);
             self.base.reserve_floor = restore_reserve_floor;
             self.base.exclude_space_race = restore_space_race;
             self.base.digs_one_museum = restore_dig_museum;
@@ -14549,7 +14549,7 @@ impl AdvancedAi {
         if self.production_builder_floor {
             self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         }
-        self.base.cities(g, pid);
+        self.culture_budgeted_base_cities(g, pid);
         self.base.reserve_floor = restore_reserve_floor;
         self.base.exclude_space_race = restore_space_race;
         self.base.digs_one_museum = restore_dig_museum;
