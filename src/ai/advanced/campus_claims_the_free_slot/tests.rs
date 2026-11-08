@@ -4,6 +4,110 @@ use crate::rules::Yields;
 use crate::setup::GameSpeed;
 use std::sync::Arc;
 
+fn culture_with_two_campus_foundations(
+    queued: bool,
+) -> (Game, AdvancedAi, u32, u32, StrategicPlan, Item) {
+    let (mut game, mut ai, cid, plan, campus) = one_citizen_native_korean_city();
+    game.cities.get_mut(&cid).unwrap().pop = 4;
+    let other = game.found_city_for(0, (25, 5), None);
+    game.cities.get_mut(&other).unwrap().pop = 4;
+    let quotes = game.host_buildable[&cid].clone();
+    Arc::make_mut(&mut game.host_buildable).insert(other, quotes);
+    if queued {
+        let item = BasicAi::first_campus_item(&game, 0, other).unwrap();
+        game.cities.get_mut(&other).unwrap().queue = vec![item];
+    } else {
+        install_test_district(&mut game, other, "seowon");
+    }
+    ai.victory_target = Some(VictoryTarget::Culture);
+    (game, ai, cid, other, plan, campus)
+}
+
+#[test]
+fn culture_stops_forcing_a_third_campus_after_two_replacement_foundations() {
+    for queued in [false, true] {
+        let (mut game, ai, cid, _, plan, campus) = culture_with_two_campus_foundations(queued);
+        assert!(game.can_produce(0, cid, &campus));
+        assert!(ai.free_slot_campus_item(&game, 0, cid, &plan).is_none());
+        game.cities.get_mut(&cid).unwrap().queue = vec![campus.clone()];
+        assert!(!ai.free_slot_campus_holds(&game, 0, cid, &plan, &campus));
+    }
+}
+
+#[test]
+fn culture_keeps_the_second_queued_campus_and_replaces_a_lost_foundation() {
+    let (mut game, ai, cid, other, plan, _) = culture_with_two_campus_foundations(true);
+    let queued = game.cities[&other].queue[0].clone();
+    assert!(ai.free_slot_campus_holds(&game, 0, other, &plan, &queued));
+    game.cities.get_mut(&other).unwrap().queue.clear();
+    assert!(ai.free_slot_campus_item(&game, 0, cid, &plan).is_some());
+}
+
+#[test]
+fn the_culture_campus_budget_leaves_wars_and_other_targets_unchanged() {
+    let (game, ai, cid, _, plan, _) = culture_with_two_campus_foundations(false);
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+        VictoryTarget::Domination,
+    ] {
+        let mut other = ai.clone();
+        other.victory_target = Some(target);
+        assert!(other.free_slot_campus_item(&game, 0, cid, &plan).is_some());
+    }
+    let mut disabled = game.clone();
+    disabled.victory_conditions.culture = false;
+    assert!(ai.free_slot_campus_item(&disabled, 0, cid, &plan).is_some());
+    let mut war = game;
+    war.players[1].alive = true;
+    war.at_war.insert((0, 1));
+    assert!(ai.free_slot_campus_item(&war, 0, cid, &plan).is_some());
+}
+
+#[test]
+fn culture_keeps_core_library_claims_and_restores_delegated_openings() {
+    let (mut game, mut ai, cid, other, plan, _) = culture_with_two_campus_foundations(false);
+    let capital = game
+        .player_city_ids(0)
+        .into_iter()
+        .find(|city| *city != cid && *city != other)
+        .unwrap();
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("granary"));
+    Arc::make_mut(&mut game.host_buildable)
+        .entry(capital)
+        .or_default()
+        .insert(
+            Game::production_block_key(&Item::Building {
+                building: crate::name!("library"),
+            }),
+            crate::game::HostMenuEntry {
+                cost: Some(45.0),
+                turns: Some(5.0),
+            },
+        );
+    ai.enable_campus_building_claims_the_queue();
+    assert!(
+        matches!(ai.campus_building_claim_item(&game, 0, capital, &plan), Some((Item::Building { building }, _, _)) if building == "library")
+    );
+    ai.base.capital_campus_first = true;
+    ai.base.campus_before_harbor = true;
+    ai.base.campus_before_the_army = true;
+    ai.base.campus_before_the_army_2 = true;
+    ai.base.campus_before_the_army_3 = true;
+    ai.culture_budgeted_base_cities(&mut game, 0);
+    assert!(
+        ai.base.capital_campus_first
+            && ai.base.campus_before_harbor
+            && ai.base.campus_before_the_army
+            && ai.base.campus_before_the_army_2
+            && ai.base.campus_before_the_army_3
+    );
+}
+
 fn one_citizen_native_korean_city() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
     let mut game = Game::new_full(2, 32, 20, 95_301, 250, 0, false);
     game.units.clear();
