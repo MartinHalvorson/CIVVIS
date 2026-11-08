@@ -9057,6 +9057,10 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         !parchment.contains("PARCH_GRID"),
         "the hidden sheet must not expose a hex grid"
     );
+    assert!(
+        parchment.contains("hexXYRaw(col - at / 2, at)"),
+        "the flat sheet's fibres are laid on the world's rows and columns"
+    );
 
     let monsters = EMBEDDED_INDEX
         .split("function drawHiddenMapMonsters")
@@ -9114,13 +9118,42 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         .expect("hidden-map viewport and stable large-tale margin");
     assert!(viewport.contains("monsterCells"));
     assert!(viewport.contains("HIDDEN_MAP_TALE_REACH"));
+    // What is drawn on a chart's unknown paper is carried by the camera that
+    // carries the ground. Seated by screen position, a drawing stood still
+    // while the known land slid across it.
     let planet_tales = EMBEDDED_INDEX
         .split("function drawPlanetChartMarginalia")
         .nth(1)
-        .and_then(|tail| tail.split("function drawPlanetMap").next())
+        .and_then(|tail| tail.split("function planetChartFibres").next())
         .expect("pre-globe chart marginalia");
-    assert!(planet_tales.contains("candidates.slice(0, 1)"));
-    assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
+    assert!(
+        planet_tales.contains("planetProject(seat.cell.center, camera, scale, centerX, centerY)"),
+        "a chart drawing is seated on the world"
+    );
+    assert!(
+        planet_tales.contains("const size = seat.size * scale"),
+        "a chart drawing zooms with the ground"
+    );
+    let planet_grain = EMBEDDED_INDEX
+        .split("function drawPlanetChartFibres")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("// The globe's half of the map's animation")
+                .next()
+        })
+        .expect("pre-globe chart paper grain");
+    assert!(
+        planet_grain.contains("planetProject(point, camera, scale, centerX, centerY)"),
+        "the chart's paper grain is seated on the world"
+    );
+    assert!(
+        !planet_grain.contains("MAPH"),
+        "the chart's paper grain must not be measured off the window"
+    );
+    assert!(EMBEDDED_INDEX.contains(
+        "drawPlanetChartFibres(camera, scale, centerX, centerY);\n      \
+         drawPlanetChartMarginalia(camera, scale, centerX, centerY);"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
     assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
@@ -9805,6 +9838,17 @@ fn browser_draws_the_selected_units_reach_perimeter_and_edge_arrows() {
         "the globe projects region cells the frame does not carry"
     );
     assert!(planet.contains("entry.cell.nbrs.indexOf(key(edge.to))"));
+
+    // One bold boundary, from one painter, so the two maps cannot drift apart.
+    assert!(EMBEDDED_INDEX.contains("function paintReachBoundary(segments, addFaces, weight)"));
+    assert!(flat.contains("paintReachBoundary(segments, () => {"));
+    assert!(planet.contains("paintReachBoundary(segments, () => {"));
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches("paintReachBoundary(segments, () => {")
+            .count(),
+        2
+    );
 
     // Each map paints the movement overlay exactly once, after fog and
     // the sight perimeter, so the boundary stays visible over parchment.
