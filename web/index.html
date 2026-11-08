@@ -287,7 +287,7 @@
      medallion beside ever-wider whitespace. The copy column stretches to the
      globe's height so the wordmark rides its top edge and the tagline its
      bottom. */
-  .brand { display: flex; align-items: stretch; gap: 15px; }
+  .brand { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 15px; }
   .brand-mark {
     position: relative; isolation: isolate; flex: 0 0 clamp(70px, 36cqw, 150px);
     aspect-ratio: 1; align-self: center;
@@ -310,7 +310,7 @@
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
   .brand-copy {
-    min-width: 0; flex: 1 1 auto; padding-top: 1px;
+    min-width: 0; flex: 1 1 0; padding-top: 1px;
     display: flex; flex-direction: column; justify-content: space-between;
   }
   /* The wordmark's lane is the band minus the globe's 36cqw and its 15px
@@ -340,12 +340,14 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* Home, then the mode this deck is not showing. They share a row so the
-     compact reflow below moves the pair as one item rather than stacking two
-     band-wide rows, and so a narrow deck wraps them instead of clipping.
+  /* Home, then a game of your own. They share a row so the compact reflow
+     below moves the pair as one item rather than stacking two band-wide rows,
+     and so a window too small for both wraps them instead of clipping. The
+     row is a whole line of the lockup because the copy column beside the
+     globe is too narrow for the pair on the 332px deck a 1920 screen gets.
      `display: flex` outranks the user agent's `[hidden]`, which is why the
      row has to say what hidden means for itself. */
-  .head-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .head-links { display: flex; flex: 0 0 100%; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .head-links[hidden] { display: none; }
   .home-link {
     display: inline-block; padding: 3px 10px 4px;
@@ -354,6 +356,14 @@
     border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
   }
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
+  /* Following this link replaces the world on the table, so it is offered only
+     over a simulation, where nothing of the viewer's is at stake. */
+  body:not(.watching-sim) #playlink { display: none; }
+  /* The narrowest default deck has 195px for the row: tighten the pair just
+     enough to keep them side by side there. */
+  @container (max-width: 236px) {
+    .home-link { padding: 3px 6px 4px; letter-spacing: .04em; }
+  }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
      dissolves (display: contents) so the tagline steps out of the mark's
@@ -380,8 +390,8 @@
     grid-column: 1 / -1; margin-top: 0;
     font-size: var(--type-small);
   }
-  /* In the compact reflow the copy column dissolves, so the links take a
-     band-wide row of their own under the tagline rather than a grid cell. */
+  /* In the compact reflow the lockup is a grid, so the links claim their
+     band-wide row under the tagline by column span rather than flex basis. */
   #side[data-type-size="compact"] .head-links {
     grid-column: 1 / -1; justify-self: start; margin-top: 0;
   }
@@ -5600,14 +5610,15 @@
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
-        <!-- Only the published site has a /home to go to; the head script
-             unhides this row on the hosts that serve one. The site offers
-             the full game and nothing else, so Home is the whole row: the
-             Tactics chip that used to stand beside it named a mode the menu
-             no longer carries. -->
-        <div class="head-links" id="headlinks" hidden>
-          <a class="home-link" id="homelink" href="/home">⌂ Home</a>
-        </div>
+      </div>
+      <!-- Only the published site has a /home to go to; the head script
+           unhides this row on the hosts that serve one. Home, then the way
+           from watching the AIs into a game of your own: `?mode=play` is the
+           new single-player game the home page's Play card starts, and being
+           relative it stays in whichever lane it was clicked in. -->
+      <div class="head-links" id="headlinks" hidden>
+        <a class="home-link" id="homelink" href="/home">⌂ Home</a>
+        <a class="home-link" id="playlink" href="?mode=play">Play single player</a>
       </div>
     </div>
   </div>
@@ -6113,8 +6124,8 @@
           </div>
         </div>
         <label class="small game-advanced-setting civ6-hidden tactics-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
-          <option value="poles">Hot equator, cold poles</option>
-          <option value="randomized" selected>Randomized</option>
+          <option value="poles" selected>Hot equator, cold poles</option>
+          <option value="randomized">Randomized</option>
         </select></label>
         <div class="overlay-options game-advanced-setting civ6-hidden tactics-hidden" id="flat-map-wrap-settings"
              data-advanced-order="55" role="group" aria-labelledby="flat-map-wrap-title">

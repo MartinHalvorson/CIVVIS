@@ -9,6 +9,6 @@ Highest Level Won by Victory Type:
 - Lv 5 - [Religion](https://www.youtube.com/watch?v=36Si52r7We0)
 - Lv 4 - [Score](https://www.youtube.com/watch?v=-ft0Ah99J1g) (score victory is less common on high levels as games are usually decided before the turn limit is reached)
 
-Quick (old) simulator UI demo:
+Quick simulator UI demo (a full game, turn 1 to a turn-193 Maori science victory; click for the 4K video on YouTube):
 
-[![CIVVIS spectate mode — an AI-vs-AI game on a planet world, in real time](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/exhibition.gif)](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/exhibition.mp4)
+[![CIVVIS spectate mode — four AI civilizations play a full game on a planet world, from the Ancient Era to a Maori science victory on turn 193](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/spectate.avif)](https://www.youtube.com/watch?v=mTelnTvAJZo)
