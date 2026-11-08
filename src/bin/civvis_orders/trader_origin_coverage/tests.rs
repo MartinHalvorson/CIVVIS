@@ -18,6 +18,19 @@ type Fixture = (
     u32,
 );
 
+fn copy_order(order: &Order) -> Order {
+    Order {
+        kind: order.kind,
+        subject: order.subject,
+        verb: order.verb.clone(),
+        pos: order.pos,
+    }
+}
+
+fn copy_orders(orders: &[Order]) -> Vec<Order> {
+    orders.iter().map(copy_order).collect()
+}
+
 fn fixture() -> Fixture {
     let mut g = Game::new_full(4, 24, 14, 475_900, 250, 0, false);
     for pid in 0..4 {
@@ -31,7 +44,8 @@ fn fixture() -> Fixture {
     }
     g.current = 0;
     for pid in 1..4 {
-        g.record_contact(0, pid);
+        g.players[0].met.insert(pid);
+        g.players[pid].met.insert(0);
     }
     let origin = g.player_city_ids(0)[0];
     let covered = g.player_city_ids(1)[0];
@@ -105,7 +119,7 @@ fn native_positive_other_origin_replaces_a_duplicate_market_route() {
 #[test]
 fn current_origin_or_existing_new_market_plan_does_not_need_a_transfer() {
     let (ai, mut g, units, orders, _, origin, _, missing) = fixture();
-    let mut direct = orders.clone();
+    let mut direct = copy_orders(&orders);
     direct[0].pos = Some(axial_to_offset(
         g.cities[&missing].pos.0,
         g.cities[&missing].pos.1,
@@ -119,14 +133,14 @@ fn current_origin_or_existing_new_market_plan_does_not_need_a_transfer() {
 #[test]
 fn missing_native_observation_busy_trader_and_disabled_lane_preserve_orders() {
     let (ai, g, units, original, uid, _, _, _) = fixture();
-    let mut orders = original.clone();
+    let mut orders = copy_orders(&original);
     assert_eq!(
         apply(&ai, &g, &units, &BTreeSet::from([1000]), &mut orders),
         0
     );
     for mode in 0..5 {
         let mut game = g.clone();
-        let mut orders = original.clone();
+        let mut orders = copy_orders(&original);
         let mut policy = AdvancedAi::targeting(if mode == 3 {
             VictoryTarget::Science
         } else {
@@ -167,7 +181,7 @@ fn only_one_idle_trader_reserves_each_missing_market() {
         },
     );
     units.insert(1001, other_id);
-    let mut second = orders[0].clone();
+    let mut second = copy_order(&orders[0]);
     second.subject = Some(1001);
     orders.push(second);
     assert_eq!(apply(&ai, &g, &units, &BTreeSet::new(), &mut orders), 1);
