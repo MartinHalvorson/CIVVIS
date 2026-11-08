@@ -65,10 +65,55 @@ impl AdvancedAi {
         else {
             return false;
         };
+        if self.native_culture_spy_prepares(g, spy, owner, legal) {
+            return false;
+        }
         (racers.contains(&owner) || threats.contains(&owner))
             // `disrupt-waits-for-the-match-point` raises the floor.
             && Self::science_denial_stages(g, owner) >= self.disrupt_from_stages()
             && Self::racer_spy_disrupt_offered(g, spy, legal)
+    }
+
+    /// Native Culture run 143319, turn154: an unprepared Spy had 25.4%
+    /// Disrupt Rocketry odds and guaranteed Gain Sources. The observed quote
+    /// rose to 49.6% after preparation. Allow that safe preparation before
+    /// the expedition launches; once it is underway, keep urgent disruption.
+    /// Missing host odds and other victory lanes retain the existing rule.
+    fn native_culture_spy_prepares(
+        &self,
+        g: &Game,
+        spy: u32,
+        owner: usize,
+        legal: &[Action],
+    ) -> bool {
+        if self.victory_target != Some(VictoryTarget::Culture)
+            || self.lane_lost
+            || g.players[owner]
+                .science_projects
+                .contains("exoplanet_expedition")
+            || g.spies.get(&spy).is_none_or(|agent| agent.level >= 2)
+            || !legal.iter().any(|action| {
+                matches!(action, Action::SpyMission { spy: id, mission, .. }
+                    if *id == spy && mission == "gain_sources")
+            })
+        {
+            return false;
+        }
+        let Some(targets) = g
+            .host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_targets.as_ref())
+        else {
+            return false;
+        };
+        let disrupt = targets
+            .get("disrupt_rocketry")
+            .and_then(|target| target.success);
+        let sources = targets
+            .get("gain_sources")
+            .and_then(|target| target.success);
+        disrupt.is_some_and(|chance| chance.is_finite() && (0.0..=1.0 / 3.0).contains(&chance))
+            && sources == Some(1.0)
     }
 
     /// Journal a green Spy that skips the training step for the disruption,
@@ -258,5 +303,96 @@ mod tests {
         let mut early = g.clone();
         early.players[1].science_projects.clear();
         assert!(!ai.training_yields_to_the_disrupt(&early, spy, &legal, &racers, &BTreeSet::new()));
+    }
+
+    fn quote_preparation(g: &mut Game, spy: u32, city: u32, chance: f64) {
+        let pos = g.cities[&city].pos;
+        let pad = *g.cities[&city]
+            .districts
+            .get(crate::name!("spaceport"))
+            .unwrap();
+        let targets = [
+            (
+                "gain_sources".to_string(),
+                crate::game::HostSpyTarget {
+                    pos,
+                    success: Some(1.0),
+                    fail: Some(0.0),
+                },
+            ),
+            (
+                "disrupt_rocketry".to_string(),
+                crate::game::HostSpyTarget {
+                    pos: pad,
+                    success: Some(chance),
+                    fail: None,
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
+        std::sync::Arc::make_mut(&mut g.host_unit_facts)
+            .entry(spy)
+            .or_default()
+            .spy_targets = Some(targets);
+    }
+
+    #[test]
+    fn native_culture_prepares_low_odds_before_the_expedition_but_disrupts_after_launch() {
+        let (mut g, city, spy) = racer_with_a_pad();
+        quote_preparation(&mut g, spy, city, 0.253906);
+        let mut ai = live();
+        ai.victory_target = Some(VictoryTarget::Culture);
+        ai.enable_disrupt_before_the_sources();
+        let mut early = g.clone();
+        ai.advanced_spies(&mut early, 0, &conquest_on(1));
+        assert_eq!(mission(&early, spy).as_deref(), Some("gain_sources"));
+        g.players[1]
+            .science_projects
+            .insert("exoplanet_expedition".into());
+        let mut late_ai = live();
+        late_ai.victory_target = Some(VictoryTarget::Culture);
+        late_ai.enable_disrupt_before_the_sources();
+        late_ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        assert_eq!(mission(&g, spy).as_deref(), Some("disrupt_rocketry"));
+    }
+
+    #[test]
+    fn native_preparation_requires_reliable_quotes_legal_sources_and_culture() {
+        let (mut g, city, spy) = racer_with_a_pad();
+        let mut ai = live();
+        ai.victory_target = Some(VictoryTarget::Culture);
+        ai.enable_disrupt_before_the_sources();
+        let racers = [1].into_iter().collect();
+        let legal = g.legal_spy_actions(0, spy);
+        assert!(ai.training_yields_to_the_disrupt(&g, spy, &legal, &racers, &BTreeSet::new()));
+        for chance in [0.5, -1.0, f64::NAN, f64::INFINITY] {
+            quote_preparation(&mut g, spy, city, chance);
+            assert!(ai.training_yields_to_the_disrupt(&g, spy, &legal, &racers, &BTreeSet::new()));
+        }
+        quote_preparation(&mut g, spy, city, 0.253906);
+        assert!(!ai.training_yields_to_the_disrupt(&g, spy, &legal, &racers, &BTreeSet::new()));
+        assert!(!ai.native_culture_spy_prepares(&g, spy, 1, &[]));
+        ai.lane_lost = true;
+        assert!(!ai.native_culture_spy_prepares(&g, spy, 1, &legal));
+        ai.lane_lost = false;
+        for target in VictoryTarget::ALL
+            .into_iter()
+            .filter(|t| *t != VictoryTarget::Culture)
+        {
+            ai.victory_target = Some(target);
+            assert!(!ai.native_culture_spy_prepares(&g, spy, 1, &legal));
+        }
+        ai.victory_target = Some(VictoryTarget::Culture);
+        std::sync::Arc::make_mut(&mut g.host_unit_facts)
+            .get_mut(&spy)
+            .unwrap()
+            .spy_targets
+            .as_mut()
+            .unwrap()
+            .get_mut("gain_sources")
+            .unwrap()
+            .success = Some(0.9);
+        assert!(!ai.native_culture_spy_prepares(&g, spy, 1, &legal));
     }
 }
