@@ -12318,6 +12318,13 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
+	-- ACCEPTED is outstanding until the host applies it. Duplicate verdicts
+	-- and follow-up proposals must not adjust or reject that same treaty.
+	-- SendWorkingDeal can dispatch these statements before returning.
+	if session.kind == "peace" and session.peace_pending ~= nil then
+		CivvisTrade.pollPeace();
+		return;
+	end
 	-- ★★ A REFUSED ALLIANCE IS FOLLOWED BY THE RIVAL'S COUNTER. Live King
 	-- 2026-11-01: every Culture seat froze on the turn a rival refused our
 	-- alliance ask (102116Z t120 from four saves, 063953Z t186, 091422Z t120,
@@ -12372,9 +12379,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			end) and type(dealEqual) == "boolean";
 			if equalityChecked then
 				submittedAction = dealEqual and "ACCEPTED" or "ADJUSTED";
+				if dealEqual then
+					-- Arm ownership before the send so synchronous callbacks see it.
+					session.peace_pending = { turn = turn };
+					pcall(function()
+						LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
+					end);
+				end
 				submitted = pcall(function()
 					DealManager.SendWorkingDeal(DealProposalAction[submittedAction], pid, other);
 				end);
+				if not submitted then session.peace_pending = nil; end
 			end
 		end
 		local cityAsked = CivvisK.peaceCityAsked and CivvisK.peaceCityAsked[other];
@@ -12387,10 +12402,8 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			-- diplomacy state; a pcall only proves that Lua accepted the request.
 			enacted = false, deal_action = tostring(dealAction) });
 		if accepted and equalityChecked and dealEqual and submitted then
-			session.peace_pending = { turn = turn };
-			pcall(function()
-				LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4);
-			end);
+			-- A synchronous host confirmation may already have released it.
+			if trade.sessions[other] ~= session then return; end
 			CivvisTrade.pollPeace();
 			return;
 		elseif accepted and equalityChecked and not dealEqual and submitted then

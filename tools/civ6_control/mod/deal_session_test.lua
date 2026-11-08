@@ -534,6 +534,65 @@ check("an adjusted session closes", trade.sessions[13], nil)
 check("an adjusted close has no synthetic peace result",
 	eventField(lastEvent("peace_result"), "target"), "12")
 
+-- Native 20261108T022611Z t146: after our equal ACCEPTED, the engine
+-- repeated ACCEPTED with unequal working deals, then PROPOSED and ACCEPTED.
+-- None may turn the outstanding acceptance into an adjusted/rejected counter.
+-- Also deliver that sequence inside SendWorkingDeal: its callback can re-enter.
+;(function()
+    TURN = 79
+    local reentered = false
+    local pending, pendingPlayer
+    pending, pendingPlayer = fixture({ atWar = true, onSend = function(action)
+        if action ~= DealProposalAction.ACCEPTED or reentered then return end
+        reentered = true
+        pending.dealsEqual = false
+        for _, followup in ipairs({ DealProposalAction.ACCEPTED,
+                DealProposalAction.PROPOSED, DealProposalAction.ACCEPTED }) do
+            onStatement(20, 7, { StatementType = "MAKE_DEAL", SessionID = 920,
+                DealAction = followup })
+        end
+    end })
+    applyOrder(pendingPlayer, 7, { kind = "peace", subject = "20" }, TURN)
+    onStatement(7, 20, { StatementType = "MAKE_DEAL", SessionID = 920 })
+    onStatement(20, 7, { StatementType = "MAKE_DEAL", SessionID = 920,
+        DealAction = DealProposalAction.ACCEPTED })
+    check("reentrant peace followups do not adjust or reject", #pending.sends, 2)
+    check("reentrant peace stays owned until host confirmation", trade.sessions[20] ~= nil, true)
+    onStatement(20, 7, { StatementType = "MAKE_DEAL", SessionID = 920,
+        DealAction = DealProposalAction.PROPOSED })
+    check("later peace followups do not restart negotiation", #pending.sends, 2)
+    pending.atWar = false
+    trade.pollPeace()
+    check("pending peace is proven by the host", eventField(lastEvent("peace_result"), "target"), "20")
+    check("pending peace host result is enacted", eventField(lastEvent("peace_result"), "enacted"), "true")
+    check("confirmed pending peace releases its session", trade.sessions[20], nil)
+
+    local inline, inlinePlayer
+    inline, inlinePlayer = fixture({ atWar = true, onSend = function(action)
+        if action ~= DealProposalAction.ACCEPTED then return end
+        inline.atWar = false
+        onClosed(921)
+    end })
+    applyOrder(inlinePlayer, 7, { kind = "peace", subject = "21" }, TURN)
+    onStatement(7, 21, { StatementType = "MAKE_DEAL", SessionID = 921 })
+    onStatement(21, 7, { StatementType = "MAKE_DEAL", SessionID = 921,
+        DealAction = DealProposalAction.ACCEPTED })
+    check("inline host confirmation releases peace ownership", trade.sessions[21], nil)
+    check("inline host confirmation is recorded", eventField(lastEvent("peace_result"), "target"), "21")
+    check("inline peace confirmation does not rearm the hold", holds[#holds].open, false)
+
+    local failed, failedPlayer = fixture({ atWar = true, onSend = function(action)
+        if action == DealProposalAction.ACCEPTED then error("send failed") end
+    end })
+    applyOrder(failedPlayer, 7, { kind = "peace", subject = "22" }, TURN)
+    onStatement(7, 22, { StatementType = "MAKE_DEAL", SessionID = 922 })
+    onStatement(22, 7, { StatementType = "MAKE_DEAL", SessionID = 922,
+        DealAction = DealProposalAction.ACCEPTED })
+    check("failed peace submission releases ownership", trade.sessions[22], nil)
+    check("failed peace submission releases the hold", holds[#holds].open, false)
+    check("failed peace submission does not invent a host result", eventField(lastEvent("peace_result"), "target"), "21")
+end)()
+
 TURN = 80
 local refused, refusedPlayer = fixture({ atWar = true })
 applyOrder(refusedPlayer, 7, { kind = "peace", subject = "6" }, TURN)
