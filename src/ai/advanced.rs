@@ -5135,6 +5135,7 @@ pub struct AdvancedAi {
     air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
+    /// Native Culture armies at war also retain a unit-fuel buffer.
     /// See `army_upgrade_materials`. Off by default.
     army_upgrade_materials: bool,
     /// `astrology-before-the-second-city`: the Prophet race's Astrology is
@@ -10710,6 +10711,7 @@ mod gun_resource;
 pub use gun_resource::{BarterSpare, GunResourceWant};
 mod army_upgrade_materials;
 pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
+mod culture_war_materials;
 
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
