@@ -2,7 +2,7 @@
 //! race closes. Native Pericles 20261107T023905Z had Theology at turn 56 but
 //! no Holy Sites across nine cities at 170. The religion-oriented governor
 //! cannot supply this economy. Once the first writing slots stand, reserve
-//! one safe faith item at a time, developing at most one Holy Site per three
+//! safe faith items within the existing source budget, developing at most one Holy Site per three
 //! cities (three total), and stop once observed Faith income meets the budget.
 
 use super::*;
@@ -120,13 +120,25 @@ impl AdvancedAi {
     ) -> Option<(u32, Item, f64)> {
         let limit = self.culture_faith_source_budget(g, pid)?;
         let cities = g.player_city_ids(pid);
-        // Keep one existing commitment before admitting another queue.
-        for &cid in &cities {
-            if let Some(item) = g.cities[&cid].queue.first() {
-                if self.culture_faith_source_holds(g, pid, cid, plan, item) {
-                    return Some((cid, item.clone(), 0.0));
-                }
-            }
+        // Retain every existing commitment, but a positively quoted Native
+        // queue may use the next pipeline inside the existing source budget.
+        // Without host quotes the original serialized plan is unchanged.
+        let held = cities.iter().find_map(|&cid| {
+            let item = g.cities[&cid].queue.first()?;
+            self.culture_faith_source_holds(g, pid, cid, plan, item)
+                .then(|| (cid, item.clone(), 0.0))
+        });
+        let active = cities
+            .iter()
+            .filter(|cid| {
+                g.cities[cid]
+                    .queue
+                    .first()
+                    .is_some_and(|item| Self::culture_faith_item(g, item))
+            })
+            .count();
+        if held.is_some() && active >= limit {
+            return held;
         }
         let sites = cities
             .iter()
@@ -172,7 +184,11 @@ impl AdvancedAi {
             let Some(item) = item else {
                 continue;
             };
-            let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            let quote = g.host_production_turns(cid, &item);
+            if held.is_some() && quote.is_none() {
+                continue;
+            }
+            let turns = quote.unwrap_or_else(|| {
                 (g.item_cost_for_city(pid, cid, &item) - g.item_invested_production(cid, &item))
                     .max(0.0)
                     / g.city_yields(cid).production.max(0.5)
@@ -190,7 +206,7 @@ impl AdvancedAi {
                 best = Some((cid, item, turns));
             }
         }
-        best
+        best.or(held)
     }
 
     pub(super) fn claim_culture_faith_source(

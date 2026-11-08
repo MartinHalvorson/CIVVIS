@@ -240,3 +240,85 @@ fn only_the_selected_faith_factory_yields_its_campus_slot() {
         .is_some_and(|item| AdvancedAi::culture_faith_item(&g, item)));
     assert!(cities.iter().any(|cid| *cid != source && matches!(g.cities[cid].queue.first(), Some(Item::District { district, .. }) if g.district_family(*district) == "campus")));
 }
+
+fn quoted_parallel_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, Item, u32, Item) {
+    let (mut g, ai, plan, cities) = fixture(6);
+    let (first, existing, _) = ai.culture_faith_source_target(&g, 0, &plan).unwrap();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: first,
+            item: existing.clone(),
+        },
+    )
+    .unwrap();
+    let (second, next) = cities
+        .into_iter()
+        .filter(|c| *c != first)
+        .find_map(|c| BasicAi::first_district_item(&g, 0, c, "holy_site").map(|item| (c, item)))
+        .unwrap();
+    Arc::make_mut(&mut g.host_buildable)
+        .entry(second)
+        .or_default()
+        .insert(
+            Game::production_block_key(&next),
+            crate::game::HostMenuEntry {
+                cost: Some(70.0),
+                turns: Some(3.0),
+            },
+        );
+    (g, ai, plan, first, existing, second, next)
+}
+
+#[test]
+fn native_quote_opens_a_second_faith_pipeline_and_preserves_the_first() {
+    let (mut g, ai, plan, first, existing, second, next) = quoted_parallel_fixture();
+    let target = ai.culture_faith_source_target(&g, 0, &plan).unwrap();
+    assert_eq!((target.0, target.1), (second, next.clone()));
+    ai.claim_culture_faith_source(&mut g, 0, &plan);
+    assert!(ai.culture_faith_source_holds(&g, 0, first, &plan, &existing));
+    assert!(ai.culture_faith_source_holds(&g, 0, second, &plan, &next));
+    assert_eq!(
+        g.player_city_ids(0)
+            .iter()
+            .filter(|c| g.cities[c]
+                .queue
+                .first()
+                .is_some_and(|i| AdvancedAi::culture_faith_item(&g, i)))
+            .count(),
+        2
+    );
+    assert!(
+        [first, second].contains(&ai.culture_faith_source_target(&g, 0, &plan).unwrap().0),
+        "two pipelines already fill this six-city source budget"
+    );
+}
+
+#[test]
+fn no_native_quote_keeps_the_serialized_headless_commitment() {
+    let (mut g, ai, plan, first, existing, _, _) = quoted_parallel_fixture();
+    Arc::make_mut(&mut g.host_buildable).clear();
+    let target = ai.culture_faith_source_target(&g, 0, &plan).unwrap();
+    assert_eq!((target.0, target.1), (first, existing));
+}
+
+#[test]
+fn a_threatened_or_slow_native_second_queue_keeps_the_existing_commitment() {
+    let (mut g, ai, mut plan, first, _, second, next) = quoted_parallel_fixture();
+    plan.threatened_city = Some(second);
+    assert_eq!(
+        ai.culture_faith_source_target(&g, 0, &plan).unwrap().0,
+        first
+    );
+    plan.threatened_city = None;
+    Arc::make_mut(&mut g.host_buildable)
+        .get_mut(&second)
+        .unwrap()
+        .get_mut(&Game::production_block_key(&next))
+        .unwrap()
+        .turns = Some(30.0);
+    assert_eq!(
+        ai.culture_faith_source_target(&g, 0, &plan).unwrap().0,
+        first
+    );
+}
