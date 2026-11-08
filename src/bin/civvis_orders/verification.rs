@@ -70,6 +70,72 @@ fn verify_order_with_context(
                 move_reached: context.later_move_reached,
             },
         ),
+        "museum_swap" => {
+            let Some(source_id) = order.subject else {
+                return failed("museum_source_missing".to_string());
+            };
+            let Some((destination_id, destination_slot)) = order.pos else {
+                return failed("museum_destination_missing".to_string());
+            };
+            if source_id == i64::from(destination_id)
+                || !(0..3).contains(&destination_slot)
+                || verb.is_empty()
+            {
+                return failed("museum_order_invalid".to_string());
+            }
+            let cities = (
+                own_city(before, source_id),
+                own_city(before, i64::from(destination_id)),
+                own_city(after, source_id),
+                own_city(after, i64::from(destination_id)),
+            );
+            let (Some(source), Some(destination), Some(source_after), Some(destination_after)) =
+                cities
+            else {
+                return failed("museum_not_ours".to_string());
+            };
+            let inventories = (
+                source.great_works.as_deref(),
+                destination.great_works.as_deref(),
+                source_after.great_works.as_deref(),
+                destination_after.great_works.as_deref(),
+            );
+            let (Some(source), Some(destination), Some(source_after), Some(destination_after)) =
+                inventories
+            else {
+                return failed("museum_inventory_unknown".to_string());
+            };
+            let Some(original) = source
+                .iter()
+                .find(|work| work.kind == verb && work.building == "BUILDING_MUSEUM_ART")
+            else {
+                return failed("museum_source_work_missing".to_string());
+            };
+            let other = destination
+                .iter()
+                .find(|work| {
+                    work.building == "BUILDING_MUSEUM_ART" && work.slot == destination_slot
+                })
+                .map(|work| work.kind.as_str());
+            let source_now = source_after
+                .iter()
+                .find(|work| work.building == "BUILDING_MUSEUM_ART" && work.slot == original.slot)
+                .map(|work| work.kind.as_str());
+            let destination_now = destination_after
+                .iter()
+                .find(|work| {
+                    work.building == "BUILDING_MUSEUM_ART" && work.slot == destination_slot
+                })
+                .map(|work| work.kind.as_str());
+            if source_now == other
+                && destination_now == Some(verb)
+                && !source_after.iter().any(|work| work.kind == verb)
+            {
+                Verdict::Verified
+            } else {
+                failed("museum_swap_not_observed".to_string())
+            }
+        }
         "produce" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());

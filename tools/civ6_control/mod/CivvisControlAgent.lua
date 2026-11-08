@@ -6272,6 +6272,105 @@ local finished = false;
 -- A bare-global namespace (the `CivvisTrade` pattern): the main chunk is one
 -- file-scope local below Lua's 200-slot ceiling and this must be visible to
 -- both `exportState` above and `orderGreatPerson` far below.
+-- Art Museum swaps proposed by the Culture AI. The stock UI's move gate and
+-- request shape are GreatWorksOverview.lua:764-799,836-868,905-914.
+-- Read native building Tourism before choosing whether a proposal is beneficial:
+-- a Curator or other city modifier must not turn a base-score gain into a loss.
+CivvisMuseumSwaps = { lastTurn = -1 };
+function CivvisMuseumSwaps.score(slots)
+    local seen, count, unique, object, same = {}, 0, 0, nil, true;
+    for slot = 1, 3 do
+        local work = slots[slot];
+        if work ~= nil then
+            count = count + 1;
+            if not seen[work.creator] then seen[work.creator] = true; unique = unique + 1; end
+            if object == nil then object = work.object; elseif object ~= work.object then same = false; end
+        end
+    end
+    local base = count + unique;
+    if count == 3 and unique == 3 and same then base = base * 2; end
+    return base;
+end
+function CivvisMuseumSwaps.read(city, building)
+    local blds = city:GetBuildings();
+    if not blds:HasBuilding(building) or blds:GetNumGreatWorkSlots(building) ~= 3 then return nil; end
+    local slots = {};
+    for slot = 0, 2 do
+        local index = blds:GetGreatWorkInSlot(building, slot);
+        if index == nil then return nil; end
+        if index >= 0 then
+            local info = GameInfo.GreatWorks[blds:GetGreatWorkTypeFromIndex(index)];
+            local data = Game.GetGreatWorkDataFromIndex(index);
+            if info == nil or (info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
+                and info.GreatWorkObjectType ~= "GREATWORKOBJECT_LANDSCAPE"
+                and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT")
+                or tonumber(info.Tourism) ~= 2 or data == nil
+                or type(data.CreatorName) ~= "string" or data.CreatorName == "" then return nil; end
+            local created = tonumber(blds:GetTurnFromIndex(index));
+            if created == nil then return nil; end
+            slots[slot + 1] = { index = index, kind = info.GreatWorkType,
+                object = info.GreatWorkObjectType, creator = data.CreatorName, created = created };
+        end
+    end
+    local base = CivvisMuseumSwaps.score(slots);
+    if base <= 0 then return nil; end
+    local tourism = tonumber(blds:GetBuildingTourismFromGreatWorks(false, building));
+    local religious = tonumber(blds:GetBuildingTourismFromGreatWorks(true, building));
+    if tourism == nil or tourism ~= tourism or tourism < 0 or tourism == math.huge
+        or religious ~= 0 then return nil; end
+    return { city = city:GetID(), blds = blds, slots = slots, factor = tourism / base, tourism = tourism };
+end
+function CivvisMuseumSwaps.attempt(player, pid, row, turn)
+    if CivvisMuseumSwaps.lastTurn == turn then return false, "museum_swap_turn_used"; end
+    local ok, accepted, reason = pcall(function()
+        local info = GameInfo.Buildings["BUILDING_MUSEUM_ART"];
+        if info == nil then return false, "museum_missing"; end
+        local source, dest;
+        eachCity(player, function(city)
+            if city:GetID() == row.subject then source = city; end
+            if city:GetID() == row.x then dest = city; end
+        end);
+        if source == nil or dest == nil or row.subject == row.x then return false, "museum_not_ours"; end
+        local a = CivvisMuseumSwaps.read(source, info.Index);
+        local b = CivvisMuseumSwaps.read(dest, info.Index);
+        if a == nil or b == nil then return false, "museum_unknown_inventory"; end
+        local target = tonumber(row.y);
+        if target == nil or target < 0 or target > 2 or target ~= math.floor(target) then return false, "museum_slot_invalid"; end
+        local sourceSlot, work;
+        for slot = 1, 3 do
+            if a.slots[slot] ~= nil and a.slots[slot].kind == row.verb then sourceSlot, work = slot, a.slots[slot]; end
+        end
+        if work == nil then return false, "museum_work_changed"; end
+        local other = b.slots[target + 1];
+        local lock = tonumber(GlobalParameters.GREATWORK_ART_LOCK_TIME) or 10;
+        if work.created + lock > turn or (other ~= nil and other.created + lock > turn) then return false, "museum_art_locked"; end
+        a.slots[sourceSlot], b.slots[target + 1] = other, work;
+        local after = CivvisMuseumSwaps.score(a.slots) * a.factor + CivvisMuseumSwaps.score(b.slots) * b.factor;
+        local before = a.tourism + b.tourism;
+        if after <= before + 0.01 then return false, "museum_no_native_gain"; end
+        local params = {};
+        params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+        params[PlayerOperations.PARAM_CITY_SRC] = a.city;
+        params[PlayerOperations.PARAM_CITY_DEST] = b.city;
+        params[PlayerOperations.PARAM_BUILDING_SRC] = info.Index;
+        params[PlayerOperations.PARAM_BUILDING_DEST] = info.Index;
+        params[PlayerOperations.PARAM_GREAT_WORK_INDEX] = work.index;
+        params[PlayerOperations.PARAM_SLOT] = target;
+        local requested, result = pcall(function()
+            return UI.RequestPlayerOperation(pid, PlayerOperations.MOVE_GREAT_WORK, params);
+        end);
+        requested = requested and result ~= false;
+        if requested then CivvisMuseumSwaps.lastTurn = turn; end
+        emit("museum_swap_requested", { turn = turn, requested = requested,
+            source_city = a.city, source_slot = sourceSlot - 1, source_work = work.kind,
+            dest_city = b.city, dest_slot = target, dest_work = other and other.kind or "",
+            native_tourism_before = before, estimated_tourism_after = after });
+        return requested, requested and "museum_swap_requested" or "museum_swap_refused";
+    end);
+    if not ok then return false, "museum_api_unavailable"; end
+    return accepted, reason;
+end
+
 CivvisGreatWorks = {
 	-- Survey memo; the export and the driver run in the same turn and the
 	-- board cannot change between them.
@@ -15786,6 +15885,8 @@ local function applyOrder(player, pid, row, turn)
 		if not ok then pendingReligionChoice = nil; end
 		return ok, ok and "religion_activation_requested" or "throw";
 	end
+
+	if kind == "museum_swap" then return CivvisMuseumSwaps.attempt(player, pid, row, turn); end
 
 	if kind == "research" or kind == "civic" then
 		local isTech = kind == "research";

@@ -2131,3 +2131,53 @@ fn pending_orders_are_settled_by_the_next_turn_and_not_by_a_frame_of_the_same_tu
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn museum_swap_requires_both_native_inventory_slots_not_a_request() {
+    let work = |kind: &str| civvis::mirror::StateGreatWork {
+        kind: kind.into(),
+        building: "BUILDING_MUSEUM_ART".into(),
+        slot: 0,
+        ..Default::default()
+    };
+    let mut before = frame(20);
+    let mut source = city(10, 1, 1, None);
+    source.great_works = Some(vec![work("ART_A")]);
+    let mut destination = city(20, 2, 2, None);
+    destination.great_works = Some(vec![work("ART_B")]);
+    before.cities = vec![source, destination];
+    let mut after = before.clone();
+    after.turn = 21;
+    let swap = order("museum_swap", Some(10), Some("ART_A"), Some((20, 0)));
+    let request = serde_json::json!({"kind":"museum_swap_requested","requested":true,"turn":20});
+    assert_eq!(
+        check(&swap, &before, &after, &[request]),
+        failed("museum_swap_not_observed")
+    );
+    after.cities[1].great_works = Some(vec![work("ART_A")]);
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_swap_not_observed")
+    );
+    after.cities[0].great_works = Some(vec![work("ART_B")]);
+    assert_eq!(check(&swap, &before, &after, &[]), Verdict::Verified);
+    after.cities[0].great_works = None;
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_inventory_unknown")
+    );
+    after.cities.pop();
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_not_ours")
+    );
+    let mut after = before.clone();
+    after.cities[1].great_works = Some(vec![work("ART_A")]);
+    after.cities[0].great_works = Some(vec![]);
+    assert_eq!(
+        check(&swap, &before, &after, &[]),
+        failed("museum_swap_not_observed")
+    );
+    before.cities[1].great_works = Some(vec![]);
+    assert_eq!(check(&swap, &before, &after, &[]), Verdict::Verified);
+}
