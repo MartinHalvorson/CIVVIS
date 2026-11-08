@@ -41,10 +41,6 @@ impl AdvancedAi {
         }
         let usable = |city: &crate::mirror::StateCity| {
             city.buildings.iter().any(|b| b == "BUILDING_AMPHITHEATER")
-                && city
-                    .pillaged_buildings
-                    .as_ref()
-                    .is_some_and(|pillaged| !pillaged.iter().any(|b| b == "BUILDING_AMPHITHEATER"))
                 && city.great_works.as_ref().is_some_and(|works| {
                     let mut slots = BTreeSet::new();
                     works
@@ -67,7 +63,14 @@ impl AdvancedAi {
         let mut destinations: Vec<_> = state
             .cities
             .iter()
-            .filter(|c| usable(c) && c.damage == 0.0 && c.loyalty >= 75.0)
+            .filter(|c| {
+                usable(c)
+                    && c.damage == 0.0
+                    && c.loyalty >= 75.0
+                    && c.pillaged_buildings.as_ref().is_some_and(|pillaged| {
+                        !pillaged.iter().any(|b| b == "BUILDING_AMPHITHEATER")
+                    })
+            })
             .collect();
         destinations.sort_by_key(|c| (!c.capital, c.id));
         let mut proposals = Vec::new();

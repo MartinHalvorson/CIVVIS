@@ -6348,7 +6348,7 @@ function CivvisWritingEvacuation.attempt(player, pid, row, turn)
         if info == nil then return false, "writing_evacuation_building_missing"; end
         local a, b = source:GetBuildings(), dest:GetBuildings();
         if not a:HasBuilding(info.Index) or not b:HasBuilding(info.Index)
-            or a:IsPillaged(info.Index) or b:IsPillaged(info.Index)
+            or b:IsPillaged(info.Index)
             or a:GetNumGreatWorkSlots(info.Index) ~= 2 or b:GetNumGreatWorkSlots(info.Index) ~= 2 then
             return false, "writing_evacuation_building_changed";
         end

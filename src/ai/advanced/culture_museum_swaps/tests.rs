@@ -109,7 +109,10 @@ fn evacuation_fixture() -> (Game, StateSnapshot) {
 
 #[test]
 fn damaged_wartime_city_proposes_writing_to_known_empty_safe_slot() {
-    let (g, s) = evacuation_fixture();
+    let (g, mut s) = evacuation_fixture();
+    // A pillaged source still contains its writings. Native UI's movement
+    // rules restrict artifact museums and new art, not pillaged writing slots.
+    s.cities[0].pillaged_buildings = Some(vec!["BUILDING_AMPHITHEATER".into()]);
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
     assert_eq!(
         ai.native_writing_evacuations(&g, 0, &s),
@@ -144,7 +147,7 @@ fn evacuation_requires_native_danger_safe_inventory_and_culture_lane() {
     x.cities[1].great_works = None;
     controls.push(x);
     let mut x = s.clone();
-    x.cities[0].pillaged_buildings = None;
+    x.cities[1].pillaged_buildings = None;
     controls.push(x);
     let mut x = s.clone();
     x.cities[1].pillaged_buildings = Some(vec!["BUILDING_AMPHITHEATER".into()]);
