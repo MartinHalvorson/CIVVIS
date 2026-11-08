@@ -50,6 +50,9 @@ use verification::*;
 #[path = "civvis_orders/builder_diagnostics.rs"]
 mod builder_diagnostics;
 
+#[path = "civvis_orders/trader_origin_coverage.rs"]
+mod trader_origin_coverage;
+
 #[path = "civvis_orders/air_assault.rs"]
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
@@ -5639,6 +5642,19 @@ fn decide(
         note_bits.push(format!("air_assault_phase_deferred={air_phase_deferred}"));
     }
 
+    let relocated_traders = trader_origin_coverage::apply(
+        ai,
+        &mirror_state.game,
+        &mirror_state.uid_of,
+        &mirror_state.active_trade_route_traders,
+        &mut orders,
+    );
+    if relocated_traders > 0 {
+        note_bits.push(format!(
+            "culture_trade_origin_transfers={relocated_traders}"
+        ));
+    }
+
     // Keep the first speculative local step before a whole walk is compressed
     // into one host operation. `HostMoveRefusals` uses it only if Firaxis then
     // leaves the unit exactly where it started.
@@ -8332,6 +8348,22 @@ fn verify_unit_order(
         // shipped `UNITOPERATION_REBASE` is a teleport that spends the turn),
         // so the aircraft standing there on the next frame is the whole
         // postcondition.
+        "TELEPORT_TO_CITY" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            match now {
+                Some(now)
+                    if now.kind == "UNIT_TRADER"
+                        && (now.x, now.y) == want
+                        && own_city_at(after, want).is_some() =>
+                {
+                    Verdict::Verified
+                }
+                None => gone(),
+                Some(_) => Verdict::Failed("trade_origin_not_changed".to_string()),
+            }
+        }
         "REBASE" => {
             let Some(want) = order.pos else {
                 return Verdict::Failed("no_destination".to_string());

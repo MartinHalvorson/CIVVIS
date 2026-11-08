@@ -27,6 +27,108 @@ use crate::game::Game;
 pub(super) const CULTURE_ROUTE_TOURISM_FLOOR: f64 = 15.0;
 
 impl AdvancedAi {
+    /// Native origin relocation for an idle Trader whose proposed route would
+    /// repeat a market. Positive host route options are the authority for the
+    /// other origin; the bridge still asks Firaxis to permit the transfer.
+    pub fn native_culture_trade_origin(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        proposed_destination: u32,
+        covered: &std::collections::BTreeSet<usize>,
+    ) -> Option<(u32, usize)> {
+        if !self.culture_routes_reach_every_rival
+            || self.lane_lost
+            || self.active_victory_target(g) != Some(super::VictoryTarget::Culture)
+            || g.tourism_per_turn(pid) < CULTURE_ROUTE_TOURISM_FLOOR
+            || g.host_unit_facts.get(&uid)?.civ6_id.is_none()
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "trader" {
+            return None;
+        }
+        let current = g.city_at(unit.pos)?;
+        if g.cities[&current].owner != pid {
+            return None;
+        }
+        let destination = g.cities.get(&proposed_destination)?;
+        let owner = &g.players[destination.owner];
+        if !owner.is_minor
+            && !owner.is_barbarian
+            && destination.owner != pid
+            && !covered.contains(&destination.owner)
+        {
+            return None; // The existing plan already opens a new market.
+        }
+        let missing_market = |destination: u32| {
+            g.cities.get(&destination).is_some_and(|city| {
+                let rival = &g.players[city.owner];
+                city.owner != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && !g.same_team(pid, city.owner)
+                    && !g.is_at_war(pid, city.owner)
+                    && !covered.contains(&city.owner)
+            })
+        };
+        if g.observed_route_options
+            .keys()
+            .any(|&(origin, destination)| {
+                origin == current
+                    && missing_market(destination)
+                    && g.can_establish_trade_route(pid, origin, destination)
+            })
+        {
+            return None; // An origin change is unnecessary here.
+        }
+        g.observed_route_options
+            .keys()
+            .filter_map(|&(origin, destination)| {
+                let city = g.cities.get(&origin)?;
+                let target = g.cities.get(&destination)?;
+                let rival = &g.players[target.owner];
+                if origin == current
+                    || city.owner != pid
+                    || city.hp < 200
+                    || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                    || target.owner == pid
+                    || !rival.alive
+                    || rival.is_minor
+                    || rival.is_barbarian
+                    || g.same_team(pid, target.owner)
+                    || g.is_at_war(pid, target.owner)
+                    || covered.contains(&target.owner)
+                    || !g.can_establish_trade_route(pid, origin, destination)
+                {
+                    return None;
+                }
+                let value = self.trade_route_destination_value_from(
+                    g,
+                    pid,
+                    Some(origin),
+                    target,
+                    GrandStrategy::Culture,
+                );
+                value.is_finite().then_some((
+                    g.domestic_tourists(target.owner),
+                    value,
+                    origin,
+                    target.owner,
+                ))
+            })
+            .max_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.total_cmp(&b.1))
+                    .then_with(|| b.2.cmp(&a.2))
+                    .then_with(|| b.3.cmp(&a.3))
+            })
+            .map(|(_, _, origin, owner)| (origin, owner))
+    }
+
     /// The rival city a Trader in `origin` should open a route to, with that
     /// route's value, or `None` when the gene does not claim this Trader.
     pub(super) fn culture_route_claim(
