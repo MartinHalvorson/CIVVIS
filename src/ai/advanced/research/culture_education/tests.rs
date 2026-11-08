@@ -48,7 +48,7 @@ fn equipped() -> (Game, AdvancedAi, StrategicPlan, u32) {
 
 #[test]
 fn culture_education_opens_a_ready_university_chain() {
-    let (mut g, mut ai, plan, _) = equipped();
+    let (mut g, ai, plan, _) = equipped();
     assert_eq!(ai.culture_education_goal(&g, 0), Some("education"));
     assert!(g.available_techs(0).contains(&crate::name!("education")));
     ai.advanced_research(&mut g, 0, &plan);
@@ -104,7 +104,7 @@ fn culture_education_ends_at_education_and_leaves_other_targets_alone() {
 
 #[test]
 fn culture_education_preserves_committed_research_and_rush_priority() {
-    let (mut g, mut ai, mut plan, _) = equipped();
+    let (mut g, ai, mut plan, _) = equipped();
     g.players[0].research = Some("construction".to_string());
     g.players[0].research_progress = 9.0;
     ai.advanced_research(&mut g, 0, &plan);
