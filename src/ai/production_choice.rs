@@ -17,6 +17,41 @@
 use super::*;
 
 impl BasicAi {
+    /// Prefer a Native-quoted non-resort Campus site over a standing resort.
+    /// `sites` already carries district legality; unquoted and all-resort
+    /// choices retain the ordinary fallback, including repairable resorts.
+    pub(super) fn culture_resort_site_is_displaced(
+        g: &Game,
+        cid: u32,
+        district: Name,
+        pos: Pos,
+        sites: &[Pos],
+    ) -> bool {
+        if g.district_family(district) != "campus"
+            || !sites.contains(&pos)
+            || g.map.tiles.get(&pos).and_then(|tile| tile.improvement)
+                != Some(crate::name!("seaside_resort"))
+        {
+            return false;
+        }
+        let Some(quoted) = g
+            .host_district_sites
+            .get(&cid)
+            .and_then(|items| items.get(&district))
+        else {
+            return false;
+        };
+        quoted.contains(&pos)
+            && sites.iter().any(|alternative| {
+                quoted.contains(alternative)
+                    && g.map.tiles.get(alternative).is_some_and(|tile| {
+                        !tile.flooded
+                            && !tile.submerged
+                            && tile.improvement != Some(crate::name!("seaside_resort"))
+                    })
+            })
+    }
+
     /// The strongest land recon unit this city can build right now.
     ///
     /// Ranked by movement first and strength second, because what this buys is
@@ -1465,7 +1500,13 @@ impl BasicAi {
             if !unlocked {
                 continue;
             }
-            let sites = g.district_sites(cid, Name::new(dname.as_str()));
+            let mut sites = g.district_sites(cid, Name::new(dname.as_str()));
+            if self.preserve_culture_resort_sites {
+                let original = sites.clone();
+                sites.retain(|pos| {
+                    !Self::culture_resort_site_is_displaced(g, cid, dname, *pos, &original)
+                });
+            }
             if !sites.is_empty() {
                 let best = *sites
                     .iter()

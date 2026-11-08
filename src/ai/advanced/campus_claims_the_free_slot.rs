@@ -202,8 +202,11 @@ impl AdvancedAi {
     /// delegated governor force a Campus again through a different opening.
     /// Building claims and ordinary scoring remain available.
     pub(super) fn culture_budgeted_base_cities(&mut self, g: &mut Game, pid: usize) {
+        let saved_resorts = self.base.preserve_culture_resort_sites;
+        self.base.preserve_culture_resort_sites = self.culture_releases_science_claims(g, pid);
         if !self.culture_limits_campus_foundations(g, pid) {
             self.base.cities(g, pid);
+            self.base.preserve_culture_resort_sites = saved_resorts;
             return;
         }
         let saved = (
@@ -226,6 +229,7 @@ impl AdvancedAi {
             self.base.campus_before_the_army_2,
             self.base.campus_before_the_army_3,
         ) = saved;
+        self.base.preserve_culture_resort_sites = saved_resorts;
     }
 
     /// The Campus `cid` would claim and how long it takes: the first Campus
