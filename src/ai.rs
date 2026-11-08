@@ -2736,6 +2736,8 @@ pub struct BasicAi {
     /// Museum, the Museum tie breaks toward the Artifact slot. Lent by the
     /// Advanced gene to a Culture seat's delegated call; off by default.
     pub(crate) digs_one_museum: bool,
+    /// Set only while delegating a Culture seat after its tourism technologies.
+    pub(crate) preserve_culture_resort_sites: bool,
     /// `deck-prices-growth`: the policy counterfactual prices each city's
     /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
     /// and amenity cards are worth the growth they release. Set by the
@@ -3877,6 +3879,7 @@ impl BasicAi {
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
+            preserve_culture_resort_sites: false,
             deck_prices_growth: false,
             deck_follows_the_queue: false,
             deck_queue_signature: RefCell::new(BTreeMap::new()),
@@ -4292,6 +4295,7 @@ impl BasicAi {
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
+            preserve_culture_resort_sites: false,
             deck_prices_growth: false,
             deck_follows_the_queue: false,
             deck_queue_signature: RefCell::new(BTreeMap::new()),

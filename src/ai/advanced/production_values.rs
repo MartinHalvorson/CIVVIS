@@ -18,6 +18,24 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn culture_preserves_resort_site(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        district: Name,
+        pos: Pos,
+    ) -> bool {
+        self.culture_releases_science_claims(g, pid)
+            && BasicAi::culture_resort_site_is_displaced(
+                g,
+                cid,
+                district,
+                pos,
+                &g.district_sites(cid, district),
+            )
+    }
+
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
     ///
     /// Worked backwards from the win condition rather than forwards from the

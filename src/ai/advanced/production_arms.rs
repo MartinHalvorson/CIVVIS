@@ -56,6 +56,9 @@ impl AdvancedAi {
             threatened,
             ..
         } = *frame;
+        if self.culture_preserves_resort_site(g, pid, cid, *district, *pos) {
+            return -10_000.0;
+        }
         let spec = &g.rules.districts[district];
         let family = g.district_family(*district);
         let science_harbor_reserved = Self::science_harbor_reserved(g, pid);
