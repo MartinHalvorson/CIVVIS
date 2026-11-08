@@ -5643,6 +5643,19 @@ fn decide(
     }
 
     for (source, work, destination, slot) in
+        ai.native_writing_evacuations(&mirror_state.game, 0, state)
+    {
+        if let Ok(destination) = i32::try_from(destination) {
+            orders.push(Order {
+                kind: "writing_evacuation",
+                subject: Some(source),
+                verb: Some(work),
+                pos: Some((destination, slot)),
+            });
+        }
+    }
+
+    for (source, work, destination, slot) in
         ai.native_art_museum_swaps(&mirror_state.game, 0, state)
     {
         if let Ok(destination) = i32::try_from(destination) {

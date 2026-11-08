@@ -24,6 +24,84 @@ fn score(slots: &[Option<&StateGreatWork>]) -> i32 {
 }
 
 impl AdvancedAi {
+    /// Preserve writings when Native damage exposes their city to capture.
+    /// These are transfer proposals; the host rechecks the danger and slot.
+    pub fn native_writing_evacuations(
+        &self,
+        g: &Game,
+        pid: usize,
+        state: &StateSnapshot,
+    ) -> Vec<(i64, String, i64, i32)> {
+        if g.players.get(pid).is_none()
+            || self.lane_lost
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || !state.rivals.iter().any(|rival| rival.at_war)
+        {
+            return Vec::new();
+        }
+        let usable = |city: &crate::mirror::StateCity| {
+            city.buildings.iter().any(|b| b == "BUILDING_AMPHITHEATER")
+                && city.great_works.as_ref().is_some_and(|works| {
+                    let mut slots = BTreeSet::new();
+                    works
+                        .iter()
+                        .filter(|w| w.building == "BUILDING_AMPHITHEATER")
+                        .all(|w| {
+                            w.object == "GREATWORKOBJECT_WRITING"
+                                && !w.kind.is_empty()
+                                && (0..2).contains(&w.slot)
+                                && slots.insert(w.slot)
+                        })
+                })
+        };
+        let mut sources: Vec<_> = state
+            .cities
+            .iter()
+            .filter(|c| usable(c) && c.damage.is_finite() && c.damage > 0.0)
+            .collect();
+        sources.sort_by(|a, b| b.damage.total_cmp(&a.damage).then(a.id.cmp(&b.id)));
+        let mut destinations: Vec<_> = state
+            .cities
+            .iter()
+            .filter(|c| {
+                usable(c)
+                    && c.damage == 0.0
+                    && c.loyalty >= 75.0
+                    && c.pillaged_buildings.as_ref().is_some_and(|pillaged| {
+                        !pillaged.iter().any(|b| b == "BUILDING_AMPHITHEATER")
+                    })
+            })
+            .collect();
+        destinations.sort_by_key(|c| (!c.capital, c.id));
+        let mut proposals = Vec::new();
+        for source in sources {
+            for work in source
+                .great_works
+                .as_ref()
+                .unwrap()
+                .iter()
+                .filter(|w| w.building == "BUILDING_AMPHITHEATER")
+            {
+                for dest in &destinations {
+                    if source.id == dest.id {
+                        continue;
+                    }
+                    let works = dest.great_works.as_ref().unwrap();
+                    for slot in 0..2 {
+                        if !works
+                            .iter()
+                            .any(|w| w.building == "BUILDING_AMPHITHEATER" && w.slot == slot)
+                        {
+                            proposals.push((source.id, work.kind.clone(), dest.id, slot));
+                        }
+                    }
+                }
+            }
+        }
+        proposals.truncate(16);
+        proposals
+    }
+
     /// Ordered, strictly improving inventory proposals, not accepted moves.
     /// Native city multipliers and creation locks are read again by the host.
     /// Religious art has a separate Tourism channel and is left untouched.
