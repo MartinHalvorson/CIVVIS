@@ -71,7 +71,10 @@ fn fixture() -> Fixture {
         kind: "unit",
         subject: Some(1000),
         verb: Some("TRADE_ROUTE".into()),
-        pos: Some(axial_to_offset(g.cities[&covered].pos)),
+        pos: Some(axial_to_offset(
+            g.cities[&covered].pos.0,
+            g.cities[&covered].pos.1,
+        )),
     }];
     (
         ai,
@@ -92,7 +95,10 @@ fn native_positive_other_origin_replaces_a_duplicate_market_route() {
     assert_eq!(orders[0].verb.as_deref(), Some("TELEPORT_TO_CITY"));
     assert_eq!(
         orders[0].pos,
-        Some(axial_to_offset(g.cities[&alternative].pos))
+        Some(axial_to_offset(
+            g.cities[&alternative].pos.0,
+            g.cities[&alternative].pos.1
+        ))
     );
 }
 
@@ -100,7 +106,10 @@ fn native_positive_other_origin_replaces_a_duplicate_market_route() {
 fn current_origin_or_existing_new_market_plan_does_not_need_a_transfer() {
     let (ai, mut g, units, orders, _, origin, _, missing) = fixture();
     let mut direct = orders.clone();
-    direct[0].pos = Some(axial_to_offset(g.cities[&missing].pos));
+    direct[0].pos = Some(axial_to_offset(
+        g.cities[&missing].pos.0,
+        g.cities[&missing].pos.1,
+    ));
     assert_eq!(apply(&ai, &g, &units, &BTreeSet::new(), &mut direct), 0);
     Arc::make_mut(&mut g.observed_route_options).insert((origin, missing), Yields::default());
     let mut local = orders;

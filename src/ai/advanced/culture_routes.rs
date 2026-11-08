@@ -54,12 +54,14 @@ impl AdvancedAi {
         if g.cities[&current].owner != pid {
             return None;
         }
+        let market_covered =
+            |owner| covered.contains(&owner) || g.has_tourism_trade_route(pid, owner);
         let destination = g.cities.get(&proposed_destination)?;
         let owner = &g.players[destination.owner];
         if !owner.is_minor
             && !owner.is_barbarian
             && destination.owner != pid
-            && !covered.contains(&destination.owner)
+            && !market_covered(destination.owner)
         {
             return None; // The existing plan already opens a new market.
         }
@@ -72,7 +74,7 @@ impl AdvancedAi {
                     && !rival.is_barbarian
                     && !g.same_team(pid, city.owner)
                     && !g.is_at_war(pid, city.owner)
-                    && !covered.contains(&city.owner)
+                    && !market_covered(city.owner)
             })
         };
         if g.observed_route_options
@@ -101,7 +103,7 @@ impl AdvancedAi {
                     || rival.is_barbarian
                     || g.same_team(pid, target.owner)
                     || g.is_at_war(pid, target.owner)
-                    || covered.contains(&target.owner)
+                    || market_covered(target.owner)
                     || !g.can_establish_trade_route(pid, origin, destination)
                 {
                     return None;

@@ -14,9 +14,7 @@ pub(super) fn apply(
     busy: &BTreeSet<i64>,
     orders: &mut [Order],
 ) -> usize {
-    let mut covered: BTreeSet<_> = (0..game.players.len())
-        .filter(|owner| game.has_tourism_trade_route(0, *owner))
-        .collect();
+    let mut covered = BTreeSet::new();
     let mut transfers = 0;
     for order in orders {
         if order.kind != "unit" || order.verb.as_deref() != Some("TRADE_ROUTE") {
@@ -38,7 +36,8 @@ pub(super) fn apply(
             ai.native_culture_trade_origin(game, 0, unit, destination, &covered)
         {
             order.verb = Some("TELEPORT_TO_CITY".into());
-            order.pos = Some(axial_to_offset(game.cities[&origin].pos));
+            let (q, r) = game.cities[&origin].pos;
+            order.pos = Some(axial_to_offset(q, r));
             covered.insert(owner); // Do not send two idle Traders to the same missing market.
             transfers += 1;
         } else {
@@ -49,4 +48,5 @@ pub(super) fn apply(
 }
 
 #[cfg(test)]
+#[path = "trader_origin_coverage/tests.rs"]
 mod tests;
