@@ -1717,7 +1717,7 @@ def parse_args() -> argparse.Namespace:
     # or `--speed` here name a different world. A supervisor started with no
     # world arguments therefore serves the world the product itself opens on
     # rather than a third description of it.
-    parser.add_argument("--poles", choices=MAP_POLES, default="randomized")
+    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),

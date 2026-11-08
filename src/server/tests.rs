@@ -7897,7 +7897,7 @@ fn the_deck_menu_holds_its_place_while_a_section_scrolls() {
 
 /// The first world a civvis.ai visitor ever waits on is the smallest
 /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-/// shipped table, its heat scattered rather than banded by latitude,
+/// shipped table, with a hot equator and cold poles,
 /// spectated, at Online speed, one seat at a time. The browser build's
 /// `wasm::opening_params` is this function with the page's seed, so the
 /// contract is tested here, where the suite actually runs.
@@ -7909,8 +7909,8 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     assert_eq!(params.num_players, 4);
     assert_eq!(params.map_script, MapScript::TeninsBall);
     assert_eq!(params.map_topology, MapTopology::Planet);
-    assert_eq!(params.map_poles, MapPoles::Randomized);
-    assert!(!params.map_poles.has_poles());
+    assert_eq!(params.map_poles, MapPoles::Poles);
+    assert!(params.map_poles.has_poles());
     assert_eq!(
         (params.width, params.height),
         size.dimensions(MapTopology::Planet)
