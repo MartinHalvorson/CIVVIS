@@ -476,6 +476,76 @@ impl BasicAi {
         melee: usize,
         ranged: usize,
     ) -> Option<Item> {
+        let item = self.pick_item_unprotected(
+            g,
+            pid,
+            cid,
+            n_cities,
+            settlers,
+            builders,
+            traders,
+            siege_support,
+            military,
+            melee,
+            ranged,
+        )?;
+        let Item::District { district, pos } = item else {
+            return Some(item);
+        };
+        if !self.preserve_culture_resort_sites {
+            return Some(item);
+        }
+        let sites = g.district_sites(cid, district);
+        if !Self::culture_resort_site_is_displaced(g, cid, district, pos, &sites) {
+            return Some(item);
+        }
+        // Apply after every production priority, including forced Campus picks.
+        let quoted = &g.host_district_plots[&cid][&district];
+        let alternative = sites
+            .iter()
+            .copied()
+            .filter(|pos| {
+                quoted.contains(pos)
+                    && g.map.tiles.get(pos).is_some_and(|tile| {
+                        !tile.flooded
+                            && !tile.submerged
+                            && tile.improvement != Some(crate::name!("seaside_resort"))
+                    })
+            })
+            .filter(|pos| {
+                g.can_produce(
+                    pid,
+                    cid,
+                    &Item::District {
+                        district,
+                        pos: *pos,
+                    },
+                )
+            })
+            .max_by(|a, b| {
+                g.district_site_yields(district, *a)
+                    .total()
+                    .total_cmp(&g.district_site_yields(district, *b).total())
+                    .then(a.cmp(b))
+            });
+        Some(alternative.map_or(item, |pos| Item::District { district, pos }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pick_item_unprotected(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        builders: usize,
+        traders: usize,
+        siege_support: usize,
+        military: usize,
+        melee: usize,
+        ranged: usize,
+    ) -> Option<Item> {
         // Repairs restore yields and unlock every building/project in the
         // damaged district, so they outrank adding new infrastructure. Basic
         // and city-state governors previously ignored `Item::Repair`
@@ -1500,13 +1570,7 @@ impl BasicAi {
             if !unlocked {
                 continue;
             }
-            let mut sites = g.district_sites(cid, Name::new(dname.as_str()));
-            if self.preserve_culture_resort_sites {
-                let original = sites.clone();
-                sites.retain(|pos| {
-                    !Self::culture_resort_site_is_displaced(g, cid, dname, *pos, &original)
-                });
-            }
+            let sites = g.district_sites(cid, Name::new(dname.as_str()));
             if !sites.is_empty() {
                 let best = *sites
                     .iter()
