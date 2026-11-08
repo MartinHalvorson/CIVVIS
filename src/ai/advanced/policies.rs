@@ -667,7 +667,7 @@ impl AdvancedAi {
         // `culture-keeps-its-aesthetics`: read after the Liberalism repair so
         // the demotion above cannot unslot it on a Culture target. See
         // `advanced/culture_aesthetics.rs`.
-        if self.culture_aesthetics_leads(g, pid, &city_ids) {
+        if self.culture_aesthetics_leads(g, &city_ids) {
             desired.retain(|card| !matches!(*card, "aesthetics" | "natural_philosophy"));
             desired.insert(0, "aesthetics");
         }

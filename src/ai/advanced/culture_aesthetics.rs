@@ -21,7 +21,7 @@ use super::*;
 const AESTHETICS_MIN_THEATER_CITIES: usize = 3;
 
 impl AdvancedAi {
-    pub(super) fn culture_aesthetics_leads(&self, g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+    pub(super) fn culture_aesthetics_leads(&self, g: &Game, city_ids: &[u32]) -> bool {
         self.culture_keeps_its_aesthetics
             && !self.lane_lost
             && self.active_victory_target(g) == Some(VictoryTarget::Culture)
@@ -77,13 +77,13 @@ mod tests {
     #[test]
     fn three_theater_cities_put_aesthetics_first() {
         let (g, ids) = board(3);
-        assert!(seat().culture_aesthetics_leads(&g, 0, &ids));
+        assert!(seat().culture_aesthetics_leads(&g, &ids));
     }
 
     #[test]
     fn two_theater_cities_do_not_pay_for_the_slot() {
         let (g, ids) = board(2);
-        assert!(!seat().culture_aesthetics_leads(&g, 0, &ids));
+        assert!(!seat().culture_aesthetics_leads(&g, &ids));
     }
 
     #[test]
@@ -91,13 +91,13 @@ mod tests {
         let (g, ids) = board(3);
         let mut ai = seat();
         ai.lane_lost = true;
-        assert!(!ai.culture_aesthetics_leads(&g, 0, &ids));
+        assert!(!ai.culture_aesthetics_leads(&g, &ids));
     }
 
     #[test]
     fn off_is_inert() {
         let (g, ids) = board(3);
         let ai = AdvancedAi::targeting(VictoryTarget::Culture);
-        assert!(!ai.culture_aesthetics_leads(&g, 0, &ids));
+        assert!(!ai.culture_aesthetics_leads(&g, &ids));
     }
 }

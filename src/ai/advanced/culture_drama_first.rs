@@ -109,7 +109,8 @@ mod tests {
         let mut g = board(&OPENED);
         let mut ai = culture_seat();
         ai.enable_culture_seat_drama_before_government();
-        ai.advanced_research(&mut g, 0, &plan(&g));
+        let plan = plan(&g);
+        ai.advanced_research(&mut g, 0, &plan);
         assert_eq!(g.players[0].civic.as_deref(), Some("drama_poetry"));
     }
 
@@ -118,7 +119,8 @@ mod tests {
         let mut g = board(&OPENED);
         let mut ai = culture_seat();
         ai.enable_culture_seat_drama_first();
-        ai.advanced_research(&mut g, 0, &plan(&g));
+        let plan = plan(&g);
+        ai.advanced_research(&mut g, 0, &plan);
         assert_ne!(g.players[0].civic.as_deref(), Some("drama_poetry"));
     }
 
@@ -127,7 +129,8 @@ mod tests {
         let mut g = board(&GOVERNED);
         let mut ai = culture_seat();
         ai.enable_culture_seat_drama_first();
-        ai.advanced_research(&mut g, 0, &plan(&g));
+        let plan = plan(&g);
+        ai.advanced_research(&mut g, 0, &plan);
         assert_eq!(g.players[0].civic.as_deref(), Some("drama_poetry"));
     }
 
