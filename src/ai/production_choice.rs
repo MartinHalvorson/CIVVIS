@@ -35,7 +35,7 @@ impl BasicAi {
             return false;
         }
         let Some(quoted) = g
-            .host_district_sites
+            .host_district_plots
             .get(&cid)
             .and_then(|items| items.get(&district))
         else {

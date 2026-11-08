@@ -314,10 +314,12 @@ fn culture_resort_sites_fixture() -> (Game, u32, Pos, Pos) {
         tile.flooded = false;
         tile.submerged = false;
     }
-    std::sync::Arc::make_mut(&mut game.host_district_sites)
+    std::sync::Arc::make_mut(&mut game.host_district_plots)
         .entry(cid)
         .or_default()
         .insert(crate::name!("campus"), [resort, farm].into_iter().collect());
+    // Supply the separate placement override as well as the current production menu.
+    game.host_district_sites = game.host_district_plots.clone();
     game.players[0].techs.extend([
         crate::name!("flight"),
         crate::name!("radio"),
@@ -389,13 +391,13 @@ fn culture_resort_preference_retains_fallback_without_quoted_safe_alternative() 
     game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("seaside_resort"));
     assert!(!displaced(&game));
     game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
-    std::sync::Arc::make_mut(&mut game.host_district_sites)
+    std::sync::Arc::make_mut(&mut game.host_district_plots)
         .get_mut(&cid)
         .unwrap()
         .get_mut(&crate::name!("campus"))
         .unwrap()
         .remove(&farm);
     assert!(!displaced(&game));
-    std::sync::Arc::make_mut(&mut game.host_district_sites).clear();
+    std::sync::Arc::make_mut(&mut game.host_district_plots).clear();
     assert!(!displaced(&game));
 }
