@@ -307,7 +307,10 @@ mod tests {
 
     fn quote_preparation(g: &mut Game, spy: u32, city: u32, chance: f64) {
         let pos = g.cities[&city].pos;
-        let pad = g.cities[&city].districts[&crate::name!("spaceport")];
+        let pad = *g.cities[&city]
+            .districts
+            .get(crate::name!("spaceport"))
+            .unwrap();
         let targets = [
             (
                 "gain_sources".to_string(),
