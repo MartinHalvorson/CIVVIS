@@ -2056,6 +2056,14 @@ pub struct BasicAi {
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
     /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
+    /// `band-plays-its-stage`: Rock Band promotions and tours priced by the
+    /// band's survival. A concert's performance level is the band's level plus
+    /// the venue's matching-promotion levels, and that level sets both the
+    /// breakup odds and how fast album sales compound (a band's sales add
+    /// straight onto every later concert). Live: 86% of 355 concerts ran at
+    /// levels 1-2, 80 of 168 bands played once, and the only two-level stage
+    /// pairings numbered 3. Off by default; opt-in gene.
+    pub(crate) band_plays_its_stage: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -3792,6 +3800,7 @@ impl BasicAi {
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            band_plays_its_stage: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4206,6 +4215,7 @@ impl BasicAi {
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            band_plays_its_stage: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -7456,9 +7466,12 @@ impl BasicAi {
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex
         // away. Rank the current venue at zero travel alongside the others.
-        if let Some(target) =
-            Self::rock_band_tour_destination(g, pid, uid).filter(|target| *target != here)
-        {
+        let tour = if self.band_plays_its_stage {
+            Self::rock_band_stage_destination(g, pid, uid)
+        } else {
+            Self::rock_band_tour_destination(g, pid, uid)
+        };
+        if let Some(target) = tour.filter(|target| *target != here) {
             if let Some(next) = g.route_step(uid, target, 0) {
                 if self.path_move(g, pid, uid, next) {
                     return true;
@@ -7485,6 +7498,36 @@ impl BasicAi {
                 let distance = g.route_distance(uid, position, 0)?;
                 let travel_turns = distance as f64 / moves;
                 Some((value / (1.0 + travel_turns), distance, position))
+            })
+            .collect();
+        venues.sort_by(|left, right| {
+            right
+                .0
+                .total_cmp(&left.0)
+                .then(left.1.cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+        });
+        venues.first().map(|(_, _, position)| *position)
+    }
+
+    /// `band-plays-its-stage`: the same tour, ranked by the concert plus what
+    /// the band keeps earning if it survives it, weighted toward the rival
+    /// holding the Culture bar. Travel is priced gently because the band's
+    /// future, not this one concert, is what the trip buys; a trip beyond
+    /// fifteen turns is off the table.
+    pub(crate) fn rock_band_stage_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        let moves = g.unit_max_moves(uid).max(1.0);
+        let mut venues: Vec<(f64, usize, Pos)> = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter_map(|position| {
+                let value = g.rock_concert_stage_value(pid, uid, position)?;
+                let distance = g.route_distance(uid, position, 0)?;
+                let travel_turns = distance as f64 / moves;
+                (travel_turns <= 15.0)
+                    .then_some((value / (1.0 + 0.1 * travel_turns), distance, position))
             })
             .collect();
         venues.sort_by(|left, right| {

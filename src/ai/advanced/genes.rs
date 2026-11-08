@@ -5426,6 +5426,9 @@ pub const GENES: &[Gene] = &[
     // ---- append: a-b ------------------------------------------------
     // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
     Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
+    // A Rock Band's concert level sets its breakup odds and how fast album
+    // sales compound. Promote and tour for survival: `advanced/band_plays_its_stage.rs`.
+    Gene { tag: "band-plays-its-stage", field: "band_plays_its_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_its_stage, disable: AdvancedAi::disable_band_plays_its_stage },
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------

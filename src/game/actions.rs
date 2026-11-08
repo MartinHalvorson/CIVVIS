@@ -22,6 +22,31 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
+/// One band's concert at one venue, as a plan reads it before performing.
+struct RockConcertRead {
+    host: usize,
+    base: f64,
+    expected_multiplier: f64,
+    survival: f64,
+    nearby_factor: f64,
+}
+
+/// `(career Tourism multiple, concerts)` for a band of `rock_band_level`
+/// 1..=4 (rows) playing venues that add 0..=3 levels (columns), from a Monte
+/// Carlo of the stock performance tables (level-ups included, fifteen further
+/// concerts at most, no album sales yet). Live, a band that stays on venues
+/// worth two levels earns about six times the band that plays any stage.
+const ROCK_BAND_STAGE_FUTURE: [[(f64, f64); 4]; 4] = [
+    [(8.0, 2.5), (19.9, 3.7), (48.9, 5.9), (82.9, 8.4)],
+    [(17.0, 3.5), (40.3, 5.5), (82.9, 8.4), (108.8, 10.2)],
+    [(29.7, 4.9), (62.0, 7.3), (108.8, 10.2), (120.7, 11.0)],
+    [(38.9, 5.9), (73.4, 8.3), (120.7, 11.0), (120.7, 11.0)],
+];
+
+/// What a concert in the band's remaining career pays per multiple. A typical
+/// venue is a mix of a thousand-Tourism wonder and 250-750 Tourism buildings.
+const ROCK_BAND_STAGE_FUTURE_BASE: f64 = 700.0;
+
 impl Game {
     // ------------------------------------------------------- action layer
 
@@ -2138,11 +2163,9 @@ impl Game {
         level.saturating_add(venue_levels).clamp(1, 6)
     }
 
-    pub(crate) fn rock_concert_ai_value(&self, pid: usize, uid: u32, position: Pos) -> Option<f64> {
-        let unit = self.units.get(&uid)?;
-        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
-            return None;
-        }
+    /// The band's concert reading at this venue: venue Tourism, the expected
+    /// result and album multiplier, survival odds and the Goes To 11 audience.
+    fn rock_concert_read(&self, pid: usize, unit: &Unit, position: Pos) -> Option<RockConcertRead> {
         let (base, venue_levels, host_city) =
             self.rock_concert_venue_details(pid, Some(unit), position)?;
         let effective_level = self.rock_band_performance_level(unit, venue_levels);
@@ -2181,7 +2204,98 @@ impl Game {
         } else {
             0
         };
-        Some(base * (expected_multiplier * (1.0 + nearby_pct * nearby as f64) + 2.0 * survival))
+        Some(RockConcertRead {
+            host,
+            base,
+            expected_multiplier,
+            survival,
+            nearby_factor: 1.0 + nearby_pct * nearby as f64,
+        })
+    }
+
+    pub(crate) fn rock_concert_ai_value(&self, pid: usize, uid: u32, position: Pos) -> Option<f64> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
+            return None;
+        }
+        let read = self.rock_concert_read(pid, unit, position)?;
+        Some(read.base * (read.expected_multiplier * read.nearby_factor + 2.0 * read.survival))
+    }
+
+    /// `band-plays-its-stage`: the concert's expected Tourism plus the rest of
+    /// the band's career, which only the survivors get. See
+    /// [`rock_band_stage_future`](Self::rock_band_stage_future).
+    pub(crate) fn rock_concert_stage_value(
+        &self,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+    ) -> Option<f64> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
+            return None;
+        }
+        let read = self.rock_concert_read(pid, unit, position)?;
+        Some(
+            (read.base * read.expected_multiplier * read.nearby_factor
+                + read.survival * self.rock_band_stage_future(unit))
+                * self.rock_concert_race_factor(pid, read.host),
+        )
+    }
+
+    /// A visitor always adds one to our count. Taken from the civilization
+    /// holding the Culture bar, it also comes out of that rival's domestic
+    /// tourists, so the same concert closes the gap twice. Live, one game drew
+    /// 180 of its 226 visitors from a rival far below the bar.
+    fn rock_concert_race_factor(&self, pid: usize, host: usize) -> f64 {
+        let bar = self
+            .players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .map(|rival| self.domestic_tourists(rival.id))
+            .max()
+            .unwrap_or(0);
+        if bar <= 0 {
+            return 1.0;
+        }
+        1.0 + (self.domestic_tourists(host).max(0) as f64 / bar as f64).clamp(0.0, 1.0)
+    }
+
+    /// The Tourism this band can still earn. A concert adds the band's album
+    /// sales straight onto its result, and Tier 5-6 concerts raise the band's
+    /// level, so a surviving band's future is far larger than the concert in
+    /// front of it. `ROCK_BAND_STAGE_FUTURE` is a Monte Carlo table of the
+    /// stock performance tables, capped at fifteen further concerts.
+    pub(crate) fn rock_band_stage_future(&self, unit: &Unit) -> f64 {
+        let level = self
+            .host_unit_facts
+            .get(&unit.id)
+            .and_then(|facts| facts.rock_band_level)
+            .unwrap_or(unit.level)
+            .clamp(1, 4) as usize;
+        let bonus = [
+            "rock_wonder_levels",
+            "rock_entertainment_levels",
+            "rock_theater_levels",
+            "rock_water_park_levels",
+            "rock_nature_levels",
+            "rock_space_levels",
+            "rock_surf_levels",
+        ]
+        .into_iter()
+        .map(|effect| self.promotion_effect(unit, effect))
+        .fold(0.0_f64, f64::max)
+        .clamp(0.0, 3.0) as usize;
+        let (lifetime, concerts) = Self::rock_band_stage_multiple(level, bonus);
+        (lifetime + unit.album_sales as f64 / 100.0 * concerts) * ROCK_BAND_STAGE_FUTURE_BASE
+    }
+
+    /// Row `level` (1..=4) and column `bonus` (0..=3) of the career table: the
+    /// Tourism multiple of a band that plays such venues, and its concerts.
+    pub(crate) fn rock_band_stage_multiple(level: usize, bonus: usize) -> (f64, f64) {
+        ROCK_BAND_STAGE_FUTURE[level.clamp(1, 4) - 1][bonus.min(3)]
     }
 
     pub(super) fn add_targeted_tourism(&mut self, pid: usize, target: usize, tourism: f64) {

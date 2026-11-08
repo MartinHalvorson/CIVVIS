@@ -10895,6 +10895,9 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+/// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
+/// survival depends on. See `advanced/band_plays_its_stage.rs`.
+mod band_plays_its_stage;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -24911,6 +24914,12 @@ impl AdvancedAi {
                 }
                 // An offer out of a modded ruleset naming none of the nine
                 // falls through to the shipped scorer below.
+            }
+            if self.base.band_plays_its_stage {
+                if let Some(promotion) = self.band_stage_promotion(g, pid, uid, &promotions) {
+                    let _ = g.apply(pid, &Action::Promote { unit: uid, promotion });
+                    continue;
+                }
             }
             let legacy_choice = promotions.iter().copied().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)
