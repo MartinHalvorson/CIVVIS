@@ -105,7 +105,7 @@ fn culture_education_ends_at_education_and_leaves_other_targets_alone() {
 #[test]
 fn culture_education_preserves_committed_research_and_rush_priority() {
     let (mut g, mut ai, mut plan, _) = equipped();
-    g.players[0].research = Some(crate::name!("construction"));
+    g.players[0].research = Some("construction".to_string());
     g.players[0].research_progress = 9.0;
     ai.advanced_research(&mut g, 0, &plan);
     assert_eq!(g.players[0].research.as_deref(), Some("construction"));
