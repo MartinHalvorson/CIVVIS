@@ -7526,8 +7526,11 @@ impl BasicAi {
                 let value = g.rock_concert_stage_value(pid, uid, position)?;
                 let distance = g.route_distance(uid, position, 0)?;
                 let travel_turns = distance as f64 / moves;
-                (travel_turns <= 15.0)
-                    .then_some((value / (1.0 + 0.1 * travel_turns), distance, position))
+                (travel_turns <= 15.0).then_some((
+                    value / (1.0 + 0.1 * travel_turns),
+                    distance,
+                    position,
+                ))
             })
             .collect();
         venues.sort_by(|left, right| {

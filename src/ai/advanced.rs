@@ -24916,7 +24916,13 @@ impl AdvancedAi {
             }
             if self.base.band_plays_its_stage {
                 if let Some(promotion) = self.band_stage_promotion(g, pid, uid, &promotions) {
-                    let _ = g.apply(pid, &Action::Promote { unit: uid, promotion });
+                    let _ = g.apply(
+                        pid,
+                        &Action::Promote {
+                            unit: uid,
+                            promotion,
+                        },
+                    );
                     continue;
                 }
             }
