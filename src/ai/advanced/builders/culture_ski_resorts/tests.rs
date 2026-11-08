@@ -146,6 +146,8 @@ fn danger_and_blocked_staging_do_not_spend_a_builder() {
     assert!(ai
         .native_culture_ski_resort_jobs(&g, 0, &BTreeSet::new(), &blocked)
         .is_empty());
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
     g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
     g.spawn_test_unit("warrior", 1, (7, 10));
     assert!(ai
