@@ -3547,7 +3547,7 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe, its heat scattered rather than banded by latitude, one
+/// Tennis Ball globe, with a hot equator and cold poles, one
 /// seat at a time.
 ///
 /// This is the one description of "the game nobody has decided anything
@@ -3578,10 +3578,9 @@ fn stock_opening_params(seed: u64) -> Params {
         turn_structure: TurnStructure::Sequential,
         map_script: MapScript::TeninsBall,
         map_topology,
-        // Heat by noise instead of latitude: the world a first visit opens
-        // on has no ice cap at either end, and its snow, desert and jungle
-        // turn up wherever their own patch of noise puts them.
-        map_poles: MapPoles::Randomized,
+        // A first visit opens on latitude-banded heat: hot at the equator,
+        // cold at the poles. Explicit setup choices still take precedence.
+        map_poles: MapPoles::Poles,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {

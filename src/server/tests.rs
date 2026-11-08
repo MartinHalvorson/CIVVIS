@@ -1762,22 +1762,29 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The masthead offers Home and nothing else. The site carries one game —
-/// the full simulation, watched or played — so the chip that used to stand
-/// beside Home naming the other mode has no other mode to name. Pinned as
-/// one literal because the row is the contract: Home alone, inside a row
-/// that only the hosts serving a /home reveal.
+/// The masthead offers Home, then a new single-player game. The site carries
+/// one game — the full simulation, watched or played — so the second chip is
+/// the way from watching it to playing it and names no other mode. Pinned as
+/// one literal because the row is the contract: those two, in that order,
+/// inside a row that only the hosts serving a /home reveal.
 #[test]
-fn viewer_masthead_offers_home_and_no_other_game_mode() {
+fn viewer_masthead_offers_home_then_a_new_single_player_game() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
-        "          <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
-        "        </div>",
+        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\">Play single player</a>\n",
+        "      </div>",
     )));
+    // The link is only as good as the shim's reading of it, and it replaces
+    // the world on the table, so it stands only over a simulation.
+    assert!(include_str!("../../beta/shim.js")
+        .contains("if (mode === \"play\") payload.spectate = false;"));
+    assert!(EMBEDDED_INDEX.contains("body:not(.watching-sim) #playlink { display: none; }"));
     // A row that draws itself as a flex container outranks the user
     // agent's `[hidden]`, so it has to restate what hidden means or the
     // chips appear on desktop builds that honour neither destination.
-    assert!(EMBEDDED_INDEX.contains(".head-links { display: flex;"));
+    // The whole line of the lockup, or the pair stacks on a 1920 screen.
+    assert!(EMBEDDED_INDEX.contains(".head-links { display: flex; flex: 0 0 100%;"));
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
@@ -7897,7 +7904,7 @@ fn the_deck_menu_holds_its_place_while_a_section_scrolls() {
 
 /// The first world a civvis.ai visitor ever waits on is the smallest
 /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-/// shipped table, its heat scattered rather than banded by latitude,
+/// shipped table, with a hot equator and cold poles,
 /// spectated, at Online speed, one seat at a time. The browser build's
 /// `wasm::opening_params` is this function with the page's seed, so the
 /// contract is tested here, where the suite actually runs.
@@ -7909,8 +7916,8 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     assert_eq!(params.num_players, 4);
     assert_eq!(params.map_script, MapScript::TeninsBall);
     assert_eq!(params.map_topology, MapTopology::Planet);
-    assert_eq!(params.map_poles, MapPoles::Randomized);
-    assert!(!params.map_poles.has_poles());
+    assert_eq!(params.map_poles, MapPoles::Poles);
+    assert!(params.map_poles.has_poles());
     assert_eq!(
         (params.width, params.height),
         size.dimensions(MapTopology::Planet)
@@ -9050,6 +9057,10 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         !parchment.contains("PARCH_GRID"),
         "the hidden sheet must not expose a hex grid"
     );
+    assert!(
+        parchment.contains("hexXYRaw(col - at / 2, at)"),
+        "the flat sheet's fibres are laid on the world's rows and columns"
+    );
 
     let monsters = EMBEDDED_INDEX
         .split("function drawHiddenMapMonsters")
@@ -9107,13 +9118,42 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         .expect("hidden-map viewport and stable large-tale margin");
     assert!(viewport.contains("monsterCells"));
     assert!(viewport.contains("HIDDEN_MAP_TALE_REACH"));
+    // What is drawn on a chart's unknown paper is carried by the camera that
+    // carries the ground. Seated by screen position, a drawing stood still
+    // while the known land slid across it.
     let planet_tales = EMBEDDED_INDEX
         .split("function drawPlanetChartMarginalia")
         .nth(1)
-        .and_then(|tail| tail.split("function drawPlanetMap").next())
+        .and_then(|tail| tail.split("function planetChartFibres").next())
         .expect("pre-globe chart marginalia");
-    assert!(planet_tales.contains("candidates.slice(0, 1)"));
-    assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
+    assert!(
+        planet_tales.contains("planetProject(seat.cell.center, camera, scale, centerX, centerY)"),
+        "a chart drawing is seated on the world"
+    );
+    assert!(
+        planet_tales.contains("const size = seat.size * scale"),
+        "a chart drawing zooms with the ground"
+    );
+    let planet_grain = EMBEDDED_INDEX
+        .split("function drawPlanetChartFibres")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("// The globe's half of the map's animation")
+                .next()
+        })
+        .expect("pre-globe chart paper grain");
+    assert!(
+        planet_grain.contains("planetProject(point, camera, scale, centerX, centerY)"),
+        "the chart's paper grain is seated on the world"
+    );
+    assert!(
+        !planet_grain.contains("MAPH"),
+        "the chart's paper grain must not be measured off the window"
+    );
+    assert!(EMBEDDED_INDEX.contains(
+        "drawPlanetChartFibres(camera, scale, centerX, centerY);\n      \
+         drawPlanetChartMarginalia(camera, scale, centerX, centerY);"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
     assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
@@ -9798,6 +9838,17 @@ fn browser_draws_the_selected_units_reach_perimeter_and_edge_arrows() {
         "the globe projects region cells the frame does not carry"
     );
     assert!(planet.contains("entry.cell.nbrs.indexOf(key(edge.to))"));
+
+    // One bold boundary, from one painter, so the two maps cannot drift apart.
+    assert!(EMBEDDED_INDEX.contains("function paintReachBoundary(segments, addFaces, weight)"));
+    assert!(flat.contains("paintReachBoundary(segments, () => {"));
+    assert!(planet.contains("paintReachBoundary(segments, () => {"));
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches("paintReachBoundary(segments, () => {")
+            .count(),
+        2
+    );
 
     // Each map paints the movement overlay exactly once, after fog and
     // the sight perimeter, so the boundary stays visible over parchment.

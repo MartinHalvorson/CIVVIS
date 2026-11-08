@@ -2181,3 +2181,46 @@ fn museum_swap_requires_both_native_inventory_slots_not_a_request() {
     before.cities[1].great_works = Some(vec![]);
     assert_eq!(check(&swap, &before, &after, &[]), Verdict::Verified);
 }
+
+#[test]
+fn writing_evacuation_requires_source_empty_and_exact_destination_inventory() {
+    let writing = civvis::mirror::StateGreatWork {
+        kind: "GREATWORK_CERVANTES_1".into(),
+        object: "GREATWORKOBJECT_WRITING".into(),
+        building: "BUILDING_AMPHITHEATER".into(),
+        slot: 0,
+        ..Default::default()
+    };
+    let mut before = frame(20);
+    let mut source = city(10, 1, 1, None);
+    source.great_works = Some(vec![writing.clone()]);
+    let mut destination = city(20, 2, 2, None);
+    destination.great_works = Some(vec![]);
+    before.cities = vec![source, destination];
+    let evacuation = order(
+        "writing_evacuation",
+        Some(10),
+        Some("GREATWORK_CERVANTES_1"),
+        Some((20, 0)),
+    );
+    let mut after = before.clone();
+    after.turn = 21;
+    let request =
+        serde_json::json!({"kind":"writing_evacuation_requested","requested":true,"turn":20});
+    assert_eq!(
+        check(&evacuation, &before, &after, &[request]),
+        failed("museum_swap_not_observed")
+    );
+    after.cities[1].great_works = Some(vec![writing]);
+    assert_eq!(
+        check(&evacuation, &before, &after, &[]),
+        failed("museum_swap_not_observed")
+    );
+    after.cities[0].great_works = Some(vec![]);
+    assert_eq!(check(&evacuation, &before, &after, &[]), Verdict::Verified);
+    after.cities[0].great_works = None;
+    assert_eq!(
+        check(&evacuation, &before, &after, &[]),
+        failed("museum_inventory_unknown")
+    );
+}

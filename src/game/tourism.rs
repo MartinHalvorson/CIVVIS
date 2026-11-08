@@ -928,7 +928,16 @@ impl Game {
     }
 
     pub(super) fn tourism_components_per_turn(&self, pid: usize) -> (f64, f64) {
-        self.tourism_components_per_turn_with_sources(pid, None)
+        if let Some(memo) = self.query_memo.tourism.borrow().as_ref() {
+            if let Some(components) = memo.get(&pid) {
+                return *components;
+            }
+        }
+        let components = self.tourism_components_per_turn_with_sources(pid, None);
+        if let Some(memo) = self.query_memo.tourism.borrow_mut().as_mut() {
+            memo.insert(pid, components);
+        }
+        components
     }
 
     /// Exact current Tourism source value at every map tile. Values sum to

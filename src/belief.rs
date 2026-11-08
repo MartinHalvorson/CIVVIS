@@ -126,35 +126,12 @@ impl BeliefState {
         self.updated_turn.saturating_sub(sighting.turn)
     }
 
-    /// Remembered enemy strength near a tile, discounted by staleness so a
-    /// twenty-turn-old sighting counts for little. `horizon` is the number
-    /// of turns after which a memory is worthless.
-    pub fn remembered_threat(
-        &self,
-        g: &Game,
-        pid: usize,
-        at: Pos,
-        radius: i32,
-        horizon: u32,
-    ) -> f64 {
-        self.units
-            .values()
-            .filter(|s| s.owner != pid && g.is_at_war(pid, s.owner))
-            .filter(|s| g.wdist(s.pos, at) <= radius)
-            .map(|s| {
-                let age = self.staleness(s).min(horizon) as f64;
-                let decay = 1.0 - age / horizon.max(1) as f64;
-                s.strength * decay
-            })
-            .sum()
-    }
-
-    /// Last-seen, now-hidden hostile military strength near a tile. This is
-    /// intentionally narrower than [`Self::remembered_threat`]: callers that
-    /// already account for live contacts must not count a refreshed sighting a
-    /// second time. The calculation reads only a sighting's observed owner,
-    /// kind, position, and strength; it never looks up that unit's current
-    /// position, health, or existence.
+    /// Last-seen, now-hidden hostile military strength near a tile, discounted
+    /// by staleness. Only hidden sightings count: callers that already account
+    /// for live contacts must not count a refreshed sighting a second time. The
+    /// calculation reads only a sighting's observed owner, kind, position, and
+    /// strength; it never looks up that unit's current position, health, or
+    /// existence.
     pub fn remembered_hidden_military_threat(
         &self,
         g: &Game,
@@ -309,24 +286,5 @@ mod tests {
         belief.observe(&g, 0);
         let remembered = belief.units.get(&enemy).expect("still visible nearby");
         assert_eq!(remembered.pos, neighbor, "memory tracks the new tile");
-    }
-
-    /// Threat memory decays to nothing past the horizon.
-    #[test]
-    fn remembered_threat_decays_with_age() {
-        let mut g = two_player_game();
-        let capital = g.player_city_ids(0)[0];
-        let near = g.cities[&capital].pos;
-        g.spawn_test_unit("warrior", 1, near);
-        g.at_war.insert((0, 1));
-
-        let mut belief = BeliefState::new();
-        belief.observe(&g, 0);
-        let fresh = belief.remembered_threat(&g, 0, near, 3, 20);
-        assert!(fresh > 0.0, "a just-seen enemy is a live threat");
-
-        belief.updated_turn += 20;
-        let stale = belief.remembered_threat(&g, 0, near, 3, 20);
-        assert_eq!(stale, 0.0, "a memory past the horizon is worthless");
     }
 }

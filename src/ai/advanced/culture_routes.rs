@@ -147,6 +147,7 @@ impl AdvancedAi {
         {
             return None;
         }
+        let _memo = g.query_memo();
         g.cities
             .values()
             .filter(|city| {

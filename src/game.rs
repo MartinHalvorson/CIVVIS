@@ -1727,6 +1727,10 @@ pub struct QueryCache {
     // once per effect key. The scope is what makes this safe: callers cannot
     // mutate a city or transfer a wonder while the guard is alive.
     wonder_effects: std::cell::RefCell<Option<WonderEffectsByPlayer>>,
+    /// `tourism_components_per_turn` per player. A Culture seat's Trader prices
+    /// every origin and destination pair, and each pair asks for the whole
+    /// empire's Tourism.
+    tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -1950,6 +1954,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.national_parks.borrow_mut() = None;
             *self.game.query_memo.regional_slots.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
+            *self.game.query_memo.tourism.borrow_mut() = None;
         }
     }
 }
@@ -6577,6 +6582,10 @@ pub struct Game {
     /// can change its inputs; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
+    /// `rules` plus the synthetic unknown terrain, shared by every decision
+    /// view, beside the ruleset it was built from. Never saved.
+    #[serde(skip)]
+    view_rules: std::cell::RefCell<Option<(Arc<Rules>, Arc<Rules>)>>,
     /// Raw next-turn attack reaches, shared by controller instances that read
     /// this exact board and by their speculative clones. The cache is keyed
     /// by the same complete board fingerprint that gates AI attack envelopes;
@@ -7943,6 +7952,7 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            view_rules: Default::default(),
             attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
@@ -8727,6 +8737,7 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            view_rules: Default::default(),
             attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,

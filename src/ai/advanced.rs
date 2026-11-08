@@ -12051,11 +12051,6 @@ impl AdvancedAi {
         self.seat_city_pace = true;
     }
 
-    /// Whether this seat's city horizon follows the live seat's curve.
-    pub fn seat_city_pace(&self) -> bool {
-        self.seat_city_pace
-    }
-
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
         self.forced_target_player = None;
@@ -23794,6 +23789,9 @@ impl AdvancedAi {
         origin: u32,
         strategy: GrandStrategy,
     ) -> Option<(f64, u32)> {
+        // Every destination reads the same board; see `culture_route_bonus`,
+        // which asks for the whole empire's Tourism per candidate.
+        let _memo = g.query_memo();
         g.cities
             .values()
             .filter(|city| g.can_establish_trade_route(pid, origin, city.id))
@@ -23834,6 +23832,7 @@ impl AdvancedAi {
         from: Pos,
         strategy: GrandStrategy,
     ) -> Option<(f64, u32)> {
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .filter_map(|origin| {
