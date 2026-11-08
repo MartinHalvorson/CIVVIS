@@ -58,22 +58,6 @@ use crate::Pos;
 /// research.
 pub const WIDTH: usize = 34;
 
-/// Index of the adjacent-enemy count within [`decision_features`].
-pub const ADJACENT_ENEMIES: usize = 29;
-/// Index of the mean gap to the nearest enemy.
-pub const MEAN_ENEMY_GAP: usize = 30;
-
-/// The two terms that make a unit move visible — and the two an argmax
-/// over a correlational value net exploits.
-///
-/// Measured over 468 committed decisions, `PolicyAi` scoring with a net
-/// trained on these features raised the adjacent-enemy count 78× more than
-/// the average legal candidate, closed distance where the field opened it,
-/// and lost material doing so. In games the scripted agent wins, contact
-/// is a *symptom* of a strong empire pressing an attack; maximising it is
-/// not the same as pressing an attack.
-pub const CONTACT_TERMS: [usize; 2] = [ADJACENT_ENEMIES, MEAN_ENEMY_GAP];
-
 /// `evolve::features` extended with terms an action can move.
 ///
 /// Ordering is stable and append-only, like `action_space::KINDS`:
