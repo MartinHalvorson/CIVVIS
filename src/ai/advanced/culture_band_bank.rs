@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn researching_ideology_opens_the_bank() {
         let mut g = board();
-        g.players[0].civic = Some(crate::name!("ideology"));
+        g.players[0].civic = Some("ideology".into());
         assert_eq!(
             seat().culture_band_bank(&g, 0),
             g.game_speed.scale(BAND_BANK_STANDARD)
