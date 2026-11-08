@@ -229,9 +229,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
+| `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
+| `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
+| `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
