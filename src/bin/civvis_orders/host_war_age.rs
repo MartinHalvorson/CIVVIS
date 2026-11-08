@@ -45,4 +45,5 @@ impl History {
 }
 
 #[cfg(test)]
+#[path = "host_war_age/tests.rs"]
 mod tests;
