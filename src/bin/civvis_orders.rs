@@ -5642,6 +5642,19 @@ fn decide(
         note_bits.push(format!("air_assault_phase_deferred={air_phase_deferred}"));
     }
 
+    for (source, work, destination, slot) in
+        ai.native_art_museum_swaps(&mirror_state.game, 0, state)
+    {
+        if let Ok(destination) = i32::try_from(destination) {
+            orders.push(Order {
+                kind: "museum_swap",
+                subject: Some(source),
+                verb: Some(work),
+                pos: Some((destination, slot)),
+            });
+        }
+    }
+
     let relocated_traders = trader_origin_coverage::apply(
         ai,
         &mirror_state.game,

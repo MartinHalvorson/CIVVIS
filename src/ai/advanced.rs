@@ -10532,6 +10532,7 @@ mod diplo_statue_harbor;
 mod culture_recovery_bank;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
+mod culture_museum_swaps;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
 mod culture_seat_allies;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
