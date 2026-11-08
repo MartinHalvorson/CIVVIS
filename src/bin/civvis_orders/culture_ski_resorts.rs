@@ -56,4 +56,5 @@ fn append_jobs(
 }
 
 #[cfg(test)]
+#[path = "culture_ski_resorts/tests.rs"]
 mod tests;
