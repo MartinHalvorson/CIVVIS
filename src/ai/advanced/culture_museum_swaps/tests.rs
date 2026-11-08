@@ -73,3 +73,104 @@ fn other_lanes_and_lost_culture_lane_do_not_rearrange() {
     ai.lane_lost = true;
     assert!(ai.native_art_museum_swaps(&g, 0, &s).is_empty());
 }
+
+fn evacuation_fixture() -> (Game, StateSnapshot) {
+    let g = Game::new_full(2, 18, 10, 903, 500, 0, false);
+    let writing = StateGreatWork {
+        kind: "GREATWORK_CERVANTES_1".into(),
+        object: "GREATWORKOBJECT_WRITING".into(),
+        building: "BUILDING_AMPHITHEATER".into(),
+        slot: 0,
+        ..Default::default()
+    };
+    let source = StateCity {
+        id: 10,
+        damage: 50.0,
+        loyalty: 100.0,
+        buildings: vec!["BUILDING_AMPHITHEATER".into()],
+        pillaged_buildings: Some(vec![]),
+        great_works: Some(vec![writing]),
+        ..Default::default()
+    };
+    let mut dest = source.clone();
+    dest.id = 20;
+    dest.damage = 0.0;
+    dest.great_works = Some(vec![]);
+    let state = StateSnapshot {
+        cities: vec![source, dest],
+        rivals: vec![crate::mirror::StateRival {
+            at_war: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    (g, state)
+}
+
+#[test]
+fn damaged_wartime_city_proposes_writing_to_known_empty_safe_slot() {
+    let (g, s) = evacuation_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert_eq!(
+        ai.native_writing_evacuations(&g, 0, &s),
+        vec![
+            (10, "GREATWORK_CERVANTES_1".into(), 20, 0),
+            (10, "GREATWORK_CERVANTES_1".into(), 20, 1),
+        ]
+    );
+}
+
+#[test]
+fn evacuation_requires_native_danger_safe_inventory_and_culture_lane() {
+    let (g, s) = evacuation_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    let mut controls = Vec::new();
+    let mut x = s.clone();
+    x.rivals.clear();
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[0].damage = 0.0;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[0].damage = f64::NAN;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[1].damage = 1.0;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[1].loyalty = 50.0;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[1].great_works = None;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[0].pillaged_buildings = None;
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[1].pillaged_buildings = Some(vec!["BUILDING_AMPHITHEATER".into()]);
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[0].great_works.as_mut().unwrap()[0].object = "GREATWORKOBJECT_ARTIFACT".into();
+    controls.push(x);
+    let mut x = s.clone();
+    x.cities[1].great_works = Some(vec![
+        StateGreatWork {
+            slot: 0,
+            ..s.cities[0].great_works.as_ref().unwrap()[0].clone()
+        },
+        StateGreatWork {
+            slot: 1,
+            ..s.cities[0].great_works.as_ref().unwrap()[0].clone()
+        },
+    ]);
+    controls.push(x);
+    for x in controls {
+        assert!(ai.native_writing_evacuations(&g, 0, &x).is_empty());
+    }
+    assert!(AdvancedAi::targeting(VictoryTarget::Science)
+        .native_writing_evacuations(&g, 0, &s)
+        .is_empty());
+    let mut ai = ai;
+    ai.lane_lost = true;
+    assert!(ai.native_writing_evacuations(&g, 0, &s).is_empty());
+}

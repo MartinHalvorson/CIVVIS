@@ -70,7 +70,14 @@ fn verify_order_with_context(
                 move_reached: context.later_move_reached,
             },
         ),
-        "museum_swap" => {
+        "museum_swap" | "writing_evacuation" => {
+            let evacuating = order.kind == "writing_evacuation";
+            let building = if evacuating {
+                "BUILDING_AMPHITHEATER"
+            } else {
+                "BUILDING_MUSEUM_ART"
+            };
+            let slots = if evacuating { 2 } else { 3 };
             let Some(source_id) = order.subject else {
                 return failed("museum_source_missing".to_string());
             };
@@ -78,7 +85,7 @@ fn verify_order_with_context(
                 return failed("museum_destination_missing".to_string());
             };
             if source_id == i64::from(destination_id)
-                || !(0..3).contains(&destination_slot)
+                || !(0..slots).contains(&destination_slot)
                 || verb.is_empty()
             {
                 return failed("museum_order_invalid".to_string());
@@ -107,25 +114,24 @@ fn verify_order_with_context(
             };
             let Some(original) = source
                 .iter()
-                .find(|work| work.kind == verb && work.building == "BUILDING_MUSEUM_ART")
+                .find(|work| work.kind == verb && work.building == building)
             else {
                 return failed("museum_source_work_missing".to_string());
             };
             let other = destination
                 .iter()
-                .find(|work| {
-                    work.building == "BUILDING_MUSEUM_ART" && work.slot == destination_slot
-                })
+                .find(|work| work.building == building && work.slot == destination_slot)
                 .map(|work| work.kind.as_str());
+            if evacuating && (other.is_some() || original.object != "GREATWORKOBJECT_WRITING") {
+                return failed("writing_evacuation_order_invalid".to_string());
+            }
             let source_now = source_after
                 .iter()
-                .find(|work| work.building == "BUILDING_MUSEUM_ART" && work.slot == original.slot)
+                .find(|work| work.building == building && work.slot == original.slot)
                 .map(|work| work.kind.as_str());
             let destination_now = destination_after
                 .iter()
-                .find(|work| {
-                    work.building == "BUILDING_MUSEUM_ART" && work.slot == destination_slot
-                })
+                .find(|work| work.building == building && work.slot == destination_slot)
                 .map(|work| work.kind.as_str());
             if source_now == other
                 && destination_now == Some(verb)

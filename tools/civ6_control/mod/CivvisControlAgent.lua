@@ -6320,6 +6320,77 @@ function CivvisMuseumSwaps.read(city, building)
         or religious ~= 0 then return nil; end
     return { city = city:GetID(), blds = blds, slots = slots, factor = tourism / base, tourism = tourism };
 end
+-- GreatWorksOverview.lua:843-856 permits a writing in an empty matching slot;
+-- :911-919 requests MOVE_GREAT_WORK with these exact city/building/work keys.
+CivvisWritingEvacuation = {};
+function CivvisWritingEvacuation.attempt(player, pid, row, turn)
+    if CivvisMuseumSwaps.lastTurn == turn then return false, "museum_swap_turn_used"; end
+    local ok, accepted, reason = pcall(function()
+        local war = false;
+        for _, other in ipairs(PlayerManager.GetAliveMajorIDs()) do
+            if other ~= pid and player:GetDiplomacy():IsAtWarWith(other) then war = true; end
+        end
+        if not war then return false, "writing_evacuation_no_war"; end
+        local source, dest;
+        eachCity(player, function(city)
+            if city:GetID() == row.subject then source = city; end
+            if city:GetID() == row.x then dest = city; end
+        end);
+        if source == nil or dest == nil or source == dest then return false, "writing_evacuation_not_ours"; end
+        local _, sourceDamage = cityDefence(source:GetX(), source:GetY());
+        local _, destDamage = cityDefence(dest:GetX(), dest:GetY());
+        local loyalty = dest:GetCulturalIdentity():GetLoyalty();
+        if type(sourceDamage) ~= "number" or not (sourceDamage > 0 and sourceDamage < math.huge)
+            or destDamage ~= 0 or type(loyalty) ~= "number" or not (loyalty >= 75) then
+            return false, "writing_evacuation_danger_changed";
+        end
+        local info = GameInfo.Buildings["BUILDING_AMPHITHEATER"];
+        if info == nil then return false, "writing_evacuation_building_missing"; end
+        local a, b = source:GetBuildings(), dest:GetBuildings();
+        if not a:HasBuilding(info.Index) or not b:HasBuilding(info.Index)
+            or a:IsPillaged(info.Index) or b:IsPillaged(info.Index)
+            or a:GetNumGreatWorkSlots(info.Index) ~= 2 or b:GetNumGreatWorkSlots(info.Index) ~= 2 then
+            return false, "writing_evacuation_building_changed";
+        end
+        local target = tonumber(row.y);
+        if target == nil or target ~= math.floor(target) or target < 0 or target > 1
+            or b:GetGreatWorkInSlot(info.Index, target) ~= -1 then
+            return false, "writing_evacuation_destination_changed";
+        end
+        local index, sourceSlot;
+        for slot = 0, 1 do
+            local candidate = a:GetGreatWorkInSlot(info.Index, slot);
+            if type(candidate) == "number" and candidate >= 0 then
+                local work = GameInfo.GreatWorks[a:GetGreatWorkTypeFromIndex(candidate)];
+                if work ~= nil and work.GreatWorkType == row.verb
+                    and work.GreatWorkObjectType == "GREATWORKOBJECT_WRITING" then
+                    index, sourceSlot = candidate, slot;
+                end
+            end
+        end
+        if index == nil then return false, "writing_evacuation_work_changed"; end
+        local params = {};
+        params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+        params[PlayerOperations.PARAM_CITY_SRC] = source:GetID();
+        params[PlayerOperations.PARAM_CITY_DEST] = dest:GetID();
+        params[PlayerOperations.PARAM_BUILDING_SRC] = info.Index;
+        params[PlayerOperations.PARAM_BUILDING_DEST] = info.Index;
+        params[PlayerOperations.PARAM_GREAT_WORK_INDEX] = index;
+        params[PlayerOperations.PARAM_SLOT] = target;
+        local requested, result = pcall(function()
+            return UI.RequestPlayerOperation(pid, PlayerOperations.MOVE_GREAT_WORK, params);
+        end);
+        requested = requested and result ~= false;
+        if requested then CivvisMuseumSwaps.lastTurn = turn; end
+        emit("writing_evacuation_requested", {turn = turn, requested = requested,
+            source_city = source:GetID(), source_slot = sourceSlot, source_work = row.verb,
+            dest_city = dest:GetID(), dest_slot = target, source_damage = sourceDamage});
+        return requested, requested and "writing_evacuation_requested" or "writing_evacuation_refused";
+    end);
+    if not ok then return false, "writing_evacuation_api_unavailable"; end
+    return accepted, reason;
+end
+
 function CivvisMuseumSwaps.attempt(player, pid, row, turn)
     if CivvisMuseumSwaps.lastTurn == turn then return false, "museum_swap_turn_used"; end
     local ok, accepted, reason = pcall(function()
@@ -15886,6 +15957,7 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "religion_activation_requested" or "throw";
 	end
 
+	if kind == "writing_evacuation" then return CivvisWritingEvacuation.attempt(player, pid, row, turn); end
 	if kind == "museum_swap" then return CivvisMuseumSwaps.attempt(player, pid, row, turn); end
 
 	if kind == "research" or kind == "civic" then
