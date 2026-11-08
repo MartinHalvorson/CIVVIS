@@ -1,5 +1,5 @@
 //! `plaza-in-the-district-list`: the empire's first Government Plaza, then its
-//! Warlord's Throne and Grand Master's Chapel, claimed at the first idle queue
+//! tier buildings, claimed at the first idle queue
 //! ahead of the higher-level investment reservation.
 //!
 //! The governor's own plaza step (`BasicAi::pick_item`) is reached only when
@@ -13,12 +13,33 @@
 //! Throne and no Grand Master's Chapel, whose Faith purchase of land units is
 //! the only use of the 1-3.5k Faith our games end on.
 
-use super::{AdvancedAi, StrategicPlan};
+use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::ai::BasicAi;
 use crate::game::{Action, Game, Item};
 use crate::think;
 
 impl AdvancedAi {
+    /// Peaceful Native Culture uses the Hall's expansion economy and the
+    /// Agency's extra, stronger spy instead of buildings for conquest. Only
+    /// a positive host quote activates this preference; headless play and
+    /// Science's separate queue-displacement policy keep their existing gates.
+    pub(super) fn native_culture_plaza_economy(&self, g: &Game, pid: usize) -> bool {
+        if self.victory_target != Some(VictoryTarget::Culture)
+            || self.lane_lost
+            || g.players.iter().any(|p| {
+                p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
+            })
+        {
+            return false;
+        }
+        g.player_city_ids(pid).into_iter().any(|cid| {
+            BasicAi::plaza_building_item_for(g, pid, cid, true).is_some_and(|item| {
+                g.host_production_turns(cid, &item)
+                    .is_some_and(|turns| turns.is_finite() && turns > 0.0)
+            })
+        })
+    }
+
     /// One idle, unthreatened queue per turn: the standing Plaza's next tier
     /// building in its city, else the empire's first Plaza in the capital,
     /// else, while the capital is busy with a wonder or a Holy Site, in the
@@ -113,7 +134,7 @@ impl AdvancedAi {
         {
             think!(self.journal(), Economy, Decision,
                 "{} starts {} for plaza-in-the-district-list", g.cities[&cid].name, Self::plain_item(&item);
-                "the Government Plaza and its Warlord's Throne and Grand Master's Chapel take one idle queue ahead of the development shortfall");
+                "the Government Plaza and its selected tier building take one idle queue ahead of the development shortfall");
         }
     }
 }

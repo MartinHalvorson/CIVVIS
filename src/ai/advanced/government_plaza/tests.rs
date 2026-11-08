@@ -149,3 +149,81 @@ fn the_standing_plaza_builds_its_throne_then_its_chapel() {
         g.cities[&cid].queue
     );
 }
+
+fn quote_plaza(g: &mut Game, cid: u32, building: &str, turns: f64) {
+    let item = Item::Building {
+        building: building.into(),
+    };
+    std::sync::Arc::make_mut(&mut g.host_buildable)
+        .entry(cid)
+        .or_default()
+        .insert(
+            Game::production_block_key(&item),
+            crate::game::HostMenuEntry {
+                cost: Some(75.0),
+                turns: Some(turns),
+            },
+        );
+}
+
+#[test]
+fn peaceful_native_culture_builds_the_quoted_economic_plaza_tiers() {
+    let (mut g, cid, plan) = board();
+    place_district(&mut g, cid, crate::name!("government_plaza"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_plaza_in_the_district_list();
+    ai.base.w.city_target = 1.0;
+    quote_plaza(&mut g, cid, "ancestral_hall", 5.0);
+    assert!(ai.native_culture_plaza_economy(&g, 0));
+    ai.base.plaza_serves_science = ai.native_culture_plaza_economy(&g, 0);
+    let mut first = g.clone();
+    ai.reserve_government_plaza(&mut first, 0, &plan);
+    assert!(
+        matches!(first.cities[&cid].queue.first(), Some(Item::Building { building }) if building == "ancestral_hall")
+    );
+    // The actual archived second-tier case already had the conquest tier one.
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("warlords_throne"));
+    g.players[0].civics.insert(crate::name!("medieval_faires"));
+    std::sync::Arc::make_mut(&mut g.host_buildable).clear();
+    quote_plaza(&mut g, cid, "intelligence_agency", 4.0);
+    assert!(ai.native_culture_plaza_economy(&g, 0));
+    ai.reserve_government_plaza(&mut g, 0, &plan);
+    assert!(
+        matches!(g.cities[&cid].queue.first(), Some(Item::Building { building }) if building == "intelligence_agency")
+    );
+}
+
+#[test]
+fn culture_plaza_preference_requires_positive_native_quote_and_peace() {
+    let (mut g, cid, _) = board();
+    place_district(&mut g, cid, crate::name!("government_plaza"));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(!ai.native_culture_plaza_economy(&g, 0));
+    for turns in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+        quote_plaza(&mut g, cid, "ancestral_hall", turns);
+        assert!(!ai.native_culture_plaza_economy(&g, 0));
+    }
+    quote_plaza(&mut g, cid, "ancestral_hall", 5.0);
+    assert!(ai.native_culture_plaza_economy(&g, 0));
+    ai.lane_lost = true;
+    assert!(!ai.native_culture_plaza_economy(&g, 0));
+    ai.lane_lost = false;
+    g.players[1].alive = true;
+    g.players[1].is_minor = false;
+    g.players[1].is_barbarian = false;
+    g.at_war.insert((0, 1));
+    assert!(!ai.native_culture_plaza_economy(&g, 0));
+    g.at_war.clear();
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+        VictoryTarget::Domination,
+    ] {
+        ai.victory_target = Some(target);
+        assert!(!ai.native_culture_plaza_economy(&g, 0));
+    }
+}
