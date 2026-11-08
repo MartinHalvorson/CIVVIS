@@ -254,7 +254,12 @@ impl Game {
         {
             return Err("World Congress embargoes that trade route".into());
         }
-        if self.wdist(origin_city.pos, dc.pos) > 15 {
+        // The native chooser's CanStartRoute offers account for extended
+        // range and trading posts. A current offer for this exact pair is
+        // stronger evidence than the simulator's fixed distance limit.
+        if self.wdist(origin_city.pos, dc.pos) > 15
+            && !self.observed_route_options.contains_key(&(origin, dest))
+        {
             return Err("destination out of range".into());
         }
         if self
@@ -627,3 +632,6 @@ impl Game {
         "Shaivism",
     ];
 }
+
+#[cfg(test)]
+mod tests;
