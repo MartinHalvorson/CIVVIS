@@ -10517,12 +10517,12 @@ mod parallel_library_backlog;
 /// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
 mod capital_walls_at_any_ratio;
 
-mod culture_faith_sources;
-mod culture_commerce_floor;
 /// `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`.
 mod culture_aesthetics;
+mod culture_commerce_floor;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
+mod culture_faith_sources;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `diplo-match-point-beelines-the-points`; see
