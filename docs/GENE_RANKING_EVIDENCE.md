@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
+| `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | — \| 2 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | — \| 2 |
 | `barbarian-research-prices-the-field` | off (unmeasured) | Research parity compares wounded land units against field targets. | 1 \| 1 |
@@ -228,9 +229,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
+| `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
+| `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
+| `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |

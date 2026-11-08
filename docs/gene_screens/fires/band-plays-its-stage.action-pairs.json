@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "band-plays-its-stage",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Pericles Culture runs civvis-20261108T143319Z (t151, t153, t169, t171, t173, t182) and civvis-20261108T182024Z (t160, t162, t163, t169), each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from this branch. Both arms carry the run's requested genome; the on arm adds the gene. On changes a Rock Band's promotion on captured menus (t153 Surf Rock to Glam Rock; t169 Reggae Rock to Album Cover Art, no Water Park being known) and its tour on t163 and t173.",
+  "archive": {
+    "path": "docs/eval/2026-11-08-band-plays-its-stage.native-queries.tar.xz",
+    "sha256": "e54b7a777a3ef0f69efe7618d1a113675017fc7dc46b9773df15b548e23304b2"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "nq-tour/0000/result.json",
+    "nq-tour/0001/result.json",
+    "nq-tour/0002/result.json",
+    "nq-tour/0003/result.json",
+    "nq-tour/0004/result.json"
+  ]
+}
