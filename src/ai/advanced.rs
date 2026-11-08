@@ -6656,6 +6656,17 @@ pub struct AdvancedAi {
     /// Keep an assigned Defend formation within two tiles of its threatened city.
     /// See `advanced/defense_formation.rs`. Off by default.
     defenders_keep_the_city_in_reach: bool,
+    /// `culture-seat-drama-first`: Drama and Poetry straight after the first
+    /// government on a Culture target. See `advanced/culture_drama_first.rs`.
+    culture_seat_drama_first: bool,
+    /// `culture-seat-drama-before-government`: Drama and Poetry ahead of the
+    /// first government on a Culture target. See
+    /// `advanced/culture_drama_first.rs`.
+    culture_seat_drama_before_government: bool,
+    /// `culture-keeps-its-aesthetics`: a Culture target with Theater Squares in
+    /// at least three cities keeps Aesthetics at the head of its deck. See
+    /// `advanced/culture_aesthetics.rs`.
+    culture_keeps_its_aesthetics: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -10506,8 +10517,12 @@ mod parallel_library_backlog;
 /// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
 mod capital_walls_at_any_ratio;
 
-mod culture_faith_sources;
+/// `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`.
+mod culture_aesthetics;
 mod culture_commerce_floor;
+/// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
+mod culture_drama_first;
+mod culture_faith_sources;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `diplo-match-point-beelines-the-points`; see
@@ -10895,6 +10910,9 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+/// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
+/// survival depends on. See `advanced/band_plays_its_stage.rs`.
+mod band_plays_its_stage;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -24910,6 +24928,18 @@ impl AdvancedAi {
                 }
                 // An offer out of a modded ruleset naming none of the nine
                 // falls through to the shipped scorer below.
+            }
+            if self.base.band_plays_its_stage {
+                if let Some(promotion) = self.band_stage_promotion(g, pid, uid, &promotions) {
+                    let _ = g.apply(
+                        pid,
+                        &Action::Promote {
+                            unit: uid,
+                            promotion,
+                        },
+                    );
+                    continue;
+                }
             }
             let legacy_choice = promotions.iter().copied().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)

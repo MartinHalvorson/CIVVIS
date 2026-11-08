@@ -7795,11 +7795,6 @@ async function setPace(opts) {
       body: JSON.stringify(opts) }));
   } catch (e) {}
 }
-// manual single step (the › button) while paused
-async function specStep() {
-  if (!SPEC) return;
-  try { render(await fetchJSON("/step", { method: "POST" })); } catch (e) {}
-}
 function scheduleSpec(_st) {} // server-driven; kept for legacy call sites
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
 
@@ -8706,10 +8701,6 @@ function hiddenMapMonsterRawArtworkSlot(q, r, seedA, seedB, variantCount) {
   ) * variantCount);
 }
 
-function hiddenMapMonsterShuffledVariant(q, r, seedA, seedB, variantCount) {
-  const deck = hiddenMapMonsterArtworkDeck(seedA, seedB, variantCount);
-  return deck[hiddenMapMonsterRawArtworkSlot(q, r, seedA, seedB, variantCount)];
-}
 
 function hiddenMapMonsterArtworkComesBefore(q, r, otherQ, otherR,
                                              priority, otherPriority) {
@@ -15955,9 +15946,6 @@ function skyExoBody(st = state) {
   return {...target, id:"exo", catalogue:target.id, name:target.name};
 }
 
-function skyWorlds() {
-  return [...SKY_SYSTEM, ...SKY_STARS, skyExoBody()];
-}
 function skyBody(id) {
   if (id === "exo") return skyExoBody();
   return SKY_SYSTEM.find(body => body.id === id)
@@ -17993,8 +17981,6 @@ function skyAlpha(colour, a) {
 function skyFade(value, low, high) {
   return Math.max(0, Math.min(1, (value - low) / Math.max(1e-9, high - low)));
 }
-// How wide a thing is on screen, from its size out here.
-function skyPixels(earthRadii, radius) { return earthRadii * radius; }
 
 // ------------------------------------------------------------------ orbits
 //
@@ -27751,10 +27737,6 @@ function prog(v, total, color) {
   return `<div class="bar"><div style="width:${pct}%;background:${color}"></div></div>` +
          `<span class="small">${Math.round(v)}/${Math.round(total)}</span>`;
 }
-function nameB(n, boosted) {
-  return `<b>${n.replaceAll("_"," ")}</b>` +
-    (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "");
-}
 function sel1(id, opts, boosted) {
   return `<select id="${id}"><option value="">— choose —</option>` +
     opts.map(o => `<option value="${o}">${o.replaceAll("_"," ")}${boosted.includes(o) ? " ⚡" : ""}</option>`).join("") +
@@ -29539,18 +29521,6 @@ function pediaVisit(key) {
   pediaTrail.push(key);
   pediaAt = pediaTrail.length - 1;
 }
-function pediaStep(delta) {
-  const to = pediaAt + delta;
-  if (to < 0 || to >= pediaTrail.length) return;
-  pediaAt = to;
-  pediaKey = pediaTrail[to];
-  const box = document.getElementById("pediaq");
-  if (box) box.value = "";
-  if (!document.getElementById("pedia").classList.contains("open")) openPedia();
-  else drawPedia();
-}
-function pediaBack() { pediaStep(-1); }
-function pediaForward() { pediaStep(1); }
 async function openPedia(key) {
   if (!PEDIA) {
     try { PEDIA = (await fetchJSON("/pedia")).entries || []; }
@@ -31377,23 +31347,6 @@ function orbitCamera(deltaRot = 0, deltaTilt = 0) {
   cameraFlight = {x:cam.x, y:cam.y, scale:cam.scale,
                   rot:cam.rot + deltaRot, tilt};
 }
-function nudgeCamera(screenX, screenY) {
-  takeCameraControl();
-  const basis = planetBasisNow();
-  if (basis) {
-    // The arrows move a globe the way a drag does, so they cross a pole instead
-    // of stopping at it. The camera goes where asked, so the ground under it
-    // travels the other way.
-    const [dx, dy] = planetGroundDrag(-screenX, -screenY);
-    applyPlanetBasis(planetTurn(basis, dx, dy));
-    draw(); drawMini();
-    return;
-  }
-  const vx = screenX / cam.scale, vy = screenY / cam.scale / mapProjectionY();
-  const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
-  cameraFlight = {x:clampCameraX(cam.x + dx), y:clampCameraY(cam.y + dy),
-                  scale:cam.scale};
-}
 function zoomAt(f, sx, sy, skyAnchor = null) {
   if (planetMap()) {
     const pending = cameraZoom?.kind === "planet" ? cameraZoom : null;
@@ -32156,22 +32109,6 @@ function mainLandmassAnchor() {
     const score = dx * dx + (tile.pos[1] - centerRow) ** 2;
     return !best || score < best.score ? { tile, score } : best;
   }, null).tile;
-}
-function setMainLandmassView() {
-  if (planetMap()) { setFullWorldView(); return; }
-  const anchor = mainLandmassAnchor();
-  if (!anchor) return;
-  cam.scale = .9;
-  const [x, y] = cameraTargetFor(anchor.pos, cam.scale);
-  cam.x = x;
-  cam.y = clampCameraY(y, cam.scale);
-}
-function centerMainLandmass() {
-  if (Number.isInteger(state?.view_player)) {
-    watchedEmpireAutoFrame = true;
-    setObservedPlayersView(false);
-  } else setMainLandmassView();
-  draw(); drawMini();
 }
 function centerOn(pos) { centerWorld(pos); }
 // Every capital on the map, indexed in one pass the three ways a row can need
@@ -34161,29 +34098,6 @@ function exploreHere() {
 }
 
 // ---- screens.
-function toggleTree(kind) {
-  if (SPEC) return;
-  const panel = document.getElementById("tree");
-  const showing = panel.classList.contains("open") && treeKind === kind;
-  if (showing) { panel.classList.remove("open"); return; }
-  openTree(kind);
-}
-function toggleEmpire(tab) {
-  if (SPEC) return;
-  if (empireOpen() && empireTab === tab) { closeEmpire(); return; }
-  openEmpire(tab);
-}
-function toggleTrade() {
-  if (SPEC) return;
-  document.getElementById("trade").classList.contains("open") ? closeTrade() : openTrade();
-}
-function togglePedia() {
-  document.getElementById("pedia").classList.contains("open") ? closePedia() : openPedia();
-}
-function toggleDiplomacy() {
-  if (SPEC) return;
-  diplomacyOpen() ? closeDiplomacy() : openDiplomacy();
-}
 // Full-screen map folds away the command deck and frames the whole world.
 let fullscreenMapRestore = null;
 function toggleFullscreenMap() {
@@ -34204,11 +34118,6 @@ function toggleFullscreenMap() {
   takeCameraControl(true);
   setFullWorldView();
   draw(); drawMini();
-}
-// Open the game-settings section of the command deck.
-function openGameMenu() {
-  if (document.body.classList.contains("sidebar-hidden")) togglePanel(false, false);
-  focusSection("setupsec");
 }
 
 // ---- getting about the empire.
@@ -34256,25 +34165,6 @@ function cycleUnit(step) {
   draw(); drawSide(); drawUbar(); drawTurnLoop();
 }
 // ---- quick save and quick load.
-async function quickSave() {
-  if (SPEC || !state) return;
-  try {
-    const done = await fetchJSON("/save", {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({name: "quicksave"})});
-    if (done.error) throw new Error(done.error);
-    await refreshSaves();
-  } catch (error) {
-    showNewSimulationError(error, "write a quicksave");
-  }
-}
-async function quickLoad() {
-  if (SPEC) return;
-  if (savesKnown === null) await refreshSaves();
-  const saves = savesKnown || [];
-  const quick = saves.find(save => save.name === "quicksave") || saves[0];
-  if (quick) await loadSave(quick.name);
-}
 
 // Civilization VI's own key map, for the seat a person is holding.
 //

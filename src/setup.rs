@@ -1310,20 +1310,6 @@ fn scatter(seed: u64) -> u64 {
     mix ^ (mix >> 31)
 }
 
-/// Which era a run opens its games in: one fixed rung of the ladder, or a
-/// fresh roll for every game.
-///
-/// A tournament has to carry this as a choice rather than a number, because
-/// the two are different experiments: a ladder rated over one era says what an
-/// AI does with that era's units, and one rated over a spread says what it
-/// does across the roster. The rating profile prints them differently for
-/// exactly that reason, so the two can never share a ledger.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StartEraChoice {
-    Fixed(usize),
-    RandomPerGame,
-}
-
 /// Which era arms a custom battle.
 ///
 /// The arena's original rule was "whatever start era the game was asked for",

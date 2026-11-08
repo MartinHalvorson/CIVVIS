@@ -80,8 +80,18 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
+        /// keep them alive, because album sales compound over a band's career.
+        base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         // ---- append: c-d --------------------------------------------
+        /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
+        culture_seat_drama_first => enable_culture_seat_drama_first, disable_culture_seat_drama_first;
+        /// `culture-seat-drama-before-government`: see
+        /// `advanced/culture_drama_first.rs`.
+        culture_seat_drama_before_government => enable_culture_seat_drama_before_government, disable_culture_seat_drama_before_government;
+        /// `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`.
+        culture_keeps_its_aesthetics => enable_culture_keeps_its_aesthetics, disable_culture_keeps_its_aesthetics;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------

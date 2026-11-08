@@ -1054,7 +1054,11 @@ impl AdvancedAi {
                     Some("divine_right")
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
+                // See `advanced/culture_drama_first.rs`. No-ops with both
+                // genes off.
+                _ if self.culture_drama_before_government(g, pid) => Some("drama_poetry"),
                 _ if first_government => Some("political_philosophy"),
+                _ if self.culture_drama_after_government(g, pid) => Some("drama_poetry"),
                 // `diplo-match-point-beelines-the-points`: the civic's point,
                 // whatever the plan reads -- ahead of the war civics and the
                 // government ladder. Live Immortal civvis-20261030T190332Z
