@@ -2092,28 +2092,6 @@ def option_strip(bounds: tuple[int, int, int, int], name: str) -> tuple[int, int
     return (int(left * 2), int(top * 2), int(right * 2), int(bottom * 2))
 
 
-def list_opened(before: Path, after: Path, rect: tuple[int, int, int, int]) -> bool:
-    """Did clicking the box actually drop a list over the rows beneath it?
-
-    An open list repaints that whole strip, so the two shots differ across a
-    large share of it. A closed one leaves the Create Game rows exactly as they
-    were — the menu's animated background is *behind* the panel and does not
-    reach here, which is why a plain difference is enough.
-    """
-    try:
-        from PIL import Image, ImageChops
-    except ImportError:
-        return True  # cannot look; fall back to the old blind behaviour
-    try:
-        a = Image.open(before).convert("L").crop(rect)
-        b = Image.open(after).convert("L").crop(rect)
-    except Exception:
-        return True
-    diff = ImageChops.difference(a, b)
-    changed = sum(1 for v in diff.getdata() if v > 24)
-    return changed > 0.10 * (diff.size[0] * diff.size[1])
-
-
 def _setup_option_label(value: str) -> str:
     """Return the English value Firaxis renders in a setup dropdown."""
     label = value.removesuffix(".lua")
