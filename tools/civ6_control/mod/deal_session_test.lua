@@ -770,6 +770,79 @@ clock = clock + 1
 queue.requestEndTurn(TURN)
 check("…the turn ends at once", endTurns, 4)
 
+-- A normal session can still be opening or awaiting its answer when the
+-- order batch reaches EndTurn. Native 20261108T084123Z t147 forced EndTurn
+-- while one counter waited and another rival's request queued behind it.
+do
+	local saved = { sessions = trade.sessions, pending = trade.pending, asked = trade.asked,
+		hold = trade.turnHold, disabled = trade.disabled, unanswered = trade.unanswered,
+		now = CivvisClock.now, turn = TURN, ends = endTurns }
+	local activeClock = 3000
+	CivvisClock.now = function() return activeClock end
+	trade.sessions, trade.pending, trade.asked = {}, {}, {}
+	trade.turnHold, trade.disabled, trade.unanswered = nil, false, 0
+	TURN = 600
+	fixture()
+	trade.ask(7, 3, "PROPOSED", "alliance", TURN)
+	queue.requestEndTurn(TURN)
+	check("an opening session holds the normal end turn", endTurns, saved.ends)
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN, { REASON = "UserForced" })
+	check("an opening session holds the forced end turn", endTurns, saved.ends)
+	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 1400 })
+	check("the first active question was actually sent", trade.sessions[3].sent, true)
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN)
+	check("a sent session awaiting its verdict holds the turn", endTurns, saved.ends)
+	onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 1400,
+		DealAction = DealProposalAction.REJECTED })
+	check("the refused alliance is waiting for its counter", trade.sessions[3].counter_wait ~= nil, true)
+	trade.ask(7, 4, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN, { REASON = "UserForced" })
+	check("a counter and a queued second opening hold the turn", endTurns, saved.ends)
+	trade.close(7, 3, "counter_answered")
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN)
+	check("closing one rival does not release the other opening", endTurns, saved.ends)
+	onStatement(7, 4, { StatementType = "MAKE_DEAL", SessionID = 1401 })
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN)
+	check("the second rival's pending verdict still holds", endTurns, saved.ends)
+	activeClock = activeClock + 29.4
+	check("the sent question gets its full reply window after opening",
+		trade.holdsEndTurn(TURN), true)
+	trade.close(7, 4, "answered")
+	activeClock = activeClock + 0.3
+	queue.requestEndTurn(TURN)
+	check("all active sessions closed permits the end turn", endTurns, saved.ends + 1)
+
+	TURN = 601
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock + 31
+	queue.requestEndTurn(TURN, { REASON = "UserForced" })
+	check("an active session cannot hold beyond its deadline", endTurns, saved.ends + 2)
+	trade.close(7, 3, "test_expired")
+	TURN = 602
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	TURN = 603
+	check("an active session from another turn holds nothing", trade.holdsEndTurn(TURN), false)
+	trade.close(7, 3, "test_old_turn")
+	TURN = 604
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock - 1
+	check("a backwards clock cannot leave an active hold", trade.holdsEndTurn(TURN), false)
+	trade.close(7, 3, "test_clock")
+	CivvisClock.now = function() return nil end
+	TURN = 605
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	check("an unreadable clock cannot leave an active hold", trade.holdsEndTurn(TURN), false)
+	trade.close(7, 3, "test_no_clock")
+	trade.sessions, trade.pending, trade.asked = saved.sessions, saved.pending, saved.asked
+	trade.turnHold, trade.disabled, trade.unanswered = saved.hold, saved.disabled, saved.unanswered
+	CivvisClock.now, TURN, endTurns = saved.now, saved.turn, saved.ends
+end
+
 -- ── A rival's session queued behind a dismissed screen is answered (G75 t133) ──
 -- Our peace asks made 2 and 3 open their own sessions to us; 2's was refused,
 -- 3's queued and opened behind a view the closer had already dismissed, so

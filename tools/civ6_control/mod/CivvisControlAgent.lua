@@ -12018,7 +12018,8 @@ CivvisTrade.ask = function(pid, subject, action, kind, turn)
 		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
 		return "direct";
 	end
-	trade.sessions[subject] = { kind = kind, action = action, turn = turn, sent = false };
+	trade.sessions[subject] = { kind = kind, action = action, turn = turn, sent = false,
+		opened_at = try(function() return CivvisClock.now(); end, nil) };
 	pcall(function() LuaEvents.CivvisDealSession(subject, true, cfg.DealSessionHoldSeconds or 4); end);
 	DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
 	emit("deal_session", { turn = turn, target = subject, kind = kind, action = action, phase = "opening" });
@@ -12330,6 +12331,9 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
 		session.sent = true;
+		session.reply_at = try(function() return CivvisClock.now(); end, nil);
+		session.end_turn_hold_expired = nil;
+		session.end_turn_hold_reported = nil;
 		-- ★★★★ THE ANSWER IS WAITED FOR, NOT TIMED OUT. The rival evaluates
 		-- the question in the game core, behind every unit command this turn
 		-- already queued ("The AI will send, ACCEPT, REJECT, etc. as the
@@ -12710,6 +12714,9 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			-- Mark and hold before sending: the engine may answer inside it.
 			pending.work_quote_proposed = true;
 			pending.turn = turn;
+			activeSession.reply_at = try(function() return CivvisClock.now(); end, nil);
+			activeSession.end_turn_hold_expired = nil;
+			activeSession.end_turn_hold_reported = nil;
 			pcall(function()
 				LuaEvents.CivvisDealSession(fromPlayer, true, cfg.DealAnswerHoldSeconds or 30);
 			end);
@@ -23850,10 +23857,31 @@ CivvisQueue.checkTimescaleClock = function()
 	if why ~= nil then CivvisQueue.resetTimescale(why); end
 end;
 
--- Whether an unanswered deal ask still holds this turn open (see abandon).
--- Bounded by `DealAnswerHoldSeconds` of the UI clock; a hold from another
--- turn, or with no clock to bound it, is dropped rather than kept.
+-- Active sessions and unanswered closed asks keep their reply window open.
+-- Each wait is bounded by DealAnswerHoldSeconds on the shared UI clock.
 CivvisTrade.holdsEndTurn = function(turn)
+	-- Opening, asked and counter-wait sessions still own a live UI reply.
+	-- Native 20261108T084123Z t147 forced EndTurn between a queued opening
+	-- and its answer. The abandoned-ask hold below did not cover that gap.
+	for subject, session in pairs(CivvisTrade.sessions) do
+		local at = session.reply_at or session.opened_at;
+		if session.turn == turn and type(at) == "number"
+				and not session.end_turn_hold_expired then
+			local now = CivvisClock.now();
+			local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
+			if limit ~= limit or limit == math.huge then limit = 30; end
+			if type(now) == "number" and now >= at and now - at < limit then
+				if not session.end_turn_hold_reported then
+					session.end_turn_hold_reported = true;
+					emit("deal_active_hold", { turn = turn, target = subject, phase = "holding" });
+				end
+				return true;
+			end
+			session.end_turn_hold_expired = true;
+			emit("deal_active_hold", { turn = turn, target = subject,
+				phase = "released", why = "expired_or_clock" });
+		end
+	end
 	local hold = CivvisTrade.turnHold;
 	if hold == nil then return false; end
 	local now = CivvisClock.now();
@@ -23890,8 +23918,7 @@ end;
 -- deliberate and is left alone.
 CivvisTrade.answerOrphanSessions = function(turn)
 	local trade = CivvisTrade;
-	local hold = trade.turnHold;
-	if hold ~= nil and hold.turn == turn then return; end
+	if trade.holdsEndTurn(turn) then return; end
 	local w = CivvisQueue.endTurnWait;
 	local now = CivvisClock.now();
 	if w == nil or w.turn ~= turn or type(now) ~= "number" or type(w.first) ~= "number" then
