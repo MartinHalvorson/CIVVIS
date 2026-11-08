@@ -330,10 +330,21 @@ fn culture_resort_sites_fixture() -> (Game, u32, Pos, Pos) {
 
 #[test]
 fn culture_keeps_repairable_resort_when_native_quotes_a_farm_for_campus() {
-    let (game, cid, resort, farm) = culture_resort_sites_fixture();
+    let (mut game, cid, resort, farm) = culture_resort_sites_fixture();
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
     assert!(ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), resort));
     assert!(!ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), farm));
+    // Ordinary menu quotes must suffice without a prior placement refusal.
+    std::sync::Arc::make_mut(&mut game.host_district_sites).clear();
+    assert!(BasicAi::culture_resort_site_is_displaced(
+        &game,
+        cid,
+        crate::name!("campus"),
+        resort,
+        &[resort, farm],
+    ));
+    // Restore the fixture's independent legality override for the assertion below.
+    game.host_district_sites = game.host_district_plots.clone();
     // This is a preference; the original Native legal site is retained.
     assert!(game
         .district_sites(cid, crate::name!("campus"))
