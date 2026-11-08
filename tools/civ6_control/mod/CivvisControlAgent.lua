@@ -1537,12 +1537,49 @@ function CivvisRockBandPromotionChoices(unit, name)
     end, nil);
 end
 
+-- UnitPanel_Expansion2.lua:40-43 reads these from the Rock Band component,
+-- separately from the generic experience/promotion level.
+CivvisRockBandProgress = function(unit)
+	local row = try(function() return GameInfo.Units[unit:GetType()]; end, nil);
+	if row == nil or row.UnitType ~= "UNIT_ROCK_BAND" then return nil; end
+	local counter = function(value)
+		if type(value) == "number" and value == value and value >= 0
+				and value < math.huge and value == math.floor(value) then return value; end
+		return nil;
+	end
+	return {
+		rock_band_level = counter(try(function()
+			return unit:GetRockBand():GetRockBandLevel();
+		end, nil)),
+		album_sales = counter(try(function()
+			return unit:GetRockBand():GetAlbumSales();
+		end, nil)),
+	};
+end;
+
+-- RockBandMoviePopup.lua:108,238 receives these scalars even when the Band
+-- retires. Do not re-resolve a dead unit just to retain its concert result.
+CivvisOnRockBandConcert = function(owner, unit, x, y, result, tourism)
+	if owner ~= try(function() return Game.GetLocalPlayer(); end, -1) then return; end
+	local row = try(function() return GameInfo.Unit_RockbandResults_XP2[result]; end, nil);
+	emit("rock_band_concert", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		owner = owner, unit = unit, x = x, y = y, result = result,
+		tourism = type(tourism) == "number" and tourism == tourism
+			and math.abs(tourism) < math.huge and tourism or nil,
+		dies = try(function() return row.Dies; end, nil),
+		gains_level = try(function() return row.GainsLevel; end, nil),
+		extra_promotion = try(function() return row.ExtraPromotion; end, nil),
+	});
+end;
+
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
 -- units to level one on every turn, so CIVVIS repeatedly chose actions Firaxis had
 -- already consumed. The stock Unit Panel reads these exact accessors.
 local function unitProgress(unit)
 	local experience = try(function() return unit:GetExperience(); end);
+	local band = CivvisRockBandProgress(unit);
 	local promotions = {};
 	if experience ~= nil then
 		for _, index in ipairs(try(function()
@@ -1568,6 +1605,8 @@ local function unitProgress(unit)
 		level = experience ~= nil and try(function()
 			return experience:GetLevel();
 		end) or nil,
+		rock_band_level = band and band.rock_band_level or nil,
+		album_sales = band and band.album_sales or nil,
 		promotions = promotions,
 		build_charges = try(function() return unit:GetBuildCharges(); end, 0),
 		spread_charges = try(function() return unit:GetSpreadCharges(); end, 0),
@@ -8408,6 +8447,8 @@ local function exportState(player, pid, turn, frame, eventKind)
 			moves = try(function() return unit:GetMovesRemaining(); end, -1),
 			xp = progress.xp,
 			level = progress.level,
+			rock_band_level = progress.rock_band_level,
+			album_sales = progress.album_sales,
 			promotions = progress.promotions,
 			build_charges = progress.build_charges,
 			spread_charges = progress.spread_charges,
@@ -8611,7 +8652,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								max_moves = try(function() return unit:GetMaxMoves(); end, nil),
-								xp = progress.xp, level = progress.level,
+								xp = progress.xp, level = progress.level, rock_band_level = progress.rock_band_level, album_sales = progress.album_sales,
 								promotions = progress.promotions,
 								build_charges = progress.build_charges,
 								spread_charges = progress.spread_charges,
@@ -9159,7 +9200,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								max_moves = try(function() return unit:GetMaxMoves(); end, nil),
-								xp = progress.xp, level = progress.level,
+								xp = progress.xp, level = progress.level, rock_band_level = progress.rock_band_level, album_sales = progress.album_sales,
 								promotions = progress.promotions,
 								build_charges = progress.build_charges,
 								spread_charges = progress.spread_charges,
@@ -9505,7 +9546,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 						-- a barbarian's allowance from an ordinary stock unit when
 						-- the host has already answered it.
 						max_moves = try(function() return unit:GetMaxMoves(); end, nil),
-						xp = progress.xp, level = progress.level,
+						xp = progress.xp, level = progress.level, rock_band_level = progress.rock_band_level, album_sales = progress.album_sales,
 						promotions = progress.promotions,
 						build_charges = progress.build_charges,
 						spread_charges = progress.spread_charges,
@@ -26122,6 +26163,7 @@ function Initialize()
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
 		DiplomacyStatement = CivvisOnDiplomacyStatement,
 		DiplomacySessionClosed = CivvisOnDealSessionClosed,
+		PostTourismBomb = CivvisOnRockBandConcert,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		-- RECORD-ONLY: when the load view finished. Game start is the load
 		-- screen's `OnActivateButtonClicked`, and its StartGame action only

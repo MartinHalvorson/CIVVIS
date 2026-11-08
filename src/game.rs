@@ -3467,6 +3467,10 @@ pub struct HostUnitFacts {
     /// for headless games and older or unreadable exports.
     #[serde(default)]
     pub concert_plots: Option<BTreeSet<Pos>>,
+    /// `GetRockBand():GetRockBandLevel()` from UnitPanel_Expansion2.lua:42.
+    /// Generic experience level remains the promotion-entitlement reading.
+    #[serde(default)]
+    pub rock_band_level: Option<i32>,
     #[serde(default)]
     pub upgrade: Option<HostUnitUpgrade>,
     /// `UnitManager.GetUnitMaintenance` (or the Corps/Army accessor) for the

@@ -966,6 +966,12 @@ pub struct StateUnit {
     pub xp: Option<i64>,
     #[serde(default)]
     pub level: Option<i32>,
+    /// Rock Band component level, distinct from the generic promotion level.
+    #[serde(default)]
+    pub rock_band_level: Option<i32>,
+    /// Native cumulative album sales; zero is an observed counter value.
+    #[serde(default)]
+    pub album_sales: Option<i64>,
     #[serde(default)]
     pub promotions: Option<Vec<String>>,
     /// Current native Rock Band menu; empty is an observed lack of choices.

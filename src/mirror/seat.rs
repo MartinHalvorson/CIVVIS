@@ -523,6 +523,11 @@ pub(super) fn apply_unit_observation(
     if let Some(level) = state.level.filter(|level| *level >= 1) {
         live.level = level;
     }
+    if live.kind == "rock_band" {
+        if let Some(sales) = state.album_sales.filter(|sales| *sales >= 0) {
+            live.album_sales = sales;
+        }
+    }
     if let Some(promotions) = progress.promotions {
         live.promotions = promotions;
     }
@@ -738,3 +743,6 @@ pub(super) fn apply_observed_host_metrics(
         })
         .collect();
 }
+
+#[cfg(test)]
+mod band_facts_tests;
