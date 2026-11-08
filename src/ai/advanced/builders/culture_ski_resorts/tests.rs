@@ -77,36 +77,36 @@ fn existing_jobs_unlocks_charges_and_other_victories_are_preserved() {
     let (ai, mut g, uid, _) = fixture();
     let empty = BTreeSet::new();
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &BTreeSet::from([uid]), &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &BTreeSet::from([uid]), &BTreeSet::new())
         .is_empty());
     for target in VictoryTarget::ALL
         .into_iter()
         .filter(|x| *x != VictoryTarget::Culture)
     {
         assert!(AdvancedAi::targeting(target)
-            .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+            .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
             .is_empty());
     }
     g.players[0].civics.clear();
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
     g.players[0]
         .civics
         .insert(crate::name!("professional_sports"));
     g.units.get_mut(&uid).unwrap().charges = 0;
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
     g.units.get_mut(&uid).unwrap().charges = 3;
     g.units.get_mut(&uid).unwrap().moves_left = 0.0;
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
     g.units.get_mut(&uid).unwrap().moves_left = 2.0;
     g.victory_conditions.culture = false;
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
 }
 
@@ -119,7 +119,7 @@ fn reserves_ski_spacing_and_respects_parks_and_host_refusals() {
     g.spawn_test_unit("builder", 0, (8, 11));
     let empty = BTreeSet::new();
     assert_eq!(
-        ai.native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        ai.native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
             .len(),
         1
     );
@@ -129,12 +129,12 @@ fn reserves_ski_spacing_and_respects_parks_and_host_refusals() {
         .or_default()
         .insert(crate::name!("ski_resort"));
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
     g.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("ski_resort"));
     Arc::make_mut(&mut g.blocked_improvements).clear();
     assert!(ai
-        .native_culture_ski_resort_jobs(&g, 0, &empty, &empty)
+        .native_culture_ski_resort_jobs(&g, 0, &empty, &BTreeSet::new())
         .is_empty());
 }
 
