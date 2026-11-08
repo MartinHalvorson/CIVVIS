@@ -3,6 +3,26 @@
 use super::*;
 
 impl Game {
+    /// `rules` plus the synthetic unknown terrain the decision view needs.
+    /// Every seat builds a view every turn, and adding that one terrain to a
+    /// private copy deep-cloned the whole ruleset each time. A replaced
+    /// ruleset is a different `Arc`, and the reference held here makes
+    /// `Arc::make_mut` copy the source rather than edit it in place, so a
+    /// changed ruleset can never be served from this cell.
+    fn rules_with_unknown_terrain(&self) -> Arc<Rules> {
+        let mut cached = self.view_rules.borrow_mut();
+        if let Some((source, derived)) = cached.as_ref() {
+            if Arc::ptr_eq(source, &self.rules) {
+                return Arc::clone(derived);
+            }
+        }
+        let mut derived = (*self.rules).clone();
+        derived.enable_unknown_terrain();
+        let derived = Arc::new(derived);
+        *cached = Some((Arc::clone(&self.rules), Arc::clone(&derived)));
+        derived
+    }
+
     /// A disposable decision board. Hidden terrain uses the same explicit
     /// unknown/prior representation as the Civilization VI mirror. Last-seen
     /// cities and terrain come from the observer's memory, not today's world.
@@ -46,7 +66,7 @@ impl Game {
             .as_ref()
             .filter(|reading| reading.player == pid)
             .cloned();
-        Arc::make_mut(&mut view.rules).enable_unknown_terrain();
+        view.rules = self.rules_with_unknown_terrain();
         // The chooser exposes which pantheons remain available, including
         // those taken by unmet civilizations, without exposing their owners.
         Arc::make_mut(&mut view.blocked_pantheons).extend(
