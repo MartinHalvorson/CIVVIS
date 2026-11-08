@@ -4,6 +4,8 @@
 //! turn 89. Their host quote named a Knight, 160 Gold and ten Iron; no
 //! Iron stock or income existed, while two peaceful rivals offered 25.
 //! The siege/air resource buyer supplied no ordinary land-upgrade want.
+//! Native Culture armies at war use `culture_war_materials` for their
+//! observed upgrade bills and a renewable unit-fuel buffer.
 use super::*;
 
 /// One material purchase, with the cash that must remain for its upgrade.
@@ -40,6 +42,9 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
     ) -> Vec<ArmyUpgradeMaterialWant> {
+        if let Some((wants, _)) = self.culture_war_material_reading(g, pid) {
+            return wants;
+        }
         let mut wants: Vec<_> = self
             .army_upgrade_material_quotes(g, pid)
             .into_iter()
@@ -77,6 +82,9 @@ impl AdvancedAi {
     }
 
     pub fn army_upgrade_material_reserves(&self, g: &Game, pid: usize) -> BTreeMap<Name, f64> {
+        if let Some((_, reserves)) = self.culture_war_material_reading(g, pid) {
+            return reserves;
+        }
         let mut reserves = BTreeMap::new();
         for quote in self.army_upgrade_material_quotes(g, pid) {
             let reserve = reserves.entry(quote.resource).or_insert(0.0_f64);
