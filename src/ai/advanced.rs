@@ -26132,7 +26132,8 @@ impl AdvancedAi {
         self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
-        self.base.plaza_serves_science = self.plaza_serves_science_on();
+        self.base.plaza_serves_science =
+            self.plaza_serves_science_on() || self.native_culture_plaza_economy(g, pid);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;
