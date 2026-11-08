@@ -2326,6 +2326,48 @@ fn film_studio_bonus_applies_only_against_each_modern_era_rival() {
     assert_eq!(g.players[0].tourism_lifetime, tourism);
 }
 
+/// A Trader's scoring pass reads the empire's Tourism once per city pair.
+#[test]
+fn tourism_is_served_from_the_memo_only_while_its_scope_is_open() {
+    let mut g = game_with_capitals(3, 4_043, 300);
+    let city = g.player_city_ids(0)[0];
+    install_test_district(&mut g, city, "theater_square");
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .extend([crate::name!("amphitheater"), crate::name!("film_studio")]);
+    g.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 1);
+    g.players[0].holy_city = Some(city);
+    g.players[1].techs.insert(crate::name!("radio"));
+    let uncached = g.tourism_components_per_turn(0);
+    assert!(uncached.1 > 0.0, "the reading must not be trivially zero");
+    assert!(g.query_memo.tourism.borrow().is_none());
+
+    let memo = g.query_memo();
+    assert_eq!(g.tourism_components_per_turn(0), uncached);
+    assert!(
+        g.query_memo
+            .tourism
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .contains_key(&0),
+        "the first read inside a scope must be remembered"
+    );
+    assert_eq!(
+        g.tourism_components_per_turn(0),
+        uncached,
+        "on the memoized read"
+    );
+    drop(memo);
+
+    // The scope really closed, so a later board cannot read this answer.
+    assert!(g.query_memo.tourism.borrow().is_none());
+}
+
 #[test]
 fn great_work_tourism_uses_tree_and_slotted_policy_modifiers() {
     let mut g = game_with_capitals(2, 412, 300);
