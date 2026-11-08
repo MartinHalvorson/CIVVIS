@@ -76,6 +76,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/host_war_age.rs"]
+mod host_war_age;
 #[path = "civvis_orders/spaceport_above_sea.rs"]
 mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]
@@ -8960,6 +8962,7 @@ fn main() {
     // The export reads a rival city's fire only while it is in sight; the
     // board rebuilt each turn keeps the last reading. See `CityFireMemory`.
     let mut host_city_fire = civvis::mirror::CityFireMemory::default();
+    let mut host_war_age = host_war_age::History::default();
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
@@ -9110,6 +9113,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
+                    host_war_age.observe_and_apply(&mut board, &state);
                     host_ranged_history.observe_and_apply(&mut board, &state);
                     host_city_attack_cooldowns.apply(&mut board);
                     if city_fire_memory {
@@ -9147,6 +9151,7 @@ fn main() {
                                 frontier,
                             );
                             host_ranged_history.observe_and_apply(&mut fresh, &state);
+                            host_war_age.observe_and_apply(&mut fresh, &state);
                             host_city_attack_cooldowns.apply(&mut fresh);
                             if city_fire_memory {
                                 host_city_fire.apply(&mut fresh.game);
@@ -9180,6 +9185,7 @@ fn main() {
                                 host_city_fire.apply(&mut existing.game);
                             }
                             host_city_strikes.apply(existing, state.turn);
+                            host_war_age.observe_and_apply(existing, &state);
                             host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
