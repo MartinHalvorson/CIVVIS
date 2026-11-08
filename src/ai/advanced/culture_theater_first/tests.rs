@@ -80,10 +80,12 @@ fn first_writing_slots_do_not_override_survival_settlers_or_finished_work() {
 #[test]
 fn other_lanes_and_disabled_gene_leave_routine_production_alone() {
     let (game, cities, _) = theaters_without_writing_slots();
-    for ai in [
-        seat(VictoryTarget::Science, true),
-        seat(VictoryTarget::Culture, false),
-    ] {
+    for ai in VictoryTarget::ALL
+        .into_iter()
+        .filter(|target| *target != VictoryTarget::Culture)
+        .map(|target| seat(target, true))
+        .chain([seat(VictoryTarget::Culture, false)])
+    {
         let mut other = game.clone();
         claim(&ai, &mut other);
         assert!(cities
@@ -93,7 +95,7 @@ fn other_lanes_and_disabled_gene_leave_routine_production_alone() {
 }
 
 #[test]
-fn completed_writing_slots_admit_one_fast_followup_through_recovery() {
+fn completed_writing_slots_admit_parallel_fast_followups_through_recovery() {
     for version_two in [false, true] {
         let (mut game, cities, amphitheater) = theaters_without_writing_slots();
         game.cities
@@ -124,20 +126,23 @@ fn completed_writing_slots_admit_one_fast_followup_through_recovery() {
         ai.claim_culture_theaters(&mut game, 0, &plan);
         assert_eq!(
             game.cities[&cities[1]].queue.first(),
-            Some(&unit("warrior")),
-            "one queued followup at a time"
+            Some(&amphitheater),
+            "another safe city's Writer economy need not wait for this build"
         );
-        game.cities
-            .get_mut(&cities[2])
-            .unwrap()
-            .buildings
-            .push(crate::name!("amphitheater"));
-        game.cities.get_mut(&cities[2]).unwrap().queue.clear();
+        assert_eq!(game.cities[&cities[2]].queue.first(), Some(&amphitheater));
+        assert!(ai.culture_theater_holds(&game, 0, cities[1], &plan, &amphitheater));
+        let queues: Vec<_> = cities
+            .iter()
+            .map(|cid| game.cities[cid].queue.clone())
+            .collect();
         ai.claim_culture_theaters(&mut game, 0, &plan);
         assert_eq!(
-            game.cities[&cities[1]].queue.first(),
-            Some(&amphitheater),
-            "the next Theater is completed after the first followup stands"
+            cities
+                .iter()
+                .map(|cid| game.cities[cid].queue.clone())
+                .collect::<Vec<_>>(),
+            queues,
+            "in-flight followups keep their queues without duplicate reservations"
         );
     }
 }
@@ -175,6 +180,55 @@ fn followup_writing_slots_respect_slow_builds_survival_debt_and_remaining_clock(
             cities
                 .iter()
                 .all(|cid| !game.cities[cid].queue.contains(&amphitheater)),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn parallel_writing_slots_keep_survival_guards_with_another_city_already_building() {
+    for why in ["threatened", "attacked", "debt", "settler", "walls", "slow"] {
+        let (mut game, cities, amphitheater) = theaters_without_writing_slots();
+        game.cities
+            .get_mut(&cities[0])
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.cities.get_mut(&cities[1]).unwrap().queue = vec![amphitheater.clone()];
+        let ai = seat(VictoryTarget::Culture, true);
+        let mut plan = ai.assess(&game, 0);
+        match why {
+            "threatened" => plan.threatened_city = Some(cities[2]),
+            "attacked" => game.cities.get_mut(&cities[2]).unwrap().last_attacked = game.turn - 1,
+            "debt" => {
+                game.players[0].gold_per_turn = -10.0;
+                game.players[0].gold = 0.0;
+            }
+            "settler" => game.cities.get_mut(&cities[2]).unwrap().queue = vec![unit("settler")],
+            "walls" => {
+                game.cities.get_mut(&cities[2]).unwrap().queue = vec![Item::Building {
+                    building: crate::name!("walls"),
+                }]
+            }
+            "slow" => {
+                Arc::make_mut(&mut game.observed_city_yield_adjustments)
+                    .get_mut(&cities[2])
+                    .unwrap()
+                    .production = -100.0
+            }
+            _ => unreachable!(),
+        }
+        let queues: Vec<_> = cities
+            .iter()
+            .map(|cid| game.cities[cid].queue.clone())
+            .collect();
+        ai.claim_culture_theaters(&mut game, 0, &plan);
+        assert_eq!(
+            cities
+                .iter()
+                .map(|cid| game.cities[cid].queue.clone())
+                .collect::<Vec<_>>(),
+            queues,
             "{why}"
         );
     }

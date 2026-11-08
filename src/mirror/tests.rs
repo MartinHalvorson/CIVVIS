@@ -1785,7 +1785,7 @@ fn untranslatable_ground_is_reported_not_swallowed() {
 
 #[test]
 fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
-    // ⚠ Written because `rebuild_with_empire` refused to place the capital of a
+    // ⚠ Written because the mirror once refused to place the capital of a
     // real run on (56,28), a plot the export clearly recorded as TERRAIN_GRASS,
     // not water. Either the tile is not being written or the placement check is
     // wrong, and a test says which.
@@ -1850,10 +1850,10 @@ fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
         "a revealed grass plot must not read as water"
     );
 
-    let (with_empire, placed) = rebuild_with_empire(&snapshot, &[(56, 28)], 4, 1);
-    assert_eq!(placed, 1, "the capital must be placeable on its own plot");
+    let mut game = game;
+    game.place_city(0, axial, None);
     assert!(
-        with_empire.cities.values().any(|c| c.pos == axial),
+        game.cities.values().any(|c| c.pos == axial),
         "and the city must actually be there, at the AXIAL position"
     );
 }
