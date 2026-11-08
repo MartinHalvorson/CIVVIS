@@ -30,7 +30,10 @@ fn culture_stops_forcing_a_third_campus_after_two_replacement_foundations() {
         assert!(game.can_produce(0, cid, &campus));
         assert!(ai.free_slot_campus_item(&game, 0, cid, &plan).is_none());
         game.cities.get_mut(&cid).unwrap().queue = vec![campus.clone()];
-        assert!(!ai.free_slot_campus_holds(&game, 0, cid, &plan, &campus));
+        assert!(
+            ai.free_slot_campus_holds(&game, 0, cid, &plan, &campus),
+            "the budget must not abandon an already committed ordinary Campus"
+        );
     }
 }
 

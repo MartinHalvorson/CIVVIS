@@ -325,9 +325,10 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if self.culture_releases_science_claims(g, pid)
-            || self.culture_other_campuses_cover_foundation(g, pid, cid)
-        {
+        // The Culture budget limits new reservations. Existing commitments,
+        // including ones admitted by ordinary scoring or during a war, keep
+        // their protection rather than all losing it when a third appears.
+        if self.culture_releases_science_claims(g, pid) {
             return false;
         }
         if !self.campus_claims_the_free_slot
