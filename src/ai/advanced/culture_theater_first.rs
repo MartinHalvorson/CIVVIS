@@ -51,7 +51,7 @@
 //! Both versions therefore reserve one safe, fastest build for the empire's
 //! first Amphitheater, leaving settlers, defenses and imminent completions
 //! under the same protections as the district claim. Additional Amphitheaters
-//! are completed one at a time after the first: a safe, solvent city must
+//! may be built in parallel after the first: a safe, solvent city must
 //! finish within fourteen Online turns, with at least twenty-eight more turns to use it.
 //! Native Deity 20261107T040449Z and 044901Z had five/four Acropoleis
 //! at turn 100 but only one Amphitheater through 125; infrastructure kept
@@ -478,9 +478,14 @@ impl AdvancedAi {
             return;
         }
         let item = Item::Building { building };
-        if g.cities
-            .values()
-            .any(|city| city.owner == pid && city.queue.contains(&item))
+        // Reserve only one empire-opening building. Once Writing slots exist,
+        // another city's construction must not serialize the whole empire's
+        // Writer points and Culture income. Each followup still passes its own
+        // bounded build-time, solvency, survival and queue-commitment checks.
+        if first
+            && g.cities
+                .values()
+                .any(|city| city.owner == pid && city.queue.contains(&item))
         {
             return;
         }
@@ -489,7 +494,8 @@ impl AdvancedAi {
             .into_iter()
             .filter_map(|cid| {
                 let city = &g.cities[&cid];
-                if plan.threatened_city == Some(cid)
+                if city.queue.contains(&item)
+                    || plan.threatened_city == Some(cid)
                     || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
                     || !g.can_produce(pid, cid, &item)
                 {
