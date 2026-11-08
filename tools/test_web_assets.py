@@ -498,3 +498,37 @@ if (animationPaintInterval(0, true, true) !== drawCost / .6) throw Error("GPU ov
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class SimulationWorldRotation(unittest.TestCase):
+    def test_player_games_stay_still_and_simulations_keep_the_saved_preference(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("function spinAvailable()")
+        block = source[start:source.index("function setWorldSpin(on)", start)]
+        scenarios = r'''
+let state = {}, SPEC = false, WORLD_SPIN = true;
+let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
+let cameraFollowManual = false, wraps = true;
+const REDUCED_MOTION_QUERY = {matches:false};
+function mapWrapsX() { return wraps; }
+const attributes = {};
+const spinButton = {title:"", setAttribute:(k,v) => attributes[k] = v};
+function expect(condition, message) { if (!condition) throw Error(message); }
+updateSpinButton();
+expect(!spinAvailable() && !spinRunning(), "player game rotates with saved spin enabled");
+expect(spinButton.disabled && attributes["aria-pressed"] === "false", "player control advertises rotation");
+expect(spinButton.title.includes("AI simulations"), "player control does not explain availability");
+SPEC = true; updateSpinButton();
+expect(spinRunning() && !spinButton.disabled, "simulation lost its saved rotation preference");
+expect(attributes["aria-pressed"] === "true" && WORLD_SPIN, "mode switch changed spin preference");
+SPEC = false; expect(!spinRunning(), "switching into player game leaves rotation running");
+SPEC = true; REDUCED_MOTION_QUERY.matches = true;
+expect(!spinRunning(), "simulation ignores reduced motion");
+REDUCED_MOTION_QUERY.matches = false; wraps = false;
+expect(!spinRunning(), "unwrapped world rotates");
+wraps = true; WORLD_SPIN = false;
+expect(!spinRunning(), "simulation ignores saved spin off");
+'''
+        done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
