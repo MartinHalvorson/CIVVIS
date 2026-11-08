@@ -772,6 +772,8 @@ local function resolveActions()
 		-- :11 (concert). None has InterfaceMode: UnitPanel.lua:2518-2535 requests
 		-- the operation directly. The generic tail preserves CanStartOperation.
 		"UNITOPERATION_EXCAVATE", "UNITOPERATION_DESIGNATE_PARK", "UNITOPERATION_TOURISM_BOMB",
+		-- The Trader origin chooser has destination parameters.
+		"UNITOPERATION_TELEPORT_TO_CITY",
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
@@ -17331,6 +17333,30 @@ local function applyOrder(player, pid, row, turn)
 		-- what made that visible in one line of the status output; the shipped call
 		-- below was then read out of the game's own `TradeRouteChooser.lua` rather
 		-- than guessed a third time.
+		-- TradeOriginChooser.lua:79-88 uses an ordinary native operation with
+		-- PARAM_X/Y and a four-argument CanStartOperation gate. Only Traders
+		-- changing to an owned city may use this bridge arm.
+		if verb == "TELEPORT_TO_CITY" then
+			local row = try(function() return GameInfo.Units[unit:GetUnitType()]; end, nil);
+			if row == nil or row.UnitType ~= "UNIT_TRADER" then return false, "not_trader"; end
+			if x == nil or y == nil then return false, "no_trade_origin"; end
+			local owned = try(function()
+				for _, city in player:GetCities():Members() do
+					if city:GetX() == x and city:GetY() == y then return true; end
+				end
+				return false;
+			end, false);
+			if not owned then return false, "trade_origin_not_ours"; end
+			local op = OP["UNITOPERATION_TELEPORT_TO_CITY"];
+			if op == nil then return false, "unknown_trade_origin_op"; end
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = x;
+			params[UnitOperationTypes.PARAM_Y] = y;
+			if not canOperate(unit, op, params) then return false, "cannot_trade_origin"; end
+			local ok = operate(unit, op, params);
+			emit("trader_origin_transfer_requested", {turn = turn, unit = subject, x = x, y = y, requested = ok});
+			return ok, ok and "trade_origin_requested" or "trade_origin_refused";
+		end
 		if verb == "TRADE_ROUTE" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			-- ★★★★ COPIED FROM `TradeRouteChooser.lua`, NOT GUESSED — and the two
