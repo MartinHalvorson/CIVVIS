@@ -5427,6 +5427,9 @@ pub const GENES: &[Gene] = &[
     // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
     Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
     // ---- append: c-d ------------------------------------------------
+    Gene { tag: "culture-seat-drama-first", field: "culture_seat_drama_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_first, disable: AdvancedAi::disable_culture_seat_drama_first },
+    Gene { tag: "culture-seat-drama-before-government", field: "culture_seat_drama_before_government", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_before_government, disable: AdvancedAi::disable_culture_seat_drama_before_government },
+    Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
