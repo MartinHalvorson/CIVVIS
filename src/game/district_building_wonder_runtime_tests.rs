@@ -2315,3 +2315,88 @@ fn native_venue_quotes_keep_ownership_pillage_and_repeat_guards() {
         .insert(format!("rock_concert:{band}:{},{}", venue.0, venue.1), 1);
     assert_eq!(game.rock_concert_tourism(0, band), None);
 }
+
+fn native_wartime_band_fixture() -> (Game, usize, u32, Pos) {
+    let (mut game, city, venue) = one_city(774_4069);
+    let rival = game.players.len();
+    game.players
+        .push(Player::new(rival, "Native Venue Rival", false));
+    game.cities.get_mut(&city).unwrap().owner = rival;
+    install_district(&mut game, city, venue, "theater_square");
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("broadcast_center"));
+    let band = game.spawn_test_unit("rock_band", 0, venue);
+    game.units
+        .get_mut(&band)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("roadies"));
+    game.at_war.insert((0, rival));
+    (game, rival, band, venue)
+}
+
+#[test]
+fn an_exact_native_concert_offer_overrides_the_modeled_wartime_venue_veto() {
+    let (mut game, rival, band, venue) = native_wartime_band_fixture();
+    assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+    assert_eq!(game.rock_concert_tourism(0, band), None);
+    // Missing, empty and different-plot observations cannot enable this venue.
+    for offered in [
+        std::collections::BTreeSet::new(),
+        [game.cities.values().next().unwrap().pos]
+            .into_iter()
+            .collect(),
+    ] {
+        std::sync::Arc::make_mut(&mut game.host_unit_facts)
+            .entry(band)
+            .or_default()
+            .concert_plots = Some(offered);
+        assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+        assert_eq!(game.rock_concert_tourism(0, band), None);
+    }
+    std::sync::Arc::make_mut(&mut game.host_unit_facts)
+        .entry(band)
+        .or_default()
+        .concert_plots = Some([venue].into_iter().collect());
+    assert!(game
+        .rock_concert_ai_value(0, band, venue)
+        .is_some_and(|value| value > 0.0));
+    assert!(game
+        .rock_concert_tourism(0, band)
+        .is_some_and(|value| value > 0.0));
+    game.apply(0, &Action::PerformConcert { unit: band })
+        .unwrap();
+    assert!(game.players[0]
+        .targeted_tourism
+        .get(&rival)
+        .is_some_and(|tourism| *tourism > 0.0));
+}
+
+#[test]
+fn a_native_wartime_concert_offer_keeps_minor_pillaged_and_unit_state_guards() {
+    let (mut game, rival, band, venue) = native_wartime_band_fixture();
+    std::sync::Arc::make_mut(&mut game.host_unit_facts)
+        .entry(band)
+        .or_default()
+        .concert_plots = Some([venue].into_iter().collect());
+    game.players[rival].is_minor = true;
+    assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+    game.players[rival].is_minor = false;
+    game.map.tiles.get_mut(&venue).unwrap().pillaged = true;
+    assert_eq!(game.rock_concert_ai_value(0, band, venue), None);
+    game.map.tiles.get_mut(&venue).unwrap().pillaged = false;
+    game.units.get_mut(&band).unwrap().moves_left = 0.0;
+    assert!(game
+        .apply(0, &Action::PerformConcert { unit: band })
+        .is_err());
+    game.units.get_mut(&band).unwrap().moves_left = 4.0;
+    // Restore an unquoted planning board: its previous wartime behavior stays.
+    std::sync::Arc::make_mut(&mut game.host_unit_facts).clear();
+    assert_eq!(game.rock_concert_tourism(0, band), None);
+    assert!(game
+        .apply(0, &Action::PerformConcert { unit: band })
+        .is_err());
+}

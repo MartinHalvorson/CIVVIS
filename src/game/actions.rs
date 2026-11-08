@@ -2008,7 +2008,13 @@ impl Game {
         let city = tile
             .owner_city
             .and_then(|city_id| self.cities.get(&city_id))?;
-        if city.owner == pid || self.players[city.owner].is_minor || self.is_at_war(pid, city.owner)
+        // SelectedUnit_Expansion2.lua:65-70 highlights the plots this Native
+        // band could use its action on. An exact positive offer is stronger
+        // than the model's peace-only assumption; keep that assumption when
+        // no host menu exists, including ordinary headless games.
+        if city.owner == pid
+            || self.players[city.owner].is_minor
+            || (native_plots.is_none() && self.is_at_war(pid, city.owner))
         {
             return None;
         }
