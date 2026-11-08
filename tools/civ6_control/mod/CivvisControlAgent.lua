@@ -6287,7 +6287,7 @@ function CivvisMuseumSwaps.score(slots)
             if object == nil then object = work.object; elseif object ~= work.object then same = false; end
         end
     end
-    local base = count + 2 * unique;
+    local base = count + unique;
     if count == 3 and unique == 3 and same then base = base * 2; end
     return base;
 end
@@ -6304,7 +6304,7 @@ function CivvisMuseumSwaps.read(city, building)
             if info == nil or (info.GreatWorkObjectType ~= "GREATWORKOBJECT_SCULPTURE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_LANDSCAPE"
                 and info.GreatWorkObjectType ~= "GREATWORKOBJECT_PORTRAIT")
-                or tonumber(info.Tourism) ~= 3 or data == nil
+                or tonumber(info.Tourism) ~= 2 or data == nil
                 or type(data.CreatorName) ~= "string" or data.CreatorName == "" then return nil; end
             local created = tonumber(blds:GetTurnFromIndex(index));
             if created == nil then return nil; end

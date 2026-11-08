@@ -5,7 +5,7 @@ CivvisControlConfig={};Automation={Log=function() end};
 local art={};local data={};local index=0
 local function museum(id, names, factor)
  local slots={};local created={}
- for i,name in ipairs(names) do index=index+1;slots[i]=index;created[index]=0;art[index]={GreatWorkType=name..'_'..i,GreatWorkObjectType='GREATWORKOBJECT_LANDSCAPE',Tourism=3};data[index]={CreatorName=name} end
+ for i,name in ipairs(names) do index=index+1;slots[i]=index;created[index]=0;art[index]={GreatWorkType=name..'_'..i,GreatWorkObjectType='GREATWORKOBJECT_LANDSCAPE',Tourism=2};data[index]={CreatorName=name} end
  local b={HasBuilding=function() return true end,GetNumGreatWorkSlots=function() return 3 end,
  GetGreatWorkInSlot=function(_,_,s) return slots[s+1] or -1 end,
  GetGreatWorkTypeFromIndex=function(_,i) return i end,GetTurnFromIndex=function(_,i) return created[i] end,

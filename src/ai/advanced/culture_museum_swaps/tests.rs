@@ -36,17 +36,17 @@ fn same_artist_museums_propose_a_real_inventory_gain() {
     assert_eq!(swaps[0], (10, "A_0".into(), 20, 0));
     let a = s.cities[0].great_works.as_ref().unwrap();
     let b = s.cities[1].great_works.as_ref().unwrap();
-    assert_eq!(score(&[Some(&a[0]), Some(&a[1]), Some(&a[2])]), 5);
-    assert_eq!(score(&[Some(&b[0]), Some(&a[1]), Some(&a[2])]), 7);
+    assert_eq!(score(&[Some(&a[0]), Some(&a[1]), Some(&a[2])]), 4);
+    assert_eq!(score(&[Some(&b[0]), Some(&a[1]), Some(&a[2])]), 5);
 }
 #[test]
 fn art_theme_uses_object_type_and_three_distinct_artists() {
     let a = work("A", 0);
     let b = work("B", 1);
     let mut c = work("C", 2);
-    assert_eq!(score(&[Some(&a), Some(&b), Some(&c)]), 18);
+    assert_eq!(score(&[Some(&a), Some(&b), Some(&c)]), 12);
     c.object = "GREATWORKOBJECT_PORTRAIT".into();
-    assert_eq!(score(&[Some(&a), Some(&b), Some(&c)]), 9);
+    assert_eq!(score(&[Some(&a), Some(&b), Some(&c)]), 6);
 }
 #[test]
 fn missing_or_unsupported_inventory_is_not_a_proposal() {

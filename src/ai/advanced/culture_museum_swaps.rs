@@ -13,9 +13,9 @@ fn regular_art(work: &StateGreatWork) -> bool {
 fn score(slots: &[Option<&StateGreatWork>]) -> i32 {
     let works: Vec<_> = slots.iter().flatten().collect();
     let artists: BTreeSet<_> = works.iter().map(|w| &w.creator).collect();
-    // Base/Assets/Gameplay/Data/Buildings.xml:469: nonunique art is 1,
+    // GreatWorks.xml:329,334: Art Tourism is 2. Buildings.xml:469: nonunique art is 1,
     // full same-object/unique-artist museums double their Great Work Tourism.
-    let base = works.len() as i32 + artists.len() as i32 * 2;
+    let base = works.len() as i32 + artists.len() as i32;
     if works.len() == 3 && artists.len() == 3 && works.iter().all(|w| w.object == works[0].object) {
         base * 2
     } else {
