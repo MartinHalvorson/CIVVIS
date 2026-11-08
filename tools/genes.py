@@ -3085,20 +3085,6 @@ def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
 
 
-def batch_win_cell(history: list[dict], back: int = 0) -> str:
-    """One legacy chronological batch cell, scaled to 10,000 on-arm seats.
-
-    `back=0` is the latest batch, `back=1` the prior batch, and so on. A
-    source without that many readings leaves the table cell unpopulated. The
-    production table uses ``load_reporting_batches`` instead, so its sample
-    size appears once in each fixed column header rather than in every cell.
-    """
-    if len(history) <= back:
-        return EN_DASH
-    batch = history[-1 - back]
-    return f"{wins_per(batch['win_on'], batch['players']):+d}"
-
-
 def total_seat_batch_wins_value(row: dict) -> float:
     """Unrounded on-arm excess, normalized to 10,000 *total* player seats.
 

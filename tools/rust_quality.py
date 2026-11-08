@@ -279,22 +279,6 @@ def rustfmt(
     return failures, skipped
 
 
-def _span_paths(message: dict, repo: Path) -> set[Path]:
-    paths = set()
-    for span in message.get("spans", []):
-        name = span.get("file_name")
-        if not name:
-            continue
-        path = Path(name)
-        if not path.is_absolute():
-            path = repo / path
-        try:
-            paths.add(path.resolve())
-        except OSError:
-            paths.add(path)
-    return paths
-
-
 def _span_hits_change(
     message: dict, repo: Path, ranges: dict[Path, list[tuple[int, int]]]
 ) -> bool:

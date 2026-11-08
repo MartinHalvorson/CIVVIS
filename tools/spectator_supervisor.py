@@ -107,36 +107,6 @@ SIMULATION_PLAYER_COUNTS = (4, 5, 6, 7, 8, 9, 10)
 # what keeps it absent.
 
 
-def rolled_simulation_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    """Redraw the three axes that vary between exhibition worlds.
-
-    Width, height and city-state counts are *dropped* rather than rolled or
-    carried: all three are functions of the seat count, and `civvis play`
-    derives them from `--players` through `MapSize::for_players`, which is the
-    shipped Civilization VI size table. Computing them here would put a second
-    copy of that table in Python to keep in step, and carrying the finished
-    world's 74x46 forward would crowd ten seats onto a board built for six.
-    """
-    rolled = dict(settings)
-    rolled["players"] = random.choice(SIMULATION_PLAYER_COUNTS)
-    rolled["map"] = random.choice(MAP_TYPES)
-    rolled["shape"] = random.choice(MAP_SHAPES)
-    for derived in ("width", "height", "city_states"):
-        rolled.pop(derived, None)
-    return rolled
-
-
-def final_countdown_seconds(requested: float) -> float:
-    """Ten seconds, whatever `--cooldown` asked for.
-
-    The argument is still taken so an existing launcher's `--cooldown` keeps
-    parsing, and still ignored so it cannot put a number on the result screen
-    that disagrees with the countdown the server is showing.
-    """
-    del requested
-    return FINAL_COUNTDOWN_SECONDS
-
-
 SCRIPT_PATH = Path(__file__).resolve()
 SCRIPT_ROOT = SCRIPT_PATH.parents[1]
 RUNNING_SUPERVISOR_SHA256 = hashlib.sha256(SCRIPT_PATH.read_bytes()).hexdigest()
@@ -654,21 +624,6 @@ def prepare_boundary_runtime(retry_seconds: float) -> bool:
     return True
 
 
-def prepare_live_refresh(port: int, path: Path) -> bool:
-    """Build current source and checkpoint before replacing a fallback runtime."""
-    if not prepare_latest_once():
-        return False
-    if not capture_checkpoint(port, path):
-        log("fresh build is ready but no safe checkpoint was captured; retrying")
-        return False
-    return True
-
-
-def prebuild_latest_once() -> bool:
-    """Fetch canonical main and keep its promoted fallback current."""
-    return prepare_latest_once()
-
-
 def start_background_prebuild() -> subprocess.Popen[str]:
     """Compile in a separate process so result polling never waits on Cargo."""
     return subprocess.Popen(
@@ -888,37 +843,6 @@ def should_nudge(state: dict[str, Any], stalled_for: float, timeout: float) -> b
     if played_by_hand(state):
         return False
     return not state.get("spectator_paused", False) and stalled_for >= max(0.1, timeout)
-
-
-def successor_started(
-    state: dict[str, Any] | None,
-    finished_instance: Any,
-    finished_seed: Any,
-) -> bool:
-    """Whether the result server has already rolled into another match."""
-    return state is not None and (
-        state.get("server_instance") != finished_instance
-        or state.get("seed") != finished_seed
-        or not game_finished(state)
-    )
-
-
-def wait_for_successor(
-    port: int,
-    finished_instance: Any,
-    finished_seed: Any,
-    timeout: float = 1.0,
-) -> dict[str, Any] | None:
-    """Give the server-owned cooldown restart a brief scheduling grace."""
-    deadline = time.monotonic() + max(0.0, timeout)
-    latest = read_status(port)
-    while not successor_started(latest, finished_instance, finished_seed):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        time.sleep(min(0.05, remaining))
-        latest = read_status(port)
-    return latest
 
 
 def checkpoint_path(port: int) -> Path:
