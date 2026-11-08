@@ -12048,11 +12048,6 @@ impl AdvancedAi {
         self.seat_city_pace = true;
     }
 
-    /// Whether this seat's city horizon follows the live seat's curve.
-    pub fn seat_city_pace(&self) -> bool {
-        self.seat_city_pace
-    }
-
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
         self.forced_target_player = None;
