@@ -3352,6 +3352,18 @@ fn hold_deals_beside_an_alliance(orders: &mut Vec<Order>) -> usize {
     before - orders.len()
 }
 
+fn defer_alliances_for_defensive_material(
+    orders: &mut Vec<Order>,
+    native_defense_buy: bool,
+) -> usize {
+    if !native_defense_buy || !orders.iter().any(|order| order.kind == "buy") {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| order.kind != "alliance");
+    before - orders.len()
+}
+
 /// Why no favor sale order was appended this turn, for the note; `None` when
 /// one was. `plan` is the plan report's `(strategy, victory_target)`.
 fn append_favor_sale_order(
@@ -5386,8 +5398,11 @@ fn decide(
             }
         }
     }
+    let mut native_defense_material_buy = false;
     if ai.army_upgrade_materials_enabled() {
-        let wants = ai.army_upgrade_material_wants(&mirror_state.game, 0);
+        let gold = planned_game.players[0].gold.floor() as i64;
+        let (wants, native_defense) =
+            ai.army_upgrade_material_wants_after_spending(&mirror_state.game, 0, gold as f64);
         let (held, kept) =
             protect_army_upgrade_material_sales(ai, &mirror_state.game, &wants, &mut orders);
         if kept > 0 {
@@ -5406,7 +5421,6 @@ fn decide(
                         .resource_gold_value(seat, resource, amount)
                 })
         };
-        let gold = planned_game.players[0].gold.floor() as i64;
         match append_army_upgrade_material_buy_order(
             &wants,
             &spares,
@@ -5417,6 +5431,7 @@ fn decide(
             gold,
         ) {
             None => {
+                native_defense_material_buy = native_defense;
                 if let Some(want) = wants.first() {
                     note_bits.push(format!(
                         "army_material_buy=1 upgrade={} unit={} cash_kept={:.0}",
@@ -5810,6 +5825,13 @@ fn decide(
     if session_conflicts > 0 {
         note_bits.push(format!(
             "deals_dropped_for_war_or_peace={session_conflicts}"
+        ));
+    }
+    let deferred_alliances =
+        defer_alliances_for_defensive_material(&mut orders, native_defense_material_buy);
+    if deferred_alliances > 0 {
+        note_bits.push(format!(
+            "alliances_deferred_for_upgrade_material={deferred_alliances}"
         ));
     }
     let held_beside_alliance = hold_deals_beside_an_alliance(&mut orders);
@@ -9382,3 +9404,7 @@ mod army_upgrade_materials_tests;
 #[cfg(test)]
 #[path = "civvis_orders/repair_postconditions_tests.rs"]
 mod repair_postconditions_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/culture_war_materials_tests.rs"]
+mod culture_war_materials_tests;

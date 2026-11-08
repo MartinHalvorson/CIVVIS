@@ -67,6 +67,23 @@ fn only_affordable_upgrades_are_funded() {
 }
 
 #[test]
+fn remaining_frame_budget_funds_a_smaller_group_instead_of_holding_every_upgrade() {
+    let (g, ai, _) = fixture(4);
+    let (wants, native_defense) = ai.army_upgrade_material_wants_after_spending(&g, 0, 500.0);
+    assert!(native_defense);
+    assert_eq!(wants[0].amount, 22);
+    assert_eq!(wants[0].gold_reserve, 449.0);
+    assert!(ai
+        .army_upgrade_material_wants_after_spending(&g, 0, 100.0)
+        .0
+        .is_empty());
+    assert!(ai
+        .army_upgrade_material_wants_after_spending(&g, 0, f64::NAN)
+        .0
+        .is_empty());
+}
+
+#[test]
 fn a_fielded_native_artillery_renews_before_its_buffer_runs_out() {
     let (mut g, ai, ids) = fixture(1);
     g.units.get_mut(&ids[0]).unwrap().kind = crate::name!("artillery");

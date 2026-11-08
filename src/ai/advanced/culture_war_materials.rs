@@ -19,7 +19,12 @@ struct Material {
 type Reading = (Vec<ArmyUpgradeMaterialWant>, BTreeMap<Name, f64>);
 
 impl AdvancedAi {
-    pub(super) fn culture_war_material_reading(&self, g: &Game, pid: usize) -> Option<Reading> {
+    pub(super) fn culture_war_material_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        remaining_gold: Option<f64>,
+    ) -> Option<Reading> {
         // An absent income observation is not a zero-income offer. This also
         // leaves ordinary simulator decisions on their existing path.
         let income = g.observed_strategic_income_adjustments.get(&pid)?;
@@ -35,6 +40,13 @@ impl AdvancedAi {
             return None;
         }
         let floor = 100.0 + (-player.gold_per_turn).max(0.0);
+        let gold_budget = remaining_gold.map_or(player.gold, |gold| {
+            if gold.is_finite() {
+                gold.min(player.gold).max(0.0)
+            } else {
+                0.0
+            }
+        });
         let capacity = g.strategic_stockpile_capacity(pid);
         let mut materials: BTreeMap<Name, Material> = BTreeMap::new();
         let mut upgrades = Vec::new();
@@ -111,7 +123,7 @@ impl AdvancedAi {
             let required = material.upfront
                 + bill
                 + (material.upkeep + fuel - rate).max(0.0) * GUN_RESOURCE_FUEL_TURNS;
-            if material.gold + gold + floor > player.gold || required > capacity {
+            if material.gold + gold + floor > gold_budget || required > capacity {
                 continue;
             }
             material.upfront += bill;
@@ -139,7 +151,7 @@ impl AdvancedAi {
                 || amount < 1.0
                 || stock + amount > capacity
                 || amount > f64::from(u32::MAX)
-                || player.gold < material.gold + floor
+                || gold_budget < material.gold + floor
             {
                 continue;
             }
