@@ -6667,6 +6667,10 @@ pub struct AdvancedAi {
     /// at least three cities keeps Aesthetics at the head of its deck. See
     /// `advanced/culture_aesthetics.rs`.
     culture_keeps_its_aesthetics: bool,
+    /// `culture-banks-for-the-bands`: from Ideology until Cold War a Culture
+    /// target holds Faith for its first four Rock Bands. See
+    /// `advanced/culture_band_bank.rs`.
+    culture_banks_for_the_bands: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -10519,6 +10523,8 @@ mod capital_walls_at_any_ratio;
 
 /// `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`.
 mod culture_aesthetics;
+/// `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`.
+mod culture_band_bank;
 mod culture_commerce_floor;
 /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
 mod culture_drama_first;
@@ -16356,6 +16362,8 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
+            // See `advanced/culture_band_bank.rs`.
+            + self.culture_band_bank(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
@@ -26514,6 +26522,8 @@ impl AdvancedAi {
             } else {
                 g.game_speed.scale(1_200.0)
             };
+            // See `advanced/culture_band_bank.rs`.
+            let reserve = reserve.max(self.culture_band_bank(g, pid));
             self.religious_spending_with_reserve(g, pid, offensive, reserve);
         }
         // See `lane_culture_spending`: the Culture reserve that keeps a
