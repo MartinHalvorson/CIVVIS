@@ -8816,6 +8816,7 @@ function drawHiddenMapMonster(x, y, size, variant, angle, mirrored, alpha) {
   cx.restore();
 }
 
+const HIDDEN_MAP_FIBRE_ROWS = 2, HIDDEN_MAP_FIBRE_WAVE_COLUMNS = 40;
 function drawHiddenMapParchment(layer) {
   if (!layer.cells.length) return;
   const xs = layer.cells.map(cell => cell.x), ys = layer.cells.map(cell => cell.y);
@@ -8844,19 +8845,33 @@ function drawHiddenMapParchment(layer) {
   cx.fillStyle = age; cx.fill();
 
   // Long, faint fibres cross many cells at once. They texture the paper
-  // without turning the hidden area back into a tile diagram.
+  // without turning the hidden area back into a tile diagram. A fibre is part
+  // of the paper, so it is laid on the world's own rows and columns and the
+  // frame only asks which ones it can see. Measured off the cells in frame,
+  // they slid a row at a time against the ground under every pan. The lanes
+  // and waves divide the world exactly, so a wrap lands on the same fibres.
   cx.clip();
   cx.strokeStyle = PARCH_INK; cx.lineWidth = .55; cx.globalAlpha = .075;
   const [seedA, seedB] = hiddenMapSeedWords();
-  const span = Math.max(S, maxY - minY);
-  for (let i = 0; i < 13; i++) {
-    const y = minY + span * (i + .35 + hash2(seedA + i * 17, seedB + 31) * .3) / 13;
-    const bend = (hash2(seedB + i * 23, seedA + 7) - .5) * S * .8;
-    cx.beginPath(); cx.moveTo(minX, y);
-    cx.bezierCurveTo(minX + (maxX - minX) * .32, y + bend,
-                     minX + (maxX - minX) * .68, y - bend, maxX, y);
-    cx.stroke();
+  const frame = framedHexBounds(2);
+  const {width, height} = state.map;
+  const lanes = Math.max(1, Math.round(height / HIDDEN_MAP_FIBRE_ROWS));
+  const laneRows = height / lanes;
+  const waves = Math.max(1, Math.round(width / HIDDEN_MAP_FIBRE_WAVE_COLUMNS));
+  const firstColumn = Math.floor(frame.left / 3) * 3;
+  cx.beginPath();
+  for (let lane = Math.floor(frame.top / laneRows);
+       lane <= Math.ceil(frame.bottom / laneRows); lane++) {
+    const fibre = ((lane % lanes) + lanes) % lanes;
+    const row = (lane + hash2(seedA + fibre * 17, seedB + 31) * .4) * laneRows;
+    const phase = hash2(seedB + fibre * 23, seedA + 7) * 2 * Math.PI;
+    for (let col = firstColumn; col <= frame.right + 3; col += 3) {
+      const at = row + Math.sin(col / width * waves * 2 * Math.PI + phase) * .3;
+      const [x, y] = hexXYRaw(col - at / 2, at);
+      col === firstColumn ? cx.moveTo(x, y) : cx.lineTo(x, y);
+    }
   }
+  cx.stroke();
   cx.restore();
 }
 
@@ -15516,18 +15531,16 @@ function drawPlanetReachOverlay(cells, camera, scale, centerX, centerY) {
     }
   }
   if (segments.length) {
-    cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
-    for (const [width, color] of [
-      [3.0, "rgba(5,10,15,.68)"],
-      [1.3, "rgba(143,216,255,.92)"],
-    ]) {
-      cx.beginPath();
-      for (const [ax, ay, bx, by] of segments) {
-        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    // One cell's size sets the weight of the whole line, so the outline keeps
+    // one thickness however the projection stretches its far side.
+    const sized = entries.get(key(sel.pos)) ||
+      [...region].map(regionKey => entries.get(regionKey)).find(Boolean);
+    paintReachBoundary(segments, () => {
+      for (const regionKey of region) {
+        const entry = entries.get(regionKey);
+        if (entry) appendPlanetPaintPath(cx, entry, 0);
       }
-      cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
-    }
-    cx.restore();
+    }, Math.max(.35, Math.min(1.25, planetCellInradius(sized) / (S * SQ3 / 2))));
   }
   cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
   for (const edge of selReachEdges().values()) {
@@ -20867,6 +20880,42 @@ function selReachRegion() {
   region.add(key(sel.pos));
   return region;
 }
+// The range is one shape and has to be the first thing the eye finds on the
+// board, over any terrain and over bare parchment: one bold line round the
+// whole of it, cased dark so it survives pale ground, lit from the inside by a
+// glow that dies away over the first tile. The individual tiles stay quiet
+// beneath it. `addFaces` appends the region's cells to the current path, so
+// the glow can be clipped to fall only inward; `weight` is the renderer's
+// line scale. Both maps paint through here, so they cannot drift apart.
+const REACH_INK = "rgb(112,222,255)";
+const REACH_WASH = "rgba(112,222,255,.13)", REACH_TILE_EDGE = "rgba(226,246,255,.26)";
+function paintReachBoundary(segments, addFaces, weight) {
+  if (!segments.length) return;
+  const traceBoundary = () => {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+  };
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.save();
+  cx.beginPath(); addFaces(); cx.clip();
+  traceBoundary();
+  cx.strokeStyle = REACH_INK;
+  for (const [width, alpha] of [[30, .09], [18, .13], [9, .2]]) {
+    cx.globalAlpha = alpha; cx.lineWidth = width * weight; cx.stroke();
+  }
+  cx.restore();
+  traceBoundary();
+  for (const [width, color] of [
+    [6.4, "rgba(4,16,28,.75)"],
+    [3.6, REACH_INK],
+    [1.1, "rgba(238,252,255,.95)"],
+  ]) {
+    cx.strokeStyle = color; cx.lineWidth = width * weight; cx.stroke();
+  }
+  cx.restore();
+}
 // The engine's per-edge movement affordances for the selected unit, one entry
 // per hex edge. `reach_steps` is directional — stepping into enemy ZOC ends
 // movement, so an edge can be enterable one way and not back — and only the
@@ -21165,20 +21214,14 @@ function drawFlatReachPerimeter() {
       segments.push([...corner(x, y, S - 1.6, a), ...corner(x, y, S - 1.6, b)]);
     }
   }
-  if (!segments.length) return;
-  const k = UI_K();
-  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
-  for (const [width, color] of [
-    [3.2 * k, "rgba(5,10,15,.68)"],
-    [1.5 * k, "rgba(143,216,255,.92)"],
-  ]) {
-    cx.beginPath();
-    for (const [ax, ay, bx, by] of segments) {
-      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+  paintReachBoundary(segments, () => {
+    for (const regionKey of region) {
+      const pos = regionKey.split(",").map(Number);
+      const tile = TMAP.get(regionKey);
+      const [x, yy] = hexXY(pos[0], pos[1]);
+      appendHexPath(x, yy - (tile ? elev(tile) : 0), S);
     }
-    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
-  }
-  cx.restore();
+  }, UI_K());
 }
 // Every way across every edge the remaining movement affords. Three arrows
 // out of a plains diamond say "straight across, or round either flank" —
@@ -21306,35 +21349,133 @@ function drawPlanetArenaFlags(cells, now, onSheet) {
   cx.restore();
 }
 
-function drawPlanetChartMarginalia() {
-  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+// What is drawn on the unknown part of a chart belongs to the world, not to the
+// window: the paper's grain and its drawings are seated on the sphere and go
+// through the camera the ground goes through. Seated by screen position they
+// stayed put while the known land slid across them, and the two read as
+// separate maps.
+//
+// The drawings are spaced as the flat sheet spaces them, converted to an angle
+// and measured over the sphere, so neither the rectangle the cells are stored
+// in nor its seam has any say. PLANET_CHART_TALE_WORLD keeps a drawing about
+// the size it has always been on this chart at the opening zoom.
+const PLANET_CHART_TALE_WORLD = .62;
+let planetChartTaleCache = null;
+function planetChartTaleSeats() {
   const [seedA, seedB] = hiddenMapSeedWords();
-  const width = MAPW, height = MAPH;
-  // Screen-space seats are appropriate here: before the sphere is known, this
-  // projection is a sheet whose uncharted paper runs to the frame. Projected
-  // known cells are painted next and cover every part of a creature that no
-  // longer belongs to the unknown.
-  // One seeded candidate leaves the pre-globe sheet intentionally open; it is
-  // a single quiet note at a random point rather than a decorated grid.
-  const candidates = Array.from({length:48}, (_, i) => ({
-    x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
-    y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
-    rank:hash2(seedA + i * 47, seedB + i * 53)
-  })).sort((a, b) => a.rank - b.rank);
-  const seats = candidates.slice(0, 1);
-  for (let i = 0; i < seats.length; i++) {
-    const seat = seats[i];
-    const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = 1.85 * HIDDEN_MAP_TALE_SCALE * Math.max(88, Math.min(162,
-      Math.min(width, height) * (.15 + h * .035)));
-    drawHiddenMapMonster(
-      seat.x, seat.y, size,
-      hiddenMapMonsterShuffledVariant(
-        i * 17 + 3, i * 19 + 5, seedA, seedB, HIDDEN_MAP_MONSTER_VARIANTS),
-      (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
-      hash2(seedB + i * 31, seedA + 29) > .5, .21
-    );
+  const id = `${seedA}:${seedB}:${PLANET.frequency}`;
+  if (planetChartTaleCache?.id === id) return planetChartTaleCache.seats;
+  const keepOut = Math.cos(Math.min(Math.PI,
+    HIDDEN_MAP_TALE_SPACING_SCALE * HIDDEN_MAP_TALE_MIN_SEPARATION *
+    S * SQ3 / (WW() / (2 * Math.PI))));
+  const deck = hiddenMapMonsterArtworkDeck(seedA, seedB, HIDDEN_MAP_MONSTER_VARIANTS);
+  const ranked = [...PLANET.cells.values()].map(cell => ({cell,
+    rank:hiddenMapMonsterPriority(cell.pos[0], cell.pos[1], seedA, seedB)}))
+    .sort((a, b) => a.rank - b.rank);
+  const seats = [];
+  for (const {cell} of ranked) {
+    if (seats.some(seat => dot3(seat.cell.center, cell.center) > keepOut)) continue;
+    const [q, r] = cell.pos;
+    const size = S * PLANET_CHART_TALE_WORLD * (HIDDEN_MAP_TALE_SIZE_MIN +
+      hash2(q * 17 + seedB, r * 19 + seedA) * HIDDEN_MAP_TALE_SIZE_RANGE);
+    seats.push({cell, size, variant:deck[seats.length % deck.length],
+      clearance:Math.ceil(size / (2 * S * SQ3)) + 1,
+      angle:(hash2(q * 7 + seedB, r * 11 + seedA) - .5) * .2,
+      mirrored:hash2(q * 37 + seedA, r * 41 + seedB) > .5});
   }
+  planetChartTaleCache = {id, seats};
+  return seats;
+}
+// A drawing only stands where nobody has been for its whole width, walked over
+// the real cell seams so the answer is right across the storage rectangle's edge.
+function planetChartTaleIsDeep(cell, radius) {
+  if (TMAP.has(key(cell.pos))) return false;
+  const seen = new Set([key(cell.pos)]);
+  let ring = [cell];
+  for (let step = 0; step < radius; step++) {
+    const next = [];
+    for (const here of ring) for (const across of here.nbrs) {
+      if (!across || seen.has(across)) continue;
+      if (TMAP.has(across)) return false;
+      seen.add(across);
+      next.push(PLANET.cells.get(across));
+    }
+    ring = next;
+  }
+  return true;
+}
+function drawPlanetChartMarginalia(camera, scale, centerX, centerY) {
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+  const floor = planetChartAntipodeFloor();
+  for (const seat of planetChartTaleSeats()) {
+    const at = planetProject(seat.cell.center, camera, scale, centerX, centerY);
+    if (at.z < floor) continue;
+    const size = seat.size * scale, reach = size * .75;
+    if (at.x < -reach || at.x > MAPW + reach ||
+        at.y < -reach || at.y > MAPH + reach) continue;
+    if (!planetChartTaleIsDeep(seat.cell, seat.clearance)) continue;
+    drawHiddenMapMonster(at.x, at.y, size, seat.variant, seat.angle, seat.mirrored, .21);
+  }
+}
+// The paper's grain: faint arcs in bands round a seeded axis. Seeded, because
+// bands round the world's own axis would tell a people who have not found
+// north which way it lies.
+const PLANET_CHART_FIBRE_BANDS = 48, PLANET_CHART_FIBRE_SAMPLES = 12;
+let planetChartFibreCache = null;
+function planetChartFibres() {
+  const [seedA, seedB] = hiddenMapSeedWords();
+  const id = `${seedA}:${seedB}`;
+  if (planetChartFibreCache?.id === id) return planetChartFibreCache.arcs;
+  const roll = salt => hash2(seedA + salt * 61, seedB + salt * 67);
+  const lift = roll(1) * 2 - 1, around = roll(2) * 2 * Math.PI;
+  const girdle = Math.sqrt(1 - lift * lift);
+  const axis = [girdle * Math.cos(around), girdle * Math.sin(around), lift];
+  const raw = cross3(axis, Math.abs(lift) < .9 ? [0, 0, 1] : [1, 0, 0]);
+  const rawLength = Math.hypot(raw[0], raw[1], raw[2]);
+  const side = raw.map(value => value / rawLength);
+  const other = cross3(axis, side);
+  const arcs = [];
+  for (let band = 0; band < PLANET_CHART_FIBRE_BANDS; band++) {
+    const level = (band + .5 + (roll(band * 31 + 3) - .5) * .5) /
+      PLANET_CHART_FIBRE_BANDS * Math.PI - Math.PI / 2;
+    const count = Math.max(1, Math.round(Math.cos(level) * 5.5));
+    const slot = 2 * Math.PI / count;
+    for (let index = 0; index < count; index++) {
+      const salt = band * 97 + index * 13 + 5;
+      const start = index * slot + roll(salt) * slot * .15;
+      const sweep = slot * (.6 + roll(salt + 1) * .25);
+      const phase = roll(salt + 2) * 2 * Math.PI;
+      const points = [];
+      for (let step = 0; step < PLANET_CHART_FIBRE_SAMPLES; step++) {
+        const along = step / (PLANET_CHART_FIBRE_SAMPLES - 1);
+        const at = level + Math.sin(along * 2 * Math.PI + phase) * .011;
+        const round = Math.cos(at), turn = start + along * sweep;
+        points.push([0, 1, 2].map(i =>
+          (side[i] * Math.cos(turn) + other[i] * Math.sin(turn)) * round +
+          axis[i] * Math.sin(at)));
+      }
+      arcs.push(points);
+    }
+  }
+  planetChartFibreCache = {id, arcs};
+  return arcs;
+}
+function drawPlanetChartFibres(camera, scale, centerX, centerY) {
+  const floor = planetChartAntipodeFloor();
+  cx.save();
+  cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
+  cx.beginPath();
+  for (const arc of planetChartFibres()) {
+    let pen = false;
+    for (const point of arc) {
+      const at = planetProject(point, camera, scale, centerX, centerY);
+      if (at.z < floor) { pen = false; continue; }
+      pen ? cx.lineTo(at.x, at.y) : cx.moveTo(at.x, at.y);
+      pen = true;
+    }
+  }
+  cx.stroke();
+  cx.restore();
 }
 
 // The globe's half of the map's animation. `animateDiff` has always filled the
@@ -21562,18 +21703,8 @@ function drawPlanetMap() {
     cx.restore();
 
     if (camera.chart && !spectator) {
-      cx.save();
-      cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
-      for (let i = 0; i < 15; i++) {
-        const y = MAPH * (i + .45) / 15;
-        cx.beginPath(); cx.moveTo(0, y);
-        cx.bezierCurveTo(MAPW * .32, y + (i % 2 ? 8 : -8),
-                         MAPW * .67, y + (i % 2 ? -7 : 7),
-                         MAPW, y);
-        cx.stroke();
-      }
-      cx.restore();
-      drawPlanetChartMarginalia();
+      drawPlanetChartFibres(camera, scale, centerX, centerY);
+      drawPlanetChartMarginalia(camera, scale, centerX, centerY);
     }
   }
 
@@ -21615,8 +21746,8 @@ function drawPlanetMap() {
       // The movement range's interior is a quiet wash, as on the flat board;
       // its boundary belongs to drawPlanetReachOverlay's perimeter and the
       // per-seam arrows. A bright outline on every cell buried both.
-      cx.fillStyle = "#ffffff14"; cx.fill();
-      cx.strokeStyle = "#ffffff5a"; cx.lineWidth = 1; cx.stroke();
+      cx.fillStyle = REACH_WASH; cx.fill();
+      cx.strokeStyle = REACH_TILE_EDGE; cx.lineWidth = 1; cx.stroke();
     } else {
       cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
     }
@@ -22374,8 +22505,8 @@ function drawScene() {
     const [x, yy] = hexXY(q, r);
     const y = yy - (t2 ? elev(t2) : 0);
     hexPath(x, y, S - 2);
-    if (hl[k] === 1) { cx.fillStyle = "#ffffff14"; cx.fill();
-      cx.strokeStyle = "#ffffff8c"; cx.lineWidth = 1.6; cx.stroke(); }
+    if (hl[k] === 1) { cx.fillStyle = REACH_WASH; cx.fill();
+      cx.strokeStyle = REACH_TILE_EDGE; cx.lineWidth = 1.2; cx.stroke(); }
     else { cx.strokeStyle = "#ff5050c4"; cx.lineWidth = 3; cx.stroke(); }
   }
   // --- fog: parchment wash over explored tiles not seen this player turn
