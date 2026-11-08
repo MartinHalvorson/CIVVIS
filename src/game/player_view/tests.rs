@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn decision_views_share_one_ruleset_until_the_ruleset_changes() {
+    let mut game = Game::new_full(2, 30, 20, 918, 40, 0, false);
+    let first = game.player_decision_view(0);
+    let second = game.player_decision_view(1);
+    assert!(first.rules.terrains.contains_key("unknown"));
+    assert!(Arc::ptr_eq(&first.rules, &second.rules));
+
+    // An in-place edit must not reach a view through the shared copy.
+    let before = Arc::as_ptr(&game.rules);
+    Arc::make_mut(&mut game.rules);
+    assert_ne!(
+        Arc::as_ptr(&game.rules),
+        before,
+        "the cell holds a reference"
+    );
+    let edited = game.player_decision_view(0);
+    assert!(edited.rules.terrains.contains_key("unknown"));
+    assert!(!Arc::ptr_eq(&first.rules, &edited.rules));
+}
+
+#[test]
 fn visible_rival_units_do_not_reveal_private_lifetime_or_training_records() {
     let mut game = Game::new_full(2, 30, 20, 918, 40, 0, false);
     let own = game.player_unit_ids(0)[0];

@@ -6582,6 +6582,10 @@ pub struct Game {
     /// can change its inputs; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
+    /// `rules` plus the synthetic unknown terrain, shared by every decision
+    /// view, beside the ruleset it was built from. Never saved.
+    #[serde(skip)]
+    view_rules: std::cell::RefCell<Option<(Arc<Rules>, Arc<Rules>)>>,
     /// Raw next-turn attack reaches, shared by controller instances that read
     /// this exact board and by their speculative clones. The cache is keyed
     /// by the same complete board fingerprint that gates AI attack envelopes;
@@ -7948,6 +7952,7 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            view_rules: Default::default(),
             attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
@@ -8732,6 +8737,7 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
+            view_rules: Default::default(),
             attack_reach_cache: Arc::new(std::sync::Mutex::new(AttackReachCache::default())),
             remembered_under: SharedVec::default(),
             track_fog_memory: true,
