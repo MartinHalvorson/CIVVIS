@@ -1595,46 +1595,10 @@ pub fn refresh_city_memory(game: &mut crate::game::Game) {
     apply_city_memory(game);
 }
 
-/// Rebuild the map AND place the seat's cities on it.
-///
-/// ⚠ Without the cities, every score that reads spacing or owned territory is
-/// evaluated against an empty world. Measured consequence: CIVVIS's settle ranking
-/// put its best site two tiles from the real capital, which Civilization VI
-/// forbids outright (`CITY_MIN_RANGE` is 3). A comparison drawn from that would
-/// have blamed the agent for a gap this reconstruction created.
-pub fn rebuild_with_empire(
-    snapshot: &Snapshot,
-    cities: &[(i32, i32)],
-    players: usize,
-    seed: u64,
-) -> (crate::game::Game, usize) {
-    let mut game = rebuild_game(snapshot, players, seed);
-    let mut placed = 0;
-    for offset in cities {
-        // `cities` arrive in Civ 6 offset coordinates, like the plots.
-        if !snapshot.is_revealed(*offset) {
-            continue;
-        }
-        let pos = crate::hex::offset_to_axial(offset.0, offset.1);
-        let is_water = game
-            .map
-            .get(pos)
-            .map(|tile| game.rules.is_water(tile))
-            .unwrap_or(true);
-        if is_water {
-            continue;
-        }
-        game.place_city(0, pos, None);
-        placed += 1;
-    }
-    (game, placed)
-}
-
 // ============================================================ the live empire
 //
-// ★★★★★ WHY THIS EXISTS. `rebuild_game` gives CIVVIS terrain and
-// `rebuild_with_empire` adds the seat's cities. Neither gives it UNITS, and
-// neither gives it a RIVAL — so CIVVIS could not answer the two questions that
+// ★★★★★ WHY THIS EXISTS. `rebuild_game` gives CIVVIS terrain, but no UNITS and
+// no RIVAL — so CIVVIS could not answer the two questions that
 // decide a game on Settler: whom to fight, and where to send the army. Those were
 // answered instead by hand-written Lua, which is how a veto comparing SCORE ratios
 // forbade every war for 190 turns while nineteen units stood on ALERT.
