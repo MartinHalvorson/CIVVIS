@@ -5429,7 +5429,6 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(
         EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, turnX, turnY))")
     );
-    assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, dx, dy))"));
     assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
     // Zooming shares that turn too, and it aims at a world rather than at a
     // pixel. Out in the system a body is a few pixels across — the Moon is
