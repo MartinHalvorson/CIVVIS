@@ -4421,8 +4421,9 @@ const spinButton = document.getElementById("spin");
 // planet that never stops moving, so that setting takes the control away
 // rather than merely being a default. Before the first observation the world's
 // shape is unknown and the control stays live: there is simply nothing yet for
-// the turn to move.
+// the turn to move. Player games hold still; rotation belongs to AI simulations.
 function spinAvailable() {
+  if (state && !SPEC) return false;
   if (REDUCED_MOTION_QUERY.matches) return false;
   return !state || mapWrapsX();
 }
@@ -4430,7 +4431,7 @@ function spinAvailable() {
 // the camera somewhere — a flight, a zoom, a followed unit, a hand on the
 // world — has the wheel, and the spin picks up again when that lets go.
 function spinRunning() {
-  return WORLD_SPIN && !!state && spinAvailable() &&
+  return WORLD_SPIN && SPEC && !!state && spinAvailable() &&
     !dragState && !touchGesture && !cameraFlight && !cameraZoom &&
     !cameraFollowManual;
 }
@@ -4438,9 +4439,11 @@ function updateSpinButton() {
   if (!spinButton) return;
   const available = spinAvailable();
   spinButton.disabled = !available;
-  spinButton.setAttribute("aria-pressed", WORLD_SPIN ? "true" : "false");
+  spinButton.setAttribute("aria-pressed", WORLD_SPIN && available ? "true" : "false");
   const title = REDUCED_MOTION_QUERY.matches
     ? "Reduced motion is on, so the world holds still"
+    : state && !SPEC
+    ? "World rotation is available only in AI simulations"
     : !available
     ? "This world does not come back on itself, so it has nothing to turn about"
     : WORLD_SPIN ? "Stop the world turning" : "Let the world turn";

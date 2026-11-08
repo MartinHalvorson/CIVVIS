@@ -1762,22 +1762,29 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The masthead offers Home and nothing else. The site carries one game —
-/// the full simulation, watched or played — so the chip that used to stand
-/// beside Home naming the other mode has no other mode to name. Pinned as
-/// one literal because the row is the contract: Home alone, inside a row
-/// that only the hosts serving a /home reveal.
+/// The masthead offers Home, then a new single-player game. The site carries
+/// one game — the full simulation, watched or played — so the second chip is
+/// the way from watching it to playing it and names no other mode. Pinned as
+/// one literal because the row is the contract: those two, in that order,
+/// inside a row that only the hosts serving a /home reveal.
 #[test]
-fn viewer_masthead_offers_home_and_no_other_game_mode() {
+fn viewer_masthead_offers_home_then_a_new_single_player_game() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
-        "          <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
-        "        </div>",
+        "        <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\">Play single player</a>\n",
+        "      </div>",
     )));
+    // The link is only as good as the shim's reading of it, and it replaces
+    // the world on the table, so it stands only over a simulation.
+    assert!(include_str!("../../beta/shim.js")
+        .contains("if (mode === \"play\") payload.spectate = false;"));
+    assert!(EMBEDDED_INDEX.contains("body:not(.watching-sim) #playlink { display: none; }"));
     // A row that draws itself as a flex container outranks the user
     // agent's `[hidden]`, so it has to restate what hidden means or the
     // chips appear on desktop builds that honour neither destination.
-    assert!(EMBEDDED_INDEX.contains(".head-links { display: flex;"));
+    // The whole line of the lockup, or the pair stacks on a 1920 screen.
+    assert!(EMBEDDED_INDEX.contains(".head-links { display: flex; flex: 0 0 100%;"));
     assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
@@ -7897,7 +7904,7 @@ fn the_deck_menu_holds_its_place_while_a_section_scrolls() {
 
 /// The first world a civvis.ai visitor ever waits on is the smallest
 /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-/// shipped table, its heat scattered rather than banded by latitude,
+/// shipped table, with a hot equator and cold poles,
 /// spectated, at Online speed, one seat at a time. The browser build's
 /// `wasm::opening_params` is this function with the page's seed, so the
 /// contract is tested here, where the suite actually runs.
@@ -7909,8 +7916,8 @@ fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
     assert_eq!(params.num_players, 4);
     assert_eq!(params.map_script, MapScript::TeninsBall);
     assert_eq!(params.map_topology, MapTopology::Planet);
-    assert_eq!(params.map_poles, MapPoles::Randomized);
-    assert!(!params.map_poles.has_poles());
+    assert_eq!(params.map_poles, MapPoles::Poles);
+    assert!(params.map_poles.has_poles());
     assert_eq!(
         (params.width, params.height),
         size.dimensions(MapTopology::Planet)
