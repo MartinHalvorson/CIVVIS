@@ -2121,6 +2121,17 @@ impl Game {
         6
     }
 
+    /// Native Bands expose performance level independently of promotion level.
+    /// Older exports and headless games retain the existing unit-level rule.
+    pub(crate) fn rock_band_performance_level(&self, band: &Unit, venue_levels: i32) -> i32 {
+        let level = self
+            .host_unit_facts
+            .get(&band.id)
+            .and_then(|facts| facts.rock_band_level)
+            .unwrap_or(band.level);
+        level.saturating_add(venue_levels).clamp(1, 6)
+    }
+
     pub(crate) fn rock_concert_ai_value(&self, pid: usize, uid: u32, position: Pos) -> Option<f64> {
         let unit = self.units.get(&uid)?;
         if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
@@ -2128,7 +2139,7 @@ impl Game {
         }
         let (base, venue_levels, host_city) =
             self.rock_concert_venue_details(pid, Some(unit), position)?;
-        let effective_level = (unit.level + venue_levels).clamp(1, 6);
+        let effective_level = self.rock_band_performance_level(unit, venue_levels);
         let bombs = [-25.0, 100.0, -25.0, 150.0, 0.0, 200.0];
         let weights = Self::rock_performance_weights(effective_level);
         let album_multiplier = unit.album_sales as f64 / 100.0;
@@ -2198,7 +2209,7 @@ impl Game {
             .rock_concert_venue_details(pid, Some(&band), position)
             .ok_or_else(|| "rock band has no valid concert venue here".to_string())?;
         let host = self.cities[&host_city].owner;
-        let effective_level = (band.level + venue_levels).clamp(1, 6);
+        let effective_level = self.rock_band_performance_level(&band, venue_levels);
         let tier =
             Self::rock_performance_tier_for_roll(effective_level, self.rng.uniform(0.0, 100.0));
         let (tourism_bomb, album_sales, promotes, retires) = match tier {

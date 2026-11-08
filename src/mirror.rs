@@ -2840,6 +2840,8 @@ const UNIT_KEYS: &[&str] = &[
     "moves",
     "xp",
     "level",
+    "rock_band_level",
+    "album_sales",
     "promotions",
     "offered_promotions",
     "build_charges",
@@ -5018,6 +5020,7 @@ fn civvis_spy_mission_kind(operation: &str) -> String {
 fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUnit) {
     let finite = |value: Option<f64>| value.filter(|value| value.is_finite());
     let exported = unit.concert_plots.is_some()
+        || (unit.kind == "UNIT_ROCK_BAND" && unit.rock_band_level.is_some())
         || unit.upgrade_to.is_some()
         || unit.upgrade_cost.is_some()
         || unit.upgrade_resource_cost.is_some()
@@ -5123,6 +5126,10 @@ fn record_host_unit_facts(game: &mut crate::game::Game, uid: u32, unit: &StateUn
                     .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
                     .collect()
             }),
+            rock_band_level: (unit.kind == "UNIT_ROCK_BAND")
+                .then_some(unit.rock_band_level)
+                .flatten()
+                .filter(|level| *level >= 0),
             upgrade,
             maintenance: finite(unit.maintenance).filter(|bill| *bill >= 0.0),
             religious_strength: finite(unit.religious_strength),
