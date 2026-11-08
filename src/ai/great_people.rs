@@ -166,7 +166,12 @@ impl BasicAi {
                 .any(|need| need.required_great_work.as_deref() == Some("artifact"))
     }
 
-    fn live_artifact_activation_digger(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+    pub(super) fn live_artifact_activation_digger(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<Item> {
         let city = &g.cities[&cid];
         if city.hp < 200
             || !city

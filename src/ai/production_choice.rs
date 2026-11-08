@@ -1006,6 +1006,12 @@ impl BasicAi {
                     }
                 }
             }
+            // The Culture lane lends this governor its Museum policy. The
+            // advanced scorer values a digger, but delegated production never
+            // reaches that scorer. Fill the empty Museum before another Spy.
+            if let Some(digger) = self.culture_museum_digger(g, pid, cid) {
+                return Some(digger);
+            }
             let spy = Item::Unit {
                 unit: crate::name!("spy"),
             };
@@ -1620,6 +1626,26 @@ impl BasicAi {
             .map(|m| Item::Unit {
                 unit: Name::new(&m),
             })
+    }
+
+    fn culture_museum_digger(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !self.digs_one_museum
+            || self.minor
+            || self.barb
+            || self.plan_threatened_city == Some(cid)
+            || g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            })
+        {
+            return None;
+        }
+        // Reuse the physical-person planner's empty-slot, one-digger,
+        // nearby-owned-land-site, local safety and production-budget checks.
+        self.live_artifact_activation_digger(g, pid, cid)
     }
 
     /// A generic fallback has no strategic reason to walk the whole Wonder
@@ -2731,3 +2757,6 @@ impl BasicAi {
             .find_map(|building| Self::civ_building(g, pid, cid, building))
     }
 }
+
+#[cfg(test)]
+mod tests;
