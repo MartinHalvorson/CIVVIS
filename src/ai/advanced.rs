@@ -6548,7 +6548,8 @@ pub struct AdvancedAi {
     /// presses claims a Holy Site in a city on a safe counterfaith. See
     /// `advanced/counterweight_diplomat.rs`.
     counterweight_builds_its_source: bool,
-    /// `culture-recovery-spends-the-bank`: a named Culture seat in Recovery
+    mod culture_museum_swaps;
+/// `culture-recovery-spends-the-bank`: a named Culture seat in Recovery
     /// still buys Rock Bands and Naturalists once the Faith bank holds twice
     /// the cheapest on sale. See `advanced/culture_recovery_bank.rs`.
     culture_recovery_spends_the_bank: bool,
@@ -10532,7 +10533,6 @@ mod diplo_statue_harbor;
 mod culture_recovery_bank;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
-mod culture_museum_swaps;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
 mod culture_seat_allies;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
