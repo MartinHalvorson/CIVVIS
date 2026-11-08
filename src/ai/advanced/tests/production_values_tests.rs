@@ -333,7 +333,9 @@ fn culture_keeps_repairable_resort_when_native_quotes_a_farm_for_campus() {
     assert!(ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), resort));
     assert!(!ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), farm));
     // This is a preference; the original Native legal site is retained.
-    assert!(game.district_sites(cid, "campus").contains(&resort));
+    assert!(game
+        .district_sites(cid, crate::name!("campus"))
+        .contains(&resort));
     assert!(!BasicAi::culture_resort_site_is_displaced(
         &game,
         cid,
