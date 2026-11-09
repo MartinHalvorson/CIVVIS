@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "faith-strike-wipes-the-spreaders",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Eight boards from eight live games of 2026-11-08/09, each the run's events.jsonl cut at the turn's first state frame. Both arms run one frozen civvis_orders --resumed built from the branch at 13fb0fa011 with the run's own requested genome; the on arm adds --with faith-strike-wipes-the-spreaders. On seven boards the on arm's orders add a war declaration and 2 or 3 CONDEMN_HERETIC orders, each after its soldier's walk where one is needed; the off arm's orders hold neither. The eighth (073552Z t55) is a control: six spreaders stood near our cities but too few could be reached, and the gene holds with orders unchanged.",
+  "archive": {
+    "path": "docs/eval/2026-11-09-faith-strike-wipes-the-spreaders.native-queries.tar.xz",
+    "sha256": "46228ec733325b692a9b8a1a8d443665c5bb28be657ed2801cddfc43ce584d91"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}

@@ -6725,6 +6725,13 @@ pub struct AdvancedAi {
     /// 050249Z, 054003Z and 071914Z). Opt-in.
     domination_spends_the_stock: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
+    /// turn several of its spreaders can be condemned at once. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_wipes_the_spreaders: bool,
+    /// `faith-strike-wipes-the-spreaders`: the turn each rival was last
+    /// struck.
+    faith_strike_last: BTreeMap<usize, u32>,
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
     embassy_finds_the_capital_2: bool,
@@ -10592,6 +10599,8 @@ mod last_two_capitals;
 mod launched_racer;
 
 mod city_memory;
+/// `faith-strike-wipes-the-spreaders`: see `advanced/faith_strike.rs`.
+mod faith_strike;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.

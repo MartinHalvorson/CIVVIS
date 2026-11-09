@@ -111,6 +111,9 @@ impl AdvancedAi {
         /// See `AdvancedAi::domination_spends_the_stock`.
         domination_spends_the_stock => enable_domination_spends_the_stock, disable_domination_spends_the_stock;
         // ---- append: e-f --------------------------------------------
+        /// Opt-in `faith-strike-wipes-the-spreaders`; see
+        /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
+        faith_strike_wipes_the_spreaders => enable_faith_strike_wipes_the_spreaders, disable_faith_strike_wipes_the_spreaders;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

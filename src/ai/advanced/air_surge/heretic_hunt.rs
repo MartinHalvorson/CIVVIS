@@ -133,7 +133,13 @@ impl AdvancedAi {
     /// together: the walk must land with a move to spare, the condemnation
     /// must remove the spreader, and the hunter must not stand in reach of
     /// half its health.
-    fn hunt_actions(g: &Game, pid: usize, uid: u32, target: u32, at: Pos) -> Option<Vec<Action>> {
+    pub(crate) fn hunt_actions(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: u32,
+        at: Pos,
+    ) -> Option<Vec<Action>> {
         let mut board = g.speculative_clone();
         let mut actions = Vec::new();
         if board.units.get(&uid)?.pos != at {
