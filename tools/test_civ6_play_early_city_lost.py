@@ -213,5 +213,64 @@ class ReligionLostReading(unittest.TestCase):
                 self.assertIs(civ6_play.religion_lost_policy(path), expected)
 
 
+
+def founding_record(turn: int, religion=None, pending=False,
+                    exhausted=("GREAT_PERSON_CLASS_PROPHET",), **extra) -> dict:
+    record = {"kind": "state", "ctx": "agent", "turn": turn, "founded_religions": [],
+              "prophet_pending": pending, "great_person_exhausted": list(exhausted), **extra}
+    if religion is not None:  # the mod leaves the key out until we found one
+        record["founded_religion"] = religion
+    return record
+
+
+class ReligionNeverFoundedReading(unittest.TestCase):
+    def read(self, records):
+        state: dict = {}
+        return [civ6_play.religion_never_founded_reading(state, record) for record in records]
+
+    def test_fires_after_three_turns_with_no_prophet_left(self):
+        results = self.read([founding_record(t) for t in (39, 40, 41)])
+        self.assertEqual(results[:2], [None, None])
+        self.assertEqual(results[2]["rule"], "religion_never_founded")
+        self.assertEqual(results[2]["turn"], 41)
+        self.assertEqual(results[2]["lost_turn"], 39)
+
+    def test_prophets_still_available_never_fires(self):
+        self.assertEqual(self.read([founding_record(t, exhausted=()) for t in range(30, 40)]),
+                         [None] * 10)
+
+    def test_a_pending_prophet_holds_the_rule_off(self):
+        records = [founding_record(32), founding_record(33, pending=True),
+                   founding_record(34, pending=True), founding_record(35, religion="RELIGION_ISLAM"),
+                   founding_record(36, religion="RELIGION_ISLAM")]
+        self.assertEqual(self.read(records), [None] * 5)
+
+    def test_a_pending_prophet_restarts_the_count(self):
+        results = self.read([founding_record(32), founding_record(33),
+                             founding_record(34, pending=True),
+                             founding_record(35), founding_record(36)])
+        self.assertEqual(results, [None] * 5)
+
+    def test_founded_religion_never_fires(self):
+        self.assertEqual(self.read([founding_record(t, religion="RELIGION_ISLAM")
+                                    for t in range(30, 40)]), [None] * 10)
+
+    def test_a_record_without_the_pending_field_says_nothing(self):
+        record = founding_record(40)
+        del record["prophet_pending"]
+        self.assertEqual(self.read([record] * 6), [None] * 6)
+
+    def test_unreadable_records_are_skipped(self):
+        state: dict = {}
+        missing = founding_record(40)
+        del missing["founded_religions"]
+        for record in ({"kind": "turn", "ctx": "agent", "turn": 40},
+                       founding_record(40, ctx="autoclose"), missing,
+                       {**founding_record(40), "great_person_exhausted": None},
+                       founding_record("40")):
+            self.assertIsNone(civ6_play.religion_never_founded_reading(state, record))
+        self.assertNotIn("no_religion_since", state)
+
+
 if __name__ == "__main__":
     unittest.main()
