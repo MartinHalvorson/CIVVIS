@@ -2,6 +2,15 @@ use super::*;
 use crate::game::{Game, GameOptions};
 use std::collections::BTreeSet;
 
+#[path = "fog_tests.rs"]
+mod fog_tests;
+
+#[path = "prior_tests.rs"]
+mod prior_tests;
+
+#[path = "clock_tests.rs"]
+mod clock_tests;
+
 fn arena(cities: u8) -> Game {
     let mut options = GameOptions::new(2, 10, 10, 90_411, 250, 0);
     options.map_script = crate::setup::MapScript::Battlefield;
