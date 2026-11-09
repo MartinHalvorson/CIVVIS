@@ -1309,6 +1309,13 @@ impl Game {
         self.map.distance(a, b)
     }
 
+    /// [`Self::wdist`] that stops measuring at `cap`: the true distance up to
+    /// it and `cap + 1` beyond. For a rule that only compares against `cap`.
+    #[inline]
+    pub fn wdist_capped(&self, a: Pos, b: Pos, cap: i32) -> i32 {
+        self.map.distance_capped(a, b, cap)
+    }
+
     /// In-map neighbors, across the wrap seam or around the globe.
     #[inline]
     pub fn nbrs(&self, p: Pos) -> hex::Neighbors {
