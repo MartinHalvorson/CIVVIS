@@ -378,10 +378,25 @@ impl Game {
                 })
                 || tile.resource.as_ref().is_some_and(|resource| {
                     // A buried Artifact reserves nothing — see `district_sites`.
-                    !matches!(
-                        self.rules.resources[resource].class.as_str(),
-                        "bonus" | "artifact"
-                    )
+                    // As with districts, an undiscovered deposit cannot veto
+                    // a site its owner observes as resource-free. Discovery
+                    // also cannot invalidate a wonder already placed here,
+                    // including one paused in favor of another queue head.
+                    self.resource_visible_to(city.owner, resource)
+                        && !matches!(
+                            self.rules.resources[resource].class.as_str(),
+                            "bonus" | "artifact"
+                        )
+                        && !city.queue.first().is_some_and(|item| {
+                            matches!(item, Item::Wonder { wonder, pos: placed }
+                                if wonder == wname && placed == pos)
+                        })
+                        && !city
+                            .production_progress
+                            .contains_key(&Self::item_progress_key(&Item::Wonder {
+                                wonder: Name::new(wname),
+                                pos: *pos,
+                            }))
                 })
             {
                 continue;

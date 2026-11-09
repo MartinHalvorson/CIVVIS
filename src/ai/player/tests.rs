@@ -245,8 +245,17 @@ fn fog_honest_seats_lose_almost_no_production_to_refused_orders() {
     game.set_fog_memory(true);
     game.set_war_ledger(false);
     let (mut lost, mut total) = (0.0_f64, 0.0_f64);
+    let mut idle_turns = Vec::new();
     while game.winner.is_none() && game.turn <= game.max_turns {
         let pid = game.current;
+        let turn = game.turn;
+        let owned_before = game.player_city_ids(pid);
+        let refused_before = game.players[pid]
+            .counters
+            .get("player:refused")
+            .copied()
+            .unwrap_or(0);
+        let log_begin = game.log.len();
         ais[pid].take_turn(&mut game, pid);
         if pid < majors {
             for city in game.cities.values().filter(|city| city.owner == pid) {
@@ -254,6 +263,16 @@ fn fog_honest_seats_lose_almost_no_production_to_refused_orders() {
                 total += production;
                 if city.queue.is_empty() {
                     lost += production;
+                    let refused = game.players[pid]
+                        .counters
+                        .get("player:refused")
+                        .copied()
+                        .unwrap_or(0)
+                        - refused_before;
+                    let production_orders: Vec<_> = game.log.since(log_begin).filter(|(actor, action)| {
+                        *actor == pid && matches!(action, Action::Produce { city: cid, .. } if *cid == city.id)
+                    }).collect();
+                    idle_turns.push(format!("turn {turn}, seat {pid}, city {}, Production {production:.2}, newly owned {}, refusals {refused}, production orders {production_orders:?}", city.id, !owned_before.contains(&city.id)));
                 }
             }
         }
@@ -266,7 +285,8 @@ fn fog_honest_seats_lose_almost_no_production_to_refused_orders() {
     assert!(
         share < 0.005,
         "fog-honest seats ended {:.2}% of their city-turns' Production on an empty queue \
-         ({lost:.0} of {total:.0}); an order the view offers is being refused by the board",
+         ({lost:.0} of {total:.0}); an order the view offers is being refused by the board. \
+         Idle city-turns: {idle_turns:?}",
         100.0 * share
     );
 }

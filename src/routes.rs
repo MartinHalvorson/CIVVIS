@@ -90,32 +90,35 @@ pub fn rules(session: &Session, include_civ6: bool) -> Value {
     out
 }
 
-/// `GET /gene-program` — the heuristic gene program a CIVVIS seat plays:
-/// every gene that can steer a deployment game, with the ledger's standing
-/// verdict and measured effect for it.
-///
-/// The strategy panel reads this once per page to say which published
-/// heuristics are actually on, and which of those carry the most measured
-/// weight. `armed` names ledger-held tags an operator's live verification arm
-/// forces back on (`--with`, or the force file the game supervisor resolves);
-/// the shared answer vouches only for tags the ledger could legally seat, so
-/// an armed chip always means what `civvis_orders --with` would accept. The
-/// simulator's own seats always play the plain ledger program — an armed tag
-/// reaches only the live Civilization VI seat.
-/// The tag → description column of the committed gene ranking, read from the
-/// build's own embedded copy. `tools/genes.py write` regenerates the table
-/// and CI holds it current, so the first prose a human reads about a gene in
-/// the strategy panel is the same sentence the ranking derived from the
-/// gene's own doc comment — one writing, not a viewer-side paraphrase. Rows
-/// are recognised by their backticked tag cell; a gene the ranking has not
-/// priced simply has no entry.
-fn gene_descriptions() -> &'static std::collections::HashMap<&'static str, String> {
-    static DESCRIPTIONS: std::sync::OnceLock<std::collections::HashMap<&'static str, String>> =
+const GENE_RANKING: &str = include_str!("../GENE_HEURISTIC_RANKING.md");
+
+/// One gene's row of the committed ranking, as the strategy panel reads it.
+struct RankingRow {
+    /// The gene's own sentence, when it has one.
+    description: Option<String>,
+    rank: Option<u32>,
+    /// `P(>0)`: the estimated chance the gene helps, in percent.
+    p_helps: Option<f64>,
+    /// The table's sort key: the win rate of seats with the gene on, minus
+    /// the win rate of seats with it off, in percentage points.
+    diff_points: Option<f64>,
+}
+
+/// The committed gene ranking by tag, read from the build's own embedded
+/// copy. `tools/genes.py write` regenerates the table and CI holds it
+/// current, so the first prose a human reads about a gene in the strategy
+/// panel is the same sentence the ranking derived from the gene's own doc
+/// comment, and its figures are the newest tournament's rather than the
+/// older ledger's. Rows are recognised by their backticked tag cell; a gene
+/// the ranking has not priced simply has no entry.
+fn ranking_rows() -> &'static std::collections::HashMap<&'static str, RankingRow> {
+    static ROWS: std::sync::OnceLock<std::collections::HashMap<&'static str, RankingRow>> =
         std::sync::OnceLock::new();
-    DESCRIPTIONS.get_or_init(|| {
-        const RANKING: &str = include_str!("../GENE_HEURISTIC_RANKING.md");
+    ROWS.get_or_init(|| {
+        let percent =
+            |cell: Option<&String>| -> Option<f64> { cell?.strip_suffix('%')?.trim().parse().ok() };
         let mut out = std::collections::HashMap::new();
-        for line in RANKING.lines() {
+        for line in GENE_RANKING.lines() {
             // Markdown escapes a literal pipe inside a cell (the version
             // column is "1 \| 2"); hold those together across the split.
             let cells: Vec<String> = line
@@ -131,17 +134,60 @@ fn gene_descriptions() -> &'static std::collections::HashMap<&'static str, Strin
                 continue;
             }
             let tag = &tag_cell[1..tag_cell.len() - 1];
-            let description = cells[3].clone();
             if let Some(gene) = crate::ai::gene(tag) {
-                if !description.is_empty() {
-                    out.insert(gene.tag, description);
-                }
+                out.insert(
+                    gene.tag,
+                    RankingRow {
+                        description: Some(cells[3].clone()).filter(|text| !text.is_empty()),
+                        rank: cells[1].parse().ok(),
+                        p_helps: percent(cells.get(6)),
+                        diff_points: percent(cells.get(12)),
+                    },
+                );
             }
         }
         out
     })
 }
 
+/// How much play the ranking's figures stand on: the seats of its three
+/// displayed batches, and the `MM-DD` the newest of them ended.
+fn ranking_sample() -> Value {
+    let header = GENE_RANKING
+        .lines()
+        .find(|line| line.starts_with("| Rank |"))
+        .unwrap_or("");
+    let seats: u64 = header
+        .split("(n=")
+        .skip(1)
+        .filter_map(|rest| {
+            rest.chars()
+                .take_while(|c| c.is_ascii_digit() || *c == ',')
+                .filter(char::is_ascii_digit)
+                .collect::<String>()
+                .parse::<u64>()
+                .ok()
+        })
+        .sum();
+    let newest_end = header
+        .split("end=")
+        .nth(1)
+        .map(|rest| rest.chars().take(5).collect::<String>());
+    json!({"seats": seats, "newest_end": newest_end})
+}
+
+/// `GET /gene-program` — the heuristic gene program a CIVVIS seat plays:
+/// every gene that can steer a deployment game, with the ledger's standing
+/// verdict and measured effect for it.
+///
+/// The strategy panel reads this once per page to say which published
+/// heuristics are actually on, and which of those carry the most measured
+/// weight. `armed` names ledger-held tags an operator's live verification arm
+/// forces back on (`--with`, or the force file the game supervisor resolves);
+/// the shared answer vouches only for tags the ledger could legally seat, so
+/// an armed chip always means what `civvis_orders --with` would accept. The
+/// simulator's own seats always play the plain ledger program — an armed tag
+/// reaches only the live Civilization VI seat.
 pub fn gene_program(armed: &[String]) -> Value {
     use crate::ai::{gene_ledger, Axis, Kind, GENES};
     let armed: Vec<&str> = armed
@@ -173,10 +219,14 @@ pub fn gene_program(armed: &[String]) -> Value {
                 Kind::OptIn => "opt-in",
             };
             let verdict = crate::ai::ledger_verdict(gene.tag);
+            let ranked = ranking_rows().get(gene.tag);
             json!({
                 "tag": gene.tag,
                 "kind": kind,
-                "description": gene_descriptions().get(gene.tag),
+                "description": ranked.and_then(|row| row.description.as_deref()),
+                "rank": ranked.and_then(|row| row.rank),
+                "p_helps": ranked.and_then(|row| row.p_helps),
+                "diff_points": ranked.and_then(|row| row.diff_points),
                 "on": deployed.contains(&gene.tag),
                 "armed": armed.contains(&gene.tag),
                 "default_on": crate::ai::ledger_default_on(gene.tag),
@@ -191,6 +241,7 @@ pub fn gene_program(armed: &[String]) -> Value {
     json!({
         "policy": gene_ledger::deployment_policy(),
         "armed": armed,
+        "ranking": ranking_sample(),
         "genes": genes,
     })
 }

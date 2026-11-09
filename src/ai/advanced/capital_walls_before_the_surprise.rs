@@ -1,4 +1,4 @@
-//! `capital-walls-before-the-surprise`: while a met major at peace fields
+//! `capital-walls-before-the-surprise`: while a met major fields
 //! [`CAPITAL_WALLS_RATIO`] times our military power and one of its land
 //! soldiers has stood within [`CAPITAL_WATCH_TILES`] of our original capital
 //! in the last ten live turns, Masonry is the next research and the
@@ -63,7 +63,8 @@ impl AdvancedAi {
         })
     }
 
-    /// A met major we are at peace with: the only owner the watch reads.
+    /// A met major, including one whose watched approach became a war.
+    /// Declaring war does not remove the army or the need to finish walls.
     fn capital_watch_suspect(g: &Game, pid: usize, other: usize) -> bool {
         g.players.get(other).is_some_and(|player| {
             other != pid
@@ -72,7 +73,6 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && !player.is_free_city
                 && g.has_met(pid, other)
-                && !g.is_at_war(pid, other)
         })
     }
 
