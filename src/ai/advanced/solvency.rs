@@ -11,8 +11,16 @@
 //! of the deficit, the empire leaves the drain itself. The policy pass puts
 //! the gold cards that pay first, an extra surplus-sale pass sells spare
 //! luxury and strategic copies every turn, and if income is still negative
-//! the cheapest units to lose are disbanded until it is not — never a siege
-//! gun, an air unit, a unit an active siege needs, or a city's garrison.
+//! units are disbanded until it is not — never a siege gun, an air unit, a
+//! unit an active siege needs, or a city's garrison.
+//!
+//! `bankruptcy-exits-the-drain-2` is the same drain with the 10-15 live
+//! repairs (084908Z on f0e7c4f43, v1 disarmed): the drain's gold cards already
+//! in a slot stay wanted for [`DRAIN_CARD_HOLD_TURNS`] after the last drained
+//! turn, and the disband takes the weakest of the weaker half of the army, at
+//! most [`DRAIN_DISBANDS_PER_TURN_2`] a turn across every frame of it. v1
+//! disbanded 9 units at t225, two Giant Death Robots among them, because its
+//! cap was per call and its order was strength per Gold of upkeep.
 //!
 //! **Why (10-14, two Emperor passers lost after the t150 gate).** With gold at
 //! 0 and income negative the host charges `amenities_bankruptcy` in every city
@@ -32,8 +40,13 @@ use super::*;
 /// Surplus sales a drained turn adds to the ordinary pass.
 pub(crate) const DRAIN_SALES_PER_TURN: usize = 2;
 
-/// Units the drain may disband in one turn; the next turn re-reads income.
+/// Units v1 may disband in one call; the next turn re-reads income.
 pub(crate) const DRAIN_DISBANDS_PER_TURN: usize = 3;
+
+/// Units `bankruptcy-exits-the-drain-2` may disband in one turn, across every
+/// frame of it. Live 084908Z (f0e7c4f43) disbanded 9 at t225 under v1, whose
+/// cap of 3 was per call while the seat ran three frames a turn.
+pub(crate) const DRAIN_DISBANDS_PER_TURN_2: usize = 2;
 
 /// A gold card estimated below this many Gold a turn is not slotted for the drain.
 pub(crate) const DRAIN_CARD_MIN_GOLD: f64 = 2.0;
@@ -193,7 +206,7 @@ impl AdvancedAi {
     /// less than one turn of it.
     pub(super) fn drained(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
-        self.bankruptcy_exits_the_drain
+        (self.bankruptcy_exits_the_drain || self.bankruptcy_exits_the_drain_2)
             && player.gold_per_turn < 0.0
             && player.gold < -player.gold_per_turn
     }
@@ -234,7 +247,7 @@ impl AdvancedAi {
     /// with the gene off, while drained (the drain's own list rules), and
     /// outside the window.
     pub(super) fn drain_cards_held(&self, g: &Game, pid: usize) -> Vec<(&'static str, f64)> {
-        if !self.bankruptcy_exits_the_drain || self.drained(g, pid) {
+        if !self.bankruptcy_exits_the_drain_2 || self.drained(g, pid) {
             return Vec::new();
         }
         let Some(last) = self.drain_last_turn.get() else {
@@ -315,6 +328,17 @@ impl AdvancedAi {
                 "bankruptcy-exits-the-drain: a gold card slotted this turn pays from the next");
             return;
         }
+        if self.bankruptcy_exits_the_drain_2 {
+            self.disband_for_the_drain_2(g, pid);
+        } else {
+            self.disband_for_the_drain_1(g, pid);
+        }
+    }
+
+    /// v1's disband, exactly as pinned in f0e7c4f43 (disarmed live 10-15
+    /// after 084908Z): least strength per Gold of upkeep first, at most
+    /// [`DRAIN_DISBANDS_PER_TURN`] a call.
+    fn disband_for_the_drain_1(&self, g: &mut Game, pid: usize) {
         let mut income = g.players[pid].gold_per_turn;
         let mut candidates: Vec<(f64, u32, f64)> = g
             .player_unit_ids(pid)
@@ -361,6 +385,88 @@ impl AdvancedAi {
                  the host would disband the costliest units first",
                 g.players[pid].gold, income);
         }
+    }
+
+    /// `bankruptcy-exits-the-drain-2`'s disband: the weakest of the weaker half
+    /// of the army first, never the stronger half, at most
+    /// [`DRAIN_DISBANDS_PER_TURN_2`] a turn across all of its frames, the upkeep
+    /// earlier frames saved credited to income.
+    fn disband_for_the_drain_2(&self, g: &mut Game, pid: usize) {
+        // Every frame of a turn reads the same host income, so what earlier
+        // frames already disbanded is counted, and its upkeep credited, here.
+        let (count, saved) = match self.drain_disbands.get() {
+            (turn, count, saved) if turn == g.turn => (count, saved),
+            _ => (0, 0.0),
+        };
+        let mut income = g.players[pid].gold_per_turn + saved;
+        if income >= 0.0 || count >= DRAIN_DISBANDS_PER_TURN_2 {
+            return;
+        }
+        let strength = |uid: u32| {
+            let spec = &g.rules.units[g.units[&uid].kind];
+            spec.strength.max(spec.ranged_attack_strength())
+        };
+        let military: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.rules.units[g.units[uid].kind].class == "military")
+            .collect();
+        // Never the stronger half of the army: live 084908Z disbanded two
+        // Giant Death Robots when the order was strength per Gold of upkeep.
+        let mut strengths: Vec<f64> = military.iter().map(|uid| strength(*uid)).collect();
+        strengths.sort_by(f64::total_cmp);
+        let median = strengths.get(strengths.len() / 2).copied().unwrap_or(0.0);
+        let mut candidates: Vec<(f64, f64, u32)> = military
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let spec = &g.rules.units[unit.kind];
+                let formation = match unit.formation {
+                    1 => 1.5,
+                    2.. => 2.0,
+                    _ => 1.0,
+                };
+                let upkeep = spec.maintenance * formation;
+                let garrison = g
+                    .city_at(unit.pos)
+                    .is_some_and(|cid| g.cities[&cid].owner == pid);
+                (!spec.siege
+                    && spec.domain.as_deref() != Some("air")
+                    && upkeep > 0.0
+                    && strength(uid) <= median
+                    && !garrison
+                    && !self.siege_needs_the_unit(g, pid, uid))
+                .then(|| {
+                    let power = strength(uid) * f64::from(unit.hp.max(1)) / 100.0;
+                    (power, upkeep, uid)
+                })
+            })
+            .collect();
+        // Weakest first; between equals, the dearer to keep, then by id.
+        candidates.sort_by(|a, b| {
+            a.0.total_cmp(&b.0)
+                .then(b.1.total_cmp(&a.1))
+                .then(a.2.cmp(&b.2))
+        });
+        let (mut count, mut saved) = (count, saved);
+        for (_, upkeep, uid) in candidates {
+            if income >= 0.0 || count >= DRAIN_DISBANDS_PER_TURN_2 {
+                break;
+            }
+            let kind = g.units[&uid].kind;
+            if g.apply(pid, &Action::DisbandUnit { unit: uid }).is_err() {
+                continue;
+            }
+            count += 1;
+            saved += upkeep;
+            income += upkeep;
+            think!(self.journal(), Military, Decision,
+                "Disbanding a {} to leave the bankruptcy drain", crate::reasoning::plain(kind.as_str());
+                "bankruptcy-exits-the-drain: {:.0} Gold, income {:+.1} after its {upkeep:.0} upkeep; \
+                 the weakest of the weaker half goes before the host takes the costliest",
+                g.players[pid].gold, income);
+        }
+        self.drain_disbands.set((g.turn, count, saved));
     }
 }
 

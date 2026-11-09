@@ -3994,6 +3994,14 @@ pub const GENES: &[Gene] = &[
     // 10-14: the bankruptcy amenity drain (20-120) turned every city Unhappy
     // in 083713Z and 100910Z. See `advanced/solvency.rs`.
     Gene { tag: "bankruptcy-exits-the-drain", field: "bankruptcy_exits_the_drain", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain, disable: AdvancedAi::disable_bankruptcy_exits_the_drain },
+    // `bankruptcy-exits-the-drain-2`: the drain with its 10-15 live repairs.
+    // v1 disbanded 9 units in one turn of live 084908Z (two Giant Death
+    // Robots) because its cap was per call across three frames and its order
+    // was strength per Gold of upkeep; v2 counts across frames (2 a turn),
+    // takes the weakest of the weaker half first, and holds the drain's gold
+    // cards 10 turns (Triangular Trade and Rationalism swapped every 1-4
+    // turns). See `advanced/solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain-2", field: "bankruptcy_exits_the_drain_2", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain_2, disable: AdvancedAi::disable_bankruptcy_exits_the_drain_2 },
     // After Urbanization, the most housing-capped city with no Aqueduct left
     // to claim puts its best-housing Neighborhood first, one in flight per
     // five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.

@@ -7892,6 +7892,16 @@ impl AdvancedAi {
         self.bankruptcy_exits_the_drain = false;
     }
 
+    /// Opt-in gene `bankruptcy-exits-the-drain-2`; see `advanced/solvency.rs`.
+    pub fn enable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = true;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain_2`.
+    pub fn disable_bankruptcy_exits_the_drain_2(&mut self) {
+        self.bankruptcy_exits_the_drain_2 = false;
+    }
+
     /// Opt-in gene `neighborhood-houses-the-capped-city`; see
     /// `advanced/neighborhood_houses_the_capped_city.rs`.
     pub fn enable_neighborhood_houses_the_capped_city(&mut self) {

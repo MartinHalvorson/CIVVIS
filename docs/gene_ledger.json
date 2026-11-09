@@ -2111,6 +2111,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "bankruptcy-exits-the-drain": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "bankruptcy-exits-the-drain": null,
+          "bankruptcy-exits-the-drain-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner-2"

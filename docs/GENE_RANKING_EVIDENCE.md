@@ -196,7 +196,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
-| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | — \| 2 |
+| `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`; see `advanced/solvency.rs`. | — \| 2 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |

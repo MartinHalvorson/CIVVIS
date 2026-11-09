@@ -5475,6 +5475,11 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `bankruptcy-exits-the-drain-2`: the drain with its 10-15 live repairs
+    /// (gold cards held a window after the drain; the disband per turn across
+    /// frames, weakest first, never the stronger half). See
+    /// `advanced/solvency.rs`. Off by default.
+    bankruptcy_exits_the_drain_2: bool,
     // ---- append: c-d ------------------------------------------------
     /// `city-under-fire-ranks-first`: a city of ours that lost health since
     /// the last assessment, or was struck within the last turn, with a
@@ -6297,6 +6302,9 @@ pub struct AdvancedAi {
     /// The last turn `bankruptcy-exits-the-drain` read the treasury as
     /// drained; its gold cards stay wanted for a hold window after it.
     drain_last_turn: std::cell::Cell<Option<u32>>,
+    /// `bankruptcy-exits-the-drain`: (turn, units disbanded, upkeep saved)
+    /// across every frame of that turn.
+    drain_disbands: std::cell::Cell<(u32, usize, f64)>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
     /// a founding rival whose spreaders stand at our cities while our majority
@@ -10617,6 +10625,7 @@ impl AdvancedAi {
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
+            bankruptcy_exits_the_drain_2: false,
             // ---- append: c-d ----------------------------------------
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
@@ -10772,6 +10781,7 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             drain_last_turn: std::cell::Cell::new(None),
+            drain_disbands: std::cell::Cell::new((0, 0, 0.0)),
             // ---- append: e-f ----------------------------------------
             faith_war_before_the_flip: false,
             faith_war_before_the_flip_2: false,
