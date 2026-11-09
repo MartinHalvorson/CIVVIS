@@ -14588,6 +14588,7 @@ const PLANET_GPU_MAX_PIXELS = 16_777_216;
 
 function planetGpuHide() {
   if (PLANET_GPU?.canvas) PLANET_GPU.canvas.style.display = "none";
+  if (PLANET_GPU?.labels) PLANET_GPU.labels.canvas.style.display = "none";
 }
 
 function planetGpuShader(gl, type, source) {
@@ -14919,7 +14920,9 @@ function drawPlanetGpuAnimationFrame() {
   const camera = planetCamera();
   const radius = camera.radius * cam.scale;
   const [centerX, centerY] = planetEarthCenter(radius);
-  return drawPlanetGpuSurface(camera, radius, centerX, centerY);
+  if (!drawPlanetGpuSurface(camera, radius, centerX, centerY)) return false;
+  paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
+  return true;
 }
 
 // The world says what shape it is, and that alone decides which renderer
@@ -21328,58 +21331,175 @@ const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
 const PLANET_CITY_PLATE_SCALE = 1.1;
 const PLANET_CITY_STATE_PLATE_SCALE = 1.6;
 const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
-function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
-  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
-  const alpha = Math.max(0, Math.min(1,
-    (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
-    (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
-  if (alpha <= 0) return;
-
-  // Work from the part of the world the viewer can actually see. The sphere's
-  // neighbour links still give us true globe connectivity, while stopping at
-  // the visible edge naturally lets two separated screen sections receive two
-  // labels instead of forcing one name through the limb.
-  const eligible = new Map();
-  for (const entry of cells) {
-    const owner = entry.tile.owner;
-    const player = state.players[owner];
-    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
-        !player.civ || entry.center.z < .12) continue;
-    if (!spectator && !visible.has(key(entry.tile.pos))) continue;
-    eligible.set(key(entry.tile.pos), entry);
+// A name is a thing on the ground, so it is worked out on the ground. Averaging
+// whichever tiles happened to face the viewer, on the screen, on every frame,
+// made a label a function of the camera: each tile crossing the limb dragged it
+// sideways and up and down while the world under it turned steadily. Now each
+// territory has one spot on the sphere, settled when the territory changes and
+// not otherwise, and the camera only ever projects that spot.
+//
+// The reach past which one name cannot cover a territory: a conquest wrapped
+// round the world would otherwise be nameless for half of every turn. Past it
+// the territory is cut along fixed meridians, so a tile always falls in the same
+// piece and the pieces do not reshuffle as borders move.
+const PLANET_EMPIRE_LABEL_SPLIT_REACH = Math.cos(65 * Math.PI / 180);
+// How far a territory's spot can move in one state and still be the same label.
+const PLANET_EMPIRE_LABEL_CLAIM = Math.cos(30 * Math.PI / 180);
+const PLANET_EMPIRE_LABEL_GLIDE_MS = 320;
+const PLANET_EMPIRE_LABEL_FADE_MS = 140;
+const PLANET_EMPIRE_LABELS = {state:null, planet:null, at:0, list:[], settling:false,
+                              sprites:new Map(), spriteDpr:0};
+function planetGroundMiddle(members, spacing) {
+  let x = 0, y = 0, z = 0;
+  for (const {cell} of members) {
+    x += cell.center[0]; y += cell.center[1]; z += cell.center[2];
   }
-  if (!eligible.size) return;
-
-  const sections = [], seen = new Set();
-  for (const [startKey, start] of eligible) {
+  const length = Math.hypot(x, y, z);
+  const middle = length > 1e-6 ? [x / length, y / length, z / length]
+    : members[0].cell.center;
+  let nearest = members[0].cell.center, closest = -2, reach = 2;
+  for (const {cell} of members) {
+    const near = planetSpotNearness(cell.center, middle);
+    if (near > closest) { closest = near; nearest = cell.center; }
+    reach = Math.min(reach, near);
+  }
+  // The average of a crescent lands in its bay, on somebody else's land.
+  return {spot:closest >= Math.cos(spacing * 1.5) ? middle : nearest, reach};
+}
+function planetSpotNearness(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function planetEmpireLabelSpots(visible, spectator, spacing) {
+  const owned = new Map();
+  for (const tile of state.map.tiles) {
+    const player = state.players[tile.owner];
+    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
+        !player.civ) continue;
+    const at = key(tile.pos);
+    if (!spectator && !visible.has(at)) continue;
+    const cell = PLANET.cells.get(at);
+    if (cell) owned.set(at, {tile, cell});
+  }
+  const spots = [], seen = new Set();
+  for (const [startKey, start] of owned) {
     if (seen.has(startKey)) continue;
     const owner = start.tile.owner;
-    const entries = [], pending = [start];
+    const members = [], pending = [start];
     seen.add(startKey);
     while (pending.length) {
-      const entry = pending.pop();
-      entries.push(entry);
-      for (const neighbourKey of entry.cell.nbrs || []) {
-        const neighbour = eligible.get(neighbourKey);
+      const member = pending.pop();
+      members.push(member);
+      for (const neighbourKey of member.cell.nbrs || []) {
+        const neighbour = owned.get(neighbourKey);
         if (!neighbour || seen.has(neighbourKey) || neighbour.tile.owner !== owner) continue;
         seen.add(neighbourKey);
         pending.push(neighbour);
       }
     }
-    if (entries.length < 2) continue;
-    let x = 0, y = 0, area = 0, totalWeight = 0;
-    for (const entry of entries) {
-      const weight = Math.max(1, planetCellInradius(entry));
-      x += entry.center.x * weight;
-      y += entry.center.y * weight;
-      area += weight * weight;
-      totalWeight += weight;
+    if (members.length < 2) continue;
+    const name = state.players[owner].civ.toUpperCase();
+    const whole = planetGroundMiddle(members, spacing);
+    if (whole.reach >= PLANET_EMPIRE_LABEL_SPLIT_REACH) {
+      spots.push({owner, name, spot:whole.spot, size:members.length});
+      continue;
     }
-    const player = state.players[owner];
-    sections.push({owner, entries, x:x / totalWeight, y:y / totalWeight, area,
-      label:player.civ.toUpperCase()});
+    const quadrants = [[], [], [], []];
+    for (const member of members) {
+      const [x, y] = member.cell.center;
+      quadrants[Math.min(3, Math.floor((Math.atan2(y, x) + Math.PI) / (Math.PI / 2)))].push(member);
+    }
+    for (const part of quadrants) {
+      if (part.length < Math.max(2, members.length * .12)) continue;
+      spots.push({owner, name, spot:planetGroundMiddle(part, spacing).spot, size:part.length});
+    }
   }
-  if (!sections.length) return;
+  return spots.sort((a, b) => b.size - a.size);
+}
+// Once per state: territories only change when one arrives. A label keeps its
+// place until its territory's middle has moved by more than a tile, so ordinary
+// border growth leaves it exactly where it was, and a real move is a glide.
+function settlePlanetEmpireLabels(visible, spectator) {
+  const store = PLANET_EMPIRE_LABELS;
+  if (store.state === state && store.planet === PLANET) return;
+  if (store.planet !== PLANET) store.list = [];
+  store.state = state;
+  store.planet = PLANET;
+  const firstLook = !store.list.length;
+  const spacing = Math.sqrt(4 * Math.PI / Math.max(1, PLANET.cells.size));
+  const unclaimed = new Set(store.list);
+  for (const {owner, name, spot, size} of planetEmpireLabelSpots(visible, spectator, spacing)) {
+    let held = null, best = PLANET_EMPIRE_LABEL_CLAIM;
+    for (const label of unclaimed) {
+      if (label.owner !== owner) continue;
+      const near = planetSpotNearness(label.target, spot);
+      if (near > best) { best = near; held = label; }
+    }
+    if (!held) {
+      store.list.push({owner, name, size, at:spot, target:spot,
+                       alpha:firstLook ? 1 : 0, shown:firstLook, gone:false});
+      continue;
+    }
+    unclaimed.delete(held);
+    if (2 - 2 * best > spacing * spacing) held.target = spot;
+    held.name = name; held.size = size; held.gone = false;
+  }
+  for (const label of unclaimed) label.gone = true;
+  store.list.sort((a, b) => b.size - a.size || a.owner - b.owner);
+}
+// The browser snaps fillText's baseline to whole device pixels, so a name drawn
+// as text on a slowly turning world climbs in visible steps: at 1x its true
+// position can rise half a pixel with nothing moving, then jump a whole one. An
+// image is placed at its exact fractional position, so each name is lettered once
+// and carried. One size per whole point of type, scaled the last fraction.
+function planetEmpireLabelSprite(name, color, type) {
+  const store = PLANET_EMPIRE_LABELS;
+  if (store.spriteDpr !== DPR || store.sprites.size > 400) {
+    store.sprites.clear();
+    store.spriteDpr = DPR;
+  }
+  const id = `${type}|${color}|${name}`;
+  let sprite = store.sprites.get(id);
+  if (sprite) return sprite;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  const font = `900 ${type}px Georgia, serif`;
+  context.font = font;
+  const textWidth = context.measureText(name).width;
+  const outline = Math.max(2, type * .22);
+  canvas.width = Math.ceil((textWidth + outline + 4) * DPR);
+  canvas.height = Math.ceil((type * 1.4 + outline + 4) * DPR);
+  const width = canvas.width / DPR, height = canvas.height / DPR;
+  context.setTransform(DPR, 0, 0, DPR, 0, 0);
+  context.font = font;
+  context.textAlign = "center"; context.textBaseline = "middle";
+  // Round, because a mitred stroke throws spikes past any margin the image has.
+  context.lineJoin = "round";
+  context.strokeStyle = "#07100f"; context.lineWidth = outline;
+  context.strokeText(name, width / 2, height / 2);
+  context.fillStyle = color;
+  context.fillText(name, width / 2, height / 2);
+  sprite = {canvas, width, height, textWidth, name};
+  store.sprites.set(id, sprite);
+  return sprite;
+}
+function planetEmpireLabelsSettling() {
+  return PLANET_EMPIRE_LABELS.settling && planetMap();
+}
+function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY,
+                                visible, spectator) {
+  const store = PLANET_EMPIRE_LABELS;
+  store.settling = false;
+  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
+  const zoomFade = Math.max(0, Math.min(1,
+    (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
+    (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
+  if (zoomFade <= 0) return;
+  settlePlanetEmpireLabels(visible, spectator);
+  const now = performance.now();
+  const dt = Math.max(0, Math.min(100, now - store.at));
+  store.at = now;
+  const glide = 1 - Math.exp(-dt / PLANET_EMPIRE_LABEL_GLIDE_MS);
+  const fade = 1 - Math.exp(-dt / PLANET_EMPIRE_LABEL_FADE_MS);
 
   // Size the type by the Earth on the screen, not by the zoom ladder. The old
   // ramp grew the font as the camera pulled away, so a globe shrunk to a ball
@@ -21387,26 +21507,76 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   // radius keeps a survey label smaller than the world it names, and the floor
   // hands over to the radius fade above before the type becomes unreadable.
   const fontSize = Math.max(9, Math.min(17, radius * .075));
-  const boxes = [];
-  sections.sort((a, b) => b.area - a.area);
-  cx.save();
-  cx.textAlign = "center"; cx.textBaseline = "middle";
-  cx.font = `900 ${fontSize}px Georgia, serif`;
-  for (const section of sections) {
-    const width = cx.measureText(section.label).width;
-    const box = {left:section.x - width / 2 - 5, right:section.x + width / 2 + 5,
-                 top:section.y - fontSize / 2 - 4, bottom:section.y + fontSize / 2 + 4};
-    if (boxes.some(other => box.left < other.right && box.right > other.left &&
-                           box.top < other.bottom && box.bottom > other.top)) continue;
-    boxes.push(box);
-    const [, light] = jerseyLanes(section.owner);
-    cx.globalAlpha = alpha;
-    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(2, fontSize * .22);
-    cx.strokeText(section.label, section.x, section.y);
-    cx.fillStyle = light;
-    cx.fillText(section.label, section.x, section.y);
+  const type = Math.ceil(fontSize), shrink = fontSize / type;
+  const placed = [];
+  context.save();
+  context.imageSmoothingEnabled = true;
+  for (const label of store.list) {
+    if (label.at !== label.target) {
+      const x = label.at[0] + (label.target[0] - label.at[0]) * glide;
+      const y = label.at[1] + (label.target[1] - label.at[1]) * glide;
+      const z = label.at[2] + (label.target[2] - label.at[2]) * glide;
+      const length = Math.hypot(x, y, z) || 1;
+      label.at = [x / length, y / length, z / length];
+      if (planetSpotNearness(label.at, label.target) > 1 - 1e-8) label.at = label.target;
+    }
+    const sprite = planetEmpireLabelSprite(label.name, jerseyLanes(label.owner)[1], type);
+    const point = planetProject(label.at, camera, scale, centerX, centerY);
+    // The limb takes a name by its position alone, so it leaves and returns at
+    // the same place on every turn of the world.
+    const limb = Math.max(0, Math.min(1, (point.z - .12) / .16));
+    let wanted = !label.gone;
+    if (wanted && limb > 0) {
+      // Biggest territory first. A name showing is let overlap a little before
+      // it gives way and a hidden one needs clear room to return, so two names
+      // converging on the limb settle once instead of trading places.
+      const spare = label.shown ? -2 : 5;
+      const halfWidth = sprite.textWidth * shrink / 2 + 5, halfHeight = fontSize / 2 + 4;
+      const box = {left:point.x - halfWidth, right:point.x + halfWidth,
+                   top:point.y - halfHeight, bottom:point.y + halfHeight};
+      if (placed.some(other => box.left - spare < other.right && box.right + spare > other.left &&
+                               box.top - spare < other.bottom && box.bottom + spare > other.top))
+        wanted = false;
+      else placed.push(box);
+    }
+    label.shown = wanted;
+    const goal = wanted ? 1 : 0;
+    label.alpha += (goal - label.alpha) * fade;
+    if (Math.abs(goal - label.alpha) < .005) label.alpha = goal;
+    if (label.at !== label.target || label.alpha !== goal) store.settling = true;
+    const alpha = zoomFade * limb * label.alpha;
+    if (alpha <= 0) continue;
+    const width = sprite.width * shrink, height = sprite.height * shrink;
+    context.globalAlpha = alpha;
+    context.drawImage(sprite.canvas, point.x - width / 2, point.y - height / 2, width, height);
   }
-  cx.restore();
+  context.restore();
+  store.list = store.list.filter(label => !label.gone || label.alpha > 0);
+}
+// While the GPU turns the ground on every display refresh, the Canvas above it
+// is repainted only as often as its cost allows, so a name painted there stands
+// still for a few frames and then catches up. Names get a small layer of their
+// own, just above the ground and below the Canvas ink, that keeps the ground's
+// time. Cities and armies still sit on top of them, as they always have.
+function paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY) {
+  const gpu = PLANET_GPU;
+  if (!gpu.labels) {
+    const canvas = document.createElement("canvas");
+    canvas.id = "planet-empire-labels";
+    canvas.setAttribute("aria-hidden", "true");
+    canvas.style.cssText = gpu.canvas.style.cssText;
+    gpu.canvas.after(canvas);
+    gpu.labels = {canvas, context:canvas.getContext("2d")};
+  }
+  const {canvas, context} = gpu.labels;
+  if (canvas.width !== cv.width) canvas.width = cv.width;
+  if (canvas.height !== cv.height) canvas.height = cv.height;
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.setTransform(DPR, 0, 0, DPR, 0, 0);
+  drawPlanetEmpireLabels(context, camera, cam.scale, radius, centerX, centerY,
+                         tileSight().turnVisible, !Number.isInteger(state.view_player));
+  canvas.style.display = "block";
 }
 function drawThematicLensPlanet(cells) {
   const context = mapLensContext(cells.map(cell => cell.tile));
@@ -22695,7 +22865,8 @@ function drawPlanetMap() {
   // settlement vocabulary with cartographic empire names. This is deliberately
   // before the city/icon pass so close markers remain readable over the label
   // if the two levels meet during a zoom animation.
-  drawPlanetEmpireLabels(cells, scale, radius, turnVisible, spectator);
+  if (gpuSurface) paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
+  else drawPlanetEmpireLabels(cx, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -36362,7 +36533,8 @@ function animTick(now) {
   const spinning = spinRunning();
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 ||
+    planetEmpireLabelsSettling() || planetSkyAnimating() || flatSkyAnimating();
   // The GPU owns the opaque terrain surface at globe scale. Submit one new
   // orientation per browser presentation frame; a GPU that cannot keep up
   // naturally presents at the refresh rate it can sustain. The richer Canvas
