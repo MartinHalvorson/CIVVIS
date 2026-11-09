@@ -182,7 +182,9 @@ impl AdvancedAi {
                     || (offensive
                         && city.owner != pid
                         && !g.is_at_war(pid, city.owner)
-                        && g.city_religion(city) != Some(religion.as_str()))
+                        && g.city_religion(city) != Some(religion.as_str())
+                        // See `advanced/religion_seat_fields_apostles.rs`.
+                        && !self.foreign_city_shows_our_faith(g, pid, city, &religion))
             })
             .map(|city| {
                 let own_pressure = city.pressure.get(&religion).copied().unwrap_or(0.0);

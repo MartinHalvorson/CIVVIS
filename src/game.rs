@@ -6852,6 +6852,11 @@ pub struct Game {
     /// a native game.
     #[serde(default)]
     pub observed_majority_religion: Arc<BTreeMap<usize, String>>,
+    /// The majority religion on the banner of each foreign city the seat has
+    /// seen, by city id, rebuilt from every host snapshot. The host reports
+    /// only the majority, so it stays out of `City::pressure`. Empty on a
+    /// native board, where `city_religion` already answers.
+    pub observed_foreign_city_religion: Arc<BTreeMap<u32, String>>,
     /// Tourists one seat's culture draws from another as the host counts them
     /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
     /// where the tourists come from) — the order `visiting_tourists_from`
@@ -7783,6 +7788,8 @@ struct GameSer {
     unseen_city_owners: BTreeSet<usize>,
     #[serde(default)]
     observed_majority_religion: BTreeMap<usize, String>,
+    #[serde(default)]
+    observed_foreign_city_religion: BTreeMap<u32, String>,
     /// A list, not a map: JSON cannot key an object by a tuple.
     #[serde(default)]
     observed_visiting_tourists: Vec<((usize, usize), i64)>,
@@ -8018,6 +8025,7 @@ impl From<GameSer> for Game {
             observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
             unseen_city_owners: s.unseen_city_owners,
             observed_majority_religion: Arc::new(s.observed_majority_religion),
+            observed_foreign_city_religion: Arc::new(s.observed_foreign_city_religion),
             observed_visiting_tourists: Arc::new(
                 s.observed_visiting_tourists.into_iter().collect(),
             ),
@@ -8292,6 +8300,7 @@ impl From<Game> for GameSer {
             observed_public_empire_stats: Arc::unwrap_or_clone(g.observed_public_empire_stats),
             unseen_city_owners: g.unseen_city_owners,
             observed_majority_religion: Arc::unwrap_or_clone(g.observed_majority_religion),
+            observed_foreign_city_religion: Arc::unwrap_or_clone(g.observed_foreign_city_religion),
             observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists)
                 .into_iter()
                 .collect(),
@@ -8800,6 +8809,7 @@ impl Game {
             observed_public_empire_stats: Arc::new(BTreeMap::new()),
             unseen_city_owners: BTreeSet::new(),
             observed_majority_religion: Arc::new(BTreeMap::new()),
+            observed_foreign_city_religion: Arc::new(BTreeMap::new()),
             observed_visiting_tourists: Arc::new(BTreeMap::new()),
             observed_city_yield_adjustments: Arc::new(BTreeMap::new()),
             observed_city_amenity_adjustments: Arc::new(BTreeMap::new()),

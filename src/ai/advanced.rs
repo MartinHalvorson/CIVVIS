@@ -8362,6 +8362,10 @@ pub struct AdvancedAi {
     /// before they step away. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
     religion_seat_presses_the_campaign: bool,
+    /// `religion-seat-reads-foreign-faith`: a Religion-target founder spends
+    /// no charge on a foreign city whose banner already shows its faith. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_reads_foreign_faith: bool,
     /// `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds
     /// on the Faith-scaling founder beliefs first. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.

@@ -10158,6 +10158,8 @@ mod air_refusal_tests;
 mod lake_identity_tests;
 
 #[cfg(test)]
+mod foreign_city_religion_tests;
+#[cfg(test)]
 mod foreign_encampment_health_tests;
 
 #[cfg(test)]

@@ -832,6 +832,14 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
             game.cities.get_mut(&cid).unwrap().pop = observed.pop;
         }
         apply_city_health(game, cid, observed);
+        // The banner of a foreign city: `religion-seat-reads-foreign-faith`
+        // reads it to stop spending charges on a city already converted. The
+        // host reports no pressure there, so `City::pressure` stays empty.
+        if game.cities[&cid].owner != 0 {
+            if let Some(name) = observed.religion.as_deref().and_then(civvis_religion_name) {
+                Arc::make_mut(&mut game.observed_foreign_city_religion).insert(cid, name);
+            }
+        }
         if observed.loyalty_per_turn.is_finite() {
             Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
                 .insert(cid, observed.loyalty_per_turn);

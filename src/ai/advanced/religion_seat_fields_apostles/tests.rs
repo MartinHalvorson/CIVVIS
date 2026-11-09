@@ -1,6 +1,7 @@
 use super::*;
 use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 use crate::game::install_test_district;
+use std::sync::Arc;
 
 /// Our founder with one Holy Site city of its own faith, and one major rival
 /// holding `rival_cities` cities on another faith.
@@ -45,7 +46,7 @@ fn build_temple(g: &mut Game, city: u32, building: &str) {
         .get_mut(&city)
         .unwrap()
         .buildings
-        .push(crate::game::Name::new(building));
+        .push(crate::name::Name::new(building));
 }
 
 #[test]
@@ -55,6 +56,9 @@ fn every_gene_is_opt_in() {
     });
     opt_in_off_in_both_controllers("religion-seat-presses-the-campaign", |ai| {
         ai.religion_seat_presses_the_campaign
+    });
+    opt_in_off_in_both_controllers("religion-seat-reads-foreign-faith", |ai| {
+        ai.religion_seat_reads_foreign_faith
     });
     opt_in_off_in_both_controllers("religion-seat-fields-apostles", |ai| {
         ai.religion_seat_fields_apostles
@@ -385,4 +389,38 @@ fn the_campaign_reads_only_lethal_threats() {
     let (g, mut ai, _) = founder(1, VictoryTarget::Culture);
     ai.enable_religion_seat_presses_the_campaign();
     assert!(!ai.religion_seat_presses_on(&g, 0), "a Culture seat");
+}
+
+/// A foreign city whose banner shows our faith stops being a target, and the
+/// corps cap stops counting it.
+#[test]
+fn a_banner_showing_our_faith_ends_the_campaign_there() {
+    let (mut g, mut ai, _) = founder(7, VictoryTarget::Religion);
+    let rival = g.player_city_ids(1)[0];
+    Arc::make_mut(&mut g.observed_foreign_city_religion).insert(rival, "Buddhism".into());
+    let city = g.cities[&rival].clone();
+    assert!(
+        !ai.foreign_city_shows_our_faith(&g, 0, &city, "Buddhism"),
+        "gene off"
+    );
+    ai.enable_religion_seat_reads_foreign_faith();
+    assert!(ai.foreign_city_shows_our_faith(&g, 0, &city, "Buddhism"));
+    assert!(
+        !ai.foreign_city_shows_our_faith(&g, 0, &city, "Hinduism"),
+        "another faith's spreader"
+    );
+    assert_eq!(
+        AdvancedAi::unconverted_major_cities(&g, 0),
+        6,
+        "seven cities, one banner ours"
+    );
+    let (mut g, mut ai, _) = founder(1, VictoryTarget::Culture);
+    let rival = g.player_city_ids(1)[0];
+    Arc::make_mut(&mut g.observed_foreign_city_religion).insert(rival, "Buddhism".into());
+    ai.enable_religion_seat_reads_foreign_faith();
+    let city = g.cities[&rival].clone();
+    assert!(
+        !ai.foreign_city_shows_our_faith(&g, 0, &city, "Buddhism"),
+        "a Culture seat"
+    );
 }

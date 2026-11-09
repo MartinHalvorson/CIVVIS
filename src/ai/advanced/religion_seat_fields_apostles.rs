@@ -65,6 +65,16 @@
 //! A kill is still avoided, and a wounded unit's next blow is lethal again, so
 //! it still retreats.
 //!
+//! **What the banner gene does.** The agent exported no religion for a foreign
+//! city, so on a live board `city_religion` read `None` for every one of them
+//! and each stayed a target for good. civvis-20261109T022744Z-cont1 spent 20 of
+//! its 112 charges from beside Willka Waman and 11 from beside Kumasi, and
+//! ended with 9 cities following its faith, 7 of them its own. The agent now
+//! sends the majority a human reads on the banner of a revealed city, and with
+//! `religion-seat-reads-foreign-faith` a founder spends no charge on a foreign
+//! city already showing its faith. A native board keeps its `city_religion`
+//! answer, so this gene does nothing in a native screen.
+//!
 //! Off, or for a seat aiming elsewhere, nothing changes.
 
 use super::*;
@@ -110,6 +120,9 @@ impl AdvancedAi {
                     && !owner.is_minor
                     && !owner.is_barbarian
                     && g.city_religion(city) != Some(religion)
+                    && g.observed_foreign_city_religion
+                        .get(&city.id)
+                        .is_none_or(|faith| faith != religion)
             })
             .count()
     }
@@ -440,6 +453,24 @@ impl AdvancedAi {
                 "religion-seat-presses-the-campaign: the mean exchange wins, and a kill hands our faith 250 pressure around the fight");
         }
         Some(acted)
+    }
+
+    /// `religion-seat-reads-foreign-faith`: the banner of this foreign city
+    /// already shows the faith this spreader carries.
+    pub(super) fn foreign_city_shows_our_faith(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        religion: &str,
+    ) -> bool {
+        self.religion_seat_reads_foreign_faith
+            && city.owner != pid
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            && g.players[pid].religion.as_deref() == Some(religion)
+            && g.observed_foreign_city_religion
+                .get(&city.id)
+                .is_some_and(|faith| faith == religion)
     }
 
     /// Whether this seat's founding should try the Faith beliefs first. Read

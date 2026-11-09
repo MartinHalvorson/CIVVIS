@@ -110,6 +110,8 @@ impl AdvancedAi {
         /// See `advanced/religion_seat_fields_apostles.rs`.
         religion_seat_presses_the_campaign => enable_religion_seat_presses_the_campaign, disable_religion_seat_presses_the_campaign;
         /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_reads_foreign_faith => enable_religion_seat_reads_foreign_faith, disable_religion_seat_reads_foreign_faith;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
         religion_seat_takes_the_faith_beliefs => enable_religion_seat_takes_the_faith_beliefs, disable_religion_seat_takes_the_faith_beliefs;
         /// Keep a committed Science launch or laser ahead of paused districts.
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
