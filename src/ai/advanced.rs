@@ -38284,6 +38284,67 @@ impl AdvancedAi {
             .or_insert_with(|| Self::settle_sooner_walk_costs(g, uid, radius))
     }
 
+    /// TRACE-ONLY: every candidate site with its scores and legality flags.
+    fn trace_settle_candidates(&self, g: &Game, pid: usize, uid: u32, chosen: Pos, founded_here: bool) {
+        let Some(unit) = g.units.get(&uid) else {
+            return;
+        };
+        let from = unit.pos;
+        let mut sites = self.settle_sites_with_limit_cached(g, pid, from, g.map.width + g.map.height, None, None);
+        sites.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        sites.truncate(40);
+        if !sites.iter().any(|(pos, _)| *pos == chosen) {
+            sites.push((chosen, f64::NAN));
+        }
+        let costs = Self::settle_sooner_walk_costs(g, uid, 30);
+        let moves = g.unit_max_moves(uid).max(1.0);
+        let turn_price = self.settle_sooner_walk_price(g, uid);
+        let avoid = self.settler_avoid.get(&uid).map(|(p, _)| *p);
+        let science = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        let height = g.map.height;
+        let out: Vec<serde_json::Value> = sites
+            .iter()
+            .map(|(pos, value)| {
+                let cost = costs.get(pos).copied();
+                let walk_turns = cost.map(|c| (c / moves).ceil());
+                let walk_price = Self::settle_sooner_walk_cost(
+                    turn_price,
+                    cost.unwrap_or(g.wdist(from, *pos) as f64 * moves / 2.0),
+                );
+                let verdict = if self.base.loyalty_rate_alarm || science {
+                    self.settle_site_loyalty_verdict(g, pid, *pos)
+                } else {
+                    self.settle_site_frontier_loyalty_verdict(g, pid, *pos)
+                };
+                serde_json::json!({
+                    "pos": [pos.0, pos.1],
+                    "value": if value.is_nan() { serde_json::Value::Null } else { serde_json::json!(value) },
+                    "worth": self.settle_value(g, pid, *pos),
+                    "walk_price": walk_price,
+                    "dist": g.wdist(from, *pos),
+                    "route": g.route_distance(uid, *pos, 0),
+                    "walk_turns": walk_turns,
+                    "polar": pos.1 <= 4 || pos.1 >= height - 5,
+                    "dead": self.settler_site_is_dead(uid, *pos),
+                    "avoid": avoid == Some(*pos),
+                    "reserved": self.settler_target_reserved_by_other(g, pid, uid, *pos),
+                    "deferred": self.settler_threat_detour_on() && self.settler_threat_deferrals.contains_key(pos),
+                    "early_ok": self.early_settler_site_allowed(g, pid, uid, *pos),
+                    "floor_ok": value.is_nan() || self.settler_target_clears_floor(g, from, *pos, *value),
+                    "verdict": verdict,
+                })
+            })
+            .collect();
+        eprintln!(
+            "[settle-cands] {}",
+            serde_json::json!({
+                "turn": g.turn, "uid": uid, "from": [from.0, from.1], "chosen": [chosen.0, chosen.1],
+                "founded_here": founded_here, "cities": g.player_city_ids(pid).len(), "height": height,
+                "cands": out,
+            })
+        );
+    }
+
     fn best_settler_target(
         &self,
         g: &Game,
@@ -39338,7 +39399,30 @@ impl AdvancedAi {
     /// has held for `SETTLER_IDLE_PATIENCE` turns. See
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        // TRACE-ONLY (scratch build, never committed): dump the candidate list
+        // whenever this step picks a new site or founds a city.
+        let trace = std::env::var_os("CIVVIS_SETTLE_TRACE").is_some();
+        let trace_pre = trace.then(|| g.speculative_clone());
+        let trace_before = self.settler_targets.get(&uid).copied();
+        let trace_pos = g.units.get(&uid).map(|u| u.pos);
         let acted = self.advanced_settler_step_inner(g, pid, uid);
+        if trace {
+            let after = self.settler_targets.get(&uid).copied();
+            let founded_here = !g.units.contains_key(&uid)
+                && trace_pos.is_some_and(|p| g.city_at(p).is_some());
+            eprintln!("[settle-trace] t{} uid {uid} at {trace_pos:?} target {trace_before:?} -> {after:?} acted {acted} founded_here {founded_here}",
+                      g.turn);
+            let chosen = if founded_here {
+                trace_pos
+            } else if after != trace_before {
+                after
+            } else {
+                None
+            };
+            if let (Some(chosen), Some(pre)) = (chosen, trace_pre.as_ref()) {
+                self.trace_settle_candidates(pre, pid, uid, chosen, founded_here);
+            }
+        }
         if acted || !self.settler_never_idles {
             return acted;
         }
