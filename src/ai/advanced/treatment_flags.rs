@@ -2288,6 +2288,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
+        /// Opt-in gene `parity-upgrades-before-it-buys-3`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_3 => enable_parity_upgrades_before_it_buys_3, disable_parity_upgrades_before_it_buys_3;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;

@@ -5463,6 +5463,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
     // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
     Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
+    // Version three of `parity-upgrades-before-it-buys`: version two's bar
+    // measured the world era, which at Online speed is a clock (era 2 at turn
+    // 51, era 5 at 111), so it refused nearly every gold military purchase
+    // from turn 51, early-war defenders included (disarmed 2026-11-05). Here a
+    // unit is obsolete at three or more eras behind our own newest technology,
+    // on the parity path and the base wartime purchases. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
