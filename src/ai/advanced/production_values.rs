@@ -17,6 +17,8 @@
 
 use super::*;
 
+mod garrison_firepower;
+
 impl AdvancedAi {
     pub(super) fn culture_preserves_resort_site(
         &self,
