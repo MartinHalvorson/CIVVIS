@@ -2810,7 +2810,7 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
     assert!(player_hud.contains("playerHudStats(p,"));
-    assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
+    assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
@@ -6366,10 +6366,11 @@ fn browser_orders_controls_interface_setup_and_logs() {
         // Best record first: win rate, then the most wins at that rate.
         ".sort(compareSimulationRecords)",
         "return b.w * aGames - a.w * bGames\n    || b.w - a.w\n",
-        // A running simulation must not send the ledger back to its top.
-        "if (!fresh?.isEqualNode(live)) return false;",
-        "if (!repaintBesideArenaStats(victoryHud, overview)) {",
-        "if (statsBody) statsBody.scrollTop = statsScroll;",
+        // A running simulation must not send the ledger back to its top, nor
+        // take the tracker's scroll box out from under the wheel.
+        "patchHudMarkup(victoryHud, overview);",
+        "const HUD_PATCH_KEEPS = new Set([\"hidden\", \"style\", \"data-fit-clipped\"]);",
+        "#victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(arena_stats_contract),
