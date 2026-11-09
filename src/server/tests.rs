@@ -9932,6 +9932,63 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
+fn closed_sidebar_sections_build_their_rows_only_when_opened() {
+    let reasoning = EMBEDDED_INDEX
+        .split("function drawReasoning() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function applyLogFilter").next())
+        .expect("reasoning panel");
+    // The log keeps accumulating with the panel closed: only the rows wait.
+    let absorbed = reasoning.find("absorbReasoning(state);").expect("absorb");
+    let guard = reasoning
+        .find("if (inClosedSidebarSection(el)) return;")
+        .expect("closed-section guard");
+    let built = reasoning.find("el.innerHTML = thoughts.map").expect("rows");
+    assert!(absorbed < guard && guard < built);
+
+    let events = EMBEDDED_INDEX
+        .split("function drawEvents() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("event log");
+    // The section's own label stays current; it is visible with the section shut.
+    let label = events.find("scope.textContent =").expect("label");
+    let guard = events
+        .find("if (inClosedSidebarSection(el)) return;")
+        .expect("closed-section guard");
+    let built = events.find("el.innerHTML = events.map").expect("rows");
+    assert!(label < guard && guard < built);
+
+    // Opening a section answers now, not on the next turn.
+    assert!(EMBEDDED_INDEX.contains("drawOpenedSidebarSection(section);"));
+    assert!(EMBEDDED_INDEX.contains("if (section.id === \"strategysec\") drawReasoning();"));
+    assert!(EMBEDDED_INDEX.contains("else if (section.id === \"eventsec\") drawEvents();"));
+}
+
+#[test]
+fn the_minimap_follows_a_moving_camera_on_its_own_budget_and_still_settles() {
+    assert!(EMBEDDED_INDEX.contains("const MINI_TURNING_PAINT_MS = 100;"));
+    assert!(EMBEDDED_INDEX.contains("const MAX_MINI_PAINT_SHARE = .05;"));
+    let tick = EMBEDDED_INDEX
+        .split("function animTick(now) {")
+        .nth(1)
+        .and_then(|tail| tail.split("requestAnimationFrame(animTick);\n").nth(1))
+        .expect("animation tick");
+    // Camera motion goes through the budget on both the GPU and Canvas paths;
+    // a detonation animates on the chart and keeps its full rate.
+    assert_eq!(
+        tick.matches("paintMiniWithCamera(now, userCameraMoving);")
+            .count(),
+        2
+    );
+    assert!(tick.contains("if (anim.blasts.length > 0) { drawMini();"));
+    // A skipped paint is owed: when the camera stops the chart catches up.
+    assert!(tick.contains("if (!cameraMoving && miniBehindCamera) {"));
+    // Every turn still gets its complete chart, outside this budget.
+    assert!(EMBEDDED_INDEX.contains("draw(); drawSide(newWorld); drawMini(); drawPlayerHud();"));
+}
+
+#[test]
 fn browser_planet_minimap_uses_a_square_cropped_azimuthal_equidistant_chart() {
     // The chart is azimuthal equidistant about the point facing the
     // viewer, cropped to the minimap's square, and the square's half-side
