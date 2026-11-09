@@ -6637,3 +6637,7 @@ mod gran_colombia_promotions_tests;
 
 #[cfg(test)]
 mod ranged_visibility_tests;
+
+#[cfg(test)]
+#[path = "builder_operation_refusal_tests.rs"]
+mod builder_operation_refusal_tests;
