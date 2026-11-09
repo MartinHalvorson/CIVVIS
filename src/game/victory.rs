@@ -290,14 +290,18 @@ impl Game {
         };
 
         let capital_target = all_majors.len();
+        // Each major's first capital, by one walk of the cities rather than a
+        // walk per major: `find` over id-ordered cities keeps the lowest id,
+        // and so does the first entry for an owner here.
+        let mut first_capitals: BTreeMap<usize, &City> = BTreeMap::new();
+        for city in self.cities.values().filter(|city| city.is_capital) {
+            first_capitals.entry(city.original_owner).or_insert(city);
+        }
         let controlled_capitals = if player.team.is_some() {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    let capital = self
-                        .cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner);
+                    let capital = first_capitals.get(*original_owner).copied();
                     if **original_owner == pid || self.same_team(pid, **original_owner) {
                         capital.is_some_and(|capital| capital.owner == **original_owner)
                     } else {
@@ -309,13 +313,10 @@ impl Game {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    self.cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner)
-                        .map_or(
-                            **original_owner == pid || !self.players[**original_owner].alive,
-                            |capital| capital.owner == pid,
-                        )
+                    first_capitals.get(*original_owner).copied().map_or(
+                        **original_owner == pid || !self.players[**original_owner].alive,
+                        |capital| capital.owner == pid,
+                    )
                 })
                 .count()
         };

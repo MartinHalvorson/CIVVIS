@@ -50,6 +50,7 @@
 //! geometry is a pure function of its frequency, so it is built once per
 //! frequency and shared by every map and every cloned game that uses it.
 
+use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
@@ -125,6 +126,18 @@ const RING_RADIUS: i32 = 6;
 const DISTANCE_ROW_CACHE_BYTES: usize = 64 * 1024 * 1024;
 const DISTANCE_ROW_ADMISSION_HITS: u16 = 8;
 
+/// What one thread may keep in [`RecentRows`] once the shared table is full.
+/// A frequency-76 globe runs out of shared rows during map generation, and
+/// those rows then stand for the start-placement candidates of a world that
+/// has moved on. Only worlds that large ever reach this tier.
+const RECENT_ROW_BYTES: usize = 48 * 1024 * 1024;
+/// Endpoints whose recent misses are being counted.
+const RECENT_ADMISSION_SLOTS: usize = 1 << 12;
+/// Misses an endpoint must collect before it earns a row. A row costs about as
+/// much as three or four point-to-point searches at frequency 76, so this is
+/// the point at which the searches it replaces have paid for it.
+const RECENT_ADMISSION_MISSES: u8 = 3;
+
 /// Lattice points are matched between rhombi by rounding to this grid. The
 /// closest two distinct tiles ever come is about `2/n` radians of arc, which
 /// at the largest frequency this engine builds is still four orders of
@@ -191,6 +204,107 @@ pub struct Sphere {
     distance_hits: Vec<AtomicU16>,
     /// Number of initialized rows, capped by [`DISTANCE_ROW_CACHE_BYTES`].
     distance_row_count: AtomicUsize,
+}
+
+/// Full distance rows one thread has used lately, for a globe too big for the
+/// shared table to hold every row it would like.
+///
+/// The shared `distance_rows` table never evicts: it is read lock-free from every
+/// thread, and on a stock globe it holds the whole world. On a frequency-76
+/// globe it fills before the first turn, so from then on every long-distance
+/// comparison ran a point-to-point search, including thousands of comparisons
+/// against the same few cities and destinations. A thread-local tier can evict
+/// freely because nothing else reads it.
+#[derive(Default)]
+struct RecentRows {
+    frequency: i32,
+    capacity: usize,
+    /// Endpoint to its slot in `rows`.
+    index: HashMap<u32, u32>,
+    /// Endpoint, its row, and whether it has been read since the clock hand
+    /// last passed it.
+    rows: Vec<(u32, Box<[u16]>, bool)>,
+    hand: usize,
+    /// Misses per endpoint, as `seen[endpoint % slots] == (endpoint + 1, misses)`.
+    seen: Vec<(u32, u8)>,
+}
+
+thread_local! {
+    static RECENT_ROWS: RefCell<RecentRows> = RefCell::default();
+}
+
+impl RecentRows {
+    fn distance(&mut self, sphere: &Sphere, from: u32, to: u32) -> Option<u16> {
+        if self.frequency != sphere.frequency {
+            let row_bytes = sphere
+                .len()
+                .saturating_mul(std::mem::size_of::<u16>())
+                .max(1);
+            *self = RecentRows {
+                frequency: sphere.frequency,
+                capacity: (RECENT_ROW_BYTES / row_bytes).max(1),
+                seen: vec![(0, 0); RECENT_ADMISSION_SLOTS],
+                ..RecentRows::default()
+            };
+        }
+        for (key, other) in [(to, from), (from, to)] {
+            if let Some(&slot) = self.index.get(&key) {
+                let entry = &mut self.rows[slot as usize];
+                entry.2 = true;
+                return Some(entry.1[other as usize]);
+            }
+        }
+        // Two distinct endpoints can both have earned a row; the destination
+        // is the one a caller's loop usually holds still, as in `cache_source`.
+        // Both are counted either way.
+        let to_earned = self.miss(to);
+        let from_earned = self.miss(from);
+        let source = match (to_earned, from_earned) {
+            (true, _) => to,
+            (_, true) => from,
+            _ => return None,
+        };
+        let row = sphere.search_all(source);
+        let distance = row[if source == from { to } else { from } as usize];
+        self.remember(source, row);
+        Some(distance)
+    }
+
+    /// Count a miss at `endpoint`; `true` once it has earned a row. The count
+    /// starts over then, so a row that is later evicted has to earn its way
+    /// back rather than being rebuilt on its next miss.
+    fn miss(&mut self, endpoint: u32) -> bool {
+        let slot = endpoint as usize % self.seen.len();
+        let mark = endpoint + 1;
+        let entry = &mut self.seen[slot];
+        if entry.0 != mark {
+            *entry = (mark, 0);
+        }
+        entry.1 = entry.1.saturating_add(1);
+        let earned = entry.1 >= RECENT_ADMISSION_MISSES;
+        if earned {
+            entry.1 = 0;
+        }
+        earned
+    }
+
+    fn remember(&mut self, endpoint: u32, row: Box<[u16]>) {
+        if self.rows.len() < self.capacity {
+            self.index.insert(endpoint, self.rows.len() as u32);
+            self.rows.push((endpoint, row, false));
+            return;
+        }
+        // Clock: a row read since the hand last came by gets one more lap.
+        while self.rows[self.hand].2 {
+            self.rows[self.hand].2 = false;
+            self.hand = (self.hand + 1) % self.rows.len();
+        }
+        let slot = self.hand;
+        self.hand = (self.hand + 1) % self.rows.len();
+        self.index.remove(&self.rows[slot].0);
+        self.index.insert(endpoint, slot as u32);
+        self.rows[slot] = (endpoint, row, false);
+    }
 }
 
 /// Consecutive sorted breadth-first rings from one globe tile.
@@ -383,8 +497,24 @@ impl Sphere {
             self.cache_row(source, row);
             return distance as i32;
         }
+        if let Some(distance) = self.recent_distance(from, to) {
+            return distance as i32;
+        }
 
         self.search_between(from, to) as i32
+    }
+
+    /// Answer a long-distance miss from this thread's recent rows, building a
+    /// row for an endpoint that has come back. `None` while the shared table
+    /// still has room, because then the shared table is the better home.
+    ///
+    /// Every row is exact and a pure function of the globe, so what this keeps
+    /// or drops changes how long a query takes and never what it returns.
+    fn recent_distance(&self, from: u32, to: u32) -> Option<u16> {
+        if self.distance_row_count.load(Ordering::Relaxed) < self.distance_row_capacity() {
+            return None;
+        }
+        RECENT_ROWS.with(|recent| recent.borrow_mut().distance(self, from, to))
     }
 
     /// One exact, caller-owned distance row for algorithms that deliberately
@@ -630,8 +760,12 @@ impl Sphere {
     fn search_between(&self, from: u32, to: u32) -> u16 {
         let mut best = vec![u16::MAX; self.len()];
         best[from as usize] = 0;
-        let mut open = BinaryHeap::from([Reverse((self.lower_bound(from, to), 0u16, from))]);
-        while let Some(Reverse((_, distance, cell))) = open.pop() {
+        // Equal estimates pop the tile furthest along first. Every member of
+        // a hex grid's diamond of equally short routes ties, so taking the
+        // shallowest first expanded the whole diamond before reaching `to`.
+        let mut open =
+            BinaryHeap::from([Reverse((self.lower_bound(from, to), Reverse(0u16), from))]);
+        while let Some(Reverse((_, Reverse(distance), cell))) = open.pop() {
             if cell == to {
                 return distance;
             }
@@ -647,7 +781,7 @@ impl Sphere {
                 }
                 best[neighbor as usize] = next_distance;
                 let estimate = next_distance + self.lower_bound(neighbor, to);
-                open.push(Reverse((estimate, next_distance, neighbor)));
+                open.push(Reverse((estimate, Reverse(next_distance), neighbor)));
             }
         }
         u16::MAX
@@ -1427,6 +1561,63 @@ mod tests {
         );
         run_phase("admitted_local", &local);
         run_phase("admitted_long", &long);
+    }
+
+    #[test]
+    fn the_point_to_point_search_agrees_with_the_exact_row() {
+        let globe = sphere(18);
+        let tiles = globe.len() as u64;
+        let mut bits = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut draw = move || {
+            bits ^= bits << 13;
+            bits ^= bits >> 7;
+            bits ^= bits << 17;
+            bits
+        };
+        for _ in 0..400 {
+            let (from, to) = ((draw() % tiles) as u32, (draw() % tiles) as u32);
+            let exact = globe.search_all(from)[to as usize];
+            assert_eq!(globe.search_between(from, to), exact, "{from} to {to}");
+        }
+    }
+
+    /// The recent-row tier decides only how long an answer takes. It must be
+    /// exact whatever it has evicted, and hold no more than its budget.
+    #[test]
+    fn recent_rows_are_exact_through_eviction_and_stay_within_budget() {
+        let globe = sphere(14);
+        let tiles = globe.len() as u64;
+        let mut recent = RecentRows {
+            frequency: globe.frequency,
+            capacity: 3,
+            seen: vec![(0, 0); RECENT_ADMISSION_SLOTS],
+            ..RecentRows::default()
+        };
+        let mut bits = 0x2545_F491_4F6C_DD1D_u64;
+        let mut draw = move || {
+            bits ^= bits << 13;
+            bits ^= bits >> 7;
+            bits ^= bits << 17;
+            bits
+        };
+        let (mut answered, mut evicting) = (0, false);
+        for _ in 0..4_000 {
+            // A handful of destinations held still against scattered sources,
+            // which is the shape that earns rows and then evicts them.
+            let to = (draw() % 8) as u32;
+            let from = (draw() % tiles) as u32;
+            if from == to {
+                continue;
+            }
+            evicting |= recent.rows.len() == 3;
+            if let Some(distance) = recent.distance(&globe, from, to) {
+                assert_eq!(distance, globe.search_all(from)[to as usize]);
+                answered += 1;
+            }
+            assert!(recent.rows.len() <= 3);
+            assert_eq!(recent.index.len(), recent.rows.len());
+        }
+        assert!(evicting && answered > 1_000, "{answered} answered");
     }
 
     /// A file either obeys the determinism rule or does not — never half.

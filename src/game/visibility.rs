@@ -13,6 +13,13 @@
 
 use super::*;
 
+/// Every city, then every unit, as `(owner, tile index)`.
+struct ContactRoster {
+    entries: Vec<(u32, u32)>,
+    /// How many leading entries are cities.
+    cities: usize,
+}
+
 impl Game {
     /// Introduce two seats to each other, permanently and in both directions.
     ///
@@ -169,7 +176,7 @@ impl Game {
         // unit's unchanged sight at every step merely duplicates the refresh
         // below. Recording contacts locally preserves the same mid-turn
         // diplomacy unlocks while an AI turn is being coalesced.
-        self.record_contacts_in_sight(pid, &visible);
+        self.record_contacts_in_sight(pid, &visible, None);
         self.refresh_visibility_snapshot(pid, &visible);
     }
 
@@ -931,7 +938,7 @@ impl Game {
     pub(super) fn refresh_player_visibility(&mut self, pid: usize) {
         let memory_world = self.snapshot_world_stamp(pid);
         let mut heights = self.height_field();
-        self.refresh_player_visibility_via(pid, &mut heights, memory_world);
+        self.refresh_player_visibility_via(pid, &mut heights, memory_world, None);
     }
 
     fn refresh_player_visibility_via(
@@ -939,6 +946,7 @@ impl Game {
         pid: usize,
         heights: &mut HeightField,
         memory_world: u64,
+        roster: Option<&ContactRoster>,
     ) {
         if self.visibility_suppressed || pid >= self.players.len() {
             return;
@@ -947,7 +955,7 @@ impl Game {
         // Ahead of the snapshot's early-out rather than inside it: that guard
         // is keyed on the seat's own memory and the world's cities, so a rival
         // unit walking into a standing scout's sight would not disturb it.
-        self.record_contacts_in_sight(pid, &visible);
+        self.record_contacts_in_sight(pid, &visible, roster);
         self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
     }
 
@@ -1305,7 +1313,12 @@ impl Game {
     /// pass is skipped once it is empty, so a table that has already been
     /// introduced pays one loop over the seats and nothing else — the common
     /// case, since this runs behind every action a player takes.
-    fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
+    fn record_contacts_in_sight(
+        &mut self,
+        pid: usize,
+        visible: &TileBits,
+        roster: Option<&ContactRoster>,
+    ) {
         if self.visibility_suppressed
             || self
                 .players
@@ -1314,35 +1327,66 @@ impl Game {
         {
             return;
         }
-        let unmet: BTreeSet<usize> = self
-            .players
-            .iter()
-            .filter(|other| other.id != pid && !other.is_barbarian && !other.is_free_city)
-            .filter(|other| !self.players[pid].met.contains(&other.id))
-            .map(|other| other.id)
-            .collect();
-        if unmet.is_empty() {
+        let seats = self.players.len();
+        let mut unmet = vec![false; seats];
+        for other in self.players.iter() {
+            unmet[other.id] = other.id != pid && !other.is_barbarian && !other.is_free_city;
+        }
+        for known in &self.players[pid].met {
+            if let Some(entry) = unmet.get_mut(*known) {
+                *entry = false;
+            }
+        }
+        let unmet_count = unmet.iter().filter(|wanted| **wanted).count();
+        if unmet_count == 0 {
             return;
         }
+        let built;
+        let roster = match roster {
+            Some(roster) => roster,
+            None => {
+                built = self.contact_roster();
+                &built
+            }
+        };
         // Cities first: there are two orders of magnitude fewer of them than
         // units, and a civilization with a city in sight needs no second look.
-        let mut found: BTreeSet<usize> = self
-            .cities
-            .values()
-            .filter(|city| unmet.contains(&city.owner) && self.sees(visible, city.pos))
-            .map(|city| city.owner)
-            .collect();
-        if found.len() < unmet.len() {
-            found.extend(
-                self.units
-                    .values()
-                    .filter(|unit| unmet.contains(&unit.owner) && self.sees(visible, unit.pos))
-                    .map(|unit| unit.owner),
-            );
+        let mut found = vec![false; seats];
+        let mut found_count = 0;
+        let (cities, units) = roster.entries.split_at(roster.cities);
+        for entries in [cities, units] {
+            if found_count == unmet_count {
+                break;
+            }
+            for &(owner, tile) in entries {
+                let owner = owner as usize;
+                if unmet[owner] && !found[owner] && visible.contains(tile as usize) {
+                    found[owner] = true;
+                    found_count += 1;
+                }
+            }
         }
-        for other in found {
+        for other in (0..seats).filter(|other| found[*other]) {
             self.record_contact(pid, other);
         }
+    }
+
+    /// Where every city and unit stands, for a pass that asks each seat what it
+    /// can see. Walking two id-keyed trees once per seat was most of what a
+    /// full visibility refresh cost on a world with hundreds of seats.
+    fn contact_roster(&self) -> ContactRoster {
+        let tiles = &self.map.tiles;
+        let mut entries = Vec::with_capacity(self.cities.len() + self.units.len());
+        entries.extend(self.cities.values().filter_map(|city| {
+            let tile = tiles.index_of(city.pos)?;
+            Some((city.owner as u32, tile as u32))
+        }));
+        let cities = entries.len();
+        entries.extend(self.units.values().filter_map(|unit| {
+            let tile = tiles.index_of(unit.pos)?;
+            Some((unit.owner as u32, tile as u32))
+        }));
+        ContactRoster { entries, cities }
     }
 
     /// `visible` is everything the seat can see; `fresh` is the part of it
@@ -1622,8 +1666,9 @@ impl Game {
         };
         self.with_suzerain_memo(|game| {
             let mut heights = game.height_field();
+            let roster = game.contact_roster();
             for pid in 0..game.players.len() {
-                game.refresh_player_visibility_via(pid, &mut heights, memory_world);
+                game.refresh_player_visibility_via(pid, &mut heights, memory_world, Some(&roster));
             }
         });
     }
@@ -1716,7 +1761,7 @@ impl Game {
                 (stamp, Arc::new(visible))
             };
             self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
-            self.record_contacts_in_sight(pid, &visible);
+            self.record_contacts_in_sight(pid, &visible, None);
             self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
         }
     }
@@ -1747,7 +1792,7 @@ impl Game {
             let mut heights = game.height_field();
             for member in members {
                 if game.players[member].alive {
-                    game.refresh_player_visibility_via(member, &mut heights, memory_world);
+                    game.refresh_player_visibility_via(member, &mut heights, memory_world, None);
                 }
             }
         });

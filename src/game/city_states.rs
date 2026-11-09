@@ -213,9 +213,36 @@ impl Game {
                 return *suzerain;
             }
         }
-        let suzerain = self.suzerain_of_uncached(minor);
+        let suzerain = self.suzerain_of_stable(minor);
         if let Some(memo) = self.query_memo.suzerain.borrow_mut().as_mut() {
             memo.insert(minor, suzerain);
+        }
+        suzerain
+    }
+
+    /// `suzerain_of_uncached` kept for as long as nothing it reads can have
+    /// moved: envoys and governors live on players, an Amani's post on a city,
+    /// and her establishment on the clock. The stamp belongs to this `Game`
+    /// alone; a clone starts with an empty cache and its own counters.
+    fn suzerain_of_stable(&self, minor: usize) -> Option<usize> {
+        let stamp: SuzerainStamp = (self.players.epoch(), self.cities.generation(), self.turn);
+        {
+            let stable = self.query_memo.suzerain_stable.borrow();
+            if let Some((held, answers)) = stable.as_ref() {
+                if *held == stamp {
+                    if let Some(suzerain) = answers.get(&minor) {
+                        return *suzerain;
+                    }
+                }
+            }
+        }
+        let suzerain = self.suzerain_of_uncached(minor);
+        let mut stable = self.query_memo.suzerain_stable.borrow_mut();
+        match stable.as_mut() {
+            Some((held, answers)) if *held == stamp => {
+                answers.insert(minor, suzerain);
+            }
+            _ => *stable = Some((stamp, BTreeMap::from([(minor, suzerain)]))),
         }
         suzerain
     }
