@@ -207,11 +207,7 @@ async function fileReport(request, env, url) {
 // The two files that are most of a first visit. publish.sh writes a `.br` beside
 // each at brotli's slowest setting; Cloudflare's own on-the-fly compression
 // favours speed and comes out about 30% larger on the engine.
-//
-// The test lane only, for now. This module is deployment-global, so it reaches
-// the front page without a promotion, and Pages' handling of these files can be
-// proven only on the real runtime. Widen this once /test has shown it working.
-const PRECOMPRESSED = /^\/test\/(?:civvis\.wasm|assets\/app\.js)$/;
+const PRECOMPRESSED = /^(?:\/test)?\/(?:civvis\.wasm|assets\/app\.js)$/;
 
 /// The harder-compressed copy of this file, if there is one and the browser
 /// can read it. Workers rewrites a request's own `Accept-Encoding`, so what the

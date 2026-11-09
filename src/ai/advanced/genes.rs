@@ -5501,6 +5501,10 @@ pub const GENES: &[Gene] = &[
     // A Russian seat's site score reads Mother Russia's +1 Faith and +1
     // Production on Tundra. See `advanced/russia_tundra.rs`.
     Gene { tag: "russia-settles-the-tundra", field: "russia_settles_the_tundra", kind: Kind::OptIn, enable: AdvancedAi::enable_russia_settles_the_tundra, disable: AdvancedAi::disable_russia_settles_the_tundra },
+    // A Religion-target founder's first Shrine takes the queue, since no
+    // Missionary can be bought without one. See
+    // `advanced/religion_seat_first_shrine.rs`.
+    Gene { tag: "religion-seat-first-shrine", field: "religion_seat_first_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_first_shrine, disable: AdvancedAi::disable_religion_seat_first_shrine },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
