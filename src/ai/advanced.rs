@@ -8416,6 +8416,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `russia-settles-the-tundra`: a Russian seat's site score reads what
+    /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
+    /// default.
+    russia_settles_the_tundra: bool,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -10548,6 +10552,8 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `russia-settles-the-tundra`: see `advanced/russia_tundra.rs`.
+mod russia_tundra;
 /// `stalled-conquest-takes-science`: see
 /// `advanced/stalled_conquest_takes_science.rs`.
 mod stalled_conquest_takes_science;
