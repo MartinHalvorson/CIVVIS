@@ -2810,7 +2810,7 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
     assert!(player_hud.contains("playerHudStats(p,"));
-    assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
+    assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
@@ -6366,10 +6366,11 @@ fn browser_orders_controls_interface_setup_and_logs() {
         // Best record first: win rate, then the most wins at that rate.
         ".sort(compareSimulationRecords)",
         "return b.w * aGames - a.w * bGames\n    || b.w - a.w\n",
-        // A running simulation must not send the ledger back to its top.
-        "if (!fresh?.isEqualNode(live)) return false;",
-        "if (!repaintBesideArenaStats(victoryHud, overview)) {",
-        "if (statsBody) statsBody.scrollTop = statsScroll;",
+        // A running simulation must not send the ledger back to its top, nor
+        // take the tracker's scroll box out from under the wheel.
+        "patchHudMarkup(victoryHud, overview);",
+        "const HUD_PATCH_KEEPS = new Set([\"hidden\", \"style\", \"data-fit-clipped\"]);",
+        "#victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(arena_stats_contract),
@@ -14171,6 +14172,42 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
              that lies about what the map is doing"
     );
     assert!(EMBEDDED_INDEX.contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
+}
+
+/// The spin button means every world, not only the one units stand on: a
+/// body with its ground on the canvas turns at the Earth's pace, in the
+/// direction a drag to the right sends the ground.
+#[test]
+fn the_spin_turns_every_world_showing_its_ground() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    assert!(body_of("function advanceWorldSpin(dt)").contains("advanceSkyWorldSpin(dt);"));
+    let sky = body_of("function advanceSkyWorldSpin(dt)");
+    assert!(sky.contains("if (skyOnCanvas(place) && skyGroundFade(place) > 0)"));
+    assert!(sky.contains("skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;"));
+    // A world can now turn under an arrival, so the flight settles once
+    // whether it aims at the landing site or at the limb.
+    let end = body_of("function skyLaunchEnd(");
+    assert!(end.contains("const seat = launch.aimsAtLimb ? null : skyLandingSeats("));
+    assert!(end.contains("if (launch.seatSeen)"));
+    assert!(end.contains("launch.aimsAtLimb = true;"));
+}
+
+/// A launch crossing the stage has no depth. Reading one anyway made NaN,
+/// `|| 1` hid it, and the hull was stretched by its speed in pixels: a
+/// needle about six times a rocket's length going past the Moon.
+#[test]
+fn a_rocket_on_a_route_with_no_depth_keeps_its_own_length() {
+    let js = EMBEDDED_APP_JS;
+    assert!(js.contains("const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;"));
+    assert!(!js.contains("const depth = limb ? (ahead.z - behind.z) * limb.r : 0;"));
 }
 
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
