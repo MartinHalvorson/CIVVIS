@@ -452,30 +452,23 @@ fn a_tech_lead_is_the_road_to_science() {
     assert!((total(&science_open, |seat| seat.now) - 1.0).abs() < 1e-9);
 }
 
-/// A banked lead outranks a bigger reading on a race that can be taken back:
-/// 55% of the Diplomatic race is further from a win than 45% of the Science one.
+/// Religious and Diplomatic races really do end games, so their meters are read
+/// as they stand. Squaring them looked right on Deity host games, where neither
+/// race ever finished, and cost the eventual winner about twenty points in the
+/// last thirty turns of the simulated games those races decided.
 #[test]
-fn a_half_finished_contested_race_counts_for_less_than_its_meter() {
+fn a_contested_race_is_read_at_face_value() {
     let mut game = even_table(4, "prince", &[]);
     for pid in 0..4 {
         found_capital(&mut game, pid);
     }
     game.turn = 150;
-    game.players[0].dvp = 11;
-    for project in ["launch_earth_satellite", "launch_moon_landing"] {
-        game.players[1].science_projects.insert(project.to_string());
-    }
+    game.players[0].dvp = 15;
+    assert_eq!(closest_victory(&game, 0, 0).earned_pct, 75.0);
     let odds = table(&game, flat);
     assert!(
-        odds[&0].race_pct > odds[&1].race_pct,
-        "the meters still read as they did: {} vs {}",
-        odds[&0].race_pct,
-        odds[&1].race_pct
-    );
-    assert!(
-        odds[&1].now > odds[&0].now,
-        "but the banked race is the likelier win: {} vs {}",
-        odds[&1].now,
+        odds[&0].now > 0.85,
+        "three quarters of a race that ends the game is close to it: {}",
         odds[&0].now
     );
 }

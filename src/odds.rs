@@ -21,11 +21,10 @@
 //! between them is everything the game has decided so far.
 //!
 //! What can end the game counts for more than what merely looks strong. The
-//! position term carries each seat's closest victory, read for how likely it is
-//! to be reached: the meter's free share (your own capital, your own faith) is
-//! not progress, a half-finished contested race is further from done than its
-//! percentage says, and the Science road is priced in techs for the hundred-odd
-//! turns before its meter can move.
+//! position term carries each seat's closest victory as far as it has been
+//! earned: the capital every seat starts with is no progress toward Domination,
+//! and the Science road is priced in techs for the hundred-odd turns before its
+//! meter can move.
 //!
 //! Both are shares of one win, so they sum to one across the table whenever the
 //! rules leave a way to win. If every victory condition is disabled, every
@@ -129,13 +128,6 @@ const NO_CITY_ELO: f64 = 100.0;
 /// fifth of the win it implies.
 const RACE_FULL_ELO: f64 = 1500.0;
 const RACE_CURVE: f64 = 2.5;
-/// A contested race is further from done than its meter says. Science projects
-/// and tourists stay banked, but Diplomatic Victory Points arrive in lumps at
-/// World Congress and rivals vote against the leader, and converted civilizations
-/// convert back. Across 66 Deity host games, no seat at 50-70% of either race
-/// finished it. Squaring the share leaves a race near its end close to its
-/// reading (95% stays 90%) and discounts a half-finished one heavily (55% is 30%).
-const CONTESTED_RACE_CURVE: f64 = 2.0;
 /// Elo for one natural-log ratio of known techs against the living field, when
 /// the Science Victory is open. Its meter reads zero until the first launch,
 /// yet 53 of those 66 games were decided by that race, and the tech lead was
@@ -553,7 +545,7 @@ fn standing_elo(game: &Game, living: &[usize], public_standings: bool) -> Vec<St
         .iter()
         .map(|pid| closest_victory(game, *pid, leading_score))
         .collect();
-    let race_elo: Vec<f64> = victories.iter().map(|v| race_elo(v.reach_pct)).collect();
+    let race_elo: Vec<f64> = victories.iter().map(|v| race_elo(v.earned_pct)).collect();
     let techs: Vec<f64> = victories.iter().map(|v| v.techs).collect();
     let science_road_open = game.victory_conditions.science && !game.is_arena();
     // Unmet seats contain placeholder zeros, not observed economic collapse.
@@ -612,9 +604,8 @@ fn standing_elo(game: &Game, living: &[usize], public_standings: bool) -> Vec<St
 struct ClosestVictory {
     /// The closest enabled race as its meter reads it, per cent.
     pct: f64,
-    /// The closest enabled race as a chance of being reached, per cent: the
-    /// meter without its free share, and with contested races discounted.
-    reach_pct: f64,
+    /// The closest enabled race counting only what was earned, per cent.
+    earned_pct: f64,
     /// Techs known, the Science road's reading before its meter can move.
     techs: f64,
 }
@@ -664,7 +655,7 @@ fn closest_victory(game: &Game, pid: usize, leading_score: i64) -> ClosestVictor
         };
         return ClosestVictory {
             pct,
-            reach_pct: pct,
+            earned_pct: pct,
             techs: 0.0,
         };
     }
@@ -676,16 +667,13 @@ fn closest_victory(game: &Game, pid: usize, leading_score: i64) -> ClosestVictor
             .filter_map(|(on, progress)| on.then_some(progress))
             .fold(0.0_f64, f64::max)
     };
-    // Every seat starts holding its own capital, and a seat with no team counts
-    // itself among the civilizations its religion must convert. Neither is a
-    // step toward winning; a team's Religious race already excludes its side.
+    // Every seat starts holding its own capital, which is no step toward
+    // Domination. The other races are read as they stand: Religious and
+    // Diplomatic meters looked overstated on host games where neither race
+    // ever finished, but discounting them cost the actual winner in simulated
+    // games those races decided.
     let capitals_held_at_start = game.team_members(pid).len().max(1) as f64;
     let own_capitals = 100.0 * capitals_held_at_start / races.capital_target.max(1) as f64;
-    let own_faith = if game.players[pid].team.is_none() {
-        100.0 / races.religious_target.max(1) as f64
-    } else {
-        0.0
-    };
     ClosestVictory {
         pct: closest([
             (enabled.science, races.science),
@@ -694,14 +682,11 @@ fn closest_victory(game: &Game, pid: usize, leading_score: i64) -> ClosestVictor
             (enabled.diplomatic, races.diplomatic),
             (enabled.domination, races.domination),
         ]),
-        reach_pct: closest([
+        earned_pct: closest([
             (enabled.science, races.science),
             (enabled.culture, races.culture),
-            (
-                enabled.religious,
-                contested_reach(beyond_free_share(races.religious, own_faith)),
-            ),
-            (enabled.diplomatic, contested_reach(races.diplomatic)),
+            (enabled.religious, races.religious),
+            (enabled.diplomatic, races.diplomatic),
             (
                 enabled.domination,
                 beyond_free_share(races.domination, own_capitals),
@@ -718,10 +703,6 @@ fn beyond_free_share(pct: f64, free: f64) -> f64 {
         return pct;
     }
     (100.0 * (pct - free) / (100.0 - free)).clamp(0.0, 100.0)
-}
-
-fn contested_reach(pct: f64) -> f64 {
-    100.0 * libm::pow((pct / 100.0).clamp(0.0, 1.0), CONTESTED_RACE_CURVE)
 }
 
 fn race_elo(pct: f64) -> f64 {

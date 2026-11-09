@@ -25889,7 +25889,7 @@ function civDossier(p, rank, relation) {
             ? "No victory condition is enabled, so this game cannot produce a winner"
             : "Out of the game: an empire with no cities and no settler to found one cannot win"
           : "The same prior corrected by the position on the board — Score, military " +
-            "strength, cities held and how likely this seat is to reach its closest " +
+            "strength, cities held and how close this seat is to its nearest " +
             "victory, with its tech lead counting toward Science — weighted up as the " +
             "clock runs down" +
             (Number.isFinite(dossierStanding) && dossierStanding !== 0
