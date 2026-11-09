@@ -71,7 +71,7 @@ fn a_shrine_hands_its_idle_queue_to_prayers() {
         .get_mut(&home)
         .unwrap()
         .buildings
-        .insert(crate::name!("shrine"));
+        .push(crate::name!("shrine"));
     let ai = treatment();
     let mut plan = ai.assess(&g, 0);
     plan.threatened_city = None;
