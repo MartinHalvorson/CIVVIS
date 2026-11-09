@@ -97,6 +97,9 @@ impl AdvancedAi {
         culture_keeps_its_aesthetics => enable_culture_keeps_its_aesthetics, disable_culture_keeps_its_aesthetics;
         /// `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`.
         culture_banks_for_the_bands => enable_culture_banks_for_the_bands, disable_culture_banks_for_the_bands;
+        /// `culture-faith-opens-at-the-theaters`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_opens_at_the_theaters => enable_culture_faith_opens_at_the_theaters, disable_culture_faith_opens_at_the_theaters;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------

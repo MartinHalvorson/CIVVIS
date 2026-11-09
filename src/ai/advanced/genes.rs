@@ -5440,6 +5440,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-seat-drama-before-government", field: "culture_seat_drama_before_government", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_before_government, disable: AdvancedAi::disable_culture_seat_drama_before_government },
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
+    Gene { tag: "culture-faith-opens-at-the-theaters", field: "culture_faith_opens_at_the_theaters", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_opens_at_the_theaters, disable: AdvancedAi::disable_culture_faith_opens_at_the_theaters },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -322,3 +322,18 @@ fn a_threatened_or_slow_native_second_queue_keeps_the_existing_commitment() {
         first
     );
 }
+
+#[test]
+fn two_theaters_open_the_sources_before_an_amphitheater_when_the_gene_is_on() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    for &cid in &cities {
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| *building != "amphitheater");
+    }
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
+    ai.enable_culture_faith_opens_at_the_theaters();
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
+}

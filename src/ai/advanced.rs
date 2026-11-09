@@ -6682,6 +6682,10 @@ pub struct AdvancedAi {
     /// target holds Faith for its first four Rock Bands. See
     /// `advanced/culture_band_bank.rs`.
     culture_banks_for_the_bands: bool,
+    /// `culture-faith-opens-at-the-theaters`: two standing Theater Squares open
+    /// the Culture Faith sources without waiting for an Amphitheater. See
+    /// `advanced/culture_faith_sources.rs`.
+    culture_faith_opens_at_the_theaters: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
