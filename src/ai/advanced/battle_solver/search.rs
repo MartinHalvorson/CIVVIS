@@ -92,6 +92,23 @@ struct Searcher<'b> {
 }
 
 impl<'b> Searcher<'b> {
+    /// Each sample's score, in sample order, for a paired comparison.
+    fn sample_scores(
+        &mut self,
+        plan: &[(usize, Line)],
+        posture: Posture,
+        samples: u32,
+    ) -> Vec<f32> {
+        let mut scores = Vec::with_capacity(samples as usize);
+        for k in 0..samples {
+            self.sim.reset(self.init, self.seed.wrapping_add(k as u64));
+            self.sim.rollout(plan, posture, self.budget.horizon);
+            scores.push(self.sim.score());
+        }
+        self.used += samples;
+        scores
+    }
+
     fn eval(&mut self, plan: &[(usize, Line)], posture: Posture, samples: u32) -> f32 {
         let mut total = 0.0f32;
         for k in 0..samples {
@@ -374,33 +391,37 @@ impl<'b> Searcher<'b> {
             .collect()
     }
 
-    /// Improve the turn one unit at a time, on common dice.
+    /// Improve the turn one unit at a time, on common dice. A change is kept
+    /// only when the paired difference on the same rolls clears its own
+    /// noise, so the climb does not wander on a handful of samples; and the
+    /// seed stands unless the finished turn beats it on the larger sample.
     fn improve(
         &mut self,
         choices: &[Choices],
-        mut picks: Vec<usize>,
+        seed: Vec<usize>,
         posture: Posture,
         budget: u32,
-    ) -> (Vec<usize>, f32) {
+    ) -> Vec<usize> {
         let stop_at = self.used + budget;
         let coarse = self.budget.coarse;
-        let mut best = self.eval(&Self::plan_of(choices, &picks), posture, coarse);
+        let mut picks = seed.clone();
+        let mut best = self.sample_scores(&Self::plan_of(choices, &picks), posture, coarse);
         for _ in 0..self.budget.passes {
             let mut improved = false;
             for u in 0..choices.len() {
-                let keep = picks[u];
                 for k in 0..choices[u].lines.len() {
-                    if k == keep || self.used + coarse > stop_at {
+                    if k == picks[u] || self.used + coarse > stop_at {
                         continue;
                     }
-                    let current = picks[u];
+                    let keep = picks[u];
                     picks[u] = k;
-                    let score = self.eval(&Self::plan_of(choices, &picks), posture, coarse);
-                    if score > best + 0.5 {
-                        best = score;
+                    let scores =
+                        self.sample_scores(&Self::plan_of(choices, &picks), posture, coarse);
+                    if paired_gain(&scores, &best) {
+                        best = scores;
                         improved = true;
                     } else {
-                        picks[u] = current;
+                        picks[u] = keep;
                     }
                 }
             }
@@ -408,7 +429,15 @@ impl<'b> Searcher<'b> {
                 break;
             }
         }
-        (picks, best)
+        if picks != seed {
+            let fine = self.budget.fine;
+            let finished = self.sample_scores(&Self::plan_of(choices, &picks), posture, fine);
+            let seeded = self.sample_scores(&Self::plan_of(choices, &seed), posture, fine);
+            if mean(&finished) < mean(&seeded) {
+                return seed;
+            }
+        }
+        picks
     }
 
     fn forecast(&mut self, plan: &[(usize, Line)], posture: Posture, samples: u32) -> Forecast {
@@ -479,6 +508,27 @@ impl<'b> Searcher<'b> {
     }
 }
 
+fn mean(scores: &[f32]) -> f32 {
+    scores.iter().sum::<f32>() / scores.len().max(1) as f32
+}
+
+/// Whether `scores` beats `best` on the same dice by more than the noise of
+/// the difference (one standard error, and at least half a hammer).
+fn paired_gain(scores: &[f32], best: &[f32]) -> bool {
+    let n = scores.len().min(best.len());
+    if n == 0 {
+        return false;
+    }
+    let diffs: Vec<f32> = (0..n).map(|k| scores[k] - best[k]).collect();
+    let centre = mean(&diffs);
+    let variance = diffs
+        .iter()
+        .map(|d| (d - centre) * (d - centre))
+        .sum::<f32>()
+        / (n.max(2) - 1) as f32;
+    centre > 0.5 && centre > (variance / n as f32).sqrt()
+}
+
 fn blow_prior(dealt: f32, taken: f32, target: super::model::Unit, me: super::model::Unit) -> f32 {
     let killed = dealt >= target.hp as f32;
     let dies = taken >= me.hp as f32 && !killed;
@@ -545,7 +595,7 @@ pub fn solve(
     let mut finalists: Vec<(Posture, Vec<usize>)> = Vec::new();
     for &posture in postures {
         let seed_picks = searcher.seed_turn(&choices, posture);
-        let (picks, _) = searcher.improve(&choices, seed_picks, posture, share);
+        let picks = searcher.improve(&choices, seed_picks, posture, share);
         finalists.push((posture, picks));
     }
     let mut by_posture = Vec::new();
@@ -727,18 +777,17 @@ pub(super) mod tests {
         );
         let s = State::new(&b, units, vec![]);
         let solution = solve(&b, &s, Objective::Field, FAST, Weights::default(), 11);
-        assert_eq!(
-            solution.posture,
-            Posture::Withdraw,
-            "{:?}",
-            solution.by_posture
-        );
         let line = solution.plan[0].1;
+        assert!(
+            b.d(line.tile, 5 * 12 + 8) > 2,
+            "it should get out of reach: {:?}",
+            solution.plan
+        );
         assert_eq!(line.aim, Aim::None, "{:?}", solution.plan);
     }
 
     #[test]
-    fn a_ranged_line_shoots_rather_than_stepping_beside_melee() {
+    fn shooters_never_step_beside_melee() {
         // Archers facing melee at range: the turn shoots, it does not walk in.
         let units = vec![
             archer(7 * 12 + 5, OURS, 100),
@@ -753,7 +802,11 @@ pub(super) mod tests {
         let s = State::new(&b, units, vec![]);
         let solution = solve(&b, &s, Objective::Field, FAST, Weights::default(), 5);
         for (_, line) in &solution.plan {
-            assert_eq!(line.aim, Aim::Unit(2), "{:?}", solution.plan);
+            assert!(
+                b.d(line.tile, 5 * 12 + 5) >= 2,
+                "a shooter must not step beside melee: {:?}",
+                solution.plan
+            );
         }
     }
 

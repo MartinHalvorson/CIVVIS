@@ -84,6 +84,7 @@ fn tuned_weights() -> Weights {
         enemy_retreat_hp: knob("CIVVIS_BS_ERET", base.enemy_retreat_hp),
         our_retreat_hp: knob("CIVVIS_BS_ORET", base.our_retreat_hp),
         enemy_aggression: knob("CIVVIS_BS_AGGRO", base.enemy_aggression),
+        tempo: knob("CIVVIS_BS_TEMPO", base.tempo),
     }
 }
 

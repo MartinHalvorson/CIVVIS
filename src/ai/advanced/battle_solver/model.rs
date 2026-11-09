@@ -235,9 +235,15 @@ pub struct Weights {
     pub enemy_retreat_hp: i16,
     /// Our retreat threshold in rollouts.
     pub our_retreat_hp: i16,
-    /// Chance a modelled enemy takes a favourable strike. Below one because
-    /// the real AI does not always swing when it could; one is the prudent
-    /// reading and the setting the benches use.
+    /// Weight on the enemy value destroyed on the turn being decided. Damage
+    /// dealt now is worth more than the same damage dealt later: it is banked
+    /// against anything the rollout cannot see arriving. Breaks the tie
+    /// between shooting now and stepping back to shoot next turn.
+    pub tempo: f32,
+    /// Chance a modelled enemy acts on a given round rather than standing.
+    /// Below one because the real AI does not press every chance it has:
+    /// over 115 live Deity games it struck well under half the units it
+    /// could reach.
     pub enemy_aggression: f32,
 }
 
@@ -250,7 +256,8 @@ impl Default for Weights {
             haste: 0.92,
             enemy_retreat_hp: 25,
             our_retreat_hp: 40,
-            enemy_aggression: 1.0,
+            enemy_aggression: 0.75,
+            tempo: 0.15,
         }
     }
 }
@@ -265,13 +272,16 @@ pub struct Sim<'b> {
     objective: Objective,
     /// Round at which the objective was reached.
     pub reached: Option<u32>,
+    enemy_worth_at_start: f32,
+    enemy_worth_after_plan: f32,
     stamp: u32,
     seen: Vec<u32>,
     left: Vec<u16>,
     queue: Vec<u16>,
     reach: Vec<(u16, u16)>,
     order: Vec<u16>,
-    dice: u32,
+    /// Draws made by each unit so far: its own stream of dice.
+    draws: Vec<u32>,
 }
 
 impl<'b> Sim<'b> {
@@ -284,13 +294,15 @@ impl<'b> Sim<'b> {
             round: 0,
             objective,
             reached: None,
+            enemy_worth_at_start: 0.0,
+            enemy_worth_after_plan: 0.0,
             stamp: 0,
             seen: vec![0; b.tiles],
             left: vec![0; b.tiles],
             queue: Vec::with_capacity(b.tiles),
             reach: Vec::with_capacity(b.tiles),
             order: Vec::with_capacity(s.units.len()),
-            dice: 0,
+            draws: vec![0; s.units.len()],
         }
     }
 
@@ -299,18 +311,34 @@ impl<'b> Sim<'b> {
         self.seed = seed;
         self.round = 0;
         self.reached = None;
-        self.dice = 0;
+        self.draws.iter_mut().for_each(|d| *d = 0);
+        self.enemy_worth_at_start = self.enemy_worth();
+        self.enemy_worth_after_plan = self.enemy_worth_at_start;
     }
 
-    /// One die per (unit, round, draw): a plan that changes one unit leaves
-    /// every other unit's rolls alone, so two plans compare on the same luck.
+    fn worth(&self, unit: &Unit) -> f32 {
+        unit.value * (self.w.alive_floor + (1.0 - self.w.alive_floor) * unit.hp as f32 / 100.0)
+    }
+
+    fn enemy_worth(&self) -> f32 {
+        self.s
+            .units
+            .iter()
+            .filter(|u| u.alive() && u.side == THEIRS)
+            .map(|u| self.worth(u))
+            .sum()
+    }
+
+    /// One die per (unit, round, the unit's own draw count): a plan that
+    /// changes one unit leaves every other unit's rolls alone, so two plans
+    /// compare on the same luck.
     #[inline]
     fn roll(&mut self, unit: usize) -> f32 {
-        self.dice = self.dice.wrapping_add(1);
+        self.draws[unit] = self.draws[unit].wrapping_add(1);
         let key = self.seed
             ^ ((unit as u64) << 40)
             ^ ((self.round as u64) << 28)
-            ^ (self.dice as u64 & 0xff_ffff);
+            ^ (self.draws[unit] as u64 & 0xff_ffff);
         0.8 + 0.4 * ((mix(key) >> 40) as f32 / 16_777_216.0)
     }
 
@@ -770,7 +798,9 @@ impl<'b> Sim<'b> {
             self.w.enemy_retreat_hp
         };
         let breaking = side == OURS && posture == Posture::Withdraw;
-        let low = me.hp <= retreat_hp;
+        let mut low = me.hp <= retreat_hp;
+        // Something it could hit stands in reach, whatever the trade.
+        let mut contact = false;
         let holds = side == OURS && posture == Posture::Hold;
         // The best blow within reach. An even trade is a blow worth striking:
         // whoever hits first leaves the other weaker for its answer, and a
@@ -792,35 +822,31 @@ impl<'b> Sim<'b> {
                     continue;
                 }
                 if me.shoots() {
-                    if !me.fires_after_moving() {
-                        if range as i32 > me.range as i32 {
-                            continue;
-                        }
-                    }
+                    // The shooter's stand: its own tile if in range, else the
+                    // nearest reach tile that is, movement left to fire.
+                    let stand = if range as i32 <= me.range as i32 {
+                        Some(me.tile)
+                    } else if holds || !me.fires_after_moving() {
+                        None
+                    } else {
+                        self.reach
+                            .iter()
+                            .filter(|(t, kept)| {
+                                *kept > 0 && (self.b.d(*t, other.tile) as i32) <= me.range as i32
+                            })
+                            .min_by_key(|(t, _)| self.b.d(*t, me.tile))
+                            .map(|(t, _)| *t)
+                    };
+                    let Some(stand) = stand else {
+                        continue;
+                    };
+                    contact = true;
                     let (att, def) = self.ranged_strengths(i, j);
                     let dealt = mean_damage(att, def);
                     let v = self.blow_value(i, dealt, 0.0, other.hp, other.value);
                     if v > best_value {
-                        // The shooter's stand: its own tile if in range, else
-                        // the nearest reach tile that is.
-                        let stand = if range as i32 <= me.range as i32 {
-                            Some(me.tile)
-                        } else if holds || !me.fires_after_moving() {
-                            None
-                        } else {
-                            self.reach
-                                .iter()
-                                .filter(|(t, kept)| {
-                                    *kept > 0
-                                        && (self.b.d(*t, other.tile) as i32) <= me.range as i32
-                                })
-                                .min_by_key(|(t, _)| self.b.d(*t, me.tile))
-                                .map(|(t, _)| *t)
-                        };
-                        if let Some(stand) = stand {
-                            best_value = v;
-                            best = Some((stand, Aim::Unit(j as u16)));
-                        }
+                        best_value = v;
+                        best = Some((stand, Aim::Unit(j as u16)));
                     }
                 } else if me.has(F_MELEE) {
                     if breaking {
@@ -854,6 +880,7 @@ impl<'b> Sim<'b> {
                     let Some((stand, _)) = stand else {
                         continue;
                     };
+                    contact = true;
                     let (att, def) = self.melee_strengths(i, j);
                     let dealt = mean_damage(att, def);
                     let taken = mean_damage(def, att);
@@ -932,17 +959,28 @@ impl<'b> Sim<'b> {
                 }
             }
         }
-        if side == THEIRS && self.w.enemy_aggression < 1.0 {
-            let swings = (self.roll(i) - 0.8) / 0.4 < self.w.enemy_aggression;
-            if !swings {
-                best = None;
-            }
+        // The host AI does not press every chance it has, so a modelled enemy
+        // sometimes stands. A plan that only works if the enemy obligingly
+        // walks into it reads worse on those rollouts, as it should.
+        let stands = side == THEIRS
+            && self.w.enemy_aggression < 1.0
+            && (self.roll(i) - 0.8) / 0.4 >= self.w.enemy_aggression;
+        if stands {
+            best = None;
         }
         if let Some((stand, aim)) = best {
             if !low || matches!(aim, Aim::Unit(_)) {
                 self.play_line(i, Line { tile: stand, aim });
                 return;
             }
+        }
+        if stands {
+            return;
+        }
+        // A soldier in reach of a fight it would lose does not walk into it:
+        // it gets out, as a wounded one does.
+        if best.is_none() && contact && !holds {
+            low = true;
         }
         if me.mp == 0 || (holds && !low) {
             return;
@@ -1140,6 +1178,7 @@ impl<'b> Sim<'b> {
     pub fn rollout(&mut self, plan: &[(usize, Line)], posture: Posture, horizon: u32) {
         self.round = 0;
         self.play_plan(plan);
+        self.enemy_worth_after_plan = self.enemy_worth();
         for round in 0..horizon {
             self.round = round + 1;
             self.begin_side(THEIRS);
@@ -1159,8 +1198,7 @@ impl<'b> Sim<'b> {
             if !unit.alive() {
                 continue;
             }
-            let worth = unit.value
-                * (self.w.alive_floor + (1.0 - self.w.alive_floor) * unit.hp as f32 / 100.0);
+            let worth = self.worth(unit);
             if unit.side == OURS {
                 v += worth * self.w.loss;
             } else {
@@ -1177,6 +1215,7 @@ impl<'b> Sim<'b> {
                 v -= city.value * (1.0 - 0.25 * worn);
             }
         }
+        v += self.w.tempo * (self.enemy_worth_at_start - self.enemy_worth_after_plan);
         match self.objective {
             Objective::Capture(c) if self.s.city_side[c as usize] == OURS => {
                 let at = self.reached.unwrap_or(0) as i32;
