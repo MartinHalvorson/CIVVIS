@@ -16010,9 +16010,8 @@ function planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
   const out = [];
   for (const tileKey of keys) {
     const tile = TMAP.get(tileKey);
-    const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!geometry || geometry.center.z <= -.03) continue;
-    out.push({tile, ...geometry});
+    const entry = tile && planetCellEntry(tile, camera, scale, centerX, centerY);
+    if (entry) out.push(entry);
   }
   out.sort((a, b) => a.center.z - b.center.z);
   return out;
@@ -16026,8 +16025,7 @@ function planetLazyCellMap(cells, camera, scale, centerX, centerY) {
     get(tileKey) {
       if (known.has(tileKey)) return known.get(tileKey) ?? undefined;
       const tile = TMAP.get(tileKey);
-      const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
-      const entry = geometry && geometry.center.z > -.03 ? {tile, ...geometry} : null;
+      const entry = (tile && planetCellEntry(tile, camera, scale, centerX, centerY)) || null;
       known.set(tileKey, entry);
       return entry ?? undefined;
     },
@@ -16069,8 +16067,8 @@ function planetHitCellAt(sx, sy) {
   const entries = [];
   for (const cellKey of [key(best.pos), ...best.nbrs]) {
     const tile = cellKey && TMAP.get(cellKey);
-    const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (geometry && geometry.center.z > -.03) entries.push({tile, ...geometry});
+    const entry = tile && planetCellEntry(tile, camera, scale, centerX, centerY);
+    if (entry) entries.push(entry);
   }
   entries.sort((a, b) => b.center.z - a.center.z);
   for (const entry of entries) if (inside(entry)) return entry.tile.pos;
@@ -16914,12 +16912,17 @@ function planetCells(camera, scale, centerX, centerY,
   const behind = camera.chart
     ? planetChartHorizon(camera, scale, reach) : -.03;
   for (const tile of state.map.tiles) {
-    const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!geometry || geometry.center.z <= behind) continue;
-    out.push({tile, ...geometry});
+    const entry = planetCellEntry(tile, camera, scale, centerX, centerY, behind);
+    if (entry) out.push(entry);
   }
   out.sort((a, b) => a.center.z - b.center.z);
   return out;
+}
+// One tile's frame entry, or null when it has turned past `behind`: what
+// planetCells keeps, for anything that needs a single cell of the frame.
+function planetCellEntry(tile, camera, scale, centerX, centerY, behind = -.03) {
+  const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY);
+  return geometry && geometry.center.z > behind ? {tile, ...geometry} : null;
 }
 
 // ------------------------------------------------------------- the sky beyond
