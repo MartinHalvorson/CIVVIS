@@ -2655,6 +2655,10 @@ function syncPlayerHudColumnGrips() {
   if (!layer) return;
   const seams = playerHudColumnSeams();
   const origin = heading.getBoundingClientRect().left;
+  // Measure every seam first and place the grips after: writing one between two
+  // readings makes the browser lay the whole masthead out again for each grip,
+  // once per seam per turn.
+  const placed = [];
   for (const grip of layer.children) {
     const seam = seams[Number(grip.dataset.hudColumnSeam)];
     const left = seam && playerHudHeadingCell(heading, seam.left)?.getBoundingClientRect();
@@ -2663,9 +2667,12 @@ function syncPlayerHudColumnGrips() {
     // measures zero everywhere. Leave those bars where they are instead of
     // stacking all fifteen of them against the left edge.
     if (!left?.width || !right?.width) continue;
-    grip.style.left = `${Math.round(left.right - origin)}px`;
-    grip.setAttribute("aria-valuenow",
-      `${Math.round(left.width / (left.width + right.width) * 100)}`);
+    placed.push({grip, x:Math.round(left.right - origin),
+                 share:Math.round(left.width / (left.width + right.width) * 100)});
+  }
+  for (const {grip, x, share} of placed) {
+    grip.style.left = `${x}px`;
+    grip.setAttribute("aria-valuenow", `${share}`);
   }
 }
 
@@ -3179,6 +3186,8 @@ const RESPONSIVE_TEXT_RULES = [
   // exact amount it is too big by — and one size for every row is what keeps
   // four adjacent settings looking like one instrument.
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
+  // Watch pace sits alone above the age, so it is fitted on its own.
+  {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
   {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
@@ -4686,9 +4695,16 @@ function hash2(q, r) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+// The chart's size only changes when its frame does; asking on every paint
+// forces a layout of whatever the turn has just written.
+let miniCssSize = null;
+if (typeof ResizeObserver === "function")
+  new ResizeObserver(() => { miniCssSize = null; }).observe(mini);
 function syncMiniCanvas() {
-  const width = Math.max(1, Math.round(mini.clientWidth || 200));
-  const height = Math.max(1, Math.round(mini.clientHeight || 140));
+  if (!miniCssSize || typeof ResizeObserver !== "function")
+    miniCssSize = {width:Math.max(1, Math.round(mini.clientWidth || 200)),
+                   height:Math.max(1, Math.round(mini.clientHeight || 140))};
+  const {width, height} = miniCssSize;
   const backingWidth = Math.max(1, Math.round(width * DPR));
   const backingHeight = Math.max(1, Math.round(height * DPR));
   if (mini.width !== backingWidth) mini.width = backingWidth;
@@ -5508,6 +5524,12 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   viewerPerformance.lastUiAt = now;
   prunePerformanceSamples(viewerPerformance.frameSamples, now);
   prunePerformanceSamples(viewerPerformance.renderSamples, now);
+  // Reporting the canvas size reads layout, and nobody can see the report while
+  // its group is shut.
+  if (!document.getElementById("performance-options-settings")?.open) {
+    updateSimulationStatsDisplay(now);
+    return;
+  }
   const frameValues = viewerPerformance.frameSamples.map(sample => sample.value);
   const renderValues = viewerPerformance.renderSamples.map(sample => sample.value);
   const frameAverage = performanceAverage(frameValues);
@@ -8538,6 +8560,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawSoloHud();
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
+  // That was a complete paint, so the animation loop's clock starts from it:
+  // otherwise animTick paints the same world again in the very same frame, and
+  // every turn costs the map twice.
+  lastIdleDraw = performance.now();
   drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
@@ -14437,6 +14463,17 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
 let PLANET = null;            // {frequency, corners, cells}
 let PLANET_WANTED = null;     // frequency currently being fetched
 let PLANET_HIT_CELLS = [];
+// Which tiles a state shows changes only when the state does, and the globe and
+// its chart ask on every frame.
+let tileSightState = null, tileSightVisible = null, tileSightTurn = null;
+function tileSight() {
+  if (tileSightState !== state) {
+    tileSightState = state;
+    tileSightVisible = new Set(state.visible.map(key));
+    tileSightTurn = state.turn_visible ? new Set(state.turn_visible.map(key)) : tileSightVisible;
+  }
+  return {visible:tileSightVisible, turnVisible:tileSightTurn};
+}
 
 // The close strategic map needs Canvas 2D's very rich, per-tile vocabulary.
 // A small spinning world does not: by the time cities, units, and terrain
@@ -15025,9 +15062,28 @@ function planetStageCenter() {
 // it gets wrong the way old maps did — stretched sideways round the rim rather
 // than squashed flat against an edge — which is the whole reason a flat chart
 // of a round world was believable for as long as it was.
+// A frame projects some sixteen thousand points through one camera, and the
+// camera's angles only change between frames.
+const PLANET_PROJECT_TRIG = {latitude:NaN, longitude:NaN, roll:NaN,
+                             cosLat:1, sinLat:0, cosLon:1, sinLon:0, cosRoll:1, sinRoll:0};
+function planetProjectTrig(camera) {
+  const trig = PLANET_PROJECT_TRIG, roll = camera.roll || 0;
+  if (trig.latitude !== camera.latitude) {
+    trig.latitude = camera.latitude;
+    trig.cosLat = Math.cos(camera.latitude); trig.sinLat = Math.sin(camera.latitude);
+  }
+  if (trig.longitude !== camera.longitude) {
+    trig.longitude = camera.longitude;
+    trig.cosLon = Math.cos(camera.longitude); trig.sinLon = Math.sin(camera.longitude);
+  }
+  if (trig.roll !== roll) {
+    trig.roll = roll;
+    trig.cosRoll = Math.cos(roll); trig.sinRoll = Math.sin(roll);
+  }
+  return trig;
+}
 function planetProject(point, camera, scale, centerX, centerY) {
-  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
-  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const {cosLat, sinLat, cosLon, sinLon, cosRoll, sinRoll} = planetProjectTrig(camera);
   const along = cosLon * point[0] + sinLon * point[1];
   const east = -sinLon * point[0] + cosLon * point[1];
   const north = -sinLat * along + cosLat * point[2];
@@ -15036,7 +15092,6 @@ function planetProject(point, camera, scale, centerX, centerY) {
   // Roll the hemisphere in the picture plane, which leaves what is in front of
   // the camera alone: the same rigid turn a flat board gets, so world north
   // lands in the same screen direction at the same yaw in either topology.
-  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
   let spread = radius;
   if (camera.chart) {
     // The angle from what the viewer is centred on, laid down as a length.
@@ -15260,7 +15315,10 @@ function planetPaintPath(context, cell, bleed = 0.8) {
   context.beginPath();
   appendPlanetPaintPath(context, cell, bleed);
 }
+// Half a dozen layers ask this of the same cell in one frame, and a frame's
+// cell records are built fresh by planetCells, so the first answer holds.
 function planetCellInradius(cell) {
+  if (cell.inradius !== undefined) return cell.inradius;
   const {points, center} = cell;
   let inradius = Infinity;
   for (let index = 0; index < points.length; index++) {
@@ -15271,7 +15329,7 @@ function planetCellInradius(cell) {
     inradius = Math.min(inradius,
       Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / length);
   }
-  return Number.isFinite(inradius) ? inradius : 0;
+  return cell.inradius = Number.isFinite(inradius) ? inradius : 0;
 }
 
 function pointInsidePlanetCell(x, y, points) {
@@ -17762,16 +17820,28 @@ const skyNavSpan = document.getElementById("skyspan");
 let SKY_NAV_UP = false, SKY_NAV_KEY = "", SKY_NAV_MARK = "", SKY_NAV_SPAN = "";
 let skyNavLadderHeld = false;
 let skyNavRefitFrame = 0, skyNavDockHeight = 0, skyNavDockHoldsStrip = false;
+let skyNavDockMeasured = null, skyNavDockObserver = null, skyNavDockPublishedHeight = null;
 function syncSkyNavDockGeometry() {
   const dock = document.getElementById("map-controls-dock");
-  const measuredHeight = dock?.getBoundingClientRect().height || 0;
-  const height = Math.max(46, Math.round(measuredHeight));
+  // The bar's height changes only when the bar does, and a custom property set
+  // on the map area restyles everything inside it, so neither happens per paint.
+  if (skyNavDockMeasured === null || typeof ResizeObserver !== "function")
+    skyNavDockMeasured = dock?.getBoundingClientRect().height || 0;
+  if (dock && !skyNavDockObserver && typeof ResizeObserver === "function") {
+    skyNavDockObserver = new ResizeObserver(() => { skyNavDockMeasured = null; });
+    skyNavDockObserver.observe(dock);
+  }
+  const height = Math.max(46, Math.round(skyNavDockMeasured));
   const edge = responsivePanelGeometry.edge || 4;
   const gap = responsivePanelGeometry.gap || 6;
   const clearance = edge + height + gap;
-  area.style.setProperty("--panel-control-height", `${height}px`);
-  area.style.setProperty("--panel-controls-clearance", `${clearance}px`);
-  responsivePanelGeometry.controlClearance = clearance;
+  if (clearance !== responsivePanelGeometry.controlClearance ||
+      height !== skyNavDockPublishedHeight) {
+    skyNavDockPublishedHeight = height;
+    area.style.setProperty("--panel-control-height", `${height}px`);
+    area.style.setProperty("--panel-controls-clearance", `${clearance}px`);
+    responsivePanelGeometry.controlClearance = clearance;
+  }
   // A world can gain or lose its sky while the bar is down, with the dock's
   // height unchanged, and the fitted map's bottom edge has to hear about that.
   const holdsStrip = skyNavAvailable();
@@ -22106,8 +22176,7 @@ function drawPlanetMap() {
   // everything below draws around wherever the Earth actually is rather than
   // around the middle of the window.
   const [centerX, centerY] = planetEarthCenter(radius);
-  const visible = new Set(state.visible.map(key));
-  const turnVisible = new Set((state.turn_visible || state.visible).map(key));
+  const {visible, turnVisible} = tileSight();
   const spectator = !Number.isInteger(state.view_player);
   const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
@@ -24156,7 +24225,7 @@ function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
   const projection = planetMiniProjection(width, height);
-  const visible = new Set((state.turn_visible || state.visible).map(key));
+  const visible = tileSight().turnVisible;
   const spectator = !Number.isInteger(state.view_player);
   const index = planetMiniCellIndex();
   for (const entry of index.entries) {
@@ -24937,13 +25006,14 @@ function hudTurnPlate() {
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    `watch pace ${watchPace}; ` +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
-    `watch pace ${watchPace}; ` +
+    `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
+    `${turnStructureName.toLowerCase()} turns`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -24954,7 +25024,8 @@ function hudTurnPlate() {
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age").
+  // 2026-10-14: "live time can be a very top section above the age"). Watch
+  // pace sits directly under it, still above the age (operator 2026-11-09).
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -24962,6 +25033,7 @@ function hudTurnPlate() {
       ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
         `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
+    `<div class="turn-setting turn-pace-line"><span>Watch pace:</span>${watchPaceValue}</div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -24971,11 +25043,10 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +
-    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
-    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
+    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `</div></section>`;
 }
 
@@ -25128,9 +25199,10 @@ function ribbonScore(value) {
 
 // Tooltips retain thousands separators while following the HUD's whole-number
 // presentation.
+const EXACT_STAT_FORMAT = new Intl.NumberFormat();
 function exactStat(value) {
   const n = Number(value) || 0;
-  return Math.round(n).toLocaleString();
+  return EXACT_STAT_FORMAT.format(Math.round(n));
 }
 
 function foundedReligionMarker(player) {
@@ -25297,7 +25369,7 @@ function drawPlayerHud() {
       if (statsBody) statsBody.scrollTop = statsScroll;
     }
     const rail = victoryHud.querySelector(".hud-rail");
-    if (rail) rail.scrollTop = victoryScroll;
+    if (rail && victoryScroll) rail.scrollTop = victoryScroll;
   }
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
@@ -25618,7 +25690,7 @@ function drawPlayerHud() {
   hud.innerHTML = html;
   syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
-  if (playerRibbon) playerRibbon.scrollTop = playerScroll;
+  if (playerRibbon && playerScroll) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the elements the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
@@ -25630,7 +25702,7 @@ function drawPlayerHud() {
   syncPlayerHudColumns();
   syncHudColumnRoster();
   const playerStandings = hud.querySelector(".player-standings");
-  if (playerStandings) playerStandings.scrollLeft = playerScrollLeft;
+  if (playerStandings && playerScrollLeft) playerStandings.scrollLeft = playerScrollLeft;
   // innerHTML also replaced the plate seam; restamp its live automatic or
   // preferred width and accessibility range.
   syncTurnPlateWidth();
@@ -30137,7 +30209,7 @@ function drawSide(force = true) {
   drawReasoning();
   drawWarLog();
   drawEvents();
-  if (scroller) scroller.scrollTop = Math.min(priorScroll, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+  if (scroller && priorScroll) scroller.scrollTop = Math.min(priorScroll, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
 }
 
 // ---------------------------------------------------------------- trees

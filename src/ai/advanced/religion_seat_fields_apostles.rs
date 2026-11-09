@@ -292,6 +292,28 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
+        self.claim_religion_seat_faith_economy_in(g, pid, plan, None);
+    }
+
+    /// The hint owns only its requested city's queue, not another city's
+    /// earlier position in the empire-wide claim order.
+    pub(super) fn claim_religion_seat_faith_hint(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        city: u32,
+    ) {
+        self.claim_religion_seat_faith_economy_in(g, pid, plan, Some(city));
+    }
+
+    fn claim_religion_seat_faith_economy_in(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        only_city: Option<u32>,
+    ) {
         if !self.religion_seat_builds_holy_sites
             || self.base.book_pos < 4
             || self.active_victory_target(g) != Some(VictoryTarget::Religion)
@@ -301,7 +323,11 @@ impl AdvancedAi {
         let Some(religion) = g.players[pid].religion.clone() else {
             return;
         };
-        let cities = g.player_city_ids(pid);
+        let cities: Vec<u32> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| only_city.is_none_or(|wanted| wanted == *cid))
+            .collect();
         for family in ["shrine", "temple"] {
             for cid in &cities {
                 let city = &g.cities[cid];
@@ -351,7 +377,40 @@ impl AdvancedAi {
                 }
             }
         }
-        self.religion_seat_claims_a_holy_site(g, pid);
+        if only_city.is_none() {
+            self.religion_seat_claims_a_holy_site(g, pid);
+        }
+    }
+
+    /// Keep the founder's legal Shrine/Temple through ordinary rescoring,
+    /// including its first frame with no invested production. Siege and
+    /// insolvency preemption still run before the governor's reservation.
+    pub(super) fn religion_seat_faith_building_reserved(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        if !self.religion_seat_builds_holy_sites
+            || self.base.book_pos < 4
+            || self.active_victory_target(g) != Some(VictoryTarget::Religion)
+            || plan.threatened_city == Some(cid)
+        {
+            return false;
+        }
+        let Some(religion) = g.players[pid].religion.as_deref() else {
+            return false;
+        };
+        let city = &g.cities[&cid];
+        matches!(item, Item::Building { building }
+            if g.building_is_family(*building, crate::name!("shrine"))
+                || g.building_is_family(*building, crate::name!("temple")))
+            && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            && g.city_religion(city) == Some(religion)
+            && g.city_has_district_family(city, crate::name!("holy_site"))
+            && Self::production_commitment_is_legal(g, pid, cid, item)
     }
 
     /// `religion-seat-builds-holy-sites`: the idle city of ours with the best

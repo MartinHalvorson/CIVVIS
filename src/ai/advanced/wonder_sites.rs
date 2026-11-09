@@ -145,6 +145,7 @@ impl AdvancedAi {
             + self.coastal_city_site_prefilter_bonus(g, pid, pos)
             + self.fresh_water_site_bonus(g, pid, pos)
             + self.nusantara_shore_site_bonus(g, pid, pos)
+            + self.mother_russia_prefilter_credit(g, pid, pos)
             + Self::early_city_water_adjustment(g, pid, pos);
         if !self.wonder_adjacent_sites_on() {
             return score;

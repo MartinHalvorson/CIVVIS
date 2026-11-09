@@ -272,5 +272,56 @@ class ReligionNeverFoundedReading(unittest.TestCase):
         self.assertNotIn("no_religion_since", state)
 
 
+def deficit_record(turn, ours, *rivals, **extra) -> dict:
+    return {"kind": "state", "ctx": "agent", "turn": turn,
+            "public_stats": {"city_count": ours},
+            "rivals": [{"civ": f"CIVILIZATION_{index}", "public_stats": {"city_count": count}}
+                       for index, count in enumerate(rivals)], **extra}
+
+
+class CityDeficitReading(unittest.TestCase):
+    """Operator 2026-11-09: "restart if we ever have 8 or more less cities than someone"."""
+
+    def test_one_reading_eight_behind_fires_and_names_the_leader(self):
+        reading = civ6_play.city_deficit_reading(deficit_record(92, 2, 5, 10, 7), 8)
+        self.assertEqual(reading, {"rule": "city_deficit", "turn": 92, "ours": 2,
+                                   "leader": "CIVILIZATION_1", "leader_cities": 10,
+                                   "deficit": 8, "fires": True})
+
+    def test_seven_behind_does_not_fire(self):
+        self.assertIsNone(civ6_play.city_deficit_reading(deficit_record(92, 3, 10), 8))
+
+    def test_a_rival_we_lead_does_not_fire(self):
+        self.assertIsNone(civ6_play.city_deficit_reading(deficit_record(92, 12, 3), 8))
+
+    def test_a_failed_rival_read_is_ignored(self):
+        self.assertIsNone(civ6_play.city_deficit_reading(deficit_record(92, 3, -1), 8))
+        self.assertIsNotNone(civ6_play.city_deficit_reading(deficit_record(92, 3, -1, 11), 8))
+
+    def test_off_and_unreadable_records_say_nothing(self):
+        self.assertIsNone(civ6_play.city_deficit_reading(deficit_record(92, 1, 20), 0))
+        for record in (deficit_record(92, -1, 20),
+                       deficit_record(92, True, 20),
+                       deficit_record(92, 1, 20, ctx="autoclose"),
+                       deficit_record(92, 1, 20, kind="turn"),
+                       deficit_record(92, 1),
+                       deficit_record("92", 1, 20),
+                       deficit_record(92, 1, 20, rivals=None),
+                       deficit_record(92, 1, 20, public_stats=None)):
+            self.assertIsNone(civ6_play.city_deficit_reading(record, 8), record)
+
+    def test_policy_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy"
+            for text, expected in (("CIVVIS_RESTART_CITY_DEFICIT=8\n", 8),
+                                   ("CIVVIS_RESTART_CITY_DEFICIT=0\n", 0),
+                                   ("CIVVIS_RESTART_CITY_DEFICIT=many\n", 0),
+                                   ("CIVVIS_RESTART_CITY_DEFICIT=-2\n", 0),
+                                   ("OTHER=8\n", 0)):
+                path.write_text(text)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(civ6_play.city_deficit_policy(path), expected, text)
+
+
 if __name__ == "__main__":
     unittest.main()
