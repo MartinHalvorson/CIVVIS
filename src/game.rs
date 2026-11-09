@@ -702,6 +702,9 @@ mod power_tests;
 mod maintenance_tests;
 
 #[cfg(test)]
+mod tourism_clamp_tests;
+
+#[cfg(test)]
 mod government_runtime_tests;
 
 #[cfg(test)]
@@ -13024,7 +13027,7 @@ impl Game {
         let player = &self.players[source];
         let religious = player
             .religious_tourism_lifetime
-            .clamp(0.0, player.tourism_lifetime);
+            .clamp(0.0, player.tourism_lifetime.max(0.0));
         let targeted_total = player.targeted_tourism.values().copied().sum::<f64>();
         let secular = (player.tourism_lifetime - religious - targeted_total).max(0.0);
         let targeted = player.targeted_tourism.get(&target).copied().unwrap_or(0.0);
@@ -13040,6 +13043,10 @@ impl Game {
         film_studio_tourism: f64,
         film_studio_religious: f64,
     ) {
+        // A per-turn total is a sum of percentage-scaled sources and can come
+        // out a hair below zero (-7e-5 on a mirrored board), and `clamp`
+        // panics whenever its upper bound is below its lower one.
+        let tourism = tourism.max(0.0);
         let religious = religious.clamp(0.0, tourism);
         let pressure: Vec<(usize, f64)> = self
             .players
@@ -13065,7 +13072,7 @@ impl Game {
                     } else {
                         0.0
                     })
-                .clamp(0.0, target_tourism);
+                .clamp(0.0, target_tourism.max(0.0));
                 let target_secular = (target_tourism - target_religious).max(0.0);
                 let added = target_secular
                     * self.international_tourism_multiplier(pid, target.id, false)

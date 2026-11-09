@@ -377,8 +377,17 @@ local dialogueObserved = false;
 local dialogueChoice = nil;
 local dialogueCallback = nil;
 local dialogueAnswered = false;
-local dialogueStatement = nil;
+local dialogueContext = "";
 local dialogueWarWithheld = false;
+local function responseString(value)
+    if type(value) ~= "string" then return "null"; end
+    return '"' .. string.gsub(value, '[%z\1-\31\\"]', function(c)
+        return string.format('\\u%04x', string.byte(c));
+    end) .. '"';
+end
+local function responsePlayer(value)
+    return type(value) == "number" and value % 1 == 0 and tostring(value) or "null";
+end
 -- Gene `dialogue-never-declares-war`. Civ VI binds some answers to a war:
 -- WARNING_TOO_MANY_TROOPS_NEAR_ME_FROM_AI's CHOICE_NEGATIVE carries
 -- DIPLOACTION_DECLARE_SURPRISE_WAR (DiplomacyStatements_Warning.xml), and the
@@ -414,7 +423,13 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
         firstMeetChoice = nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
-        dialogueStatement = type(statementType) == "string" and statementType or nil;
+        -- Shipped ApplyStatement passes the response subtype and actors to
+        -- ExtractStatement (DiplomacyActionView.lua:566-569). Both delegation
+        -- acceptance and refusal offer EXIT; the choice alone cannot tell them apart.
+        dialogueContext = string.format(',"statement":%s,"subtype":%s,"from_player":%s,"to_player":%s,"initiator":%s',
+            responseString(statementType), responseString(subType),
+            responsePlayer(statement.FromPlayer), responsePlayer(toPlayer),
+            responsePlayer(statement.Initiator));
         dialogueWarWithheld = false;
         stockApply(handler, statementType, subType, toPlayer, statement);
         local firstMeet = type(statementType) == "string"
@@ -674,6 +689,9 @@ local function endScreen(attempt)
     if NAME == "DiplomacyActionView" and dialogueChoice ~= nil
             and not dialogueAnswered and type(dialogueCallback) == "function" then
         local choice, callback = dialogueChoice, dialogueCallback;
+        -- Dispatch can install a follow-up synchronously. Record the response
+        -- being answered, including its war guard, before invoking its callback.
+        local context = dialogueContext .. (dialogueWarWithheld and ',"war_withheld":true' or '');
         dialogueAnswered = true;
         local ok = pcall(function() callback(choice); end);
         -- A callback may synchronously replace this statement. Do not mark
@@ -681,9 +699,8 @@ local function endScreen(attempt)
         if not ok and dialogueCallback == callback and dialogueChoice == choice then
             dialogueAnswered = false;
         end
-        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s,"statement":"%s"%s',
-            choice, tostring(ok), tostring(dialogueStatement),
-            dialogueWarWithheld and ',"war_withheld":true' or ''));
+        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s%s',
+            choice, tostring(ok), context));
         return ok;
     end
     if NAME == "DiplomacyActionView" and firstMeetChoice ~= nil then
@@ -1046,6 +1063,7 @@ else
         firstMeetChoice = nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
+        dialogueContext = "";
 		showing = false;
 		controllerPulseSeconds = 0;
 		remaining = 0;

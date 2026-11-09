@@ -1390,6 +1390,9 @@ impl Game {
     }
 
     pub(crate) fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
+        if self.blocked_improvement_sites.contains(&pos) {
+            return vec![];
+        }
         let Some(tile) = self.map.get(pos) else {
             return vec![];
         };
@@ -1450,6 +1453,11 @@ impl Game {
             && self.tree_effect(pid, "plant_woods") > 0.0
         {
             operations.push("plant_woods".to_string());
+        }
+        // Clearing uses Action::Improve too. Respect the same host exclusions
+        // as ordinary improvements, before a planner spends the unit's turn.
+        if let Some(refused) = self.blocked_improvements.get(&pos) {
+            operations.retain(|operation| !refused.contains(&Name::new(operation)));
         }
         operations
     }
@@ -3176,6 +3184,17 @@ impl Game {
         cost
     }
 
+    /// Gitarja (Indonesia's only leader): every naval military unit may be
+    /// bought with Faith. Shipped `TRAIT_LEADER_EXALTED_GODDESS`
+    /// ("Naval units can be purchased with Faith"); live Indonesia games
+    /// export Faith prices for Galleys, Quadriremes, Caravels, Privateers and
+    /// Ironclads that the model used to refuse.
+    pub(crate) fn exalted_goddess_naval(player: &Player, spec: &crate::rules::UnitSpec) -> bool {
+        player.civ == "Indonesia"
+            && spec.class == "military"
+            && matches!(spec.domain.as_deref(), Some("sea"))
+    }
+
     pub(super) fn unit_purchase_cost_for_formation_uncached(
         &self,
         pid: usize,
@@ -3276,7 +3295,11 @@ impl Game {
                             })
                             .sum::<f64>()
                             > 0.0);
-                if !monumentality && !faith_land_combat {
+                // Gitarja's Exalted Goddess of the Three Worlds: naval units
+                // can be purchased with Faith (`Indonesia_Khmer_GameplayData.xml`,
+                // `TRAIT_LEADER_EXALTED_GODDESS`; the live host quotes them).
+                let exalted_goddess = Self::exalted_goddess_naval(player, spec);
+                if !monumentality && !faith_land_combat && !exalted_goddess {
                     return None;
                 }
             }
@@ -3534,7 +3557,9 @@ impl Game {
                             })
                             .sum::<f64>()
                             > 0.0);
-                if !monumentality && !faith_land_combat {
+                // See `unit_purchase_cost_for_formation_uncached`.
+                let exalted_goddess = Self::exalted_goddess_naval(&self.players[pid], spec);
+                if !monumentality && !faith_land_combat && !exalted_goddess {
                     return Err("faith cannot purchase that unit".into());
                 }
             }
@@ -6637,3 +6662,7 @@ mod gran_colombia_promotions_tests;
 
 #[cfg(test)]
 mod ranged_visibility_tests;
+
+#[cfg(test)]
+#[path = "builder_operation_refusal_tests.rs"]
+mod builder_operation_refusal_tests;

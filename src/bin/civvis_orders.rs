@@ -49,6 +49,8 @@ use verification::*;
 
 #[path = "civvis_orders/builder_diagnostics.rs"]
 mod builder_diagnostics;
+#[path = "civvis_orders/builder_operation_refusals.rs"]
+mod builder_operation_refusals;
 
 #[path = "civvis_orders/trader_origin_coverage.rs"]
 mod trader_origin_coverage;
@@ -4752,6 +4754,17 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_confirmed_host_deaths(&planned_game, state);
+    let refused_builder_operations = builder_operation_refusals::refused_operations(
+        &planned_game,
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    );
+    let builder_operations_held: usize = refused_builder_operations
+        .values()
+        .map(|ops| ops.len())
+        .sum();
+    ai.set_refused_builder_operations(refused_builder_operations);
     air_assault::apply_cooldowns(
         &mut planned_game,
         &mirror_state.civ6_of,
@@ -4849,6 +4862,9 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    if builder_operations_held > 0 {
+        note_bits.push(format!("builder_operations_held={builder_operations_held}"));
+    }
     // `food-focus-grows-the-small-city`: see `citizen_growth::choices`.
     let citizen_growth_orders = append_citizen_growth_orders(
         snapshot,

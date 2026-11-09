@@ -4483,6 +4483,9 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Spend foreign spreads on the civilizations still needed for victory.
+    // The host majority verdict includes unseen cities. See `religion_majorities.rs`.
+    Gene { tag: "religion-finishes-majorities", field: "religion_finishes_majorities", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_finishes_majorities, disable: AdvancedAi::disable_religion_finishes_majorities },
     // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
     // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
     // our own faith war on Macedon as "another major war", although
@@ -5436,13 +5439,41 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
     // ---- append: e-f ------------------------------------------------
+    // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
+    // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
+    // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion
+    // and made no Faith purchase in three games. A threatened coastal city
+    // buys the strongest ranged ship for Faith before the Gold defender buy.
+    // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+    Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
+    // First-slot ranged support. Leaves later recon settings unchanged;
+    // the opening Scout is displaced. No Native strength claim.
+    Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
+    // A Religion-target founder claims a Holy Site in each idle city. Unpriced, off.
+    Gene { tag: "religion-seat-builds-holy-sites", field: "religion_seat_builds_holy_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_builds_holy_sites, disable: AdvancedAi::disable_religion_seat_builds_holy_sites },
+    // A Religion-target founder saves for an Apostle-led corps. Unpriced, off.
+    Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
+    // A Religion-target founder's corps yields only to a killing blow; its Apostles fight first. Unpriced, off.
+    Gene { tag: "religion-seat-presses-the-campaign", field: "religion_seat_presses_the_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_presses_the_campaign, disable: AdvancedAi::disable_religion_seat_presses_the_campaign },
+    // A Religion-target seat races its Holy Site and Prayers ahead of its queues until it founds. Unpriced, off.
+    Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
+    // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
+    Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
+    // Version three of `parity-upgrades-before-it-buys`: version two's bar
+    // measured the world era, which at Online speed is a clock (era 2 at turn
+    // 51, era 5 at 111), so it refused nearly every gold military purchase
+    // from turn 51, early-war defenders included (disarmed 2026-11-05). Here a
+    // unit is obsolete at three or more eras behind our own newest technology,
+    // on the parity path and the base wartime purchases. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
