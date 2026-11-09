@@ -423,6 +423,75 @@ fn a_race_near_its_threshold_all_but_settles_the_game() {
     assert!((total(&racing, |seat| seat.now) - 1.0).abs() < 1e-9);
 }
 
+/// The Science meter reads nothing until the first launch, so before then the
+/// road to that victory is the tech lead, and it counts only while Science can
+/// still end the game.
+#[test]
+fn a_tech_lead_is_the_road_to_science() {
+    let mut game = even_table(4, "prince", &[]);
+    for pid in 0..4 {
+        found_capital(&mut game, pid);
+    }
+    game.turn = 120;
+    let techs: Vec<_> = game.rules.techs.keys().take(24).cloned().collect();
+    game.players[1].techs.extend(techs);
+    let science_open = table(&game, flat);
+    assert_eq!(
+        game.victory_races(1, 0).science,
+        0.0,
+        "no launch yet, so the meter cannot see it"
+    );
+    game.victory_conditions.science = false;
+    let science_closed = table(&game, flat);
+    assert!(
+        science_open[&1].now > science_closed[&1].now,
+        "with Science open the tech lead is worth more: {} vs {}",
+        science_open[&1].now,
+        science_closed[&1].now
+    );
+    assert!((total(&science_open, |seat| seat.now) - 1.0).abs() < 1e-9);
+}
+
+/// Religious and Diplomatic races really do end games, so their meters are read
+/// as they stand. Squaring them looked right on Deity host games, where neither
+/// race ever finished, and cost the eventual winner about twenty points in the
+/// last thirty turns of the simulated games those races decided.
+#[test]
+fn a_contested_race_is_read_at_face_value() {
+    let mut game = even_table(4, "prince", &[]);
+    for pid in 0..4 {
+        found_capital(&mut game, pid);
+    }
+    game.turn = 150;
+    game.players[0].dvp = 15;
+    assert_eq!(closest_victory(&game, 0, 0).earned_pct, 75.0);
+    let odds = table(&game, flat);
+    assert!(
+        odds[&0].now > 0.85,
+        "three quarters of a race that ends the game is close to it: {}",
+        odds[&0].now
+    );
+}
+
+/// Holding your own capital is where every seat starts. It is not a sixth of a
+/// Domination victory, and finishing the race must still read as finished.
+#[test]
+fn the_share_every_seat_holds_for_free_is_not_progress() {
+    assert_eq!(beyond_free_share(25.0, 25.0), 0.0);
+    assert_eq!(
+        beyond_free_share(10.0, 25.0),
+        0.0,
+        "a lost capital is not negative"
+    );
+    assert!((beyond_free_share(50.0, 25.0) - 100.0 / 3.0).abs() < 1e-9);
+    assert_eq!(beyond_free_share(100.0, 25.0), 100.0);
+    assert_eq!(
+        beyond_free_share(40.0, 100.0),
+        40.0,
+        "no share left to remove"
+    );
+}
+
 /// The same lead is worth more with less clock left to overturn it.
 #[test]
 fn the_same_lead_is_worth_more_late() {

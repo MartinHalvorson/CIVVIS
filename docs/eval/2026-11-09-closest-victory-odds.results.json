@@ -1,0 +1,1505 @@
+{
+ "schema": "civvis-closest-victory-odds-eval-v1",
+ "baseline": "origin/main a203ad09dc odds_export",
+ "candidate": "this change, final build",
+ "lower_is_better": [
+  "log_loss",
+  "brier"
+ ],
+ "selection_set": {
+  "host_audited_games": 58,
+  "simulated_seeds": "9400000-9400035, 36 games",
+  "variant_comparison_vs_baseline": {
+   "first draft: curve on Religious and Diplomatic, both free shares": {
+    "host_t50_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0623,
+     "log_loss_95": [
+      -0.0903,
+      -0.0354
+     ],
+     "brier_difference": -0.00497,
+     "brier_95": [
+      -0.0075,
+      -0.00245
+     ]
+    },
+    "host_t125_plus": {
+     "games": 58,
+     "log_loss_difference": -0.1178,
+     "log_loss_95": [
+      -0.1661,
+      -0.0705
+     ],
+     "brier_difference": -0.00956,
+     "brier_95": [
+      -0.01414,
+      -0.00504
+     ]
+    },
+    "sim_t20_plus": {
+     "games": 36,
+     "log_loss_difference": 0.0243,
+     "log_loss_95": [
+      -0.0272,
+      0.0797
+     ],
+     "brier_difference": 0.00406,
+     "brier_95": [
+      -0.004,
+      0.01313
+     ]
+    },
+    "sim_last_30_turns": {
+     "games": 36,
+     "log_loss_difference": 0.1875,
+     "log_loss_95": [
+      0.0531,
+      0.347
+     ],
+     "brier_difference": 0.02667,
+     "brier_95": [
+      0.0059,
+      0.05174
+     ]
+    },
+    "sim_religious_last_30_turns": {
+     "games": 26,
+     "log_loss_difference": 0.2805,
+     "log_loss_95": [
+      0.1381,
+      0.4532
+     ],
+     "brier_difference": 0.04387,
+     "brier_95": [
+      0.02035,
+      0.07291
+     ]
+    },
+    "sim_diplomatic_last_30_turns": {
+     "games": 5,
+     "log_loss_difference": -0.0299,
+     "log_loss_95": [
+      -0.3665,
+      0.2118
+     ],
+     "brier_difference": -0.00542,
+     "brier_95": [
+      -0.05716,
+      0.02744
+     ]
+    },
+    "sim_culture_last_30_turns": {
+     "games": 2,
+     "log_loss_difference": -0.2055,
+     "log_loss_95": [
+      -0.3755,
+      -0.0355
+     ],
+     "brier_difference": -0.03374,
+     "brier_95": [
+      -0.06511,
+      -0.00237
+     ]
+    },
+    "sim_score_last_30_turns": {
+     "games": 3,
+     "log_loss_difference": 0.0057,
+     "log_loss_95": [
+      -0.7411,
+      0.8267
+     ],
+     "brier_difference": -0.02863,
+     "brier_95": [
+      -0.1208,
+      0.04223
+     ]
+    }
+   },
+   "Religious untouched, Diplomatic curved": {
+    "host_t50_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0521,
+     "log_loss_95": [
+      -0.0714,
+      -0.0314
+     ],
+     "brier_difference": -0.00404,
+     "brier_95": [
+      -0.0059,
+      -0.00215
+     ]
+    },
+    "host_t125_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0913,
+     "log_loss_95": [
+      -0.1229,
+      -0.056
+     ],
+     "brier_difference": -0.00705,
+     "brier_95": [
+      -0.01018,
+      -0.00369
+     ]
+    },
+    "sim_t20_plus": {
+     "games": 36,
+     "log_loss_difference": -0.0119,
+     "log_loss_95": [
+      -0.0509,
+      0.0408
+     ],
+     "brier_difference": -0.00302,
+     "brier_95": [
+      -0.00731,
+      0.00181
+     ]
+    },
+    "sim_last_30_turns": {
+     "games": 36,
+     "log_loss_difference": 0.0269,
+     "log_loss_95": [
+      -0.0868,
+      0.1627
+     ],
+     "brier_difference": 0.00111,
+     "brier_95": [
+      -0.01376,
+      0.01921
+     ]
+    },
+    "sim_religious_last_30_turns": {
+     "games": 26,
+     "log_loss_difference": -0.068,
+     "log_loss_95": [
+      -0.1029,
+      -0.0322
+     ],
+     "brier_difference": -0.00876,
+     "brier_95": [
+      -0.01543,
+      -0.0023
+     ]
+    },
+    "sim_diplomatic_last_30_turns": {
+     "games": 5,
+     "log_loss_difference": 0.5534,
+     "log_loss_95": [
+      0.0149,
+      1.2192
+     ],
+     "brier_difference": 0.07567,
+     "brier_95": [
+      0.00525,
+      0.14609
+     ]
+    },
+    "sim_culture_last_30_turns": {
+     "games": 2,
+     "log_loss_difference": -0.0957,
+     "log_loss_95": [
+      -0.165,
+      -0.0264
+     ],
+     "brier_difference": -0.01815,
+     "brier_95": [
+      -0.0342,
+      -0.00211
+     ]
+    },
+    "sim_score_last_30_turns": {
+     "games": 3,
+     "log_loss_difference": 0.0533,
+     "log_loss_95": [
+      -0.7411,
+      0.8267
+     ],
+     "brier_difference": -0.02475,
+     "brier_95": [
+      -0.1208,
+      0.04223
+     ]
+    }
+   },
+   "shipped: tech road and Domination free share only": {
+    "host_t50_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0298,
+     "log_loss_95": [
+      -0.0438,
+      -0.016
+     ],
+     "brier_difference": -0.00229,
+     "brier_95": [
+      -0.0035,
+      -0.00108
+     ]
+    },
+    "host_t125_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0467,
+     "log_loss_95": [
+      -0.063,
+      -0.0305
+     ],
+     "brier_difference": -0.0036,
+     "brier_95": [
+      -0.00515,
+      -0.00204
+     ]
+    },
+    "sim_t20_plus": {
+     "games": 36,
+     "log_loss_difference": -0.0242,
+     "log_loss_95": [
+      -0.0513,
+      0.0087
+     ],
+     "brier_difference": -0.00359,
+     "brier_95": [
+      -0.0074,
+      0.00033
+     ]
+    },
+    "sim_last_30_turns": {
+     "games": 36,
+     "log_loss_difference": -0.0152,
+     "log_loss_95": [
+      -0.0568,
+      0.0396
+     ],
+     "brier_difference": -0.00162,
+     "brier_95": [
+      -0.0076,
+      0.00581
+     ]
+    },
+    "sim_religious_last_30_turns": {
+     "games": 26,
+     "log_loss_difference": -0.0256,
+     "log_loss_95": [
+      -0.0612,
+      0.0116
+     ],
+     "brier_difference": -0.00189,
+     "brier_95": [
+      -0.0077,
+      0.00427
+     ]
+    },
+    "sim_diplomatic_last_30_turns": {
+     "games": 5,
+     "log_loss_difference": 0.1041,
+     "log_loss_95": [
+      -0.1176,
+      0.4198
+     ],
+     "brier_difference": 0.01374,
+     "brier_95": [
+      -0.01274,
+      0.05201
+     ]
+    },
+    "sim_culture_last_30_turns": {
+     "games": 2,
+     "log_loss_difference": -0.0911,
+     "log_loss_95": [
+      -0.1606,
+      -0.0215
+     ],
+     "brier_difference": -0.01787,
+     "brier_95": [
+      -0.03403,
+      -0.00171
+     ]
+    },
+    "sim_score_last_30_turns": {
+     "games": 3,
+     "log_loss_difference": -0.0735,
+     "log_loss_95": [
+      -0.1471,
+      0.0358
+     ],
+     "brier_difference": -0.01398,
+     "brier_95": [
+      -0.02294,
+      -0.00172
+     ]
+    }
+   },
+   "tech road only": {
+    "host_t50_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0301,
+     "log_loss_95": [
+      -0.0438,
+      -0.0165
+     ],
+     "brier_difference": -0.00232,
+     "brier_95": [
+      -0.0035,
+      -0.00114
+     ]
+    },
+    "host_t125_plus": {
+     "games": 58,
+     "log_loss_difference": -0.0476,
+     "log_loss_95": [
+      -0.064,
+      -0.0316
+     ],
+     "brier_difference": -0.00367,
+     "brier_95": [
+      -0.00524,
+      -0.00211
+     ]
+    },
+    "sim_t20_plus": {
+     "games": 36,
+     "log_loss_difference": -0.0175,
+     "log_loss_95": [
+      -0.046,
+      0.0159
+     ],
+     "brier_difference": -0.00259,
+     "brier_95": [
+      -0.00664,
+      0.0014
+     ]
+    },
+    "sim_last_30_turns": {
+     "games": 36,
+     "log_loss_difference": 0.001,
+     "log_loss_95": [
+      -0.0402,
+      0.0553
+     ],
+     "brier_difference": 0.00079,
+     "brier_95": [
+      -0.00513,
+      0.00807
+     ]
+    },
+    "sim_religious_last_30_turns": {
+     "games": 26,
+     "log_loss_difference": -0.0033,
+     "log_loss_95": [
+      -0.0388,
+      0.0339
+     ],
+     "brier_difference": 0.00143,
+     "brier_95": [
+      -0.00426,
+      0.00734
+     ]
+    },
+    "sim_diplomatic_last_30_turns": {
+     "games": 5,
+     "log_loss_difference": 0.1041,
+     "log_loss_95": [
+      -0.1176,
+      0.4198
+     ],
+     "brier_difference": 0.01374,
+     "brier_95": [
+      -0.01274,
+      0.05201
+     ]
+    },
+    "sim_culture_last_30_turns": {
+     "games": 2,
+     "log_loss_difference": -0.0895,
+     "log_loss_95": [
+      -0.1606,
+      -0.0184
+     ],
+     "brier_difference": -0.01771,
+     "brier_95": [
+      -0.03403,
+      -0.00139
+     ]
+    },
+    "sim_score_last_30_turns": {
+     "games": 3,
+     "log_loss_difference": -0.0735,
+     "log_loss_95": [
+      -0.1471,
+      0.0358
+     ],
+     "brier_difference": -0.01398,
+     "brier_95": [
+      -0.02294,
+      -0.00172
+     ]
+    }
+   }
+  }
+ },
+ "held_out": "19 host games absent from the audit; simulated seeds 9500000-9500059, 60 games",
+ "final_build_windows": {
+  "host audited (chosen on) t50-124": {
+   "games": 51,
+   "ll_shipped": 1.54848,
+   "ll_new": 1.53187,
+   "ll_diff": -0.01661,
+   "ll_95": [
+    -0.03279,
+    -0.00159
+   ],
+   "brier_diff": -0.00124,
+   "brier_95": [
+    -0.00254,
+    -4e-05
+   ],
+   "fav_diff": 0.01307,
+   "fav_95": [
+    0.0,
+    0.03268
+   ]
+  },
+  "host audited (chosen on) t125+": {
+   "games": 51,
+   "ll_shipped": 1.29474,
+   "ll_new": 1.24878,
+   "ll_diff": -0.04595,
+   "ll_95": [
+    -0.0634,
+    -0.02882
+   ],
+   "brier_diff": -0.00338,
+   "brier_95": [
+    -0.00497,
+    -0.00175
+   ],
+   "fav_diff": 0.01634,
+   "fav_95": [
+    0.0,
+    0.04248
+   ]
+  },
+  "host audited (chosen on) t50+": {
+   "games": 51,
+   "ll_shipped": 1.43029,
+   "ll_new": 1.39981,
+   "ll_diff": -0.03049,
+   "ll_95": [
+    -0.0457,
+    -0.01647
+   ],
+   "brier_diff": -0.00225,
+   "brier_95": [
+    -0.00358,
+    -0.00101
+   ],
+   "fav_diff": 0.01373,
+   "fav_95": [
+    0.00327,
+    0.0281
+   ]
+  },
+  "host unseen t50-124": {
+   "games": 10,
+   "ll_shipped": 1.59878,
+   "ll_new": 1.5945,
+   "ll_diff": -0.00428,
+   "ll_95": [
+    -0.07865,
+    0.06351
+   ],
+   "brier_diff": -0.00042,
+   "brier_95": [
+    -0.00643,
+    0.00502
+   ],
+   "fav_diff": -0.05,
+   "fav_95": [
+    -0.3,
+    0.15
+   ]
+  },
+  "host unseen t125+": {
+   "games": 19,
+   "ll_shipped": 1.05597,
+   "ll_new": 1.00028,
+   "ll_diff": -0.05569,
+   "ll_95": [
+    -0.09599,
+    -0.0159
+   ],
+   "brier_diff": -0.00614,
+   "brier_95": [
+    -0.01107,
+    -0.00135
+   ],
+   "fav_diff": 0.04386,
+   "fav_95": [
+    -0.02632,
+    0.12281
+   ]
+  },
+  "host unseen t50+": {
+   "games": 19,
+   "ll_shipped": 1.16742,
+   "ll_new": 1.11994,
+   "ll_diff": -0.04748,
+   "ll_95": [
+    -0.08795,
+    -0.00655
+   ],
+   "brier_diff": -0.00521,
+   "brier_95": [
+    -0.00963,
+    -0.00089
+   ],
+   "fav_diff": 0.00789,
+   "fav_95": [
+    -0.07018,
+    0.07719
+   ]
+  },
+  "host all t50-124": {
+   "games": 61,
+   "ll_shipped": 1.55672,
+   "ll_new": 1.54214,
+   "ll_diff": -0.01459,
+   "ll_95": [
+    -0.03164,
+    0.00242
+   ],
+   "brier_diff": -0.00111,
+   "brier_95": [
+    -0.00246,
+    0.00026
+   ],
+   "fav_diff": 0.00273,
+   "fav_95": [
+    -0.04098,
+    0.03825
+   ]
+  },
+  "host all t125+": {
+   "games": 70,
+   "ll_shipped": 1.22993,
+   "ll_new": 1.18133,
+   "ll_diff": -0.0486,
+   "ll_95": [
+    -0.06506,
+    -0.03221
+   ],
+   "brier_diff": -0.00412,
+   "brier_95": [
+    -0.00591,
+    -0.00236
+   ],
+   "fav_diff": 0.02381,
+   "fav_95": [
+    0.0,
+    0.05238
+   ]
+  },
+  "host all t50+": {
+   "games": 70,
+   "ll_shipped": 1.35894,
+   "ll_new": 1.32385,
+   "ll_diff": -0.0351,
+   "ll_95": [
+    -0.05086,
+    -0.0203
+   ],
+   "brier_diff": -0.00305,
+   "brier_95": [
+    -0.00462,
+    -0.00157
+   ],
+   "fav_diff": 0.01214,
+   "fav_95": [
+    -0.01095,
+    0.03381
+   ]
+  },
+  "sim held-out t20+": {
+   "games": 60,
+   "ll_shipped": 1.05099,
+   "ll_new": 1.04284,
+   "ll_diff": -0.00815,
+   "ll_95": [
+    -0.03084,
+    0.01573
+   ],
+   "brier_diff": -0.0001,
+   "brier_95": [
+    -0.00364,
+    0.00357
+   ],
+   "fav_diff": -0.02865,
+   "fav_95": [
+    -0.05591,
+    -0.00194
+   ]
+  },
+  "sim held-out last30": {
+   "games": 60,
+   "ll_shipped": 0.63795,
+   "ll_new": 0.62031,
+   "ll_diff": -0.01764,
+   "ll_95": [
+    -0.04852,
+    0.01705
+   ],
+   "brier_diff": -0.00171,
+   "brier_95": [
+    -0.00679,
+    0.00385
+   ],
+   "fav_diff": 0.0,
+   "fav_95": [
+    -0.02778,
+    0.02778
+   ]
+  },
+  "sim held-out religious t20+": {
+   "games": 39,
+   "ll_shipped": 1.01186,
+   "ll_new": 0.99447,
+   "ll_diff": -0.01739,
+   "ll_95": [
+    -0.04334,
+    0.0116
+   ],
+   "brier_diff": -0.00178,
+   "brier_95": [
+    -0.00558,
+    0.00216
+   ],
+   "fav_diff": -0.03123,
+   "fav_95": [
+    -0.06669,
+    0.00046
+   ]
+  },
+  "sim held-out religious last30": {
+   "games": 39,
+   "ll_shipped": 0.57403,
+   "ll_new": 0.53268,
+   "ll_diff": -0.04134,
+   "ll_95": [
+    -0.07268,
+    -0.00897
+   ],
+   "brier_diff": -0.00478,
+   "brier_95": [
+    -0.01035,
+    0.00094
+   ],
+   "fav_diff": 0.0,
+   "fav_95": [
+    -0.04274,
+    0.04274
+   ]
+  },
+  "sim held-out diplomatic t20+": {
+   "games": 14,
+   "ll_shipped": 1.19537,
+   "ll_new": 1.23891,
+   "ll_diff": 0.04354,
+   "ll_95": [
+    -0.00438,
+    0.09358
+   ],
+   "brier_diff": 0.00881,
+   "brier_95": [
+    0.0011,
+    0.01721
+   ],
+   "fav_diff": -0.0485,
+   "fav_95": [
+    -0.11654,
+    0.00752
+   ]
+  },
+  "sim held-out diplomatic last30": {
+   "games": 14,
+   "ll_shipped": 0.85935,
+   "ll_new": 0.93758,
+   "ll_diff": 0.07824,
+   "ll_95": [
+    -0.00608,
+    0.1743
+   ],
+   "brier_diff": 0.01194,
+   "brier_95": [
+    -0.00061,
+    0.02517
+   ],
+   "fav_diff": -0.02381,
+   "fav_95": [
+    -0.07143,
+    0.0
+   ]
+  },
+  "sim held-out culture t20+": {
+   "games": 4,
+   "ll_shipped": 0.86876,
+   "ll_new": 0.78652,
+   "ll_diff": -0.08225,
+   "ll_95": [
+    -0.12736,
+    -0.03537
+   ],
+   "brier_diff": -0.01342,
+   "brier_95": [
+    -0.0217,
+    -0.00513
+   ],
+   "fav_diff": 0.04441,
+   "fav_95": [
+    0.0,
+    0.09375
+   ]
+  },
+  "sim held-out culture last30": {
+   "games": 4,
+   "ll_shipped": 0.32951,
+   "ll_new": 0.27261,
+   "ll_diff": -0.0569,
+   "ll_95": [
+    -0.08635,
+    -0.0234
+   ],
+   "brier_diff": -0.00641,
+   "brier_95": [
+    -0.01106,
+    -0.00253
+   ],
+   "fav_diff": 0.0,
+   "fav_95": [
+    0.0,
+    0.0
+   ]
+  },
+  "sim held-out score t20+": {
+   "games": 3,
+   "ll_shipped": 1.12882,
+   "ll_new": 1.09846,
+   "ll_diff": -0.03036,
+   "ll_95": [
+    -0.05506,
+    0.01283
+   ],
+   "brier_diff": -0.00219,
+   "brier_95": [
+    -0.00776,
+    0.00288
+   ],
+   "fav_diff": 0.0,
+   "fav_95": [
+    -0.04762,
+    0.04762
+   ]
+  },
+  "sim held-out score last30": {
+   "games": 3,
+   "ll_shipped": 0.84701,
+   "ll_new": 0.74252,
+   "ll_diff": -0.10449,
+   "ll_95": [
+    -0.19717,
+    0.02755
+   ],
+   "brier_diff": -0.01931,
+   "brier_95": [
+    -0.03997,
+    0.00378
+   ],
+   "fav_diff": 0.11111,
+   "fav_95": [
+    0.0,
+    0.33333
+   ]
+  }
+ },
+ "final_build_phases": {
+  "audited": {
+   "games": 51,
+   "phases": [
+    {
+     "phase": 0.1,
+     "games": 51,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13092374944702728,
+       "now": 0.12986662301732232,
+       "difference": -0.0010571264297049479,
+       "difference_95": [
+        -0.0023661745032381005,
+        0.00015534144151978398
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.578377595250378,
+       "now": 1.564740251978336,
+       "difference": -0.013637343272042064,
+       "difference_95": [
+        -0.030275667410719843,
+        0.001918256358851606
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.35294117647058826,
+       "now": 0.35294117647058826,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.15,
+     "games": 51,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13061788229928847,
+       "now": 0.1299248766735293,
+       "difference": -0.0006930056257591605,
+       "difference_95": [
+        -0.002038721717474827,
+        0.0006311484780096343
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.5725222342674112,
+       "now": 1.5635759967660274,
+       "difference": -0.008946237501383807,
+       "difference_95": [
+        -0.025745838328049317,
+        0.007476929849899974
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.29411764705882354,
+       "now": 0.3137254901960784,
+       "difference": 0.0196078431372549,
+       "difference_95": [
+        0.0,
+        0.058823529411764705
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.2,
+     "games": 51,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.12497893706920708,
+       "now": 0.12300350752927647,
+       "difference": -0.001975429539930623,
+       "difference_95": [
+        -0.0035980825703561966,
+        -0.0004146079798838557
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.4945303932193206,
+       "now": 1.4672935540709484,
+       "difference": -0.02723683914837224,
+       "difference_95": [
+        -0.04760957522853086,
+        -0.008495277123453174
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.37254901960784315,
+       "now": 0.39215686274509803,
+       "difference": 0.0196078431372549,
+       "difference_95": [
+        0.0,
+        0.058823529411764705
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.25,
+     "games": 51,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.12292919288182795,
+       "now": 0.1200576753290339,
+       "difference": -0.00287151755279405,
+       "difference_95": [
+        -0.004769951972704051,
+        -0.0009688930421122922
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.4493999687383103,
+       "now": 1.409289484648126,
+       "difference": -0.040110484090184285,
+       "difference_95": [
+        -0.06344110602397776,
+        -0.016894006823298485
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.35294117647058826,
+       "now": 0.35294117647058826,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.3,
+     "games": 50,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.1205660104529794,
+       "now": 0.1165549681360173,
+       "difference": -0.004011042316962095,
+       "difference_95": [
+        -0.0061777341390462336,
+        -0.001853302606319503
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.3978385726800746,
+       "now": 1.3405372013523282,
+       "difference": -0.05730137132774647,
+       "difference_95": [
+        -0.07849031067908836,
+        -0.035017797356818564
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.34,
+       "now": 0.36,
+       "difference": 0.02,
+       "difference_95": [
+        0.0,
+        0.06
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.35,
+     "games": 36,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.08731081255388046,
+       "now": 0.08426830982316051,
+       "difference": -0.0030425027307199462,
+       "difference_95": [
+        -0.004840981410074556,
+        -0.0011919824266234842
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.01143688276787,
+       "now": 0.9746328507576169,
+       "difference": -0.036804032010253195,
+       "difference_95": [
+        -0.05265751636617021,
+        -0.02064031203529127
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.6111111111111112,
+       "now": 0.6388888888888888,
+       "difference": 0.027777777777777776,
+       "difference_95": [
+        0.0,
+        0.08333333333333333
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    }
+   ]
+  },
+  "fresh": {
+   "games": 19,
+   "phases": [
+    {
+     "phase": 0.1,
+     "games": 7,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13308500170198156,
+       "now": 0.13243400390061524,
+       "difference": -0.0006509978013663169,
+       "difference_95": [
+        -0.004104387640712105,
+        0.0016124194526327764
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.6079430402554717,
+       "now": 1.6011111108928637,
+       "difference": -0.0068319293626080135,
+       "difference_95": [
+        -0.04822908118981352,
+        0.020441479801532405
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.42857142857142855,
+       "now": 0.42857142857142855,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.15,
+     "games": 7,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13308500170198156,
+       "now": 0.13243400390061524,
+       "difference": -0.0006509978013663169,
+       "difference_95": [
+        -0.004104387640712105,
+        0.0016124194526327764
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.6079430402554717,
+       "now": 1.6011111108928637,
+       "difference": -0.0068319293626080135,
+       "difference_95": [
+        -0.04822908118981352,
+        0.020441479801532405
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.42857142857142855,
+       "now": 0.42857142857142855,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.2,
+     "games": 8,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13528993416164575,
+       "now": 0.1349766969060524,
+       "difference": -0.0003132372555933547,
+       "difference_95": [
+        -0.008622250667391593,
+        0.004582590062009121
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.6382797506120812,
+       "now": 1.6419300239354844,
+       "difference": 0.0036502733234030915,
+       "difference_95": [
+        -0.09629509674086828,
+        0.06407073556249898
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.25,
+       "now": 0.125,
+       "difference": -0.125,
+       "difference_95": [
+        -0.375,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.25,
+     "games": 8,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13324317380603257,
+       "now": 0.1327632141151323,
+       "difference": -0.0004799596909002696,
+       "difference_95": [
+        -0.00870490699969117,
+        0.004388492313224624
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.6115064443369114,
+       "now": 1.611399056746168,
+       "difference": -0.00010738759074332971,
+       "difference_95": [
+        -0.09795900599432533,
+        0.06036478532887388
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.25,
+       "now": 0.25,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.3,
+     "games": 11,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.12701984103192815,
+       "now": 0.1262579244735599,
+       "difference": -0.0007619165583682305,
+       "difference_95": [
+        -0.00613136922383055,
+        0.004394980797995155
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.5290231187927394,
+       "now": 1.5253725412269823,
+       "difference": -0.003650577565757172,
+       "difference_95": [
+        -0.0670530839051169,
+        0.058461874598546765
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.36363636363636365,
+       "now": 0.36363636363636365,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.35,
+     "games": 13,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.11088631586670351,
+       "now": 0.11084228831090577,
+       "difference": -4.4027555797744536e-05,
+       "difference_95": [
+        -0.0042235455899930436,
+        0.004314294740333106
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.3368502813906382,
+       "now": 1.3379988240725567,
+       "difference": 0.0011485426819184898,
+       "difference_95": [
+        -0.051619258861307346,
+        0.05274930496940582
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.46153846153846156,
+       "now": 0.46153846153846156,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    }
+   ]
+  },
+  "all": {
+   "games": 70,
+   "phases": [
+    {
+     "phase": 0.1,
+     "games": 58,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13118459023641832,
+       "now": 0.1301764793308232,
+       "difference": -0.001008110905595113,
+       "difference_95": [
+        -0.002182361342862469,
+        0.00012205340722730033
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.5819458386130618,
+       "now": 1.5691298383990548,
+       "difference": -0.012816000214006919,
+       "difference_95": [
+        -0.028234153235464254,
+        0.001546217499576232
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.3620689655172414,
+       "now": 0.3620689655172414,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.15,
+     "games": 58,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.13091563808926868,
+       "now": 0.13022770237335002,
+       "difference": -0.0006879357159186449,
+       "difference_95": [
+        -0.0019487292615826273,
+        0.0004767886454275409
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.5767971591280392,
+       "now": 1.5681060967468525,
+       "difference": -0.008691062381186727,
+       "difference_95": [
+        -0.024750926652682685,
+        0.0059188251447233895
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.3103448275862069,
+       "now": 0.3275862068965517,
+       "difference": 0.017241379310344827,
+       "difference_95": [
+        0.0,
+        0.05172413793103448
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.2,
+     "games": 59,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.12637703836987674,
+       "now": 0.12462699083460202,
+       "difference": -0.0017500475352747224,
+       "difference_95": [
+        -0.0035456482097233027,
+        -0.00015501777150148745
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.5140218315098644,
+       "now": 1.4909730754085126,
+       "difference": -0.023048756101351858,
+       "difference_95": [
+        -0.04533024965657978,
+        -0.0032787627368306605
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.3559322033898305,
+       "now": 0.3559322033898305,
+       "difference": 0.0,
+       "difference_95": [
+        -0.05084745762711865,
+        0.05084745762711865
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.25,
+     "games": 59,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.1243276987698557,
+       "now": 0.12178046024918283,
+       "difference": -0.0025472385206728597,
+       "difference_95": [
+        -0.004544040100345615,
+        -0.0007769627052727469
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.4713805078025275,
+       "now": 1.4366941723902333,
+       "difference": -0.03468633541229399,
+       "difference_95": [
+        -0.05873318270389306,
+        -0.012855060899189053
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.3389830508474576,
+       "now": 0.3389830508474576,
+       "difference": 0.0,
+       "difference_95": [
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.3,
+     "games": 61,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.12172981596721606,
+       "now": 0.11830468157393483,
+       "difference": -0.003425134393281234,
+       "difference_95": [
+        -0.005444686960761859,
+        -0.0013768594958421816
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.4214948023069487,
+       "now": 1.3738681642805446,
+       "difference": -0.047626638026404135,
+       "difference_95": [
+        -0.06871772174781722,
+        -0.024811587783938334
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.3442622950819672,
+       "now": 0.36065573770491804,
+       "difference": 0.01639344262295082,
+       "difference_95": [
+        0.0,
+        0.06557377049180328
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    },
+    {
+     "phase": 0.35,
+     "games": 49,
+     "metrics": {
+      "brier": {
+       "shipped_now": 0.09356553792258862,
+       "now": 0.0913185490137868,
+       "difference": -0.0022469889088018113,
+       "difference_95": [
+        -0.0040010954724446456,
+        -0.00038271632867597805
+       ]
+      },
+      "log_loss": {
+       "shipped_now": 1.0977710497494209,
+       "now": 1.071036068167703,
+       "difference": -0.02673498158171785,
+       "difference_95": [
+        -0.04540644495995826,
+        -0.006910566471836988
+       ]
+      },
+      "favorite_accuracy": {
+       "shipped_now": 0.5714285714285714,
+       "now": 0.5918367346938775,
+       "difference": 0.02040816326530612,
+       "difference_95": [
+        0.0,
+        0.061224489795918366
+       ]
+      }
+     },
+     "zero_probability_winners": {
+      "shipped_now": 0,
+      "now": 0
+     }
+    }
+   ]
+  }
+ }
+}
