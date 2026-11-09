@@ -282,6 +282,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
+| `guru-walks-to-the-wounded` | off (unmeasured) | Opt-in gene `guru-walks-to-the-wounded`; see `advanced/guru_walks_to_the_wounded.rs`. | 1 \| 1 |
 | `gutted-rival-passes-the-edge` | off (unmeasured) | `gutted-rival-passes-the-edge`: a staged declaration by a Domination lane passes the peak edge against a target at 60% or less of its 30-turn peak, at 1.5 times what it has left. | 1 \| 1 |
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
 | `hint-runs-the-claims` | off (unmeasured) | Opt-in gene `hint-runs-the-claims`; see `Self::hint_runs_the_claims`. | 1 \| 1 |
