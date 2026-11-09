@@ -446,7 +446,7 @@ impl AdvancedAi {
         let grown = |flat: f64, delay: f64| grown_turns(flat, delay, growth.economy, origin);
         // A measured increase can widen the optimistic bound, but never invent
         // a faster central estimate or erase a missing project prerequisite.
-        let growth = old.map_or(1.0, |before| {
+        let observed_rise = old.map_or(1.0, |before| {
             (science / before.yields.science.max(1.0)).clamp(1.0, 1.5)
         });
         let pad = crate::name!("spaceport");
@@ -530,7 +530,7 @@ impl AdvancedAi {
         );
         forecast.optimistic_finish_turn = Some(
             f64::from(g.turn)
-                + production_ready / growth
+                + production_ready / observed_rise
                 + g.science_victory_points_needed(pid) / 2.0,
         );
         forecast
