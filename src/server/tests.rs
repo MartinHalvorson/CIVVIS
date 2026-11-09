@@ -14218,9 +14218,18 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
             "a turning world must yield to whatever else is aiming the camera: {guard}"
         );
     }
-    // The watched-empire reframe arrives ten times a second. Left to
-    // argue with the turn it would win every observation, so it waits.
-    assert!(js.contains("!dragState && !touchGesture && !spinRunning())"));
+    // Watch as frames one empire and keeps it framed, so the world holds
+    // still for it rather than carrying that empire off the stage.
+    assert!(
+        js.split_once("function spinAvailable()")
+            .expect("the spin's availability test")
+            .1
+            .split_once('}')
+            .expect("the end of spinAvailable")
+            .0
+            .contains("if (Number.isInteger(state?.view_player)) return false;"),
+        "a turning world would carry the watched empire off the stage"
+    );
     assert_eq!(
         js.matches("takeCameraControl(); stopWorldSpin();").count(),
         3,

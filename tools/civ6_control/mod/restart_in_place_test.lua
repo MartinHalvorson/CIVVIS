@@ -15,6 +15,7 @@ local rows, attached, regenerates = {}, true, true
 local seeds = { map = 11, game = 22 }
 local calls, events, queries = {}, {}, {}
 local env = {
+	CivvisK = { guard = function(fn) pcall(fn) end },
 	string = string, tonumber = tonumber, ipairs = ipairs, pcall = pcall,
 	CivvisBoard = {},
 	CivvisQueue = { resetTimescale = function(why) calls[#calls + 1] = "timescale:" .. why end },

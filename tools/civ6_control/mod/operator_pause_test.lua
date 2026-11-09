@@ -14,6 +14,7 @@ local block = assert(source:match("(CivvisBoard%.hold = .-\nend\n)"),
 local clock, rows, queries, attached, sent, pace = 0, 0, 0, true, false, 0
 local events = {}
 local env = {
+	CivvisK = { guard = function(fn) pcall(fn) end },
 	string = string, math = math, type = type, tonumber = tonumber,
 	ipairs = ipairs, pcall = pcall,
 	CivvisBoard = {},
