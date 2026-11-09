@@ -189,7 +189,7 @@ fn our_cities(g: &Game) -> BTreeSet<(i32, i32)> {
 /// record exists its `joint_war_until` pins the war; otherwise a peace signed
 /// in the replay is undone at once.
 fn hold_war(g: &mut Game, attacker: usize, until: u32) -> bool {
-    let key = (attacker.min(0), attacker.max(0));
+    let key = (0, attacker);
     if let Some(record) = g.wars.get_mut(&key) {
         record.joint_war_until = Some(record.joint_war_until.unwrap_or(0).max(until));
         return true;
@@ -213,7 +213,7 @@ fn replay(
     g.rng = civvis::rng::Rng::new(seed);
     let start = g.turn;
     g.max_turns = g.max_turns.max(start + turns + 1);
-    let key = (attacker.min(0), attacker.max(0));
+    let key = (0, attacker);
     let recorded = hold && hold_war(&mut g, attacker, start + turns + 1);
     let mut ais: Vec<Box<dyn Ai>> = Vec::new();
     for pid in 0..g.players.len() {
@@ -445,7 +445,7 @@ fn main() {
         base.is_at_war(attacker, 0),
         military_units(&base, 0),
         military_units(&base, attacker),
-        base.wars.contains_key(&(attacker.min(0), attacker.max(0))),
+        base.wars.contains_key(&(0, attacker)),
     );
     let (mut lost, mut fell, mut any, mut capitals, mut dead, mut crashed) = (0, 0, 0, 0, 0, 0);
     for seed in 0..seeds {
