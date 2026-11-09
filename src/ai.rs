@@ -13121,6 +13121,16 @@ impl BasicAi {
             }
         }
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        if std::env::var("CIVVIS_TRACE_DOM").is_ok() && self.enter_prophet_race {
+            let hs = Self::civ_district(g, pid, "holy_site");
+            eprintln!(
+                "PICK t{} city {} enter {} skip {} dpri {:?} holy_sites {} has_astrology {}",
+                g.turn, g.cities[&cid].name, self.enter_prophet_race, self.skip_prophet_race,
+                dpri.iter().map(|(f, w)| format!("{f}:{w:.2}")).collect::<Vec<_>>(),
+                g.district_sites(cid, Name::new(hs.as_str())).len(),
+                g.players[pid].techs.contains(&crate::name!("astrology"))
+            );
+        }
         for (family, _) in dpri {
             if family == "holy_site" && g.players[pid].religion.is_none() {
                 // `skip-the-prophet-race-2`: never open the tab. See the flag's
@@ -18571,6 +18581,7 @@ impl BasicAi {
     /// engine's own predicate first changes no game state: the order it
     /// replaces was rejected before it could change any.
     pub(crate) fn fortify_or_stop(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        crate::game::trace_unit_hold(g, pid, uid, "HOLD");
         if !g.units[&uid].fortified && g.unit_can_fortify(&g.units[&uid]) {
             let _ = g.apply(pid, &Action::Fortify { unit: uid });
         }

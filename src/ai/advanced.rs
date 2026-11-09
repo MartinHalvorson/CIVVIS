@@ -12659,6 +12659,25 @@ impl AdvancedAi {
         let rival_culture_pressures = self.rival_culture_pressures(g);
         let actionable_denial =
             self.actionable_victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures);
+        if std::env::var("CIVVIS_TRACE_DOM").is_ok() {
+            for city in g.cities.values().filter(|c| c.is_capital) {
+                eprintln!(
+                    "DOM t{} capital {} owner {} original_owner {} minor_orig {} completes {}",
+                    g.turn, city.name, city.owner, city.original_owner,
+                    g.players.get(city.original_owner).is_some_and(|p| p.is_minor),
+                    Self::capture_completes_domination(g, pid, city.id)
+                );
+            }
+            for rival in g.players.iter().filter(|p| p.id != pid && p.alive && !p.is_minor && !p.is_barbarian) {
+                eprintln!(
+                    "DOM t{} rival {} {} war {} finishing {:?} legal {}",
+                    g.turn, rival.id, rival.civ, g.is_at_war(pid, rival.id),
+                    self.domination_finishing_capital_for(g, pid, rival.id),
+                    self.campaign_target_legal(g, pid, rival.id)
+                );
+            }
+            eprintln!("DOM t{} actionable_denial {:?}", g.turn, actionable_denial);
+        }
         let domination_finish = actionable_denial.and_then(|(rival, _)| {
             self.domination_finishing_capital_for(g, pid, rival)
                 .map(|city| (rival, city))
@@ -41380,6 +41399,9 @@ impl AdvancedAi {
         // unconditional rebuild before every step made a turn with `n` units
         // repeatedly regroup and rescore all `n` after each unit moved.
         if (self.victory_planning || self.objective_board) && self.force_groups_dirty {
+            if std::env::var("CIVVIS_TRACE_SIEGE").is_ok() {
+                eprintln!("REBUILD t{} before u{} {}", g.turn, uid, g.units[&uid].kind);
+            }
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
         }
@@ -43698,6 +43720,15 @@ impl AdvancedAi {
         // `prophet_race_open_for` is false by then.
         let prophet_race_enabled = self.prophet_race_enabled_for(active_victory_target);
         let prophet_race_open = self.prophet_race_enterable_for(g, pid, active_victory_target);
+        if std::env::var("CIVVIS_TRACE_DOM").is_ok() {
+            eprintln!(
+                "PROPHET t{} enabled {} open_for {} viable {} skip {} enterable {} religion {:?} founded {} max {}",
+                g.turn, prophet_race_enabled, self.prophet_race_open_for(g, pid),
+                self.religious_opening_viable(g, pid),
+                self.skip_prophet_race_2_for(g, pid, active_victory_target),
+                prophet_race_open, g.players[pid].religion, g.religions_founded(), g.max_religions()
+            );
+        }
         self.base.enter_prophet_race = prophet_race_open;
         if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;

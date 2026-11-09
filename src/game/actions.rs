@@ -2146,6 +2146,33 @@ impl Game {
     }
 
     pub fn apply(&mut self, pid: usize, action: &Action) -> Result<(), String> {
+        if let Action::Fortify { unit } = action {
+            crate::game::trace_unit_hold(self, pid, *unit, "FORTIFY");
+        }
+        if let Action::Move { unit, to } = action {
+            if pid == 0 {
+                if let (Ok(spec), Ok(turns)) = (std::env::var("CIVVIS_TRACE_NEAR"), std::env::var("CIVVIS_TRACE_TURNS")) {
+                    let v: Vec<i32> = spec.split(',').filter_map(|x| x.parse().ok()).collect();
+                    let t: Vec<u32> = turns.split(',').filter_map(|x| x.parse().ok()).collect();
+                    if v.len() == 3 && t.len() == 2 && self.turn >= t[0] && self.turn <= t[1] {
+                        let target = (v[0], v[1]);
+                        if let Some(u) = self.units.get(unit) {
+                            let (d0, d1) = (self.wdist(u.pos, target), self.wdist(*to, target));
+                            if d0 <= v[2] {
+                                let bt = std::backtrace::Backtrace::force_capture().to_string();
+                                let frames: Vec<String> = bt
+                                    .lines()
+                                    .filter(|l| l.contains("civvis::ai"))
+                                    .map(|l| l.trim().trim_start_matches(|c: char| c.is_ascii_digit() || c == ':' || c == ' ').replace("civvis::ai::", "").chars().take(70).collect())
+                                    .take(7)
+                                    .collect();
+                                eprintln!("MOVE t{} u{} {} hp{} {:?}->{:?} d{}->{} | {}", self.turn, unit, u.kind, u.hp, u.pos, to, d0, d1, frames.join(" < "));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if self.is_finished() {
             return Err("game over".into());
         }

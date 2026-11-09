@@ -36422,3 +36422,42 @@ mod siege_support_eligibility_tests;
 
 #[cfg(test)]
 mod air_pillage_eligibility_tests;
+
+
+/// Scratch trace: a hold by a unit of `pid` 0 near CIVVIS_TRACE_NEAR.
+pub(crate) fn trace_unit_hold(g: &Game, pid: usize, uid: u32, what: &str) {
+    if pid != 0 {
+        return;
+    }
+    let (Ok(spec), Ok(turns)) = (
+        std::env::var("CIVVIS_TRACE_NEAR"),
+        std::env::var("CIVVIS_TRACE_TURNS"),
+    ) else {
+        return;
+    };
+    let v: Vec<i32> = spec.split(',').filter_map(|x| x.parse().ok()).collect();
+    let t: Vec<u32> = turns.split(',').filter_map(|x| x.parse().ok()).collect();
+    if v.len() != 3 || t.len() != 2 || g.turn < t[0] || g.turn > t[1] {
+        return;
+    }
+    let Some(u) = g.units.get(&uid) else { return };
+    let d = g.wdist(u.pos, (v[0], v[1]));
+    if d > v[2] {
+        return;
+    }
+    let bt = std::backtrace::Backtrace::force_capture().to_string();
+    let frames: Vec<String> = bt
+        .lines()
+        .filter(|l| l.contains("civvis::ai"))
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(|c: char| c.is_ascii_digit() || c == ':' || c == ' ')
+                .replace("civvis::ai::", "")
+                .chars()
+                .take(70)
+                .collect()
+        })
+        .take(7)
+        .collect();
+    eprintln!("{what} t{} u{} {} hp{} {:?} d{} | {}", g.turn, uid, u.kind, u.hp, u.pos, d, frames.join(" < "));
+}

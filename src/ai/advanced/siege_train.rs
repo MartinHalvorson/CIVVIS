@@ -1274,11 +1274,21 @@ impl AdvancedAi {
         if arm_of(g, uid) == Arm::Other {
             return None;
         }
-        let group = self
+        let traced = std::env::var("CIVVIS_TRACE_SIEGE").is_ok()
+            && plan.target_city.and_then(|cid| g.cities.get(&cid)).is_some_and(|city| {
+                g.units.get(&uid).is_some_and(|unit| g.wdist(unit.pos, city.pos) <= 12)
+            });
+        let Some(group) = self
             .force_groups
             .iter()
             .find(|group| group.units.contains(&uid))
-            .cloned()?;
+            .cloned()
+        else {
+            if traced {
+                eprintln!("DOCTRINE t{} u{} {} moves{} -> None: no force group ({} groups)", g.turn, uid, g.units[&uid].kind, g.units[&uid].moves_left, self.force_groups.len());
+            }
+            return None;
+        };
         if group.domain != ForceDomain::Land {
             return None;
         }
@@ -1289,8 +1299,15 @@ impl AdvancedAi {
         }
         if self.siege_train || self.siege_positive_damage_budget {
             if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
-                return self.siege_train_step(g, pid, uid, cid, plan, &group);
+                let out = self.siege_train_step(g, pid, uid, cid, plan, &group);
+                if traced && out.is_none() {
+                    eprintln!("DOCTRINE t{} u{} {} moves{} -> None from siege_train_step (stage {:?})", g.turn, uid, g.units[&uid].kind, g.units[&uid].moves_left, self.sieges.get(&cid).map(|s| s.stage));
+                }
+                return out;
             }
+        }
+        if traced {
+            eprintln!("DOCTRINE t{} u{} {} moves{} -> None: group obj{:?} anc{:?} has no siege city", g.turn, uid, g.units[&uid].kind, g.units[&uid].moves_left, group.objective, group.anchor);
         }
         None
     }
@@ -1683,6 +1700,32 @@ impl AdvancedAi {
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         let arena = g.is_arena();
         let force = self.siege_force(g, pid, &city, plan, group);
+        if std::env::var("CIVVIS_TRACE_SIEGE").is_ok() {
+            let members: Vec<String> = force
+                .iter()
+                .map(|uid| format!("u{}:{}@{}", uid, g.units[uid].kind, g.wdist(g.units[uid].pos, city.pos)))
+                .collect();
+            let groups: Vec<String> = self
+                .force_groups
+                .iter()
+                .filter(|grp| grp.domain == ForceDomain::Land)
+                .map(|grp| {
+                    format!(
+                        "[obj{:?} anc{:?} city{:?} n{} near{}]",
+                        grp.objective,
+                        grp.anchor,
+                        self.siege_city_of(g, pid, plan, grp),
+                        grp.units.len(),
+                        grp.units.iter().filter(|u| g.units.get(u).is_some_and(|x| g.wdist(x.pos, city.pos) <= 3)).count()
+                    )
+                })
+                .collect();
+            eprintln!(
+                "SIEGE t{} city{:?} caller_group obj{:?} anc{:?} n{} | force {} | groups {}",
+                g.turn, city.pos, group.objective, group.anchor, group.units.len(),
+                members.join(" "), groups.join(" ")
+            );
+        }
         let strength: f64 = force.iter().map(|uid| unit_power(g, *uid)).sum();
         let staged: f64 = force
             .iter()
@@ -2134,6 +2177,9 @@ impl AdvancedAi {
                 if let Some((_, _, pos)) = safer {
                     return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
+                if std::env::var("CIVVIS_TRACE_SIEGE").is_ok() {
+                    eprintln!("STAGEHOLD t{} u{} {} d{} danger-here {:.0} > limit {:.0}", g.turn, uid, g.units[&uid].kind, distance, risk_here, escorted_limit(here));
+                }
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
@@ -2160,6 +2206,10 @@ impl AdvancedAi {
             }
             return self.base.fortify_or_stop(g, pid, uid);
         }
+        if distance > STAGING_FAR && std::env::var("CIVVIS_TRACE_SIEGE").is_ok() {
+            let ms = march_step(g, uid, city.pos, STAGING_FAR);
+            eprintln!("STAGEMARCH t{} u{} {} d{} march_step {:?} can_move {:?} next_dist {:?} route_step {:?} moves {}", g.turn, uid, g.units[&uid].kind, distance, ms, ms.map(|p| g.can_move(uid, p)), ms.map(|p| g.wdist(p, city.pos)), g.route_step(uid, city.pos, STAGING_FAR), g.units[&uid].moves_left);
+        }
         if distance > STAGING_FAR {
             if let Some(next) = march_step(g, uid, city.pos, STAGING_FAR)
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
@@ -2183,6 +2233,9 @@ impl AdvancedAi {
                             });
                         if let Some((_, _, pos)) = safe {
                             return self.base.tactical_apply_move(g, pid, uid, pos);
+                        }
+                        if std::env::var("CIVVIS_TRACE_SIEGE").is_ok() {
+                            eprintln!("STAGEHOLD t{} u{} {} d{} danger-next {:?}", g.turn, uid, g.units[&uid].kind, distance, next);
                         }
                         return self.base.fortify_or_stop(g, pid, uid);
                     }
