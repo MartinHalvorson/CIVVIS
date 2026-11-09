@@ -40,8 +40,8 @@ fn a_refused_clearing_leaves_remote_jobs_and_other_builders_usable() {
     for target in [
         VictoryTarget::Culture,
         VictoryTarget::Science,
-        VictoryTarget::Religious,
-        VictoryTarget::Diplomatic,
+        VictoryTarget::Religion,
+        VictoryTarget::Diplomacy,
         VictoryTarget::Domination,
         VictoryTarget::Score,
     ] {
