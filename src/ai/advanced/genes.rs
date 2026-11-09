@@ -5429,10 +5429,12 @@ pub const GENES: &[Gene] = &[
     // A Rock Band's concert level sets its breakup odds and how fast album
     // sales compound. Promote and tour for survival: `advanced/band_plays_its_stage.rs`.
     Gene { tag: "band-plays-its-stage", field: "band_plays_its_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_its_stage, disable: AdvancedAi::disable_band_plays_its_stage },
+    Gene { tag: "acropolis-before-the-deterrent", field: "acropolis_before_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_acropolis_before_the_deterrent, disable: AdvancedAi::disable_acropolis_before_the_deterrent },
     // ---- append: c-d ------------------------------------------------
     Gene { tag: "culture-seat-drama-first", field: "culture_seat_drama_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_first, disable: AdvancedAi::disable_culture_seat_drama_first },
     Gene { tag: "culture-seat-drama-before-government", field: "culture_seat_drama_before_government", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_before_government, disable: AdvancedAi::disable_culture_seat_drama_before_government },
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
+    Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

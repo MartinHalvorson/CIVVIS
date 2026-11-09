@@ -84,6 +84,9 @@ impl AdvancedAi {
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
+        /// `acropolis-before-the-deterrent`: see
+        /// `advanced/acropolis_before_the_deterrent.rs`.
+        acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
         // ---- append: c-d --------------------------------------------
         /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
         culture_seat_drama_first => enable_culture_seat_drama_first, disable_culture_seat_drama_first;
@@ -92,6 +95,8 @@ impl AdvancedAi {
         culture_seat_drama_before_government => enable_culture_seat_drama_before_government, disable_culture_seat_drama_before_government;
         /// `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`.
         culture_keeps_its_aesthetics => enable_culture_keeps_its_aesthetics, disable_culture_keeps_its_aesthetics;
+        /// `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`.
+        culture_banks_for_the_bands => enable_culture_banks_for_the_bands, disable_culture_banks_for_the_bands;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
         // ---- append: l-o --------------------------------------------
