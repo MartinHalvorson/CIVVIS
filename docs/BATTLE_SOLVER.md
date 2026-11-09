@@ -91,6 +91,30 @@ stack. A gain here is a necessary condition for a gain live, not a measurement
 of it, and `docs/TACTICS.md` §6–§7 records that a large gain on this bench has
 not moved whole-game win rate before.
 
+### Whole games: no measurable change
+
+Paired `gene_screen` games on 2026-11-09: Deity Online, firaxis-faithful rivals,
+the live genome (619 treatments) with and without `battle-solver`, one seat of
+each lane in the rotation. Delta is solver minus control, with z in brackets.
+
+| seat | pairs | cities lost | cities taken | score |
+|---|---|---|---|---|
+| Gran Colombia domination, first batch | 10 | −2.90 (−3.1) | −0.30 (−0.6) | +73.6 (+2.1) |
+| Gran Colombia domination, second batch | 16 | +0.94 (+1.1) | +0.44 (+2.0) | −21.8 (−0.8) |
+| Greece culture | 12 | −0.17 (−0.1) | +0.17 (+1.5) | +25.5 (+0.6) |
+| Khmer religious | 12 | +1.42 (+1.6) | 0.00 | −96.1 (−2.4) |
+| **pooled** | **50** | **+0.02 (0.0)** | **+0.12 (+0.9)** | **−9.2 (−0.5)** |
+
+No seat won a game in either arm. The first batch looked like a clear gain and
+the next 40 pairs did not repeat it, so it should not be quoted alone. The one
+pooled line past z 1.5 is cities taken by turn 100 (+0.14, z 2.0, 5 up and
+0 down), one of eleven lines read, so it is a lead and not a result. Khmer's
+score loss is the line to recheck before arming on that seat.
+
+This is the same shape `docs/TACTICS.md` records for one-turn joint tactics: a
+large bench gain that does not reach the whole game. The seat records final
+counts only, so these runs cannot say whether the in-game kill ratio moved.
+
 What the tuning found: the assumed enemy matters most. Modelling a greedy,
 always-swinging enemy read **−100** on combined arms and **−88** on melee;
 assuming it acts half the time read +262 and held melee. A longer horizon made
@@ -106,3 +130,26 @@ only worth buying with a better enemy model. Raising the budget from 2,400 to
 - Ships, aircraft and embarked units are not modelled.
 - Unseen enemies are not modelled; the forecast is conditional on what is in
   sight.
+
+## What a 10× would take
+
+The solver computes the fight it is shown. Four things limit how much that is
+worth, in the order they bind:
+
+1. **Being in the fight with comparable units.** Of 765 live Lv 7 unit losses,
+   580 were single blows from out-teched units. Damage is exponential in the
+   strength gap, so no ordering of attacks recovers a 30-strength deficit.
+2. **Knowing what the enemy will do.** The tuning's largest swing came from the
+   assumed enemy (−100 to +262), and depth made things worse because the model
+   is wrong. A model fitted to the host's recorded moves is what makes a horizon
+   beyond two rounds pay. The strike census already holds the data.
+3. **Owning the sieges.** Cities decide the domination lane and the solver hands
+   them to `siege_train`. Solver-run sieges did not help on the replays, so this
+   needs siege-specific scoring first.
+4. **The army it is given.** Ranged-heavy armies gained the most (2.60 against
+   0.39), melee-only the least (1.14 against 0.88), so production decides how
+   much the tactics can return.
+
+A game-level kill and loss count on the seat record is the instrument that is
+missing: without it a whole-game null cannot be split into "the tactics did not
+change the exchange" and "the exchange did not change the game".
