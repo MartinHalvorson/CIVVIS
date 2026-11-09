@@ -14976,8 +14976,11 @@ const PLANET_GPU_MAP_FACE_QUALITY = 1.2;   // cube texels per device pixel at a 
 const PLANET_GPU_MAP_MARK_QUALITY = 1.5;   // sprite texels per device pixel at the disc centre
 const PLANET_GPU_MAP_ATLAS_MAX = 4096;
 // A settled zoom this far from the baked one bakes again; while the camera is
-// still zooming the bake is simply scaled.
+// still moving the bake is simply scaled, up to the second figure.
 const PLANET_GPU_MAP_REBAKE_DRIFT = .02;
+const PLANET_GPU_MAP_MOVING_DRIFT = .25;
+const PLANET_GPU_MAP_SETTLE_MS = 600;
+const PLANET_GPU_MAP_MOVING_REBAKE_MS = 1000;
 const PLANET_FLOODPLAIN_FEATURES = new Set(["floodplains", "grassland_floodplains",
                                             "plains_floodplains"]);
 
@@ -15464,7 +15467,7 @@ function planetGpuMapLineKey(tile) {
 
 // Which cells a new state dirtied: every tile whose baked layers changed and
 // its neighbours, every tile whose fog changed, and fallout that has just run
-// out. `null` means all of them.
+// out.
 function planetGpuMapDirtyCells(map, bake, frame) {
   const tiles = state.map.tiles;
   const dirty = new Set();
@@ -15477,17 +15480,26 @@ function planetGpuMapDirtyCells(map, bake, frame) {
       if (other !== undefined) dirty.add(other);
     }
   };
-  if (bake.tiles.length !== tiles.length) return null;
+  // A player's own view lists only the tiles it knows, so the list grows as
+  // it explores: then the old tiles are matched by position, not by index.
+  let before = null;
+  if (bake.tiles.length !== tiles.length) {
+    before = new Map(bake.tiles.map(tile => [key(tile.pos), tile]));
+    for (const tile of tiles) before.delete(key(tile.pos));
+    for (const tileKey of before.keys()) touch(tileKey);
+    before = new Map(bake.tiles.map(tile => [key(tile.pos), tile]));
+  }
   for (let index = 0; index < tiles.length; index++) {
     const tile = tiles[index];
-    if (tile === bake.tiles[index]) {
+    const old = before ? before.get(key(tile.pos)) : bake.tiles[index];
+    if (tile === old) {
       if (tile && tile.fallout_until > bake.turn && tile.fallout_until <= state.turn)
         touch(key(tile.pos));
       continue;
     }
-    if (planetGpuMapLineKey(tile) === planetGpuMapLineKey(bake.tiles[index])) continue;
+    if (old && planetGpuMapLineKey(tile) === planetGpuMapLineKey(old)) continue;
     if (tile) touch(key(tile.pos));
-    if (bake.tiles[index]) touch(key(bake.tiles[index].pos));
+    if (old && old !== tile) touch(key(old.pos));
   }
   if (!frame.spectator && bake.visible !== frame.visible) {
     for (const tileKey of frame.visible) if (!bake.visible?.has(tileKey)) touch(tileKey);
@@ -15518,6 +15530,14 @@ function planetGpuMapDirtyRect(geometry, dirty, size, k) {
   return {x0, y0, width:x1 - x0, height:y1 - y0};
 }
 
+// A zoom, a flight (Watch as frames an empire by flying and zooming at once)
+// or a pinch: the bake is scaled until the camera settles, then made again.
+function planetGpuMapSettling(map) {
+  const now = performance.now();
+  if (cameraZoom || cameraFlight || touchGesture) map.cameraMovedAt = now;
+  return now - (map.cameraMovedAt ?? -Infinity) < PLANET_GPU_MAP_SETTLE_MS;
+}
+
 function planetGpuMapBakeLines(gl, map, frame) {
   const faceSize = planetGpuMapFaceSize(frame.radius);
   if (faceSize > map.maxCube) return "zoomed past the bake";
@@ -15528,9 +15548,14 @@ function planetGpuMapBakeLines(gl, map, frame) {
   let whole = !bake || bake.signature !== signature;
   let dirty = null;
   if (!whole) {
+    // A moving camera — or one that moved a moment ago, as Watch as does on
+    // every turn — gets the bake scaled unless it has drifted a long way.
     const drift = frame.radius / bake.radius;
-    if (cameraZoom) {
-      if (drift > 2 || drift < .5) return "zooming";
+    if (planetGpuMapSettling(map)) {
+      // ...and at most one fresh bake a second while it keeps moving.
+      const due = performance.now() - (bake.madeAt ?? -Infinity) > PLANET_GPU_MAP_MOVING_REBAKE_MS;
+      if (Math.abs(drift - 1) > PLANET_GPU_MAP_MOVING_DRIFT && due) whole = true;
+      else if (drift > 2 || drift < .5) return "zooming";
     } else if (Math.abs(drift - 1) > PLANET_GPU_MAP_REBAKE_DRIFT || faceSize !== bake.faceSize) {
       whole = true;
     }
@@ -15538,11 +15563,10 @@ function planetGpuMapBakeLines(gl, map, frame) {
       if (bake.tiles === state.map.tiles && bake.turn === state.turn &&
           (frame.spectator || bake.visible === frame.visible)) return "";
       dirty = planetGpuMapDirtyCells(map, bake, frame);
-      if (!dirty) whole = true;
     }
   }
   const started = performance.now();
-  if (whole) bake = map.bake = {signature, radius:frame.radius, faceSize};
+  if (whole) bake = map.bake = {signature, radius:frame.radius, faceSize, madeAt:performance.now()};
   bake.tiles = state.map.tiles;
   bake.turn = state.turn;
   bake.visible = frame.visible;
@@ -15707,9 +15731,9 @@ function planetGpuMapMarks(gl, map, frame) {
   const signature = [state.seed, SHOW_RESOURCES, RESOURCE_DISPLAY, SHOW_ARTIFACT_SITES,
                      shouldDrawResourceBadges(), frame.spectator, state.view_player ?? ""].join("|");
   let marks = map.marks_;
-  // While zooming keep the sprites already made unless they are far too coarse.
-  if (marks && marks.signature === signature && cameraZoom && slot <= marks.slot * 2)
-    slot = marks.slot;
+  // While the camera zooms keep the sprites already made; they are only
+  // softer or sharper than wanted until it settles.
+  if (marks && marks.signature === signature && planetGpuMapSettling(map)) slot = marks.slot;
   if (marks && marks.signature === signature && marks.slot === slot &&
       marks.state === state && marks.visible === frame.visible) return "";
   const started = performance.now();
