@@ -1429,6 +1429,8 @@ const MAP_AREA_DEFAULT = {auto:true, rect:{left:0, top:0, right:1, bottom:1}};
 const MAP_AREA_MIN = 180;
 let MAP_AREA = loadMapArea();
 let mapAreaInsets = {left:0, top:0, right:0, bottom:0};
+// The height the sky bar last stood at, for the zooms that take it down.
+let skyBarHeight = 46;
 
 function loadMapArea() {
   const value = {auto:MAP_AREA_DEFAULT.auto, rect:{...MAP_AREA_DEFAULT.rect}};
@@ -1658,9 +1660,34 @@ function wantedMapAreaInsets() {
             bottom:areaRect.bottom - rect.bottom * view.height};
   }
   // Fitted: the edges stand against whatever chrome is on screen right now,
-  // which is the same rectangle the camera already composes into.
+  // which is the same rectangle the camera already composes into. The bottom
+  // edge also stops short of the sky bar.
   const box = uncoveredMapBox(area.getBoundingClientRect(), width, height);
-  return {left:box.left, top:box.top, right:width - box.right, bottom:height - box.bottom};
+  return {left:box.left, top:box.top, right:width - box.right,
+          bottom:Math.max(height - box.bottom, skyBarClearance())};
+}
+// How far up from the bottom of `#maparea` a fitted map stops on a world with
+// a sky: just above the Earth/Moon/Mars row, which puts the globe in the visual
+// middle of the ground between the masthead and that row. The zoom row above it
+// keeps floating over the map's corner.
+//
+// The row comes down while home fills the frame, and the edge must not follow
+// it: the map area would change size partway through a wheel zoom and the world
+// would jump under the pointer. So the strip is held for as long as this world
+// has a sky at all, at the height the row last stood.
+//
+// A compact layout keeps running under the bar. The standings and the tracker
+// already take the top of a short window and the bar wraps there, so stopping
+// above it halved the globe in an 830x586 window.
+function skyBarClearance() {
+  if (responsivePanelGeometry.compact || !skyNavAvailable()) return 0;
+  const dock = document.getElementById("map-controls-dock")?.getBoundingClientRect();
+  if (!dock?.height) return 0;
+  const bar = document.getElementById("skynav");
+  const measured = bar && !bar.hidden ? bar.getBoundingClientRect().height : 0;
+  if (measured) skyBarHeight = measured;
+  return Math.max(0, area.getBoundingClientRect().bottom - dock.bottom) +
+         skyBarHeight + hudWidgetGap();
 }
 // Keep the viewport on screen and large enough to read. When both edges of an
 // axis ask for more than there is, they give ground in proportion rather than
@@ -17716,7 +17743,7 @@ const skyNavLadder = document.getElementById("skyladder");
 const skyNavSpan = document.getElementById("skyspan");
 let SKY_NAV_UP = false, SKY_NAV_KEY = "", SKY_NAV_MARK = "", SKY_NAV_SPAN = "";
 let skyNavLadderHeld = false;
-let skyNavRefitFrame = 0, skyNavDockHeight = 0;
+let skyNavRefitFrame = 0, skyNavDockHeight = 0, skyNavDockHoldsStrip = false;
 function syncSkyNavDockGeometry() {
   const dock = document.getElementById("map-controls-dock");
   const measuredHeight = dock?.getBoundingClientRect().height || 0;
@@ -17727,8 +17754,12 @@ function syncSkyNavDockGeometry() {
   area.style.setProperty("--panel-control-height", `${height}px`);
   area.style.setProperty("--panel-controls-clearance", `${clearance}px`);
   responsivePanelGeometry.controlClearance = clearance;
-  if (Math.abs(height - skyNavDockHeight) <= .5) return;
+  // A world can gain or lose its sky while the bar is down, with the dock's
+  // height unchanged, and the fitted map's bottom edge has to hear about that.
+  const holdsStrip = skyNavAvailable();
+  if (Math.abs(height - skyNavDockHeight) <= .5 && holdsStrip === skyNavDockHoldsStrip) return;
   skyNavDockHeight = height;
+  skyNavDockHoldsStrip = holdsStrip;
   if (skyNavRefitFrame) return;
   skyNavRefitFrame = requestAnimationFrame(() => {
     skyNavRefitFrame = 0;
@@ -17736,7 +17767,7 @@ function syncSkyNavDockGeometry() {
     refitMapAreaToChrome();
   });
 }
-function skyNavShowing() {
+function skyNavAvailable() {
   // A chart has no sky. Before the globe is known there is nothing out there
   // to be shown, and once Swap maps has put the azimuthal chart on the main
   // map the viewer has chosen the instrument over the ball: the bar would be
@@ -17744,6 +17775,10 @@ function skyNavShowing() {
   // the camera off the sheet into black.
   if (!planetMap() || !knowsGlobe() || planetMainUsesChart() ||
       !mapOverlayVisible("controls")) return false;
+  return true;
+}
+function skyNavShowing() {
+  if (!skyNavAvailable()) return false;
   // Only home takes it down, and only while home fills the frame. Home is the
   // one world with a board on it and the one place the bar would be standing
   // over the game; every other world out here is somewhere to look at and
@@ -17757,7 +17792,10 @@ function skyNavShowing() {
   // Mars wants a way back.
   const focus = skyFocusBody();
   if (!focus || focus.body.id !== "earth") return true;
-  const stage = Math.max(160, Math.min(MAPW, MAPH));
+  // Measured with the bar's own strip handed back. The fitted shot of the world
+  // is the same size with or without that strip, so taking it off this stage
+  // would keep the bar down on the very view it belongs on.
+  const stage = Math.max(160, Math.min(MAPW, MAPH + (MAP_AREA.auto ? mapAreaInsets.bottom : 0)));
   return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);
 }
 // Its box, in canvas coordinates, so a caption out there dodges the bar the
@@ -31510,9 +31548,10 @@ function uncoveredMapBox(origin, width, height) {
     else right = Math.max(0, Math.min(width, victory.left));
   }
   // The bottom control dock floats over the world like every other lower
-  // instrument: the fitted map deliberately runs to the bottom of the screen
-  // rather than reserving a strip for the zoom cluster, so the world reads as
-  // the whole stage and the dock as a control resting on it.
+  // instrument, so this measurement reserves nothing for it. A fitted map on a
+  // world with a sky does stop above the dock's lower row, but that is the
+  // fit's own rule (`skyBarClearance`), and a flat world still runs to the
+  // bottom of the screen with the dock resting on it.
   // A custom widget layout can put the nominal right edge left of the deck,
   // or the nominal top edge below the screen. There is no uncovered rectangle
   // on that axis, so retain a real on-screen center instead of returning an

@@ -14458,9 +14458,43 @@ fn the_map_area_is_a_rectangle_the_viewer_can_set() {
             "the ground outside the map area's {edge} edge must be dimmed"
         );
     }
-    // The fitted world runs to the bottom of the screen. The zoom dock
-    // floats over it like every other lower instrument, so the uncovered
-    // rectangle must not carve a strip out for it.
+    // The zoom dock floats over the world like every other lower
+    // instrument, so the uncovered rectangle must not carve a strip out
+    // for it. A fitted map on a world with a sky stops just above the
+    // Earth/Moon/Mars row instead, and that belongs to the fit alone: a
+    // hand-set area is returned before it, and the strip outlasts the bar
+    // so a zoom that takes the bar down does not resize the map under it.
+    let wanted = EMBEDDED_INDEX
+        .split_once("function wantedMapAreaInsets()")
+        .expect("the wanted map-area insets")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the wanted map-area insets")
+        .0;
+    let hand_set = wanted
+        .find("if (!MAP_AREA.auto) {")
+        .expect("the hand-set area branch");
+    let fitted = wanted
+        .find("bottom:Math.max(height - box.bottom, skyBarClearance())")
+        .expect("a fitted map stops above the sky bar");
+    assert!(hand_set < fitted, "a hand-set area must ignore the sky bar");
+    let clearance = EMBEDDED_INDEX
+        .split_once("function skyBarClearance()")
+        .expect("the sky bar clearance")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the sky bar clearance")
+        .0;
+    for piece in [
+        "if (responsivePanelGeometry.compact || !skyNavAvailable()) return 0;",
+        "if (measured) skyBarHeight = measured;",
+        "skyBarHeight + hudWidgetGap();",
+    ] {
+        assert!(
+            clearance.contains(piece),
+            "the sky bar clearance is missing {piece}"
+        );
+    }
     let uncovered = EMBEDDED_INDEX
         .split_once("function uncoveredMapBox(origin, width, height)")
         .expect("the uncovered-map measurement")
