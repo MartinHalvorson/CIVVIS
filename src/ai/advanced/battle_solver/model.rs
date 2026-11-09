@@ -723,7 +723,7 @@ impl<'b> Sim<'b> {
             Aim::Unit(j) => {
                 let j = j as usize;
                 let target = self.s.units[j];
-                if !target.alive() || self.s.units[i].attacks == 0 {
+                if !target.alive() || self.s.units[i].attacks == 0 || self.garrisoned(&target) {
                     return false;
                 }
                 let d = self.b.d(self.s.units[i].tile, target.tile);
@@ -822,7 +822,7 @@ impl<'b> Sim<'b> {
         if me.attacks > 0 {
             for j in 0..self.s.units.len() {
                 let other = self.s.units[j];
-                if !other.alive() || other.side == side {
+                if !other.alive() || other.side == side || self.garrisoned(&other) {
                     continue;
                 }
                 let range = self.b.d(me.tile, other.tile);
@@ -1032,6 +1032,14 @@ impl<'b> Sim<'b> {
                 },
             );
         }
+    }
+
+    /// A garrison cannot be struck while its city stands: the blow lands on
+    /// the city (`combat_forecast`, `do_attack`).
+    #[inline]
+    pub fn garrisoned(&self, unit: &Unit) -> bool {
+        let c = self.b.city_at[unit.tile as usize];
+        c != NO_CITY && self.s.city_side[c as usize] == unit.side && self.s.city_hp[c as usize] > 0
     }
 
     #[inline]

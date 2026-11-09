@@ -111,13 +111,11 @@ struct Applied {
 impl AdvancedAi {
     /// Whether another layer already owns this unit this turn.
     pub(super) fn solver_leaves_alone(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        let takes_the_siege = knob("CIVVIS_BS_SIEGE", 0) != 0;
         self.battle_planner_ordered.contains(&uid)
             || self.guard_is_reserved_for_civilian(uid)
-            || (!takes_the_siege
-                && (self.unit_is_reserved(uid)
-                    || self.active_siege_member(g, pid, uid)
-                    || self.staging_siege_member(g, pid, uid)))
+            || self.unit_is_reserved(uid)
+            || self.active_siege_member(g, pid, uid)
+            || self.staging_siege_member(g, pid, uid)
     }
 
     /// Solve and play every local fight. True if any unit struck.

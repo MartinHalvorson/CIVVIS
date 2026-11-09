@@ -202,7 +202,7 @@ impl<'b> Searcher<'b> {
         if me.attacks > 0 {
             for j in 0..self.init.units.len() {
                 let other = self.init.units[j];
-                if !other.alive() || other.side == me.side {
+                if !other.alive() || other.side == me.side || self.sim.garrisoned(&other) {
                     continue;
                 }
                 if me.shoots() {
@@ -316,7 +316,12 @@ impl<'b> Searcher<'b> {
 
         // Moves. The stand where it is, the safest few, the strongest
         // ground, and the steps that close on the fight.
-        let (near, _) = nearest_enemy(self.init, b, me.side, me.tile);
+        // An army with a city to take closes on the city, not on whichever
+        // soldier happens to be nearest.
+        let near = match objective {
+            Objective::Capture(c) => b.cities[c as usize].tile,
+            _ => nearest_enemy(self.init, b, me.side, me.tile).0,
+        };
         let mut stands: Vec<(u16, f32)> = reach
             .iter()
             .filter(|(t, _)| *t == me.tile || self.init.occ[*t as usize] == NO_UNIT)
