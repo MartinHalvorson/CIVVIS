@@ -1390,6 +1390,9 @@ impl Game {
     }
 
     pub(crate) fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
+        if self.blocked_improvement_sites.contains(&pos) {
+            return vec![];
+        }
         let Some(tile) = self.map.get(pos) else {
             return vec![];
         };
@@ -1450,6 +1453,11 @@ impl Game {
             && self.tree_effect(pid, "plant_woods") > 0.0
         {
             operations.push("plant_woods".to_string());
+        }
+        // Clearing uses Action::Improve too. Respect the same host exclusions
+        // as ordinary improvements, before a planner spends the unit's turn.
+        if let Some(refused) = self.blocked_improvements.get(&pos) {
+            operations.retain(|operation| !refused.contains(&Name::new(operation)));
         }
         operations
     }

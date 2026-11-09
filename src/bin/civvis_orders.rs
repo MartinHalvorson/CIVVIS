@@ -4754,12 +4754,17 @@ fn decide(
     // been measured leaving such kills alive. And a settler's bound guard is
     // not the volley's to spend one tile away from the civilian it shields.
     ai.observe_confirmed_host_deaths(&planned_game, state);
-    let builder_operations_held = builder_operation_refusals::apply_cooldowns(
-        &mut planned_game,
+    let refused_builder_operations = builder_operation_refusals::refused_operations(
+        &planned_game,
         &mirror_state.civ6_of,
         state.turn,
         host_order_refusals,
     );
+    let builder_operations_held: usize = refused_builder_operations
+        .values()
+        .map(|ops| ops.len())
+        .sum();
+    ai.set_refused_builder_operations(refused_builder_operations);
     air_assault::apply_cooldowns(
         &mut planned_game,
         &mirror_state.civ6_of,

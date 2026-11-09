@@ -38,19 +38,16 @@ fn failures(verb: &str) -> HostOrderRefusals {
 }
 
 #[test]
-fn withheld_harvest_reaches_only_the_disposable_board_at_the_builder() {
+fn withheld_harvest_is_keyed_to_the_builder_without_mutating_the_mirror() {
     let (observed, mapped, uid) = fixture();
-    let mut planned = observed.clone();
-    let site = planned.units[&uid].pos;
+    let operations = refused_operations(&observed, &mapped, 93, &failures("HARVEST_RESOURCE"));
+    assert_eq!(operations.len(), 1);
     assert_eq!(
-        apply_cooldowns(&mut planned, &mapped, 93, &failures("HARVEST_RESOURCE")),
-        1
+        operations[&uid],
+        BTreeSet::from([Name::new("harvest_resource")])
     );
-    assert!(planned.blocked_improvements[&site].contains(&Name::new("harvest_resource")));
-    assert_eq!(planned.blocked_improvements.len(), 1);
     assert!(observed.blocked_improvements.is_empty());
-    assert_eq!(planned.units[&uid].charges, observed.units[&uid].charges);
-    assert!(!planned.blocked_improvements[&site].contains(&Name::new("camp")));
+    assert_eq!(observed.units[&uid].charges, 3);
 }
 
 #[test]
@@ -62,14 +59,11 @@ fn clearing_and_planting_use_the_exact_exported_verbs() {
         ),
         ("PLANT_FOREST", vec!["plant_woods"]),
     ] {
-        let (mut game, mapped, uid) = fixture();
-        let pos = game.units[&uid].pos;
+        let (game, mapped, uid) = fixture();
+        let operations = refused_operations(&game, &mapped, 93, &failures(verb));
+        assert_eq!(operations.len(), 1);
         assert_eq!(
-            apply_cooldowns(&mut game, &mapped, 93, &failures(verb)),
-            expected.len()
-        );
-        assert_eq!(
-            game.blocked_improvements[&pos],
+            operations[&uid],
             expected.into_iter().map(Name::new).collect()
         );
     }
@@ -98,9 +92,8 @@ fn absent_unconfirmed_expired_or_verified_failures_leave_work_available() {
         (93, cleared),
         (93, failures("MOVE_TO")),
     ] {
-        let mut planned = game.clone();
-        assert_eq!(apply_cooldowns(&mut planned, &mapped, turn, &refusals), 0);
-        assert!(planned.blocked_improvements.is_empty());
+        assert!(refused_operations(&game, &mapped, turn, &refusals).is_empty());
+        assert!(game.blocked_improvements.is_empty());
     }
 }
 
@@ -119,10 +112,7 @@ fn unmapped_foreign_or_non_builder_units_cannot_block_the_ground() {
                 game.units.get_mut(&uid).unwrap().kind = Name::new("warrior");
             }
         }
-        assert_eq!(
-            apply_cooldowns(&mut game, &mapped, 93, &failures("HARVEST_RESOURCE")),
-            0
-        );
+        assert!(refused_operations(&game, &mapped, 93, &failures("HARVEST_RESOURCE")).is_empty());
         assert!(game.blocked_improvements.is_empty());
     }
 }

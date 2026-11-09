@@ -27,6 +27,7 @@ mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
 mod assessment;
+mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
 /// steps. See `advanced/builders.rs`.
 mod builders;
@@ -2076,6 +2077,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// Host clearing-operation cooldowns, replaced for each fresh Native frame.
+    refused_builder_operations: BTreeMap<u32, BTreeSet<Name>>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
     /// `(last observed turn, consecutive idle-turn count)` for cities whose
