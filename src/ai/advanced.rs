@@ -1310,6 +1310,11 @@ pub(crate) const DOMINATION_SPECIALIZATION_PERCENT: u32 = 40;
 /// three more eliminations over 32 paired games: the stronger rivals punish
 /// the earlier war, so the shared halfway clock stands there.
 pub(crate) const DOMINATION_SPECIALIZATION_MAX_ORDER: usize = 4;
+/// `domination-clock-every-rung`: the share of the game clock (percent) after
+/// which an assigned Domination lane leaves its development half at any
+/// difficulty. 30% is turn 75 of the ladder's 250, while the rivals' cities
+/// near us still stand behind 0-100 walls.
+pub(crate) const DOMINATION_EVERY_RUNG_PERCENT: u32 = 30;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategicPlan {
@@ -6686,6 +6691,26 @@ pub struct AdvancedAi {
     /// the Culture Faith sources without waiting for an Amphitheater. See
     /// `advanced/culture_faith_sources.rs`.
     culture_faith_opens_at_the_theaters: bool,
+    /// `domination-clock-every-rung`: an assigned Domination lane leaves its
+    /// development half at [`DOMINATION_EVERY_RUNG_PERCENT`] of the clock at
+    /// every difficulty. `domination-specializes-earlier` stops at King, so
+    /// at Deity the lane reads "the first half is reserved for expansion"
+    /// until turn 125 of 250: 33 of 63 sampled turns from turn 60 to 160
+    /// across three live Gran Colombia games, and every other hold came up
+    /// four times or fewer. That is the window the rivals are soft in. In
+    /// civvis-20261109T054003Z Persia stood at defense 39-46 behind no walls
+    /// through turn 90, then 82 behind 300 by turn 120, and by the first
+    /// declaration at turn 135 our best gun hit for 3.7 a shot. Opt-in.
+    domination_clock_every_rung: bool,
+    /// `domination-spends-the-stock`: on an assigned Domination lane, the
+    /// delegated governor's combined-arms pick takes a melee unit priced in
+    /// a strategic resource whenever a city can start one, ahead of the 1:1
+    /// melee/ranged alternation. That alternation counts Scouts, Warriors
+    /// and Spearmen as melee, so the live Gran Colombia seat reaches turn
+    /// 100 with 6-8 Archers and 2-6 units that can take a city, while Horses
+    /// or Iron stand at the stockpile cap (civvis-20261109T024657Z,
+    /// 050249Z, 054003Z and 071914Z). Opt-in.
+    domination_spends_the_stock: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -7743,6 +7768,16 @@ pub struct AdvancedAi {
     /// `group-steps-read-the-field`: the frame's danger field for the group
     /// step, rebuilt when the visible hostiles at war change.
     group_step_field: group_steps_read_the_field::GroupStepField,
+    /// `gutted-rival-passes-the-edge`: on an assigned Domination lane, a
+    /// staged declaration passes `declaration-needs-the-edge-2` against a
+    /// target whose steady power is at most 60% of its own 30-turn peak, at
+    /// 1.5 times what it has left. The peak rule was fitted on wars against
+    /// intact rivals. A rival that another empire has just gutted keeps its
+    /// old peak for 30 turns: in civvis-20261109T050249Z Macedon fell from
+    /// 684 to about 200 by turn 118 at defense 58-65 and walls 0-100, we
+    /// stood at 360-478, and no war opened until turn 151. The same window
+    /// came in 4 of 5 Gran Colombia games of 2026-11-09. Opt-in.
+    gutted_rival_passes_the_edge: bool,
     // ---- append: l-o ------------------------------------------------
     /// Rank wartime upgrade goals by gain per remaining research. Opt-in.
     modernization_prices_the_path: bool,
@@ -14589,6 +14624,10 @@ impl AdvancedAi {
                 })
         })
         .flatten();
+        // `domination-spends-the-stock`: lent for the call; see the field.
+        let restore_priced_melee = self.base.prefers_priced_melee;
+        self.base.prefers_priced_melee = self.domination_spends_the_stock
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination);
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.space_race_excluded();
         // `culture-digs-one-museum`: the delegated governor picks this seat's
@@ -14622,6 +14661,7 @@ impl AdvancedAi {
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.culture_budgeted_base_cities(g, pid);
             self.base.reserve_floor = restore_reserve_floor;
+            self.base.prefers_priced_melee = restore_priced_melee;
             self.base.exclude_space_race = restore_space_race;
             self.base.digs_one_museum = restore_dig_museum;
             self.base.w.mil_per_city = restore_military;
@@ -14655,6 +14695,7 @@ impl AdvancedAi {
         }
         self.culture_budgeted_base_cities(g, pid);
         self.base.reserve_floor = restore_reserve_floor;
+        self.base.prefers_priced_melee = restore_priced_melee;
         self.base.exclude_space_race = restore_space_race;
         self.base.digs_one_museum = restore_dig_museum;
         self.base.w.city_target = restore_target;
@@ -18390,6 +18431,15 @@ impl AdvancedAi {
         let culture_buildup = self.victory_target == Some(VictoryTarget::Culture)
             && g.max_turns > 0
             && g.turn.saturating_mul(3) >= g.max_turns.min(g.game_speed.turn_limit());
+        // `domination-clock-every-rung`: see the field.
+        if self.domination_clock_every_rung
+            && self.victory_target == Some(VictoryTarget::Domination)
+            && g.max_turns > 0
+        {
+            return !self.victory_planning
+                || g.turn.saturating_mul(100)
+                    >= g.max_turns.min(g.game_speed.turn_limit()) * DOMINATION_EVERY_RUNG_PERCENT;
+        }
         // `domination-specializes-earlier`: an assigned Domination lane turns
         // to Conquest at 40% of the clock rather than halfway. See
         // `AdvancedAi::domination_specializes_earlier`.

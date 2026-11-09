@@ -248,7 +248,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `disrupt-waits-for-the-match-point` | off (unmeasured) | Opt-in gene `disrupt-waits-for-the-match-point`; see `advanced/disrupt_waits_for_the_match_point.rs`. | 1 \| 1 |
 | `districts-price-the-improvement` | off (unmeasured) | Opt-in gene `districts-price-the-improvement`; see `Self::districts_price_the_improvement`. | 1 \| 1 |
 | `districts-protect-seowon-science` | off (unmeasured) | Price the Science lost when a new district crowds an owned Seowon. | 1 \| 1 |
+| `domination-clock-every-rung` | off (unmeasured) | `domination-clock-every-rung`: an assigned Domination lane leaves its development half at 30% of the clock at every difficulty. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
+| `domination-spends-the-stock` | off (unmeasured) | `domination-spends-the-stock`: a Domination seat's delegated governor takes a resource-priced melee unit whenever a city can start one. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
@@ -279,6 +281,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
+| `gutted-rival-passes-the-edge` | off (unmeasured) | `gutted-rival-passes-the-edge`: a staged declaration by a Domination lane passes the peak edge against a target at 60% or less of its 30-turn peak, at 1.5 times what it has left. | 1 \| 1 |
 | `hidden-border-yields-to-our-pressure` | off (unmeasured) | Opt-in gene `hidden-border-yields-to-our-pressure`; see `Self::hidden_border_yields_to_our_pressure`. | 1 \| 1 |
 | `hint-runs-the-claims` | off (unmeasured) | Opt-in gene `hint-runs-the-claims`; see `Self::hint_runs_the_claims`. | 1 \| 1 |
 | `holdable-land-keeps-settling` | off (unmeasured) | Opt-in gene `holdable-land-keeps-settling`; see `advanced/holdable_land_keeps_settling.rs`. | 1 \| 1 |

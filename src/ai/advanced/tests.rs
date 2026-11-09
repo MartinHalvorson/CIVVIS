@@ -26390,6 +26390,73 @@ fn domination_specializes_earlier_moves_only_the_domination_clock() {
         .any(|gene| gene.tag == "domination-specializes-earlier" && gene.opt_in()));
 }
 
+/// `gutted-rival-passes-the-edge`: a target at 60% or less of its 30-turn peak
+/// reads as gutted at 1.5 times what it has left, and no other reading does.
+#[test]
+fn gutted_rival_reading_needs_the_fall_and_the_margin() {
+    let edge = |ours: f64, peak: f64, steady: f64| super::one_war::DeclarationEdge {
+        ours,
+        peak,
+        steady,
+        our_production: 99.0,
+        their_production: 319.0,
+    };
+    // Macedon, civvis-20261109T050249Z turn 118.
+    let macedon = edge(360.0, 684.0, 202.0);
+    assert!(macedon.gutted());
+    assert!(
+        !macedon.passes(),
+        "the peak rule holds this war without the gene"
+    );
+    assert!(!edge(360.0, 684.0, 500.0).gutted(), "no fall, no reading");
+    assert!(
+        !edge(250.0, 684.0, 202.0).gutted(),
+        "under 1.5 times what is left"
+    );
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "gutted-rival-passes-the-edge" && gene.opt_in()));
+}
+
+/// `domination-clock-every-rung`: the Domination lane's development half ends
+/// at 30% of the clock at Deity too, and no other lane's clock moves.
+#[test]
+fn domination_clock_every_rung_moves_only_the_domination_clock() {
+    let mut deity = Game::new_full(2, 24, 16, 91_014, 250, 0, false);
+    deity.difficulty = "deity".to_string();
+    deity.turn = 80;
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        !domination.domination_clock_every_rung,
+        "the gene ships off"
+    );
+    assert!(
+        !domination.phase_specialization_active(&deity),
+        "off, turn 80 of 250 is still the development half"
+    );
+    domination.enable_domination_clock_every_rung();
+    assert!(
+        domination.phase_specialization_active(&deity),
+        "on, turn 80 of 250 is past 30% at Deity"
+    );
+    deity.turn = 70;
+    assert!(
+        !domination.phase_specialization_active(&deity),
+        "turn 70 is before 30%"
+    );
+    deity.turn = 80;
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_domination_clock_every_rung();
+    assert_eq!(
+        science.phase_specialization_active(&deity),
+        AdvancedAi::targeting(VictoryTarget::Science).phase_specialization_active(&deity),
+        "only the Domination lane's clock moves"
+    );
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "domination-clock-every-rung" && gene.opt_in()));
+}
+
 /// `threatened_city` and `city_pressures` read the visible hostiles once per
 /// sweep. The per-city pressure computed from that list must be the pressure
 /// the per-city scan computes, bit for bit, with a mix of hostiles near, far,

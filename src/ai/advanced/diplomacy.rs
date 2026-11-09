@@ -2543,6 +2543,25 @@ impl AdvancedAi {
                        reading.our_production, reading.their_production);
             }
         }
+        // `gutted-rival-passes-the-edge`: journal the staged declarations
+        // the gene alone lets through.
+        if self.gutted_rival_passes_the_edge
+            && self.declaration_needs_the_edge_2
+            && close_enough
+            && ready
+            && staged
+            && edge
+            && !urgent_waiver
+            && !faith_counter_due
+        {
+            let reading = self.declaration_edge_2(g, pid, target);
+            if !reading.passes() && !reading.crushing_steady() && reading.gutted() {
+                think!(self.journal(), Military, Detail,
+                       "The edge reads a gutted {}", g.players[target].civ;
+                       "gutted-rival-passes-the-edge: its steady power {:.0} is {:.0}% of its 30-turn peak {:.0}; ours {:.0}",
+                       reading.steady, 100.0 * reading.steady / reading.peak.max(1.0), reading.peak, reading.ours);
+            }
+        }
         if close_enough && ready && staged && !edge {
             if self.declaration_needs_the_edge_2 {
                 let reading = self.declaration_edge_2(g, pid, target);

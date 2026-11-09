@@ -155,6 +155,9 @@ pub(crate) const CRUSHING_STEADY_RATIO: f64 = 3.0;
 /// peak under which the crushing steady reading does not pass. Live Emperor
 /// turns 100-130 held 27 such targets at a median 1.64 times the peak.
 pub(crate) const CRUSHING_PEAK_FLOOR: f64 = 1.5;
+/// `gutted-rival-passes-the-edge`: the share of its own 30-turn peak under
+/// which a target's steady military reads as gutted.
+pub(crate) const GUTTED_PEAK_SHARE: f64 = 0.6;
 /// `declaration-needs-production-parity`: our Production a turn over the
 /// target's under which an offensive declaration on a major holds. Of the 20
 /// declarations on majors in live Emperor G185-G198, the 16 made under 0.8
@@ -232,6 +235,15 @@ impl DeclarationEdge {
     /// 30-turn peak, whichever empire out-produces the other.
     pub fn crushing_steady(&self) -> bool {
         self.steady_ratio() >= CRUSHING_STEADY_RATIO && self.peak_ratio() >= CRUSHING_PEAK_FLOOR
+    }
+
+    /// `gutted-rival-passes-the-edge`: a target whose steady power has fallen
+    /// to [`GUTTED_PEAK_SHARE`] of its 30-turn peak, at version 1's
+    /// [`DECLARATION_EDGE_RATIO`] over what it has left, whichever empire
+    /// out-produces the other.
+    pub fn gutted(&self) -> bool {
+        self.steady <= GUTTED_PEAK_SHARE * self.peak
+            && self.steady_ratio() >= DECLARATION_EDGE_RATIO
     }
 }
 /// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which
@@ -2094,7 +2106,11 @@ impl AdvancedAi {
             // `DeclarationEdge::crushing_steady`. The plain staged
             // declaration only; the screens that call `passes` keep it.
             return reading.passes()
-                || (self.crushing_steady_passes_the_edge && reading.crushing_steady());
+                || (self.crushing_steady_passes_the_edge && reading.crushing_steady())
+                // `gutted-rival-passes-the-edge`: see the field.
+                || (self.gutted_rival_passes_the_edge
+                    && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                    && reading.gutted());
         }
         !self.declaration_needs_the_edge
             || g.military_power(pid)
