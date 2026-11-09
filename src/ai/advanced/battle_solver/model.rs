@@ -240,6 +240,12 @@ pub struct Weights {
     /// against anything the rollout cannot see arriving. Breaks the tie
     /// between shooting now and stepping back to shoot next turn.
     pub tempo: f32,
+    /// What taking an objective city's health and walls down is worth, as
+    /// shares of `objective_bonus`. A short horizon cannot see a capture
+    /// that is five turns of bombardment away, so progress toward it has to
+    /// be scored or the search walks past the city to kill units.
+    pub siege_hp: f32,
+    pub siege_wall: f32,
     /// Chance a modelled enemy acts on a given round rather than standing.
     /// Below one because the real AI does not press every chance it has:
     /// over 115 live Deity games it struck well under half the units it
@@ -256,6 +262,8 @@ impl Default for Weights {
             haste: 0.92,
             enemy_retreat_hp: 25,
             our_retreat_hp: 30,
+            siege_hp: 0.8,
+            siege_wall: 0.4,
             enemy_aggression: 0.5,
             tempo: 0.4,
         }
@@ -1233,6 +1241,18 @@ impl<'b> Sim<'b> {
             Objective::Capture(c) if self.s.city_side[c as usize] == OURS => {
                 let at = self.reached.unwrap_or(0) as i32;
                 v += self.w.objective_bonus * self.w.haste.powi(at);
+            }
+            Objective::Capture(c) => {
+                let c = c as usize;
+                let city = &self.b.cities[c];
+                let hp_gone = 1.0 - (self.s.city_hp[c] as f32 / 200.0).clamp(0.0, 1.0);
+                let wall_gone = if city.wall_max > 0 {
+                    1.0 - (self.s.city_wall[c] as f32 / city.wall_max as f32).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                v += self.w.objective_bonus
+                    * (self.w.siege_hp * hp_gone + self.w.siege_wall * wall_gone);
             }
             Objective::Hold(c) if self.s.city_side[c as usize] == OURS => {
                 v += self.w.objective_bonus;

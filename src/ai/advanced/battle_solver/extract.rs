@@ -18,7 +18,7 @@ const MAX_TILES: usize = 420;
 pub(super) const MAX_OURS: usize = 20;
 pub(super) const MAX_HOSTILES: usize = 24;
 /// How close a city must stand to a fight to be the fight's objective.
-const OBJECTIVE_RADIUS: i32 = 3;
+const OBJECTIVE_RADIUS: i32 = 6;
 /// A city's worth to the score, in hammers.
 const CITY_BASE_VALUE: f32 = 220.0;
 const CITY_POP_VALUE: f32 = 45.0;
