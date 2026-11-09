@@ -971,6 +971,44 @@ fn space_race_launches_outlive_fast_turn_boundaries() {
     assert!(index.contains("const player = launch.player ||"));
 }
 
+/// Keeping the launch alive across turns is not enough if nobody can see it.
+/// From a close-up Earth the true route runs thousands to millions of pixels
+/// off the frame, so the rocket left the picture almost at once and the next
+/// turn looked as though it had cut the launch off. The film is played over
+/// the part of the route in view.
+#[test]
+fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
+    let app = include_str!("../../web/assets/app.js");
+
+    let painter = app
+        .split_once("function drawSkyLaunches(")
+        .unwrap()
+        .1
+        .split_once("function drawSkyCaption(")
+        .unwrap()
+        .0;
+    assert!(painter.contains("const film = skyLaunchFilm("));
+    assert!(painter.contains("const at = skyLaunchPoint(start, end, progress, bend, ease);"));
+    assert!(
+        !painter.contains("skyOnStage("),
+        "the film is already fitted to the stage; culling it again drops its ending"
+    );
+    // Neither ring may be drawn at a point where the frame merely cut the route.
+    assert!(painter.contains("progress < .22 && !film.entering"));
+    assert!(painter.contains("progress > .82 && !film.leaving"));
+
+    let film = app
+        .split_once("function skyLaunchFilm(")
+        .unwrap()
+        .1
+        .split_once("function skyLaunchEase(")
+        .unwrap()
+        .0;
+    // A route wholly in the picture keeps its true endpoints however short it
+    // is: at Solar System zoom the Moon is three pixels from the Earth.
+    assert!(film.contains("(!seen.entering && !seen.leaving)"));
+}
+
 #[test]
 fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
     let mut game = Game::new(2, 18, 12, 7, 25, 0);
