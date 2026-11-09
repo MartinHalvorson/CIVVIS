@@ -255,6 +255,10 @@ impl AdvancedAi {
             if g.wdist(current, target) <= 1 {
                 return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
             }
+            // See `advanced/religion_seat_pack.rs`.
+            if self.religion_seat_holds_for_the_pack(g, pid, uid, target) {
+                return false;
+            }
             if self.religious_step_toward_range(g, pid, uid, target, 1) {
                 return true;
             }

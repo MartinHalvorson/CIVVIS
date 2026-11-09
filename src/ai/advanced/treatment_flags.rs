@@ -106,6 +106,8 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// See `advanced/religion_seat_pack.rs`.
+        religion_seat_marches_in_a_pack => enable_religion_seat_marches_in_a_pack, disable_religion_seat_marches_in_a_pack;
         /// Opt-in gene `religion-seat-earns-its-prophet`; see
         /// [`Self::religion_seat_earns_its_prophet`].
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;

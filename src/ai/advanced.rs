@@ -8368,6 +8368,12 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-marches-in-a-pack`: a Religion-target founder's
+    /// spreaders gather before a long walk past rival Apostles. See
+    /// `advanced/religion_seat_pack.rs`. Off by default.
+    religion_seat_marches_in_a_pack: bool,
+    /// Per religious unit, the turn it began waiting for its pack.
+    pack_wait_started: RefCell<BTreeMap<u32, u32>>,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -26261,6 +26267,8 @@ mod religion_seat_fields_apostles;
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+/// `religion-seat-marches-in-a-pack`: see `advanced/religion_seat_pack.rs`.
+mod religion_seat_pack;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;

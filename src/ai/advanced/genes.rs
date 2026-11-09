@@ -5456,6 +5456,8 @@ pub const GENES: &[Gene] = &[
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
+    // A Religion-target founder's spreaders gather before a long walk past rival Apostles. Unpriced, off.
+    Gene { tag: "religion-seat-marches-in-a-pack", field: "religion_seat_marches_in_a_pack", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_marches_in_a_pack, disable: AdvancedAi::disable_religion_seat_marches_in_a_pack },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },
     // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
