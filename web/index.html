@@ -932,7 +932,7 @@
   .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
   .turn-live {
     min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px;
-    margin: 0 0 4px; padding: 0 16px 4px; border-bottom: 1px solid #d7b66a24; white-space: nowrap;
+    margin: 0 0 4px; padding: 0 16px; white-space: nowrap;
   }
   .turn-live .turn-label { font-size: var(--type-small); }
   .turn-live b {
@@ -984,6 +984,8 @@
     justify-content: safe center; margin: 0 0 4px; color: #9fb0a9;
     font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
   }
+  /* The stopwatch and the pace read as one section; the rule closes it. */
+  .has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }
   /* The seam on the plate's right edge: the command deck's resize affordance
      brought inside the masthead. As a grid item overlapping the plate cell it
      rides the plate's edge at every density, leaning into the panel gap. */
