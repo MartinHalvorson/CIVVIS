@@ -31772,7 +31772,7 @@ impl Game {
         }
     }
 
-    fn tourism_open_borders(&self, source: usize, target: usize) -> bool {
+    pub(crate) fn tourism_open_borders(&self, source: usize, target: usize) -> bool {
         self.are_allied(source, target)
             || self.players[target]
                 .open_borders_until

@@ -80,6 +80,8 @@ pub struct PaceSample {
     pub culture: f64,
     pub military: f64,
     pub wars: usize,
+    #[serde(default)]
+    pub diag: Option<serde_json::Value>,
 }
 
 impl PaceSample {
@@ -105,8 +107,155 @@ impl PaceSample {
                         && game.is_at_war(pid, *other)
                 })
                 .count(),
+            diag: Some(culture_diag(game, pid)),
         }
     }
+}
+
+/// LOCAL DIAGNOSTIC (culture lane study, not for commit).
+fn culture_diag(game: &Game, pid: usize) -> serde_json::Value {
+    let majors: Vec<usize> = game
+        .players
+        .iter()
+        .filter(|p| !p.is_minor && !p.is_barbarian && p.alive && p.id != pid)
+        .map(|p| p.id)
+        .collect();
+    let bar = majors.iter().map(|o| game.domestic_tourists(*o)).max().unwrap_or(0);
+    let bar_holder = majors.iter().copied().max_by_key(|o| game.domestic_tourists(*o));
+    let works: usize = game
+        .housed_great_works(pid)
+        .values()
+        .flat_map(|m| m.values())
+        .sum();
+    let wonders: usize = game
+        .player_city_ids(pid)
+        .iter()
+        .filter_map(|cid| game.cities.get(cid))
+        .map(|c| c.wonders.len())
+        .sum();
+    let ob = majors.iter().filter(|o| game.tourism_open_borders(pid, **o)).count();
+    let tr = majors.iter().filter(|o| game.has_tourism_trade_route(pid, **o)).count();
+    let theaters = game
+        .player_city_ids(pid)
+        .iter()
+        .filter(|cid| game.city_has_district_family(&game.cities[cid], crate::name!("theater_square")))
+        .count();
+    let rival_culture: f64 = majors
+        .iter()
+        .map(|o| game.players[*o].culture_lifetime)
+        .fold(0.0, f64::max);
+    let mut by_kind: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    for (pos, amount) in game.tourism_by_tile(pid) {
+        let tile = &game.map.tiles[&pos];
+        let kind = if tile.wonder.is_some() {
+            "wonder".to_string()
+        } else if let Some(d) = tile.district {
+            format!("d:{}", d.as_str())
+        } else if let Some(i) = tile.improvement {
+            format!("i:{}", i.as_str())
+        } else {
+            "other".to_string()
+        };
+        *by_kind.entry(kind).or_default() += amount;
+    }
+    let by_kind: std::collections::BTreeMap<String, f64> = by_kind
+        .into_iter()
+        .filter(|(_, v)| *v >= 0.5)
+        .map(|(k, v)| (k, (v * 10.0).round() / 10.0))
+        .collect();
+    let mut works_by_kind: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for m in game.housed_great_works(pid).values() {
+        for (k, n) in m {
+            *works_by_kind.entry(k.clone()).or_default() += *n;
+        }
+    }
+    let techs_has: Vec<&str> = ["printing", "flight", "radio", "computers"]
+        .into_iter()
+        .filter(|t| game.players[pid].techs.contains(&crate::name::Name::new(t)))
+        .collect();
+    let civics_has: Vec<&str> = [
+        "humanism", "natural_history", "conservation", "cold_war", "cultural_heritage",
+        "drama_poetry", "aesthetics",
+    ]
+    .into_iter()
+    .filter(|t| game.players[pid].civics.contains(&crate::name::Name::new(t)))
+    .collect();
+    // Marginal tourism of each unlock: remove it from a clone and recompute.
+    let base_tourism = game.tourism_per_turn(pid);
+    let mut marginal = std::collections::BTreeMap::new();
+    for (kind, name) in [
+        ("t", "printing"),
+        ("t", "flight"),
+        ("t", "computers"),
+        ("c", "humanism"),
+        ("c", "natural_history"),
+        ("c", "conservation"),
+    ] {
+        let key = crate::name::Name::new(name);
+        let has = if kind == "t" {
+            game.players[pid].techs.contains(&key)
+        } else {
+            game.players[pid].civics.contains(&key)
+        };
+        if !has {
+            continue;
+        }
+        let mut clone = game.clone();
+        if kind == "t" {
+            clone.players[pid].techs.remove(&key);
+        } else {
+            clone.players[pid].civics.remove(&key);
+        }
+        let without = clone.tourism_per_turn(pid);
+        marginal.insert(name.to_string(), ((base_tourism - without) * 10.0).round() / 10.0);
+    }
+    let deals = game.quick_deals(pid);
+    let lux_quotes = deals.iter().filter(|d| d.category == "luxury").count();
+    let strat_quotes = deals.iter().filter(|d| d.category == "strategic").count();
+    let gw_quotes = deals.iter().filter(|d| d.category == "great_work").count();
+    let proxy = game.empire_gold_per_turn(pid);
+    let park_sites = game.national_park_sites(pid).len();
+    let parks = game
+        .map
+        .tiles
+        .values()
+        .filter(|t| t.improvement.is_some_and(|i| i.as_str() == "national_park"))
+        .filter(|t| t.owner_city.is_some_and(|c| game.cities.get(&c).is_some_and(|c| c.owner == pid)))
+        .count()
+        / 4;
+    let naturalists = game
+        .player_unit_ids(pid)
+        .iter()
+        .filter(|u| game.units[u].kind == "naturalist")
+        .count();
+    serde_json::json!({
+        "parks": [park_sites, parks, naturalists, game.naturalist_purchase_cost(pid) as i64],
+        "deal_quotes": [lux_quotes, strat_quotes, gw_quotes],
+        "liquidity_proxy": (proxy * 10.0).round() / 10.0,
+        "gold": game.players[pid].gold as i64,
+        "gpt_field": (game.players[pid].gold_per_turn * 10.0).round() / 10.0,
+        "marginal": marginal,
+        "works_by_kind": works_by_kind,
+        "techs_has": techs_has,
+        "civics_has": civics_has,
+        "by_kind": by_kind,
+        "tourism": (game.tourism_per_turn(pid) * 10.0).round() / 10.0,
+        "visitors": game.foreign_tourists(pid),
+        "domestic": game.domestic_tourists(pid),
+        "bar": bar,
+        "bar_holder_from": bar_holder.map(|o| game.tourism_pressure_against(pid, o) as i64),
+        "works": works,
+        "wonders": wonders,
+        "theaters": theaters,
+        "open_borders": ob,
+        "routes": tr,
+        "rivals": majors.len(),
+        "culture_life": game.players[pid].culture_lifetime as i64,
+        "rival_culture_life": rival_culture as i64,
+        "gov": game.players[pid].government.clone(),
+        "faith": game.players[pid].faith as i64,
+        "bands": game.player_unit_ids(pid).iter().filter(|u| game.units[u].kind == "rock_band").count(),
+    })
 }
 
 pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {

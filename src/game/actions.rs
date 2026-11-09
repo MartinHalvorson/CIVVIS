@@ -9713,7 +9713,7 @@ impl Game {
         }
     }
 
-    pub(super) fn empire_gold_per_turn(&self, pid: usize) -> f64 {
+    pub(crate) fn empire_gold_per_turn(&self, pid: usize) -> f64 {
         // Deal quoting runs for many counterparties in headless games. Use a
         // conservative liquidity proxy rather than recursively rebuilding
         // every citizen plan and city yield for every candidate contract.
