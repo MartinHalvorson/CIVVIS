@@ -8846,7 +8846,7 @@ function hiddenMapMonsterSeat(q, r, seedA, seedB) {
 }
 
 function drawHiddenMapMonster(x, y, size, variant, angle, mirrored, alpha) {
-  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+  if (!hiddenMapMonstersReady()) return;
   const sourceX = (variant % HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
   const sourceY = Math.floor(variant / HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
   cx.save();
@@ -8923,7 +8923,7 @@ function drawHiddenMapParchment(layer) {
 
 function drawHiddenMapMonsters(layer) {
   const cells = layer.monsterCells || layer.cells;
-  if (!HIDDEN_MAP_MONSTER_ATLAS_READY || !cells.length) return;
+  if (!hiddenMapMonstersReady() || !cells.length) return;
   const [seedA, seedB] = hiddenMapSeedWords();
   for (const cell of cells) {
     if (!hiddenMapMonsterSeat(cell.q, cell.r, seedA, seedB)) continue;
@@ -21961,7 +21961,7 @@ function planetChartTaleIsDeep(cell, radius) {
   return true;
 }
 function drawPlanetChartMarginalia(camera, scale, centerX, centerY) {
-  if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
+  if (!hiddenMapMonstersReady()) return;
   const floor = planetChartAntipodeFloor();
   for (const seat of planetChartTaleSeats()) {
     const at = planetProject(seat.cell.center, camera, scale, centerX, centerY);

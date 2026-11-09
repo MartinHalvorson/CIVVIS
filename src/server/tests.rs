@@ -9076,6 +9076,25 @@ fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
     );
     assert!(EMBEDDED_INDEX
         .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+    // It loads when a chart first asks for it, not with the page.
+    let ready = EMBEDDED_INDEX
+        .split("function hiddenMapMonstersReady() {")
+        .nth(1)
+        .and_then(|tail| tail.split("return HIDDEN_MAP_MONSTER_ATLAS_READY;").next())
+        .expect("the atlas's loader");
+    assert!(ready.contains("HIDDEN_MAP_MONSTER_ATLAS.src = "));
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches("HIDDEN_MAP_MONSTER_ATLAS.src = ")
+            .count(),
+        1,
+        "and nothing else starts the download"
+    );
+    assert!(
+        !EMBEDDED_INDEX.contains("new Image();\nlet FEATURE_ATLAS_READY")
+            && !EMBEDDED_INDEX.contains("ENVIRONMENT_FEATURE_ATLAS"),
+        "the two atlases nothing draws stay off the page's first download"
+    );
     assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_CELL = 256"));
     assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_VARIANTS = 30"));
 
