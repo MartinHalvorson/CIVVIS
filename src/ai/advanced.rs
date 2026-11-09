@@ -17829,6 +17829,8 @@ impl AdvancedAi {
         if active_naturalists == 0
             && !g.national_park_sites(pid).is_empty()
             && portfolio_budget + f64::EPSILON >= g.naturalist_purchase_cost(pid)
+            // See `advanced/culture_band_bank.rs`.
+            && !self.culture_band_bank_holds_naturalists(g, pid)
         {
             for city in g.player_city_ids(pid) {
                 if g.apply(
