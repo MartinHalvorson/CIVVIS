@@ -872,6 +872,44 @@ def religion_lost_reading(state: dict, event: dict) -> dict | None:
     }
 
 
+# ★ OPERATOR 2026-11-09: "if we are targeting a religious victory and don't
+# found a religion, we should restart too". Same switch as the lost religion.
+#
+# We can no longer found one once the host reports the Prophet class exhausted
+# and no Prophet of ours is pending. The class can read exhausted while a
+# Prophet we already earned walks to its Holy Site (founded two turns later in
+# civvis-20261109T022744Z), which is what `prophet_pending` covers; a record
+# without that field says nothing. Held for the same three turns running.
+PROPHET_CLASS = "GREAT_PERSON_CLASS_PROPHET"
+
+
+def religion_never_founded_reading(state: dict, event: dict) -> dict | None:
+    """Fold one record into the founding watch; a verdict once founding is closed."""
+    if event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    exhausted = event.get("great_person_exhausted")
+    # `founded_religion` is absent until we found one; `founded_religions`, the
+    # whole world's list, is what shows the record carries religion data at all.
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(event.get("founded_religions"), list)
+            or not isinstance(exhausted, list)):
+        return None
+    if (event.get("founded_religion") or event.get("prophet_pending") is not False
+            or PROPHET_CLASS not in exhausted):
+        state.pop("no_religion_since", None)
+        return None
+    since = state.setdefault("no_religion_since", turn)
+    if turn - since + 1 < RELIGION_LOST_TURNS:
+        return None
+    return {
+        "rule": "religion_never_founded",
+        "turn": turn,
+        "lost_turn": since,
+        "fires": True,
+    }
+
+
 # ★ A seat that leads a victory race is not retired on Production. Live 10-31
 # (6p Continents, Diplomatic lane): civvis-20261031T015208Z-cont2 was retired
 # at turn 187 on 19 Diplomatic Victory points against the best rival's 11
@@ -5057,9 +5095,9 @@ def play(args: argparse.Namespace) -> int:
     religion_lost = religion_lost_policy() if religion_lost is None else bool(religion_lost)
     args.restart_on_religion_lost = religion_lost
     if religion_lost and getattr(args, "civvis_victory", None) == "religious":
-        print(f"[policy] a religious-victory game whose religion has no followers "
-              f"for {RELIGION_LOST_TURNS} turns running is retired "
-              "(operator 2026-11-09)", flush=True)
+        print(f"[policy] a religious-victory game that cannot found a religion, or "
+              f"whose religion has no followers, for {RELIGION_LOST_TURNS} turns "
+              "running is retired (operator 2026-11-09)", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -6515,6 +6553,15 @@ def _play(args: argparse.Namespace) -> int:
                       "retiring so the next game starts (operator 2026-11-09)",
                       flush=True)
                 return abandon_with_retire(reading)
+            # Arabia's Last Prophet arrives after the class closes.
+            if not str(args.leader or "").startswith("LEADER_SALADIN"):
+                reading = religion_never_founded_reading(state, event)
+                if reading is not None and reading.get("fires"):
+                    print(f"[abandon] turn {reading['turn']}: no religion founded and "
+                          f"no Great Prophet left since turn {reading['lost_turn']} — "
+                          "retiring so the next game starts (operator 2026-11-09)",
+                          flush=True)
+                    return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -7430,8 +7477,9 @@ def main(argv: list[str] | None = None) -> int:
                          f"{EARLY_CITY_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-04)")
     ap.add_argument("--restart-on-religion-lost", type=int, default=None,
-                    help="retire a religious-victory game once no city follows "
-                         "the religion it founded (1 = on, 0 = off); unset reads "
+                    help="retire a religious-victory game once it cannot found a "
+                         "religion or no city follows the one it founded "
+                         "(1 = on, 0 = off); unset reads "
                          f"{RELIGION_LOST_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-09)")
     ap.add_argument("--city-target", type=int, default=6)
