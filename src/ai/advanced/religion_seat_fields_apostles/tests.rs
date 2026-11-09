@@ -263,6 +263,7 @@ fn an_idle_city_claims_a_holy_site() {
 fn a_founder_takes_its_faith_buildings_first() {
     let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
     ai.base.book_pos = 4;
+    g.players[0].techs.insert(crate::name!("astrology"));
     g.players[0].civics.insert(crate::name!("theology"));
     g.players[0].faith = 0.0;
     let plan = StrategicPlan {
