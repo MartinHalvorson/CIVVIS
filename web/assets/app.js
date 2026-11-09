@@ -3186,6 +3186,8 @@ const RESPONSIVE_TEXT_RULES = [
   // exact amount it is too big by — and one size for every row is what keeps
   // four adjacent settings looking like one instrument.
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
+  // Watch pace sits alone above the age, so it is fitted on its own.
+  {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
   {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
@@ -25257,10 +25259,10 @@ function hudTurnPlate() {
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    `watch pace ${watchPace}; ` +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
-    `watch pace ${watchPace}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
@@ -25275,7 +25277,8 @@ function hudTurnPlate() {
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age").
+  // 2026-10-14: "live time can be a very top section above the age"). Watch
+  // pace sits directly under it, still above the age (operator 2026-11-09).
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -25283,6 +25286,7 @@ function hudTurnPlate() {
       ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
         `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
+    `<div class="turn-setting turn-pace-line"><span>Watch pace:</span>${watchPaceValue}</div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -25292,7 +25296,6 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +
-    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
