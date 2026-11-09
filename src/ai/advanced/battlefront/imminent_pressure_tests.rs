@@ -134,7 +134,7 @@ fn a_blocked_attack_route_is_not_an_imminent_city_attack() {
 
 #[test]
 fn disabled_observation_and_peace_keep_the_old_threshold() {
-    let (mut g, cid, _) = fixture("knight");
+    let (mut g, _cid, _) = fixture("knight");
     let mut ai = AdvancedAi::new();
     ai.battlefront_observation = false;
     assert_eq!(ai.threatened_city(&g, 0), None);
