@@ -149,6 +149,6 @@ fn an_established_multi_city_empire_does_not_take_an_opening_slot() {
 fn opening_ranged_support_is_an_opt_in_off_in_both_controllers() {
     crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
         "opening-ranged-support",
-        |ai| ai.opening_ranged_support,
+        |ai| ai.opening_ranged_support(),
     );
 }
