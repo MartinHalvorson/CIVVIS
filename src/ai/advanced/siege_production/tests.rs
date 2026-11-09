@@ -120,6 +120,52 @@ fn delegated_domination_reserves_one_real_wall_breaker() {
         .is_none());
 }
 
+#[test]
+fn delegated_domination_reserves_a_gun_for_an_open_city_that_outheals_the_assault() {
+    let (mut g, mut ai, plan, home, target) = siege_gap_case();
+    ai.enable_lane_delegates_production_2();
+    ai.enable_siege_positive_damage_budget();
+    let target_pos = g.cities[&target].pos;
+    g.cities.get_mut(&target).unwrap().wall_hp = 0;
+    g.cities
+        .get_mut(&target)
+        .unwrap()
+        .buildings
+        .retain(|building| {
+            !matches!(
+                building.as_str(),
+                "walls" | "medieval_walls" | "renaissance_walls"
+            )
+        });
+    g.spawn_unit("modern_armor", 1, target_pos);
+    g.spawn_unit("archer", 0, (target_pos.0 - 2, target_pos.1));
+    g.players[0].turn_visible.insert(target_pos);
+    let nearby: Vec<_> = g
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|uid| g.wdist(g.units[uid].pos, target_pos) <= 5)
+        .collect();
+    let (finish, endurance) = ai
+        .conversion_siege_budget(&g, 0, target, &nearby)
+        .expect("the open city is visible");
+    assert!(finish > endurance * 0.8);
+
+    let mut nearly_taken = g.clone();
+    nearly_taken.cities.get_mut(&target).unwrap().hp = super::OPEN_CITY_GUN_HEALTH_FLOOR;
+    assert!(ai
+        .reserve_delegated_domination_siege(&mut nearly_taken, 0, &plan)
+        .is_none());
+    assert_eq!(
+        ai.reserve_delegated_domination_siege(&mut g, 0, &plan),
+        Some((
+            home,
+            Item::Unit {
+                unit: crate::name!("catapult")
+            }
+        ))
+    );
+}
+
 /// On `civvis-20260929T003923Z` turn 146, every productive city had just
 /// started a routine queue, so the delegated reservation picked a new
 /// one-production city and forecast 144 turns for a bombard. A fresh trader

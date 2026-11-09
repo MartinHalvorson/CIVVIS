@@ -4,6 +4,9 @@ use super::*;
 /// opening conquest reservation scale; ordinary production-time pricing still
 /// prefers a faster city and existing/queued weapons close this reservation.
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
+/// An open city already below half health can be finished by the current
+/// assault before a newly trained gun arrives.
+const OPEN_CITY_GUN_HEALTH_FLOOR: i32 = 100;
 
 impl AdvancedAi {
     /// Remember wall breakers whose production would otherwise be lost when a
@@ -98,9 +101,10 @@ impl AdvancedAi {
     }
 
     /// The delegated city governor does not call `production_value`, where the
-    /// ordinary missing-siege reservation lives. Give a walled Domination
-    /// assault one real bombardment unit before delegation fills every idle
-    /// queue. A fielded or queued land gun normally closes this reservation;
+    /// ordinary missing-siege reservation lives. Give a Domination assault
+    /// one real bombardment unit when walls or an open city's defensive
+    /// strength defeat the current damage budget. A fielded or queued land
+    /// gun normally closes this reservation;
     /// a failed positive damage budget can reserve up to three in total. If
     /// only a new, low-production city is idle, a much faster city may give up
     /// an uninvested routine queue instead: a 140-turn gun cannot reinforce a
@@ -119,10 +123,7 @@ impl AdvancedAi {
             .target_city
             .and_then(|cid| g.cities.get(&cid))
             .filter(|city| {
-                city.wall_hp > 0
-                    && city.owner != pid
-                    && !g.players[city.owner].is_minor
-                    && g.is_at_war(pid, city.owner)
+                city.owner != pid && !g.players[city.owner].is_minor && g.is_at_war(pid, city.owner)
             })
         else {
             return None;
@@ -139,12 +140,18 @@ impl AdvancedAi {
             let spec = &g.rules.units[g.units[id].kind];
             spec.is_melee_capable() && spec.ranged_strength == 0.0 && spec.bombard_strength == 0.0
         });
-        let breach_shortfall = self.siege_positive_damage_budget
-            && counts.siege < 3
-            && nearby_taker
+        let damage_shortfall = self.siege_positive_damage_budget
             && self
                 .conversion_siege_budget(g, pid, target.id, &nearby_force)
                 .is_some_and(|(finish, endurance)| finish > endurance * 0.8);
+        // A full-health city with no walls can still outheal Archers. The
+        // same first gun is useful there; do not wait for the enemy to finish
+        // walls before reserving it.
+        if target.wall_hp <= 0 && !(target.hp > OPEN_CITY_GUN_HEALTH_FLOOR && damage_shortfall) {
+            return None;
+        }
+        let breach_shortfall =
+            target.wall_hp > 0 && damage_shortfall && counts.siege < 3 && nearby_taker;
         if self.live_war_economy_requires_recovery(g, pid, &counts) {
             return None;
         }
