@@ -329,10 +329,14 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
 
         // The countdown that follows a result is wall-clock, and a wasm module
         // has no clock of its own worth trusting; the shim runs it and calls
-        // here when it reaches zero.
+        // here when it reaches zero. Only a finished world can be moved on
+        // from: the count is the one caller nobody asked, so a world somebody
+        // has put back into play is left alone however the requests interleave.
         ("POST", "/next-game") => with_session(|session| {
-            let queued = NEXT_GAME_PARAMS.with(|cell| cell.borrow_mut().take());
-            start_automatic_browser_next_game(session, queued);
+            if session.game.is_finished() {
+                let queued = NEXT_GAME_PARAMS.with(|cell| cell.borrow_mut().take());
+                start_automatic_browser_next_game(session, queued);
+            }
             let mut o = session.state();
             o["error"] = Value::Null;
             decorate_browser(&mut o);
