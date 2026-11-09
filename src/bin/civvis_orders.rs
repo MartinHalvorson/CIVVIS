@@ -61,6 +61,8 @@ mod air_assault_continuation;
 mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
+#[path = "civvis_orders/culture_ski_resorts.rs"]
+mod culture_ski_resorts;
 #[path = "civvis_orders/diagnostics.rs"]
 mod diagnostics;
 #[path = "civvis_orders/formation_refusals.rs"]
@@ -5765,6 +5767,11 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let ski_jobs =
+        culture_ski_resorts::append(ai, mirror_state, &host_move_refusals.dead, &mut orders);
+    if ski_jobs > 0 {
+        note_bits.push(format!("culture_ski_jobs={ski_jobs}"));
+    }
     let safer_campuses = campus_above_sea::retarget(ai, mirror_state, &mut orders);
     if safer_campuses > 0 {
         note_bits.push(format!("campus_above_the_sea={safer_campuses}"));
