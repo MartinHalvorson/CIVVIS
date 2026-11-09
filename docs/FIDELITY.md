@@ -881,6 +881,19 @@ the `Continents` column of `Maps` for the map size.
 The shipped buffer is skipped under the Legendary Start setting. CIVVIS has no
 such setting, so the buffer always applies.
 
+**Tribal Villages** now follow `AddGoodies` and `CanPlaceGoodyAt` in
+`MapUtilities.lua`, run last as the scripts run them. CIVVIS had rolled 2.5% of
+land before resources and starts existed, and refused rivers.
+
+| Rule | Shipped | Live (193 villages, 47 games, revealed plots) |
+|---|---|---|
+| Density | `TilesPerGoody` 128 over every plot walked, water included, then a coin flip | a floor only, the export is revealed plots |
+| No resource | `plot:GetResourceType() ~= NO_RESOURCE` refuses | 0 on a resource |
+| Features | `Improvement_ValidFeatures`: Woods, Rainforest, Marsh, the three Floodplains | those, plus 1 on Volcanic Soil an eruption left later |
+| Rivers | no rule | 34 on a river |
+| Other villages | `GoodyRange` 3, walking `dx` and `dy` from -3 to 2, so some plots at 3 are not checked | nearest neighbour never under 3, 14 at exactly 3 against 60 at 4 |
+| Starts | `dx` and `dy` from -3 to 3 with a range of 4, every start plot | not censused |
+
 ## Closed: major start spacing
 
 `START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`

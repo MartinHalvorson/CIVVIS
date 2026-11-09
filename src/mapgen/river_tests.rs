@@ -4332,6 +4332,80 @@ fn starts_keep_the_shipped_standoff_from_natural_wonders() {
 }
 
 #[test]
+fn tribal_villages_stand_where_the_shipped_script_puts_them() {
+    // `CanPlaceGoodyAt` and `AddGoodies`. In 47 live games, 193 villages:
+    // none on a resource, 34 on a river, none within 2 of another.
+    let rules = Rules::embedded();
+    let village = rules
+        .improvements
+        .get(&crate::name!("goody_hut"))
+        .expect("the Tribal Village is in the rules");
+    let mut on_a_river = 0;
+    for seed in 0..6u64 {
+        let mut rng = Rng::new(63_000 + seed);
+        let (wm, spawns) = generate_with_script(
+            &rules,
+            84,
+            54,
+            8,
+            12,
+            4,
+            4,
+            MapScript::Continents,
+            MapTopology::Flat,
+            POLED,
+            &mut rng,
+        );
+        let villages: Vec<Pos> = wm
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.improvement.as_deref() == Some("goody_hut"))
+            .map(|(position, _)| *position)
+            .collect();
+        let plots = wm.tiles.len();
+        assert!(
+            villages.len() <= plots / 128 + 1,
+            "seed {seed}: {} villages on {plots} plots",
+            villages.len()
+        );
+        assert!(
+            villages.len() >= plots / 128 * 6 / 10,
+            "seed {seed}: only {} villages on {plots} plots",
+            villages.len()
+        );
+        for (index, position) in villages.iter().enumerate() {
+            let tile = &wm.tiles[position];
+            assert!(tile.resource.is_none(), "seed {seed}: on a resource");
+            assert!(
+                village.terrain.contains(&tile.terrain),
+                "seed {seed}: on {}",
+                tile.terrain
+            );
+            assert!(
+                tile.feature
+                    .is_none_or(|feature| village.feature.contains(&feature)),
+                "seed {seed}: on {:?}",
+                tile.feature
+            );
+            for start in &spawns {
+                assert!(
+                    wm.distance(*position, *start) > 3,
+                    "seed {seed}: a village within 3 of a start"
+                );
+            }
+            for other in &villages[index + 1..] {
+                assert!(
+                    wm.distance(*position, *other) > 2,
+                    "seed {seed}: two villages within 2 of each other"
+                );
+            }
+            on_a_river += usize::from(tile.has_river());
+        }
+    }
+    assert!(on_a_river > 0, "no village stood on a river in six worlds");
+}
+
+#[test]
 fn each_world_type_spreads_the_lakes_its_shipped_script_asks_for() {
     // `numLargeLakes` in each script, over the `Continents` column of Maps.xml:
     // Duel 1, Tiny 2, Small 3, Standard 4, Large 5, Huge 6.

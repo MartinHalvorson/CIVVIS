@@ -1792,8 +1792,8 @@ pub(super) fn place_starts_and_finish(
     // laid down before the seats were known. On a world with plenty of land
     // that is one or two tiles and the top-up finds nothing to do; on a Water
     // World, where every seat is a large share of the land, it is the
-    // difference between an iron age and a bronze one. Nothing after this
-    // draws from the stream, so a world that needed no top-up is unmoved.
+    // difference between an iron age and a bronze one. Only the Tribal Villages
+    // draw from the stream after this, so a top-up can move nothing but them.
     if !script.is_battlefield() {
         place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
         place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
@@ -1826,5 +1826,98 @@ pub(super) fn place_starts_and_finish(
             tile.feature = None;
         }
     }
+    // Tribal Villages come last, as `AddGoodies` does in the shipped scripts:
+    // they keep off the resources and the starts that are final by now. The
+    // battlefield has none, nothing on an arena exists to be discovered.
+    if !script.is_battlefield() {
+        add_goodies(rules, &mut wm, &spawns, rng);
+    }
     (wm, spawns)
+}
+
+/// `Improvements.TilesPerGoody` for the Tribal Village: one per this many
+/// plots of the whole map, water counted.
+const TILES_PER_GOODY: usize = 128;
+
+/// `Improvements.GoodyRange` for the Tribal Village.
+const GOODY_RANGE: i32 = 3;
+
+/// Whether the shipped scripts' offset walk reaches `other` from `centre`.
+///
+/// `MapUtilities.lua` loops `dx` and `dy` over `low..=high` and asks
+/// `Map.GetPlotXYWithRangeCheck` for each. The square clips the hex, so the
+/// two walks in `CanPlaceGoodyAt` are not plain distances: the village walk
+/// stops one short on its positive side, and the start walk takes six plots
+/// of the fourth ring. A globe has no shipped script and uses the distance.
+fn offset_walk_reaches(
+    wm: &WorldMap,
+    centre: Pos,
+    other: Pos,
+    low: i32,
+    high: i32,
+    range: i32,
+) -> bool {
+    if wm.sphere().is_some() {
+        return wm.distance(centre, other) <= GOODY_RANGE;
+    }
+    let (dq, dr) = (other.0 - centre.0, other.1 - centre.1);
+    let wrap = if wm.wraps_east_west() { wm.width } else { 0 };
+    [dq, dq - wrap, dq + wrap].into_iter().any(|dq| {
+        (low..=high).contains(&dq)
+            && (low..=high).contains(&dr)
+            && hex::distance((0, 0), (dq, dr)) <= range
+    })
+}
+
+/// `CanPlaceGoodyAt`. The terrain and feature lists are the Tribal Village's
+/// `Improvement_ValidTerrains` and `Improvement_ValidFeatures`, which already
+/// leave out water, Mountains, Oases and every Natural Wonder. A river is no
+/// bar: 34 of 193 live villages stood on one.
+fn can_place_goody_at(
+    wm: &WorldMap,
+    village: &crate::rules::ImprovementSpec,
+    pos: Pos,
+    villages: &[Pos],
+    starts: &[Pos],
+) -> bool {
+    let tile = &wm.tiles[&pos];
+    tile.improvement.is_none()
+        && tile.resource.is_none()
+        && village.terrain.contains(&tile.terrain)
+        && tile
+            .feature
+            .is_none_or(|feature| village.feature.contains(&feature))
+        && !villages.iter().any(|other| {
+            offset_walk_reaches(wm, pos, *other, -GOODY_RANGE, GOODY_RANGE - 1, GOODY_RANGE)
+        })
+        && !starts
+            .iter()
+            .any(|start| offset_walk_reaches(wm, pos, *start, -3, 3, 4))
+}
+
+/// `AddGoodies`: walk the map a column at a time, and on each legal plot flip
+/// a coin if the villages so far are fewer than one per `TILES_PER_GOODY`
+/// plots walked.
+fn add_goodies(rules: &Rules, wm: &mut WorldMap, starts: &[Pos], rng: &mut Rng) {
+    let Some(village) = rules.improvements.get(&crate::name!("goody_hut")) else {
+        return;
+    };
+    let mut villages: Vec<Pos> = Vec::new();
+    let mut plots_walked = 0usize;
+    for col in 0..wm.width {
+        for row in 0..wm.height {
+            let pos = hex::offset_to_axial(col, row);
+            if !wm.tiles.contains_key(&pos) {
+                continue;
+            }
+            if can_place_goody_at(wm, village, pos, &villages, starts)
+                && (villages.is_empty() || TILES_PER_GOODY * villages.len() < plots_walked)
+                && rng.below(2) == 1
+            {
+                wm.tiles.get_mut(&pos).unwrap().improvement = Some("goody_hut".into());
+                villages.push(pos);
+            }
+            plots_walked += 1;
+        }
+    }
 }

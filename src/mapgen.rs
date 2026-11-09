@@ -2157,20 +2157,6 @@ pub fn generate_with_script_and_leader_starts(
     remove_water_boundary_rivers(&mut wm);
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
-    // --- tribal villages (goody huts), roughly 1 per 40 land tiles. The
-    // battlefield has none: nothing on an arena exists to be discovered.
-    if !script.is_battlefield() {
-        for pos in &land_list {
-            let t = &wm.tiles[pos];
-            if t.terrain == "mountain" || t.has_river() {
-                continue;
-            }
-            if rng.f64() < 0.025 {
-                wm.tiles.get_mut(pos).unwrap().improvement = Some("goody_hut".into());
-            }
-        }
-    }
-
     // --- tectonic and polar features
     // Volcanoes replace a small, well-spaced subset of mountain tiles. Every
     // candidate needs exposed land at its foot so the volcano reads as part of
