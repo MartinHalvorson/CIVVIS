@@ -15983,26 +15983,17 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
   return true;
 }
 
-// The cells the 2D ink above the GPU ground iterates over: natural wonders,
-// the tiles an empire label is placed from, and the edge of sight. Everything
-// else it needs it looks up by key, projected on demand.
-function planetGpuMapOverlayKeys(map, scale, radius, visible, turnVisible, spectator) {
-  const labels = scale <= PLANET_MAJOR_CITY_LABEL_SCALE && radius > PLANET_EMPIRE_LABEL_MIN_RADIUS;
+// The cells the 2D ink above the GPU ground iterates over: natural wonders
+// and the edge of sight. Everything else it needs it looks up by key,
+// projected on demand; empire labels stand on their own ground spots.
+function planetGpuMapOverlayKeys(map, radius, visible, spectator) {
   const perimeter = !spectator && radius >= SKY_MARKERS;
   const cached = map.overlayKeys;
-  if (cached && cached.state === state && cached.labels === labels &&
-      cached.perimeter === perimeter && cached.visible === visible &&
-      cached.turnVisible === turnVisible && cached.spectator === spectator) return cached.keys;
+  if (cached && cached.state === state && cached.perimeter === perimeter &&
+      cached.visible === visible && cached.spectator === spectator) return cached.keys;
   const keys = new Set();
-  for (const tile of state.map.tiles) {
-    const tileKey = key(tile.pos);
-    if (isNaturalWonder(tile.feature)) { keys.add(tileKey); continue; }
-    if (!labels) continue;
-    const player = state.players[tile.owner];
-    if (!player || player.is_minor || player.is_barbarian || player.met === false || !player.civ)
-      continue;
-    if (spectator || turnVisible.has(tileKey)) keys.add(tileKey);
-  }
+  for (const tile of state.map.tiles)
+    if (isNaturalWonder(tile.feature)) keys.add(key(tile.pos));
   if (perimeter) {
     for (const tileKey of visible) {
       const cell = PLANET.cells.get(tileKey);
@@ -16010,14 +16001,12 @@ function planetGpuMapOverlayKeys(map, scale, radius, visible, turnVisible, spect
         keys.add(tileKey);
     }
   }
-  map.overlayKeys = {state, labels, perimeter, visible, turnVisible, spectator, keys};
+  map.overlayKeys = {state, perimeter, visible, spectator, keys};
   return keys;
 }
 
-function planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
-                                  visible, turnVisible, spectator) {
-  const keys = planetGpuMapOverlayKeys(PLANET_GPU.map, scale, radius, visible, turnVisible,
-                                       spectator);
+function planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius, visible, spectator) {
+  const keys = planetGpuMapOverlayKeys(PLANET_GPU.map, radius, visible, spectator);
   const out = [];
   for (const tileKey of keys) {
     const tile = TMAP.get(tileKey);
@@ -24003,7 +23992,7 @@ function drawPlanetMap() {
   // iterates only the cells that carry some, and finds the rest by key.
   const cells = !earthInFrame ? []
     : gpuMap ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
-                                        visible, turnVisible, spectator)
+                                        visible, spectator)
     : planetCells(camera, scale, centerX, centerY);
   if (!gpuSurface && !gpuMap)
     drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
