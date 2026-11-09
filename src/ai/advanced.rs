@@ -13068,17 +13068,17 @@ impl AdvancedAi {
                 // A lone fast unit can be below the aggregate 0.90 ratio and
                 // still take the City Center's attack ring this turn. Civ VI
                 // resolves that movement before the next defensive turn, so
-                // waiting for a second attacker is one turn too late. Keep
-                // the existing 0.45 floor to avoid promoting a weak outer
-                // contact to an empire-wide recall. A materially overmatching
-                // attacker gets a lower aggregate floor because the
-                // City-Center defense is independently weak evidence.
+                // waiting for a second attacker is one turn too late. Ordinary
+                // contact or city damage keeps the 0.45 floor. A materially
+                // overmatching attacker with a legal attack independently
+                // uses the lower 0.30 floor because the City-Center defense
+                // is independently weak evidence.
                 let imminent_attack = self.battlefront_observation
                     && danger >= IMMINENT_ATTACK_PRESSURE
                     && Self::imminent_city_attack(g, pid, cid, &visible);
-                let critical = danger >= 0.90
-                    || (danger >= BASTION_PRESSURE
-                        && (breached || fresh_damage || imminent_attack));
+                let critical = imminent_attack
+                    || danger >= 0.90
+                    || (danger >= BASTION_PRESSURE && (breached || fresh_damage));
                 // A fresh timestamp is a useful bridge signal, but it can be
                 // absent after a skipped export or a decider restart. Once a
                 // city is already breached, its remaining health is stronger
