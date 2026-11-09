@@ -101,7 +101,9 @@ impl AdvancedAi {
         let mut best: Option<(f64, f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
-            if !city.queue.is_empty()
+            // `religion-seat-races-the-prophet`: any queue, not only an idle
+            // one. See `advanced/religion_seat_fields_apostles.rs`.
+            if (!city.queue.is_empty() && !self.religion_seat_races_the_prophet)
                 || plan.threatened_city == Some(cid)
                 || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
             {

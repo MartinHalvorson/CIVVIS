@@ -110,20 +110,24 @@ fn only_the_open_races_prayers_are_protected_from_settlement() {
     let prayers = Item::Project {
         project: crate::name!("holy_site_prayers"),
     };
-    g.apply(
-        0,
-        &Action::Produce {
-            city: home,
-            item: prayers.clone(),
-        },
-    )
-    .unwrap();
+    g.cities.get_mut(&home).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("settler"),
+    });
     let mut on = treatment();
+    on.enable_religion_seat_races_the_prophet();
     on.plan_city_target = true;
     let mut plan = on.assess(&g, 0);
     plan.strategy = GrandStrategy::Religion;
     plan.desired_cities = 6;
+    plan.threatened_city = None;
+    on.claim_religion_seat_prayers(&mut g, 0, &plan);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&prayers),
+        "the race policy reaches Prayers by preempting the occupied queue"
+    );
     let mut off = AdvancedAi::targeting(VictoryTarget::Religion);
+    off.enable_religion_seat_races_the_prophet();
     off.plan_city_target = true;
     let mut baseline = g.clone();
     off.redirect_repeatable_projects_for_settlement_gap(&mut baseline, 0, &plan);

@@ -473,6 +473,11 @@ pub struct StateCity {
     /// held hundreds of unspent faith.
     #[serde(default)]
     pub religion: Option<String>,
+    /// Whether the foreign city's majority was read on a currently visible
+    /// plot. `Some(true)` with no `religion` means an observed lack of majority;
+    /// false or absent is unknown and must not clear a remembered religion.
+    #[serde(default)]
+    pub religion_observed: Option<bool>,
     /// The religion gaining on this city, if one is. `religion` alone is a level:
     /// a city holding steady and a city about to flip read identically — the same
     /// reason `loyalty_per_turn` exists beside `loyalty`.
