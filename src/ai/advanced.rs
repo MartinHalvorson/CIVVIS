@@ -19814,6 +19814,11 @@ impl AdvancedAi {
                     self.domination_defensive_temple(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
+            // A founder's newly claimed Faith building has not banked its
+            // first hammer yet, but ordinary rescoring must let it start.
+            let faith_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.religion_seat_faith_building_reserved(g, pid, cid, plan, item)
+            });
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
             // `prophet-builds-its-site`: likewise the Holy Site a Prophet
@@ -19940,6 +19945,7 @@ impl AdvancedAi {
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || faith_building_commitment
                     || race_shrine_commitment
                     || denial_spy_commitment
                     || early_settler_commitment
@@ -19968,6 +19974,7 @@ impl AdvancedAi {
                     || live_gp_commitment
                     || domination_research_commitment
                     || defensive_temple_commitment
+                    || faith_building_commitment
                     || race_shrine_commitment
                     || denial_spy_commitment
                     || early_settler_commitment
@@ -20820,6 +20827,11 @@ impl AdvancedAi {
             && !self.hint_city_in_reach_of_war(g, pid, city);
         if claims_and_writers {
             preview.run_idle_queue_claims(&mut board, pid, &plan);
+        }
+        // A Religion founder's Faith infrastructure must reach the hint even
+        // when the independent hint-runs-the-claims treatment is off.
+        if !self.hint_city_in_reach_of_war(g, pid, city) {
+            preview.claim_religion_seat_faith_hint(&mut board, pid, &plan, city);
         }
         preview.advanced_production(&mut board, pid, &plan, false);
         // `hint-runs-the-claims`: the defensive writers that follow the
