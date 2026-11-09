@@ -7539,6 +7539,19 @@ impl AdvancedAi {
         self.industrial_zone_claims_the_factory = false;
     }
 
+    /// A march whose dry road exists but cannot start this turn waits
+    /// without reading as a water hold. Opt-in gene
+    /// `dry-road-outlasts-a-blocked-step`; see
+    /// `AdvancedAi::dry_road_blocked_holds`.
+    pub fn enable_dry_road_outlasts_a_blocked_step(&mut self) {
+        self.dry_road_outlasts_a_blocked_step = true;
+    }
+
+    /// The twin of `enable_dry_road_outlasts_a_blocked_step`.
+    pub fn disable_dry_road_outlasts_a_blocked_step(&mut self) {
+        self.dry_road_outlasts_a_blocked_step = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

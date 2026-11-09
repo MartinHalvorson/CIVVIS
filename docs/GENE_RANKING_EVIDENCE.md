@@ -299,6 +299,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-siege-research-2` | off (unmeasured) | Version one, and the next stronger buildable land siege design once the target's walls reach the Medieval tier. | — \| 2 |
 | `domination-specializes-earlier` | off (unmeasured) | `domination-specializes-earlier`: an assigned Domination lane leaves its development half at 40% of the clock. | 1 \| 1 |
 | `domination-strikes-when-staged` | off (unmeasured) | Opt-in gene `domination-strikes-when-staged`; see `Self::domination_strikes_when_staged`. | 1 \| 1 |
+| `dry-road-outlasts-a-blocked-step` | off (unmeasured) | A march whose dry road exists but cannot start this turn waits without reading as a water hold. | 1 \| 1 |
 | `dvp-leader-is-the-front` | off (unmeasured) | Opt-in gene `dvp-leader-is-the-front`; see `Self::dvp_leader_is_the_front`. | 1 \| 1 |
 | `early-conquest-stands-down` | off (unmeasured) | Opt-in gene `early-conquest-stands-down`; see `Self::conquest_stands_down`. | 1 \| 1 |
 | `early-settler-floor` | off (unmeasured) | Enable `early-settler-floor`. | 1 \| 1 |

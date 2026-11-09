@@ -58,6 +58,19 @@ pub(super) struct RoadTally {
     pub(super) streak: u32,
 }
 
+#[cfg(test)]
+impl RoadTally {
+    /// Whether this turn's Stage step held `uid` (else marched it, or never
+    /// read it), for tests outside this module.
+    pub(super) fn held(&self, uid: u32) -> Option<bool> {
+        if self.held.contains_key(&uid) {
+            Some(true)
+        } else {
+            self.marched.contains(&uid).then_some(false)
+        }
+    }
+}
+
 /// A capture stood down for want of a road.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RoadClosed {
