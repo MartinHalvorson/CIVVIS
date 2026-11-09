@@ -1,6 +1,7 @@
 -- A sortie at a city holds its strike frame until its combat ends, exactly as
 -- a ranged shot does; a sortie at a plot with no city (a pillage) does not.
 -- Exercises the shipped AIR_ATTACK branch, combat callback and settleTurn.
+CivvisK = CivvisK or { guard = function(fn) pcall(fn) end, attempt = function(fn) return (pcall(fn)) end }
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local file = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = file:read("*a"); file:close()
