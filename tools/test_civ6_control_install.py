@@ -317,8 +317,9 @@ class ProtectedInstallTest(unittest.TestCase):
             "refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil)", source
         )
         self.assertIn(
-            'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
+            "refusalReason(unit, buildOperation,", source
         )
+        self.assertIn("canOperate(unit, buildOperation, params)", source)
 
         # The war-assault fallback must preflight a ranged attack with the
         # target parameters. A parameterless CanStartOperation asks a

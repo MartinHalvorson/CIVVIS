@@ -2243,3 +2243,30 @@ while keeping combat-builder survival measures **19,359 decisions and
 independent runs agree on all profiles and both final fingerprints. The pin
 records these deliberate rule changes; it does not establish stronger play
 or a native Domination win.
+
+## v45 (2026-11-09) — wonder sites respect resource discovery
+
+#4815 corrects shared wonder placement. District sites already ignored a
+strategic deposit the owner had not discovered; wonder sites vetoed it even
+while the owner's observed board offered the site as resource-free. The new
+deployment selection in #4805 exposed that mismatch: Chengdu repeatedly
+ordered Petra over undiscovered Aluminum and the board refused it, losing
+Production on an empty queue. Shipped `Resources.xml:214` reveals Aluminum
+with Radio, and row 215 reveals Coal with Industrialization.
+
+Wonder placement now uses the owner's resource visibility too. A revealed
+strategic or luxury resource still blocks a new site. A wonder already placed
+before discovery, including a paused build with saved progress at that site,
+can resume and complete without destroying the deposit. This is a shared
+engine correction used by every controller, including `AdvancedAi::legacy()`;
+the legacy planning configuration and the five anchor profiles are unchanged.
+
+The unchanged five-profile probe reproduces v44 exactly on the pre-fix engine:
+**19,252 decisions / `0x880c_b390_c0a3_3d00`**. The corrected engine measures
+**19,251 decisions / `0x791f_7a51_8002_0627`**. Comparing the actual action
+streams finds the first difference on Pangaea seed 73: seat 1 places its Oracle
+at `(10,7)`, over undiscovered Coal, instead of `(11,6)`. The first profile's
+action count is unchanged; the six-major profile accounts for the one-action
+reduction in the total. The existing test continues to enforce all five
+profiles and the full fingerprint. This re-pin records the deliberate rules
+boundary; it does not establish stronger play or a Native victory.
