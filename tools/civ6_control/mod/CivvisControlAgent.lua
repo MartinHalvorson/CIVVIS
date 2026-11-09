@@ -8765,10 +8765,6 @@ local function exportState(player, pid, turn, frame, eventKind)
 							end, ""),
 							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
-							-- The religion on the banner of a city we have seen.
-							-- Without it a spreader cannot tell a city it has
-							-- already converted from one it has not.
-							religion = cityReligion(city),
 							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
 							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),
@@ -9350,10 +9346,6 @@ local function exportState(player, pid, turn, frame, eventKind)
 							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
-							-- The religion on the banner of a city we have seen.
-							-- Without it a spreader cannot tell a city it has
-							-- already converted from one it has not.
-							religion = cityReligion(city),
 							-- WorldRankings.lua:1842-1848 counts original capitals and founders.
 							original_capital = try(function() return city:IsOriginalCapital(); end, nil),
 							original_owner = try(function() return city:GetOriginalOwner(); end, nil),

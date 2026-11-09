@@ -366,7 +366,6 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
-| `religion-seat-reads-foreign-faith` | off (unmeasured) | `religion-seat-reads-foreign-faith`: a Religion-target founder spends no charge on a foreign city whose banner already shows its faith. | 1 \| 1 |
 | `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |

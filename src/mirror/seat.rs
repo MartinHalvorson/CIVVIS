@@ -597,7 +597,6 @@ pub(super) fn apply_observed_host_metrics(
     Arc::make_mut(&mut game.observed_yield_adjustments).clear();
     Arc::make_mut(&mut game.observed_public_empire_stats).clear();
     Arc::make_mut(&mut game.observed_majority_religion).clear();
-    Arc::make_mut(&mut game.observed_foreign_city_religion).clear();
     Arc::make_mut(&mut game.observed_visiting_tourists).clear();
     Arc::make_mut(&mut game.observed_city_loyalty_per_turn).clear();
     Arc::make_mut(&mut game.observed_city_strength).clear();
