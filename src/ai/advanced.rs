@@ -25784,9 +25784,6 @@ impl AdvancedAi {
         // `religion-seat-builds-holy-sites`: a founder's Shrine and Temple
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
-        // `religion-seat-first-shrine`: the founder's first Shrine, ahead of
-        // the claims below. See `advanced/religion_seat_first_shrine.rs`.
-        self.claim_religion_seat_first_shrine(g, pid, &plan);
         self.claim_religion_seat_faith_economy(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
@@ -26043,6 +26040,13 @@ impl AdvancedAi {
             }
         }
         Self::surge_release_field_slot(g, held_field_slot);
+        // `religion-seat-first-shrine`: the founder's first Shrine, after every
+        // ordinary writer so none of them takes the head back, and before the
+        // defence handoffs below, which may. An earlier claim here was
+        // journalled on t40-49 of civvis-20261109T142418Z and overwritten by a
+        // Monument and an Archer the same turn. See
+        // `advanced/religion_seat_first_shrine.rs`.
+        self.claim_religion_seat_first_shrine(g, pid, &plan);
         // `capital-walls-before-the-surprise`: the original capital's Walls,
         // or its defender, after every ordinary writer (the opening book and
         // both governors), before the paused finishes and the defence
