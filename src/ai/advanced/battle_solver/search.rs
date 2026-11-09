@@ -32,6 +32,8 @@ pub struct Budget {
     pub fine: u32,
     pub max_lines: usize,
     pub passes: u32,
+    /// Stands kept per melee target when a unit's candidates are built.
+    pub melee_stands: usize,
 }
 
 impl Budget {
@@ -43,6 +45,7 @@ impl Budget {
         fine: 40,
         max_lines: 9,
         passes: 2,
+        melee_stands: 2,
     };
 }
 
@@ -248,7 +251,7 @@ impl<'b> Searcher<'b> {
                         }
                     }
                     stands.sort_by(|a, b| a.1.total_cmp(&b.1));
-                    for (t, cost) in stands.into_iter().take(2) {
+                    for (t, cost) in stands.into_iter().take(self.budget.melee_stands) {
                         let value = blow_prior(dealt, taken, other, me) - cost;
                         lines.push((
                             Line {
@@ -737,6 +740,7 @@ pub(super) mod tests {
         fine: 24,
         max_lines: 8,
         passes: 2,
+        melee_stands: 2,
     };
 
     #[test]

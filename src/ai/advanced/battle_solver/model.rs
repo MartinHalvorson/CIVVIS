@@ -1059,7 +1059,7 @@ impl<'b> Sim<'b> {
             u.hp = (u.hp + heal).min(100);
             u.mp = u.max_mp;
             u.attacks = u.max_attacks;
-            if !u.acted && u.fort < 2 && !u.shoots() {
+            if !u.acted && u.fort < 2 {
                 u.fort += 1;
             }
             u.acted = false;
@@ -1153,6 +1153,19 @@ impl<'b> Sim<'b> {
     /// Our plan for this turn, in the order that gives each blow its best
     /// chance: shots first, then the melee, then everyone who only moves.
     pub fn play_plan(&mut self, plan: &[(usize, Line)]) {
+        // The heaviest melee blows go last: each blow that lands first adds a
+        // flanker for the ones behind it.
+        let mut ordered: Vec<(usize, Line)> = plan.to_vec();
+        ordered.sort_by(|a, b| {
+            let n = self.b.n;
+            let strength = |i: usize| {
+                (0..n)
+                    .map(|j| self.b.melee_att[i * n + j])
+                    .fold(0.0f32, f32::max)
+            };
+            strength(a.0).total_cmp(&strength(b.0))
+        });
+        let plan = &ordered;
         for pass in 0..3 {
             for (i, line) in plan {
                 let unit = self.s.units[*i];

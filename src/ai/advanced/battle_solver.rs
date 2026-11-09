@@ -71,6 +71,7 @@ fn tuned_budget() -> Budget {
         fine: knob("CIVVIS_BS_FINE", BATTLE_SOLVER_BUDGET.fine),
         max_lines: knob("CIVVIS_BS_LINES", BATTLE_SOLVER_BUDGET.max_lines),
         passes: knob("CIVVIS_BS_PASSES", BATTLE_SOLVER_BUDGET.passes),
+        melee_stands: knob("CIVVIS_BS_STANDS", BATTLE_SOLVER_BUDGET.melee_stands),
     }
 }
 
@@ -108,11 +109,13 @@ struct Applied {
 impl AdvancedAi {
     /// Whether another layer already owns this unit this turn.
     pub(super) fn solver_leaves_alone(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let takes_the_siege = knob("CIVVIS_BS_SIEGE", 0) != 0;
         self.battle_planner_ordered.contains(&uid)
-            || self.unit_is_reserved(uid)
-            || self.active_siege_member(g, pid, uid)
-            || self.staging_siege_member(g, pid, uid)
             || self.guard_is_reserved_for_civilian(uid)
+            || (!takes_the_siege
+                && (self.unit_is_reserved(uid)
+                    || self.active_siege_member(g, pid, uid)
+                    || self.staging_siege_member(g, pid, uid)))
     }
 
     /// Solve and play every local fight. True if any unit struck.
