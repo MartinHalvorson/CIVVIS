@@ -94,7 +94,7 @@ pub(super) fn theaters(ai: &AdvancedAi, g: &Game, pid: usize) -> Vec<Theater> {
     for (m, uid) in mine.iter().enumerate() {
         let here = g.units[uid].pos;
         for (h, hid) in hostile.iter().enumerate() {
-            if g.wdist(here, g.units[hid].pos) <= ENGAGE_RADIUS {
+            if g.wdist(here, g.units[hid].pos) <= super::engage_radius() {
                 linked[m] = true;
                 linked[mine.len() + h] = true;
                 let (a, b) = (find(&mut parent, m), find(&mut parent, mine.len() + h));

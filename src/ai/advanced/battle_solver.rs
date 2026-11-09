@@ -48,6 +48,49 @@ use search::{solve, Budget, Solution};
 /// The solver's search budget. Rollouts are cheap enough to afford this on
 /// every fight of every frame; the live seat runs 2-3 frames a turn.
 const BATTLE_SOLVER_BUDGET: Budget = Budget::DEFAULT;
+/// Experiment knobs while the search is tuned on the benches: `CIVVIS_BS_*`
+/// environment variables, developer builds only.
+#[cfg(feature = "developer-tools")]
+fn knob<T: std::str::FromStr>(name: &str, default: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+#[cfg(not(feature = "developer-tools"))]
+fn knob<T>(_name: &str, default: T) -> T {
+    default
+}
+
+fn tuned_budget() -> Budget {
+    Budget {
+        rollouts: knob("CIVVIS_BS_ROLLOUTS", BATTLE_SOLVER_BUDGET.rollouts),
+        horizon: knob("CIVVIS_BS_HORIZON", BATTLE_SOLVER_BUDGET.horizon),
+        coarse: knob("CIVVIS_BS_COARSE", BATTLE_SOLVER_BUDGET.coarse),
+        fine: knob("CIVVIS_BS_FINE", BATTLE_SOLVER_BUDGET.fine),
+        max_lines: knob("CIVVIS_BS_LINES", BATTLE_SOLVER_BUDGET.max_lines),
+        passes: knob("CIVVIS_BS_PASSES", BATTLE_SOLVER_BUDGET.passes),
+    }
+}
+
+fn tuned_weights() -> Weights {
+    let base = Weights::default();
+    Weights {
+        loss: knob("CIVVIS_BS_LOSS", base.loss),
+        alive_floor: knob("CIVVIS_BS_FLOOR", base.alive_floor),
+        objective_bonus: knob("CIVVIS_BS_BONUS", base.objective_bonus),
+        haste: knob("CIVVIS_BS_HASTE", base.haste),
+        enemy_retreat_hp: knob("CIVVIS_BS_ERET", base.enemy_retreat_hp),
+        our_retreat_hp: knob("CIVVIS_BS_ORET", base.our_retreat_hp),
+        enemy_aggression: knob("CIVVIS_BS_AGGRO", base.enemy_aggression),
+    }
+}
+
+fn engage_radius() -> i32 {
+    knob("CIVVIS_BS_RADIUS", extract::ENGAGE_RADIUS)
+}
+
 /// How many times one fight may be re-solved in a frame after the dice
 /// surprise the plan: the rolls are real, so the rest of the turn is too.
 const MAX_RESOLVES: u32 = 4;
@@ -115,8 +158,8 @@ impl AdvancedAi {
                     &snap.board,
                     &snap.state,
                     snap.objective,
-                    BATTLE_SOLVER_BUDGET,
-                    Weights::default(),
+                    tuned_budget(),
+                    tuned_weights(),
                     seed,
                 );
                 self.census.battle_solver_rollouts += solution.rollouts as u64;
@@ -275,7 +318,7 @@ impl AdvancedAi {
             solution.plan.iter().filter(|(_, l)| l.aim != Aim::None).count(),
             kills.into_iter().collect::<Vec<_>>().join(", ");
             "{} rollouts over {} turns ({} samples): objective {:.0}%, lose {:.1} units, kill {:.1}, value {:+.0} ({})",
-            solution.rollouts, BATTLE_SOLVER_BUDGET.horizon, forecast.samples,
+            solution.rollouts, tuned_budget().horizon, forecast.samples,
             forecast.p_objective * 100.0, forecast.own_lost, forecast.killed, forecast.value,
             solution.by_posture.iter()
                 .map(|(p, v)| format!("{p:?} {v:+.0}"))

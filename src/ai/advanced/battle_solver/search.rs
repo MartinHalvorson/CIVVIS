@@ -190,8 +190,9 @@ impl<'b> Searcher<'b> {
                     let dealt = mean_damage(att, def);
                     let mut best: Option<(u16, f32)> = None;
                     let fixed = !me.fires_after_moving();
-                    for (t, _) in &reach {
-                        if fixed && *t != me.tile {
+                    for (t, kept) in &reach {
+                        // A shot needs movement left to spend on it.
+                        if (fixed && *t != me.tile) || (*kept == 0 && *t != me.tile) {
                             continue;
                         }
                         if b.d(*t, other.tile) as i32 > me.range as i32
@@ -253,8 +254,10 @@ impl<'b> Searcher<'b> {
                     15.0
                 };
                 if me.shoots() {
-                    for (t, _) in &reach {
-                        if !me.fires_after_moving() && *t != me.tile {
+                    for (t, kept) in &reach {
+                        if (!me.fires_after_moving() && *t != me.tile)
+                            || (*kept == 0 && *t != me.tile)
+                        {
                             continue;
                         }
                         if b.d(*t, tile) as i32 <= me.range as i32 && b.shot_visible(*t, tile) {

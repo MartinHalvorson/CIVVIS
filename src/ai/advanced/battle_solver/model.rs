@@ -351,7 +351,8 @@ impl<'b> Sim<'b> {
         if a.shoots() {
             (
                 effective_strength(self.b.ranged_att[i * n + j], a.hp as i32),
-                self.b.ranged_def[i * n + j] + 3.0 * d.fort as f32
+                self.b.ranged_def[i * n + j]
+                    + 3.0 * d.fort as f32
                     + self.b.defense[d.tile as usize],
             )
         } else {
@@ -771,8 +772,14 @@ impl<'b> Sim<'b> {
         let breaking = side == OURS && posture == Posture::Withdraw;
         let low = me.hp <= retreat_hp;
         let holds = side == OURS && posture == Posture::Hold;
-        // The best blow within reach.
-        let mut best_value = 0.0f32;
+        // The best blow within reach. An even trade is a blow worth striking:
+        // whoever hits first leaves the other weaker for its answer, and a
+        // scripted line that refuses even trades never closes at all.
+        let mut best_value = if side == THEIRS || posture == Posture::Press {
+            -12.0f32
+        } else {
+            0.0f32
+        };
         let mut best: Option<(u16, Aim)> = None;
         if me.attacks > 0 {
             for j in 0..self.s.units.len() {
@@ -803,8 +810,9 @@ impl<'b> Sim<'b> {
                         } else {
                             self.reach
                                 .iter()
-                                .filter(|(t, _)| {
-                                    (self.b.d(*t, other.tile) as i32) <= me.range as i32
+                                .filter(|(t, kept)| {
+                                    *kept > 0
+                                        && (self.b.d(*t, other.tile) as i32) <= me.range as i32
                                 })
                                 .min_by_key(|(t, _)| self.b.d(*t, me.tile))
                                 .map(|(t, _)| *t)
