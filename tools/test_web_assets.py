@@ -585,8 +585,9 @@ class SimulationWorldRotation(unittest.TestCase):
     def test_player_games_stay_still_and_simulations_keep_the_saved_preference(self):
         source = (ASSETS / "app.js").read_text(encoding="utf-8")
         start = source.index("function spinAvailable()")
-        block = source[start:source.index("function setWorldSpin(on)", start)]
+        block = source[start:source.index("function advanceWorldSpin(dt)", start)]
         scenarios = r'''
+const WORLD_SPIN_STORAGE_KEY = "spin", localStorage = {setItem() {}};
 let state = {}, SPEC = false, WORLD_SPIN = true;
 let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
 let cameraFollowManual = false, wraps = true;
@@ -609,6 +610,15 @@ REDUCED_MOTION_QUERY.matches = false; wraps = false;
 expect(!spinRunning(), "unwrapped world rotates");
 wraps = true; WORLD_SPIN = false;
 expect(!spinRunning(), "simulation ignores saved spin off");
+WORLD_SPIN = true; state = {view_player:1}; updateSpinButton();
+expect(!spinAvailable() && !spinRunning(), "the world keeps turning under a watched empire");
+expect(spinButton.disabled && spinButton.title.includes("watch one civilization"), "Watch as does not explain the hold");
+stopWorldSpin();
+expect(WORLD_SPIN, "looking around a watched empire cleared the saved rotation");
+state = {view_player:null}; updateSpinButton();
+expect(spinRunning() && !spinButton.disabled, "going back to All did not pick the turn up again");
+stopWorldSpin();
+expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
