@@ -2576,6 +2576,64 @@ EXIT_DIALOG_HEADING = "Exit To Desktop"
 EXIT_DIALOG_CANCEL = "Cancel"
 
 
+def _quit_yes_point_from_palette(path: Path,
+                                 bounds: tuple[int, int, int, int],
+                                 ) -> tuple[int, int] | None:
+    """Recognize the newer ARE YOU SURE? confirmation by its button pair.
+
+    The 2026-09-28 live quit showed red YES left of blue NO. Its heading and
+    tiny button labels were not reliably readable by OCR, but these colors
+    and their positions inside the game window were unambiguous. This is
+    called only after the application's Quit menu has been requested.
+    """
+    try:
+        from PIL import Image
+        screen = desktop_size()
+        if screen is None:
+            return None
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+    except (ImportError, OSError, ValueError):
+        return None
+    if not all(screen) or not image.width or not image.height:
+        return None
+    x, y, w, h = bounds
+    scale_x, scale_y = image.width / screen[0], image.height / screen[1]
+
+    def point(fx: float, fy: float) -> tuple[int, int]:
+        return (int(x + w * fx), int(y + h * fy))
+
+    def pixels(center: tuple[int, int], half_w: int, half_h: int):
+        px, py = int(center[0] * scale_x), int(center[1] * scale_y)
+        dx, dy = max(1, int(half_w * scale_x)), max(1, int(half_h * scale_y))
+        box = (px - dx, py - dy, px + dx + 1, py + dy + 1)
+        if box[0] < 0 or box[1] < 0 or box[2] > image.width or box[3] > image.height:
+            return []
+        return list(image.crop(box).getdata())
+
+    yes = point(.44, .56)
+    no = point(.56, .56)
+    panel = point(.50, .52)
+    red = pixels(yes, 22, 4)
+    blue = pixels(no, 22, 4)
+    pale = pixels(panel, 4, 4)
+    if not red or not blue or not pale:
+        return None
+    red_share = sum(r >= 65 and r > g * 1.4 and r > b * 1.3
+                    for r, g, b in red) / len(red)
+    blue_share = sum(b >= 50 and b > r * 1.4 and b > g * 1.25
+                     for r, g, b in blue) / len(blue)
+    panel_share = sum(r >= 90 and g >= 120 and b >= 130
+                      and g > r * .9 and b > g * .9
+                      for r, g, b in pale) / len(pale)
+    if min(red_share, blue_share, panel_share) < .55:
+        print(f"[setup] quit confirmation palette absent: red={red_share:.2f} "
+              f"blue={blue_share:.2f} panel={panel_share:.2f} "
+              f"yes={yes} bounds={bounds} screen={screen}", flush=True)
+        return None
+    return yes
+
+
 def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
     """Click OK on the EXIT TO DESKTOP confirmation, if it is on screen.
 
@@ -2611,6 +2669,13 @@ def confirm_exit_dialog(run_dir: Path | None = None) -> bool:
     shot = shots / "exit-dialog.png"
     if not screenshot(shot):
         return False
+    confirm = _quit_yes_point_from_palette(shot, bounds)
+    if confirm is not None:
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        click_at(*confirm)
+        print(f"[setup] answered the ARE YOU SURE? quit confirmation at {confirm}",
+              flush=True)
+        return True
     heading = _observed_label_points(shot, EXIT_DIALOG_HEADING, bounds)
     cancel = _observed_label_points(shot, EXIT_DIALOG_CANCEL, bounds)
     if not heading or not cancel:
