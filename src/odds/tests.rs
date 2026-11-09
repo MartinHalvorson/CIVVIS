@@ -478,10 +478,18 @@ fn a_contested_race_is_read_at_face_value() {
 #[test]
 fn the_share_every_seat_holds_for_free_is_not_progress() {
     assert_eq!(beyond_free_share(25.0, 25.0), 0.0);
-    assert_eq!(beyond_free_share(10.0, 25.0), 0.0, "a lost capital is not negative");
+    assert_eq!(
+        beyond_free_share(10.0, 25.0),
+        0.0,
+        "a lost capital is not negative"
+    );
     assert!((beyond_free_share(50.0, 25.0) - 100.0 / 3.0).abs() < 1e-9);
     assert_eq!(beyond_free_share(100.0, 25.0), 100.0);
-    assert_eq!(beyond_free_share(40.0, 100.0), 40.0, "no share left to remove");
+    assert_eq!(
+        beyond_free_share(40.0, 100.0),
+        40.0,
+        "no share left to remove"
+    );
 }
 
 /// The same lead is worth more with less clock left to overturn it.

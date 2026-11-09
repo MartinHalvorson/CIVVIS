@@ -131,9 +131,10 @@ const RACE_CURVE: f64 = 2.5;
 /// Elo for one natural-log ratio of known techs against the living field, when
 /// the Science Victory is open. Its meter reads zero until the first launch,
 /// yet 53 of 66 audited Deity host games were decided by that race, and the
-/// tech lead was the strongest out-of-sample addition to this forecast. Deliberately below
-/// that sample's optimum: the sample is mostly Science wins, and a game that
-/// other victories decide should not be priced as if it were one.
+/// tech lead was the strongest out-of-sample addition to this forecast.
+/// Deliberately below that sample's optimum: the sample is mostly Science wins,
+/// and a game that other victories decide should not be priced as if it were
+/// one.
 const SCIENCE_ROAD_ELO: f64 = 450.0;
 /// Added to both sides of the tech ratio, so a seat with a few techs is not
 /// priced as multiples of a seat with fewer in the opening turns.
