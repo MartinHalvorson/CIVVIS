@@ -1538,8 +1538,10 @@ fn browser_lights_turn_memory_but_traces_only_exact_current_sight() {
     assert!(INDEX.contains("function drawFlatVisibilityPerimeter(tiles, visible)"));
     assert!(INDEX.contains("function drawPlanetVisibilityPerimeter(cells, visible)"));
     assert!(INDEX.contains("const visible = new Set(state.visible.map(key));"));
-    assert!(INDEX
-        .contains("const turnVisible = new Set((state.turn_visible || state.visible).map(key));"));
+    assert!(INDEX.contains("tileSightVisible = new Set(state.visible.map(key));"));
+    assert!(INDEX.contains(
+        "tileSightTurn = state.turn_visible ? new Set(state.turn_visible.map(key)) : tileSightVisible;"
+    ));
     assert!(
         INDEX.contains("const visSet = new Set((state.turn_visible || state.visible).map(key));")
     );

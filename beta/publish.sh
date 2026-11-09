@@ -298,8 +298,17 @@ PY
 # asks for fresh content while unchanged files remain reusable across builds.
 python3 "$repo_root/beta/cache_bust.py" "$out"
 
+# The two files that are most of a first visit, at brotli's slowest setting.
+# `_worker.js` serves these when the browser accepts them. They are alternate
+# encodings of files already counted, so the budget below does not count them.
+if command -v brotli >/dev/null; then
+  for file in "$out/civvis.wasm" "$out/assets/app.js"; do
+    brotli -q 11 --lgwin=24 -f -o "$file.br" "$file"
+  done
+fi
+
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
-bundle_bytes=$(find "$out" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
+bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | awk '{print $1}')
 cat > "$out/build.json" <<JSON
 {
   "commit": "$commit",
