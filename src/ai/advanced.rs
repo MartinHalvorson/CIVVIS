@@ -8396,6 +8396,9 @@ pub struct AdvancedAi {
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
     /// See `advanced/religion_lane_spreads.rs`. Off by default.
     religion_lane_spreads_from_founding: bool,
+    /// Religion campaigns spend foreign charges only on living major holdouts.
+    /// See `advanced/religion_majorities.rs`. Off by default.
+    religion_finishes_majorities: bool,
     /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
     /// plan's `desired_cities` at the live Immortal field's city curve plus
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
@@ -10384,6 +10387,7 @@ mod religion_lane;
 mod religion_lane_hands_over;
 /// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
 mod religion_lane_spreads;
+mod religion_majorities;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
