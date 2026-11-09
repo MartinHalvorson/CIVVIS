@@ -412,7 +412,8 @@ impl AdvancedAi {
         // only for a live, measured decline with a short runway; a healthy
         // governed city must not trade away a lane card for a merely
         // hypothetical loyalty benefit.
-        if self.loyalty_policy_needed(g, pid) {
+        let loyalty_policy_needed = self.loyalty_policy_needed(g, pid);
+        if loyalty_policy_needed {
             desired.insert(0, "praetorium");
         }
         // `bleeding-capital-loyalty`: Limitanei's +2 with the garrison while a
@@ -1017,6 +1018,21 @@ impl AdvancedAi {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
                     }
+                    // A full deck otherwise protects every wanted card, even
+                    // when Praetorium leads the emergency portfolio. Native
+                    // Russia 20261109T210123Z t132 kept Merchant Confederation
+                    // and missed its last free window before the revolt.
+                    // Take only the same typed seat; do not borrow a lane's
+                    // wildcard or displace another timed emergency.
+                    if loyalty_policy_needed && card == "praetorium" {
+                        return g.rules.policies[current].slot == "diplomatic"
+                            && current.as_str() != "communications_office"
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && !drain_cards
+                                .iter()
+                                .any(|(gold_card, _)| *gold_card == current.as_str());
+                    }
                     // `medina-quarter-houses-the-districts`: the housing card may
                     // take an ordinary Economic card's slot (wanted or not),
                     // never a spared production card or a protected one.
@@ -1198,6 +1214,12 @@ impl AdvancedAi {
                                "{qualifying} housing-limited cities with 3 or more specialty \
                                 districts gain +2 Housing; {} was the Economic card the {} \
                                 plan wants least", plain(&current), objective.as_str());
+                    } else if loyalty_policy_needed && card == "praetorium" {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted praetorium over {}", plain(&current);
+                               "a governed city has at most {LOYALTY_POLICY_TRIGGER_TURNS:.0} turns \
+                                of measured Loyalty runway; use the occupied diplomatic slot \
+                                for +2 Loyalty per turn");
                     } else {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
@@ -1674,3 +1696,7 @@ impl AdvancedAi {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "loyalty_policy_tests.rs"]
+mod loyalty_policy_tests;
