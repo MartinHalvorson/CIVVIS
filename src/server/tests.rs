@@ -4819,7 +4819,9 @@ fn browser_search_lights_every_matching_visible_tile() {
         matcher.contains("if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);")
     );
     assert!(
-        matcher.contains("if (excludedWords.some(word => mapSearchWordFound(haystack, word))) continue;"),
+        matcher.contains(
+            "if (excludedWords.some(word => mapSearchWordFound(haystack, word))) continue;"
+        ),
         "the exclude box is Civ VI's search filter: none of its terms may match"
     );
     assert!(
@@ -4834,8 +4836,9 @@ fn browser_search_lights_every_matching_visible_tile() {
     assert!(EMBEDDED_INDEX.contains("function mapSearchKnownCivilizations(st)"));
     assert!(EMBEDDED_INDEX
         .contains("player && !player.is_barbarian && player.civ && owners.has(String(player.id))"));
-    assert!(EMBEDDED_INDEX
-        .contains("for (const unit of st.units || []) if (visible.has(key(unit.pos))) noteOwner(unit.owner);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "for (const unit of st.units || []) if (visible.has(key(unit.pos))) noteOwner(unit.owner);"
+    ));
     let civilization_sync = EMBEDDED_INDEX
         .split_once("function syncMapSearchCivilizations(st = state) {")
         .expect("civilization-filter synchronizer")
