@@ -7330,7 +7330,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("restore it in Display Settings"));
     assert_eq!(
         EMBEDDED_INDEX.matches("class=\"sidebar-section\"").count(),
-        6,
+        7,
         "every scrolling left-panel section should be collapsible; the \
              lens dock below them carries its own panel style"
     );
@@ -7342,12 +7342,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // understood and settles the layout before a scripted open scrolls.
     assert_eq!(
         EMBEDDED_INDEX.matches(" name=\"deck-section\">").count(),
-        6,
+        7,
         "every scrolling left-panel section belongs to the deck's one accordion group"
     );
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics\" open name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10043,6 +10044,56 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
     // dropped, so a zoomed-out footprint keeps its corners.
     assert!(planet.contains("if (distance >= 1 - 1e-6) {"));
     assert!(EMBEDDED_INDEX.contains("drawPlanetMiniViewportFootprint(projection);"));
+}
+
+#[test]
+fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
+    let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
+    let politics = EMBEDDED_INDEX
+        .find("id=\"politicssec\"")
+        .expect("World politics");
+    let strategy = EMBEDDED_INDEX
+        .find("id=\"strategysec\"")
+        .expect("AI strategy");
+    assert!(setup < politics && politics < strategy);
+    assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
+    // It is the only section open in the markup: the deck is one accordion.
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches(" open name=\"deck-section\">")
+            .count(),
+        1
+    );
+    // A reader meets it open once, whichever section they had left open, and
+    // from then on what they chose is what is saved.
+    let init = EMBEDDED_INDEX
+        .split("function initSidebarSections() {")
+        .nth(1)
+        .and_then(|tail| tail.split("initSidebarSections();").next())
+        .expect("section setup");
+    assert!(init.contains(
+        "section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section)"
+    ));
+    assert!(init.contains("if (firstMeeting && section !== firstMeeting) open = false;"));
+    // A battlefield has no politics, and the section hands over its room.
+    assert!(EMBEDDED_INDEX.contains("body.watching-tactics #politicssec,"));
+    assert!(EMBEDDED_INDEX.contains("document.getElementById(\"politicssec\")?.open ||"));
+
+    let panel = EMBEDDED_INDEX
+        .split("function drawWorldPolitics() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("World politics panel");
+    // The heading's count is visible with the section shut; rows wait.
+    let label = panel.find("scope.textContent =").expect("label");
+    let guard = panel
+        .find("if (inClosedSidebarSection(list)) return;")
+        .expect("closed-section guard");
+    let built = panel.find("list.innerHTML =").expect("rows");
+    assert!(label < guard && guard < built);
+    assert!(
+        EMBEDDED_INDEX.contains("else if (section.id === \"politicssec\") drawWorldPolitics();")
+    );
 }
 
 #[test]

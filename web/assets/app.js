@@ -13,9 +13,9 @@ const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
 // the profiles that ever moved a HUD panel. Declared here, at the top, where
 // no load-time path can run first.
 let PLANET_GPU = null;
-// The command deck's scrolling sections — Display Settings, Game setup, AI
-// strategy, War log, Game event log, Government — are one accordion: at most
-// one is open at a time, and none is fine. Opening a section closes whichever
+// The command deck's scrolling sections — Display Settings, Game setup, World
+// politics, AI strategy, War log, Game event log, Government — are one
+// accordion: at most one is open at a time, and none is fine. Opening a section closes whichever
 // other one was open, so two long logs never stack and push a third off the
 // bottom of the deck. The markup asks the browser for the same rule natively
 // (one `name="deck-section"` shared by their `<details>` tags); this closes
@@ -38,6 +38,7 @@ function drawOpenedSidebarSection(section) {
   if (!state || !section.open) return;
   if (section.id === "strategysec") drawReasoning();
   else if (section.id === "eventsec") drawEvents();
+  else if (section.id === "politicssec") drawWorldPolitics();
 }
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
@@ -60,6 +61,11 @@ function initSidebarSections() {
   // sections; the first in reading order keeps its place and the rest close,
   // and the store is rewritten so the next load agrees with what was shown.
   let opened = false;
+  // A section that opens by default and that this reader has never seen is
+  // the one thing the deck opens on, once. After that their own choice is the
+  // saved one, as it is for every other section.
+  const firstMeeting = [...document.querySelectorAll(SIDEBAR_SECTIONS)].find(section =>
+    section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section));
   // The lens dock is a fixed panel at the deck's lower edge now, so it needs
   // no scroll-into-view choreography — only the same saved disclosure state
   // as the scrolling sections above it.
@@ -76,6 +82,7 @@ function initSidebarSections() {
       open = !!saved["ai-reasoning"];
     }
     if (section.classList.contains("sidebar-section")) {
+      if (firstMeeting && section !== firstMeeting) open = false;
       if (open && opened) open = false;
       if (open) opened = true;
     }
@@ -8376,7 +8383,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   const tacticsWorld = isBattlefieldMapScript(st.map?.script);
   if (document.body.classList.contains("watching-tactics") !== tacticsWorld) {
     document.body.classList.toggle("watching-tactics", tacticsWorld);
-    if (tacticsWorld && (document.getElementById("warsec")?.open ||
+    if (tacticsWorld && (document.getElementById("politicssec")?.open ||
+        document.getElementById("warsec")?.open ||
         document.getElementById("eventsec")?.open))
       openSidebarSection(document.getElementById("strategysec"));
   }
@@ -30559,6 +30567,70 @@ function releaseWatchedWar() {
   if (state) drawWarLog();
 }
 
+// World politics: who stands with whom at this moment. The engine reports it
+// as pairs of major civilizations, so the panel only has to lay them out; the
+// War log below it keeps the history. The heading's count is cheap and always
+// current, and the rows are built only while somebody can see them.
+function worldPoliticsPair(first, second, joiner) {
+  const civ = id =>
+    `<span class="politics-civ"><i class="politics-chip" aria-hidden="true" ` +
+    `style="background:${pcol(id)};border-color:${pcol2(id)}"></i>${warEntityLink(id)}</span>`;
+  return `<span class="politics-pair">${civ(first)}` +
+    `<span class="politics-joiner">${joiner}</span>${civ(second)}</span>`;
+}
+function worldPoliticsBondRow(bond) {
+  const left = bond.until === null || bond.until === undefined ? null : Math.max(0, bond.until - state.turn);
+  const name = bond.kind === "team" ? "Team"
+    : bond.kind === "alliance" ? `${titleCase(bond.alliance)} Lv ${bond.level}`
+    : "Friends";
+  const kind = bond.kind === "team" ? "On the same team for the whole game"
+    : bond.kind === "alliance" ? `${titleCase(bond.alliance)} alliance, level ${bond.level}`
+    : "Declared friends";
+  const title = left === null ? kind : `${kind}, ${left} turn${left === 1 ? "" : "s"} left`;
+  const tone = bond.kind === "friendship" ? "friendship" : "alliance";
+  return `<div class="politics-row ${tone}" title="${escapeAttr(title)}">` +
+    `${worldPoliticsPair(bond.first, bond.second, "&amp;")}` +
+    `<span class="politics-note">${name}${left === null ? "" : ` · ${left}t`}</span></div>`;
+}
+function worldPoliticsWarRow(war) {
+  const known = war.since !== null && war.since !== undefined;
+  const length = known ? Math.max(0, state.turn - war.since) : null;
+  const note = known ? (length ? `${length}t` : "new") : "";
+  const title = known
+    ? `At war since turn ${war.since}, ${length} turn${length === 1 ? "" : "s"} so far`
+    : "At war, as reported by the host";
+  return `<div class="politics-row war" title="${escapeAttr(title)}">` +
+    `${worldPoliticsPair(war.first, war.second, "vs")}` +
+    `${note ? `<span class="politics-note">${note}</span>` : ""}</div>`;
+}
+function worldPoliticsGroup(heading, tone, rows, none) {
+  return `<div class="politics-group"><div class="politics-heading${tone ? ` ${tone}` : ""}">` +
+    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</div>` +
+    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</div>`;
+}
+function drawWorldPolitics() {
+  const list = document.getElementById("worldpolitics");
+  const scope = document.getElementById("politicsscope");
+  if (!list || !state) return;
+  const politics = state.world_politics || {};
+  const bonds = Array.isArray(politics.bonds) ? politics.bonds : [];
+  const wars = Array.isArray(politics.wars) ? politics.wars : [];
+  // The label has room for little beside the section's own name.
+  scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
+  scope.title = wars.length ? `${wars.length} war${wars.length === 1 ? "" : "s"} in progress` : "";
+  if (inClosedSidebarSection(list)) return;
+  const signature = `${state.seed}|${state.turn}|${JSON.stringify(politics)}`;
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
+  list.innerHTML =
+    worldPoliticsGroup("Alliances &amp; friendships", "", bonds.map(worldPoliticsBondRow),
+      "No alliances or friendships.") +
+    worldPoliticsGroup("At war", "war", wars.map(worldPoliticsWarRow), "No civilizations at war.") +
+    (politics.partial
+      ? `<div class="politics-caveat">Civ VI reports pacts for our own seat only, so rival pacts are not listed.</div>`
+      : "");
+}
+
 function drawWarLog() {
   const el = document.getElementById("wars");
   const scope = document.getElementById("warscope");
@@ -30765,6 +30837,7 @@ function drawSide(force = true) {
     document.getElementById("gov").innerHTML = politics;
   } else gs.style.display = "none";
   drawReasoning();
+  drawWorldPolitics();
   drawWarLog();
   drawEvents();
   if (scroller && priorScroll) scroller.scrollTop = Math.min(priorScroll, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
