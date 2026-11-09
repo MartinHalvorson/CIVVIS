@@ -83,10 +83,14 @@ def pull(cache: Path = CACHE_DEFAULT, *, repo: Path | None = None,
 
 
 def run_dirs(root: Path) -> list[Path]:
-    """Run directories under a pulled ledger cache OR a live runs directory."""
+    """Run directories under a pulled ledger cache, the live runs root (whose
+    games sit in `control/`), or one directory of runs."""
     root = Path(root)
-    base = root / "runs" if (root / "runs").is_dir() else root
-    return [path.parent for path in base.glob("*/summary.json")]
+    for sub in ("runs", "control"):
+        if (root / sub).is_dir():
+            root = root / sub
+            break
+    return [path.parent for path in root.glob("*/summary.json")]
 
 
 def events_path(run_dir: Path) -> Path | None:
