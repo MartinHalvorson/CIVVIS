@@ -7248,7 +7248,93 @@ fn translate(
                 })
             }
         }
-        _ => None,
+        // A naval raider lands on the coast it stands beside. The shipped UI
+        // requests it with the plot as the ordinary pair,
+        // `Base/Assets/UI/WorldInput.lua:2331-2353` (`CoastalRaid`).
+        Action::CoastalRaid { unit, target } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("COASTAL_RAID".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+        }),
+        // A device leaves one of two ways, and the host has a different call
+        // for each: a carrier is a unit operation
+        // (`WorldInput.lua:2162-2168`, `WMDStrike`), a silo is a command of
+        // the city that owns it, aimed from the silo's plot
+        // (`WorldInput.lua:2264-2272`, `ICBMStrike`). The engine picks the
+        // platform; `mirror_state.game` is still the board it was picked on.
+        Action::WmdStrike {
+            city,
+            target,
+            thermonuclear,
+        } => {
+            let weapon = if *thermonuclear {
+                "WMD_THERMONUCLEAR_DEVICE"
+            } else {
+                "WMD_NUCLEAR_DEVICE"
+            };
+            let platform = *mirror_state
+                .game
+                .wmd_platforms(
+                    civvis::game::MIRRORED_SEAT,
+                    Some(*city),
+                    *target,
+                    *thermonuclear,
+                )
+                .first()?;
+            let pos = Some(civvis::hex::axial_to_offset(target.0, target.1));
+            match platform.unit {
+                Some(carrier) => civ6_of.get(&carrier).map(|civ6| Order {
+                    kind: "unit",
+                    subject: Some(*civ6),
+                    verb: Some(weapon.to_string()),
+                    pos,
+                }),
+                None => {
+                    let (x, y) = civvis::hex::axial_to_offset(platform.from.0, platform.from.1);
+                    mirror_state
+                        .cid_of
+                        .iter()
+                        .find(|(_, cid)| **cid == *city)
+                        .map(|(civ6, _)| Order {
+                            kind: "wmd_strike",
+                            subject: Some(*civ6),
+                            verb: Some(format!("{x}:{y}:{weapon}")),
+                            pos,
+                        })
+                }
+            }
+        }
+        // ⚠ NO WILDCARD HERE, ON PURPOSE. This match used to end in `_ => None`,
+        // so every new `Action` reached the live board as nothing at all and
+        // the compiler said nothing: the air verbs, swaps, coastal raids and
+        // nuclear strikes each sat there until somebody happened to notice.
+        // A new variant now fails to compile until it is given an arm above
+        // or a reason below. These are the orders the live seat does not send.
+        //
+        // The host's own flow answers these: the mod's deal and congress
+        // handlers respond to the popups, and the harness ends the turn.
+        Action::AcceptDeal { .. }
+        | Action::RejectDeal { .. }
+        | Action::CongressVote { .. }
+        | Action::EndTurn
+        | Action::AssignGovernor { .. }
+        // Game modes the live seat does not play, or CIVVIS's own Future Era.
+        | Action::ChooseSecretSociety { .. }
+        | Action::FoundCorporation { .. }
+        | Action::MoveProduct { .. }
+        | Action::AimMassDriver { .. }
+        | Action::MassDriverStrike { .. }
+        // Real host orders with no bridge arm yet. The planner can choose
+        // them, and each lands in the run's `skipped` notes by variant name.
+        | Action::BuildRailroad { .. }
+        | Action::ContributeDistrict { .. }
+        | Action::DemandGold { .. }
+        | Action::PriorityTarget { .. }
+        | Action::ProposeDefensivePact { .. }
+        | Action::ProposeJointWar { .. }
+        | Action::RequestPromise { .. }
+        | Action::Upgrade { .. } => None,
     }
 }
 

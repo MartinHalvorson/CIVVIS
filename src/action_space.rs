@@ -681,6 +681,31 @@ mod tests {
     use crate::ai::{AdvancedAi, Ai};
     use crate::game::{Action, Game};
 
+    /// An order with no control can only ever be given by the AI, and nothing
+    /// used to say so. Nuclear launches went years without one. A new kind now
+    /// fails here until the viewer draws it or this list says why not.
+    #[test]
+    fn every_action_kind_has_a_browser_control_or_a_stated_reason() {
+        const NO_BROWSER_CONTROL: &[(&str, &str)] = &[
+            ("move_product", "Monopolies game mode; no panel for it yet"),
+            ("aim_mass_driver", "CIVVIS Future Era; AI only so far"),
+            ("mass_driver_strike", "CIVVIS Future Era; AI only so far"),
+        ];
+        let app = include_str!("../web/assets/app.js");
+        for kind in KINDS {
+            let waived = NO_BROWSER_CONTROL.iter().any(|(name, _)| name == kind);
+            let drawn = app.contains(&format!("\"{kind}\""));
+            assert!(
+                drawn || waived,
+                "`{kind}` has no control in web/assets/app.js; add one or a reason"
+            );
+            assert!(!(drawn && waived), "`{kind}` is drawn now; drop its waiver");
+        }
+        for (name, _) in NO_BROWSER_CONTROL {
+            assert!(KINDS.contains(name), "`{name}` is no longer an action kind");
+        }
+    }
+
     #[test]
     fn kinds_are_unique_and_cover_every_legal_action() {
         let mut sorted = KINDS.to_vec();

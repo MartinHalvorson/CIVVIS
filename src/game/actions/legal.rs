@@ -1233,8 +1233,9 @@ impl Game {
                 }
             }
         }
-        // Nuclear strikes are enumerated against enemy city centers in
-        // ICBM range; arbitrary revealed tiles remain legal through apply.
+        // Nuclear strikes are enumerated against enemy city centers some
+        // platform can reach; arbitrary revealed tiles remain legal through
+        // apply.
         for (device_key, thermonuclear, weapon) in [
             ("project_effect:nuclear_devices", false, "nuclear_device"),
             (
@@ -1247,28 +1248,28 @@ impl Game {
                 continue;
             }
             let range = self.rules.wmds[weapon].icbm_strike_range;
-            // Hoisted once rather than rebuilt per candidate target: an
-            // SSBN's reach does not depend on which city the order names,
+            // Hoisted once rather than rebuilt per candidate target: a
+            // carrier's reach does not depend on which city the order names,
             // and rescanning every unit inside a doubly-nested city loop
             // would put the whole roster in a hot enumeration path.
-            let submarines: Vec<Pos> = self
-                .units
-                .values()
-                .filter(|unit| unit.owner == pid && unit.kind == "nuclear_submarine")
-                .map(|unit| unit.pos)
-                .collect();
+            let carriers = self.wmd_carriers(pid, thermonuclear);
             let launchers: Vec<(u32, Vec<Pos>)> = self
                 .cities
                 .values()
                 .filter(|city| city.owner == pid)
                 .map(|city| {
-                    let mut platforms = vec![city.pos];
-                    platforms.extend(city.owned_tiles.iter().copied().filter(|position| {
-                        self.map.tiles.get(position).is_some_and(|tile| {
-                            tile.improvement.as_deref() == Some("missile_silo") && !tile.pillaged
+                    let silos = city
+                        .owned_tiles
+                        .iter()
+                        .copied()
+                        .filter(|position| {
+                            self.map.tiles.get(position).is_some_and(|tile| {
+                                tile.improvement.as_deref() == Some("missile_silo")
+                                    && !tile.pillaged
+                            })
                         })
-                    }));
-                    (city.id, platforms)
+                        .collect();
+                    (city.id, silos)
                 })
                 .collect();
             for enemy in self.cities.values() {
@@ -1276,8 +1277,8 @@ impl Game {
                     continue;
                 }
                 let mut offered = false;
-                for (launch, platforms) in &launchers {
-                    if platforms
+                for (launch, silos) in &launchers {
+                    if silos
                         .iter()
                         .any(|position| self.wdist(*position, enemy.pos) <= range)
                     {
@@ -1289,12 +1290,12 @@ impl Game {
                         });
                     }
                 }
-                // A boat in range makes the target reachable from anywhere,
-                // so offer the shot once rather than once per city.
+                // A carrier in range makes the target reachable whichever city
+                // the order names, so offer the shot once rather than per city.
                 if !offered
-                    && submarines
+                    && carriers
                         .iter()
-                        .any(|position| self.wdist(*position, enemy.pos) <= range)
+                        .any(|(_, from, reach)| self.wdist(*from, enemy.pos) <= *reach)
                 {
                     if let Some((launch, _)) = launchers.first() {
                         acts.push(Action::WmdStrike {
