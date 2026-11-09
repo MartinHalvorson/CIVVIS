@@ -2711,6 +2711,14 @@ fn the_result_screen_offers_the_between_game_interval() {
         "if (changed && finaleEndsAt !== null) { finaleEndsAt = performance.now() + betweenGameCountdownMs; finaleHold += 1; }"
     ));
     assert!(shim.contains("state.restart_hold = finaleHold;"));
+    // Nothing but a person replaces a world that is live or held: the count
+    // stands down for a pause, re-reads the world at its last moment, and the
+    // engine refuses to move on from anything that has not finished.
+    assert!(shim.contains("if (!finished || paused) {"));
+    assert!(shim.contains("if (paused || current.finished !== true || current.seed !== state.seed) {"));
+    assert!(include_str!("../wasm.rs").contains(
+        "(\"POST\", \"/next-game\") => with_session(|session| {\n            if session.game.is_finished() {"
+    ));
     // And a drawn battle is held and counted down like a won one: the
     // shim once looked only for a winner, so a Tactics draw in the
     // published build sat on "Preparing the next battle" for ever.
@@ -12418,7 +12426,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('until_next_victory', false)\"\n            title=\"Keep this world playing until a different victory ends it.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('indefinite', false)\"\n            title=\"Keep this world playing. Nothing ends it until you press Restart sim.\">One more turn</button>"
     ));
     assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
     assert!(EMBEDDED_INDEX.contains(">New Game</button>"));

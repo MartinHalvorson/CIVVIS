@@ -8497,8 +8497,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         : winnerIds.includes(0) ? "Victory" : "Defeat";
       const winnerActions = SPEC
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
-            onclick="playOnPastVictory('until_next_victory', false)"
-            title="Keep this world playing until a different victory ends it.">One more turn</button>
+            onclick="playOnPastVictory('indefinite', false)"
+            title="Keep this world playing. Nothing ends it until you press Restart sim.">One more turn</button>
           <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
             title="Start a new game now.">New Game</button>`
         : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
