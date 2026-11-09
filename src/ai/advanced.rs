@@ -19820,10 +19820,11 @@ impl AdvancedAi {
                     self.domination_defensive_temple(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
-            // A founder's newly claimed Faith building has not banked its
-            // first hammer yet, but ordinary rescoring must let it start.
+            // A founder's Faith building or replacement Holy Site has not
+            // banked its first hammer yet; ordinary rescoring lets it start.
             let faith_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 self.religion_seat_faith_building_reserved(g, pid, cid, plan, item)
+                    || self.religion_seat_recovery_site_reserved(g, pid, cid, plan, item)
             });
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
