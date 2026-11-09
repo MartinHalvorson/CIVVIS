@@ -124,8 +124,8 @@ fn an_offered_paused_defender_does_not_receive_active_queue_credit() {
 #[test]
 fn host_confirmation_does_not_protect_an_offensive_siege_queue() {
     let (mut g, city, _) = fixture();
-    let siege = unit("bombard");
-    g.players[0].techs.insert(crate::name!("metal_casting"));
+    let siege = unit("catapult");
+    g.players[0].techs.insert(crate::name!("engineering"));
     g.cities.get_mut(&city).unwrap().queue = vec![siege.clone()];
     std::sync::Arc::make_mut(&mut g.host_buildable)
         .get_mut(&city)
@@ -133,7 +133,7 @@ fn host_confirmation_does_not_protect_an_offensive_siege_queue() {
         .insert(
             Game::production_block_key(&siege),
             crate::game::HostMenuEntry {
-                cost: Some(140.0),
+                cost: Some(60.0),
                 turns: Some(1.0),
             },
         );
