@@ -3910,8 +3910,9 @@
   #victoryhud.sim-stats-collapsed.victory-collapsed {
     bottom: auto; height: auto; grid-template-rows: min-content min-content;
   }
-  /* A standing rail scrolls down, not across. */
-  #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
+  /* A standing rail scrolls down, not across. Its paths trade places as the
+     race moves, and the wheel must not be pulled along after one of them. */
+  #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
 
 

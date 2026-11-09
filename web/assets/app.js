@@ -24895,7 +24895,7 @@ function simulationStatsSection() {
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
     `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
     `title="${SIM_STATS_VIEWS[view].title}">${SIM_STATS_VIEWS[view].label}</button>`;
-  return `<section class="hud-region sim-stats-region" aria-labelledby="sim-stats-title">` +
+  return `<section class="hud-region sim-stats-region" data-key="sim-stats" aria-labelledby="sim-stats-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
@@ -25080,6 +25080,55 @@ function hudTurnPlate() {
     `</div></section>`;
 }
 
+// How many turns until this seat wins by this road, as near as the page can
+// tell. The victory planner's clock comes first: `victory_eta`, the estimate
+// the Closest victory column reads. A road it has not priced, or a rival's
+// under your fog, falls back on the public meter once the seat is past halfway,
+// at the pace that got it there. Score's meter only measures the turn limit
+// running out, so it is never read this way.
+const VICTORY_METER_READ_FROM = 50;
+function victoryRoadTurns(player, road) {
+  const priced = player.victory_eta?.find(([id]) => id === road)?.[1];
+  if (priced !== null && priced !== undefined && Number.isFinite(Number(priced))) return Number(priced);
+  const meter = +victoryMetric(player, road).progress || 0;
+  if (road === "score" || meter < VICTORY_METER_READ_FROM) return Infinity;
+  return reportedTurn() * (100 - meter) / meter;
+}
+
+// What to watch right now: the road somebody is estimated to finish first
+// stands on top (operator, 2026-11-09). Science earns the top of the early game
+// on its own clock, and roads nobody can price yet keep the standing order
+// behind the priced ones. Estimates wobble by a turn or two from one turn to
+// the next, so a road has to be clearly sooner to pass the one above it;
+// measured over three games that took one top band from 15 changes to 4
+// without changing which road led at the end.
+let victoryTrackOrder = [];
+function rankVictoryTracksBySoonest(tracks, contenders) {
+  const standing = new Map(tracks.map((track, index) => [track.id, index]));
+  const soonest = new Map(tracks.map(track => [track.id, Math.min(Infinity,
+    ...contenders.map(player => victoryRoadTurns(player, track.id)))]));
+  const overtakes = (below, above) => {
+    const belowTurns = soonest.get(below.id), aboveTurns = soonest.get(above.id);
+    if (!Number.isFinite(aboveTurns))
+      return Number.isFinite(belowTurns) || standing.get(below.id) < standing.get(above.id);
+    return aboveTurns - belowTurns > Math.max(3, aboveTurns * .1);
+  };
+  const shownAt = track => {
+    const at = victoryTrackOrder.indexOf(track.id);
+    return at < 0 ? tracks.length + standing.get(track.id) : at;
+  };
+  tracks.sort((a, b) => shownAt(a) - shownAt(b));
+  for (let moved = true; moved;) {
+    moved = false;
+    for (let at = 0; at + 1 < tracks.length; at++) {
+      if (!overtakes(tracks[at + 1], tracks[at])) continue;
+      [tracks[at], tracks[at + 1]] = [tracks[at + 1], tracks[at]];
+      moved = true;
+    }
+  }
+  victoryTrackOrder = tracks.map(track => track.id);
+}
+
 function playerHudOverview() {
   const contenders = state.players
     .filter(p => p.alive && !p.is_minor && !p.is_barbarian && metPlayer(p));
@@ -25098,6 +25147,8 @@ function playerHudOverview() {
     const leading = new Map(enabledVictoryTracks.map(track => [track.id,
       Math.max(0, ...contenders.map(player => +victoryMetric(player, track.id).progress || 0))]));
     enabledVictoryTracks.sort((a, b) => leading.get(b.id) - leading.get(a.id));
+  } else {
+    rankVictoryTracksBySoonest(enabledVictoryTracks, contenders);
   }
   const victoryTracks = enabledVictoryTracks.map(track => {
     const researchField = track.id === "science" ? "techs"
@@ -25116,7 +25167,7 @@ function playerHudOverview() {
       : -1;
     if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
-    return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
+    return `<section class="victory-track" data-key="${track.id}" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><b>${track.label}</b></div>` +
       `<div class="victory-body">` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
@@ -25129,7 +25180,7 @@ function playerHudOverview() {
         const empireTitle = capital
           ? `View ${player.civ}'s empire from its capital, ${capital.name}`
           : `${player.civ} has no capital to view`;
-        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-victory-focus="${isFocus}" ` +
+        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-key="${player.id}" data-victory-focus="${isFocus}" ` +
           `style="--civ:${pcol(player.id)}" title="${focusLabel}#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<button type="button" class="victory-civ" data-hud-action="capital" data-hud-civ="${player.id}" ` +
@@ -25163,7 +25214,7 @@ function playerHudOverview() {
     `<button class="sim-stats-seam" type="button" data-sim-stats-seam role="separator" ` +
     `aria-orientation="horizontal" aria-label="Simulation stats height; drag or use arrow keys, double-click resets" ` +
     `title="Drag to divide the panel · double-click resets"></button>` +
-    `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
+    `<section class="hud-region victory-region" data-key="victory" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
@@ -25359,23 +25410,59 @@ function playerHudStats(player, rank) {
 let hudHtml = "", victoryHudHtml = "";
 
 // The victory tracker repaints whenever one of its numbers moves, which is
-// most frames of a running simulation, but the Arena Stats ledger changes only
-// when a game ends. Rebuilding it with the tracker sent the list back to the
-// top and cut off any wheel gesture in flight, so while its markup is unchanged
-// the ledger stays in the document and only its neighbours are replaced.
-function repaintBesideArenaStats(victoryHud, overview) {
-  const live = victoryHud.querySelector(".sim-stats-region");
-  if (!live) return false;
+// most frames of a running simulation. Replacing its markup took the scroll box
+// out from under the wheel several times a second: a gesture in flight died
+// with the old element, and the position put back on the new one then slid
+// toward the top as its spare rows folded away (operator, 2026-11-09: "trying
+// to scroll doesn't really seem to work"). So a repaint edits the nodes already
+// in the document, and a node with a `data-key` follows its key when the order
+// changes.
+//
+// What the markup does not name is left alone: the leader-capacity pass writes
+// `hidden`, the type fitter writes a font size and its clipped mark, and both
+// run again straight after every repaint.
+const HUD_PATCH_KEEPS = new Set(["hidden", "style", "data-fit-clipped"]);
+const hudPatchKey = node => node.getAttribute?.("data-key") ?? null;
+
+function patchHudAttributes(live, fresh) {
+  for (const {name} of [...live.attributes])
+    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
+  for (const {name, value} of fresh.attributes)
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+}
+
+function patchHudChildren(live, fresh) {
+  const keyed = new Map();
+  for (const node of live.childNodes)
+    if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+  let cursor = live.firstChild;
+  for (const want of [...fresh.childNodes]) {
+    const key = hudPatchKey(want);
+    const held = key === null ? cursor : keyed.get(key);
+    if (!held || held.nodeName !== want.nodeName || hudPatchKey(held) !== key) {
+      live.insertBefore(want, cursor);
+      continue;
+    }
+    if (held === cursor) cursor = cursor.nextSibling;
+    else live.insertBefore(held, cursor);
+    if (held.nodeType === Node.ELEMENT_NODE) {
+      patchHudAttributes(held, want);
+      patchHudChildren(held, want);
+    } else if (held.nodeValue !== want.nodeValue) {
+      held.nodeValue = want.nodeValue;
+    }
+  }
+  while (cursor) {
+    const spent = cursor;
+    cursor = cursor.nextSibling;
+    spent.remove();
+  }
+}
+
+function patchHudMarkup(root, markup) {
   const next = document.createElement("template");
-  next.innerHTML = overview;
-  const fresh = next.content.querySelector(".sim-stats-region");
-  if (!fresh?.isEqualNode(live)) return false;
-  const nodes = [...next.content.childNodes];
-  const seat = nodes.indexOf(fresh);
-  for (const node of [...victoryHud.childNodes]) if (node !== live) node.remove();
-  live.before(...nodes.slice(0, seat));
-  live.after(...nodes.slice(seat + 1));
-  return true;
+  next.innerHTML = markup;
+  patchHudChildren(root, next.content);
 }
 
 function drawPlayerHud() {
@@ -25383,23 +25470,14 @@ function drawPlayerHud() {
   const victoryHud = document.getElementById("victoryhud");
   const priorBounds = mapFocusBounds();
   const priorFocus = currentMapFocusWorld();
-  // State updates are frequent in spectator mode. Preserve each rail's exact
-  // reading position so a person can browse an off-screen victory path
-  // without the next simulation frame snapping the HUD back to the leader.
-  const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
-  const statsScroll = victoryHud.querySelector(".sim-stats-body")?.scrollTop || 0;
+  // State updates are frequent in spectator mode. Preserve the standings' exact
+  // reading position so the next simulation frame cannot snap them back.
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
-    if (!repaintBesideArenaStats(victoryHud, overview)) {
-      victoryHud.innerHTML = overview;
-      const statsBody = victoryHud.querySelector(".sim-stats-body");
-      if (statsBody) statsBody.scrollTop = statsScroll;
-    }
-    const rail = victoryHud.querySelector(".hud-rail");
-    if (rail && victoryScroll) rail.scrollTop = victoryScroll;
+    patchHudMarkup(victoryHud, overview);
   }
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
@@ -26345,7 +26423,9 @@ function civDossier(p, rank, relation) {
 // applies to the narrow-viewport layout, where the paths sit in a row again.
 document.getElementById("victoryhud").addEventListener("wheel", event => {
   const rail = event.target.closest(".hud-rail");
-  if (!rail || rail.scrollHeight > rail.clientHeight ||
+  // Ask how the rail scrolls, not whether its content is taller: a row of paths
+  // clips a few pixels of height on purpose, and that must not disarm the wheel.
+  if (!rail || getComputedStyle(rail).overflowY !== "hidden" ||
       rail.scrollWidth <= rail.clientWidth ||
       Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
   rail.scrollLeft += event.deltaY;
