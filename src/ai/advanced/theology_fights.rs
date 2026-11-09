@@ -19,6 +19,10 @@
 //! duel the model reads as an exact tie, which passes `dealt >= received`,
 //! really runs 7 or more points against us. The gene reads the fight with
 //! those two terms; the rule itself does not change.
+//!
+//! The model also gave an attacker Holy Ground, which the host gives to the
+//! defender only (79 defenders and no attacker in 346 previews), so the
+//! gene's reading leaves it off the attacker.
 
 use super::AdvancedAi;
 use crate::game::Game;
