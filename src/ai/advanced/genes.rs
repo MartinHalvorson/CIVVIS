@@ -4427,6 +4427,14 @@ pub const GENES: &[Gene] = &[
     // `frontier-walls-before-the-surprise`. See
     // `advanced/surprise_watch_latch.rs`.
     Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // Random leaders (live 10-31): of the 9 seats dealt a civilization with
+    // a unique improvement, only Sumeria's (no prerequisite) built one;
+    // Scotland never adopted Reformed Church for its Golf Course in 205
+    // turns. `civic_value` priced no improvement, and research credited
+    // every civilization's uniques for everyone. Research skips another
+    // civilization's unique unlocks, credits our own, and a civic prices the
+    // improvements it unlocks. See `advanced/research_uniques.rs`.
+    Gene { tag: "research-weighs-our-own-uniques", field: "research_weighs_our_own_uniques", kind: Kind::OptIn, enable: AdvancedAi::enable_research_weighs_our_own_uniques, disable: AdvancedAi::disable_research_weighs_our_own_uniques },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

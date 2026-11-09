@@ -8698,6 +8698,17 @@ impl AdvancedAi {
         self.surprise_watch_holds_its_ratio = false;
     }
 
+    /// Opt-in gene `research-weighs-our-own-uniques`; see
+    /// [`Self::research_weighs_our_own_uniques`].
+    pub fn enable_research_weighs_our_own_uniques(&mut self) {
+        self.research_weighs_our_own_uniques = true;
+    }
+
+    /// The twin of `enable_research_weighs_our_own_uniques`.
+    pub fn disable_research_weighs_our_own_uniques(&mut self) {
+        self.research_weighs_our_own_uniques = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

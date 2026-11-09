@@ -7887,6 +7887,11 @@ pub struct AdvancedAi {
     /// turn and with no held siege march; the objective is its city on the
     /// road. See `advanced/silent_counter.rs`.
     racer_blocker_declares: bool,
+    /// `research-weighs-our-own-uniques`: `tech_value` and `civic_value`
+    /// skip another civilization's unique unlocks, credit our own, and a
+    /// civic prices the improvements it unlocks. See
+    /// `advanced/research_uniques.rs`. Off by default.
+    research_weighs_our_own_uniques: bool,
     /// `phantom-capture-keeps-the-siege`: a capture this frame's planning
     /// board makes on damage the same frame dealt (a volley the executor
     /// defers, a shot or another unit's blow the host has not yet executed)
@@ -10226,6 +10231,8 @@ mod frontier_walls_before_the_surprise;
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
 mod research_alliance;
+/// `research-weighs-our-own-uniques`: see `advanced/research_uniques.rs`.
+mod research_uniques;
 /// `solvent-or-hold` and `bankruptcy-exits-the-drain`: the bankruptcy spiral's
 /// two opt-in genes. See `advanced/solvency.rs`.
 mod solvency;
@@ -11463,6 +11470,7 @@ impl AdvancedAi {
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
+            research_weighs_our_own_uniques: false,
             phantom_capture_keeps_the_siege: false,
             phantom_frame_cities: None,
             phantom_contingent_captures: BTreeSet::new(),
@@ -21980,20 +21988,26 @@ impl AdvancedAi {
             .buildings
             .values()
             .filter(|b| b.tech.as_deref() == Some(tech))
+            .filter(|b| self.research_counts_unlock(g, pid, b.unique_to.as_deref()))
         {
+            // `research-weighs-our-own-uniques`: no other civilization's
+            // design, ours credited. Unchanged off.
             value += self.yield_value(building.yields, strategy) * 14.0
                 + building.housing * 12.0
-                + building.amenity * 18.0;
+                + building.amenity * 18.0
+                + self.own_unique_unlock_credit(g, pid, building.unique_to.as_deref());
         }
         for district in g
             .rules
             .districts
             .values()
             .filter(|d| d.tech.as_deref() == Some(tech))
+            .filter(|d| self.research_counts_unlock(g, pid, d.unique_to.as_deref()))
         {
             value += self.yield_value(district.yields, strategy) * 18.0
                 + district.defense * 1.5
-                + district.amenity * 18.0;
+                + district.amenity * 18.0
+                + self.own_unique_unlock_credit(g, pid, district.unique_to.as_deref());
         }
         for project in g
             .rules
@@ -22018,8 +22032,11 @@ impl AdvancedAi {
             .improvements
             .values()
             .filter(|i| i.tech.as_deref() == Some(tech))
+            .filter(|i| self.research_counts_unlock(g, pid, i.unique_to.as_deref()))
         {
-            value += self.yield_value(improvement.yields, strategy) * 10.0 + 18.0;
+            value += self.yield_value(improvement.yields, strategy) * 10.0
+                + 18.0
+                + self.own_unique_unlock_credit(g, pid, improvement.unique_to.as_deref());
         }
         if strategy == GrandStrategy::Religion && tech == "astrology" {
             value += 95.0;
@@ -22169,19 +22186,28 @@ impl AdvancedAi {
             .buildings
             .values()
             .filter(|b| b.civic.as_deref() == Some(civic))
+            .filter(|b| self.research_counts_unlock(g, pid, b.unique_to.as_deref()))
         {
+            // `research-weighs-our-own-uniques`, as in `tech_value`.
             value += self.yield_value(building.yields, strategy) * 15.0
                 + building.housing * 12.0
-                + building.amenity * 18.0;
+                + building.amenity * 18.0
+                + self.own_unique_unlock_credit(g, pid, building.unique_to.as_deref());
         }
         for district in g
             .rules
             .districts
             .values()
             .filter(|d| d.civic.as_deref() == Some(civic))
+            .filter(|d| self.research_counts_unlock(g, pid, d.unique_to.as_deref()))
         {
-            value += self.yield_value(district.yields, strategy) * 18.0 + district.amenity * 18.0;
+            value += self.yield_value(district.yields, strategy) * 18.0
+                + district.amenity * 18.0
+                + self.own_unique_unlock_credit(g, pid, district.unique_to.as_deref());
         }
+        // `research-weighs-our-own-uniques`: the improvements a civic
+        // unlocks, ours among them. Zero off.
+        value += self.civic_improvement_value(g, pid, civic, strategy);
         value += g
             .rules
             .governments
