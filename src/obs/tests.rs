@@ -548,11 +548,13 @@ fn player_standings_report_each_civilizations_age() {
 
     const INDEX: &str = include_str!("../../web/assets/app.js");
     let age_column = INDEX.find("{key:\"age\", label:\"Age\"").unwrap();
-    let plan_column = INDEX.find("{key:\"plan\", label:\"Plan\"").unwrap();
-    let next_column = INDEX[age_column + 1..].find("{key:\"").unwrap() + age_column + 1;
+    let closest_column = INDEX
+        .find("{key:\"closest_victory\", label:\"Closest victory\"")
+        .unwrap();
+    let next_column = INDEX[closest_column + 1..].find("{key:\"").unwrap() + closest_column + 1;
     assert_eq!(
-        next_column, plan_column,
-        "the resizable AGE column belongs immediately before PLAN"
+        next_column, age_column,
+        "the resizable AGE column belongs immediately after CLOSEST"
     );
     assert!(INDEX.contains("age:[\"AGE\", \"Civilization age\"],"));
     assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
