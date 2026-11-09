@@ -278,9 +278,16 @@ return false'''
             ["osascript", "-e", script], capture_output=True, text=True,
             timeout=5,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"[env] Civ VI Quit menu unavailable: {error}",
+              file=sys.stderr, flush=True)
         return False
-    return done.returncode == 0 and done.stdout.strip().lower() == "true"
+    accepted = done.returncode == 0 and done.stdout.strip().lower() == "true"
+    if not accepted:
+        detail = (done.stderr or done.stdout or "menu item not found").strip()
+        print(f"[env] Civ VI Quit menu was not accepted: {detail[:240]}",
+              file=sys.stderr, flush=True)
+    return accepted
 
 
 def confirm_exit_dialog() -> bool:
