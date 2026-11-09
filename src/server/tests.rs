@@ -9989,6 +9989,37 @@ fn the_minimap_follows_a_moving_camera_on_its_own_budget_and_still_settles() {
 }
 
 #[test]
+fn a_turn_paints_the_map_once_and_a_frame_keeps_what_it_has_worked_out() {
+    // The turn's own paint restarts the animation clock, or animTick repaints
+    // the identical world in the same frame.
+    let render = EMBEDDED_INDEX
+        .split("function render(st, recordChronicle = true")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawCaptureChoice").next())
+        .expect("render");
+    let painted = render
+        .find("draw(); drawSide(newWorld); drawMini();")
+        .expect("the turn's paint");
+    let clock = render
+        .find("lastIdleDraw = performance.now();")
+        .expect("the animation clock restarts");
+    assert!(painted < clock);
+    // Cell records are rebuilt per frame; the layers share one measurement.
+    assert!(EMBEDDED_INDEX.contains("if (cell.inradius !== undefined) return cell.inradius;"));
+    assert!(EMBEDDED_INDEX.contains("return cell.inradius = Number.isFinite(inradius)"));
+    let project = EMBEDDED_INDEX
+        .split("function planetProject(point, camera, scale, centerX, centerY) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function ").next())
+        .expect("planetProject");
+    assert!(project.contains("planetProjectTrig(camera)"));
+    assert!(
+        !project.contains("Math.cos("),
+        "angles belong to the camera, not the point"
+    );
+}
+
+#[test]
 fn browser_planet_minimap_uses_a_square_cropped_azimuthal_equidistant_chart() {
     // The chart is azimuthal equidistant about the point facing the
     // viewer, cropped to the minimap's square, and the square's half-side
