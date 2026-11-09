@@ -10602,6 +10602,7 @@ mod phantom_capture;
 mod holdout_faith_war;
 
 /// `the-last-two-capitals-come-first`: see `advanced/last_two_capitals.rs`.
+mod last_civ_standing;
 mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
@@ -12413,8 +12414,12 @@ impl AdvancedAi {
     }
 
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
-        self.victory_target
-            .filter(|target| g.victory_conditions.is_enabled(target.as_str()))
+        self.victory_target.filter(|target| {
+            g.victory_conditions.is_enabled(target.as_str())
+                // The lobby may have switched Domination off, but a world
+                // played on to its last civilization has no other lane.
+                || (*target == VictoryTarget::Domination && g.plays_to_the_last_civ())
+        })
     }
 
     fn victory_strategy_enabled(g: &Game, strategy: GrandStrategy) -> bool {
@@ -25322,6 +25327,8 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        // See `last_civ_standing`: "one more turn" leaves one lane.
+        self.plays_for_the_last_civ(g, pid);
         // `districts-price-the-improvement`: what a District could bulldoze.
         self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.

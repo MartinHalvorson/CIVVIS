@@ -8585,10 +8585,15 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.dataset.signature = signature;
       const kicker = SPEC ? "A civilization ascendant"
         : winnerIds.includes(0) ? "Victory" : "Defeat";
-      const winnerActions = SPEC
+      // One more turn plays to the last civilization, so a result that
+      // already left only one has no further turn to offer.
+      const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
-            onclick="playOnPastVictory('indefinite', false)"
-            title="Keep this world playing. Nothing ends it until you press Restart sim.">One more turn</button>
+            onclick="playOnPastVictory('last_civ_standing', false)"
+            title="Keep this world playing until only one civilization remains.">One more turn</button>`
+        : ``;
+      const winnerActions = SPEC
+        ? `${oneMoreTurn}
           <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
             title="Start a new game now.">New Game</button>`
         : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
@@ -25469,7 +25474,9 @@ function hudTurnPlate() {
     decided && "turn-count-playing-on"].filter(Boolean).join(" ");
   const playOnLabel = decided
     ? `Playing on past ${decided.civ || "the winner"}'s ${victoryVerdict(decided.victory_type, decided.victory_label)} on turn ${decided.turn}` +
-      (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
+      (decided.mode === "indefinite" ? " indefinitely"
+        : decided.mode === "last_civ_standing" ? " until one civ remains"
+        : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
   // Live time is the spectator's stopwatch: how long this world has actually
@@ -28966,6 +28973,7 @@ function victoryVerdict(type, label) {
   // The flag verdict names the deed rather than a lane: a capture-the-flag
   // battle is not won by "a flag victory", the flag was captured.
   if (type === "flag") return "Captured the Flag";
+  if (type === "last_civ_standing") return "Last Civ Standing";
   return titleCase(type || "score") + " victory";
 }
 function researchCard(kind, name, progress, total, perTurn, boosted) {

@@ -5286,3 +5286,8 @@ fn open_url(url: &str) {
 
 #[cfg(test)]
 mod tests;
+
+// PROBE ONLY, never committed.
+pub fn probe_stock_params(seed: u64) -> Params {
+    stock_opening_params(seed)
+}

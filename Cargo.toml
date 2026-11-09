@@ -249,3 +249,8 @@ debug-assertions = true
 # target directory; a shared one reuses stale sibling binaries and passes
 # suites the code cannot pass.
 incremental = true
+
+# PROBE ONLY, never committed.
+[[bin]]
+name = "lastciv_probe"
+path = "src/bin/lastciv_probe.rs"

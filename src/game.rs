@@ -6349,6 +6349,10 @@ pub enum PlayOnMode {
     UntilNextVictory,
     /// Keep the world live no matter which later victory requirements are met.
     Indefinite,
+    /// Every civilization left plays on until only one remains. Nothing else
+    /// can end the world: every other result is refused and no two
+    /// civilizations can be at peace, so the survivor is the only verdict.
+    LastCivStanding,
 }
 
 impl PlayOnMode {
@@ -6356,6 +6360,7 @@ impl PlayOnMode {
         match value {
             "until_next_victory" => Some(Self::UntilNextVictory),
             "indefinite" => Some(Self::Indefinite),
+            "last_civ_standing" => Some(Self::LastCivStanding),
             _ => None,
         }
     }
@@ -6364,6 +6369,7 @@ impl PlayOnMode {
         match self {
             Self::UntilNextVictory => "until_next_victory",
             Self::Indefinite => "indefinite",
+            Self::LastCivStanding => "last_civ_standing",
         }
     }
 }
@@ -6383,7 +6389,8 @@ pub struct Decided {
     pub mercy_lanes: Vec<String>,
     /// The turn the victory was declared on, not the turn play resumed.
     pub turn: u32,
-    /// Whether this continuation stops at the next distinct result or never.
+    /// What ends this continuation: the next distinct result, nothing, or
+    /// the last civilization left standing.
     #[serde(default)]
     pub mode: PlayOnMode,
 }
@@ -6413,6 +6420,10 @@ pub const DRAW_RESULT: &str = "draw";
 /// checkboxes, so it is not one of [`VictoryConditions::NAMES`]: the flag is
 /// an arena objective, and only a battle set up around one can end this way.
 pub const FLAG_VICTORY: &str = "flag";
+/// The result of a world played on until one civilization was left. It is not
+/// one of [`VictoryConditions::NAMES`] either: no lobby checkbox asks for it,
+/// and only "one more turn" can lead here.
+pub const LAST_CIV_VICTORY: &str = "last_civ_standing";
 
 /// The notation a Mercy Rule verdict is written and displayed under.
 ///
@@ -10199,6 +10210,11 @@ impl Game {
         // can sign it away, which is why this is the war state itself rather
         // than a declaration written into `at_war` at setup.
         if self.is_arena() {
+            return true;
+        }
+        // The same is true of a world played on to its last civilization:
+        // the war is the rule of the extension, so it cannot be signed away.
+        if self.plays_to_the_last_civ() && self.major_diplomatic_counterpart(a, b) {
             return true;
         }
         if self

@@ -417,6 +417,115 @@ fn playing_on_can_wait_for_the_next_victory_or_run_indefinitely() {
     assert!(untouched.decided.is_none());
 }
 
+/// Remove a civilization from the board the way a conquest would leave it.
+fn wipe_out(game: &mut Game, pid: usize) {
+    let cities: Vec<u32> = game.player_city_ids(pid);
+    for city in cities {
+        game.cities.remove(&city);
+    }
+    for unit in game.player_unit_ids(pid) {
+        game.remove_unit(unit);
+    }
+    game.check_elimination(pid);
+}
+
+/// "One more turn" on the site: every other result is refused, nobody can
+/// sign the war away, and the world ends when one civilization is left.
+#[test]
+fn one_more_turn_plays_on_until_one_civ_remains() {
+    let mut game = game_with_capitals(3, 90_200, 40);
+    game.turn = 30;
+    game.players[0].friends_until.insert(1, 500);
+    game.players[1].friends_until.insert(0, 500);
+    game.players[0].open_borders_until.insert(2, 500);
+    game.players[1].defensive_pacts.insert(2, 500);
+    game.peace_treaties.insert((0, 2), 500);
+    assert!(game.set_winner(1, "diplomatic"));
+
+    assert!(game.play_on(PlayOnMode::LastCivStanding));
+    assert_eq!(game.winner, None);
+    assert_eq!(game.turn_limit(), None, "only the survivor ends it");
+    assert!(game.plays_to_the_last_civ());
+
+    // Every pair is at war, and the agreements that stood in the way of it
+    // are gone. Peace is refused however it is asked for.
+    for (first, second) in [(0, 1), (0, 2), (1, 2)] {
+        assert!(game.is_at_war(first, second), "{first} and {second} at war");
+        assert!(game.wars.contains_key(&(first, second)), "war is on record");
+        assert!(game.peace_available_at(first, second).is_some());
+        assert!(game.apply(first, &Action::MakePeace { player: second }).is_err());
+    }
+    assert!(!game.are_friends(0, 1));
+    assert!(!game.has_defensive_pact(1, 2));
+    assert!(game.peace_treaties.is_empty());
+    assert!(game.players[0].open_borders_until.is_empty());
+
+    // Nothing but the survivor can finish this world, at any turn.
+    for victory_type in VictoryConditions::NAMES {
+        assert!(!game.set_winner(0, victory_type));
+        assert_eq!(game.winner, None, "{victory_type} ended the war");
+    }
+    game.turn = game.max_turns;
+    game.current = 2;
+    game.do_end_turn();
+    assert!(game.turn > game.max_turns);
+    assert_eq!(game.winner, None, "the old cap manufactures no score result");
+
+    // Two left is still a war.
+    wipe_out(&mut game, 2);
+    assert!(!game.is_finished());
+    assert_eq!(game.last_side_standing(), None);
+
+    // The stopping rule survives a save.
+    let raw = serde_json::to_string(&game).expect("a played-on game saves");
+    let mut reloaded: Game = serde_json::from_str(&raw).expect("and loads");
+    assert!(reloaded.plays_to_the_last_civ());
+    assert!(reloaded.is_at_war(0, 1));
+    wipe_out(&mut reloaded, 0);
+    assert_eq!(reloaded.winner, Some(1));
+
+    wipe_out(&mut game, 1);
+    assert_eq!(game.winner, Some(0));
+    assert_eq!(game.victory_type.as_deref(), Some(LAST_CIV_VICTORY));
+    assert_eq!(game.last_side_standing(), Some(0));
+
+    // There is no one left to play on against.
+    assert!(!game.play_on(PlayOnMode::LastCivStanding));
+    assert_eq!(game.winner, Some(0), "a refused press changes nothing");
+}
+
+/// A result that already left one civilization has no further turns to give,
+/// which is why the finish screen stops offering the button.
+#[test]
+fn one_more_turn_is_refused_when_one_civ_is_already_left() {
+    let mut game = game_with_capitals(2, 90_201, 40);
+    wipe_out(&mut game, 1);
+    assert!(game.set_winner(0, "domination"));
+    assert_eq!(game.last_side_standing(), Some(0));
+    assert!(!game.play_on(PlayOnMode::LastCivStanding));
+    assert_eq!(game.winner, Some(0));
+    assert!(game.decided.is_none());
+}
+
+/// Teammates cannot fight, so a team left together is the last side. City-
+/// states are not civilizations, so one left standing does not hold it open.
+#[test]
+fn the_last_side_can_be_a_team_and_ignores_city_states() {
+    let mut game = game_with_capitals(4, 90_202, 40);
+    game.players[0].team = Some(1);
+    game.players[1].team = Some(1);
+    game.players[3].is_minor = true;
+    assert!(game.set_winner(2, "culture"));
+    assert!(game.play_on(PlayOnMode::LastCivStanding));
+    assert!(!game.is_at_war(0, 1), "teammates stay on one side");
+    assert!(game.is_at_war(0, 2));
+
+    wipe_out(&mut game, 2);
+    assert_eq!(game.winner, Some(0));
+    assert_eq!(game.victory_type.as_deref(), Some(LAST_CIV_VICTORY));
+    assert_eq!(game.winning_players(), vec![0, 1]);
+}
+
 /// The Civilization Players League publishes the lobby it plays
 /// (https://cpl.gg/rules/in-game-rules/), and `docs/COMPETITIVE.md` maps
 /// every line of it onto the setting that pins it here. This asserts the
