@@ -75,6 +75,54 @@ fn walls() -> Item {
     }
 }
 
+/// War must neither erase a recent approach warning nor prevent a new
+/// sighting from arming walls before the original capital takes damage.
+#[test]
+fn the_capital_watch_keeps_its_wall_claim_during_war() {
+    for seen_before_war in [false, true] {
+        let (mut game, capital) = watched().expect("fixture: watched capital");
+        game.players[0].techs.insert(crate::name!("masonry"));
+        let at = ground(&game, capital, 5);
+        game.spawn_unit("warrior", 1, at);
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        game.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: builder.clone(),
+            },
+        )
+        .unwrap();
+        let mut ai = armed();
+        if seen_before_war {
+            ai.observe_turn_start_hostiles(&game, 0);
+        }
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        if !seen_before_war {
+            ai.observe_turn_start_hostiles(&game, 0);
+        }
+        assert_eq!(game.cities[&capital].hp, CITY_MAX_HP);
+        assert_eq!(game.city_max_wall_hp(&game.cities[&capital]), 0);
+        assert!(ai.capital_walls_threat(&game, 0).is_some());
+
+        let mut off = game.clone();
+        AdvancedAi::new().claim_capital_walls_before_the_surprise(&mut off, 0);
+        assert_eq!(off.cities[&capital].queue.first(), Some(&builder));
+
+        let mut weaker = game.clone();
+        power(&mut weaker, 1, 150.0);
+        ai.claim_capital_walls_before_the_surprise(&mut weaker, 0);
+        assert_eq!(weaker.cities[&capital].queue.first(), Some(&builder));
+
+        ai.claim_capital_walls_before_the_surprise(&mut game, 0);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&walls()));
+        assert!(ai.capital_walls_hold(&game, 0, capital, &walls()));
+    }
+}
+
 /// The research leg: a rival soldier seen within eight tiles at 2.5 times
 /// our power puts Masonry next; off, at 1.5 times, past the window, or with
 /// Masonry known, it does not.

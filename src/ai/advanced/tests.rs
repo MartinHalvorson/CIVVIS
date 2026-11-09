@@ -26404,9 +26404,15 @@ fn gutted_rival_reading_needs_the_fall_and_the_margin() {
     // Macedon, civvis-20261109T050249Z turn 118.
     let macedon = edge(360.0, 684.0, 202.0);
     assert!(macedon.gutted());
-    assert!(!macedon.passes(), "the peak rule holds this war without the gene");
+    assert!(
+        !macedon.passes(),
+        "the peak rule holds this war without the gene"
+    );
     assert!(!edge(360.0, 684.0, 500.0).gutted(), "no fall, no reading");
-    assert!(!edge(250.0, 684.0, 202.0).gutted(), "under 1.5 times what is left");
+    assert!(
+        !edge(250.0, 684.0, 202.0).gutted(),
+        "under 1.5 times what is left"
+    );
     assert!(super::GENES
         .iter()
         .any(|gene| gene.tag == "gutted-rival-passes-the-edge" && gene.opt_in()));

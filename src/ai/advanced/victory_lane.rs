@@ -843,6 +843,9 @@ mod tests {
         plan.strategy = GrandStrategy::Recovery;
         let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
         ai.enable_live_bridge();
+        // Exercise the recovery gate at the host's quoted price, independent
+        // of which pricing policy the deployment batch currently selects.
+        ai.enable_engine_faith_price();
         g.players[0].faith = 500.0;
         g.players[0].civics.insert(crate::name!("cold_war"));
         assert!(

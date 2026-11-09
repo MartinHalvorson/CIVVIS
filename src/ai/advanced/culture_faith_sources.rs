@@ -7,6 +7,14 @@
 
 use super::*;
 
+/// `culture-faith-opens-at-the-theaters`: standing Theater Squares that open
+/// the Faith sources without waiting for an Amphitheater. Live Deity Pericles
+/// 2026-11-08 (45 games) earned a median of 15 Faith a turn at t120, and the
+/// lower half averaged 0.6 Holy Sites against 2.0. Amphitheaters reach only
+/// 29% of cities by t100, so the original gate opens too late to fund the
+/// Rock Bands that unlock at Cold War.
+const CULTURE_FAITH_OPENING_THEATERS: usize = 2;
+
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
         if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
@@ -17,13 +25,21 @@ impl AdvancedAi {
         }
         let city_ids = g.player_city_ids(pid);
         let cities = city_ids.len();
+        let opened_by_theaters = self.culture_faith_opens_at_the_theaters
+            && city_ids
+                .iter()
+                .filter(|cid| {
+                    g.city_has_district_family(&g.cities[*cid], crate::name!("theater_square"))
+                })
+                .count()
+                >= CULTURE_FAITH_OPENING_THEATERS;
         if cities < 3
-            || !city_ids.iter().any(|cid| {
-                g.cities[cid]
-                    .buildings
-                    .iter()
-                    .any(|building| g.building_is_family(*building, crate::name!("amphitheater")))
-            })
+            || !(opened_by_theaters
+                || city_ids.iter().any(|cid| {
+                    g.cities[cid].buildings.iter().any(|building| {
+                        g.building_is_family(*building, crate::name!("amphitheater"))
+                    })
+                }))
         {
             return None;
         }

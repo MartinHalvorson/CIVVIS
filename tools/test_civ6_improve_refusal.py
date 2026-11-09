@@ -73,8 +73,8 @@ class ImproveRefusalTests(unittest.TestCase):
         emit = self.handler.index('emit("improve_refused"')
         payload = self.handler[emit:]
         self.assertIn("why = why,", payload)
-        self.assertIn("can_operate = canOperate(unit,", payload)
-        self.assertIn('OP["UNITOPERATION_BUILD_IMPROVEMENT"],', payload)
+        self.assertIn("can_operate = canOperate(unit, buildOperation, params)", payload)
+        self.assertIn("local why = refusalReason(unit, buildOperation,", self.handler)
 
     def test_the_refusal_records_the_movement_that_actually_explains_it(self) -> None:
         """The disagreement between the two gates was the builder's movement.
@@ -145,7 +145,7 @@ class ImproveRefusalTests(unittest.TestCase):
         # It must be decided BEFORE the engine call, or it is not saving one.
         self.assertLess(
             handler.index('emit("improve_already"'),
-            handler.index('if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then'),
+            handler.index("if operate(unit, buildOperation, params) then"),
             "the duplicate check must come before the operation is attempted",
         )
         # And it must be a DIFFERENT kind, or it still blocks the tile.

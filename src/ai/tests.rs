@@ -10962,10 +10962,9 @@ fn a_lent_flag_spends_the_stock_on_priced_melee() {
         .find(|id| g.units[id].kind == "settler")
         .unwrap();
     g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    g.players[0].techs.extend([
-        crate::name!("archery"),
-        crate::name!("iron_working"),
-    ]);
+    g.players[0]
+        .techs
+        .extend([crate::name!("archery"), crate::name!("iron_working")]);
     let cid = g.player_city_ids(0)[0];
     let mut ai = BasicAi::new();
     ai.prefers_priced_melee = true;

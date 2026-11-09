@@ -242,7 +242,8 @@ impl DeclarationEdge {
     /// [`DECLARATION_EDGE_RATIO`] over what it has left, whichever empire
     /// out-produces the other.
     pub fn gutted(&self) -> bool {
-        self.steady <= GUTTED_PEAK_SHARE * self.peak && self.steady_ratio() >= DECLARATION_EDGE_RATIO
+        self.steady <= GUTTED_PEAK_SHARE * self.peak
+            && self.steady_ratio() >= DECLARATION_EDGE_RATIO
     }
 }
 /// `diplomatic-contender-eliminated`: the Diplomatic Victory points at which

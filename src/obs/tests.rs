@@ -1826,3 +1826,23 @@ fn observed_tile(observation: &Value, position: Pos) -> &Value {
         .find(|tile| tile["pos"] == json!([position.0, position.1]))
         .expect("tile is in the observation")
 }
+
+/// A detonation is a local event. It once bleached the whole frame as well,
+/// which in a game watched for hours is a flash grenade every time one is
+/// fired. The fireball, rings and fallout are what show a blast.
+#[test]
+fn a_detonation_glows_on_its_fireball_and_leaves_the_frame_alone() {
+    let app = include_str!("../../web/assets/app.js");
+    let flash = app
+        .split_once("function drawNuclearFlash(now) {")
+        .unwrap()
+        .1
+        .split_once("\n}\n")
+        .unwrap()
+        .0;
+    assert!(flash.contains("cx.fillRect(sx - r, sy - r, r * 2, r * 2);"));
+    assert!(
+        !flash.contains("cv.width"),
+        "a detonation must not paint across the whole canvas"
+    );
+}
