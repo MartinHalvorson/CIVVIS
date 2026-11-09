@@ -62,6 +62,10 @@
 //! 1,555 Faith and 472 Artist points: patronage correctly refused an unusable
 //! creator. One legal Art Museum opens three slots and the Artist economy; an
 //! Archaeological Museum does not supply compatible art slots.
+//! A reserved University keeps its queue ahead of that first Museum unless a
+//! recruited cultural person needs the Museum's slot chain. Native Deity
+//! Pericles 20261109T005826Z/t101 claimed a four-turn University and replaced
+//! it with a Museum in the same pass; the University first stood at t129.
 
 use super::*;
 
@@ -489,6 +493,15 @@ impl AdvancedAi {
         {
             return;
         }
+        let waiting_for_art_slots = g.players[pid]
+            .live_great_person_activation_needs
+            .iter()
+            .any(|need| {
+                BasicAi::live_great_person_work(need).is_some_and(|work| {
+                    BasicAi::live_great_person_work_chain(work).contains(&"art_museum")
+                        && BasicAi::live_great_person_work_stage_needed(g, pid, work, "art_museum")
+                })
+            });
         let choice = g
             .player_city_ids(pid)
             .into_iter()
@@ -502,6 +515,15 @@ impl AdvancedAi {
                     return None;
                 }
                 if let Some(head) = city.queue.first() {
+                    // The Campus claim already selected this short University.
+                    // Another city can open the first art slots, or this city
+                    // can do so after its University. A physical person's
+                    // missing activation chain retains its immediate priority.
+                    let university_held = building == "art_museum"
+                        && !waiting_for_art_slots
+                        && matches!(head, Item::Building { building }
+                            if g.building_is_family(*building, crate::name!("university")))
+                        && self.campus_building_claim_holds(g, pid, cid, plan, head);
                     if self.early_settler_floor_holds(g, pid, cid, plan)
                         || self.bound_granary_holds(g, pid, cid, plan, head)
                         || self.capital_monument_holds(g, pid, cid, plan, head)
@@ -509,6 +531,7 @@ impl AdvancedAi {
                         || self.idle_route_trader_holds(g, pid, cid, plan, head)
                         || self.backlog_builder_holds(g, pid, cid, plan, head)
                         || self.capped_aqueduct_holds(g, pid, cid, plan, head)
+                        || university_held
                         || !Self::culture_theater_may_defer(g, pid, cid, head, at_major_war)
                     {
                         return None;
