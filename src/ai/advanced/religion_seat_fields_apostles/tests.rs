@@ -675,7 +675,7 @@ fn stranded_founder(cities: usize) -> (Game, AdvancedAi, u32) {
         .get_mut(&home)
         .unwrap()
         .districts
-        .remove(&crate::name!("holy_site"))
+        .remove(crate::name!("holy_site"))
         .unwrap();
     for site in sites {
         g.map.tiles.get_mut(&site).unwrap().district = None;
@@ -797,6 +797,12 @@ fn source_recovery_does_not_replace_units_walls_or_repairs() {
         Item::Repair {
             repair: crate::name!("district"),
             pos: (6, 8),
+        },
+        Item::Project {
+            project: crate::name!("repair_outer_defenses"),
+        },
+        Item::Project {
+            project: crate::name!("repair_encampment"),
         },
     ] {
         let mut board = g.clone();
@@ -983,5 +989,51 @@ fn source_recovery_uses_the_host_quoted_fastest_city() {
         Some(&Item::Building {
             building: crate::name!("granary")
         })
+    );
+}
+
+#[test]
+fn source_recovery_can_defer_an_ordinary_project() {
+    let (mut g, ai, home) = stranded_founder(1);
+    install_test_district(&mut g, home, "campus");
+    let project = Item::Project {
+        project: crate::name!("campus_research_grants"),
+    };
+    assert!(g.can_produce(0, home, &project));
+    g.cities.get_mut(&home).unwrap().queue = vec![project];
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(recovery_claims(&g), 1);
+}
+
+#[test]
+fn source_recovery_does_not_freeze_behind_a_threatened_foundation() {
+    let (mut g, ai, _) = stranded_founder(2);
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    let held = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| matches!(g.cities[cid].queue.first(), Some(Item::District { .. })))
+        .unwrap();
+    let safe = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != held)
+        .unwrap();
+    let mut threatened = plan;
+    threatened.threatened_city = Some(held);
+    g.cities.get_mut(&held).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &threatened);
+    assert_eq!(
+        g.cities[&held].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("warrior")
+        })
+    );
+    assert!(
+        matches!(g.cities[&safe].queue.first(), Some(Item::District { district, .. }) if *district == "lavra")
     );
 }

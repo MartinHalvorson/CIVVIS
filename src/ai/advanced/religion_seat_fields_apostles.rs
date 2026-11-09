@@ -456,6 +456,23 @@ impl AdvancedAi {
             && Self::production_commitment_is_legal(g, pid, cid, item)
     }
 
+    fn religion_seat_recovery_city_available(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        let city = &g.cities[&cid];
+        plan.threatened_city != Some(cid)
+            && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            && g.city_religion(city) == g.players[pid].religion.as_deref()
+            && !city
+                .queue
+                .first()
+                .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+            && Self::faith_building_may_displace(g, city.queue.first())
+    }
+
     /// Replace a lost Faith source, including in a one- or two-city remnant.
     /// Ordinary buildings/projects may wait; units, Walls and repairs keep
     /// their queues. A paused foundation is resumed before a new one is laid.
@@ -470,39 +487,45 @@ impl AdvancedAi {
             return false;
         }
         let cities = g.player_city_ids(pid);
-        let pending: BTreeSet<Pos> = cities
-            .iter()
-            .flat_map(|cid| {
-                let city = &g.cities[cid];
-                city.queue
-                    .iter()
-                    .filter_map(|item| match item {
-                        Item::District { district, pos }
-                            if g.district_family(*district) == "holy_site" =>
-                        {
-                            Some(*pos)
-                        }
-                        _ => None,
-                    })
-                    .chain(city.owned_tiles.iter().filter_map(|pos| {
-                        g.map
-                            .get(*pos)
-                            .and_then(|tile| tile.district_foundation.as_ref())
-                            .filter(|foundation| {
-                                g.district_family(foundation.district) == "holy_site"
-                            })
-                            .map(|_| *pos)
-                    }))
-            })
-            .collect();
+        let mut pending = BTreeSet::new();
+        for cid in &cities {
+            if !Self::religion_seat_recovery_city_available(g, pid, *cid, plan) {
+                continue;
+            }
+            let city = &g.cities[cid];
+            let placed = city
+                .queue
+                .iter()
+                .filter_map(|item| match item {
+                    Item::District { district, pos }
+                        if g.district_family(*district) == "holy_site" =>
+                    {
+                        Some((*district, *pos))
+                    }
+                    _ => None,
+                })
+                .chain(city.owned_tiles.iter().filter_map(|pos| {
+                    g.map
+                        .get(*pos)
+                        .and_then(|tile| tile.district_foundation.as_ref())
+                        .filter(|foundation| g.district_family(foundation.district) == "holy_site")
+                        .map(|foundation| (foundation.district, *pos))
+                }));
+            for (district, pos) in placed {
+                if Self::production_commitment_is_legal(
+                    g,
+                    pid,
+                    *cid,
+                    &Item::District { district, pos },
+                ) {
+                    pending.insert(pos);
+                }
+            }
+        }
         let mut best: Option<(f64, f64, u32, Pos, Item)> = None;
         for cid in cities {
-            let city = &g.cities[&cid];
             if only_city.is_some_and(|wanted| wanted != cid)
-                || plan.threatened_city == Some(cid)
-                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
-                || g.city_religion(city) != g.players[pid].religion.as_deref()
-                || !Self::faith_building_may_displace(g, city.queue.first())
+                || !Self::religion_seat_recovery_city_available(g, pid, cid, plan)
             {
                 continue;
             }
@@ -545,7 +568,7 @@ impl AdvancedAi {
             return false;
         }
         think!(self.journal(), Faith, Decision,
-            "{} restores its Holy Site", g.cities[&city].name;
+            "{} starts a replacement Holy Site", g.cities[&city].name;
             "religion-seat-builds-holy-sites: no completed Holy Site remains; restore the source before the expansion floor ({turns:.1} turns)");
         true
     }

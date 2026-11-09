@@ -30,13 +30,16 @@ Retain the normal three-city expansion floor. Under the existing Holy Site
 construction treatment, a founded Religion-target seat with no completed
 Holy Site instead restores one legal site in a city following its faith.
 A completed pillaged district stays on the repair path. Units, Walls,
-repairs, threatened cities and recently attacked cities retain their queues.
+repairs (including defensive repair projects), threatened cities and recently
+attacked cities retain their queues.
 Ordinary buildings and projects can wait for the missing source. Native
 legality decides whether a one-citizen city can place its first district.
 
 Choose the fastest legal completion using native turn quotes where available,
 breaking ties by Faith adjacency and
-stable city/plot order. Resume an owned foundation before placing a new one.
+stable city/plot order. Resume a legal foundation in an eligible city before
+placing a new one. An unsafe, defended or refused foundation does not block
+recovery in another eligible city.
 The recovery investment must survive ordinary strategic rescoring, including
 its first frame, and production hints must restrict recovery to the requested
 city. After completion, the existing Shrine/Temple claim resumes.
@@ -65,3 +68,9 @@ The local pre-change test compile was intentionally stopped before its test
 executed, to free resources for the native seat. It is not recorded as a
 passing or failing model test. The native missed opportunities above provide
 the observed control; the added model regressions require optimized CI.
+
+Recovery reuses the controller's defensive-queue classification for repair
+projects as well as ordinary `Item::Repair` queues. Its reservation and hint
+coverage includes a threatened foundation with another safe city available;
+ordinary projects remain deferrable. The district fixture uses the engine's
+`Districts` API and provides Pottery for its legal Granary queue.
