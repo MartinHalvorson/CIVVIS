@@ -127,7 +127,6 @@ impl AdvancedAi {
         /// Opt-in gene `religion-seat-guards-the-race`; see
         /// `advanced/religion_seat_guards_the_race.rs`.
         religion_seat_guards_the_race => enable_religion_seat_guards_the_race, disable_religion_seat_guards_the_race;
-||||||| 33a1f61f89
         /// Opt-in gene `religion-seat-earns-its-prophet`; see
         /// [`Self::religion_seat_earns_its_prophet`].
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;

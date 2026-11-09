@@ -8424,7 +8424,6 @@ pub struct AdvancedAi {
     /// pillaged Holy Site at once and keeps a Prayers project finishing this
     /// turn. See `advanced/religion_seat_guards_the_race.rs`. Off by default.
     religion_seat_guards_the_race: bool,
-||||||| 33a1f61f89
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.

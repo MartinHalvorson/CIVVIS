@@ -5502,7 +5502,6 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
-||||||| 33a1f61f89
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
