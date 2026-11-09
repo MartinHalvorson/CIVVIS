@@ -57,6 +57,18 @@ class TheCheckerReadsLua(unittest.TestCase):
         self.assertEqual(scope.unexplained_globals(text), {"Thing"})
         self.assertEqual(scope.unexplained_globals(text, {"Other": "Thing = {};\n"}), set())
 
+    def test_a_function_defined_twice_is_named_with_both_lines(self):
+        text = "T.go = function() end\nlocal x = 1;\nT.go = function() end\n"
+        self.assertEqual(scope.duplicate_definitions(text), {"T.go": [1, 3]})
+
+    def test_the_two_definition_spellings_count_as_one_name(self):
+        text = "function T.go() end\nT.go = function() end\n"
+        self.assertEqual(scope.duplicate_definitions(text), {"T.go": [1, 2]})
+
+    def test_a_nested_definition_is_not_a_top_level_one(self):
+        text = "T.go = function() end\nlocal function f()\n\tT.go = function() end\nend\n"
+        self.assertEqual(scope.duplicate_definitions(text), {})
+
     def test_the_self_test_passes(self):
         self.assertEqual(scope.self_test(), 0)
 
@@ -74,6 +86,11 @@ class TheShippedMod(unittest.TestCase):
         for stem, text in self.files.items():
             with self.subTest(stem):
                 self.assertEqual(scope.slip_names(text), [])
+
+    def test_no_function_is_defined_twice(self):
+        for stem, text in self.files.items():
+            with self.subTest(stem):
+                self.assertEqual(scope.duplicate_definitions(text), {})
 
     def test_no_global_goes_unexplained(self):
         for stem, text in self.files.items():

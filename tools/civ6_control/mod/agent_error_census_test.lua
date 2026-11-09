@@ -63,6 +63,12 @@ emitted = {}
 K.noteError({}, "guard")
 assert(type(emitted[1].message) == "string", "a table thrown as an error still reports")
 
+-- A traceback is not part of the site: two callers are one message.
+emitted = {}
+K.noteError("Agent:60: boom\nstack traceback:\n\tfrom one caller", "guard")
+K.noteError("Agent:60: boom\nstack traceback:\n\tfrom another caller", "guard")
+assert(#emitted == 1 and emitted[1].message == "Agent:60: boom", "only the first line is the key")
+
 -- guard: failure is reported, success is silent, neither escapes.
 emitted = {}
 K.guard(function() error("Agent:7: boom") end)

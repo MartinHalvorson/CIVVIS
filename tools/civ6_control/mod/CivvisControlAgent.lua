@@ -483,11 +483,13 @@ end
 -- messages per guard kind. The message carries its own file and line.
 -- Table fields, not locals: the main chunk is at Civ VI's register ceiling.
 CivvisK.ERROR_LIMIT = 40;
+CivvisK.MOVE_FALLBACK_STEP = false;
 CivvisK.errors = { seen = {}, distinct = {} };
 function CivvisK.noteError(err, where)
 	pcall(function()
 		local errors = CivvisK.errors;
-		local message = string.sub(tostring(err), 1, 240);
+		-- The first line names the site; the traceback only varies with the caller.
+		local message = string.sub(string.match(tostring(err), "^[^\n]*"), 1, 240);
 		local count = errors.seen[message];
 		if count == nil then
 			local distinct = errors.distinct[where] or 0;
@@ -6921,7 +6923,9 @@ CivvisMenus.buildable = function(city)
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
-					local canCorps = try(function()
+					-- `results` is nil when the host has nothing to report, and the
+					-- panel checks for that first (ProductionPanel.lua:2158).
+					local canCorps = results ~= nil and try(function()
 						return results[CityOperationResults.CAN_TRAIN_CORPS] == true;
 					end, false);
 					if corps ~= nil and canCorps
@@ -6934,7 +6938,7 @@ CivvisMenus.buildable = function(city)
 							r = CivvisMenus.resource_cost(queue, row.Index, corps),
 						};
 					end
-					local canArmy = try(function()
+					local canArmy = results ~= nil and try(function()
 						return results[CityOperationResults.CAN_TRAIN_ARMY] == true;
 					end, false);
 					if army ~= nil and canArmy
@@ -7269,8 +7273,10 @@ end;
 
 CivvisExportClock = { marks = nil };
 CivvisExportClock.now = function()
-	local raw = try(function() return os.rawclock(); end, nil);
-	local per = try(function() return os.clockpersecond(); end, nil);
+	-- Asked before called: the live context has neither, and a raise per export
+	-- was the commonest error the agent reported.
+	local raw = try(function() return type(os.rawclock) == "function" and os.rawclock() or nil; end, nil);
+	local per = try(function() return type(os.clockpersecond) == "function" and os.clockpersecond() or nil; end, nil);
 	if type(raw) == "number" and type(per) == "number" and per > 0 then
 		return raw / per, "raw";
 	end
@@ -20537,18 +20543,6 @@ CivvisBoard.noteMoveAttempt = function(subject, turn, fromX, fromY, wantX, wantY
 	};
 end;
 
--- The six plots around (x, y), in direction order, skipping the map edge.
-CivvisBoard.adjacentPlots = function(x, y)
-	local out = {};
-	CivvisK.guard(function()
-		for direction = 0, DirectionTypes.NUM_DIRECTION_TYPES - 1 do
-			local plot = Map.GetAdjacentPlot(x, y, direction);
-			if plot ~= nil then out[#out + 1] = plot; end
-		end
-	end);
-	return out;
-end;
-
 -- Every plot a combat unit of a player we are at war with stands on, the
 -- Barbarian seat included, keyed "x,y".
 CivvisBoard.hostilePlots = function(pid)
@@ -20608,10 +20602,8 @@ end;
 -- How many of the plots around (x, y) hold a hostile combat unit.
 CivvisBoard.hostileAdjacent = function(hostile, x, y)
 	local n = 0;
-	for _, plot in ipairs(CivvisBoard.adjacentPlots(x, y)) do
-		local px = tonumber(try(function() return plot:GetX(); end, nil));
-		local py = tonumber(try(function() return plot:GetY(); end, nil));
-		if px ~= nil and py ~= nil and hostile[px .. "," .. py] then n = n + 1; end
+	for _, point in ipairs(CivvisBoard.adjacentPlots(x, y)) do
+		if hostile[point.x .. "," .. point.y] then n = n + 1; end
 	end
 	return n;
 end;
@@ -20731,16 +20723,20 @@ end;
 -- Once per unit per turn. Returns the plot sent, or nil.
 CivvisBoard.fallbackStep = function(player, pid, unit, subject, fromX, fromY, wantX, wantY, turn, why)
 	if cfg.MoveFallback == false then return nil; end
+	-- ⚠ NEVER YET RUN IN A LIVE GAME: `adjacentPlots` was defined twice, and the
+	-- version this was written against was overwritten, so every neighbour read
+	-- nil and 107 games on disk hold no `move_fallback`. Off until the first
+	-- games on the corrected no-op reading say what it would answer.
+	if not CivvisK.MOVE_FALLBACK_STEP then return nil; end
 	local attempt = CivvisBoard.moveAttempts[subject];
 	if attempt ~= nil and attempt.turn == turn and attempt.fallback == true then return nil; end
 	local hostile = CivvisBoard.hostilePlots(pid);
 	local own = CivvisBoard.ownDomainsAt(player);
 	local domain = CivvisBoard.unitDomain(unit);
 	local best = nil;
-	for index, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
-		local px = tonumber(try(function() return plot:GetX(); end, nil));
-		local py = tonumber(try(function() return plot:GetY(); end, nil));
-		if px ~= nil and py ~= nil and not (px == wantX and py == wantY) then
+	for index, point in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
+		local px, py = point.x, point.y;
+		if not (px == wantX and py == wantY) then
 			local key = px .. "," .. py;
 			local stacked = own[key] ~= nil and domain ~= nil and own[key][domain] == true;
 			if not hostile[key] and not stacked then
@@ -20796,6 +20792,15 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	end
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
+	local native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start");
+	-- ★ A WALK IN FLIGHT IS NOT A NO-OP. The host answers "cannot start" with no
+	-- reasons while it is still walking the unit we sent. Seven live games, read
+	-- against the next state: of those named in the first ticks 8,394 stood on
+	-- the wanted plot and 360 had not moved; every other reason reached it 0 times.
+	if why == "cannot_start" and entry.stall_probe == nil and (entry.wait or 0) < 5
+			and string.find(tostring(native.operation_failure), "no_reasons", 1, true) then
+		return false;
+	end
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
 	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
 	if stalled ~= nil then entry.stall_resolved = true; end
@@ -20803,7 +20808,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
-		native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start"),
+		native = native,
 		stall_probe = stalled,
 	});
 	if afterFallback then return false; end

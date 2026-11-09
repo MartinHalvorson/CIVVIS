@@ -832,6 +832,16 @@ Three mechanisms, each behind its own switch:
    beside `kills_per_loss` on the next runs; the first two are the numbers
    above and are computable on every run already on the ledger.
 
+⚠ **Corrected 2026-11-09.** The fallback step above has never run in a live
+game: `CivvisBoard.adjacentPlots` was defined twice and the copy `fallbackStep`
+was written against was overwritten, so 107 recorded games hold no
+`move_fallback`. The step is off behind `CivvisK.MOVE_FALLBACK_STEP` until the
+corrected reading below has been looked at. Separately, `cannot_start` with no
+host reasons in the first ticks was a walk still in flight, not a no-op: of
+8,764 such rows in seven games, 8,394 units stood on the wanted plot at the next
+state. They are no longer named, so the older `move_noop_reasons` totals are
+inflated by about 95%.
+
 What to read first: `move_noop_reasons` on the first runs with
 `MoveFallback` on. The reason distribution decides the next repair —
 `occupied` and `zoc` are pathing the mirror could model; `unknown` is a
