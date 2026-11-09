@@ -1,5 +1,34 @@
 use super::*;
 
+/// The three largest arrays of the document are built once and moved in. Named
+/// inside `json!` they are serialized a second time, element by element, which
+/// was an eighth of the worker's time on a spectated turn.
+#[test]
+fn the_state_document_moves_its_largest_arrays_in_rather_than_copying_them() {
+    let game = Game::new(2, 24, 18, 91_143, 60, 0);
+    let observed = observation_spectator(&game, 0);
+    assert_eq!(
+        observed["map"]["tiles"].as_array().map(Vec::len),
+        Some(game.map.tiles.len()),
+        "the spectator's document still carries every tile"
+    );
+    assert_eq!(
+        observed["units"].as_array().map(Vec::len),
+        Some(game.units.len()),
+        "and every unit"
+    );
+    assert!(observed["cities"].is_array(), "and the city list");
+
+    let source = include_str!("../obs.rs");
+    for assignment in [
+        "observation[\"map\"][\"tiles\"] = Value::Array(tiles);",
+        "observation[\"units\"] = Value::Array(units);",
+        "observation[\"cities\"] = Value::Array(cities);",
+    ] {
+        assert!(source.contains(assignment), "missing {assignment}");
+    }
+}
+
 /// Pointing at a unit is a question asked through the same fog the
 /// observation was built with, and it has to answer with the same
 /// discipline: the omniscient spectator is told everything, a seat is told
