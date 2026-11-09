@@ -7779,6 +7779,8 @@ pub struct AdvancedAi {
     /// `military-alliance-shield-2`: its own asks by partner and kind, by the
     /// turn asked and whether the partner was a declared friend then.
     military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
+    /// Opt-in first capital slot for ranged support; later recon flags are unchanged.
+    opening_ranged_support: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -8362,6 +8364,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-flips-the-cheapest`: a Religion-target founder's
+    /// spreaders go where a charge buys the most of the victory. See
+    /// `advanced/religion_seat_flips_the_cheapest.rs`. Off by default.
+    religion_seat_flips_the_cheapest: bool,
     /// `religion-seat-fields-apostles`: a Religion-target founder on the
     /// offensive saves its Faith for an Apostle-led corps. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
@@ -8403,6 +8409,11 @@ pub struct AdvancedAi {
     /// behind the world. See
     /// `advanced/parity_upgrades_before_it_buys.rs`.
     parity_upgrades_before_it_buys_2: bool,
+    /// `parity-upgrades-before-it-buys-3`: version one, with a unit obsolete
+    /// by our own technology (not the world era's clock), on the parity path
+    /// and the base wartime defender purchases. See
+    /// `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys_3: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -11846,8 +11857,10 @@ impl AdvancedAi {
             // ---- append: l-o ----------------------------------------
             nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
+            opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
+            parity_upgrades_before_it_buys_3: false,
             pillaged_districts_repair_first: false,
             queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
@@ -12026,6 +12039,11 @@ impl AdvancedAi {
             .map(|(_, guard)| *guard)
             .filter(|guard| g.units.get(guard).is_some_and(|unit| unit.owner == pid))
             .collect()
+    }
+
+    /// Whether the opening-only ranged-support experiment is enabled.
+    pub fn opening_ranged_support(&self) -> bool {
+        self.opening_ranged_support
     }
 
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
@@ -16843,7 +16861,7 @@ impl AdvancedAi {
             }
         }
         let Some(unit) = candidates.into_iter().find(|unit| {
-            self.parity_buy_barred(g, unit, ours, theirs).is_none()
+            self.parity_buy_barred(g, pid, unit, ours, theirs).is_none()
                 && g.unit_purchase_cost(pid, contact, unit, "gold")
                     .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
         }) else {
@@ -25195,6 +25213,7 @@ impl AdvancedAi {
         // `parity-upgrades-before-it-buys-2`: the base defender purchases
         // read this. See `advanced/parity_upgrades_before_it_buys.rs`.
         self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
+        self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
         self.base.plaza_serves_science =
@@ -26210,6 +26229,9 @@ mod air_campaign;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
+/// `religion-seat-flips-the-cheapest`: see
+/// `advanced/religion_seat_flips_the_cheapest.rs`.
+mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 mod religious_interception;
