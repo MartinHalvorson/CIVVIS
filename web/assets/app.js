@@ -4,6 +4,17 @@ const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
 const SIDEBAR_WIDTH_STORAGE_KEY = "civvis-sidebar-width-v1";
 const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
 const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
+// `?map=gpu` opts this page into drawing the whole known globe's ground on the
+// GPU (`drawPlanetGpuMap`). Without it nothing below changes. Declared at the
+// top for the same load-order reason as PLANET_GPU below.
+const PLANET_GPU_MAP = (() => {
+  try { return new URLSearchParams(location.search).get("map") === "gpu"; }
+  catch (_) { return false; }
+})();
+// What the opt-in path did, for anyone measuring it: frames it presented,
+// whole and partial bakes, sprites painted, and why it last stood down.
+const PLANET_GPU_MAP_STATS = {frames:0, fullBakes:0, faceBakes:0, markPaints:0,
+                              bakeMs:0, lineMs:0, markMs:0, declined:""};
 // The planet renderer's GPU surface lives with the rest of that fast path far
 // below, but its binding must execute before ANY top-level call above it can
 // reach `syncPlanetGpuCanvas` — `applySavedHudLayouts()` gets there via
@@ -5480,6 +5491,7 @@ function pixelToHex(sx, sy) {
     // Cells are already clipped at the globe limb and stored in painter order.
     // Search front-to-back so a tile at the horizon never steals a click from
     // the face visibly above it.
+    if (!PLANET_HIT_CELLS) return planetHitCellAt(sx, sy);
     for (let index = PLANET_HIT_CELLS.length - 1; index >= 0; index--) {
       const cell = PLANET_HIT_CELLS[index];
       if (pointInsidePlanetCell(sx, sy, cell.points)) return cell.pos;
@@ -14680,11 +14692,22 @@ function createPlanetGpu() {
   area.insertBefore(canvas, cv);
   let gl = null;
   try {
-    gl = canvas.getContext("webgl", {
-      alpha: false, antialias: true, depth: true, stencil: false,
-      preserveDrawingBuffer: false, desynchronized: true,
-      powerPreference: "high-performance",
-    });
+    // The opt-in whole-globe path needs WebGL 2 (instancing, flat varyings,
+    // texture LOD) and a real graphics processor: a software rasterizer would
+    // be slower than the Canvas painter it replaces, so the browser is asked to
+    // refuse rather than emulate. It also presents in step with the 2D ink
+    // above it, which a desynchronized surface does not promise.
+    gl = PLANET_GPU_MAP
+      ? canvas.getContext("webgl2", {
+        alpha: false, antialias: true, depth: true, stencil: false,
+        preserveDrawingBuffer: false, desynchronized: false,
+        powerPreference: "high-performance", failIfMajorPerformanceCaveat: true,
+      })
+      : canvas.getContext("webgl", {
+        alpha: false, antialias: true, depth: true, stencil: false,
+        preserveDrawingBuffer: false, desynchronized: true,
+        powerPreference: "high-performance",
+      });
   } catch (_) {}
   if (!gl) {
     canvas.remove();
@@ -14903,7 +14926,9 @@ function drawPlanetGpuSurface(camera, radius, centerX, centerY) {
 // is precisely the transform already resident on the GPU.
 function planetGpuCanAnimate() {
   const gpu = PLANET_GPU;
-  if (!gpu?.gl || gpu.lost || gpu.canvas.style.display === "none" ||
+  // The whole-globe path repaints its ink with every frame; turning only the
+  // ground under stale ink would leave the units behind.
+  if (!gpu?.gl || gpu.lost || gpu.mapActive || gpu.canvas.style.display === "none" ||
       gpu.meshState !== state) return false;
   const camera = planetCamera();
   const radius = camera.radius * cam.scale;
@@ -14920,6 +14945,1098 @@ function drawPlanetGpuAnimationFrame() {
   const radius = camera.radius * cam.scale;
   const [centerX, centerY] = planetEarthCenter(radius);
   return drawPlanetGpuSurface(camera, radius, centerX, centerY);
+}
+
+// ------------------------------------------- the whole known globe on the GPU
+// Opt-in with `?map=gpu`. A turning globe re-projects, re-fills and re-strokes
+// every visible cell on every frame, and on an ordinary laptop that per-hex
+// JavaScript is most of the main thread. Nearly all of it is attached to the
+// ground, so it does not need redoing, only turning. This path paints that
+// ground once, with the very painters the Canvas map uses, and lets the
+// graphics processor turn it:
+//
+//   - ground: one instanced fan per cell, lit flat exactly as the Canvas does
+//     (.70 + .34·z of the cell centre, ground nobody knows at .30);
+//   - wash, survey grid, volcanic soil, roads, coasts, frontiers, cliffs,
+//     rivers and fallout: baked by their own painters into a cube map, one
+//     equi-angular face down each axis, laid over the ground unlit;
+//   - terrain marks and floodplains: each tile's mark painted once, upright,
+//     into a sprite atlas and drawn on the cell's own triangles, scaled by the
+//     cell's projected inradius and clipped to it, the way
+//     `withPlanetStrategicCell` scales and clips it.
+//
+// The 2D canvas above keeps the sparse ink — natural wonders, cities, units,
+// labels, the sky and the rim — and projects only the cells that carry it.
+// Lenses, selection, search, yields, arena flags, unit intel and detonations
+// stand the path down for that frame, as do a chart and an unknown globe; the
+// Canvas painter then draws exactly as it does without the switch.
+const PLANET_GPU_MAP_MARK_HALF = S;        // local units kept each side of a mark's centre
+const PLANET_GPU_MAP_FACE_MAX = 2048;
+const PLANET_GPU_MAP_FACE_QUALITY = 1.2;   // cube texels per device pixel at a face centre
+const PLANET_GPU_MAP_MARK_QUALITY = 1.5;   // sprite texels per device pixel at the disc centre
+const PLANET_GPU_MAP_ATLAS_MAX = 4096;
+// A settled zoom this far from the baked one bakes again; while the camera is
+// still zooming the bake is simply scaled.
+const PLANET_GPU_MAP_REBAKE_DRIFT = .02;
+const PLANET_FLOODPLAIN_FEATURES = new Set(["floodplains", "grassland_floodplains",
+                                            "plains_floodplains"]);
+
+const PLANET_GPU_MAP_GROUND_VS = `#version 300 es
+precision highp float;
+in vec2 aTemplate;
+in vec3 iCenter;
+in vec3 iC0;
+in vec3 iC1;
+in vec3 iC2;
+in vec3 iC3;
+in vec3 iC4;
+in vec3 iC5;
+in vec4 iGround;
+in vec4 iMark;
+uniform vec3 uOut;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec2 uCenter;
+uniform vec2 uViewport;
+uniform float uRadius;
+uniform float uRadiusCss;
+uniform float uBleed;
+uniform float uMarksOn;
+uniform float uMarkTexels;
+uniform float uMarkSlot;
+uniform float uMarkInradius;
+out vec3 vPosition;
+flat out vec3 vGround;
+out vec2 vMarkUv;
+flat out vec3 vMarkSlot;
+// Canvas screen axes in sphere units: x right, y down.
+vec2 screenOf(vec3 p) { return vec2(dot(p, uRight), -dot(p, uUp)); }
+void main() {
+  vec3 corners[6] = vec3[6](iC0, iC1, iC2, iC3, iC4, iC5);
+  int side = int(aTemplate.x + .5);
+  int which = int(aTemplate.y + .5);
+  vec3 p = which == 0 ? iCenter : corners[which == 1 ? side : (side + 1) % 6];
+  vGround = vec3(0.);
+  vMarkUv = vec2(0.);
+  vMarkSlot = vec3(0.);
+  float facing = dot(iCenter, uOut);
+  // planetCells drops a cell whose centre has turned this far away.
+  if (iGround.a < -.5 || facing <= -.03) {
+    vPosition = p;
+    gl_Position = vec4(0., 0., 2., 1.);
+    return;
+  }
+  vec2 here = screenOf(p);
+  vec2 centre = screenOf(iCenter);
+  // A corner behind the horizon is pushed out to the limb, as
+  // planetCellGeometry pushes it, and sampled there.
+  if (which != 0 && dot(p, uOut) < 0.) {
+    here /= max(length(here), 1e-9);
+    p = uRight * here.x - uUp * here.y;
+  }
+  vec2 pixel = uCenter + vec2(here.x, -here.y) * uRadius;
+  // The Canvas fills each cell .8px proud of its outline, far cells first, so
+  // a nearer cell overlaps its neighbour: grow the corners the same way and
+  // let depth be the cell centre's, not the facet's. The projection is
+  // linear, so the sampled point grows about the centre by the same factor.
+  vec2 centrePixel = uCenter + vec2(centre.x, -centre.y) * uRadius;
+  if (which != 0) {
+    vec2 out2 = pixel - centrePixel;
+    float span = max(length(out2), 1e-6);
+    float grow = (span + uBleed) / span;
+    pixel = centrePixel + out2 * grow;
+    p = iCenter + (p - iCenter) * grow;
+  }
+  vPosition = p;
+  // This vertex's offset from the cell centre in Canvas pixels, y down.
+  vec2 offset = (pixel - centrePixel) * vec2(1., -1.) * (uRadiusCss / uRadius);
+  gl_Position = vec4(pixel / uViewport * 2. - 1., -facing * .999, 1.);
+  vGround = iGround.rgb * (iGround.a > .5 ? .70 + .34 * max(0., facing) : .30);
+  if (uMarksOn < .5 || iMark.x < 0.) return;
+  // planetCellInradius over the projected face, corners behind the horizon
+  // pushed out to the limb as planetCellGeometry pushes them.
+  vec2 ring[6];
+  for (int k = 0; k < 6; k++) {
+    vec2 q = screenOf(corners[k]);
+    if (dot(corners[k], uOut) < 0.) q /= max(length(q), 1e-9);
+    ring[k] = q;
+  }
+  float inradius = 1e9;
+  for (int k = 0; k < 6; k++) {
+    vec2 a = ring[k];
+    vec2 e = ring[(k + 1) % 6] - a;
+    float span = length(e);
+    if (span * uRadiusCss < 1e-6) continue;
+    inradius = min(inradius, abs((a.x - centre.x) * e.y - (a.y - centre.y) * e.x) / span);
+  }
+  inradius *= uRadiusCss;
+  if (inradius < 2. || inradius > 1e8) return;
+  float scale = inradius / uMarkInradius;
+  vMarkUv = iMark.xy + .5 * uMarkSlot + offset / scale * uMarkTexels;
+  vMarkSlot = vec3(iMark.xy, 1.);
+}`;
+
+const PLANET_GPU_MAP_GROUND_FS = `#version 300 es
+precision highp float;
+in vec3 vPosition;
+flat in vec3 vGround;
+in vec2 vMarkUv;
+flat in vec3 vMarkSlot;
+uniform vec3 uOut;
+uniform samplerCube uLines;
+uniform sampler2D uMarks;
+uniform float uMarkSlot;
+uniform float uMarkAtlas;
+out vec4 fragColor;
+// The bake stores each face equi-angularly: its texel for a direction sits at
+// 4/pi * atan of that direction's ordinary cube-map coordinate.
+vec3 equiangular(vec3 d) {
+  vec3 a = abs(d);
+  const float k = 1.2732395447351628;
+  if (a.x >= a.y && a.x >= a.z)
+    return vec3(d.x, a.x * k * atan(d.y / a.x), a.x * k * atan(d.z / a.x));
+  if (a.y >= a.z)
+    return vec3(a.y * k * atan(d.x / a.y), d.y, a.y * k * atan(d.z / a.y));
+  return vec3(a.z * k * atan(d.x / a.z), a.z * k * atan(d.y / a.z), d.z);
+}
+void main() {
+  vec3 n = normalize(vPosition);
+  if (dot(n, uOut) < -.002) discard;
+  vec3 colour = vGround;
+  // Trilinear filtering of a bake barely denser than the screen blends in
+  // the next level down and softens every stroke; bias toward the sharper
+  // level and keep the mip chain for the foreshortened limb.
+  vec4 ink = texture(uLines, equiangular(n), -1.);
+  colour = colour * (1. - ink.a) + ink.rgb;
+  vec4 mark = texture(uMarks, vMarkUv / uMarkAtlas, -1.);
+  vec2 inside = vMarkUv - vMarkSlot.xy;
+  mark *= vMarkSlot.z * step(1., inside.x) * step(1., inside.y) *
+    step(inside.x, uMarkSlot - 1.) * step(inside.y, uMarkSlot - 1.);
+  colour = colour * (1. - mark.a) + mark.rgb;
+  fragColor = vec4(colour, 1.);
+}`;
+
+const PLANET_GPU_MAP_OCEAN_VS = `#version 300 es
+precision highp float;
+in vec2 aCorner;
+uniform vec2 uCenter;
+uniform vec2 uViewport;
+uniform float uRadius;
+void main() {
+  vec2 pixel = uCenter + aCorner * (uRadius + 2.);
+  gl_Position = vec4(pixel / uViewport * 2. - 1., .999, 1.);
+}`;
+
+// The Canvas ocean is createRadialGradient(centre - (.32r, .36r), .05r,
+// centre, r): this is that two-circle gradient, solved per pixel.
+const PLANET_GPU_MAP_OCEAN_FS = `#version 300 es
+precision highp float;
+uniform vec2 uCenter;
+uniform float uRadius;
+uniform vec3 uStops[4];
+out vec4 fragColor;
+void main() {
+  vec2 v = vec2(gl_FragCoord.x - uCenter.x, uCenter.y - gl_FragCoord.y);
+  float r = uRadius;
+  float coverage = clamp(r - length(v) + .5, 0., 1.);
+  if (coverage <= 0.) discard;
+  vec2 c0 = vec2(-.32, -.36) * r;
+  float r0 = .05 * r;
+  vec2 d = -c0;
+  float dr = r - r0;
+  vec2 q = v - c0;
+  float a = dot(d, d) - dr * dr;
+  float b = dot(q, d) + r0 * dr;
+  float c = dot(q, q) - r0 * r0;
+  float t = clamp((b - sqrt(max(0., b * b - a * c))) / a, 0., 1.);
+  vec3 colour = t < .52 ? mix(uStops[0], uStops[1], t / .52)
+    : t < .88 ? mix(uStops[1], uStops[2], (t - .52) / .36)
+    : mix(uStops[2], uStops[3], (t - .88) / .12);
+  fragColor = vec4(colour * coverage, 1.);
+}`;
+
+function planetGpuMapCompile(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+  PLANET_GPU_MAP_STATS.declined = "shader: " + String(gl.getShaderInfoLog(shader) || "").slice(0, 300);
+  gl.deleteShader(shader);
+  return null;
+}
+
+function planetGpuMapProgram(gl, vertexSource, fragmentSource, attributes, uniforms) {
+  const vertex = planetGpuMapCompile(gl, gl.VERTEX_SHADER, vertexSource);
+  const fragment = planetGpuMapCompile(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  if (!vertex || !fragment) return null;
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  attributes.forEach((name, index) => gl.bindAttribLocation(program, index, name));
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    PLANET_GPU_MAP_STATS.declined = "link: " + String(gl.getProgramInfoLog(program) || "").slice(0, 300);
+    gl.deleteProgram(program);
+    return null;
+  }
+  const at = {};
+  for (const name of uniforms) at[name] = gl.getUniformLocation(program, name);
+  return {program, at};
+}
+
+function planetGpuMapTexture(gl, target) {
+  const texture = gl.createTexture();
+  gl.bindTexture(target, texture);
+  gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
+  if (anisotropy) {
+    gl.texParameterf(target, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,
+      Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1));
+  }
+  return texture;
+}
+
+// Programs, buffers and textures, made once per context. `null` means this
+// browser cannot run the path, and it is not asked again.
+function planetGpuMapResources(gpu) {
+  if (gpu.map !== undefined) return gpu.map;
+  const {gl} = gpu;
+  gpu.map = null;
+  if (typeof WebGL2RenderingContext === "undefined" || !(gl instanceof WebGL2RenderingContext)) {
+    PLANET_GPU_MAP_STATS.declined = "no WebGL 2";
+    return null;
+  }
+  if (gl.getParameter(gl.MAX_VERTEX_ATTRIBS) < 10 ||
+      gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) < 2) {
+    PLANET_GPU_MAP_STATS.declined = "too few attributes or texture units";
+    return null;
+  }
+  const groundAttributes = ["aTemplate", "iCenter", "iC0", "iC1", "iC2", "iC3", "iC4", "iC5",
+                            "iGround", "iMark"];
+  const ground = planetGpuMapProgram(gl, PLANET_GPU_MAP_GROUND_VS, PLANET_GPU_MAP_GROUND_FS,
+    groundAttributes, ["uOut", "uRight", "uUp", "uCenter", "uViewport", "uRadius", "uRadiusCss",
+                       "uBleed", "uMarksOn", "uMarkTexels", "uMarkSlot", "uMarkInradius", "uMarkAtlas",
+                       "uLines", "uMarks"]);
+  const ocean = planetGpuMapProgram(gl, PLANET_GPU_MAP_OCEAN_VS, PLANET_GPU_MAP_OCEAN_FS,
+    ["aCorner"], ["uCenter", "uViewport", "uRadius", "uStops"]);
+  if (!ground || !ocean) return null;
+
+  // One fan template: six triangles of (side, which corner), instanced per cell.
+  const template = [];
+  for (let side = 0; side < 6; side++) template.push(side, 0, side, 1, side, 2);
+  const templateBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, templateBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(template), gl.STATIC_DRAW);
+  const staticBuffer = gl.createBuffer();
+  const dynamicBuffer = gl.createBuffer();
+  const groundVao = gl.createVertexArray();
+  gl.bindVertexArray(groundVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, templateBuffer);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, staticBuffer);
+  for (let index = 0; index < 7; index++) {
+    gl.enableVertexAttribArray(1 + index);
+    gl.vertexAttribPointer(1 + index, 3, gl.FLOAT, false, 84, 12 * index);
+    gl.vertexAttribDivisor(1 + index, 1);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, dynamicBuffer);
+  for (let index = 0; index < 2; index++) {
+    gl.enableVertexAttribArray(8 + index);
+    gl.vertexAttribPointer(8 + index, 4, gl.FLOAT, false, 32, 16 * index);
+    gl.vertexAttribDivisor(8 + index, 1);
+  }
+  const quadBuffer = gl.createBuffer();
+  const oceanVao = gl.createVertexArray();
+  gl.bindVertexArray(oceanVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+  gl.bindVertexArray(null);
+
+  const lines = planetGpuMapTexture(gl, gl.TEXTURE_CUBE_MAP);
+  const marks = planetGpuMapTexture(gl, gl.TEXTURE_2D);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+                new Uint8Array(4));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  const faceCanvas = document.createElement("canvas");
+  const patchCanvas = document.createElement("canvas");
+  const markCanvas = document.createElement("canvas");
+  gpu.map = {
+    ground, ocean, groundVao, oceanVao, staticBuffer, dynamicBuffer, lines, marks,
+    faceCanvas, faceContext:faceCanvas.getContext("2d"),
+    patchCanvas, patchContext:patchCanvas.getContext("2d"),
+    markCanvas, markContext:markCanvas.getContext("2d"),
+    maxTexture:Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), PLANET_GPU_MAP_ATLAS_MAX),
+    maxCube:Math.min(gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE), PLANET_GPU_MAP_FACE_MAX),
+    planet:null, cells:[], cellKeys:[], cellIndex:new Map(), cellFaces:[], faceCells:[],
+    trueArea:null, trueInradius:null, inradiusMax:0, bake:null, marks_:null, instances:null,
+    overlayKeys:null,
+  };
+  return gpu.map;
+}
+
+// Each axis's face, in the cube-map convention: [major, s, t] of a direction.
+function planetGpuMapFaceCoords(face, x, y, z) {
+  switch (face) {
+    case 0: return [x, -z, -y];
+    case 1: return [-x, z, -y];
+    case 2: return [y, x, z];
+    case 3: return [-y, x, -z];
+    case 4: return [z, x, -y];
+    default: return [-z, -x, -y];
+  }
+}
+
+// The static half of the instances: each cell's centre and six corners (a
+// pentagon repeats its last), which faces of the bake it is painted into, and
+// how large it is on its own ground.
+function planetGpuMapGeometry(gl, map) {
+  if (map.planet === PLANET) return;
+  const cells = [...PLANET.cells.values()];
+  const corners = PLANET.corners;
+  const data = new Float32Array(cells.length * 21);
+  const trueArea = new Float64Array(cells.length);
+  const trueInradius = new Float64Array(cells.length);
+  const faceCells = [[], [], [], [], [], []];
+  const cellFaces = cells.map(() => []);
+  const margin = Math.PI / 4 + 3 * (PLANET.reach || .05);
+  let inradiusMax = 0;
+  cells.forEach((cell, index) => {
+    const at = index * 21;
+    const [cx0, cy0, cz0] = cell.center;
+    data[at] = cx0; data[at + 1] = cy0; data[at + 2] = cz0;
+    const ring = [];
+    for (let k = 0; k < 6; k++) {
+      const id = cell.ids[Math.min(k, cell.ids.length - 1)];
+      data[at + 3 + 3 * k] = corners[3 * id];
+      data[at + 4 + 3 * k] = corners[3 * id + 1];
+      data[at + 5 + 3 * k] = corners[3 * id + 2];
+    }
+    // The cell laid flat on its own tangent plane, which is how the Canvas sees
+    // it when it faces the viewer: its inradius and its area.
+    for (const id of cell.ids) {
+      const p = [corners[3 * id], corners[3 * id + 1], corners[3 * id + 2]];
+      const lean = dot3(p, cell.center);
+      ring.push([p[0] - lean * cx0, p[1] - lean * cy0, p[2] - lean * cz0]);
+    }
+    let inradius = Infinity, area = 0;
+    for (let k = 0; k < ring.length; k++) {
+      const a = ring[k], b = ring[(k + 1) % ring.length];
+      const span = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const crossing = cross3(a, b);
+      const twice = Math.hypot(crossing[0], crossing[1], crossing[2]);
+      area += twice / 2;
+      if (span > 1e-12) inradius = Math.min(inradius, twice / span);
+    }
+    if (Number.isFinite(inradius)) inradiusMax = Math.max(inradiusMax, inradius);
+    trueInradius[index] = Number.isFinite(inradius) ? inradius : 0;
+    trueArea[index] = area;
+    for (let face = 0; face < 6; face++) {
+      const [major, s, t] = planetGpuMapFaceCoords(face, cx0, cy0, cz0);
+      if (major <= .3 || Math.abs(Math.atan2(s, major)) > margin ||
+          Math.abs(Math.atan2(t, major)) > margin) continue;
+      faceCells[face].push(index);
+      cellFaces[index].push(face);
+    }
+  });
+  gl.bindBuffer(gl.ARRAY_BUFFER, map.staticBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  map.cells = cells;
+  map.cellKeys = cells.map(cell => key(cell.pos));
+  map.cellIndex = new Map(map.cellKeys.map((cellKey, index) => [cellKey, index]));
+  map.trueArea = trueArea;
+  map.trueInradius = trueInradius;
+  map.faceCells = faceCells;
+  map.cellFaces = cellFaces;
+  map.inradiusMax = inradiusMax;
+  map.planet = PLANET;
+  map.bake = null;
+  map.marks_ = null;
+  map.instances = null;
+}
+
+// One face's cells, projected equi-angularly into painter units: Canvas
+// pixels at the bake's zoom where the face meets the sphere square-on. The
+// geometry holds for as long as the bake does; only the tiles are looked up
+// afresh each time the face is painted.
+function planetGpuMapFaceGeometry(map, bake, face) {
+  bake.faces ||= [];
+  if (bake.faces[face]) return bake.faces[face];
+  const radius = bake.radius;
+  const corners = PLANET.corners;
+  const project = (x, y, z) => {
+    const [major, s, t] = planetGpuMapFaceCoords(face, x, y, z);
+    return {x:radius * Math.atan2(s, major), y:radius * Math.atan2(t, major), z:1};
+  };
+  const entries = [], byIndex = new Map();
+  let reach = 0;
+  for (const index of map.faceCells[face]) {
+    const cell = map.cells[index];
+    const points = cell.ids.map(id =>
+      project(corners[3 * id], corners[3 * id + 1], corners[3 * id + 2]));
+    const center = project(cell.center[0], cell.center[1], cell.center[2]);
+    let area = 0;
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let k = 0; k < points.length; k++) {
+      const a = points[k], b = points[(k + 1) % points.length];
+      area += a.x * b.y - b.x * a.y;
+      box[0] = Math.min(box[0], a.x); box[1] = Math.min(box[1], a.y);
+      box[2] = Math.max(box[2], a.x); box[3] = Math.max(box[3], a.y);
+    }
+    reach = Math.max(reach, box[2] - box[0], box[3] - box[1]);
+    // How much the face stretches this cell, for the one stroke whose Canvas
+    // width is a constant number of pixels.
+    const magnification = Math.sqrt(Math.abs(area) / 2 /
+      Math.max(1e-12, map.trueArea[index] * radius * radius));
+    // Every painter sizes its strokes from the cell's projected inradius, in
+    // weight steps. Give each cell the one the Canvas measures when that cell
+    // faces the viewer, not whatever the face's own stretch makes of it.
+    const entry = {index, cell, points, center, magnification, box, tile:null,
+                   inradius:map.trueInradius[index] * radius};
+    entries.push(entry);
+    byIndex.set(index, entry);
+  }
+  return bake.faces[face] = {entries, byIndex, reach};
+}
+
+// The face's cells that can paint inside `box` (painter units), or all of
+// them, each carrying the tile it shows now.
+function planetGpuMapFaceEntries(map, geometry, box = null) {
+  const out = [];
+  for (const entry of geometry.entries) {
+    if (box && (entry.box[2] < box[0] || entry.box[0] > box[2] ||
+                entry.box[3] < box[1] || entry.box[1] > box[3])) continue;
+    const tile = TMAP.get(map.cellKeys[entry.index]);
+    if (!tile) continue;
+    entry.tile = tile;
+    out.push(entry);
+  }
+  return out;
+}
+
+// Everything the Canvas paints onto the ground between the fills and the
+// marks, in its order, through its own painters.
+function planetGpuMapPaintGround(entries, frame) {
+  const {scale, radius, visible, spectator} = frame;
+  if (scale > PLANET_STRATEGIC_DETAIL_SCALE)
+    drawPlanetStrategicVolcanicSoil(entries, visible, spectator);
+  drawPlanetGroundWash(entries, false);
+  if (radius >= SKY_MARKERS)
+    drawPlanetSurveyGrid(entries, scale, entry => entry.magnification);
+  drawPlanetStrategicRoads(entries, visible, spectator);
+  if (radius >= SKY_MARKERS) {
+    drawPlanetCoastlines(entries, visible, spectator);
+    drawPlanetFrontiers(entries);
+  }
+  if (scale > PLANET_STRATEGIC_DETAIL_SCALE) {
+    drawPlanetStrategicCliffs(entries, visible, spectator);
+    drawPlanetStrategicRivers(entries, visible, spectator);
+    drawPlanetFallout(entries, visible, spectator);
+  }
+}
+
+function planetGpuMapFaceSize(radius) {
+  const wanted = radius * DPR * Math.PI / 2 * PLANET_GPU_MAP_FACE_QUALITY;
+  return Math.max(256, 2 ** Math.ceil(Math.log2(Math.max(1, wanted))));
+}
+
+// What the baked layers read from one tile. Most tiles a turn sends again
+// changed only in their yields, appeal or weather, none of which is drawn here.
+const PLANET_GPU_LINE_KEYS = new WeakMap();
+function planetGpuMapLineKey(tile) {
+  if (!tile) return "";
+  let lineKey = PLANET_GPU_LINE_KEYS.get(tile);
+  if (lineKey === undefined) {
+    lineKey = [tile.owner ?? "", tile.terrain, tile.feature ?? "", tile.road ?? 0,
+               String(tile.river_edges ?? ""), String(tile.cliff_edges ?? ""),
+               tile.fallout_until ?? 0].join("|");
+    PLANET_GPU_LINE_KEYS.set(tile, lineKey);
+  }
+  return lineKey;
+}
+
+// Which cells a new state dirtied: every tile whose baked layers changed and
+// its neighbours, every tile whose fog changed, and fallout that has just run
+// out. `null` means all of them.
+function planetGpuMapDirtyCells(map, bake, frame) {
+  const tiles = state.map.tiles;
+  const dirty = new Set();
+  const touch = tileKey => {
+    const index = map.cellIndex.get(tileKey);
+    if (index === undefined) return;
+    dirty.add(index);
+    for (const neighbour of map.cells[index].nbrs) {
+      const other = map.cellIndex.get(neighbour);
+      if (other !== undefined) dirty.add(other);
+    }
+  };
+  if (bake.tiles.length !== tiles.length) return null;
+  for (let index = 0; index < tiles.length; index++) {
+    const tile = tiles[index];
+    if (tile === bake.tiles[index]) {
+      if (tile && tile.fallout_until > bake.turn && tile.fallout_until <= state.turn)
+        touch(key(tile.pos));
+      continue;
+    }
+    if (planetGpuMapLineKey(tile) === planetGpuMapLineKey(bake.tiles[index])) continue;
+    if (tile) touch(key(tile.pos));
+    if (bake.tiles[index]) touch(key(bake.tiles[index].pos));
+  }
+  if (!frame.spectator && bake.visible !== frame.visible) {
+    for (const tileKey of frame.visible) if (!bake.visible?.has(tileKey)) touch(tileKey);
+    for (const tileKey of bake.visible || []) if (!frame.visible.has(tileKey)) touch(tileKey);
+  }
+  return dirty;
+}
+
+// The rectangle of one face (texels, clamped to it) a set of dirty cells can
+// have drawn into, or null when that is most of the face anyway.
+function planetGpuMapDirtyRect(geometry, dirty, size, k) {
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const index of dirty) {
+    const entry = geometry.byIndex.get(index);
+    if (!entry) continue;
+    box[0] = Math.min(box[0], entry.box[0]); box[1] = Math.min(box[1], entry.box[1]);
+    box[2] = Math.max(box[2], entry.box[2]); box[3] = Math.max(box[3], entry.box[3]);
+  }
+  if (!(box[2] >= box[0])) return false;
+  // A cell's strokes reach no further than its neighbour.
+  const pad = geometry.reach;
+  const x0 = Math.max(0, Math.floor(size / 2 + (box[0] - pad) * k));
+  const y0 = Math.max(0, Math.floor(size / 2 + (box[1] - pad) * k));
+  const x1 = Math.min(size, Math.ceil(size / 2 + (box[2] + pad) * k));
+  const y1 = Math.min(size, Math.ceil(size / 2 + (box[3] + pad) * k));
+  if (x1 <= x0 || y1 <= y0) return false;
+  if ((x1 - x0) * (y1 - y0) > size * size * .35) return null;
+  return {x0, y0, width:x1 - x0, height:y1 - y0};
+}
+
+function planetGpuMapBakeLines(gl, map, frame) {
+  const faceSize = planetGpuMapFaceSize(frame.radius);
+  if (faceSize > map.maxCube) return "zoomed past the bake";
+  const signature = [state.seed, frame.spectator, state.view_player ?? "",
+                     frame.scale > PLANET_STRATEGIC_DETAIL_SCALE,
+                     frame.radius >= SKY_MARKERS, DPR].join("|");
+  let bake = map.bake;
+  let whole = !bake || bake.signature !== signature;
+  let dirty = null;
+  if (!whole) {
+    const drift = frame.radius / bake.radius;
+    if (cameraZoom) {
+      if (drift > 2 || drift < .5) return "zooming";
+    } else if (Math.abs(drift - 1) > PLANET_GPU_MAP_REBAKE_DRIFT || faceSize !== bake.faceSize) {
+      whole = true;
+    }
+    if (!whole) {
+      if (bake.tiles === state.map.tiles && bake.turn === state.turn &&
+          (frame.spectator || bake.visible === frame.visible)) return "";
+      dirty = planetGpuMapDirtyCells(map, bake, frame);
+      if (!dirty) whole = true;
+    }
+  }
+  const started = performance.now();
+  if (whole) bake = map.bake = {signature, radius:frame.radius, faceSize};
+  bake.tiles = state.map.tiles;
+  bake.turn = state.turn;
+  bake.visible = frame.visible;
+  if (!whole && !dirty.size) return "";
+  const size = bake.faceSize;
+  // Painter units are Canvas pixels at the zoom the bake was made at.
+  const k = 2 * size / (Math.PI * bake.radius);
+  const bakeFrame = {...frame, radius:bake.radius,
+                     scale:bake.radius / Math.max(1e-9, frame.radius) * frame.scale};
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, map.lines);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  const canvasContext = cx;
+  let painted = 0;
+  try {
+    for (let face = 0; face < 6; face++) {
+      const geometry = planetGpuMapFaceGeometry(map, bake, face);
+      let rect = null;
+      if (!whole) {
+        rect = planetGpuMapDirtyRect(geometry, dirty, size, k);
+        if (rect === false) continue;
+      }
+      // Paint the whole face, or just the patch the dirty cells can reach.
+      const canvas = rect ? map.patchCanvas : map.faceCanvas;
+      const g = rect ? map.patchContext : map.faceContext;
+      const width = rect ? rect.width : size, height = rect ? rect.height : size;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width; canvas.height = height;
+      }
+      const x0 = rect ? rect.x0 : 0, y0 = rect ? rect.y0 : 0;
+      const box = rect ? [(x0 - size / 2) / k - geometry.reach, (y0 - size / 2) / k - geometry.reach,
+                          (x0 + width - size / 2) / k + geometry.reach,
+                          (y0 + height - size / 2) / k + geometry.reach] : null;
+      const entries = planetGpuMapFaceEntries(map, geometry, box);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
+      g.clearRect(0, 0, width, height);
+      g.save();
+      g.setTransform(k, 0, 0, k, size / 2 - x0, size / 2 - y0);
+      cx = g;
+      planetGpuMapPaintGround(entries, bakeFrame);
+      cx = canvasContext;
+      g.restore();
+      if (rect) {
+        gl.texSubImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, x0, y0, gl.RGBA,
+                         gl.UNSIGNED_BYTE, canvas);
+      } else {
+        gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, gl.RGBA, gl.RGBA,
+                      gl.UNSIGNED_BYTE, canvas);
+      }
+      painted++;
+    }
+  } finally {
+    cx = canvasContext;
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  }
+  if (painted) gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+  PLANET_GPU_MAP_STATS.faceBakes += painted;
+  if (whole) PLANET_GPU_MAP_STATS.fullBakes++;
+  const spent = performance.now() - started;
+  PLANET_GPU_MAP_STATS.bakeMs += spent;
+  PLANET_GPU_MAP_STATS.lineMs += spent;
+  return "";
+}
+
+// --- marks
+// A tile's fields as its mark sees them. The ones left out are read by no
+// mark painter, and they are most of what changes from one turn to the next.
+const PLANET_GPU_MARK_UNREAD = new Set(["appeal", "yields", "disaster_yields", "tourism",
+  "adjacency", "district_yields", "owner_city", "owner_city_name", "continent",
+  "coastal_lowland", "river", "river_edges", "cliff_edges", "road"]);
+const PLANET_GPU_MARK_FIELDS = new WeakMap();
+function planetGpuMapMarkFields(tile) {
+  let fields = PLANET_GPU_MARK_FIELDS.get(tile);
+  if (fields === undefined) {
+    fields = JSON.stringify(Object.keys(tile).filter(name => !PLANET_GPU_MARK_UNREAD.has(name))
+      .map(name => [name, tile[name]]));
+    PLANET_GPU_MARK_FIELDS.set(tile, fields);
+  }
+  return fields;
+}
+
+// Everything a tile's mark is painted from, as one string: the tile's own
+// fields, and what the painters read beside it.
+const PLANET_GPU_MARK_TILES = new WeakMap();
+function planetGpuMapMarkKeys(frame) {
+  const campSet = new Set(state.camps.map(key));
+  const cityTiles = new Set(state.cities.map(city => key(city.pos)));
+  const districtBuildings = districtBuildingsByTile();
+  const disasters = new Map();
+  for (const event of state.active_disasters || []) {
+    if (!["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind)) continue;
+    for (const pos of event.tiles || []) if (!disasters.has(key(pos))) disasters.set(key(pos), event.kind);
+  }
+  const turn = state.turn || 0;
+  const wanted = [];
+  for (const tile of state.map.tiles) {
+    // What the tile alone says, worked out once per tile object.
+    let own = PLANET_GPU_MARK_TILES.get(tile);
+    if (!own) {
+      own = {tileKey:key(tile.pos), wonder:isNaturalWonder(tile.feature),
+             marked:Boolean(tile.terrain === "mountain" || tile.feature || tile.hills ||
+               tile.improvement || tile.resource || tile.district || tile.wonder ||
+               tile.storm || tile.drought || tile.flooded || tile.submerged ||
+               tile.fallout_until > 0)};
+      PLANET_GPU_MARK_TILES.set(tile, own);
+    }
+    if (own.wonder) continue;
+    const tileKey = own.tileKey;
+    const camp = campSet.size > 0 && campSet.has(tileKey);
+    const disaster = disasters.size ? disasters.get(tileKey) || "" : "";
+    if (!own.marked && !camp && !disaster) continue;
+    const resource = resourceMarkerVisible(tile);
+    const fallout = tile.fallout_until > turn;
+    if (!(tile.terrain === "mountain" || tile.feature || tile.hills || tile.improvement ||
+          camp || resource || tile.district || tile.wonder || tile.storm || tile.drought ||
+          tile.flooded || tile.submerged || fallout || disaster)) continue;
+    const alpha = planetStrategicAlpha({tile}, frame.visible, frame.spectator);
+    const buildings = tile.district ? JSON.stringify(districtBuildings.get(tileKey) || null) : "";
+    const markKey = `${planetGpuMapMarkFields(tile)}|${camp ? 1 : 0}${resource ? 1 : 0}` +
+      `${hillSeatsLow(tile, tileKey, cityTiles) ? 1 : 0}${fallout ? 1 : 0}|${disaster}|${alpha}|${buildings}`;
+    wanted.push({tile, tileKey, markKey, alpha});
+  }
+  return {wanted, context:{campSet, cityTiles, districtBuildings}};
+}
+
+function planetGpuMapPaintMark(marks, item, context) {
+  const size = marks.slot, columns = marks.atlas / size;
+  const x0 = (item.slot % columns) * size, y0 = Math.floor(item.slot / columns) * size;
+  const g = marks.context;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1;
+  g.clearRect(x0, y0, size, size);
+  g.save();
+  // A one-texel gutter keeps every mip level of a sprite to itself.
+  g.beginPath(); g.rect(x0 + 1, y0 + 1, size - 2, size - 2); g.clip();
+  g.translate(x0 + size / 2, y0 + size / 2);
+  const k = size / (2 * PLANET_GPU_MAP_MARK_HALF);
+  g.scale(k, k);
+  g.globalAlpha = item.alpha;
+  const canvasContext = cx;
+  cx = g;
+  try {
+    const t = item.tile;
+    if (PLANET_FLOODPLAIN_FEATURES.has(t.feature)) drawFloodplainPoolCluster(0, 0, 1);
+    drawPlanetStrategicMark(t, item.tileKey, context.cityTiles, context.campSet,
+                            context.districtBuildings);
+  } finally {
+    cx = canvasContext;
+    g.restore();
+  }
+}
+
+function planetGpuMapMarks(gl, map, frame) {
+  if (!(frame.scale > PLANET_STRATEGIC_DETAIL_SCALE)) return "";
+  // The nearest power of two to the sprite size the disc centre wants, so a
+  // sprite lands between .7 and 1.4 times the quality asked for.
+  const discCentre = frame.radius * map.inradiusMax / PLANET_STRATEGIC_INRADIUS;
+  let slot = 2 ** Math.round(Math.log2(Math.max(1,
+    2 * PLANET_GPU_MAP_MARK_HALF * discCentre * DPR * PLANET_GPU_MAP_MARK_QUALITY)));
+  slot = Math.max(16, Math.min(128, slot));
+  const signature = [state.seed, SHOW_RESOURCES, RESOURCE_DISPLAY, SHOW_ARTIFACT_SITES,
+                     shouldDrawResourceBadges(), frame.spectator, state.view_player ?? ""].join("|");
+  let marks = map.marks_;
+  // While zooming keep the sprites already made unless they are far too coarse.
+  if (marks && marks.signature === signature && cameraZoom && slot <= marks.slot * 2)
+    slot = marks.slot;
+  if (marks && marks.signature === signature && marks.slot === slot &&
+      marks.state === state && marks.visible === frame.visible) return "";
+  const started = performance.now();
+  const {wanted, context} = planetGpuMapMarkKeys(frame);
+  if (!marks || marks.signature !== signature || marks.slot !== slot ||
+      wanted.length > marks.capacity) {
+    let size = slot, atlas = 0;
+    for (; size >= 16; size /= 2) {
+      const side = Math.ceil(Math.sqrt(wanted.length * 1.3 + 16));
+      atlas = Math.max(size, 2 ** Math.ceil(Math.log2(side * size)));
+      if (atlas <= map.maxTexture) break;
+    }
+    if (size < 16) return "too many marks for one atlas";
+    map.markCanvas.width = atlas;
+    map.markCanvas.height = atlas;
+    marks = map.marks_ = {signature, slot:size, atlas, capacity:(atlas / size) ** 2,
+                          context:map.markContext, slotOf:new Map(), keyOf:new Map(),
+                          free:[], next:0, serial:(marks?.serial || 0) + 1, fresh:true};
+  }
+  const seen = new Set();
+  const paintedSlots = [];
+  for (const item of wanted) {
+    seen.add(item.tileKey);
+    if (marks.keyOf.get(item.tileKey) === item.markKey) continue;
+    let slotIndex = marks.slotOf.get(item.tileKey);
+    if (slotIndex === undefined) {
+      slotIndex = marks.free.length ? marks.free.pop() : marks.next++;
+      marks.slotOf.set(item.tileKey, slotIndex);
+    }
+    item.slot = slotIndex;
+    planetGpuMapPaintMark(marks, item, context);
+    marks.keyOf.set(item.tileKey, item.markKey);
+    paintedSlots.push(slotIndex);
+  }
+  const painted = paintedSlots.length;
+  let released = 0;
+  for (const [tileKey, slotIndex] of marks.slotOf) {
+    if (seen.has(tileKey)) continue;
+    marks.slotOf.delete(tileKey);
+    marks.keyOf.delete(tileKey);
+    marks.free.push(slotIndex);
+    released++;
+  }
+  if (painted || released) marks.serial++;
+  if (painted || marks.fresh) {
+    gl.bindTexture(gl.TEXTURE_2D, map.marks);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    if (marks.fresh || painted > 48) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, map.markCanvas);
+    } else {
+      // A turn changes a handful of sprites: send just those squares.
+      const size = marks.slot, columns = marks.atlas / size;
+      for (const slotIndex of paintedSlots) {
+        const x0 = (slotIndex % columns) * size, y0 = Math.floor(slotIndex / columns) * size;
+        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0);
+        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, size, size, gl.RGBA, gl.UNSIGNED_BYTE,
+                         map.markCanvas);
+      }
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    }
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    marks.fresh = false;
+  }
+  marks.state = state;
+  marks.visible = frame.visible;
+  PLANET_GPU_MAP_STATS.markPaints += painted;
+  const spent = performance.now() - started;
+  PLANET_GPU_MAP_STATS.bakeMs += spent;
+  PLANET_GPU_MAP_STATS.markMs += spent;
+  return "";
+}
+
+// The per-state half of the instances: ground colour, whether it is known,
+// and where its mark sits in the atlas.
+const PLANET_GPU_GROUND_RGB = new WeakMap();
+function planetGpuMapInstances(gl, map, frame) {
+  const marks = frame.scale > PLANET_STRATEGIC_DETAIL_SCALE ? map.marks_ : null;
+  const current = map.instances;
+  if (current && current.state === state && current.visible === frame.visible &&
+      current.spectator === frame.spectator && current.marks === marks &&
+      current.serial === (marks?.serial ?? 0)) return;
+  const count = map.cells.length;
+  const data = current?.data?.length === count * 8 ? current.data : new Float32Array(count * 8);
+  const columns = marks ? marks.atlas / marks.slot : 1;
+  for (let index = 0; index < count; index++) {
+    const at = index * 8;
+    const tileKey = map.cellKeys[index];
+    const tile = TMAP.get(tileKey);
+    if (!tile) { data[at + 3] = -1; data[at + 4] = -1; continue; }
+    let rgb = PLANET_GPU_GROUND_RGB.get(tile);
+    if (!rgb) {
+      rgb = rgbOf(tileGroundColor(tile, "#4b5960")).map(channel => channel / 255);
+      PLANET_GPU_GROUND_RGB.set(tile, rgb);
+    }
+    data[at] = rgb[0]; data[at + 1] = rgb[1]; data[at + 2] = rgb[2];
+    data[at + 3] = frame.spectator || frame.visible.has(tileKey) ? 1 : 0;
+    const slot = marks?.slotOf.get(tileKey);
+    if (slot === undefined) { data[at + 4] = -1; data[at + 5] = -1; }
+    else {
+      data[at + 4] = (slot % columns) * marks.slot;
+      data[at + 5] = Math.floor(slot / columns) * marks.slot;
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, map.dynamicBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  map.instances = {state, visible:frame.visible, spectator:frame.spectator, marks,
+                   serial:marks?.serial ?? 0, data};
+}
+
+// Why the whole-globe path cannot draw this frame, or "" when it can.
+function planetGpuMapDeclines(camera) {
+  if (!PLANET_GPU_MAP) return "off";
+  if (PLANET_GPU?.failed || PLANET_GPU?.lost || PLANET_GPU?.map === null) return "no GPU";
+  if (!state || !PLANET || !planetReady() || !knowsGlobe() || camera.chart) return "not a known globe";
+  if (mapLens) return "lens";
+  if (sel || selCity) return "selection";
+  if (tacks.length) return "tacks";
+  if (mapSearchQuery || mapSearchCivId) return "search";
+  if (SHOW_YIELDS) return "yields";
+  if (state.arena_flags?.length) return "arena flags";
+  if (anim.blasts.length) return "detonation";
+  if (unitIntelLayers().length) return "unit intel";
+  return "";
+}
+
+function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spectator) {
+  const declined = planetGpuMapDeclines(camera);
+  if (declined) { PLANET_GPU_MAP_STATS.declined = declined; return false; }
+  const gpu = createPlanetGpu();
+  if (!gpu || gpu.lost) { PLANET_GPU_MAP_STATS.declined = "no GPU"; return false; }
+  syncPlanetGpuCanvas();
+  if (!gpu.width || !gpu.height || gpu.width * gpu.height > PLANET_GPU_MAX_PIXELS ||
+      gpu.width > gpu.maxWidth || gpu.height > gpu.maxHeight) {
+    PLANET_GPU_MAP_STATS.declined = "canvas size";
+    return false;
+  }
+  const map = planetGpuMapResources(gpu);
+  if (!map) return false;
+  const {gl} = gpu;
+  const frame = {scale, radius, visible, spectator};
+  planetGpuMapGeometry(gl, map);
+  const linesDeclined = planetGpuMapBakeLines(gl, map, frame);
+  if (linesDeclined) { PLANET_GPU_MAP_STATS.declined = linesDeclined; return false; }
+  const marksDeclined = planetGpuMapMarks(gl, map, frame);
+  if (marksDeclined) { PLANET_GPU_MAP_STATS.declined = marksDeclined; return false; }
+  planetGpuMapInstances(gl, map, frame);
+  if (gpu.mapChecked !== map.bake || gpu.mapCheckedMarks !== map.marks_) {
+    // A browser can accept a context and still refuse a large texture. Ask
+    // once per new bake rather than every frame: the question stalls.
+    gpu.mapChecked = map.bake;
+    gpu.mapCheckedMarks = map.marks_;
+    if (gl.getError() !== gl.NO_ERROR) {
+      gpu.lost = true;
+      planetGpuHide();
+      PLANET_GPU_MAP_STATS.declined = "GL error";
+      return false;
+    }
+  }
+
+  const basis = planetViewBasis(camera);
+  const centerPx = [centerX * DPR, (MAPH - centerY) * DPR];
+  gl.viewport(0, 0, gpu.width, gpu.height);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clearDepth(1);
+  gl.depthMask(true);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.BLEND);
+
+  const ocean = map.ocean;
+  gl.useProgram(ocean.program);
+  gl.bindVertexArray(map.oceanVao);
+  gl.disable(gl.DEPTH_TEST);
+  gl.uniform2f(ocean.at.uCenter, centerPx[0], centerPx[1]);
+  gl.uniform2f(ocean.at.uViewport, gpu.width, gpu.height);
+  gl.uniform1f(ocean.at.uRadius, radius * DPR);
+  const stops = (spectator ? ["#46679f", "#14315e", "#091a3a", "#020714"]
+                           : ["#39434c", "#222a32", "#141a20", "#05090d"])
+    .flatMap(hex => rgbOf(hex).map(channel => channel / 255));
+  gl.uniform3fv(ocean.at.uStops, stops);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  const ground = map.ground;
+  const marks = scale > PLANET_STRATEGIC_DETAIL_SCALE ? map.marks_ : null;
+  gl.useProgram(ground.program);
+  gl.bindVertexArray(map.groundVao);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.uniform3fv(ground.at.uOut, basis.out);
+  gl.uniform3fv(ground.at.uRight, basis.right);
+  gl.uniform3fv(ground.at.uUp, basis.up);
+  gl.uniform2f(ground.at.uCenter, centerPx[0], centerPx[1]);
+  gl.uniform2f(ground.at.uViewport, gpu.width, gpu.height);
+  gl.uniform1f(ground.at.uRadius, radius * DPR);
+  gl.uniform1f(ground.at.uRadiusCss, radius);
+  gl.uniform1f(ground.at.uBleed, .8 * DPR);
+  gl.uniform1f(ground.at.uMarksOn, marks ? 1 : 0);
+  gl.uniform1f(ground.at.uMarkTexels, marks ? marks.slot / (2 * PLANET_GPU_MAP_MARK_HALF) : 1);
+  gl.uniform1f(ground.at.uMarkSlot, marks ? marks.slot : 1);
+  gl.uniform1f(ground.at.uMarkAtlas, marks ? marks.atlas : 1);
+  gl.uniform1f(ground.at.uMarkInradius, PLANET_STRATEGIC_INRADIUS);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, map.lines);
+  gl.uniform1i(ground.at.uLines, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, map.marks);
+  gl.uniform1i(ground.at.uMarks, 1);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 18, map.cells.length);
+  gl.bindVertexArray(null);
+  gl.activeTexture(gl.TEXTURE0);
+  // The narrow surface path keeps a scissored clear between its own frames.
+  gpu.needsFullClear = true;
+  gpu.surfaceRect = null;
+  gpu.canvas.style.display = "block";
+  PLANET_GPU_MAP_STATS.frames++;
+  PLANET_GPU_MAP_STATS.declined = "";
+  return true;
+}
+
+// The cells the 2D ink above the GPU ground iterates over: natural wonders,
+// the tiles an empire label is placed from, and the edge of sight. Everything
+// else it needs it looks up by key, projected on demand.
+function planetGpuMapOverlayKeys(map, scale, radius, visible, turnVisible, spectator) {
+  const labels = scale <= PLANET_MAJOR_CITY_LABEL_SCALE && radius > PLANET_EMPIRE_LABEL_MIN_RADIUS;
+  const perimeter = !spectator && radius >= SKY_MARKERS;
+  const cached = map.overlayKeys;
+  if (cached && cached.state === state && cached.labels === labels &&
+      cached.perimeter === perimeter && cached.visible === visible &&
+      cached.turnVisible === turnVisible && cached.spectator === spectator) return cached.keys;
+  const keys = new Set();
+  for (const tile of state.map.tiles) {
+    const tileKey = key(tile.pos);
+    if (isNaturalWonder(tile.feature)) { keys.add(tileKey); continue; }
+    if (!labels) continue;
+    const player = state.players[tile.owner];
+    if (!player || player.is_minor || player.is_barbarian || player.met === false || !player.civ)
+      continue;
+    if (spectator || turnVisible.has(tileKey)) keys.add(tileKey);
+  }
+  if (perimeter) {
+    for (const tileKey of visible) {
+      const cell = PLANET.cells.get(tileKey);
+      if (cell && cell.nbrs.some(neighbour => !neighbour || !visible.has(neighbour)))
+        keys.add(tileKey);
+    }
+  }
+  map.overlayKeys = {state, labels, perimeter, visible, turnVisible, spectator, keys};
+  return keys;
+}
+
+function planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
+                                  visible, turnVisible, spectator) {
+  const keys = planetGpuMapOverlayKeys(PLANET_GPU.map, scale, radius, visible, turnVisible,
+                                       spectator);
+  const out = [];
+  for (const tileKey of keys) {
+    const tile = TMAP.get(tileKey);
+    const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
+    if (!geometry || geometry.center.z <= -.03) continue;
+    out.push({tile, ...geometry});
+  }
+  out.sort((a, b) => a.center.z - b.center.z);
+  return out;
+}
+
+// A stand-in for the frame's `cellByKey` Map: a cell is projected the first
+// time anything on the ink layer asks for it, and only then.
+function planetLazyCellMap(cells, camera, scale, centerX, centerY) {
+  const known = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  return {
+    get(tileKey) {
+      if (known.has(tileKey)) return known.get(tileKey) ?? undefined;
+      const tile = TMAP.get(tileKey);
+      const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
+      const entry = geometry && geometry.center.z > -.03 ? {tile, ...geometry} : null;
+      known.set(tileKey, entry);
+      return entry ?? undefined;
+    },
+  };
+}
+
+// Hit testing when the frame kept no projected copy of every cell: turn the
+// pointer back into a point on the sphere, take the nearest cell centre and
+// its neighbours, and test their projected outlines exactly as the Canvas
+// frame's hit cells would have been tested.
+function planetHitCellAt(sx, sy) {
+  if (!state || !PLANET) return null;
+  const camera = planetCamera();
+  const scale = cam.scale;
+  const radius = camera.radius * scale;
+  const [centerX, centerY] = planetEarthCenter(radius);
+  const inside = entry => pointInsidePlanetCell(sx, sy,
+    entry.points.map(point => planetGroundPoint(point, centerY)));
+  const fullScan = () => {
+    const cells = planetCells(camera, scale, centerX, centerY);
+    for (let index = cells.length - 1; index >= 0; index--)
+      if (inside(cells[index])) return cells[index].tile.pos;
+    return null;
+  };
+  if (camera.chart) return fullScan();
+  const u = (sx - centerX) / radius;
+  const v = -(planetGroundInputY(sy, centerY) - centerY) / radius;
+  const reach = u * u + v * v;
+  if (reach > 1.02) return null;
+  const basis = planetViewBasis(camera);
+  const w = Math.sqrt(Math.max(0, 1 - reach));
+  const p = [0, 1, 2].map(i => basis.right[i] * u + basis.up[i] * v + basis.out[i] * w);
+  let best = null, bestDot = -Infinity;
+  for (const cell of PLANET.cells.values()) {
+    const d = dot3(cell.center, p);
+    if (d > bestDot) { bestDot = d; best = cell; }
+  }
+  if (!best) return null;
+  const entries = [];
+  for (const cellKey of [key(best.pos), ...best.nbrs]) {
+    const tile = cellKey && TMAP.get(cellKey);
+    const geometry = tile && planetCellGeometry(tile, camera, scale, centerX, centerY);
+    if (geometry && geometry.center.z > -.03) entries.push({tile, ...geometry});
+  }
+  entries.sort((a, b) => b.center.z - a.center.z);
+  for (const entry of entries) if (inside(entry)) return entry.tile.pos;
+  return fullScan();
 }
 
 // The world says what shape it is, and that alone decides which renderer
@@ -15451,9 +16568,9 @@ function drawPlanetCoastlines(cells, visible, spectator) {
   const done = new Set();
   const groups = new Map();
   for (const entry of cells) {
-    const {tile, cell, points, center} = entry;
+    const {tile, cell, points} = entry;
     if (!cell || isWater(tile)) continue;
-    const inradius = planetCellInradius({points, center});
+    const inradius = planetCellInradius(entry);
     if (!(inradius > PLANET_LANE_TILE / 8)) continue;
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     const alpha = planetStrategicAlpha(entry, visible, spectator);
@@ -15490,7 +16607,8 @@ function drawPlanetCoastlines(cells, visible, spectator) {
 }
 function planetFrontierLanes(cells) {
   const lanes = new Map();
-  for (const {tile, cell, points, center} of cells) {
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
     const owner = tile.owner;
     if (owner === null || owner === undefined || !cell) continue;
     const sides = points.length;
@@ -15501,7 +16619,7 @@ function planetFrontierLanes(cells) {
     // quantized so the layer stays a handful of strokes instead of one per
     // edge; four steps is finer than the eye follows a border foreshortening
     // into the horizon.
-    const inradius = planetCellInradius({points, center});
+    const inradius = planetCellInradius(entry);
     if (!(inradius > PLANET_LANE_TILE / 8)) continue;
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
@@ -20452,7 +21570,12 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
   if (scale > PLANET_STRATEGIC_DETAIL_SCALE)
     drawPlanetStrategicVolcanicSoil(cells, visible, spectator);
 
-  // Ownership is a transparent command-map layer over finished ground.
+  drawPlanetGroundWash(cells, empire);
+  if (!empire && radius >= SKY_MARKERS) drawPlanetSurveyGrid(cells, scale);
+}
+
+// Ownership is a transparent command-map layer over finished ground.
+function drawPlanetGroundWash(cells, empire) {
   for (const cell of cells) {
     const owner = cell.tile.owner;
     if (owner === null || owner === undefined) continue;
@@ -20466,14 +21589,18 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fill();
   }
   cx.globalAlpha = 1;
+}
 
-  if (!empire && radius >= SKY_MARKERS) {
-    cx.strokeStyle = "rgba(214,235,231,.075)";
-    cx.lineWidth = Math.max(.3, Math.min(1, scale * .75));
-    for (const cell of cells) {
-      planetPath(cx, cell.points);
-      cx.stroke();
-    }
+// The survey grid. `widthScale` lets a baked face hold the line's on-screen
+// width where the face stretches a cell; the Canvas passes none.
+function drawPlanetSurveyGrid(cells, scale, widthScale = null) {
+  cx.strokeStyle = "rgba(214,235,231,.075)";
+  const width = Math.max(.3, Math.min(1, scale * .75));
+  cx.lineWidth = width;
+  for (const cell of cells) {
+    if (widthScale) cx.lineWidth = width * widthScale(cell);
+    planetPath(cx, cell.points);
+    cx.stroke();
   }
 }
 
@@ -20884,7 +22011,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
   drawPlanetStrategicCliffs(cells, visible, spectator);
   drawPlanetStrategicRivers(cells, visible, spectator);
   for (const entry of cells) {
-    if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(entry.tile.feature))
+    if (PLANET_FLOODPLAIN_FEATURES.has(entry.tile.feature))
       drawPlanetStrategicFloodplains(entry, visible, spectator);
   }
   // Contaminated ground, under every landmark standing on it.
@@ -20902,31 +22029,43 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       if (placement) drawPlanetNaturalWonder(placement, visible, spectator);
       continue;
     }
-    withPlanetStrategicCell(entry, visible, spectator, () => {
-      if (t.feature === "volcano") {
-        drawStrategicMountainIcon(0, 0, true, .78);
-        drawFeatureEffects(t, 0, 0);
-        return;
-      }
-      if (t.terrain === "mountain") {
-        drawStrategicMountainIcon(0, 0, false, .78);
-        return;
-      }
-      const hillSeated = hillSeatsLow(t, tileKey, cityTiles);
-      if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
-        drawStrategicTerrainMark(t, 0, 0, hillSeated);
-      drawFeatureEffects(t, 0, 0);
-      if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
-        drawBarbarianCamp(0, 0);
-      } else if (t.improvement) {
-        drawImprovement(t, 0, 0);
-      }
-      if (resourceMarkerVisible(t)) drawResourceBadge(t, 0, 0);
-      const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
-      if (t.district) drawDistrict(t, 0, -built, districtBuildings.get(tileKey));
-      if (t.wonder) drawWorldWonderMarker(t.wonder, 0, -built);
-    });
+    withPlanetStrategicCell(entry, visible, spectator, () =>
+      drawPlanetStrategicMark(t, tileKey, cityTiles, campSet, districtBuildings));
   }
+}
+
+// One tile's upright mark at the origin of its local strategic frame. The
+// Canvas globe paints it through `withPlanetStrategicCell`; the GPU globe
+// paints it once into its sprite atlas.
+function drawPlanetStrategicMark(t, tileKey, cityTiles, campSet, districtBuildings) {
+  if (t.feature === "volcano") {
+    drawStrategicMountainIcon(0, 0, true, .78);
+    drawFeatureEffects(t, 0, 0);
+    return;
+  }
+  if (t.terrain === "mountain") {
+    drawStrategicMountainIcon(0, 0, false, .78);
+    return;
+  }
+  const hillSeated = hillSeatsLow(t, tileKey, cityTiles);
+  if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
+    drawStrategicTerrainMark(t, 0, 0, hillSeated);
+  drawFeatureEffects(t, 0, 0);
+  if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
+    drawBarbarianCamp(0, 0);
+  } else if (t.improvement) {
+    drawImprovement(t, 0, 0);
+  }
+  if (resourceMarkerVisible(t)) drawResourceBadge(t, 0, 0);
+  const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
+  if (t.district) drawDistrict(t, 0, -built, districtBuildings.get(tileKey));
+  if (t.wonder) drawWorldWonderMarker(t.wonder, 0, -built);
+}
+
+// The GPU globe leaves natural wonders, which span several cells, to Canvas.
+function drawPlanetNaturalWonders(cells, visible, spectator) {
+  for (const placement of buildPlanetNaturalWonderPlacements(cells).values())
+    drawPlanetNaturalWonder(placement, visible, spectator);
 }
 
 // Like the flat board, the reader's optional yield overlay belongs above all
@@ -22539,18 +23678,29 @@ function drawPlanetMap() {
   const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
 
+  // Standing over Mars, the Earth is a whole screen-width of world sitting
+  // several screens off the side of the stage. Every one of its tiles still
+  // projects and still fills, for nothing. Ask once whether home is even in the
+  // picture; the disc behind it is two fills either way and costs nothing.
+  const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
+
+  // `?map=gpu`: the whole ground of a known globe is drawn by the graphics
+  // processor and this canvas carries only the ink above it.
+  const gpuMap = PLANET_GPU_MAP && earthInFrame &&
+    drawPlanetGpuMap(camera, scale, radius, centerX, centerY, turnVisible, spectator);
+  if (PLANET_GPU) PLANET_GPU.mapActive = gpuMap;
   // At globe scale WebGL owns the opaque terrain surface while Canvas 2D keeps
   // its established strategic ink above it.  The overlay remains available
   // for normal detail paints; between them the GPU can rotate the expensive
   // part at the display's own 120/144/240 Hz cadence.
-  const gpuSurface = drawPlanetGpuSurface(camera, radius, centerX, centerY);
-  if (!gpuSurface) planetGpuHide();
+  const gpuSurface = !gpuMap && drawPlanetGpuSurface(camera, radius, centerX, centerY);
+  if (!gpuSurface && !gpuMap) planetGpuHide();
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   // The GPU surface is an opaque black-backed layer under this canvas.  Clear
   // only the overlay when it is active; otherwise Canvas retains its ordinary
   // complete black field.
-  if (gpuSurface) {
+  if (gpuSurface || gpuMap) {
     cx.clearRect(0, 0, MAPW, MAPH);
   } else {
     // Space is a true black field. The globe, stars, and bodies are the only
@@ -22563,13 +23713,16 @@ function drawPlanetMap() {
   // and the bodies, orbits, satellites and launches in `drawPlanetSky` — is
   // ever painted over or around it.
   const depth = skyDepth(radius);
+  // Over the GPU's globe the stars would land on the ground: keep them to the
+  // sky around it, which is all the Canvas globe leaves of them.
+  const starsAroundGpuGlobe = gpuMap && depth > 0;
+  if (starsAroundGpuGlobe) {
+    cx.save();
+    cx.beginPath(); cx.rect(0, 0, MAPW, MAPH); cx.arc(centerX, centerY, radius, 0, 7);
+    cx.clip("evenodd");
+  }
   if (depth > 0 && !camera.chart) drawSkyStars(depth, radius);
-
-  // Standing over Mars, the Earth is a whole screen-width of world sitting
-  // several screens off the side of the stage. Every one of its tiles still
-  // projects and still fills, for nothing. Ask once whether home is even in the
-  // picture; the disc behind it is two fills either way and costs nothing.
-  const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
+  if (starsAroundGpuGlobe) cx.restore();
 
   // Everything that belongs to the Earth is painted through one camera. On a
   // known globe that camera was tilted in 3D before projection, preserving the
@@ -22580,7 +23733,7 @@ function drawPlanetMap() {
   cx.save();
   applyPlanetGroundTilt(centerY);
 
-  if (!gpuSurface) {
+  if (!gpuSurface && !gpuMap) {
     // The ocean sphere under the tiles: it fills the limb no tile quite reaches
     // and gives the globe its roundness. On a chart there is no limb and no ball
     // to be round, so the same wash is spread to the corners of the sheet instead
@@ -22621,28 +23774,40 @@ function drawPlanetMap() {
     }
   }
 
-  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
-  if (!gpuSurface)
+  // The GPU globe has already drawn every cell's ground; the ink above it
+  // iterates only the cells that carry some, and finds the rest by key.
+  const cells = !earthInFrame ? []
+    : gpuMap ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
+                                        visible, turnVisible, spectator)
+    : planetCells(camera, scale, centerX, centerY);
+  if (!gpuSurface && !gpuMap)
     drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
-  // A route is ground infrastructure on the globe too: draw it before the
-  // frontier ribbon and before every terrain landmark that shares its tile.
-  drawPlanetStrategicRoads(cells, turnVisible, spectator);
-  for (const {tile, points, center} of cells)
-    PLANET_HIT_CELLS.push({pos:tile.pos,
-                           points:points.map(point => planetGroundPoint(point, centerY)),
-                           z:center.z});
+  if (gpuMap) {
+    // Hit cells are worked out when a pointer asks (`planetHitCellAt`).
+    PLANET_HIT_CELLS = null;
+  } else {
+    // A route is ground infrastructure on the globe too: draw it before the
+    // frontier ribbon and before every terrain landmark that shares its tile.
+    drawPlanetStrategicRoads(cells, turnVisible, spectator);
+    for (const {tile, points, center} of cells)
+      PLANET_HIT_CELLS.push({pos:tile.pos,
+                             points:points.map(point => planetGroundPoint(point, centerY)),
+                             z:center.z});
 
-  // Frontiers go over the finished ground, the way they do on a flat board, and
-  // below everything a viewer clicks. Under a coin-sized world a tile is a
-  // pixel and its border is a smear, which is the same reason the grid stops.
-  if (radius >= SKY_MARKERS) drawPlanetCoastlines(cells, turnVisible, spectator);
-  if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
+    // Frontiers go over the finished ground, the way they do on a flat board, and
+    // below everything a viewer clicks. Under a coin-sized world a tile is a
+    // pixel and its border is a smear, which is the same reason the grid stops.
+    if (radius >= SKY_MARKERS) drawPlanetCoastlines(cells, turnVisible, spectator);
+    if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
+  }
 
   // The planet is another projection of the strategic map, not a lower-detail
   // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
   // yields therefore use the same authored vocabulary as the flat board.
-  if (scale > PLANET_STRATEGIC_DETAIL_SCALE)
-    drawPlanetStrategicTerrain(cells, turnVisible, spectator);
+  if (scale > PLANET_STRATEGIC_DETAIL_SCALE) {
+    if (gpuMap) drawPlanetNaturalWonders(cells, turnVisible, spectator);
+    else drawPlanetStrategicTerrain(cells, turnVisible, spectator);
+  }
 
   const highlighted = new Map();
   if (sel) {
@@ -22699,9 +23864,9 @@ function drawPlanetMap() {
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
-  const cellByKey = radius >= SKY_MARKERS
-    ? new Map(cells.map(cell => [key(cell.tile.pos), cell]))
-    : new Map();
+  const cellByKey = radius < SKY_MARKERS ? new Map()
+    : gpuMap ? planetLazyCellMap(cells, camera, scale, centerX, centerY)
+    : new Map(cells.map(cell => [key(cell.tile.pos), cell]));
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
