@@ -1,3 +1,6 @@
+//! A city already holding a wall and a healthy melee garrison trains a ranged
+//! unit instead of another body, when one is at most three turns away.
+
 use super::*;
 
 /// An existing wall and healthy melee garrison can cover a short reinforcement

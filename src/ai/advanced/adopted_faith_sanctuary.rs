@@ -1,3 +1,8 @@
+//! A seat with no religion of its own keeps an adopted faith at home against
+//! the one converting its empire: reading that threat, checking the
+//! counterweight cannot hand another founder a win, and building its Holy
+//! Site and Shrine in time.
+
 use super::*;
 
 impl AdvancedAi {

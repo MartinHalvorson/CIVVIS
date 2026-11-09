@@ -1,3 +1,6 @@
+//! Where an embarked field unit assembles beside the enemy's landing shore
+//! when closed borders prevent a peacetime landing.
+
 use super::AdvancedAi;
 use crate::{game::Game, Pos};
 

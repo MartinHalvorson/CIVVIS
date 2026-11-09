@@ -1,3 +1,6 @@
+//! The host's policy-change window as the live state reports it
+//! (`GovernmentScreen.lua:1383-1422`).
+
 use super::*;
 
 /// GovernmentScreen.lua:1383-1422 reads these before exposing Confirm.

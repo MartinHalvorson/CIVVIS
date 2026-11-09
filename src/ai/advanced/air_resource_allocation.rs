@@ -1,3 +1,6 @@
+//! Aluminum held for the launch wing: capture cavalry and other discretionary
+//! land units may spend only what the wing does not need.
+
 use super::*;
 
 impl AdvancedAi {

@@ -1,3 +1,6 @@
+//! Whether a siege bomber rebases rather than stay on its current mission:
+//! one sortie after a legal rebase, priced by the ordinary strike valuation.
+
 use super::*;
 
 impl AdvancedAi {

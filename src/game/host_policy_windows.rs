@@ -1,3 +1,6 @@
+//! The live host's permission for a policy change on one observed turn, so a
+//! forecast turn cannot inherit an old lock or an old free window.
+
 use super::*;
 
 /// The host's permission for a policy transaction on one observed turn.

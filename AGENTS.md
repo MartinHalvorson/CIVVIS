@@ -46,6 +46,15 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   --agent <agent-id> --path <owned-path-or-glob>
 ```
 
+## Finding code
+
+`python3 tools/codemap.py <words>` searches every module, tool and doc by what
+each says about itself. `--gene TAG` gives a gene's flag, every read of it and
+whether it is armed live. `--turn` prints the order an AI seat plays its turn.
+It reads the source each time and writes no file, so it cannot be stale.
+Every shipping Rust module opens with a `//!` line saying what it is for, and
+`tools/test_codemap.py` fails when one does not.
+
 ## Mandatory Git isolation
 
 - Treat `main` as read-only. Never develop on it or push to it directly.

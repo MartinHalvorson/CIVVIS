@@ -1,3 +1,6 @@
+//! A non-founder resisting conversion keeps an alternative faith at home,
+//! under the same threat and safety checks used when buying defenders.
+
 use super::*;
 
 impl AdvancedAi {
