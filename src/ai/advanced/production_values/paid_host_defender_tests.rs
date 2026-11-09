@@ -32,8 +32,9 @@ fn fixture() -> (Game, u32, Item) {
     center.production = 66.0;
     center.buildings.push(crate::name!("walls"));
     center.wall_hp = 85;
-    center.hp = 180;
+    center.hp = CITY_MAX_HP;
     center.strategic_resource_commitments.clear();
+    g.spawn_test_unit("crossbowman", 1, (9, 12));
     g.replace_host_unit_resource_prices(
         [(city, [(Game::production_block_key(&defender), 10.0)].into())].into(),
     );
@@ -85,7 +86,7 @@ fn every_victory_target_keeps_the_host_confirmed_paid_defender() {
         );
         assert_eq!(g.cities[&city].queue.first(), Some(&defender));
         assert_eq!(g.cities[&city].production, 66.0);
-        assert_eq!(g.strategic_stockpile(0, "iron"), 3.0);
+        assert_eq!(g.strategic_stockpile(0, crate::name!("iron")), 3.0);
     }
 }
 
