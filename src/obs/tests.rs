@@ -901,10 +901,10 @@ fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
     assert!(index.contains("function queueSkyLaunches(prev, next"));
     assert!(index.contains("if (!SHOW_ROCKET_ANIMATIONS || !prev || !next"));
     assert!(index.contains("function drawSkyLaunches(crews, placements"));
-    assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now);"));
+    assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, 1, fade);"));
     assert!(index.contains("function flatLaunchRoute(launch, player)"));
     assert!(index.contains("function drawFlatLaunches(now)"));
-    assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
+    assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel, fade);"));
     assert!(index.contains(
             "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawMissileStrikes(now0);\n  drawNuclearBlasts(now0);"
         ));
@@ -987,8 +987,11 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
         .split_once("function drawSkyCaption(")
         .unwrap()
         .0;
-    assert!(painter.contains("const film = skyLaunchFilm("));
-    assert!(painter.contains("const at = skyLaunchPoint(start, end, progress, bend, ease);"));
+    assert!(painter.contains("const film = place ? skyLaunchFilmRoute(skyLaunchFilm("));
+    assert!(painter.contains("const at = pointAt(progress);"));
+    assert!(app.contains(
+        "pointAt:progress => skyLaunchPoint(film.start, film.end, progress, bend, ease)"
+    ));
     assert!(
         !painter.contains("skyOnStage("),
         "the film is already fitted to the stage; culling it again drops its ending"
@@ -1007,6 +1010,56 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
     // A route wholly in the picture keeps its true endpoints however short it
     // is: at Solar System zoom the Moon is three pixels from the Earth.
     assert!(film.contains("(!seen.entering && !seen.leaving)"));
+}
+
+/// Every launch says whose it is, and a satellite launch ends as the craft the
+/// standing orbit is already drawing. It has nothing to land on, so the two
+/// have to meet: same place, same velocity, one fading as the other appears.
+#[test]
+fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
+    let app = include_str!("../../web/assets/app.js");
+
+    // One label, painted by both maps. The old mission-only text is gone.
+    assert!(app.contains("return `${civName(launch.playerId)} ${goal} launch`.toUpperCase();"));
+    assert_eq!(
+        app.matches("drawSkyLaunchLabel(launch, at.x, at.y").count(),
+        2
+    );
+    assert!(!app.contains("\"EXOPLANET LAUNCH\""));
+
+    assert!(
+        app.contains("satellite:{project:SKY_CHAIN.satellite, duration:3200, rocket:\"orbital\"}")
+    );
+
+    // The point aimed at reaches the orbit's own rate exactly at the end, while
+    // the blend from the pad flattens out, so the velocity carries over.
+    let ascent = app
+        .split_once("function skySatelliteAscent(")
+        .unwrap()
+        .1
+        .split_once("function skySatelliteInsertion(")
+        .unwrap()
+        .0;
+    assert!(ascent.contains("endAngle - sweep * (1 - p) * p * p"));
+    assert!(ascent.contains("p * p * (3 - 2 * p)"));
+
+    // The insertion moves the craft along its orbit and nothing else, and the
+    // adjustment belongs to the world it was made in.
+    assert!(app
+        .contains("phase:6.283 * hash2(player.id, 7) + (anim.skyOrbitTrims.get(player.id) || 0),"));
+    assert!(app.contains("anim.skyOrbitTrims.clear();"));
+
+    // Both maps hold the craft back while its rocket flies, and fade the rocket
+    // over the same stretch, so neither is ever missing or doubled.
+    assert!(app.contains("deployed:skySatelliteDeployed(player.id, now)"));
+    assert!(app.contains("deployed = skySatelliteDeployed(player.id, now);"));
+    assert_eq!(
+        app.matches(
+            "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1"
+        )
+        .count(),
+        2
+    );
 }
 
 #[test]

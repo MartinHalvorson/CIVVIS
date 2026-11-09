@@ -182,6 +182,7 @@ impl AdvancedAi {
                     || (offensive
                         && city.owner != pid
                         && !g.is_at_war(pid, city.owner)
+                        && self.religion_campaign_needs_city(g, pid, city, &religion)
                         && g.city_religion(city) != Some(religion.as_str()))
             })
             .map(|city| {
@@ -269,6 +270,11 @@ impl AdvancedAi {
         // `missionary_evades_raiders` covers the whole corps: an Apostle or a
         // Guru inside a raider's reach leaves it before it does anything else.
         if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
+            return acted;
+        }
+        // `religion-seat-presses-the-campaign`: a winnable fight comes before
+        // stepping away. See `advanced/religion_seat_fields_apostles.rs`.
+        if let Some(acted) = self.religion_seat_apostle_fights_first(g, pid, uid) {
             return acted;
         }
         // `spreader-steps-out-of-the-apostle`: the whole corps, likewise, out

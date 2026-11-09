@@ -5293,7 +5293,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
     assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
     assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
-    assert!(EMBEDDED_INDEX.contains("9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"));
+    assert!(EMBEDDED_INDEX
+        .contains("${9 * pixel}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"));
     for illegible in [
         "font-size: 5.5px",
         "font-size: 6px",

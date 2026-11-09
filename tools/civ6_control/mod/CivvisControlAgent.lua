@@ -17943,6 +17943,70 @@ CivvisCongressTargetIndex = function(targets, player)
 	return nil;
 end
 
+-- Preserve the public inputs BEFORE requesting a vote. Outcomes alone cannot
+-- reconstruct the offered target indices or the public preference indicators.
+-- Shipped Expansion2/UI/Additions/WorldCongressPopup.lua:627-650 displays
+-- FavoredPlayerIDs/DisfavoredPlayerIDs; :908-923 preserves PossibleTargets'
+-- original indices while sorting only the displayed names; :968 says those
+-- non-player targets are unlocalized names. The snapshot uses supplied tables.
+-- Bare global: the main chunk is at its local/register limit.
+CivvisCongressChoiceContext = function(rtype, row, config, candidates, request)
+	row = type(row) == "table" and row or {};
+	config = type(config) == "table" and config or {};
+	request = type(request) == "table" and request or {};
+	local function scalar(value)
+		return type(value) == "string" or type(value) == "boolean"
+			or (type(value) == "number" and value == value
+				and value ~= math.huge and value ~= -math.huge);
+	end
+	local function object(source)
+		local copy = {};
+		for key, value in pairs(type(source) == "table" and source or {}) do
+			if type(key) == "string" and scalar(value) then copy[key] = value; end
+		end
+		return copy;
+	end
+	local function list(source, field, zeroBased)
+		local copy, complete = {}, type(source) == "table";
+		for index, value in pairs(type(source) == "table" and source or {}) do
+			if type(index) == "number" and scalar(index) and index >= 1 and index == math.floor(index)
+				and (type(value) == "string" or type(value) == "number") and scalar(value) then
+				copy[#copy + 1] = { index = index, [field] = value };
+				if zeroBased then copy[#copy].selection = index - 1; end
+			else
+				complete = false;
+			end
+		end
+		table.sort(copy, function(a, b) return a.index < b.index; end);
+		return copy, complete;
+	end
+	local targets, targetsComplete = list(row.PossibleTargets, "target", true);
+	local favored, favoredComplete = list(row.FavoredPlayerIDs, "player", false);
+	local disfavored, disfavoredComplete = list(row.DisfavoredPlayerIDs, "player", false);
+	local choice = object(request);
+	local target = nil;
+	for _, offered in ipairs(targets) do
+		if offered.selection == request.selection then target = offered.target; break; end
+	end
+	choice.target = target;
+	local rivals = {};
+	for _, candidate in ipairs(type(candidates) == "table" and candidates or {}) do
+		rivals[#rivals + 1] = object(candidate);
+	end
+	return {
+		schema = 1, turn = scalar(request.turn) and request.turn or nil, resolution = rtype,
+		native_resolution_type = scalar(row.Type) and row.Type or nil,
+		target_type = scalar(row.TargetType) and row.TargetType or nil,
+		lane = type(config.VictoryLane) == "string" and config.VictoryLane or nil,
+		lane_known = type(config.VictoryLane) == "string",
+		diplomatic_racer = CivvisDiploRacer(config), congress_racer = CivvisCongressRacer(config),
+		possible_targets = targets, targets_complete = targetsComplete,
+		requested_target_known = target ~= nil, requested = choice, rivals = rivals,
+		favored_players = favored, favored_players_known = favoredComplete,
+		disfavored_players = disfavored, disfavored_players_known = disfavoredComplete,
+	};
+end
+
 -- The Diplomatic Victory denial: option B on `leader` when the ballot offers
 -- it; otherwise B on the offered rival with the most points; with none
 -- offered, A on us (never B on us). Returns `option, selection`.
@@ -24673,7 +24737,7 @@ local function tick()
 		-- free vote goes to the option that is not a ban. Nothing here is a
 		-- claim about winning a resolution: the point is that a session the
 		-- seat sat out is now one it takes part in, cheaply, every time.
-		local function voteWorldCongress(pid)
+		local function voteWorldCongress(pid, ballotTurn)
 			local wc = Game.GetWorldCongress();
 			if wc == nil then return 0, 0, "no_congress"; end
 			local resolutions = wc:GetResolutions(pid);
@@ -25184,6 +25248,25 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
+					-- This records inputs and the pending request, not acceptance or
+					-- a prediction. The later native review/verdict remains the readback.
+					local contextOK, contextError = pcall(function()
+						emit("wc_ballot_context", CivvisCongressChoiceContext(rtype, r, cfg, candidates, {
+							turn = ballotTurn, stage = resolutions.Stage, resolution_hash = info.Hash,
+							option = option, selection = selection - 1, votes = votes,
+							favor_at_ballot = favorNow, favor_entering_congress = favorEntering,
+							favor_after_allocations = favor, spent_requested = spent,
+							diplomatic_resolution_mode = mode,
+							leader = leader, leader_points = leaderPoints,
+							threat = threat, threat_progress = threatProgress,
+							racer_slowed = racerSlowed,
+						}));
+					end);
+					if not contextOK then
+						pcall(emit, "wc_ballot_context_failed", {
+							turn = ballotTurn, resolution = rtype, why = tostring(contextError),
+						});
+					end
 					-- Match the shipped OnAccept request: one operation carries the
 					-- complete vote count. A successful pcall records a request,
 					-- not acceptance; GetReview verifies the complete selection.
@@ -25246,7 +25329,7 @@ local function tick()
 					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_RESOLUTION");
 			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
-			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
+			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid, ballotTurn);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
 			-- `spent` is the modeled request cost, not a confirmed charge.
 			-- Player operations are queued: the immediate Favor read can precede
@@ -25767,7 +25850,7 @@ local function tick()
 								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
-								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
+								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid, turn);
 								emit("wc_vote", { turn = turn, cast = cast, spent = spent,
 								                  why = why, leader = leader,
 								                  leader_points = leaderPoints,

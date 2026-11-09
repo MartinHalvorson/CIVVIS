@@ -4483,6 +4483,9 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Spend foreign spreads on the civilizations still needed for victory.
+    // The host majority verdict includes unseen cities. See `religion_majorities.rs`.
+    Gene { tag: "religion-finishes-majorities", field: "religion_finishes_majorities", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_finishes_majorities, disable: AdvancedAi::disable_religion_finishes_majorities },
     // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
     // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
     // our own faith war on Macedon as "another major war", although
@@ -5443,6 +5446,16 @@ pub const GENES: &[Gene] = &[
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
+    // A Religion-target founder claims a Holy Site in each idle city. Unpriced, off.
+    Gene { tag: "religion-seat-builds-holy-sites", field: "religion_seat_builds_holy_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_builds_holy_sites, disable: AdvancedAi::disable_religion_seat_builds_holy_sites },
+    // A Religion-target founder saves for an Apostle-led corps. Unpriced, off.
+    Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
+    // A Religion-target founder's corps yields only to a killing blow; its Apostles fight first. Unpriced, off.
+    Gene { tag: "religion-seat-presses-the-campaign", field: "religion_seat_presses_the_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_presses_the_campaign, disable: AdvancedAi::disable_religion_seat_presses_the_campaign },
+    // A Religion-target seat races its Holy Site and Prayers ahead of its queues until it founds. Unpriced, off.
+    Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
+    // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
+    Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
