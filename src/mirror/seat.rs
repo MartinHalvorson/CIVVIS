@@ -632,7 +632,7 @@ pub(super) fn apply_observed_host_metrics(
             .is_finite()
             .then_some(state.culture_turns_to_victory);
         // Match the local player's World Rankings science lane to the host
-        // instead of treating its reconstructed fifty-light-year trip as fact.
+        // instead of treating its reconstructed trip as fact.
         observed.science_victory_points = (state.science_victory_points.is_finite()
             && state.science_victory_points >= 0.0)
             .then_some(state.science_victory_points);

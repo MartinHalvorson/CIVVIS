@@ -93,7 +93,7 @@
 //! `maintain_science_drive` clears while the gene is off.
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
-use crate::game::{Game, Item, EXOPLANET_DESTINATION};
+use crate::game::{Game, Item};
 use crate::name::Name;
 use crate::think;
 use std::collections::BTreeSet;
@@ -936,7 +936,9 @@ impl AdvancedAi {
                     && rival.science_projects.contains("exoplanet_expedition")
             })
             .map(|rival| {
-                ((EXOPLANET_DESTINATION - rival.exoplanet_distance).max(0.0)
+                ((g.science_victory_points_needed(rival.id)
+                    - g.science_victory_points(rival.id))
+                .max(0.0)
                     / g.exoplanet_speed(rival.id).max(1.0))
                 .ceil()
             })

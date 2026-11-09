@@ -729,7 +729,12 @@ pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 /// is off in a stock Gathering Storm game and in every tournament lobby.
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
-pub const EXOPLANET_DESTINATION: f64 = 50.0;
+/// The Exoplanet Expedition's trip on Standard speed, in light-years:
+/// `SCIENCE_VICTORY_POINTS_REQUIRED` in Expansion2_GlobalParameters.xml.
+/// It is private because it is no game's total on its own: the game speed
+/// scales it, and real Online games read 25. Read
+/// [`Game::science_victory_points_needed`] instead.
+const EXOPLANET_DESTINATION: f64 = 50.0;
 
 /// A world the expedition can be sent to.
 ///
@@ -849,9 +854,9 @@ pub struct VictoryRaces {
     /// Civilization VI board this is the host's Science Victory Points, which
     /// are the real distance shown by World Rankings rather than a simulation.
     pub exoplanet_distance: f64,
-    /// Science Victory Points required on this game's speed. Native games use
-    /// the model's fifty-light-year destination; a mirrored host can require a
-    /// different total.
+    /// Science Victory Points required on this game's speed: the host's own
+    /// total on a mirrored board, otherwise fifty light-years scaled by the
+    /// speed ([`Game::exoplanet_destination`]).
     pub exoplanet_distance_target: f64,
     /// The host-reported Science Victory Points gained per turn when available,
     /// including the current effects of Lagrange and Terrestrial Laser Stations.
@@ -12952,7 +12957,7 @@ impl Game {
     ///
     /// The best world found, and the nearest of those if two are graded alike.
     /// It aims for the *best* rather than the nearest because a light-year
-    /// currently costs nothing — see [`EXOPLANET_DESTINATION`], which is the
+    /// currently costs nothing — see [`Game::exoplanet_destination`], which is the
     /// whole trip whichever world it is — so there is nothing to trade a worse
     /// world for. A civilization that surveyed nothing takes the one anybody
     /// would already have heard of.
@@ -13015,10 +13020,11 @@ impl Game {
         {
             return;
         }
+        let destination = self.science_victory_points_needed(pid);
         self.players[pid].exoplanet_distance = (self.players[pid].exoplanet_distance
             + self.modeled_exoplanet_speed(pid))
-        .min(EXOPLANET_DESTINATION);
-        if self.players[pid].exoplanet_distance >= EXOPLANET_DESTINATION {
+        .min(destination);
+        if self.players[pid].exoplanet_distance >= destination {
             self.set_winner(pid, "science");
         }
     }
