@@ -16616,9 +16616,21 @@ impl AdvancedAi {
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             // `breaker-research-first`: no non-breaker upgrade while a siege
             // is held for its wall-breaker. See `advanced/decisive_window.rs`.
-            let wartime_modernization_goal = self
-                .wartime_modernization_tech(g, pid)
+            let modernization_wanted = self.wartime_modernization_tech(g, pid);
+            let wartime_modernization_goal = modernization_wanted
                 .filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech));
+            if let (Some(tech), None) = (modernization_wanted, wartime_modernization_goal) {
+                if self.journal().wants(crate::reasoning::Level::Detail) {
+                    let holds = self
+                        .siege_breaker_waits
+                        .values()
+                        .filter(|wait| g.turn.saturating_sub(wait.last) <= 1)
+                        .count();
+                    think!(self.journal(), Research, Detail, "breaker-research-first: modernization yields to the breaker";
+                           "{} unlocks no wall-breaker while {} siege(s) wait for one",
+                           plain(tech.as_str()), holds);
+                }
+            }
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
@@ -16649,7 +16661,7 @@ impl AdvancedAi {
                     }
                     Some(window) => {
                         think!(self.journal(), Research, Detail, "decisive-window: open";
-                               "{} beats {}'s best defender ({:.0}) by {:.0}{}",
+                               "{} beats {}'s best defender ({:.0}) by {:.0}{}{}",
                                plain(window.assault.as_str()),
                                g.players[window.target].civ,
                                window.defender,
@@ -16661,7 +16673,8 @@ impl AdvancedAi {
                                        plain(breaker.as_str()),
                                        window.wall_tier
                                    ))
-                                   .unwrap_or_default())
+                                   .unwrap_or_default(),
+                               decisive_window::supply_note(window))
                     }
                     None => {
                         think!(self.journal(), Research, Detail, "decisive-window: no package";
@@ -17016,7 +17029,7 @@ impl AdvancedAi {
                                         ))
                                         .unwrap_or_default(),
                                     window.turns,
-                                )
+                                ) + &decisive_window::supply_note(window)
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
                             } else if standing_army_fuel_goal.as_deref() == Some(goal) {

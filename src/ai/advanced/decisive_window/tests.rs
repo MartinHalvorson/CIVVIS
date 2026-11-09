@@ -538,6 +538,14 @@ fn breaker_research_first_needs_the_resource_in_hand() {
         .decisive_window_within(&g, 0, &plan, f64::INFINITY)
         .expect("a window");
     assert_ne!(on.breaker, Some(name!("bombard")), "{on:?}");
+    assert_eq!(
+        on.unsupplied_breaker,
+        Some((name!("bombard"), name!("niter"))),
+        "the journal names what it left out"
+    );
+    assert!(super::supply_note(&on).contains("bombard skipped, no niter in hand"));
+    assert_eq!(off.unsupplied_breaker, None);
+    assert_eq!(super::supply_note(&off), "");
 
     g.players[0].strategic_resources.insert(name!("niter"), 20.0);
     let supplied = ai

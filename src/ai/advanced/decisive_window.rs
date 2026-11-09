@@ -126,6 +126,13 @@ pub(crate) struct DecisiveWindow {
     pub(crate) margin: f64,
     /// Our military power over the target's when the window was priced.
     pub(crate) power_ratio: f64,
+    /// `breaker-research-first`: a strategic resource still hidden whose
+    /// revealing technology joined this package's path.
+    pub(crate) hidden_resource: Option<Name>,
+    /// `breaker-research-first`: the strongest breaker we could otherwise
+    /// train, left out because its strategic resource is not in hand, and
+    /// that resource.
+    pub(crate) unsupplied_breaker: Option<(Name, Name)>,
     pub(crate) unique: bool,
     /// Turns until both halves are unlocked at the current rates; 0 = open.
     pub(crate) turns: f64,
@@ -137,6 +144,27 @@ impl DecisiveWindow {
     pub(crate) fn open(&self) -> bool {
         self.tech_goal.is_none() && self.civic_goal.is_none()
     }
+}
+
+/// `breaker-research-first`'s journal suffix for a window: the hidden
+/// resource it reveals first, and the breaker it left out for want of its
+/// resource. Empty with the gene off.
+pub(super) fn supply_note(window: &DecisiveWindow) -> String {
+    let mut note = String::new();
+    if let Some(resource) = window.hidden_resource {
+        note.push_str(&format!(
+            "; breaker-research-first: {} is still hidden, reveal first",
+            resource.as_str().replace('_', " ")
+        ));
+    }
+    if let Some((unit, resource)) = window.unsupplied_breaker {
+        note.push_str(&format!(
+            "; breaker-research-first: {} skipped, no {} in hand",
+            unit.as_str().replace('_', " "),
+            resource.as_str().replace('_', " ")
+        ));
+    }
+    note
 }
 
 fn is_cavalry(spec: &UnitSpec) -> bool {
@@ -534,6 +562,34 @@ impl AdvancedAi {
             })
             .map(|(kind, spec)| (*kind, spec))
             .collect();
+        // `breaker-research-first`, journal only: the strongest breaker left
+        // out for want of its strategic resource.
+        let unsupplied_breaker = if self.breaker_research_first {
+            g.rules
+                .units
+                .iter()
+                .filter(|(kind, spec)| {
+                    spec.class == "military"
+                        && spec.siege
+                        && spec.bombard_strength > 0.0
+                        && spec.buildable
+                        && g.player_unit_replacement(pid, **kind) == **kind
+                        && spec.unique_to.as_deref().is_none_or(|owner| owner == civ)
+                        && spec
+                            .obsolete_tech
+                            .is_none_or(|tech| !g.players[pid].techs.contains(&tech))
+                        && Self::decisive_resource_feasible(g, pid, spec)
+                        && !Self::decisive_resource_supplied(g, pid, spec)
+                })
+                .max_by(|(left, a), (right, b)| {
+                    a.bombard_strength
+                        .total_cmp(&b.bombard_strength)
+                        .then_with(|| right.cmp(left))
+                })
+                .and_then(|(kind, spec)| spec.requires_resource.map(|resource| (*kind, resource)))
+        } else {
+            None
+        };
         let opens = |kind: Name, spec: &UnitSpec, assault: &UnitSpec| -> bool {
             match kind.as_str() {
                 "battering_ram" => {
@@ -635,6 +691,15 @@ impl AdvancedAi {
                     defender,
                     margin,
                     power_ratio,
+                    hidden_resource: if hidden.is_empty() {
+                        None
+                    } else {
+                        std::iter::once(*spec)
+                            .chain(breaker.map(|(breaker, _, _)| &g.rules.units[breaker]))
+                            .filter(|unit| Self::decisive_hidden_resource_tech(g, pid, unit).is_some())
+                            .find_map(|unit| unit.requires_resource)
+                    },
+                    unsupplied_breaker,
                     unique: is_unique,
                     turns,
                     tech_goal,
