@@ -47,7 +47,7 @@ this is the flag that pins it:
 | Tribal Villages: ENABLED | default (`data/goody_huts.json`) |
 | Teams Share Visibility: ENABLED | implied by `--teams` |
 | Start Era: Ancient | default |
-| All Game Modes: DISABLED | default; `--game-modes apocalypse,secret_societies` opts back in |
+| All Game Modes: DISABLED | default; `--game-modes apocalypse,secret_societies` opts back in. Meteor showers are not a game mode and still fall, see [FIDELITY.md](FIDELITY.md) |
 | Duplicate Civs and Leaders: ALLOWED | seats past the eighth reuse the roster |
 | Start Position: Balanced (FFA) | **not ported, and not a default** — see below |
 | Teamers Start Position: Standard | default; the generator does not distinguish a teamers layout from a free-for-all one, so a teamers game gets the same balanced-ish layout an FFA does |
