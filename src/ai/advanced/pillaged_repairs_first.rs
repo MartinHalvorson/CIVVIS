@@ -40,7 +40,7 @@ pub(super) const REPAIR_SAFE_TILES: i32 = 2;
 impl AdvancedAi {
     /// Whether a hostile land or naval soldier stands within
     /// [`REPAIR_SAFE_TILES`] of `pos`: a barbarian, or a major at war with us.
-    fn repair_site_threatened(g: &Game, pid: usize, pos: Pos) -> bool {
+    pub(super) fn repair_site_threatened(g: &Game, pid: usize, pos: Pos) -> bool {
         g.units.values().any(|unit| {
             unit.owner != pid
                 && g.rules.units[unit.kind].class == "military"

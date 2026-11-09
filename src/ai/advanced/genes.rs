@@ -5502,6 +5502,10 @@ pub const GENES: &[Gene] = &[
     // Missionary can be bought without one. See
     // `advanced/religion_seat_first_shrine.rs`.
     Gene { tag: "religion-seat-first-shrine", field: "religion_seat_first_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_first_shrine, disable: AdvancedAi::disable_religion_seat_first_shrine },
+    // A Religion-target seat repairs a pillaged Holy Site at once and keeps
+    // a Prayers project finishing this turn. See
+    // `advanced/religion_seat_guards_the_race.rs`.
+    Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

@@ -127,6 +127,9 @@ impl AdvancedAi {
         /// Opt-in gene `religion-seat-first-shrine`; see
         /// `advanced/religion_seat_first_shrine.rs`.
         religion_seat_first_shrine => enable_religion_seat_first_shrine, disable_religion_seat_first_shrine;
+        /// Opt-in gene `religion-seat-guards-the-race`; see
+        /// `advanced/religion_seat_guards_the_race.rs`.
+        religion_seat_guards_the_race => enable_religion_seat_guards_the_race, disable_religion_seat_guards_the_race;
         /// Opt-in gene `religion-seat-earns-its-prophet`; see
         /// [`Self::religion_seat_earns_its_prophet`].
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
