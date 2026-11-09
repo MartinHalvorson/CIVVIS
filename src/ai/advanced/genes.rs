@@ -5502,7 +5502,6 @@ pub const GENES: &[Gene] = &[
     // Missionary can be bought without one. See
     // `advanced/religion_seat_first_shrine.rs`.
     Gene { tag: "religion-seat-first-shrine", field: "religion_seat_first_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_first_shrine, disable: AdvancedAi::disable_religion_seat_first_shrine },
-||||||| 33a1f61f89
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

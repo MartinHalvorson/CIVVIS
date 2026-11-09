@@ -8424,7 +8424,6 @@ pub struct AdvancedAi {
     /// takes the queue. See `advanced/religion_seat_first_shrine.rs`. Off by
     /// default.
     religion_seat_first_shrine: bool,
-||||||| 33a1f61f89
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
