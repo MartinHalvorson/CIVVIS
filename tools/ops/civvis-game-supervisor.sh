@@ -1093,7 +1093,7 @@ while true; do
   played_games=0
   for PLAY in "$LOGS"/civvis-*-play.log(N); do
     [[ "$PLAY" -nt "$CYCLE_MARK" ]] || continue
-    grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null && played_games=$((played_games + 1))
+    grep -qE "^\[turn +[0-9]+\]" "$PLAY" 2>/dev/null && played_games=$((played_games + 1))
   done
   if (( played_games > 0 )); then
     consecutive_failures=0

@@ -156,8 +156,20 @@ SELF_STAMP=$(/usr/bin/stat -f '%m %z' "$SELF_PATH" 2>/dev/null || print -r -- "u
 STATE_READER=${CIVVIS_WEDGE_STATE_READER:-${SELF_DIR}/civvis_watchdog_state.py}
 LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
 INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-operator-intent}}
+# The operator's Pause (`tools/civ6_control/live_pause.py`, the CIVVIS page's
+# button). While it stands the control mod holds our turn ON PURPOSE, so every
+# signal below reads exactly like a wedge: no turn, no frame, the same token
+# poll after poll — and the remedy, SHIFT+RETURN then a restart, would end the
+# held turn and throw the game away. Present = paused, unless the file says
+# `"paused": false`; the same reading as `live_pause.requested()`.
+PAUSEFILE=${CIVVIS_LIVE_PAUSE_FILE:-$HOME/.civvis-live-pause.json}
 
 say() { print -r -- "[wedge] $(date -u +%FT%TZ) $*" >> "$LOG" }
+
+live_pause_requested() {
+  [[ -e "$PAUSEFILE" ]] || return 1
+  ! /usr/bin/grep -Eq '"paused"[[:space:]]*:[[:space:]]*false' "$PAUSEFILE" 2>/dev/null
+}
 
 verification_intent_running() {
   [[ -r "$INTENTFILE" ]] && [[ "$(<"$INTENTFILE")" == running ]]
@@ -379,6 +391,7 @@ handoff_climb=""
 handoff_polls=0
 last_unowned_tag=""
 unowned_reported_at=0
+paused_said=0
 while true; do
   sleep "$POLL_S"
   if ! verification_intent_running; then
@@ -399,6 +412,17 @@ while true; do
     # loop can simply hand over.
     rm -rf -- "$LOCK"
     exec /bin/zsh "$SELF_PATH"
+  fi
+  if live_pause_requested; then
+    (( paused_said )) || say "operator pause requested ($PAUSEFILE); standing down until it is lifted"
+    paused_said=1
+    strikes=0
+    reset_progress
+    continue
+  fi
+  if (( paused_said )); then
+    say "operator pause lifted; watching the game again"
+    paused_said=0
   fi
   # ⚠⚠ PICK THE RUN BY ITS events.jsonl, NOT BY ITS DIRECTORY. A directory's
   # mtime changes whenever an entry is created or removed in it — and opening a

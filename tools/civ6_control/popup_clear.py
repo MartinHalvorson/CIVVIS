@@ -49,6 +49,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from civ6_control import macos_capture, macos_input, macos_ocr  # noqa: E402
+try:
+    from civ6_control import live_pause  # noqa: E402
+except ImportError:  # a tree older than the operator's Pause
+    live_pause = None
 
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
@@ -166,6 +170,20 @@ def game_in_progress(runs_dir, fresh_seconds=180.0):
                 return True
         return False
     except OSError:
+        return False
+
+
+def operator_holds_game():
+    """True while the operator's Pause holds the live game (`live_pause`).
+
+    Every screen on a held game is the operator's: a leader they opened, the
+    pause menu, a governor panel. Unreadable means "not held", as before.
+    """
+    if live_pause is None:
+        return False
+    try:
+        return live_pause.holds_game()
+    except Exception:  # noqa: BLE001 - the backstop must never die on this
         return False
 
 
@@ -335,6 +353,63 @@ def _exact_interactive_capture(command):
 RECORDING_OUTPUT_SUFFIXES = (".mov", ".mp4", ".m4v", ".qtz")
 RECORDING_PATH_MARKERS = ("screen recording", "screenrecording")
 RECORDING_LSOF_TIMEOUT_S = 3.0
+#: ⚠⚠ WHERE THE MOVIE ACTUALLY IS. Measured 2026-10-08 on macOS 26 (an 8 s
+#: `screencapture -v` recording, lsof every 1.5 s): `screencapture` holds NO
+#: movie open -- `replayd` writes it, into this group container, and
+#: `screencapture` only moves it to the Desktop after the stop. (The host's
+#: recording guard has tracked Cmd-Shift-5 movies through replayd since
+#: 2026-10-03.) Asking `lsof -p <screencapture>` alone therefore answered "not
+#: recording" for every real recording, leaving the five-minute rule free to
+#: SIGKILL one whenever Civ VI's bootstrap probe missed a frame -- and a killed
+#: helper never hands its movie over, so the recording would be cut AND
+#: stranded in this folder, which Finder never shows.
+RECORDING_STAGING_DIR = (Path.home() / "Library" / "Group Containers"
+                         / "group.com.apple.screencapture" / "ScreenRecordings")
+
+
+def _holds_a_movie(lsof_output):
+    for line in lsof_output.splitlines():
+        if not line.startswith("n"):
+            continue
+        name = line[1:].casefold()
+        if name.endswith(RECORDING_OUTPUT_SUFFIXES):
+            return True
+        if any(marker in name for marker in RECORDING_PATH_MARKERS):
+            return True
+    return False
+
+
+def _replayd_writes_a_recording():
+    """True/False for whether replayd has a movie open; None when unreadable."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-w", "-c", "replayd", "-Fn"],
+            capture_output=True,
+            text=True,
+            timeout=RECORDING_LSOF_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # replayd runs permanently, so a healthy answer always names its process.
+    if not any(line.startswith("p") for line in result.stdout.splitlines()):
+        return None
+    return _holds_a_movie(result.stdout)
+
+
+def _staged_recording_waiting():
+    """True when a movie sits in screencapture's staging folder; None if unreadable.
+
+    After the stop `screencapture` still owes the hand-off (floating thumbnail,
+    Trim editor): killing it then strands a finished recording just as surely.
+    """
+    try:
+        names = os.listdir(RECORDING_STAGING_DIR)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    return any(name.casefold().endswith(RECORDING_OUTPUT_SUFFIXES) for name in names)
 
 
 def writes_a_recording(pid):
@@ -363,6 +438,10 @@ def writes_a_recording(pid):
     ⚠ Unreadable answers count as recording. Failing closed costs a stale helper
     the ladder waits on and reports, which it already knows how to do; failing
     open destroys a recording that cannot be recovered.
+
+    ⚠⚠ The helper's own files are not enough: see `RECORDING_STAGING_DIR`.
+    `replayd` holding a movie, or a movie waiting in staging for its hand-off,
+    counts as this helper recording too.
     """
     try:
         result = subprocess.run(
@@ -379,13 +458,10 @@ def writes_a_recording(pid):
     # has already gone. Both are real answers. Anything else is not.
     if result.returncode not in (0, 1):
         return True
-    for line in result.stdout.splitlines():
-        if not line.startswith("n"):
-            continue
-        name = line[1:].casefold()
-        if name.endswith(RECORDING_OUTPUT_SUFFIXES):
-            return True
-        if any(marker in name for marker in RECORDING_PATH_MARKERS):
+    if _holds_a_movie(result.stdout):
+        return True
+    for elsewhere in (_replayd_writes_a_recording, _staged_recording_waiting):
+        if elsewhere() is not False:
             return True
     return False
 
@@ -1165,7 +1241,26 @@ def main():
     warned_setup = False
     warned_cards = False
     last_pause_reason = None
+    warned_hold = False
     while True:
+        # ★ THE OPERATOR'S PAUSE. While the live game is held the operator is
+        # looking around it, and a click or an Escape from here would close
+        # the screen they opened under them (Escape on the map opens the pause
+        # menu, which this then "cleared"). Nothing is captured or clicked
+        # until they resume, and the episode counters start afresh then.
+        if operator_holds_game():
+            if not warned_hold:
+                log("the operator holds the game; leaving its screens to them")
+                warned_hold = True
+            if args.once:
+                return
+            time.sleep(max(MIN_POLL_SECONDS, args.interval))
+            continue
+        if warned_hold:
+            log("the operator resumed the game; popup checks back on")
+            warned_hold = False
+            esc_budget_used = advisor_stuck_passes = 0
+            leader_passes = no_target_passes = misses = 0
         # Do this before even probing capture or window geometry.  A pre-turn
         # Create Game screen is setup, not a popup, so it must have exclusive
         # access to System Events while the recorder's UI is present.
