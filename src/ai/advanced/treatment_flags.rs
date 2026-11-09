@@ -2064,6 +2064,8 @@ impl AdvancedAi {
         /// Opt-in gene `religion-lane-spreads-from-founding`; see
         /// [`Self::religion_lane_spreads_from_founding`].
         religion_lane_spreads_from_founding => enable_religion_lane_spreads_from_founding, disable_religion_lane_spreads_from_founding;
+        /// Opt-in `religion-finishes-majorities`; see `religion_majorities.rs`.
+        religion_finishes_majorities => enable_religion_finishes_majorities, disable_religion_finishes_majorities;
         /// Opt-in gene `board-ignores-the-faith-war`; see
         /// [`Self::board_ignores_the_faith_war`].
         board_ignores_the_faith_war => enable_board_ignores_the_faith_war, disable_board_ignores_the_faith_war;
