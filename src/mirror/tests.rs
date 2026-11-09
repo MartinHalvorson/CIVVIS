@@ -14384,6 +14384,106 @@ fn native_open_work_slots_do_not_relocate_palace_writing() {
         .contains("any"));
 }
 
+/// A live Apostle takes one promotion from a host-drawn three of nine, so the
+/// simulated draw named a promotion the host refused for 26 of 27 Apostles
+/// that went unpromoted on 2026-11-09.
+#[test]
+fn native_apostle_choices_replace_the_simulated_offer() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: (0..12)
+            .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let mut state = StateSnapshot {
+        turn: 120,
+        cities: vec![StateCity {
+            id: 1,
+            name: "Athens".into(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        }],
+        units: vec![StateUnit {
+            id: 3407895,
+            kind: "UNIT_APOSTLE".into(),
+            x: 5,
+            y: 5,
+            xp: Some(0),
+            level: Some(1),
+            promotions: Some(vec![]),
+            offered_promotions: Some(vec![
+                "PROMOTION_ORATOR".into(),
+                "PROMOTION_TRANSLATOR".into(),
+                "PROMOTION_MARTYR".into(),
+            ]),
+            spread_charges: Some(3),
+            ..StateUnit::default()
+        }],
+        ..StateSnapshot::default()
+    };
+    state.refused_promotions.insert(
+        3407895,
+        ["PROMOTION_DEBATER".into(), "PROMOTION_PROSELYTIZER".into()]
+            .into_iter()
+            .collect(),
+    );
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let uid = *mirror
+        .civ6_of
+        .iter()
+        .find(|(_, native)| **native == 3407895)
+        .unwrap()
+        .0;
+    let expected: BTreeSet<Name> = ["orator", "translator", "martyr"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    assert_eq!(
+        mirror
+            .game
+            .available_promotions(uid)
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        expected,
+        "the host's three cards replace the simulated draw and the old refusals"
+    );
+    assert!(
+        mirror.game.promotion_pending(uid),
+        "an offered card is a pending choice whatever the simulator's XP says"
+    );
+    // A name from another class is no card of an Apostle's.
+    state.units[0].offered_promotions =
+        Some(vec!["PROMOTION_ORATOR".into(), "PROMOTION_GOES_TO".into()]);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(
+        mirror.game.available_promotions(uid),
+        vec![crate::name!("orator")]
+    );
+    assert!(
+        mirror
+            .game
+            .apply(
+                0,
+                &crate::game::Action::Promote {
+                    unit: uid,
+                    promotion: crate::name!("orator")
+                }
+            )
+            .is_ok(),
+        "the host's card must be executable"
+    );
+    // Promoted: the host now offers nothing, and the choice is spent.
+    state.units[0].promotions = Some(vec!["PROMOTION_ORATOR".into()]);
+    state.units[0].offered_promotions = Some(vec![]);
+    mirror.sync(&snapshot, &state, 0);
+    assert!(mirror.game.available_promotions(uid).is_empty());
+    assert!(!mirror.game.promotion_pending(uid));
+
 /// A Guru's spread charges read 0 on the host, and its heals are a separate
 /// pool. All 21 live Gurus of 2026-11-09 therefore mirrored as empty and none
 /// ever healed, 13 Guru-turns of them beside a wounded unit of their faith.
@@ -14441,6 +14541,7 @@ fn a_guru_reads_its_heal_charges_and_can_heal() {
     mirror.sync(&snapshot, &state, 0);
     assert_eq!(mirror.game.units[&uid].charges, 0);
     assert!(!can_heal(&mirror), "a spent Guru has nothing to heal with");
+||||||| 90a32a32ac
 }
 
 #[test]

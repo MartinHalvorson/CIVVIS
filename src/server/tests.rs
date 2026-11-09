@@ -7212,7 +7212,18 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
     assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
-    assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
+    // ...measured first and written after, or every grip forces a layout of
+    // the whole masthead.
+    let grips = EMBEDDED_INDEX
+        .split("function syncPlayerHudColumnGrips() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function playerHudColumnFloor").next())
+        .expect("grips");
+    let measured = grips
+        .find("placed.push({grip, x:Math.round(left.right - origin),")
+        .expect("measure");
+    let written = grips.find("grip.style.left = `${x}px`;").expect("write");
+    assert!(measured < written);
     // The fitter has to measure the cell: the figure is centered content in
     // its own grid, so its clientWidth and scrollWidth are always equal and
     // it can never report the overflow that would shrink it.
