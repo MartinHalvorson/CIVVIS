@@ -1011,6 +1011,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // the diplomacy panel above already names every player, so this is
         // shown whole rather than through the viewer's fog.
         "wars": wars_json(g, &explored),
+        // Who stands with whom right now, pair by pair: the world-level
+        // answer `players[]` cannot give, because each row there only says
+        // how that civilization stands with the seat being observed.
+        "world_politics": world_politics_json(g, pid, omniscient),
         // Every detonation, newest last. Shown whole for the same reason wars
         // are: a mushroom cloud is not a thing one civilization keeps to
         // itself, and a client needs the account to place the blast on the map
@@ -1061,6 +1065,78 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     observation["units"] = Value::Array(units);
     observation["cities"] = Value::Array(cities);
     observation
+}
+
+/// The standing relationships between the world's major civilizations, one
+/// row per pair: its strongest bond (an alliance outranks the friendship it
+/// grew from) or the war between them.
+///
+/// A seat is told about pairs it has met both sides of, as in Civilization
+/// VI's own diplomacy screen; a spectator sees them all. City-states,
+/// barbarians and Free Cities have no place here: those last two are at war
+/// with everybody by definition, and a city-state follows its Suzerain, so
+/// listing them buries the pairs this exists to show. A battlefield is one
+/// undeclared war with nothing to negotiate, so it reports nothing.
+///
+/// A mirrored game knows its seat's own pacts and the wars between met rivals,
+/// but the host's export has never named a pact between two rivals. `partial`
+/// says so, so that a viewer does not read an empty list as a world without
+/// alliances.
+fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
+    let mut alliances = Vec::new();
+    let mut friendships = Vec::new();
+    let mut wars = Vec::new();
+    if !g.is_arena() {
+        let majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian && !p.is_free_city)
+            .filter(|p| omniscient || g.has_met(pid, p.id))
+            .map(|p| p.id)
+            .collect();
+        for (index, &first) in majors.iter().enumerate() {
+            for &second in &majors[index + 1..] {
+                if g.rivals_at_war(first, second) {
+                    // A war the host reported between two rivals has no
+                    // record here, so it has no known first turn.
+                    let since = g
+                        .wars
+                        .get(&(first.min(second), first.max(second)))
+                        .filter(|war| war.ended.is_none())
+                        .map(|war| war.started);
+                    wars.push((since, first, second));
+                } else if g.same_team(first, second) {
+                    alliances.push(json!({"first": first, "second": second, "kind": "team"}));
+                } else if let Some(alliance) = g.alliance_with(first, second) {
+                    alliances.push(json!({
+                        "first": first,
+                        "second": second,
+                        "kind": "alliance",
+                        "alliance": alliance.kind,
+                        "level": alliance.level,
+                        "until": alliance.ends,
+                    }));
+                } else if g.are_friends(first, second) {
+                    friendships.push(json!({
+                        "first": first,
+                        "second": second,
+                        "kind": "friendship",
+                        "until": g.players[first].friends_until.get(&second),
+                    }));
+                }
+            }
+        }
+    }
+    wars.sort_by_key(|&(since, first, second)| (since.unwrap_or(u32::MAX), first, second));
+    alliances.append(&mut friendships);
+    json!({
+        "bonds": alliances,
+        "wars": wars
+            .into_iter()
+            .map(|(since, first, second)| json!({"first": first, "second": second, "since": since}))
+            .collect::<Vec<_>>(),
+        "partial": !g.observed_leader_types.is_empty(),
+    })
 }
 
 /// Every conflict in progress, longest-running first, followed by the most

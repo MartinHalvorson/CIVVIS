@@ -483,11 +483,13 @@ end
 -- messages per guard kind. The message carries its own file and line.
 -- Table fields, not locals: the main chunk is at Civ VI's register ceiling.
 CivvisK.ERROR_LIMIT = 40;
+CivvisK.MOVE_FALLBACK_STEP = false;
 CivvisK.errors = { seen = {}, distinct = {} };
 function CivvisK.noteError(err, where)
 	pcall(function()
 		local errors = CivvisK.errors;
-		local message = string.sub(tostring(err), 1, 240);
+		-- The first line names the site; the traceback only varies with the caller.
+		local message = string.sub(string.match(tostring(err), "^[^\n]*"), 1, 240);
 		local count = errors.seen[message];
 		if count == nil then
 			local distinct = errors.distinct[where] or 0;
@@ -511,6 +513,14 @@ end
 function CivvisK.guard(fn)
 	local ok, err = pcall(fn);
 	if not ok then CivvisK.noteError(err, "guard"); end
+end
+
+-- `pcall` when the caller branches on success: the same answer, and the error
+-- is reported rather than reduced to a boolean.
+function CivvisK.attempt(fn)
+	local ok, err = pcall(fn);
+	if not ok then CivvisK.noteError(err, "attempt"); end
+	return ok;
 end
 
 -- Every read of the game API is guarded. A method this ruleset does not have,
@@ -1362,7 +1372,7 @@ local function rehost()
 	if cfg.LeaveBeforeHost == true then
 		left = pcall(function() Network.LeaveGame(); end);
 	end
-	local hosted = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
+	local hosted = CivvisK.attempt(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	emit("rehost_issued", { left = left, hosted = hosted });
 end
 
@@ -3287,7 +3297,7 @@ local function declareWar(player, pid, counts, turn)
 	local params = {};
 	params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 	params[PlayerOperations.PARAM_PLAYER_TWO] = target.player;
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_DECLARE_WAR, params);
 	end);
 	if ok then
@@ -4521,14 +4531,20 @@ local function cityReligion(city)
 end
 
 -- BEGIN visible foreign city religion
--- ReligionScreen.lua:1075-1076 reads CityReligion:GetMajorityReligion().
--- For foreign cities use only a currently visible plot. A failed read is an
--- unknown, while a successful -1 is an observed absence of majority.
+-- What a human sees on a rival city's banner with the Religion lens on, which
+-- includes a revealed city under fog. DLC/Expansion2/UI/CityBanners/
+-- CityBannerManager.lua:757-769 `CityBanner:IsVisible` is true for IsVisible
+-- OR IsRevealed, `RealizeReligion` (:3534-3547) calls `UpdateReligion` on every
+-- banner that passes it, and `UpdateReligion` (:1903-1918) reads
+-- `pCity:GetReligion():GetMajorityReligion()` from the live city. Base
+-- ReligionScreen.lua:1075-1076 reads the same accessor. An unrevealed city or a
+-- failed read is an unknown; a successful -1 is an observed absence of majority.
 function CivvisReligionState.visibleCity(pid, city)
-	local visible = try(function()
-		return PlayersVisibility[pid]:IsVisible(city:GetX(), city:GetY());
+	local shown = try(function()
+		local seat, x, y = PlayersVisibility[pid], city:GetX(), city:GetY();
+		return seat:IsVisible(x, y) or seat:IsRevealed(x, y);
 	end, false);
-	if visible ~= true then return false, nil; end
+	if shown ~= true then return false, nil; end
 	local ok, id = pcall(function() return city:GetReligion():GetMajorityReligion(); end);
 	if not ok or type(id) ~= "number" then return false, nil; end
 	if id < 0 then return true, nil; end
@@ -4811,7 +4827,7 @@ local function driveProduction(player, turn, force)
 						-- its next genuine candidate instead of blocking every turn.
 						rejected[name] = true;
 					else
-						local ok = pcall(function()
+						local ok = CivvisK.attempt(function()
 							CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 						end);
 						if ok then
@@ -4872,7 +4888,7 @@ local function chooseResearch(player, pid)
 				params[PlayerOperations.PARAM_TECH_TYPE] =
 					try(function() return techs:GetResearchPath(row.Hash); end) or row.Hash;
 				params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-				local ok = pcall(function()
+				local ok = CivvisK.attempt(function()
 					UI.RequestPlayerOperation(pid, PlayerOperations.RESEARCH, params);
 				end);
 				if ok then return name .. ":war"; end
@@ -4891,7 +4907,7 @@ local function chooseResearch(player, pid)
 	params[PlayerOperations.PARAM_TECH_TYPE] =
 		try(function() return techs:GetResearchPath(best.Hash); end) or best.Hash;
 	params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		UI.RequestPlayerOperation(pid, PlayerOperations.RESEARCH, params);
 	end);
 	return ok and best.TechnologyType or nil;
@@ -4986,7 +5002,7 @@ local function chooseDedication(player, pid)
 		if choice ~= nil then
 			local params = {};
 			params[param] = choice;
-			local ok = pcall(function()
+			local ok = CivvisK.attempt(function()
 				UI.RequestPlayerOperation(pid, operation, params);
 			end);
 			if ok then
@@ -5003,7 +5019,7 @@ local function chooseDedication(player, pid)
 			if offered[name] ~= nil then
 				local params = {};
 				params[param] = offered[name];
-				local ok = pcall(function()
+				local ok = CivvisK.attempt(function()
 					UI.RequestPlayerOperation(pid, operation, params);
 				end);
 				if ok then taken = 1; break; end
@@ -5074,7 +5090,7 @@ CivvisReligionFounding.confirm = function(player, pid, choice)
 			return false;
 		end
 	end
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		local found = {};
 		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
 		found[PlayerOperations.PARAM_RELIGION_TYPE] = choice.religion_hash;
@@ -5138,7 +5154,7 @@ local function chooseGovernor(player, pid)
 					-- The stock GovernorPanel operation contract takes the row INDEX.
 					-- This used to send Hash and produced the repeatable Game Core crash.
 					params[govParam] = row.Index;
-					local ok = pcall(function()
+					local ok = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(pid, appointOp, params);
 					end);
 					if ok then appointed = wanted; break; end
@@ -5214,7 +5230,7 @@ local function chooseGovernor(player, pid)
 					params[govParam] = row.Index;
 					params[playerParam] = pid;
 					params[cityParam] = target;
-					local ok = pcall(function()
+					local ok = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(pid, assignOp, params);
 					end);
 					if ok then
@@ -5246,7 +5262,7 @@ local function chooseCivic(player, pid)
 	params[PlayerOperations.PARAM_CIVIC_TYPE] =
 		try(function() return culture:GetCivicPath(best.Hash); end) or best.Hash;
 	params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		UI.RequestPlayerOperation(pid, PlayerOperations.PROGRESS_CIVIC, params);
 	end);
 	return ok and best.CivicType or nil;
@@ -5316,7 +5332,7 @@ local function fillPolicies(player)
 		end
 	end
 	if added == 0 then return nil; end
-	local ok = pcall(function() culture:RequestPolicyChanges(clearList, addList); end);
+	local ok = CivvisK.attempt(function() culture:RequestPolicyChanges(clearList, addList); end);
 	return ok and ("policies+" .. added) or nil;
 end
 
@@ -5356,7 +5372,7 @@ local function chooseGovernment(player)
 		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
 		return nil;
 	end
-	local ok = pcall(function() culture:RequestChangeGovernment(best.Hash); end);
+	local ok = CivvisK.attempt(function() culture:RequestChangeGovernment(best.Hash); end);
 	pcall(function() culture:SetGovernmentChangeConsidered(true); end);
 	return ok and best.GovernmentType or nil;
 end
@@ -5370,7 +5386,7 @@ local function choosePantheon(player, pid)
 			if taken == false then
 				local params = {};
 				params[PlayerOperations.PARAM_BELIEF_TYPE] = row.Hash;
-				local ok = pcall(function()
+				local ok = CivvisK.attempt(function()
 					UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_PANTHEON, params);
 				end);
 				if ok then return row.BeliefType; end
@@ -5649,7 +5665,7 @@ local function chooseEnvoy(player, pid, turn)
 				if cost >= 0 and purse >= cost then
 					local params = {};
 					params[oneParam] = minor.id;
-					local ok = pcall(function()
+					local ok = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(pid, levyOp, params);
 					end);
 					if ok then levied = minor.id; end
@@ -5693,7 +5709,7 @@ local function chooseEnvoy(player, pid, turn)
 				for _ = 1, want do
 					local params = {};
 					params[oneParam] = minor.id;
-					local ok = pcall(function()
+					local ok = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(pid, giveOp, params);
 					end);
 					if not ok then break; end
@@ -6097,7 +6113,7 @@ local function answerBlocker(player, pid, blocker, turn, residual_ok)
 		local params = {};
 		params[PlayerOperations.PARAM_BELIEF_TYPE] = pendingReligionChoice.belief_hash;
 		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
 		end);
 		if ok then pendingReligionChoice.add_requested = true; end
@@ -6915,7 +6931,9 @@ CivvisMenus.buildable = function(city)
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
-					local canCorps = try(function()
+					-- `results` is nil when the host has nothing to report, and the
+					-- panel checks for that first (ProductionPanel.lua:2158).
+					local canCorps = results ~= nil and try(function()
 						return results[CityOperationResults.CAN_TRAIN_CORPS] == true;
 					end, false);
 					if corps ~= nil and canCorps
@@ -6928,7 +6946,7 @@ CivvisMenus.buildable = function(city)
 							r = CivvisMenus.resource_cost(queue, row.Index, corps),
 						};
 					end
-					local canArmy = try(function()
+					local canArmy = results ~= nil and try(function()
 						return results[CityOperationResults.CAN_TRAIN_ARMY] == true;
 					end, false);
 					if army ~= nil and canArmy
@@ -7263,8 +7281,10 @@ end;
 
 CivvisExportClock = { marks = nil };
 CivvisExportClock.now = function()
-	local raw = try(function() return os.rawclock(); end, nil);
-	local per = try(function() return os.clockpersecond(); end, nil);
+	-- Asked before called: the live context has neither, and a raise per export
+	-- was the commonest error the agent reported.
+	local raw = try(function() return type(os.rawclock) == "function" and os.rawclock() or nil; end, nil);
+	local per = try(function() return type(os.clockpersecond) == "function" and os.clockpersecond() or nil; end, nil);
 	if type(raw) == "number" and type(per) == "number" and per > 0 then
 		return raw / per, "raw";
 	end
@@ -7379,7 +7399,7 @@ CivvisCitizenGrowth.command = function(city, enable)
 		return CityManager.CanStartCommand(city, CityCommandTypes.SET_FOCUS, params);
 	end, false);
 	if can ~= true then return false, "cannot_set_food_focus"; end
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		CityManager.RequestCommand(city, CityCommandTypes.SET_FOCUS, params);
 	end);
 	return ok, ok and "food_focus_requested" or "food_focus_throw";
@@ -12013,7 +12033,7 @@ local function attachOrders()
 		ordersAttached = false;
 		return false;
 	end
-	local ok = pcall(function()
+	local ok = CivvisK.attempt(function()
 		DB.Query("ATTACH DATABASE '" .. sqlSafe(path) .. "' AS civvis");
 	end);
 	-- Prove the attach by reading through it, not by the absence of a throw:
@@ -12616,7 +12636,7 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		CivvisK.guard(function()
 			LuaEvents.CivvisDealSession(other, true, cfg.DealAnswerHoldSeconds or 30);
 		end);
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
 		end);
 		emit("deal_session", { turn = turn, target = other, kind = session.kind,
@@ -12648,7 +12668,7 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	-- it is refused the way DiplomacyDealView.lua OnRefuseDeal does
 	-- (SendWorkingDeal REJECTED, then CloseSession).
 	if session.counter_wait ~= nil then
-		local rejected = pcall(function()
+		local rejected = CivvisK.attempt(function()
 			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
 		end);
 		emit("counter_answered", { turn = turn, target = other, kind = session.kind,
@@ -14207,7 +14227,7 @@ local function applyOrder(player, pid, row, turn)
 		-- The disabled legacy path sent Hash here, which is the root cause of its
 		-- repeatable game-core crash.
 		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, PlayerOperations.APPOINT_GOVERNOR, params);
 		end);
 		if not ok then pendingGovernorAssignments[pid] = nil; end
@@ -14234,7 +14254,7 @@ local function applyOrder(player, pid, row, turn)
 		local params = {};
 		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
 		params[PlayerOperations.PARAM_GOVERNOR_PROMOTION_TYPE] = promotion.Index;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, PlayerOperations.PROMOTE_GOVERNOR, params);
 		end);
 		return ok, ok and (governorName .. ":" .. promotionName)
@@ -14269,7 +14289,7 @@ local function applyOrder(player, pid, row, turn)
 						end, false) then
 							return false, "gp_cannot_recruit";
 						end
-						local ok = pcall(function()
+						local ok = CivvisK.attempt(function()
 							UI.RequestPlayerOperation(
 								pid, PlayerOperations.RECRUIT_GREAT_PERSON, params);
 						end);
@@ -14284,7 +14304,7 @@ local function applyOrder(player, pid, row, turn)
 						return false, "gp_cannot_patronize";
 					end
 					params[PlayerOperations.PARAM_YIELD_TYPE] = yield;
-					local ok = pcall(function()
+					local ok = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(
 							pid, PlayerOperations.PATRONIZE_GREAT_PERSON, params);
 					end);
@@ -14339,7 +14359,7 @@ local function applyOrder(player, pid, row, turn)
 		end, false) then
 			return false, "cannot_" .. string.lower(verb);
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(city, CityCommandTypes.DESTROY, params);
 		end);
 		emit("city_disposition", {
@@ -14372,7 +14392,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local warRefusal = CivvisLedger.refuseWarStarter(city, subject, "CITY_STRIKE", x, y, turn);
 		if warRefusal ~= nil then return false, warRefusal; end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(city, CityCommandTypes.RANGE_ATTACK, params);
 		end);
 		return ok, ok and "CITY_STRIKE" or "city_strike_throw";
@@ -14413,7 +14433,7 @@ local function applyOrder(player, pid, row, turn)
 		end, false) then return false, "district_strike_refused"; end
 		local warRefusal = CivvisLedger.refuseWarStarter(district, subject, "RANGE_ATTACK", x, y, turn);
 		if warRefusal ~= nil then return false, warRefusal; end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(district, CityCommandTypes.RANGE_ATTACK, params);
 		end);
 		return ok, ok and "RANGE_ATTACK" or "district_strike_throw";
@@ -14454,7 +14474,7 @@ local function applyOrder(player, pid, row, turn)
 		local warRefusal = CivvisLedger.refuseWarStarter(
 			encampment, subject, "ENCAMPMENT_STRIKE", x, y, turn);
 		if warRefusal ~= nil then return false, warRefusal; end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(
 				encampment, CityCommandTypes.RANGE_ATTACK, params);
 		end);
@@ -14552,7 +14572,7 @@ local function applyOrder(player, pid, row, turn)
 		local params = {};
 		params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 		params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			if major then
 				DiplomacyManager.RequestSession(pid, subject, CivvisWarDeclarations.statements[statement]);
 			else
@@ -14707,7 +14727,7 @@ local function applyOrder(player, pid, row, turn)
 		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
 			return false, "delegation_cooldown";
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			DiplomacyManager.RequestSession(pid, subject, verb);
 		end);
 		if ok then peaceAsked[key] = turn; end
@@ -14737,7 +14757,7 @@ local function applyOrder(player, pid, row, turn)
 		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
 			return false, "denounce_cooldown";
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			DiplomacyManager.RequestSession(pid, subject, "DENOUNCE");
 		end);
 		if ok then peaceAsked[key] = turn; end
@@ -14782,7 +14802,7 @@ local function applyOrder(player, pid, row, turn)
 		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
 			return false, "friendship_cooldown";
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			DiplomacyManager.RequestSession(pid, subject, "DECLARE_FRIEND");
 		end);
 		if ok then peaceAsked[key] = turn; end
@@ -14793,7 +14813,7 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "alliance" then
 		local step, why = CivvisAllianceStep(player, pid, subject, verb, turn, cfg);
 		if step == "friendship" then
-			local ok = pcall(function()
+			local ok = CivvisK.attempt(function()
 				DiplomacyManager.RequestSession(pid, subject, "DECLARE_FRIEND");
 			end);
 			if ok then peaceAsked["DECLARE_FRIEND" .. subject] = turn; end
@@ -15471,7 +15491,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local params = {};
 		params[oneParam] = subject;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, giveOp, params);
 		end);
 		-- ⚠ NO SAME-FRAME "AFTER" COUNT. The first version of this event read
@@ -15519,7 +15539,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local params = {};
 		params[oneParam] = subject;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, levyOp, params);
 		end);
 		if ok then
@@ -15850,7 +15870,7 @@ local function applyOrder(player, pid, row, turn)
 		-- result: from the Oligarchy switch (~t57) to t250 exactly ONE card
 		-- stayed slotted while slots grew to 6 and 551 policy orders counted
 		-- `applied` — accepted by pcall, discarded by the engine.
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			culture:RequestPolicyChanges({ target }, addList);
 		end);
 		-- The policy layer had ZERO provenance events, so an accepted-but-
@@ -15928,7 +15948,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local params = {};
 		params[param] = selected;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, operation, params);
 		end);
 		return ok, ok and verb or "dedication_throw";
@@ -15956,7 +15976,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local params = {};
 		params[PlayerOperations.PARAM_BELIEF_TYPE] = row2.Hash;
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_PANTHEON, params);
 		end);
 		return ok, ok and resolved or "throw";
@@ -16043,7 +16063,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		-- Only activate now. The blocker/export path submits the retained
 		-- choice after the native earned-belief gate opens, as the UI does.
-		local ok = pcall(function() UnitManager.RequestOperation(prophet, foundOperation.Hash); end);
+		local ok = CivvisK.attempt(function() UnitManager.RequestOperation(prophet, foundOperation.Hash); end);
 		if not ok then pendingReligionChoice = nil; end
 		return ok, ok and "religion_activation_requested" or "throw";
 	end
@@ -16074,7 +16094,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
 		local op = isTech and PlayerOperations.RESEARCH or PlayerOperations.PROGRESS_CIVIC;
-		local ok = pcall(function() UI.RequestPlayerOperation(pid, op, params); end);
+		local ok = CivvisK.attempt(function() UI.RequestPlayerOperation(pid, op, params); end);
 		return ok, ok and verb or "throw";
 	end
 
@@ -16360,7 +16380,7 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return false, canOk and ("cannot_start_" .. verb) or "can_produce_throw";
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 		end);
 		if ok and verb == "UNIT_SETTLER" then
@@ -16431,7 +16451,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "plot_price_changed";
 			end
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
 		end);
 		return ok, ok and "bought_plot" or "throw";
@@ -16620,7 +16640,7 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return false, "cannot_buy_" .. resolved;
 		end
-		local ok = pcall(function()
+		local ok = CivvisK.attempt(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
 		end);
 		return ok, ok and resolved or "throw";
@@ -16741,7 +16761,7 @@ local function applyOrder(player, pid, row, turn)
 				return UnitManager.CanStartCommand(unit, hash, params);
 			end);
 			if not (okCan and can == true) then return false, "cannot_enter_formation"; end
-			local ok = pcall(function()
+			local ok = CivvisK.attempt(function()
 				UnitManager.RequestCommand(unit, hash, params);
 			end);
 			return ok, ok and verb or "throw";
@@ -16794,7 +16814,7 @@ local function applyOrder(player, pid, row, turn)
 			if not (okCan and can == true) then
 				return false, "cannot_" .. string.lower(verb);
 			end
-			local ok = pcall(function()
+			local ok = CivvisK.attempt(function()
 				UnitManager.RequestCommand(unit, hash, params);
 			end);
 			return ok, ok and verb or "throw";
@@ -17765,7 +17785,7 @@ local function applyOrder(player, pid, row, turn)
 			end
 			local params = {};
 			params[UnitCommandTypes.PARAM_PROMOTION_TYPE] = promotion.Index;
-			local ok = pcall(function()
+			local ok = CivvisK.attempt(function()
 				UnitManager.RequestCommand(unit, hash, params);
 			end);
 			return ok, ok and verb or "throw";
@@ -17901,9 +17921,9 @@ applyOrder = function(player, pid, row, turn)
 	local frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0;
 	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = frame,
 		order = { kind = row.kind, subject = row.subject, verb = row.verb, x = row.x, y = row.y } });
-	local before = pcall(function() exportState(player, pid, turn, frame, "action_transition_before"); end);
+	local before = CivvisK.attempt(function() exportState(player, pid, turn, frame, "action_transition_before"); end);
 	local safe, accepted, why = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
-	local after = pcall(function() exportState(player, pid, turn, frame, "action_transition_after"); end);
+	local after = CivvisK.attempt(function() exportState(player, pid, turn, frame, "action_transition_after"); end);
 	emit("action_transition_end", { sequence = sequence, turn = turn, frame = frame,
 		accepted = safe and accepted == true, why = tostring(why or ""),
 		before_export = before, after_export = after, phase = "request_boundary", threw = not safe });
@@ -17933,7 +17953,7 @@ CivvisActionProbe.tick = function(player, pid, turn)
 				and unit:GetMovesRemaining() < pending.moves;
 		end, false);
 		if not arrived and pending.ticks < 120 and turn == pending.turn then return true; end
-		local after = pcall(function()
+		local after = CivvisK.attempt(function()
 			exportState(player, pid, turn, 0, "action_transition_after");
 		end);
 		emit("action_transition_end", { sequence = pending.sequence, turn = turn, frame = 0,
@@ -17973,7 +17993,7 @@ CivvisActionProbe.tick = function(player, pid, turn)
 	local sequence = CivvisTransitions.sequence;
 	emit("action_transition_begin", { sequence = sequence, turn = turn, frame = 0, order = row,
 		isolated = true, source = "diagnostic_probe" });
-	local before = pcall(function() exportState(player, pid, turn, 0, "action_transition_before"); end);
+	local before = CivvisK.attempt(function() exportState(player, pid, turn, 0, "action_transition_before"); end);
 	local safe, accepted = pcall(function() return CivvisTransitions.apply(player, pid, row, turn); end);
 	if not safe or not accepted then
 		emit("action_transition_end", { sequence = sequence, turn = turn, frame = 0,
@@ -20531,18 +20551,6 @@ CivvisBoard.noteMoveAttempt = function(subject, turn, fromX, fromY, wantX, wantY
 	};
 end;
 
--- The six plots around (x, y), in direction order, skipping the map edge.
-CivvisBoard.adjacentPlots = function(x, y)
-	local out = {};
-	CivvisK.guard(function()
-		for direction = 0, DirectionTypes.NUM_DIRECTION_TYPES - 1 do
-			local plot = Map.GetAdjacentPlot(x, y, direction);
-			if plot ~= nil then out[#out + 1] = plot; end
-		end
-	end);
-	return out;
-end;
-
 -- Every plot a combat unit of a player we are at war with stands on, the
 -- Barbarian seat included, keyed "x,y".
 CivvisBoard.hostilePlots = function(pid)
@@ -20602,10 +20610,8 @@ end;
 -- How many of the plots around (x, y) hold a hostile combat unit.
 CivvisBoard.hostileAdjacent = function(hostile, x, y)
 	local n = 0;
-	for _, plot in ipairs(CivvisBoard.adjacentPlots(x, y)) do
-		local px = tonumber(try(function() return plot:GetX(); end, nil));
-		local py = tonumber(try(function() return plot:GetY(); end, nil));
-		if px ~= nil and py ~= nil and hostile[px .. "," .. py] then n = n + 1; end
+	for _, point in ipairs(CivvisBoard.adjacentPlots(x, y)) do
+		if hostile[point.x .. "," .. point.y] then n = n + 1; end
 	end
 	return n;
 end;
@@ -20725,16 +20731,20 @@ end;
 -- Once per unit per turn. Returns the plot sent, or nil.
 CivvisBoard.fallbackStep = function(player, pid, unit, subject, fromX, fromY, wantX, wantY, turn, why)
 	if cfg.MoveFallback == false then return nil; end
+	-- ⚠ NEVER YET RUN IN A LIVE GAME: `adjacentPlots` was defined twice, and the
+	-- version this was written against was overwritten, so every neighbour read
+	-- nil and 107 games on disk hold no `move_fallback`. Off until the first
+	-- games on the corrected no-op reading say what it would answer.
+	if not CivvisK.MOVE_FALLBACK_STEP then return nil; end
 	local attempt = CivvisBoard.moveAttempts[subject];
 	if attempt ~= nil and attempt.turn == turn and attempt.fallback == true then return nil; end
 	local hostile = CivvisBoard.hostilePlots(pid);
 	local own = CivvisBoard.ownDomainsAt(player);
 	local domain = CivvisBoard.unitDomain(unit);
 	local best = nil;
-	for index, plot in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
-		local px = tonumber(try(function() return plot:GetX(); end, nil));
-		local py = tonumber(try(function() return plot:GetY(); end, nil));
-		if px ~= nil and py ~= nil and not (px == wantX and py == wantY) then
+	for index, point in ipairs(CivvisBoard.adjacentPlots(fromX, fromY)) do
+		local px, py = point.x, point.y;
+		if not (px == wantX and py == wantY) then
 			local key = px .. "," .. py;
 			local stacked = own[key] ~= nil and domain ~= nil and own[key][domain] == true;
 			if not hostile[key] and not stacked then
@@ -20790,6 +20800,15 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	end
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
+	local native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start");
+	-- ★ A WALK IN FLIGHT IS NOT A NO-OP. The host answers "cannot start" with no
+	-- reasons while it is still walking the unit we sent. Seven live games, read
+	-- against the next state: of those named in the first ticks 8,394 stood on
+	-- the wanted plot and 360 had not moved; every other reason reached it 0 times.
+	if why == "cannot_start" and entry.stall_probe == nil and (entry.wait or 0) < 5
+			and string.find(tostring(native.operation_failure), "no_reasons", 1, true) then
+		return false;
+	end
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
 	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
 	if stalled ~= nil then entry.stall_resolved = true; end
@@ -20797,7 +20816,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
-		native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start"),
+		native = native,
 		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
@@ -22394,7 +22413,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 		turn = turn, frame = CivvisFrames.current, reason = reason,
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
 	});
-	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+	CivvisK.guard(function() exportState(player, pid, turn, CivvisFrames.current); end);
 	return true;
 end;
 
@@ -22515,7 +22534,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- usually before this turn's first batch lands, so the batch renews a
 	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
 	if dialogueNoWar then
-		local leased = pcall(function() LuaEvents.CivvisDialogueNoWar(turn); end);
+		local leased = CivvisK.attempt(function() LuaEvents.CivvisDialogueNoWar(turn); end);
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
 			policy = "DIALOGUE_NEVER_DECLARES_WAR", leased = leased,
@@ -23136,7 +23155,7 @@ end
 
 local function beginTurn(player, pid, turn)
 	-- First, before anything else this turn can change the roster.
-	pcall(function() reportLostCities(player, pid, turn); end);
+	CivvisK.guard(function() reportLostCities(player, pid, turn); end);
 	if cfg.ProbeChannels then probeChannels(turn); end
 	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
 	-- change within a game, and one line per district per city per turn would
@@ -23200,7 +23219,7 @@ local function beginTurn(player, pid, turn)
 		envoyTally.pending = nil;
 	end);
 	if cfg.EnvoyEnabled then
-		pcall(function() chooseEnvoy(player, pid, turn); end);
+		CivvisK.guard(function() chooseEnvoy(player, pid, turn); end);
 	end
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
@@ -24087,7 +24106,7 @@ end;
 CivvisQueue.startTimescale = function(want)
 	want = tonumber(want);
 	if want == nil or want <= 1 or want > 8 or CivvisQueue.timescale ~= nil then return false; end
-	local ack = pcall(function() ExposedMembers.CivvisClockAck = { scale = {}, at = {} }; end);
+	local ack = CivvisK.attempt(function() ExposedMembers.CivvisClockAck = { scale = {}, at = {} }; end);
 	local ran, result = false, "no shared table";
 	if ack then
 		ran, result = pcall(function()
@@ -24134,7 +24153,7 @@ CivvisQueue.timescaleBlock = function(turn)
 	if ts == nil or not ts.applied or ts.reverted or ab == nil or turn == nil then return; end
 	local want = ab[(math.floor(turn / ab.turns) % 2) + 1];
 	if want == CivvisClock.scale then return; end
-	local ran = pcall(function() return AutoProfiler.RunCommand("timescale " .. tostring(want)); end);
+	local ran = CivvisK.attempt(function() return AutoProfiler.RunCommand("timescale " .. tostring(want)); end);
 	if not ran then CivvisQueue.resetTimescale("ab_switch_failed"); return; end
 	CivvisClock.setScale(want);
 	ts.want, ts.slow_frames = want, 0;
@@ -24547,7 +24566,7 @@ function CivvisBoard.restartPoll()
 	-- (`CivvisBoard.restartFromCore`, at the head of `onGameCoreTick`).
 	if mode == 4 or mode == 5 then
 		restart.deferred = mode;
-		local ended = pcall(function()
+		local ended = CivvisK.attempt(function()
 			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
 		end);
 		emit("restart_deferred", { mode = mode, ended = ended });
@@ -24828,7 +24847,7 @@ local function tick()
 				if action == nil then
 					emit("retire_failed", { why = "no_action_type" });
 				else
-					local asked = pcall(function() UI.RequestAction(action); end);
+					local asked = CivvisK.attempt(function() UI.RequestAction(action); end);
 					emit(asked and "retired" or "retire_failed",
 					     { why = asked and "requested" or "refused" });
 				end
@@ -25396,7 +25415,7 @@ local function tick()
 					-- Match the shipped OnAccept request: one operation carries the
 					-- complete vote count. A successful pcall records a request,
 					-- not acceptance; GetReview verifies the complete selection.
-					local sent = pcall(function()
+					local sent = CivvisK.attempt(function()
 						UI.RequestPlayerOperation(pid,
 							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
 					end);
@@ -25474,10 +25493,10 @@ local function tick()
 		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
-			local hookedLua = pcall(function()
+			local hookedLua = CivvisK.attempt(function()
 				LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);
 			end);
-			local hookedStage = pcall(function()
+			local hookedStage = CivvisK.attempt(function()
 				Events.WorldCongressStage1.Add(function(playerID)
 					if tonumber(playerID) == pid then
 						emit("wc_vote", {
@@ -26104,7 +26123,7 @@ local function ensureStarted()
 	if ticks < (cfg.StartAfterTicks or 3) then return; end
 	started = true;
 
-	pcall(resolveActions);
+	CivvisK.guard(resolveActions);
 
 	-- Try to impose a turn limit from inside the game.
 	--
@@ -26126,7 +26145,7 @@ local function ensureStarted()
 		});
 	end
 
-	pcall(survey);
+	CivvisK.guard(survey);
 	-- The load screen waits on a keypress before the first turn runs, and
 	-- nothing in any log says so -- a harness watching for turn data sees only
 	-- a hang. Both dismissals the shipped screen offers are attempted.
@@ -26142,7 +26161,7 @@ local function ensureStarted()
 	local marker = try(function() return GameConfiguration.GetValue("CIVVIS_SETUP"); end);
 	if cfg.Rehost ~= false and (marker == nil or marker == "") then
 		finished = true;  -- do not play the throwaway game
-		pcall(rehost);
+		CivvisK.guard(rehost);
 	end
 end
 
@@ -26544,7 +26563,7 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 	-- can still retry; a normal return is only a submitted operation, not a
 	-- claimed membership or score change.
 	if turn >= 0 then peaceAsked[key] = turn; end
-	local submitted = pcall(function()
+	local submitted = CivvisK.attempt(function()
 		UI.RequestPlayerOperation(pid, accept, parameters);
 	end);
 	if not submitted and turn >= 0 and peaceAsked[key] == turn then

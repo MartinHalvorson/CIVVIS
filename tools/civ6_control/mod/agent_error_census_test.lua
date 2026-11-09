@@ -63,6 +63,12 @@ emitted = {}
 K.noteError({}, "guard")
 assert(type(emitted[1].message) == "string", "a table thrown as an error still reports")
 
+-- A traceback is not part of the site: two callers are one message.
+emitted = {}
+K.noteError("Agent:60: boom\nstack traceback:\n\tfrom one caller", "guard")
+K.noteError("Agent:60: boom\nstack traceback:\n\tfrom another caller", "guard")
+assert(#emitted == 1 and emitted[1].message == "Agent:60: boom", "only the first line is the key")
+
 -- guard: failure is reported, success is silent, neither escapes.
 emitted = {}
 K.guard(function() error("Agent:7: boom") end)
@@ -70,6 +76,12 @@ assert(#emitted == 1 and emitted[1].where == "guard", "guard reports a failure")
 emitted = {}
 K.guard(function() return 1 end)
 assert(#emitted == 0, "guard says nothing when the work succeeds")
+
+-- attempt: the same boolean as pcall, and the failure is reported.
+emitted = {}
+assert(K.attempt(function() return 1 end) == true and #emitted == 0, "attempt reports success silently")
+assert(K.attempt(function() error("Agent:8: nope") end) == false, "attempt answers false on failure")
+assert(#emitted == 1 and emitted[1].where == "attempt", "attempt reports what it caught")
 
 -- A report that itself fails must not take the turn down.
 env.emit = function() error("the log is gone") end
@@ -80,4 +92,8 @@ assert(pcall(K.guard, function() error("Agent:51: boom") end), "guard never thro
 assert(source:find('CivvisK.noteError(result, "try");', 1, true), "try() reports what it catches")
 assert(source:find("CivvisK.guard(function() fn(unit); end);", 1, true), "eachUnit reports per unit")
 assert(source:find("CivvisK.guard(function() fn(city); end);", 1, true), "eachCity reports per city")
+for _, name in ipairs({ "resolveActions", "survey", "rehost" }) do
+	assert(source:find("CivvisK.guard(" .. name .. ");", 1, true), name .. " reports what it swallows")
+end
+assert(source:find("CivvisK.guard(function() exportState(", 1, true), "a lost state export is reported")
 print("agent error census checks passed")

@@ -571,6 +571,36 @@ class AttachSummaryTests(unittest.TestCase):
                          {"spaceport_turn": 201, "launches_completed": 2,
                           "last_launch_turn": 219})
 
+    def test_attached_summary_carries_the_progress_marks_to_the_ladder_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "civvis-attach-progress"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").write_text("".join(
+                json.dumps(row) + "\n" for row in [
+                    {"kind": "seat", "local_player": 0},
+                    {"kind": "state", "turn": 100, "frame": 0,
+                     "public_stats": {"population": 40, "production": 70.0},
+                     "science": 45.0, "cities_following_religion": 6,
+                     "founded_religion": "RELIGION_BUDDHISM",
+                     "cities": [{"original_owner": 1, "original_capital": True}],
+                     "rivals": [{"player": 1, "religion": "RELIGION_BUDDHISM"}]},
+                ]))
+            args = SimpleNamespace(
+                tag=run_dir.name, ruleset="RULESET_EXPANSION_2", game_mode=[],
+                civvis_decides=True, civvis_victory="religious",
+                civvis_without=[], civvis_with=[], move_fallback=True)
+            config = {"Difficulty": "DIFFICULTY_DEITY",
+                      "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE",
+                      "MapSeed": None, "MaxTurns": 250}
+            state = {"turn": 100, "score": 300, "outcome": None,
+                     "configured": True, "modes": [],
+                     "ruleset": "RULESET_EXPANSION_2"}
+            summary = civ6_play.attached_summary(
+                args, config, state, run_dir, "completed")
+        self.assertEqual(summary["economy_marks"]["100"]["population"], 40)
+        self.assertEqual(summary["religion_marks"]["at"]["100"]["converted"], 1)
+        self.assertEqual(summary["conquest_marks"]["at"]["100"]["capitals"], 1)
+
     def test_setup_timing_is_inert_until_the_clock_runs(self):
         calls = []
         timed = civ6_play._setup_timed("step", lambda x: calls.append(x) or x * 2)

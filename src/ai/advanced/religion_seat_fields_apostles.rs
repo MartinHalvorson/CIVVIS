@@ -89,8 +89,8 @@
 
 use super::*;
 
-/// The Apostle cap's ceiling. Each carries three charges, so six are eighteen
-/// charges in the field, which covers the majorities of five rivals.
+/// Bound on concurrent Apostles; the estimated remaining workload raises the
+/// target up to this ceiling. Charges alone do not guarantee conversions.
 const APOSTLE_CAP_CEILING: usize = 6;
 
 /// One more Apostle for this many major-power cities not yet following us.
@@ -116,22 +116,42 @@ impl AdvancedAi {
             && g.players[pid].religion.is_some()
     }
 
-    /// Major-power cities we can see that do not follow this seat's faith.
+    /// Estimate the major-power cities that may still need this seat's faith.
+    /// Public totals include cities whose locations and religions are unknown;
+    /// they size the corps without inventing targets or religious pressure.
     fn unconverted_major_cities(g: &Game, pid: usize) -> usize {
         let Some(religion) = g.players[pid].religion.as_deref() else {
             return 0;
         };
-        g.cities
-            .values()
-            .filter(|city| {
-                let owner = &g.players[city.owner];
-                city.owner != pid
-                    && owner.alive
-                    && !owner.is_minor
-                    && !owner.is_barbarian
-                    && g.city_religion(city) != Some(religion)
+        g.players
+            .iter()
+            .filter(|owner| {
+                owner.id != pid && owner.alive && !owner.is_minor && !owner.is_barbarian
             })
-            .count()
+            .map(|owner| {
+                let known = g.player_city_ids(owner.id);
+                let known_left = known
+                    .iter()
+                    .filter(|cid| g.city_religion(&g.cities[cid]) != Some(religion))
+                    .count();
+                // Keep the existing contribution of known holdouts. A native
+                // verdict that the major already follows us is no reason to
+                // assume its unseen cities need conversion as well.
+                let already_follows = g
+                    .observed_majority_religion
+                    .get(&owner.id)
+                    .is_some_and(|faith| faith == religion);
+                let unseen = if already_follows {
+                    0
+                } else {
+                    g.observed_public_empire_stats
+                        .get(&owner.id)
+                        .and_then(|stats| stats.city_count)
+                        .map_or(0, |count| count.saturating_sub(known.len()))
+                };
+                known_left.saturating_add(unseen)
+            })
+            .sum()
     }
 
     /// The Apostle cap. `shipped` with the gene off or on another target.
@@ -145,9 +165,13 @@ impl AdvancedAi {
         if !self.religion_seat_corps_active(g, pid, offensive) {
             return shipped;
         }
-        (shipped + Self::unconverted_major_cities(g, pid).div_ceil(CITIES_PER_APOSTLE))
+        let workload = Self::unconverted_major_cities(g, pid);
+        let cap = (shipped + workload.div_ceil(CITIES_PER_APOSTLE))
             .min(APOSTLE_CAP_CEILING)
-            .max(shipped)
+            .max(shipped);
+        think!(self.journal(), Faith, Detail, "Sizing the Apostle corps to {cap}";
+               "religion-seat-fields-apostles: up to {workload} major-power cities may still need conversion; public city totals size the corps without revealing their locations or religions");
+        cap
     }
 
     /// Whether the next religious unit is an Apostle: always for the first
@@ -748,3 +772,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod corps_fog_tests;

@@ -396,21 +396,19 @@ subtraction cancels to zero, the logarithm is negative infinity and the whole
 flight comes out `NaN` with the camera never moving. And its own answer for how
 long the trip takes — a constant speed along the path — is twenty-five seconds
 for the whole sky, which is right for a film and wrong for a control. It keeps
-his pace for a short hop and is capped after that — at 5,100 ms, three times as
-long as it first shipped at. The distances out here are the content, and at the
-first pace the crossing between two of these places was over before it had said
-anything about what lay between them, which throws away the whole reason for
-flying a path rather than cutting. `SKY_TRAVEL_PACE` multiplies both ends of the
-clamp, so every switch is 3× longer in both directions:
+his pace for a short hop and is capped after that. The clamp was slowed to 5,100
+ms for a while, and the operator then asked for the buttons to fly faster: three
+times between the worlds near home, six times to the exoplanet and back.
+`SKY_TRAVEL_HOP_SPEED` and `SKY_TRAVEL_EXO_SPEED` divide the clamp, and a trip
+takes the exoplanet speed when either end of it is nearer the exoplanet than the
+Sun:
 
-| switch | first shipped | now |
+| switch | slow clamp | now |
 |---|---|---|
-| Earth ↔ Moon | 1,533 ms | **4,599 ms** |
-| Earth ↔ Mars, Solar system, Voyage, Exoplanet | 1,700 ms | **5,100 ms** |
-| the floor | 420 ms | **1,260 ms** |
-
-Even so it is a fifth of Van Wijk's own answer for a trip across the whole sky,
-which is twenty-five seconds — this is still a control and not a film.
+| Earth ↔ Moon | 4,599 ms | **1,533 ms** |
+| Earth ↔ Mars, Solar system, Voyage | 5,100 ms | **1,700 ms** |
+| anything to or from the Exoplanet | 5,100 ms | **850 ms** |
+| the floor, near home | 1,260 ms | **420 ms** |
 
 The zoom buttons themselves now repeat while held, which on the flat board is a
 convenience and out here is the difference between a control and an ornament.

@@ -2,7 +2,7 @@
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local f = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = f:read("*a"); f:close()
-local function run(mode, why)
+local function run(mode, why, wait, inFlight)
     local state = { calls = 0, emitted = {}, fallbacks = 0 }
     local unit = {}
     local env = {
@@ -62,8 +62,13 @@ local function run(mode, why)
         local chunk = assert(loadstring(body)); setfenv(chunk, env); chunk()
     end
     local board = env.CivvisBoard
-    assert(board.moveNoop({}, 0, 7, unit, { expect = { x = 8, y = 9 }, wait = 2 },
+    assert(board.moveNoop({}, 0, 7, unit, { expect = { x = 8, y = 9 }, wait = wait or 2 },
         40, 6, 9, 3) == false, "diagnostics must not alter the movement outcome")
+    if inFlight then
+        assert(#state.emitted == 0 and state.fallbacks == 0 and board.stats.move_noop == 0,
+            "a walk still in flight is neither counted, named nor answered")
+        return state, nil
+    end
     assert(#state.emitted == 1 and state.emitted[1][1] == "move_noop")
     assert(state.emitted[1][2].why == (why or "cannot_start"), "keep the existing classifier")
     assert(state.fallbacks == 1, "keep the existing fallback decision")
@@ -76,9 +81,10 @@ assert(state.calls == 1, "stop after the first answered form with reasons")
 state, native = run("fallback")
 assert(native.operation_failure == "localized:LOC_ALTERNATE_REASON [t5r]" and state.calls == 2,
     "retain provenance when only the existing alternate form answers")
-state, native = run("empty")
+state, native = run("empty", nil, 5)
 assert(native.operation_failure == "can_start=false,no_reasons [p4r]" and state.calls == 2,
-    "an empty result stays explicitly unknown")
+    "an empty result stays explicitly unknown once the walk has had time to start")
+run("empty", nil, 2, true)
 state, native = run("throw")
 assert(native.operation_failure:find("probe_threw[p4r]:", 1, true) == 1 and state.calls == 2,
     "unavailable native overloads retain their failure, not an invented reason")
