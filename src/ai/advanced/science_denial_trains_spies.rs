@@ -25,6 +25,13 @@
 //! progress. It runs after the defence, religion, settlement, siege and
 //! backlog claims and before the routine ones, and the end-of-turn defence
 //! redirects still have the last word.
+//!
+//! The strategic governor retains the selected Spy while that same unmet
+//! race applies. Native Deity Pericles 015051Z/t136 selected a Spy against
+//! Khmer after its Satellite, then ordinary review replaced it; Khmer won
+//! Science at t189. The earlier claim alone did not reserve production.
+//! Siege handling, upkeep/recovery and the final near-done handoff keep
+//! their existing priority. The delegated governor already keeps a busy queue.
 
 use super::*;
 
@@ -67,6 +74,37 @@ impl AdvancedAi {
         } else {
             needed
         }
+    }
+
+    /// A running, legal Spy still requested by the existing denial policy.
+    /// A quote for a paused or new Spy does not reserve the active queue.
+    pub(super) fn denial_spy_queue_committed(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        if !self.science_denial_trains_spies
+            || !matches!(item, Item::Unit { unit } if unit == "spy")
+            || self.spy_losses_pause_training(g)
+        {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        if city.queue.first() != Some(item)
+            || plan.threatened_city == Some(cid)
+            || (city.last_attacked > 0
+                && g.turn.saturating_sub(city.last_attacked) <= SPY_CLAIM_ATTACK_MEMORY)
+            || !Self::production_commitment_is_legal(g, pid, cid, item)
+        {
+            return false;
+        }
+        let racers = self.denial_spy_racers(g, pid);
+        !racers.is_empty() && g.spy_agents(pid) < self.denial_spies_wanted(g, pid, &racers)
     }
 
     /// See the module: claim queues for the Spies a decisive space race

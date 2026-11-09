@@ -19812,6 +19812,12 @@ impl AdvancedAi {
                         || self.religion_prophet_project_reserved(g, pid, cid))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
+            // The denial claim runs before this governor. Its first frame
+            // has no invested production yet, but the same unmet space race
+            // must keep the selected Spy through ordinary rescoring.
+            let denial_spy_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.denial_spy_queue_committed(g, pid, cid, plan, item));
             // `early-settler-floor`: the floor's Settler finishes before
             // routine rescoring can claim the city.
             let early_settler_commitment = plan.threatened_city != Some(cid)
@@ -19921,6 +19927,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || race_shrine_commitment
+                    || denial_spy_commitment
                     || early_settler_commitment
                     || deterrence_commitment
                     || capital_walls_commitment
@@ -19948,6 +19955,7 @@ impl AdvancedAi {
                     || domination_research_commitment
                     || defensive_temple_commitment
                     || race_shrine_commitment
+                    || denial_spy_commitment
                     || early_settler_commitment
                     || deterrence_commitment
                     || capital_walls_commitment
