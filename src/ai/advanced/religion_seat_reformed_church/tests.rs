@@ -127,7 +127,7 @@ fn the_real_civic_chooser_reaches_theology_before_the_later_government() {
     let mut control = g.clone();
     ai.disable_religion_seat_fields_apostles();
     ai.advanced_research(&mut control, 0, &plan);
-    let old = control.players[0].civic.unwrap();
+    let old = control.players[0].civic.as_ref().unwrap();
     assert!(
         !ai.civic_leads_to(&g, old.as_str(), "theology"),
         "the control must actually take the later-government detour: {old}"
@@ -135,7 +135,7 @@ fn the_real_civic_chooser_reaches_theology_before_the_later_government() {
     ai.enable_religion_seat_fields_apostles();
     let mut candidate = g.clone();
     ai.advanced_research(&mut candidate, 0, &plan);
-    let selected = candidate.players[0].civic.unwrap();
+    let selected = candidate.players[0].civic.as_ref().unwrap();
     assert!(
         ai.civic_leads_to(&g, selected.as_str(), "theology"),
         "Expansion posture must still reach the Religion seat's unlock: {selected}"
