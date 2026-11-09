@@ -3,6 +3,9 @@ use crate::rules::Yields;
 use crate::setup::GameSpeed;
 use std::sync::Arc;
 
+#[path = "university_tests.rs"]
+mod university_tests;
+
 fn theaters_without_writing_slots() -> (Game, Vec<u32>, Item) {
     let (mut game, cities) = theater_less_empire();
     let amphitheater = Item::Building {
