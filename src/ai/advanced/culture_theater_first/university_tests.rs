@@ -21,6 +21,9 @@ fn university_ready() -> (Game, Vec<u32>, Item, Item, AdvancedAi, StrategicPlan)
         .get_mut(&cities[0])
         .unwrap()
         .production = 20.0;
+    // Match idle Native Athens101; a Warrior here would finish this turn and
+    // correctly keep its queue under the existing completion protection.
+    game.cities.get_mut(&cities[0]).unwrap().queue.clear();
     let university = Item::Building {
         building: crate::name!("university"),
     };
