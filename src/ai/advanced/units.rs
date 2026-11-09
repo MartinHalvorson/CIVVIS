@@ -399,7 +399,7 @@ impl AdvancedAi {
                     // `theology-fights-only-to-win`: a fight the mean roll loses
                     // is not taken (see `theology_fight_is_winnable`).
                     if self.theology_fights_only_to_win
-                        && !Self::theology_fight_is_winnable(g, uid, *target)
+                        && !self.theology_fight_is_winnable(g, uid, *target)
                     {
                         return None;
                     }

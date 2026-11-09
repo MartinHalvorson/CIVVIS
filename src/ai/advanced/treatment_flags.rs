@@ -144,6 +144,9 @@ impl AdvancedAi {
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
+        /// Opt-in gene `theology-fights-count-the-host-edge`; see
+        /// `advanced/theology_fights.rs`.
+        theology_fights_count_the_host_edge => enable_theology_fights_count_the_host_edge, disable_theology_fights_count_the_host_edge;
     }
 
     toggles! {

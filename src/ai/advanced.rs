@@ -9806,6 +9806,10 @@ pub struct AdvancedAi {
     /// theological fight only when the mean exchange kills the defender or
     /// trades evenly and survives. See `advanced/theology_fights.rs`. Off by default.
     theology_fights_only_to_win: bool,
+    /// `theology-fights-count-the-host-edge`: the theological fight reading
+    /// also counts each side's difficulty bonus and its visibility edge. See
+    /// `advanced/theology_fights.rs`. Off by default.
+    theology_fights_count_the_host_edge: bool,
     /// `trader-fills-the-idle-route`: while a trade route slot stands
     /// empty, the safe origin that trains a Trader soonest puts one at the
     /// head of its queue ahead of the governor's rescoring. See
