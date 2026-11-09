@@ -5453,6 +5453,8 @@ pub const GENES: &[Gene] = &[
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
+    // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
+    Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },
     // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
     Gene { tag: "religion-seat-flips-the-cheapest", field: "religion_seat_flips_the_cheapest", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_flips_the_cheapest, disable: AdvancedAi::disable_religion_seat_flips_the_cheapest },
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.

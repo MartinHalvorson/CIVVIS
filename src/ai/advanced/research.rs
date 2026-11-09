@@ -1157,6 +1157,8 @@ impl AdvancedAi {
                 {
                     Some("theology")
                 }
+                // See `advanced/religion_seat_reformed_church.rs`.
+                GrandStrategy::Religion => self.religion_seat_civic_goal(g, pid),
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
