@@ -1,6 +1,7 @@
 //! `delegations-reach-every-rival`: the diplomatic-mission step in
-//! `advanced_diplomacy` asks every [`MISSION_CADENCE`] turns instead of every
-//! eighth, skips a rival that already hosts our Delegation (unless the
+//! `advanced_diplomacy` can ask on every turn instead of every eighth, skips
+//! a rival the host reads as Unfriendly, Denounced or at War, and skips a
+//! rival that already hosts our Delegation (unless the
 //! Embassy that supersedes it is ready) or our Embassy, and does not ask the
 //! same rival again within [`MISSION_RETRY_TURNS`] standard turns.
 //!
@@ -15,22 +16,23 @@
 //! turn 30, took Popayán at 42 and the capital at 111; `befriend-the-strongest`
 //! asks only a rival the host reads as Friendly.
 //!
+//! Seven of 25 first contacts in six recorded Deity Pericles Culture games
+//! were Neutral on an odd turn and Unfriendly the next. The former two-turn
+//! cadence cannot use those windows. The host's mission guard refuses the
+//! colder state, so preserve the one mission slot for an eligible rival.
+//!
 //! Off, nothing changes.
 
 use super::*;
-
-/// Turns between asks while the gene is on.
-pub(super) const MISSION_CADENCE: u32 = 2;
 
 /// Standard turns before the same rival is asked again.
 pub(super) const MISSION_RETRY_TURNS: u32 = 16;
 
 impl AdvancedAi {
-    /// Whether this turn is an extra mission turn: every
-    /// [`MISSION_CADENCE`] turns with the gene on, never with it off.
-    pub(super) fn mission_cadence_due(&self, g: &Game, pid: usize) -> bool {
+    /// Every turn can contain the only Neutral first-contact window. The
+    /// partner's retry clock still prevents repeated asks.
+    pub(super) fn mission_cadence_due(&self, _g: &Game, _pid: usize) -> bool {
         self.delegations_reach_every_rival
-            && g.turn % MISSION_CADENCE == pid as u32 % MISSION_CADENCE
     }
 
     /// Whether `other` may be asked: always with the gene off; with it on,
@@ -40,6 +42,16 @@ impl AdvancedAi {
     pub(super) fn mission_partner_open(&self, g: &Game, pid: usize, other: usize) -> bool {
         if !self.delegations_reach_every_rival {
             return true;
+        }
+        // Match the live bridge's delegation_unfriendly guard before choosing
+        // the one partner to ask. Boards without a host reading keep their
+        // ordinary mission eligibility.
+        if g.players[other]
+            .observed_diplomatic_state
+            .get(&pid)
+            .is_some_and(|state| matches!(state.as_str(), "UNFRIENDLY" | "DENOUNCED" | "WAR"))
+        {
+            return false;
         }
         let retry = g.standard_duration(MISSION_RETRY_TURNS);
         if self

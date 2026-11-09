@@ -5439,6 +5439,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
     // ---- append: e-f ------------------------------------------------
+    // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
+    // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
+    // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion
+    // and made no Faith purchase in three games. A threatened coastal city
+    // buys the strongest ranged ship for Faith before the Gold defender buy.
+    // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+    Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
@@ -5449,6 +5456,16 @@ pub const GENES: &[Gene] = &[
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
+    // A Religion-target founder claims a Holy Site in each idle city. Unpriced, off.
+    Gene { tag: "religion-seat-builds-holy-sites", field: "religion_seat_builds_holy_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_builds_holy_sites, disable: AdvancedAi::disable_religion_seat_builds_holy_sites },
+    // A Religion-target founder saves for an Apostle-led corps. Unpriced, off.
+    Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
+    // A Religion-target founder's corps yields only to a killing blow; its Apostles fight first. Unpriced, off.
+    Gene { tag: "religion-seat-presses-the-campaign", field: "religion_seat_presses_the_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_presses_the_campaign, disable: AdvancedAi::disable_religion_seat_presses_the_campaign },
+    // A Religion-target seat races its Holy Site and Prayers ahead of its queues until it founds. Unpriced, off.
+    Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
+    // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
+    Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

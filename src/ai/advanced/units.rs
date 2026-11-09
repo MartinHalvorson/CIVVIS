@@ -272,6 +272,11 @@ impl AdvancedAi {
         if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
             return acted;
         }
+        // `religion-seat-presses-the-campaign`: a winnable fight comes before
+        // stepping away. See `advanced/religion_seat_fields_apostles.rs`.
+        if let Some(acted) = self.religion_seat_apostle_fights_first(g, pid, uid) {
+            return acted;
+        }
         // `spreader-steps-out-of-the-apostle`: the whole corps, likewise, out
         // of a rival Apostle's reach first.
         if let Some(acted) = self.religious_unit_evades_apostles(g, pid, uid) {
