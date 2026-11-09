@@ -53,6 +53,9 @@ fn every_gene_is_opt_in() {
     opt_in_off_in_both_controllers("religion-seat-builds-holy-sites", |ai| {
         ai.religion_seat_builds_holy_sites
     });
+    opt_in_off_in_both_controllers("religion-seat-presses-the-campaign", |ai| {
+        ai.religion_seat_presses_the_campaign
+    });
     opt_in_off_in_both_controllers("religion-seat-fields-apostles", |ai| {
         ai.religion_seat_fields_apostles
     });
@@ -310,4 +313,76 @@ fn a_faith_building_displaces_only_ordinary_work() {
     assert!(!may(Item::Unit {
         unit: crate::name!("settler")
     }));
+}
+
+fn spawn_religious(
+    g: &mut Game,
+    kind: &str,
+    owner: usize,
+    pos: crate::Pos,
+    faith: &str,
+    hp: i32,
+) -> u32 {
+    let uid = g.spawn_unit(kind, owner, pos);
+    let moves = g.unit_max_moves(uid);
+    let unit = g.units.get_mut(&uid).unwrap();
+    unit.religion = Some(faith.into());
+    unit.charges = 3;
+    unit.hp = hp;
+    unit.moves_left = moves;
+    uid
+}
+
+/// Our Apostle takes the fight a wounded rival Missionary cannot win; with the
+/// gene off, or on another lane, nothing is decided here.
+#[test]
+fn an_apostle_fights_a_winnable_rival_before_stepping_away() {
+    let (mut g, ai, _) = founder(1, VictoryTarget::Religion);
+    let apostle = spawn_religious(&mut g, "apostle", 0, (30, 12), "Buddhism", 100);
+    let rival = spawn_religious(&mut g, "missionary", 1, (31, 12), "Hinduism", 20);
+    assert_eq!(
+        ai.religion_seat_apostle_fights_first(&mut g, 0, apostle),
+        None,
+        "gene off"
+    );
+
+    let (mut g, mut ai, _) = founder(1, VictoryTarget::Culture);
+    ai.enable_religion_seat_presses_the_campaign();
+    let apostle = spawn_religious(&mut g, "apostle", 0, (30, 12), "Buddhism", 100);
+    spawn_religious(&mut g, "missionary", 1, (31, 12), "Hinduism", 20);
+    assert_eq!(
+        ai.religion_seat_apostle_fights_first(&mut g, 0, apostle),
+        None,
+        "a Culture seat"
+    );
+
+    let (mut g, mut ai, _) = founder(1, VictoryTarget::Religion);
+    ai.enable_religion_seat_presses_the_campaign();
+    let apostle = spawn_religious(&mut g, "apostle", 0, (30, 12), "Buddhism", 100);
+    let target = spawn_religious(&mut g, "missionary", 1, (31, 12), "Hinduism", 20);
+    assert_eq!(
+        ai.religion_seat_apostle_fights_first(&mut g, 0, apostle),
+        Some(true)
+    );
+    assert!(
+        g.units.get(&target).is_none_or(|unit| unit.hp < 20),
+        "the rival took the blow"
+    );
+    let _ = rival;
+}
+
+/// The corps yields only to a killing blow once the gene reads a founded
+/// Religion seat.
+#[test]
+fn the_campaign_reads_only_lethal_threats() {
+    let (g, ai, _) = founder(1, VictoryTarget::Religion);
+    assert!(!ai.religion_seat_presses_on(&g, 0), "gene off");
+    let (mut g, mut ai, _) = founder(1, VictoryTarget::Religion);
+    ai.enable_religion_seat_presses_the_campaign();
+    assert!(ai.religion_seat_presses_on(&g, 0));
+    g.players[0].religion = None;
+    assert!(!ai.religion_seat_presses_on(&g, 0), "not yet founded");
+    let (g, mut ai, _) = founder(1, VictoryTarget::Culture);
+    ai.enable_religion_seat_presses_the_campaign();
+    assert!(!ai.religion_seat_presses_on(&g, 0), "a Culture seat");
 }

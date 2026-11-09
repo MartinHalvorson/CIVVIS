@@ -52,6 +52,19 @@
 //! civilization's replacement, ahead of Districts and ordinary buildings, and
 //! buys either with Faith when the bank covers it.
 //!
+//! **What the campaign gene does.** `spreader-steps-out-of-the-apostle` counts
+//! a rival as a threat when its mean blow would out-trade ours. On a Religion
+//! seat that pins the corps: civvis-20261109T022744Z (first Deity Khmer Religion
+//! seat) ended t102-136 with its Missionaries held outside a rival Apostle's
+//! reach on most turns, and Immortal 063431Z spread 5 times all game for the
+//! same reason. `stalled-spreader-braves-the-march` already reads a rival as a
+//! threat only when its blow would kill, but only after three held turns. With
+//! `religion-seat-presses-the-campaign` the corps of a Religion-target founder
+//! reads threats that way from the start, and an Apostle beside a rival
+//! religious unit takes a fight whose mean exchange wins before any step away.
+//! A kill is still avoided, and a wounded unit's next blow is lethal again, so
+//! it still retreats.
+//!
 //! Off, or for a seat aiming elsewhere, nothing changes.
 
 use super::*;
@@ -372,6 +385,61 @@ impl AdvancedAi {
                     "religion-seat-builds-holy-sites: Faith and religious-unit purchases come from Holy Sites, and this site yields {:.0} Faith", faith);
             }
         }
+    }
+
+    /// `religion-seat-presses-the-campaign`: whether this seat's corps yields
+    /// only to a killing blow.
+    pub(super) fn religion_seat_presses_on(&self, g: &Game, pid: usize) -> bool {
+        self.religion_seat_presses_the_campaign
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            && g.players[pid].religion.is_some()
+    }
+
+    /// `religion-seat-presses-the-campaign`: an Apostle beside a rival
+    /// religious unit takes the winnable fight against the weakest of them.
+    /// `None` with the gene off, for any other unit, or with no such fight.
+    pub(super) fn religion_seat_apostle_fights_first(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !self.religion_seat_presses_on(g, pid) {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.kind != "apostle" || unit.moves_left <= 0.0 {
+            return None;
+        }
+        let faith = unit.religion.clone()?;
+        let target = g
+            .nbrs(unit.pos)
+            .into_iter()
+            .filter(|position| Self::theology_fight_is_winnable(g, uid, *position))
+            .filter_map(|position| {
+                g.unit_ids_at(position)
+                    .iter()
+                    .filter(|other| {
+                        let other = &g.units[other];
+                        other.owner != pid
+                            && g.rules.units[other.kind].class == "religious"
+                            && other.religion.as_deref().is_some_and(|r| r != faith)
+                    })
+                    .map(|other| g.units[other].hp)
+                    .min()
+                    .map(|hp| (hp, position))
+            })
+            .min()?
+            .1;
+        let acted = g
+            .apply(pid, &Action::TheologicalAttack { unit: uid, target })
+            .is_ok();
+        if acted {
+            think!(self.journal(), Faith, Decision,
+                "Apostle {} fights at {:?}", uid, target;
+                "religion-seat-presses-the-campaign: the mean exchange wins, and a kill hands our faith 250 pressure around the fight");
+        }
+        Some(acted)
     }
 
     /// Whether this seat's founding should try the Faith beliefs first. Read

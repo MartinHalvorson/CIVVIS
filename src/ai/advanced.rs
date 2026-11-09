@@ -8357,6 +8357,11 @@ pub struct AdvancedAi {
     /// Holy Site in each idle city without one. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
     religion_seat_builds_holy_sites: bool,
+    /// `religion-seat-presses-the-campaign`: a Religion-target founder's corps
+    /// yields only to a killing blow, and its Apostles take a winnable fight
+    /// before they step away. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_presses_the_campaign: bool,
     /// `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds
     /// on the Faith-scaling founder beliefs first. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.

@@ -5447,6 +5447,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "religion-seat-builds-holy-sites", field: "religion_seat_builds_holy_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_builds_holy_sites, disable: AdvancedAi::disable_religion_seat_builds_holy_sites },
     // A Religion-target founder saves for an Apostle-led corps. Unpriced, off.
     Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
+    // A Religion-target founder's corps yields only to a killing blow; its Apostles fight first. Unpriced, off.
+    Gene { tag: "religion-seat-presses-the-campaign", field: "religion_seat_presses_the_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_presses_the_campaign, disable: AdvancedAi::disable_religion_seat_presses_the_campaign },
     // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
     Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
     // ---- append: s-s ------------------------------------------------

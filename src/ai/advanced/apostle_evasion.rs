@@ -89,7 +89,10 @@ impl AdvancedAi {
         // `stalled-spreader-braves-the-march`: a stalled spreader on a
         // Religion seat yields only to a lethal blow. See
         // `advanced/stalled_spreader.rs`.
-        let lethal_only = self.spreader_braves_the_march(g, uid);
+        // `religion-seat-presses-the-campaign`: from the start, on the same
+        // terms. See `advanced/religion_seat_fields_apostles.rs`.
+        let lethal_only = self.spreader_braves_the_march(g, uid)
+            || self.religion_seat_presses_on(g, pid);
         g.units
             .values()
             .filter(|rival| {
