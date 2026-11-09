@@ -24939,11 +24939,12 @@ function hudTurnPlate() {
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
+    `game speed ${speedName}; ` +
     `watch pace ${watchPace}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
+    `${turnStructureName.toLowerCase()} turns`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -24971,11 +24972,11 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +
-    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
+    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `</div></section>`;
 }
 
