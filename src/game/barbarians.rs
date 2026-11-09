@@ -92,11 +92,6 @@ impl Game {
         self.spawn_camp_unwatched(&watched);
     }
 
-    /// Seat one camp, given what the world can already see. Setup places a
-    /// third of the target in one go and nothing moves between those
-    /// placements, so it works the sight out once and passes it in rather
-    /// than re-sweeping the whole world per camp — the difference between one
-    /// visibility pass and twenty on a globe seating twenty-one civilizations.
     /// `Improvement_ValidFeatures` for the camp, which has no
     /// `Improvement_ValidResources` row: none of 113 camps seen in live games
     /// sat on a resource.
@@ -116,6 +111,11 @@ impl Game {
             })
     }
 
+    /// Seat one camp, given what the world can already see. Setup places a
+    /// third of the target in one go and nothing moves between those
+    /// placements, so it works the sight out once and passes it in rather
+    /// than re-sweeping the whole world per camp — the difference between one
+    /// visibility pass and twenty on a globe seating twenty-one civilizations.
     pub(super) fn spawn_camp_unwatched(&mut self, watched: &TileBits) {
         // The shipped placement floors: 4 tiles from any city, 7 from another
         // camp. Both are clearance radii, so they are read off a disk around
