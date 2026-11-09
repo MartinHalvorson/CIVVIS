@@ -56,6 +56,8 @@ window.Worker = class {
       if ([0, 3000, 5000, 10000].includes(requested))
         window.betweenGameCountdownMs = requested;
       answer = { between_game_countdown_ms: window.betweenGameCountdownMs };
+    } else if (message.path === "/status") {
+      answer = { seed: 7, finished: window.statusFinished !== false };
     } else if (message.path === "/next-game") {
       answer = { seed: 8, turn: 1, winner: null };
     } else if (message.path === "/save") {
@@ -298,6 +300,30 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert immediate["seed"] == 8 and immediate["turn"] == 1, immediate
         assert calls.count("/next-game") == 2, calls
+
+        # A result left on Pause is held however long it is left, and the
+        # count starts over at its full length when the world resumes.
+        post_pace = "fetch('/pace', {method:'POST', body:JSON.stringify(%s)}).then(r => r.json())"
+        dev.evaluate(post_pace % "{between_game_countdown_ms:3000, paused:true}")
+        dev.evaluate("fetch('/state?have=2').then(r => r.json())")
+        dev.evaluate("window.fakeNow = 60000")
+        held = dev.evaluate("fetch('/state?have=2').then(r => r.json())")
+        calls = dev.evaluate("window.workerCalls")
+        assert held["seed"] == 7 and "restart_in" not in held, held
+        assert calls.count("/next-game") == 2, calls
+        dev.evaluate(post_pace % "{paused:false}")
+        armed = dev.evaluate("fetch('/state?have=2').then(r => r.json())")
+        assert armed["restart_in"] == 3, armed
+
+        # One more turn can land while the count's last check is out on the
+        # network. The world it answers for is live again, so it stays.
+        dev.evaluate("window.statusFinished = false; window.fakeNow = 64000")
+        kept = dev.evaluate("fetch('/state?have=2').then(r => r.json())")
+        calls = dev.evaluate("window.workerCalls")
+        assert kept["seed"] == 7, kept
+        assert "/status" in calls, calls
+        assert calls.count("/next-game") == 2, calls
+        dev.evaluate("window.statusFinished = true; window.fakeNow = 0")
 
         # A save from before IndexedDB moves across on first use, and the
         # listing carries what the Continue button shows without loading a

@@ -19,6 +19,7 @@ local clock, attached, sent, shown = 0, true, false, nil
 local peeks = 0
 local events = {}
 local env = {
+	CivvisK = { guard = function(fn) pcall(fn) end },
 	string = string, math = math, type = type, tonumber = tonumber,
 	ipairs = ipairs, pcall = pcall,
 	CivvisBoard = {},

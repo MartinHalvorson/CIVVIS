@@ -1,3 +1,6 @@
+//! Host combat deaths keyed by player and stable unit id, read only up to the
+//! selected state line so later results cannot leak backwards.
+
 use std::collections::BTreeMap;
 
 /// A host combat result, keyed by both player and stable unit id.

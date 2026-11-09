@@ -1,3 +1,6 @@
+//! How many wall breakers a campaign reserves and which city builds them: the
+//! first-weapon reservation, the caps, and supply scaled to wall hit points.
+
 use super::*;
 use crate::game::expected_damage;
 

@@ -1,3 +1,6 @@
+//! Rebuilds unit losses from confirmed host deaths, because the live mirror
+//! supplies war flags but does not replay combats into `Game::wars`.
+
 use super::*;
 
 impl AdvancedAi {

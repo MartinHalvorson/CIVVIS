@@ -309,9 +309,7 @@
     return answer;
   }
 
-  async function reloadInstalledSuccessor() {
-    const commit = await installedSuccessorBuild();
-    if (commit === null) return false;
+  function reloadInstalledSuccessor(commit) {
     const target = new URL(window.location.href);
     // A pinned `game=` is the world that just ended. The newly installed
     // module starts the next default simulation, not a replay of that seed.
@@ -320,7 +318,6 @@
     target.searchParams.set("build", commit);
     report.refreshingTo = commit;
     window.location.replace(target.href);
-    return true;
   }
 
   // ------------------------------------------------------- clock and finale
@@ -346,7 +343,11 @@
     // battle that runs out its clock is drawn, and a draw once held the
     // published build's screen for ever because only a winner counted.
     const finished = state.finished === true || (state.winner !== undefined && state.winner !== null);
-    if (!finished) {
+    // A paused result stays on screen for as long as it is paused, which is
+    // what the page says and what a socket server does. Voiding the clock in
+    // `/pace` alone was not enough: this ran on the very next poll and armed it
+    // again, so the "paused" result was replaced ten seconds later anyway.
+    if (!finished || paused) {
       finaleEndsAt = null;
       return state;
     }
@@ -362,7 +363,18 @@
       return state;
     }
     finaleEndsAt = null;
-    if (await reloadInstalledSuccessor()) return state;
+    const successor = await installedSuccessorBuild();
+    // That check crossed the network, and One more turn or a pause can land
+    // while it is out. The world as it stands now decides, never the answer
+    // this count began from: only a result still on the table is replaced.
+    const current = await ask("GET", "/status", "");
+    if (paused || current.finished !== true || current.seed !== state.seed) {
+      return await ask("GET", "/state", "");
+    }
+    if (successor !== null) {
+      reloadInstalledSuccessor(successor);
+      return state;
+    }
     return await ask("POST", "/next-game", "{}");
   }
 
@@ -546,6 +558,9 @@
 
     const started = performance.now();
     let answer = await ask(method, target, body);
+    // Playing on sets the engine's pause from its own request, so this clock
+    // has to be told, or the resumed world is priced and held as a paused one.
+    if (path === "/play-on" && typeof answer?.paused === "boolean") paused = answer.paused;
     noteWorld(answer);
     report.requests++;
     if (answer && typeof answer.turn === "number") {
