@@ -11989,6 +11989,11 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Whether the opening-only ranged-support experiment is enabled.
+    pub fn opening_ranged_support(&self) -> bool {
+        self.opening_ranged_support
+    }
+
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
     pub fn naval_recon(&self) -> bool {
         self.base.naval_recon_on()

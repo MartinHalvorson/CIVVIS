@@ -3052,11 +3052,6 @@ impl AdvancedAi {
         self.base.scout_first_opening = false;
     }
 
-    /// Whether the opening-only ranged-support experiment is enabled.
-    pub fn opening_ranged_support(&self) -> bool {
-        self.opening_ranged_support
-    }
-
     /// Replace the capital's first opening slot with legal ranged support.
     pub fn enable_opening_ranged_support(&mut self) {
         self.opening_ranged_support = true;
