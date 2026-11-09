@@ -17753,18 +17753,24 @@ function skyTravelPath(from, w0, to, w1) {
 // a button press is a button press, and nobody waits out a journey they can see
 // the end of from the start.
 //
-// Three times as long as it first shipped at, both ways. The distances out here
-// are the content, and at 240 ms a unit the trip between two of these places was
-// over before it had said anything about what lay between them — the whole
-// argument for flying a path rather than cutting is that the crossing is worth
-// watching, and it was being thrown away to save a second. Van Wijk's own answer
-// for a trip across the whole sky is twenty-five seconds; even at three times
-// the first pace this is a fifth of that, so it is still a control and not a
-// film.
-const SKY_TRAVEL_PACE = 3;
-function skyTravelDuration(S) {
-  return Math.max(420 * SKY_TRAVEL_PACE,
-                  Math.min(1700 * SKY_TRAVEL_PACE, S * 240 * SKY_TRAVEL_PACE));
+// The clamp is the unhurried trip, and a button press flies it faster than that
+// by one of two speeds: three times between the worlds near home, six times on
+// the long road to the exoplanet and back.
+const SKY_TRAVEL_HOP_SPEED = 3;
+const SKY_TRAVEL_EXO_SPEED = 6;
+function skyTravelDuration(S, speed = SKY_TRAVEL_HOP_SPEED) {
+  return Math.max(1260, Math.min(5100, S * 720)) / speed;
+}
+// A trip is on the long road when either end of it is out at the exoplanet, and
+// out there means nearer to it than to the Sun. Asking where the camera is,
+// rather than which button was pressed, is what covers the way back: Earth, Mars
+// and Voyage are ordinary stops until the trip to them starts at the far end.
+function skyTravelSpeed(from, to) {
+  if (!skyWorldStops().some(stop => stop.id === "exo")) return SKY_TRAVEL_HOP_SPEED;
+  const [ex, ey] = skyBodyPos(skyExoBody());
+  const [sx, sy] = skyBodyPos(SKY_SUN);
+  const outThere = ({x, y}) => Math.hypot(x - ex, y - ey) < Math.hypot(x - sx, y - sy);
+  return outThere(from) || outThere(to) ? SKY_TRAVEL_EXO_SPEED : SKY_TRAVEL_HOP_SPEED;
 }
 function skyTravel(pan, scale) {
   // No sky to travel on a chart: see `skyNavShowing`.
@@ -17780,7 +17786,7 @@ function skyTravel(pan, scale) {
   }
   cameraZoom = {kind:"planet", scale:want, pan:to, lean:null,
                 path:{at:path.at, S:path.S, elapsed:0,
-                      duration:skyTravelDuration(path.S)}};
+                      duration:skyTravelDuration(path.S, skyTravelSpeed(SKY_PAN, to))}};
 }
 function skyGoToWorld(id) {
   const stop = skyWorldStops().find(candidate => candidate.id === id);

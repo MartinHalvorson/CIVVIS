@@ -14507,12 +14507,16 @@ fn the_sky_carries_its_own_way_about() {
     assert!(EMBEDDED_INDEX.contains("skyNavButton(stop.body ? \"world\" : \"scale\", stop)"));
     assert!(EMBEDDED_INDEX.contains("document.querySelectorAll(\"#skynav [data-sky-stop]\")"));
     assert!(EMBEDDED_INDEX.contains("button.setAttribute(\"aria-label\", stop.label);"));
-    // A switch takes three times as long as it first shipped at, both ways.
-    // The distances are the content, and at the old pace the crossing was
-    // over before it had said anything about what lay between the two ends.
-    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 3;"));
-    assert!(EMBEDDED_INDEX.contains("  return Math.max(420 * SKY_TRAVEL_PACE,"));
-    assert!(!EMBEDDED_INDEX.contains("return Math.max(420, Math.min(1700, S * 240));"));
+    // A button press flies three times faster between the worlds near home
+    // and six times faster to the exoplanet and back. Either end being out
+    // there decides it, so the way home is as quick as the way out.
+    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_HOP_SPEED = 3;"));
+    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_EXO_SPEED = 6;"));
+    assert!(EMBEDDED_INDEX.contains("return Math.max(1260, Math.min(5100, S * 720)) / speed;"));
+    assert!(EMBEDDED_INDEX
+        .contains("duration:skyTravelDuration(path.S, skyTravelSpeed(SKY_PAN, to))}};"));
+    assert!(EMBEDDED_INDEX.contains("return outThere(from) || outThere(to) ? SKY_TRAVEL_EXO_SPEED"));
+    assert!(!EMBEDDED_INDEX.contains("SKY_TRAVEL_PACE"));
     for gone in [
         "GALAXY_DISC_LY",
         "GALAXY_SUN_RADIUS_LY",
