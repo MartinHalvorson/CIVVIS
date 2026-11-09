@@ -10977,8 +10977,9 @@ fn a_lent_flag_spends_the_stock_on_priced_melee() {
         .strategic_resources
         .insert(crate::name!("iron"), 30.0);
     let with_stock = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
-    assert!(!g.rules.units[with_stock].has_ranged_attack());
-    assert!(g.rules.units[with_stock].resource_cost > 0.0);
+    let spec = &g.rules.units[with_stock];
+    assert!(!spec.has_ranged_attack());
+    assert!(spec.resource_cost > 0.0);
 
     ai.prefers_priced_melee = false;
     let flag_off = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
