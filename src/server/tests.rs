@@ -3076,7 +3076,7 @@ fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
     // The single dossier has the spare height formerly allocated to a
     // separate reasoning card. Its trail scrolls inside the dossier while
     // the world chronicles keep their measured floors.
-    assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 0; min-height: 460px; }"));
+    assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 auto; min-height: min-content; }"));
     assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
     assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
     assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
@@ -3085,7 +3085,7 @@ fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
     assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
     assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
     assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
-    assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
+    assert!(EMBEDDED_INDEX.contains("Logged by ${civ.civ}'s agent as it decides"));
 }
 
 /// Watching a battlefield, the deck reads tactically.
@@ -3143,7 +3143,7 @@ fn browser_reads_a_battlefield_deck_as_ai_tactics() {
         EMBEDDED_INDEX.contains("const wantTitle = tactics ? \"AI Tactics\" : \"AI strategy\";")
     );
     assert!(EMBEDDED_INDEX
-        .contains("const wantHeading = tactics ? \"Battle plans\" : \"Grand strategy\";"));
+        .contains("const wantHeading = tactics ? \"Battle plans\" : liveSeat ? \"Live seat\" : \"Grand strategy\";"));
     // A battle is understood by comparing the sides' plans, not by
     // flipping a picker between them: every side still standing gets a
     // block, while the picker keeps scoping the decision factors below.
@@ -5227,6 +5227,17 @@ fn the_gene_program_route_reports_the_ledger_and_vouches_for_armed_tags() {
     }
     let genes = answer["genes"].as_array().unwrap();
     assert!(!genes.is_empty());
+    // The panel's figures are the committed ranking's: every ranked gene
+    // carries a whole row, and the sample behind them is stated.
+    assert!(answer["ranking"]["seats"].as_u64().unwrap() > 0);
+    assert!(answer["ranking"]["newest_end"].is_string());
+    let ranked: Vec<&Value> = genes.iter().filter(|gene| gene["rank"].is_u64()).collect();
+    assert!(!ranked.is_empty());
+    for gene in ranked {
+        assert!(gene["diff_points"].is_number(), "{gene}");
+        let helps = gene["p_helps"].as_f64().unwrap();
+        assert!((0.0..=100.0).contains(&helps), "{gene}");
+    }
     for gene in genes {
         let tag = gene["tag"].as_str().unwrap();
         assert!(crate::ai::gene(tag).is_some(), "unknown tag {tag}");
@@ -14580,6 +14591,28 @@ fn browser_covers_every_empire_decision() {
 /// "the deployment genome" for weeks while the code seated the stock agent;
 /// this pins the seat to `enable_native_deployment` by its whole decision
 /// stream, so neither half can move without the other.
+#[test]
+fn the_strategy_panel_names_the_agent_the_site_seats() {
+    // The panel's Agent row tells a viewer every major is the rule-based
+    // CIVVIS agent and that no model is playing. Both halves are facts about
+    // this tree, so they are held here rather than left as copy.
+    let mut params = current();
+    params.spectate = true;
+    let session = Session::new(params);
+    for (seat, player) in session.game.players.iter().enumerate() {
+        if !player.is_minor && !player.is_barbarian {
+            assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+        }
+    }
+    let embedded = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
+    assert!(
+        !embedded.join(crate::elo::VALUENET_FILE).exists(),
+        "a shipped value net makes the panel's \"no neural network\" untrue"
+    );
+    assert!(EMBEDDED_INDEX.contains("It uses no language model and no neural network"));
+    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", \"CIVVIS Advanced AI\", SITE_AGENT_STORY)"));
+}
+
 #[test]
 fn every_site_major_plays_the_native_deployment_genome() {
     use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};
