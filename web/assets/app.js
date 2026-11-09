@@ -1627,7 +1627,7 @@ function syncResponsivePanelGeometry() {
       wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
     wideMinimapHeight = wideMinimapWidth;
   }
-  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
+  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
   style.setProperty("--panel-gap", `${gap}px`);
@@ -2105,6 +2105,8 @@ let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
 // until asked for. A saved layout still decides for itself.
 const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta", "plan"];
 let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
+// Columns the viewer wants that the panel has no readable room for right now.
+let playerHudShedColumns = new Set();
 const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
 let playerHudReorderGesture = null;
@@ -2219,11 +2221,81 @@ function playerHudColumnExists(column) {
   return Boolean(column) && (!column.exists || column.exists());
 }
 
-function visiblePlayerHudColumns() {
+// The columns the viewer has asked for, whether or not the panel can seat them.
+function wantedPlayerHudColumns() {
   return playerHudColumnOrder
     .map(key => PLAYER_HUD_COLUMN_BY_KEY.get(key))
     .filter(column => playerHudColumnExists(column) &&
       !playerHudHiddenColumns.has(column.key));
+}
+
+function visiblePlayerHudColumns() {
+  return wantedPlayerHudColumns().filter(column => !playerHudShedColumns.has(column.key));
+}
+
+// ── Which columns the panel can seat ───────────────────────────────────────
+//
+// Twenty-odd columns dividing a 900px table all come out too narrow to read:
+// "Mon…", "Gengh…", "Siege…". Past a point a column is worth more gone than
+// present, so when the table cannot give each column the width it needs to be
+// read, the least telling ones step aside in this order and every other column
+// takes up their room. They are not hidden in the viewer's model: their boxes
+// stay ticked in Display Settings and they come back as soon as there is room.
+//
+// A name a leader or an AI profile goes by is the first to go, since the
+// civilization beside it identifies the row. A column the viewer turned on
+// that a fresh table lacks is never shed, because they asked for it.
+const PLAYER_HUD_SHED_ORDER = [
+  "player", "leader", "win_start", "win_delta", "age", "nukes", "suzerain",
+  "wonders", "closest_victory", "food", "population", "rank", "faith", "gold", "culture",
+];
+const PLAYER_HUD_READABLE_WIDTH = {
+  lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo_delta:40,
+  win_start:24, win_delta:16, win:26, plan:70, closest_victory:60, age:40,
+  military:36, score:38,
+};
+const PLAYER_HUD_READABLE_STAT_WIDTH = 31;
+// Row padding, the close control's gutter and the row border.
+const PLAYER_HUD_TABLE_CHROME = 23;
+const PLAYER_HUD_READABLE_GAP = 3;
+
+// What a column needs to be read, and never less than the floor the stylesheet
+// holds it to at this width: a table seated below its floors would scroll.
+function playerHudSeatWidth(column, style) {
+  return Math.max(PLAYER_HUD_READABLE_WIDTH[column.key] ?? PLAYER_HUD_READABLE_STAT_WIDTH,
+                  parseFloat(style.getPropertyValue(column.min)) || 0);
+}
+
+// True when the set of seated columns changed, which needs a repaint.
+function syncPlayerHudShedColumns() {
+  const hud = document.getElementById("playerhud");
+  const tableWidth = hud?.querySelector(":scope > .player-standings")?.clientWidth;
+  if (!tableWidth) return false;
+  const style = getComputedStyle(hud);
+  const wanted = wantedPlayerHudColumns();
+  let need = PLAYER_HUD_TABLE_CHROME + PLAYER_HUD_READABLE_GAP * Math.max(0, wanted.length - 1) +
+    wanted.reduce((sum, column) => sum + playerHudSeatWidth(column, style), 0);
+  const shed = new Set();
+  for (const key of PLAYER_HUD_SHED_ORDER) {
+    if (need <= tableWidth) break;
+    const column = wanted.find(candidate => candidate.key === key);
+    if (!column) continue;
+    shed.add(key);
+    need -= playerHudSeatWidth(column, style) + PLAYER_HUD_READABLE_GAP;
+  }
+  if (shed.size === playerHudShedColumns.size &&
+      [...shed].every(key => playerHudShedColumns.has(key))) return false;
+  playerHudShedColumns = shed;
+  return true;
+}
+
+// A width change anywhere that moves the table's edge: the window, the deck,
+// the turn plate's seam. A column being dragged owns the table until it lands.
+function refreshPlayerHudShedColumns() {
+  if (playerHudColumnGesture || playerHudReorderGesture) return;
+  if (!syncPlayerHudShedColumns()) return;
+  syncPlayerHudColumns();
+  if (state && hudLayoutGesture?.name !== "players") drawPlayerHud();
 }
 
 // One bar per seam between two adjacent flexible columns. A fixed track such
@@ -2584,8 +2656,8 @@ function syncPlayerHudColumns(placeGrips = true) {
     : `minmax(${playerHudColumnMinExpr(column)}, ` +
       `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
   // Every column floor, one gutter per seam and the panel's own padding and
-  // border. 9px is that chrome: 4px + 3px padding, 2px border.
-  const tableMin = `calc(9px + ` +
+  // border, the padding on the right being the close control's gutter.
+  const tableMin = `calc(${PLAYER_HUD_TABLE_CHROME}px + ` +
     `${Math.max(0, columns.length - 1)} * var(--hud-stat-gap, 3px) + ` +
     columns.map(column => column.fixed ? `var(${column.min})`
       : playerHudColumnMinExpr(column)).join(" + ") + `)`;
@@ -3151,9 +3223,9 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  {selector:"#playerhud .diplomacy-civ", min:9, max:13},
-  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
-  {selector:"#playerhud .diplomacy-player", min:9, max:13},
+  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
@@ -3172,15 +3244,12 @@ const RESPONSIVE_TEXT_RULES = [
   // inside the button at every width.
   {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
   {selector:"#playerhud .turn-era", min:12, max:17},
-  {selector:"#playerhud .turn-label", min:11, max:14},
-  {selector:"#playerhud .victory-turn strong", min:24, max:40},
-  {selector:"#playerhud .turn-total", min:10, max:14},
-  // A four-digit current turn needs its whole reading to remain together in
-  // the narrow plate. It is still fitted independently from the ordinary,
-  // deliberately large early-game turn number above.
-  {selector:"#playerhud .turn-count.turn-count-long .turn-label", min:10, max:11},
-  {selector:"#playerhud .turn-count.turn-count-long strong", min:14, max:26},
-  {selector:"#playerhud .turn-count.turn-count-long .turn-total", min:9, max:10},
+  {selector:"#playerhud .turn-live .turn-label", min:11, max:14},
+  // The word, the number and the cap are one reading and scale as one: every
+  // part is sized in em from this box. Fitted apart, the label and the cap each
+  // kept their full size because each fit on its own, and the turn number took
+  // what was left, which at a 148px plate printed turn 181 as "1..".
+  {selector:"#playerhud .turn-count", min:8, max:14, slack:2},
   // The settings block is fitted as one piece, not cell by cell. Its single
   // grid track holds the widest whole row, so the block's own overflow is the
   // exact amount it is too big by — and one size for every row is what keeps
@@ -3188,11 +3257,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   // Watch pace sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
-  {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
-  {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
-  {selector:"#victoryhud .victory-subheading span", min:9, max:11},
-  {selector:"#victoryhud .victory-civ", min:10, max:14},
-  {selector:"#victoryhud .victory-value", min:10, max:14},
+  {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   {selector:".dossier-window .dossier-title", min:11, max:18},
   {selector:".dossier-window .dossier-tag", min:9, max:11},
   {selector:".dossier-window .dossier-btn", min:10, max:14},
@@ -3211,6 +3276,7 @@ const RESPONSIVE_TYPE_ROOT_SELECTOR = [
   "#pedia", "#tree", "#empire", "#diplomacy", "#cityscreen", "#trade", "#capture-choice",
 ].join(",");
 const responsiveTypeRoots = new Set();
+const responsiveTextRange = document.createRange();
 let responsiveTypeFrame = 0;
 
 function responsiveTypeBand(root, width) {
@@ -3236,11 +3302,7 @@ function syncResponsiveTypeBox(root, width, height) {
     // width change crosses that band so every civilization remains visible.
     if (state && hudLayoutGesture?.name !== "players") drawPlayerHud();
   }
-  if (root.id === "victoryhud") {
-    const ratio = width / Math.max(1, height);
-    root.dataset.typeShape = width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260))
-      ? "wide" : "rail";
-  }
+  if (root.id === "playerhud") refreshPlayerHudShedColumns();
 }
 
 function scheduleResponsiveType(root) {
@@ -3318,8 +3380,18 @@ function fitResponsiveType() {
     // Inline line boxes commonly report one extra device-rounded pixel even
     // when every glyph is visible. Treat only a larger difference as real
     // overflow so that harmless rounding cannot ratchet text below its ceiling.
-    const widthFit = element.scrollWidth > room + 1
-      ? room / element.scrollWidth * .985 : 1;
+    //
+    // A cell that ends in an ellipsis cannot use that tolerance: the browser
+    // draws the ellipsis at a fraction of a pixel over, and scrollWidth rounds
+    // that away, so "Portugal" printed as "Portu…" at full size with room to
+    // spare a quarter-point down. `exact` measures the run itself.
+    let textWidth = element.scrollWidth, tolerance = 1;
+    if (rule.exact) {
+      responsiveTextRange.selectNodeContents(element);
+      textWidth = responsiveTextRange.getBoundingClientRect().width;
+      tolerance = 0;
+    }
+    const widthFit = textWidth > room + tolerance ? room / textWidth * .985 : 1;
     const heightFit = element.scrollHeight > availableHeight + 1
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
@@ -4455,9 +4527,13 @@ const spinButton = document.getElementById("spin");
 // rather than merely being a default. Before the first observation the world's
 // shape is unknown and the control stays live: there is simply nothing yet for
 // the turn to move. Player games hold still; rotation belongs to AI simulations.
+// Watch as holds still too: it frames one empire and keeps it framed, and a
+// turning world would carry that empire off the stage. WORLD_SPIN is left as it
+// was, so going back to All picks the turn up again.
 function spinAvailable() {
   if (state && !SPEC) return false;
   if (REDUCED_MOTION_QUERY.matches) return false;
+  if (Number.isInteger(state?.view_player)) return false;
   return !state || mapWrapsX();
 }
 // Whether it is turning this instant. Anything that is deliberately pointing
@@ -4477,6 +4553,8 @@ function updateSpinButton() {
     ? "Reduced motion is on, so the world holds still"
     : state && !SPEC
     ? "World rotation is available only in AI simulations"
+    : Number.isInteger(state?.view_player)
+    ? "The world holds still while you watch one civilization"
     : !available
     ? "This world does not come back on itself, so it has nothing to turn about"
     : WORLD_SPIN ? "Stop the world turning" : "Let the world turn";
@@ -4493,9 +4571,10 @@ function setWorldSpin(on) {
 // held still, so a drag stops it — and stops it for good rather than for the
 // moment, because a map that resumed drifting the instant a viewer let go of
 // it would have to be caught again every time they looked away. The button is
-// how it comes back.
+// how it comes back. A world already held still has nothing to stop, so looking
+// around a watched empire does not cost the turn waiting back at All.
 function stopWorldSpin() {
-  if (WORLD_SPIN) setWorldSpin(false);
+  if (WORLD_SPIN && spinAvailable()) setWorldSpin(false);
 }
 // One tick of the turn. `dt` is milliseconds and a whole turn is the period,
 // so the pace holds however the frames fall — within the fifty-millisecond
@@ -5003,6 +5082,7 @@ function applyTurnPlateWidth(width, persist = true) {
     ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), candidate)))
     : null;
   syncTurnPlateWidth();
+  refreshPlayerHudShedColumns();
   if (persist) {
     try {
       if (turnPlateWidth === null) localStorage.removeItem(TURN_PLATE_WIDTH_STORAGE_KEY);
@@ -8409,15 +8489,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
   }
-  // A turning world and an empire kept in frame are two answers to where the
-  // camera should be, and this one arrives ten times a second: left to argue,
-  // the reframe would win every observation and the spin would show as a
-  // shiver rather than a turn. So the standing, stated preference outranks the
-  // automatic convenience, and the flag is only stepped over rather than
-  // cleared — stopping the spin hands the watched empire its framing straight
-  // back.
+  // The watched empire stays in frame as it grows. A watched world never turns
+  // (see spinAvailable), so only a hand on the camera can overrule this.
   else if (watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
-           !cameraFollowManual && !dragState && !touchGesture && !spinRunning())
+           !cameraFollowManual && !dragState && !touchGesture)
     setObservedPlayersView(true);
   const errEl = document.getElementById("err");
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
@@ -8512,8 +8587,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         : winnerIds.includes(0) ? "Victory" : "Defeat";
       const winnerActions = SPEC
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
-            onclick="playOnPastVictory('until_next_victory', false)"
-            title="Keep this world playing until a different victory ends it.">One more turn</button>
+            onclick="playOnPastVictory('indefinite', false)"
+            title="Keep this world playing. Nothing ends it until you press Restart sim.">One more turn</button>
           <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
             title="Start a new game now.">New Game</button>`
         : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
@@ -16213,18 +16288,22 @@ function skyLaunchInFlight(playerId, mission, now = performance.now()) {
   return activeSkyLaunches(now).some(launch =>
     launch.playerId === playerId && launch.mission === mission);
 }
-// How much of a civilization's satellite is out of its rocket: none for most of
-// the ascent, then all of it, which is also what a craft with no launch running
-// reads. The rocket fades over exactly this stretch, so the one hands over to
-// the other and there is never a moment with both or neither on the screen.
+// How much of a civilization's standing craft is out of its rocket: none for
+// most of the flight, then all of it, which is also what a craft with no launch
+// running reads. The rocket fades over exactly this stretch, so the one hands
+// over to the other and there is never a moment with both or neither on the
+// screen.
 const SKY_SATELLITE_HANDOVER = .88;
-function skySatelliteDeployed(playerId, now) {
+function skyCraftDeployed(playerId, mission, now) {
   const launch = activeSkyLaunches(now).find(candidate =>
-    candidate.playerId === playerId && candidate.mission === "satellite");
+    candidate.playerId === playerId && candidate.mission === mission);
   if (!launch) return 1;
   const flown = (now - launch.t0) / launch.duration;
   return Math.max(0, Math.min(1,
     (flown - SKY_SATELLITE_HANDOVER) / (1 - SKY_SATELLITE_HANDOVER)));
+}
+function skySatelliteDeployed(playerId, now) {
+  return skyCraftDeployed(playerId, "satellite", now);
 }
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
@@ -18888,7 +18967,8 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
   if (!crew.length) return;
   cx.save();
   crew.forEach((player, index) => {
-    if (skyLaunchInFlight(player.id, "expedition", now)) return;
+    const deployed = skyCraftDeployed(player.id, "expedition", now);
+    if (!deployed) return;
     const {ux, uy, travelled, startX, startY, endX, endY, shipX, shipY} =
       skyExpeditionRoute(player, index, crew.length, exo, radius, centerX, centerY);
     // Zoomed in close, the whole lane is off in the dark and all that reaches
@@ -18896,14 +18976,15 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
     // ship itself is in the picture; that is the thing worth drawing.
     if (!skyOnStage(shipX, shipY, 24)) return;
     const colour = pcol(player.id);
+    const shown = alpha * deployed;
     // The road ahead, then the part already flown over the top of it.
-    cx.globalAlpha = alpha * .22; cx.strokeStyle = colour; cx.lineWidth = 1;
+    cx.globalAlpha = shown * .22; cx.strokeStyle = colour; cx.lineWidth = 1;
     cx.setLineDash([2, 5]);
     cx.beginPath(); cx.moveTo(startX, startY); cx.lineTo(endX, endY); cx.stroke();
     cx.setLineDash([]);
-    cx.globalAlpha = alpha * .62; cx.lineWidth = 1.4;
+    cx.globalAlpha = shown * .62; cx.lineWidth = 1.4;
     cx.beginPath(); cx.moveTo(startX, startY); cx.lineTo(shipX, shipY); cx.stroke();
-    cx.globalAlpha = alpha;
+    cx.globalAlpha = shown;
     const size = Math.max(2.2, Math.min(5, radius * .07));
     // An engine that flickers is the cheapest way to say a thing is under way
     // rather than parked; an arrived expedition holds still instead.
@@ -18912,9 +18993,9 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
       const glow = cx.createRadialGradient(shipX - ux * size, shipY - uy * size, 0,
                                            shipX - ux * size, shipY - uy * size, flare);
       glow.addColorStop(0, colour); glow.addColorStop(1, "rgba(255,214,140,0)");
-      cx.globalAlpha = alpha * .55; cx.fillStyle = glow;
+      cx.globalAlpha = shown * .55; cx.fillStyle = glow;
       cx.beginPath(); cx.arc(shipX - ux * size, shipY - uy * size, flare, 0, 7); cx.fill();
-      cx.globalAlpha = alpha;
+      cx.globalAlpha = shown;
     }
     cx.fillStyle = colour; cx.strokeStyle = "#0b1116"; cx.lineWidth = .8;
     cx.beginPath();
@@ -19191,18 +19272,30 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
   return shape;
 }
 
-// A flight on the globe is a path through the planet's own frame, projected
-// through the camera exactly as the ground is. That one decision is most of the
-// realism: the rocket leaves the actual Spaceport, a turning world carries it
-// along as it carries the pad, and the planet hides it for exactly as long as
-// the planet is really in the way. Every launch pitches over to the east, the
-// way the world turns, which is why real ones do: the spin is free speed.
+// A launch has one clock and one curve. The clock says how much of the route
+// has been flown and the curve says where that puts the rocket; both are
+// settled on its first frame and only read after that. Routes that re-derived
+// themselves every frame were what jumped, and a climb through the world
+// dragged toward a point on the screen was what hooked: a rocket would swing
+// out from its pad and then cut back across the face of the planet after a Moon
+// twenty thousand pixels away. Nothing here blends two motions any more.
 //
-// How much of a flight is spent climbing, before it holds its height.
+// A flight on the globe is a path through the planet's own frame, projected
+// through the camera exactly as the ground is. It leaves the actual Spaceport,
+// a turning world carries it along as it carries the pad, and the planet hides
+// it for exactly as long as the planet is really in the way. Every launch
+// pitches over to the east, the way the world turns, which is why real ones do:
+// the spin is free speed.
+//
+// How much of a satellite's flight is spent climbing, before it holds height.
 const SKY_CLIMB_SHARE = .8;
 function skySmooth(value) {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
+}
+function skySmoother(value) {
+  const t = Math.max(0, Math.min(1, value));
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 function skyLaunchesToPaint(now) {
   if (!SHOW_ROCKET_ANIMATIONS) return [];
@@ -19234,40 +19327,70 @@ function skyCameraIn(camera, ms) {
 function skyFlightLens(camera, launch, progress) {
   return {...skyCameraIn(camera, progress * launch.duration), radius:1};
 }
-// On the stage, clear of the panels, and not behind the world.
-function skyLaunchInSight(point, radius, centerX, centerY) {
-  return skyOnStage(point.x, point.y, 0) &&
+// On the stage, clear of the panels, and not behind the world. A plan asks this
+// hundreds of times, so the panels are measured once.
+function skySightTest(radius, centerX, centerY) {
+  const boxes = skyWidgetBoxes();
+  return point => point.x >= 0 && point.x <= MAPW && point.y >= 0 && point.y <= MAPH &&
+    !boxes.some(box => point.x > box.left && point.x < box.right &&
+                       point.y > box.top && point.y < box.bottom) &&
     !(point.z < 0 && Math.hypot(point.x - centerX, point.y - centerY) < radius);
 }
 
-// Where along its route a launch is. Normally that is simply how much of the
-// film has played, but one going up behind the world would spend most of its
-// film out of sight, so the part nobody can see is run through faster. A
-// mission simply spends the first three tenths of its film getting to the point
-// where it comes into view. A satellite cannot change speed like that, since it
-// has to arrive moving at orbital speed, so its `haste` eases back to no effect
-// by the last frame.
-function skyLaunchProgress(launch, now) {
-  const flown = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
-  if (launch.emerges > .3)
-    return flown < .3 ? launch.emerges * flown / .3
-      : launch.emerges + (1 - launch.emerges) * (flown - .3) / .7;
-  return flown + (launch.haste || 0) * flown * (1 - flown) * (1 - flown);
+// The clock. A rocket is still gathering speed when it leaves the picture, so a
+// flight that ends off the frame runs on thrust: almost nothing at first, then
+// harder and harder, with no seam anywhere in it. One that has been flying
+// behind the world comes into view already moving: `from` is how much of the
+// route is behind it by then, and `rolling` the share of what remains that it
+// flies at a steady rate.
+const SKY_THRUST_POWER = 2.2, SKY_ROLLING_START = .22;
+function skyThrustLaw(from = 0, rolling = 0) {
+  return clock => {
+    const t = Math.max(0, Math.min(1, clock));
+    return from + (1 - from) * (rolling * t + (1 - rolling) * Math.pow(t, SKY_THRUST_POWER));
+  };
 }
-// Settled on a launch's first frame: how much to hurry so the rocket comes into
-// view within the first third of its film, or, when no part of the true route
-// can be seen at all, that it will have to cross the stage instead.
-function skyLaunchSettle(launch, inSight) {
-  launch.settled = true;
-  for (let step = 0; step <= 40; step++) {
-    if (!inSight(step / 40)) continue;
-    if (launch.mission === "satellite")
-      launch.haste = Math.max(0, Math.min(3, (step / 40 - .3) / .147));
-    else launch.emerges = step / 40;
-    return;
+// Passing through, at one speed.
+const skyCoastLaw = clock => Math.max(0, Math.min(1, clock));
+// Coming in from beyond the frame and braking to a landing.
+const skyBrakeLaw = clock => {
+  const t = Math.max(0, Math.min(1, clock));
+  return 1 - (1 - t) * (1 - t);
+};
+// World to world, both in the picture: away, across, and down.
+const skyTransferLaw = clock => skySmoother(clock);
+
+// The curve. Pitch falls steadily with distance flown, from near vertical to
+// well over, which makes the path one arc of a circle in the plane holding the
+// pad's vertical and its line of flight. An arc only ever bends one way, the
+// height it has gained can only grow, and an orthographic camera turns a circle
+// into an ellipse, so all of that is still true on the screen.
+function skyPitchArc(pitchFrom, pitchTo) {
+  const turn = pitchTo - pitchFrom;
+  const sinFrom = Math.sin(pitchFrom), cosFrom = Math.cos(pitchFrom);
+  return progress => {
+    if (Math.abs(turn) < 1e-4) return {up:progress * sinFrom, along:progress * cosFrom};
+    const pitch = pitchFrom + turn * progress;
+    return {up:(cosFrom - Math.cos(pitch)) / turn, along:(Math.sin(pitch) - sinFrom) / turn};
+  };
+}
+// How far along a ray, in multiples of `delta`, it comes out of a box. Null when
+// it is never inside.
+function skyRayLeavesBox(origin, delta, box) {
+  let enter = -Infinity, leave = Infinity;
+  for (const [from, step, low, high] of [[origin.x, delta.x, box.left, box.right],
+                                         [origin.y, delta.y, box.top, box.bottom]]) {
+    if (!step) {
+      if (from < low || from > high) return null;
+      continue;
+    }
+    const first = (low - from) / step, second = (high - from) / step;
+    enter = Math.max(enter, Math.min(first, second));
+    leave = Math.min(leave, Math.max(first, second));
   }
-  launch.crossing = true;
+  return leave > Math.max(enter, 0) ? leave : null;
 }
+
 function skyStageEdge(stage, dx, dy, margin) {
   const span = Math.hypot(dx, dy) || 1, ux = dx / span, uy = dy / span;
   const reach = Math.min(
@@ -19283,83 +19406,161 @@ function skyStageEdge(stage, dx, dy, margin) {
 function skyLaunchCrossing(from, goal, stage, margin) {
   const midX = (stage.left + stage.right) / 2, midY = (stage.top + stage.bottom) / 2;
   const inX = from.x - midX, inY = from.y - midY;
-  let outX = goal.x - midX, outY = goal.y - midY;
-  if (inX * outX + inY * outY > .3 * Math.hypot(inX, inY) * Math.hypot(outX, outY)) {
-    const side = inY <= 0 ? 1 : -1; // not back out the way it came, so east of it
-    outX = -inY * side; outY = inX * side;
-  }
+  // Out through the far side, leaning toward where it is going by no more than
+  // the frame can carry. Leaving by the bearing of the goal alone sent a rocket
+  // whose pad and goal lay the same way along the outside of the frame.
+  const through = Math.atan2(-inY, -inX);
+  let lean = Math.atan2(goal.y - midY, goal.x - midX) - through;
+  lean = Math.atan2(Math.sin(lean), Math.cos(lean));
+  const out = through + Math.max(-.8, Math.min(.8, lean));
   const start = skyStageEdge(stage, inX, inY, margin);
-  const end = skyStageEdge(stage, outX, outY, margin);
-  return {start, end, entering:true, leaving:true,
+  const end = skyStageEdge(stage, Math.cos(out), Math.sin(out), margin);
+  return {start, end, entering:true, leaving:true, law:skyCoastLaw,
           pointAt:progress => skyLaunchPoint(start, end, progress, .5, ease => ease)};
 }
 
-// A mission climbs off its pad and pitches over to the east, and only then
-// bends toward where it is going, which from here is almost always off the
-// frame. The climb belongs to the world and turns with it; the destination
-// belongs to the sky and does not.
-function skyMissionAscent(launch, player, place, crews, view, radius, centerX, centerY, margin,
-                          {peak, turn}) {
-  const pad = skyLaunchPad(launch, player), east = skyPadEast(pad);
-  const site = planetProject(pad, view, radius, centerX, centerY);
-  const out = Math.hypot(site.x - centerX, site.y - centerY);
-  // Round the back, what decides the visible route is the limb above the pad.
-  const start = site.z >= 0 ? site
-    : out > 1e-6 ? {x:centerX + (site.x - centerX) / out * radius,
-                    y:centerY + (site.y - centerY) / out * radius}
-    : {x:centerX, y:centerY - radius};
-  const film = skyLaunchFilm(start,
-    skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY), margin);
-  if (!film) return null;
-  const {end} = film;
-  return {...film, start:site, pointAt:(progress, lens = view) => {
-    const p = Math.max(0, Math.min(1, progress));
-    const height = 1 + peak * skySmooth(p / SKY_CLIMB_SHARE);
-    const along = height * Math.cos(turn * p * p), ahead = height * Math.sin(turn * p * p);
-    const climb = planetProject(
-      [0, 1, 2].map(axis => pad[axis] * along + east[axis] * ahead),
-      lens, radius, centerX, centerY);
-    // Arriving at a world slows into it; leaving the picture is still
-    // accelerating, because the rocket is nowhere near done.
-    const away = Math.max(0, (p - .2) / .8);
-    const bent = film.leaving ? away * away : skySmooth(away);
-    return {x:climb.x + (end.x - climb.x) * bent,
-            y:climb.y + (end.y - climb.y) * bent,
-            z:climb.z * (1 - bent)};
-  }};
+// Off the true east by this many radians, and pitching over between these two
+// angles above the horizon. The first of each is the launch a viewer expects;
+// the rest exist because a camera looks down on a pad at some angle, and from
+// some angles the expected launch runs straight back along its own sightline.
+const SKY_ASCENT_AZIMUTHS = [0, .35, -.35, .7, -.7];
+const SKY_ASCENT_PITCHES = [[1.5, .95], [1.5, .6], [1.5, .35],
+                            [1.15, .6], [1.15, .35], [.85, .45]];
+// Below this the world is a marble and a pad has no meaning of its own.
+const SKY_WORLD_IS_A_DOT = 24;
+
+function skyAscentAt(shape, progress, lens, radius, centerX, centerY) {
+  const {up, along} = shape.arc(Math.max(0, Math.min(1, progress)));
+  const {pad, heading, reach} = shape;
+  return planetProject([0, 1, 2].map(axis =>
+    pad[axis] * (1 + reach * up) + heading[axis] * reach * along),
+    lens, radius, centerX, centerY);
 }
 
-// How high and how far east a mission flies. With the world filling the frame
-// there is only a thin margin of sky around it, so a climb that suits one pad
-// carries another straight off the stage: take the boldest one that stays in
-// view the longest.
-function skyMissionPlan(launch, player, place, crews, camera, view, radius, centerX, centerY,
-                        margin) {
-  let most = -1;
-  for (const peak of [2.4, 1.5, .9, .5, .25, .1]) {
-    for (const turn of [.95, .5]) {
-      const route = skyMissionAscent(launch, player, place, crews, view, radius, centerX, centerY,
-                                     margin, {peak, turn});
-      if (!route) return;
+// Which climb this pad flies from this camera. Each one is scaled to leave the
+// frame just as its film ends, however much of the planet is in the picture, and
+// is scored on what a viewer would actually get: time in sight, a heading that
+// does not swing round, a rocket that is not flying down its own sightline.
+function skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, margin) {
+  const east = skyPadEast(pad);
+  const north = [pad[1] * east[2] - pad[2] * east[1],
+                 pad[2] * east[0] - pad[0] * east[2],
+                 pad[0] * east[1] - pad[1] * east[0]];
+  const view = {...camera, radius:1}, last = skyFlightLens(camera, launch, 1);
+  const box = {left:stage.left - margin, top:stage.top - margin,
+               right:stage.right + margin, bottom:stage.bottom + margin};
+  const run = .55 * Math.min(MAPW, MAPH);
+  const at = planetProject(pad, last, radius, centerX, centerY);
+  const upward = planetProject(pad, last, radius, 0, 0);
+  const inSight = skySightTest(radius, centerX, centerY);
+  let best = null, score = -Infinity;
+  for (const azimuth of SKY_ASCENT_AZIMUTHS) {
+    const heading = [0, 1, 2].map(axis =>
+      Math.cos(azimuth) * east[axis] + Math.sin(azimuth) * north[axis]);
+    const onward = planetProject(heading, last, radius, 0, 0);
+    for (const [pitchFrom, pitchTo] of SKY_ASCENT_PITCHES) {
+      const arc = skyPitchArc(pitchFrom, pitchTo), tip = arc(1);
+      const chord = {x:upward.x * tip.up + onward.x * tip.along,
+                     y:upward.y * tip.up + onward.y * tip.along};
+      const span = Math.hypot(chord.x, chord.y);
+      const leaves = span > 1e-6 ? skyRayLeavesBox(at, chord, box) : null;
+      if (leaves === null) continue;
+      const shape = {pad, heading, arc, reach:Math.max(leaves, run / span)};
+      // The first moment it can be seen from here. Anything earlier is flown
+      // out of sight, so the film opens just before it.
+      let first = -1;
+      for (let step = 0; step <= 40 && first < 0; step++)
+        if (inSight(skyAscentAt(shape, step / 40, view, radius, centerX, centerY))) first = step / 40;
+      if (first < 0) continue;
+      const from = first > 0 ? Math.max(0, first - .02) : 0;
+      const law = skyThrustLaw(from, from > 0 ? SKY_ROLLING_START : 0);
       let seen = 0;
       for (let step = 0; step <= 24; step++)
-        if (skyLaunchInSight(route.pointAt(step / 24, skyFlightLens(camera, launch, step / 24)),
-                             radius, centerX, centerY)) seen++;
-      if (seen > most) { most = seen; launch.shape = {peak, turn}; }
+        if (inSight(skyAscentAt(shape, law(step / 24), skyFlightLens(camera, launch, step / 24),
+                                radius, centerX, centerY))) seen++;
+      // How the heading swings on the screen, and how flat-on it gets.
+      let swing = 0, least = Infinity, most = 0, prior = null;
+      for (let step = 0; step <= 8; step++) {
+        const pitch = pitchFrom + (pitchTo - pitchFrom) * step / 8;
+        const px = upward.x * Math.sin(pitch) + onward.x * Math.cos(pitch);
+        const py = upward.y * Math.sin(pitch) + onward.y * Math.cos(pitch);
+        const speed = Math.hypot(px, py);
+        least = Math.min(least, speed); most = Math.max(most, speed);
+        if (prior) swing += Math.abs(Math.atan2(prior[0] * py - prior[1] * px,
+                                                prior[0] * px + prior[1] * py));
+        prior = [px, py];
+      }
+      const worth = seen / 25 * 6 - from * 2 - Math.abs(azimuth) * 1.2 -
+        (1.5 - pitchFrom) * .8 - Math.max(0, swing - 1.7) * 3 -
+        (least < most * .35 ? 1.5 : 0);
+      if (worth > score) { score = worth; best = {...shape, law, from}; }
     }
   }
+  return best;
 }
 
-// A satellite climbs inside the plane of the orbit it is going to. It leaves
-// the pad straight up, takes on height first and range second, and reaches the
-// ring moving along it at the ring's own rate, so that at the last frame it is
-// exactly where the craft is and moving exactly as the craft moves.
-function skySatelliteClimb(orbit, from, range, sweep) {
+// From far enough out the Earth is a dot and the Moon is on the stage with it,
+// and the whole trip is in the picture. A body closer than the rocket is long
+// gets a short departure instead, since there is no distance to fly: at Solar
+// System zoom the Moon is two pixels from the Earth.
+function skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY) {
+  const start = planetProject(skyLaunchPad(launch, player), view, radius, centerX, centerY);
+  const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
+  const dx = goal.x - start.x, dy = goal.y - start.y, span = Math.hypot(dx, dy);
+  const hop = span < 30;
+  const end = hop
+    ? {x:start.x + (span > 1 ? dx / span : 0) * 44, y:start.y + (span > 1 ? dy / span : -1) * 44}
+    : goal;
+  return {start, end, entering:false, leaving:hop, law:hop ? skyThrustLaw() : skyTransferLaw,
+          pointAt:progress => ({...skyLaunchPoint(start, end, progress, .5, ease => ease),
+                                z:start.z * (1 - progress)})};
+}
+
+// The camera is parked at the destination and home is far out of the picture:
+// the rocket comes in over the edge of the frame on Earth's bearing and brakes.
+function skyArrivalRoute(start, goal, margin) {
+  const film = skyLaunchFilm(start, goal, margin);
+  if (!film) return null;
+  return {...film, law:film.leaving ? skyCoastLaw : skyBrakeLaw, pointAt:progress => ({
+    x:film.start.x + (film.end.x - film.start.x) * progress,
+    y:film.start.y + (film.end.y - film.start.y) * progress, z:0})};
+}
+
+// Settled once, on a launch's first frame, from what the camera can see then.
+function skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin) {
+  const view = {...camera, radius:1};
+  const pad = skyLaunchPad(launch, player);
+  const site = planetProject(pad, view, radius, centerX, centerY);
+  const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
+  if (skyOnStage(goal.x, goal.y, 0)) {
+    const home = skyOnStage(site.x, site.y, 0);
+    if (home && radius <= SKY_WORLD_IS_A_DOT) return {kind:"transfer"};
+    if (!home && skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
+  }
+  const shape = skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, margin);
+  return shape ? {kind:"ascent", shape} : {kind:"crossing"};
+}
+
+// A satellite climbs inside the plane of the orbit it is going to, and reaches
+// the ring moving along it at the ring's own rate, so that at the last frame it
+// is exactly where the craft is and moving exactly as the craft moves. The climb
+// is a true gravity turn: the angle of flight above the horizon starts at its
+// highest and falls without ever rising again to level at the ring, because
+// height is the integral of tan(angle) times range flown, with the angle set
+// by `tan = steep * (1 - p ^ settle)` and `steep` the one value that ends on the
+// ring. A small `settle` is a launch that goes up first; a large one stays low
+// and pitches over early, which is what a pad needs when the camera is looking
+// down it and height on the screen would run back against the range.
+function skySatelliteClimb(orbit, from, range, sweep, settle = .4) {
   const early = 3 * range - sweep, late = sweep - 2 * range;
+  const steep = Math.log(orbit.ring) /
+    (early * (1 - 2 / (settle + 2)) + late * (1 - 3 / (settle + 3)));
   return progress => {
     const p = Math.max(0, Math.min(1, progress));
-    const height = 1 + (orbit.ring - 1) * skySmooth(p / SKY_CLIMB_SHARE);
-    return skySatelliteSite({...orbit, ring:height},
+    const raised = early * p * p + late * p * p * p -
+      2 * early * Math.pow(p, settle + 2) / (settle + 2) -
+      3 * late * Math.pow(p, settle + 3) / (settle + 3);
+    return skySatelliteSite({...orbit, ring:Math.exp(steep * raised)},
                             from + early * p * p + late * p * p * p);
   };
 }
@@ -19367,10 +19568,11 @@ function skySatelliteClimb(orbit, from, range, sweep) {
 // least as steep as its own latitude, and always passes back over its pad, so
 // the civilization's orbit is leaned just enough and then swung round until it
 // does. That leaves two ways to go, north of east and south of east, and any
-// amount of downrange: pick the shortest flight that joins the ring out in open
-// sky (the track is not drawn across the world's face) and spends a good share
-// of its film in view. Coming round from behind the planet, that is what
-// decides which way it goes.
+// amount of downrange. Up to two thirds of what the orbit itself covers in the
+// film is the most a flight can go and still be speeding up as it arrives, so
+// that is the limit; past it the rocket would have to overtake the orbit and
+// then brake into it. Within that, take the one that joins the ring in open sky
+// and spends the most of its film in view.
 function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY) {
   const base = skyOrbit(player);
   const lap = skySatelliteOrbit(player, index, radius, base).lap;
@@ -19379,42 +19581,87 @@ function skySatellitePlan(launch, player, index, pad, camera, radius, centerX, c
     Math.min(1.5, Math.max(Math.abs(base.inclination), Math.abs(latitude) + .03));
   const rise = Math.max(-1, Math.min(1, pad[2] / Math.sin(inclination)));
   const sweep = launch.duration / lap * 6.283;
+  const view = {...camera, radius:1};
   const project = (point, p) => planetProject(point, skyFlightLens(camera, launch, p),
                                               radius, centerX, centerY);
+  const inSight = skySightTest(radius, centerX, centerY);
   let best = null, score = -Infinity;
   for (const from of [Math.asin(rise), Math.PI - Math.asin(rise)]) {
     const node = Math.atan2(pad[1], pad[0]) -
       Math.atan2(Math.sin(from) * Math.cos(inclination), Math.cos(from));
     const orbit = skySatelliteOrbit(player, index, radius, {...base, inclination, node});
-    best ||= {from, node, range:sweep * .5};
-    for (let range = sweep * .5; range < sweep * .5 + 3.6; range += .1) {
-      const climb = skySatelliteClimb(orbit, from, range, sweep);
+    for (const settle of [.4, 1, 2.5, 7]) for (let share = .5; share <= 2 / 3 + 1e-6; share += 1 / 24) {
+      const range = sweep * share;
+      const climb = skySatelliteClimb(orbit, from, range, sweep, settle);
       const end = project(climb(1), 1);
-      if (end.x < 24 || end.x > MAPW - 24 || end.y < 24 || end.y > MAPH - 24 ||
-          !skyOnStage(end.x, end.y, 12) ||
-          Math.hypot(end.x - centerX, end.y - centerY) <= radius * 1.04) continue;
-      let seen = 0;
-      for (let step = 0; step <= 24; step++)
-        if (skyLaunchInSight(project(climb(step / 24), step / 24),
-                             radius, centerX, centerY)) seen++;
-      const worth = Math.min(seen / 25, .55) * 8 - range;
-      if (worth > score) { score = worth; best = {from, node, range}; }
+      const openSky = end.x >= 24 && end.x <= MAPW - 24 && end.y >= 24 && end.y <= MAPH - 24 &&
+        skyOnStage(end.x, end.y, 12) && Math.hypot(end.x - centerX, end.y - centerY) > radius * 1.04;
+      let seen = 0, first = -1, earlier = null, fastest = 0, slowest = Infinity;
+      const headings = [];
+      for (let step = 0; step <= 32; step++) {
+        const point = project(climb(step / 32), step / 32);
+        if (inSight(point)) {
+          if (step % 4 === 0) seen++;
+          if (first < 0) first = step / 32;
+        }
+        if (earlier) {
+          const moved = Math.hypot(point.x - earlier.x, point.y - earlier.y);
+          if (moved > 1.2) headings.push(Math.atan2(point.y - earlier.y, point.x - earlier.x));
+          fastest = Math.max(fastest, moved);
+          if (step >= 6) slowest = Math.min(slowest, moved);
+        }
+        earlier = point;
+      }
+      if (first < 0) continue;
+      // Doubling back on itself is the one thing a climb must not do on the
+      // screen: how far did it ever point from where it ends up going, and did
+      // it come nearly to a standstill turning round?
+      const final = headings[headings.length - 1] ?? 0;
+      const doubled = headings.reduce((most, heading) =>
+        Math.max(most, Math.abs(Math.atan2(Math.sin(heading - final), Math.cos(heading - final)))), 0);
+      const worth = seen / 9 * 8 / 3 + (openSky ? 2 : 0) - share - settle * .06 -
+        Math.max(0, doubled - 1.5) * 8 - (slowest < fastest * .18 ? 3 : 0);
+      if (worth > score) { score = worth; best = {from, node, range, orbit, first, settle, seen}; }
     }
+  }
+  if (!best || best.seen < 3) {
+    // No way of flying it can be seen for long enough from here. The orbit still
+    // has to pass over the pad; the rocket simply crosses the picture.
+    const from = Math.asin(rise);
+    best = {from, node:Math.atan2(pad[1], pad[0]) -
+      Math.atan2(Math.sin(from) * Math.cos(inclination), Math.cos(from)), range:sweep * .5};
+    launch.route = {kind:"crossing"};
+  }
+  if (best.orbit) {
+    // A flight that starts behind the world would spend its first seconds out
+    // of sight. It is not hurried through them, which would mean a rocket that
+    // sprints and then has to slow down to match its orbit: it simply started
+    // that much earlier, and everything after that is the same flight.
+    const climb = skySatelliteClimb(best.orbit, best.from, best.range, sweep, best.settle);
+    let first = 0;
+    for (let step = 0; step <= 40; step++) {
+      const point = planetProject(climb(step / 40), view, radius, centerX, centerY);
+      if (inSight(point)) { first = step / 40; break; }
+    }
+    const skip = Math.max(0, Math.min(.55, first - .03)) * launch.duration;
+    launch.t0 -= skip; launch.endsAt -= skip;
   }
   anim.skySettledOrbits.set(player.id, {inclination, node:best.node,
     phase:best.from + best.range - launch.endsAt / lap * 6.283});
-  launch.ascent = {from:best.from, range:best.range};
+  launch.ascent = {from:best.from, range:best.range, settle:best.settle};
 }
 function skySatelliteRoute(launch, player, index, view, radius, centerX, centerY) {
   const orbit = skySatelliteOrbit(player, index, radius);
   const climb = skySatelliteClimb(orbit, launch.ascent.from, launch.ascent.range,
-                                  launch.duration / orbit.lap * 6.283);
+                                  launch.duration / orbit.lap * 6.283, launch.ascent.settle);
   const pointAt = (progress, lens = view) =>
     planetProject(climb(progress), lens, radius, centerX, centerY);
-  return {start:pointAt(0), end:pointAt(1), entering:false, leaving:false, pointAt};
+  return {start:pointAt(0), end:pointAt(1), entering:false, leaving:false,
+          law:skyCoastLaw, pointAt};
 }
 
-// The route a launch flies on the globe this frame.
+// The route a launch flies on the globe this frame: only the camera that is
+// looking at it changes from one frame to the next.
 function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, centerY,
                         stage, margin) {
   const view = {...camera, radius:1};
@@ -19427,28 +19674,40 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   // all there is to see is something leaving it.
   if (!place && radius <= 10) return {
     start:{x:centerX, y:centerY}, end:{x:centerX + 14, y:centerY - 30},
-    entering:false, leaving:true,
+    entering:false, leaving:true, law:skyThrustLaw(),
     pointAt:progress => ({x:centerX + 14 * progress * progress, y:centerY - 30 * progress}),
   };
-  if (!launch.crossing) {
-    if (place && !launch.shape)
-      skyMissionPlan(launch, player, place, crews, camera, view, radius, centerX, centerY, margin);
-    const route = !place
-      ? skySatelliteRoute(launch, player, index, view, radius, centerX, centerY)
-      : launch.shape && skyMissionAscent(launch, player, place, crews, view, radius,
-                                         centerX, centerY, margin, launch.shape);
-    if (!route) launch.crossing = true;
-    else if (!launch.settled) skyLaunchSettle(launch, p => skyLaunchInSight(
-      route.pointAt(p, skyFlightLens(camera, launch, p)), radius, centerX, centerY));
-    if (!launch.crossing) return route;
+  if (!launch.route) {
+    launch.route = place
+      ? skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin)
+      : {kind:"orbit"};
   }
-  const site = planetProject(pad, view, radius, centerX, centerY);
-  const east = skyPadEast(pad);
-  return skyLaunchCrossing(site, place
-    ? skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY)
-    : planetProject([0, 1, 2].map(axis => pad[axis] + 2 * east[axis]), view,
-                    radius, centerX, centerY),
-    stage, margin);
+  const {route} = launch;
+  if (route.kind === "orbit") return skySatelliteRoute(launch, player, index, view, radius, centerX, centerY);
+  if (route.kind === "transfer")
+    return skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY);
+  if (route.kind === "arrive") {
+    const film = skyArrivalRoute(planetProject(pad, view, radius, centerX, centerY),
+      skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY), margin);
+    if (film) return film;
+    route.kind = "crossing";
+  }
+  if (route.kind === "ascent") {
+    const {shape} = route;
+    const pointAt = (progress, lens = view) =>
+      skyAscentAt(shape, progress, lens, radius, centerX, centerY);
+    return {start:pointAt(0), end:pointAt(1), entering:shape.from > 0, leaving:true,
+            law:shape.law, pointAt};
+  }
+  if (!route.crossing) {
+    const east = skyPadEast(pad);
+    route.crossing = skyLaunchCrossing(planetProject(pad, view, radius, centerX, centerY), place
+      ? skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY)
+      : planetProject([0, 1, 2].map(axis => pad[axis] + 2 * east[axis]), view,
+                      radius, centerX, centerY),
+      stage, margin);
+  }
+  return route.crossing;
 }
 
 function drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now) {
@@ -19475,7 +19734,7 @@ function drawChartLaunches(camera, radius, centerX, centerY) {
     const site = planetProject(pad, view, radius, centerX, centerY);
     const aside = planetProject([0, 1, 2].map(axis => pad[axis] + .02 * east[axis]), view,
                                 radius, centerX, centerY);
-    const route = skyClimbRoute(site, launch.mission, aside.x < site.x ? -1 : 1, 1);
+    const route = skyClimbRoute(launch, site, aside.x < site.x ? -1 : 1, stage, 36);
     drawLaunchFlight(launch, player, flight, skyBoardFlight(launch, route, stage, 36),
                      4.2, now, 1, stage);
   }
@@ -19494,12 +19753,17 @@ function drawLaunchSmoke(x, y, size, age) {
   }
 }
 
+// Radians a rocket's nose can swing per millisecond: well past any turn it
+// flies, and only ever met when the path runs through the sightline.
+const SKY_NOSE_RATE = .0046;
+
 // One painter for every map, because a launch should look like the same event
 // on all of them. `pixel` is one screen pixel in the caller's coordinates and
 // `limb`, on the globe only, is the disc that hides whatever is behind it.
 function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage, limb = null) {
   const {end, pointAt} = film;
-  const progress = skyLaunchProgress(launch, now);
+  const clock = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
+  const progress = film.law(clock);
   const at = pointAt(progress);
   const ahead = pointAt(Math.min(1, progress + .004));
   const behind = pointAt(Math.max(0, progress - .004));
@@ -19513,22 +19777,25 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;
   const lean = Math.max(.45, across / (Math.hypot(across, depth) || 1));
   const colour = pcol(player.id);
-  const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now) : 1;
+  // A satellite becomes its craft; anything else that is somehow still in the
+  // picture at the end of its film goes out rather than switching off.
+  const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
+    : 1 - skySmooth((clock - .9) / .1);
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
   const pad = pointAt(0);
   cx.save();
-  // The exhaust hangs where it was left and thins as it ages. Whatever is
-  // behind the world is not drawn, so a trail comes round the limb with its
-  // rocket instead of being laid across the planet's face.
-  const steps = Math.max(1, Math.ceil(progress * 40));
-  let last = pad;
-  for (let step = 1; step <= steps; step++) {
-    const flown = progress * step / steps;
-    const point = pointAt(flown);
+  // The exhaust hangs where it was left and thins as it ages. It is laid down on
+  // a fixed grid of moments so its corners do not crawl as the rocket climbs.
+  // Whatever is behind the world is not drawn, so a trail comes round the limb
+  // with its rocket instead of being laid across the planet's face.
+  let last = pointAt(film.law(0));
+  for (let step = 1, steps = Math.ceil(clock * 64); step <= steps; step++) {
+    const when = Math.min(clock, step / 64);
+    const point = pointAt(film.law(when));
     if (!unseen(point) && !unseen(last)) {
-      const thin = Math.max(.16, 1 - (progress - flown) / .6) * fade;
+      const thin = Math.max(.16, 1 - (clock - when) / .6) * fade;
       cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(point.x, point.y);
       cx.globalAlpha = thin * .3; cx.strokeStyle = "#e8e6dc";
       cx.lineWidth = 3.4 * pixel; cx.stroke();
@@ -19540,12 +19807,12 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // Ignition at the pad; landings answer it with a small arrival ring, and the
   // expedition instead hands straight into its live lane. A film cut off by the
   // frame shows neither at the cut.
-  if (progress < .3 && !film.entering) {
-    if (!unseen(pad)) drawLaunchSmoke(pad.x, pad.y, size, progress / .3);
-  } else if (launch.mission !== "expedition" && progress > .82 && !film.leaving && !unseen(end)) {
-    cx.globalAlpha = (progress - .82) / .18 * .52 * fade;
+  if (clock < .3 && !film.entering) {
+    if (!unseen(pad)) drawLaunchSmoke(pad.x, pad.y, size, clock / .3);
+  } else if (launch.mission !== "expedition" && clock > .82 && !film.leaving && !unseen(end)) {
+    cx.globalAlpha = (clock - .82) / .18 * .52 * fade;
     cx.strokeStyle = colour; cx.lineWidth = 1.2 * pixel;
-    cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
+    cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - clock), 0, 7); cx.stroke();
   }
   // Behind the world the rocket is cut by the limb rather than switched on, so
   // it comes up over the horizon nose first.
@@ -19555,8 +19822,24 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
     cx.arc(limb.x, limb.y, limb.r, 0, 7);
     cx.clip("evenodd");
   }
-  // The mission-specific craft and its plume point along the actual tangent.
-  cx.translate(at.x, at.y); cx.rotate(Math.atan2(dy, dx)); cx.scale(lean, 1);
+  // The route is where the rocket's tail starts from: it stands on the pad, and
+  // by the time it is flying the route runs through its middle.
+  const stand = (film.entering ? 0 : rocket.length / 2 * lean * (1 - skySmooth(clock / .4))) /
+    (across || 1);
+  // The mission-specific craft and its plume point along the actual tangent,
+  // at no more than a fixed rate of turn: pointing almost straight at the camera
+  // the tangent has no steady direction on the screen, and a nose that followed
+  // it exactly would flip end over end in a single frame.
+  const target = Math.atan2(dy, dx);
+  if (launch.nose === undefined) launch.nose = target;
+  else {
+    const turn = Math.atan2(Math.sin(target - launch.nose), Math.cos(target - launch.nose));
+    const most = SKY_NOSE_RATE * Math.max(0, now - launch.noseAt);
+    launch.nose += Math.max(-most, Math.min(most, turn));
+  }
+  launch.noseAt = now;
+  cx.translate(at.x + dx * stand, at.y + dy * stand);
+  cx.rotate(launch.nose); cx.scale(lean, 1);
   drawMissionRocket(flight.rocket, player, size, now, pixel, fade);
   cx.restore();
 
@@ -19906,34 +20189,68 @@ function flatSkyProject(worldX, worldY) {
 
 // A flat chart has no Moon or Mars to fly toward, but it does have the launch
 // city and an unambiguous direction: up and out of the picture, leaning east.
-// The bend is what makes that a gravity turn, nearly straight up off the pad
-// and pitching over as it climbs. Keep that path in screen proportions so the
-// same completion is legible at every map zoom.
-function skyClimbRoute(start, mission, east, pixel) {
-  const order = {satellite:-1, moon:0, mars:1}[mission] ?? 2;
-  const end = {x:start.x + east * MAPW * (.08 + order * .025) * pixel,
-               y:start.y - MAPH * (.48 + order * .06) * pixel};
-  const bend = -east * (.34 + order * .08);
-  return {start, end, pixel, leaving:true,
-          pointAt:progress => skyLaunchPoint(start, end, progress, bend)};
+// It is the same arc a globe flies, laid on the picture rather than on the
+// world: near vertical off the pad, pitching over steadily, and scaled to reach
+// the edge of the frame at the end of the film. The heavier the rocket the
+// further over it pitches. Kept in the frame's own units so that the same
+// completion is legible at every map zoom, and settled once.
+function skyClimbRoute(launch, start, east, stage, margin) {
+  const order = {satellite:-1, moon:0, mars:1}[launch.mission] ?? 2;
+  const arc = skyPitchArc(1.46, 1.02 - order * .13);
+  if (launch.reach === undefined) {
+    const tip = arc(1);
+    const leaves = skyRayLeavesBox(start, {x:east * tip.along, y:-tip.up},
+      {left:stage.left - margin, top:stage.top - margin,
+       right:stage.right + margin, bottom:stage.bottom + margin});
+    launch.reach = Math.max(leaves || 0,
+      .55 * Math.min(stage.right - stage.left, stage.bottom - stage.top));
+  }
+  const {reach} = launch;
+  const pointAt = progress => {
+    const {up, along} = arc(Math.max(0, Math.min(1, progress)));
+    return {x:start.x + east * along * reach, y:start.y - up * reach};
+  };
+  return {start, end:pointAt(1), leaving:true, law:skyThrustLaw(), east, pointAt};
+}
+function flatBoardStage(pixel) {
+  return {left:-MAPW / 2 * pixel, right:MAPW / 2 * pixel,
+          top:-MAPH / 2 * pixel, bottom:MAPH / 2 * pixel};
 }
 function flatLaunchRoute(launch, player) {
   const anchor = launch.originPos ? {pos:launch.originPos} : playerAnchor(player.id);
   if (!anchor?.pos) return null;
   const [x, y] = worldXY(anchor.pos);
   const pixel = 1 / cam.scale;
-  return skyClimbRoute({x, y:y - 5 * pixel}, launch.mission, COSR < 0 ? -1 : 1, pixel);
+  return skyClimbRoute(launch, {x, y:y - 5 * pixel}, COSR < 0 ? -1 : 1,
+                       flatBoardStage(pixel), 36 * pixel);
 }
-// A board has no horizon, only the edge of the frame, so the one thing to
-// settle is whether any of the route is in the picture.
+// A board has no horizon, only the edge of the frame, so the one thing to settle
+// is how soon the route is in the picture. A rocket whose pad is off the frame
+// comes in already moving; one that would never be in the picture still passes
+// up through it, because up is the only way a launch goes on a board.
 function skyBoardFlight(launch, route, stage, margin) {
-  if (!launch.settled) skyLaunchSettle(launch, p => {
-    const at = route.pointAt(p);
-    return at.x >= stage.left && at.x <= stage.right && at.y >= stage.top && at.y <= stage.bottom;
-  });
-  return launch.crossing
-    ? {...skyLaunchCrossing(route.start, route.end, stage, margin), pixel:route.pixel}
-    : route;
+  if (launch.firstSeen === undefined) {
+    launch.firstSeen = -1;
+    for (let step = 0; step <= 40 && launch.firstSeen < 0; step++) {
+      const at = route.pointAt(step / 40);
+      if (at.x >= stage.left && at.x <= stage.right && at.y >= stage.top && at.y <= stage.bottom)
+        launch.firstSeen = step / 40;
+    }
+    if (launch.firstSeen < 0) {
+      const east = route.east ?? 1, wide = stage.right - stage.left;
+      const low = {x:Math.max(stage.left + margin, Math.min(stage.right - margin, route.start.x)),
+                   y:stage.bottom + margin};
+      const high = {x:low.x + east * wide * .16, y:stage.top - margin};
+      launch.passing = {start:low, end:high, entering:true, leaving:true, law:skyCoastLaw,
+                        pointAt:progress => skyLaunchPoint(low, high, progress, -east * .4, ease => ease)};
+    }
+  }
+  if (launch.passing) return launch.passing;
+  if (launch.firstSeen > 0 && route.keepsClock !== true) {
+    const from = Math.max(0, launch.firstSeen - .02);
+    return {...route, entering:true, law:skyThrustLaw(from, SKY_ROLLING_START)};
+  }
+  return route;
 }
 
 // Height of a craft above the ground point it is drawn over on a flat board.
@@ -19947,26 +20264,33 @@ function flatSatelliteTheta(orbit, now) {
 // A flat board's version of the same climb: straight up off the Spaceport and
 // away along the craft's own track, which has been swung round to pass over the
 // pad. The track lies on the ground, so the height is drawn as a bow that lifts
-// off the pad and settles onto the track at the craft's own height and speed.
-// Zoomed in far enough that no craft is drawn, there is nothing to join and the
-// rocket leaves the picture.
+// off the pad, tops out past halfway and settles onto the track at the craft's
+// own height and speed. As on the globe, it can only cover so much of its track
+// and still be accelerating when it gets there. Zoomed in far enough that no
+// craft is drawn, there is nothing to join and the rocket leaves the picture.
 function flatSatelliteRoute(launch, player) {
   const route = flatLaunchRoute(launch, player);
   if (!route || !launch.originPos || flatSkyShown() <= .02) return route;
-  const {pixel} = route;
-  const lift = flatSatelliteLift(), bow = MAPH * .16 * pixel;
+  const pixel = 1 / cam.scale;
+  const lift = flatSatelliteLift();
   const halfW = MAPW / 2 * pixel - 24 * pixel, halfH = MAPH / 2 * pixel - 24 * pixel;
   const base = skyOrbit(player);
   const lap = FLAT_SAT_LAP * (.82 + .5 * base.pace);
   const sweep = launch.duration / lap * 6.283185;
   const climbFrom = (orbit, from, range) => {
     const early = 3 * range - sweep, late = sweep - 2 * range;
+    // A bow is the height of a rocket that has not yet joined its orbit, and it
+    // has to stay low next to the distance it crosses: with the same height and
+    // a board zoomed out it is a spike, straight up and straight back down.
+    const pad = flatSkyProject(...flatSatelliteGround(orbit, from));
+    const join = flatSkyProject(...flatSatelliteGround(orbit, from + range));
+    const bow = Math.min(MAPH * .12 * pixel, .34 * Math.hypot(join.x - pad.x, join.y - pad.y));
     return progress => {
-      const p = Math.max(0, Math.min(1, progress)), arc = p * (1 - p);
+      const p = Math.max(0, Math.min(1, progress));
       const here = flatSkyProject(...flatSatelliteGround(orbit,
         from + early * p * p + late * p * p * p));
-      return {x:here.x,
-              y:here.y - lift * skySmooth(p / SKY_CLIMB_SHARE) - bow * 16 * arc * arc};
+      return {x:here.x, y:here.y - lift * skySmoother(p / SKY_CLIMB_SHARE) -
+                          bow * 7.78 * Math.pow(p, 1.7) * Math.pow(1 - p, 1.3)};
     };
   };
   if (!launch.ascent) {
@@ -19981,10 +20305,15 @@ function flatSatelliteRoute(launch, player) {
       const swing = Math.atan2(Math.cos(inclination) * Math.sin(from), Math.cos(from));
       const node = pad.x * 6.283185 / WW() - swing -
         6.283185 * Math.round((from - swing) / 6.283185) + FLAT_SAT_DRIFT * from;
-      for (let range = sweep * .5; range < sweep * .5 + 3; range += .1) {
-        const end = climbFrom({...base, inclination, node}, from, range)(1);
+      for (let share = .5; share <= 2 / 3 + 1e-6; share += 1 / 24) {
+        const range = sweep * share;
+        const path = climbFrom({...base, inclination, node}, from, range);
+        const end = path(1);
         if (Math.abs(end.x) >= halfW || Math.abs(end.y) >= halfH) continue;
-        if (-range > score) { score = -range; best = {from, node, range}; }
+        // Of the two ways round, the one that climbs the picture: a rocket is
+        // pointing up as it leaves its pad and should go that way.
+        const worth = -range - (end.y > path(0).y ? 10 : 0);
+        if (worth > score) { score = worth; best = {from, node, range}; }
       }
     }
     if (!best) return route;
@@ -19993,13 +20322,12 @@ function flatSatelliteRoute(launch, player) {
     launch.ascent = {from:best.from, range:best.range};
   }
   const pointAt = climbFrom(skyOrbit(player), launch.ascent.from, launch.ascent.range);
-  return {start:pointAt(0), end:pointAt(1), pixel, pointAt};
+  return {start:pointAt(0), end:pointAt(1), leaving:false, law:skyCoastLaw, keepsClock:true, pointAt};
 }
 
 function drawFlatLaunches(now) {
   const pixel = 1 / cam.scale, size = 4.2 * pixel;
-  const stage = {left:-MAPW / 2 * pixel, right:MAPW / 2 * pixel,
-                 top:-MAPH / 2 * pixel, bottom:MAPH / 2 * pixel};
+  const stage = flatBoardStage(pixel);
   for (const {launch, player, flight} of skyLaunchesToPaint(now)) {
     const route = launch.mission === "satellite"
       ? flatSatelliteRoute(launch, player) : flatLaunchRoute(launch, player);
@@ -24775,61 +25103,195 @@ const DEFAULT_VICTORY_LEADERS = 3;
 // only when it is one of them, and stands the paths nearest a win first.
 const DEDICATED_VICTORY_LEADERS = 2;
 
-// Measure the space the rendered track actually has instead of coupling this
-// behavior to a hard-coded widget height. This keeps custom layouts, keyboard
-// resizing, compact viewports, and future style changes in sync. All paths use
-// the same capacity so every band advances from top 3 to top 4 together;
-// science's slightly taller split meter sets the safe limit.
+// The tracker sizes itself as one instrument, and being able to read it comes
+// first. Its room decides, in this order: every path on screen, then type at a
+// comfortable size with three leaders on each, then further leaders, and with
+// all of that met the type grows to fill what is left. Short of that, a third
+// leader may cost a point of type but no more, because the runner-up in a race
+// is worth more than a third name nobody can read. Then the type gives way to
+// its floor to keep two leaders, and scrolling comes last, soonest road on top.
+// A row is either whole or not drawn.
 //
-// The bands are stacked, so each one gets an equal share of the rail rather
-// than the whole of it — dividing by the full height would ask every band to
-// print the entire table and leave the rail permanently scrolled.
-function victoryLeaderCapacity(victoryHud) {
-  const rail = victoryHud?.querySelector(".hud-rail");
-  const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
-  if (!rail || !tracks.length) return DEFAULT_VICTORY_LEADERS;
-  const ribbon = victoryHud.querySelector(".victory-ribbon");
-  const ribbonGap = parseFloat(getComputedStyle(ribbon || rail).rowGap) || 0;
-  // The ribbon's shape changes with the room it has: one band per row down the
-  // rail, and a single row of columns below 620px, where there is no rail. What
-  // a band actually gets is the rail divided by the number of grid rows, so
-  // count the rows the bands landed on rather than assuming any one shape.
-  const gridRows = Math.max(1, new Set(tracks.map(track => track.offsetTop)).size);
-  const share = (rail.clientHeight - ribbonGap * (gridRows - 1)) / gridRows;
-  let capacity = Infinity;
-  for (const track of tracks) {
-    const list = track.querySelector(".victory-list");
-    const entries = [...(list?.querySelectorAll(".victory-entry") || [])];
-    if (!entries.length) { capacity = 0; continue; }
-    const floor = Math.min(DEFAULT_VICTORY_LEADERS, entries.length);
-    const trackStyle = getComputedStyle(track);
-    const listStyle = getComputedStyle(list);
-    const rowHeight = entries[0].getBoundingClientRect().height;
-    const gap = parseFloat(listStyle.rowGap) || 0;
-    const fixedHeight = list.getBoundingClientRect().top -
-      track.getBoundingClientRect().top + (parseFloat(trackStyle.paddingBottom) || 0);
-    const fits = rowHeight > 0
-      ? Math.floor((share - fixedHeight + gap) / (rowHeight + gap))
-      : floor;
-    capacity = Math.min(capacity, Math.max(floor, fits));
-  }
-  const total = tracks[0].querySelectorAll(".victory-entry").length;
-  return Math.max(0, Math.min(total, Number.isFinite(capacity) ? capacity : total));
+// There is one type size for the whole tracker. Fitting each name on its own
+// printed "Gran Colombia" smaller than "Egypt" in the same list.
+const VICTORY_TYPE_FLOOR = 12;
+const VICTORY_TYPE_THIRD_ROW_FLOOR = 13;
+const VICTORY_TYPE_COMFORT = 14;
+const VICTORY_TYPE_CEILING = 18;
+// The band's own padding and its top border.
+const VICTORY_BAND_CHROME = 9;
+// A path is a column of about this width in the short wide shape: a common
+// civilization name, its figure and the row's gutters at the type floor.
+const VICTORY_BAND_MIN_WIDTH = 108;
+
+// Every length in a band comes from its type size, in one place, so the row
+// count below is computed from the same numbers the stylesheet then draws.
+function victoryBandMetrics(type) {
+  const line = Math.ceil(type * 1.2);
+  const meter = Math.max(3.5, Math.round(type * .64) / 2);
+  const rowGap = Math.max(2, Math.round(type * .18));
+  const head = Math.ceil(type * 1.04);
+  const headGap = Math.max(2, Math.round(type * .16));
+  const dot = Math.max(5, Math.round(type * .9) / 2);
+  const dotGap = Math.max(3, Math.round(type * .3));
+  return {line, meter, rowGap, head, headGap, dot, dotGap, pitch:line + 1 + meter + rowGap};
 }
+
+function victoryBandHeight(rows, type) {
+  const band = victoryBandMetrics(type);
+  return VICTORY_BAND_CHROME + band.head + band.headGap + rows * band.pitch - band.rowGap;
+}
+
+// `room` is one band's height and `total` the rows it could print. A fixed row
+// count (the dedicated display's two) only chooses the type. A watched
+// civilization ranked below the cut keeps its row, so that row is budgeted too.
+function fitVictoryBands({room, total, ceiling, floorRows, fixedRows = null, focusRank = -1}) {
+  const shown = rows => rows + (focusRank >= rows ? 1 : 0);
+  const fits = (rows, type) => victoryBandHeight(shown(rows), type) <= room;
+  const largest = (rows, top, bottom) => {
+    for (let type = top; type >= bottom; type -= .5) if (fits(rows, type)) return type;
+    return null;
+  };
+  if (fixedRows !== null) {
+    const rows = Math.min(fixedRows, total);
+    return {rows, type:largest(rows, ceiling, VICTORY_TYPE_FLOOR) ?? VICTORY_TYPE_FLOOR};
+  }
+  const wanted = Math.min(DEFAULT_VICTORY_LEADERS, total);
+  for (let rows = total; rows >= wanted; rows--)
+    if (fits(rows, VICTORY_TYPE_COMFORT))
+      return {rows, type:largest(rows, ceiling, VICTORY_TYPE_COMFORT)};
+  // A watched civilization outside the leaders takes the runner-up's place
+  // before the rail gives up and scrolls: "who leads, and where am I".
+  const floor = Math.max(1, Math.min(floorRows, total) - (focusRank >= floorRows ? 1 : 0));
+  for (let rows = wanted; rows >= floor; rows--) {
+    const bottom = rows >= DEFAULT_VICTORY_LEADERS ? VICTORY_TYPE_THIRD_ROW_FLOOR : VICTORY_TYPE_FLOOR;
+    const type = largest(rows, rows < wanted ? ceiling : VICTORY_TYPE_COMFORT, bottom);
+    if (type !== null) return {rows, type};
+  }
+  return {rows:floor, type:VICTORY_TYPE_FLOOR};
+}
+
+// A wider band can carry larger type before a name runs out of line.
+function victoryTypeCeiling(bandWidth) {
+  return clampPanelDimension(Math.floor(bandWidth / 6) / 2,
+                             VICTORY_TYPE_COMFORT, VICTORY_TYPE_CEILING);
+}
+
+function applyVictoryType(victoryHud, type, rows, focusRank) {
+  const band = victoryBandMetrics(type);
+  const values = {
+    "--vt-name":`${type}px`, "--vt-line":`${band.line}px`, "--vt-meter":`${band.meter}px`,
+    "--vt-row-gap":`${band.rowGap}px`, "--vt-head":`${band.head}px`,
+    "--vt-head-gap":`${band.headGap}px`, "--vt-dot":`${band.dot}px`, "--vt-dot-gap":`${band.dotGap}px`,
+    "--vt-name-inset":`${band.dot + band.dotGap}px`,
+    "--vt-head-type":`${Math.round(type * 1.72) / 2}px`,
+    "--vt-sub-type":`${Math.max(10, Math.round(type * 1.52) / 2)}px`,
+    "--vt-band-min":`${victoryBandHeight(rows + (focusRank >= rows ? 1 : 0), type)}px`,
+  };
+  for (const [name, value] of Object.entries(values))
+    if (victoryHud.style.getPropertyValue(name) !== value) victoryHud.style.setProperty(name, value);
+}
+
+// What the width guard last settled, so a repaint that changed only numbers
+// does not lay the tracker out a second time.
+let victoryTypeGuard = {key:"", type:0};
+
+// The arrangement is part of the fit. A tall box stands its paths in one rail,
+// a short wide one lays them out in a row, and a box dragged out to something
+// in between divides them into columns: widening a rail that had run out of
+// height used to buy nothing at all. Each arrangement is priced by what it lets
+// a reader read: type first, the width of a band limiting how large that type
+// can usefully be, then leaders up to four. Past four more names are not worth
+// splitting a rail for.
+const VICTORY_BAND_WIDTH_PER_TYPE = 9.5;
+const VICTORY_RIBBON_GAP = 2;
+
+function chooseVictoryLayout({width, height, count, total, focusRank, fixedRows}) {
+  const bandFit = (columns, floorRows) => {
+    const bandWidth = (width - VICTORY_RIBBON_GAP * (columns - 1)) / columns;
+    const gridRows = Math.ceil(count / columns);
+    const room = (height - VICTORY_RIBBON_GAP * (gridRows - 1)) / gridRows;
+    return {columns, bandWidth, room, ...fitVictoryBands({
+      room, total, fixedRows, focusRank, floorRows, ceiling:victoryTypeCeiling(bandWidth),
+    })};
+  };
+  if (fixedRows !== null) return bandFit(1, fixedRows);
+  let best = null, bestScore = -Infinity;
+  for (let columns = 1; columns <= count; columns++) {
+    const fit = bandFit(columns, 2);
+    if (columns > 1 && fit.bandWidth < VICTORY_BAND_MIN_WIDTH) break;
+    const seen = fit.rows + (focusRank >= fit.rows ? 1 : 0);
+    if (victoryBandHeight(seen, fit.type) > fit.room || seen < Math.min(2, total)) continue;
+    const legible = Math.min(fit.type, fit.bandWidth / VICTORY_BAND_WIDTH_PER_TYPE, VICTORY_TYPE_COMFORT);
+    const score = legible * 1000 + Math.min(fit.rows, DEFAULT_VICTORY_LEADERS) * 100 +
+      Math.min(fit.rows, 4) * 10 + fit.type;
+    if (score > bestScore) { best = fit; bestScore = score; }
+  }
+  if (best) return best;
+  // Nothing shows every path. A rail can scroll and keeps two leaders on each;
+  // a row of columns cannot, so it would sooner show one whole row.
+  const ratio = width / Math.max(1, height);
+  const row = count > 1 && width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260));
+  return bandFit(row ? count : 1, row ? 1 : 2);
+}
+
+// Returns the arrangement and the rows to show on every path, and the type to
+// draw them at. `type` is null when there is nothing to measure: a world with
+// no contenders yet, or a folded tracker, which keeps the fit it had.
+function fitVictoryTracker(victoryHud, tracks, fixedRows = null) {
+  const rail = victoryHud.querySelector(".hud-rail");
+  // A long Arena Stats ledger is worth a share of the panel, not the panel.
+  // It scrolls inside that share, and a dragged seam still overrides it.
+  const statsCap = `${Math.round(Math.min(168, victoryHud.clientHeight * .2))}px`;
+  if (victoryHud.style.getPropertyValue("--sim-stats-cap") !== statsCap)
+    victoryHud.style.setProperty("--sim-stats-cap", statsCap);
+  const total = tracks[0].querySelectorAll(".victory-entry").length;
+  if (!total) return {rows:0, type:null};
+  if (!rail?.clientHeight)
+    return {rows:victoryTrackerRows ?? Math.min(DEFAULT_VICTORY_LEADERS, total), type:null};
+  const focusRank = fixedRows !== null ? -1 : Math.max(-1, ...tracks.map(track =>
+    [...track.querySelectorAll(".victory-entry")]
+      .findIndex(entry => entry.dataset.victoryFocus === "true")));
+  const layout = chooseVictoryLayout({
+    width:rail.clientWidth, height:rail.clientHeight, count:tracks.length, total, focusRank, fixedRows,
+  });
+  const shape = layout.columns === 1 ? "rail" : layout.columns === tracks.length ? "wide" : "grid";
+  if (victoryHud.dataset.typeShape !== shape) victoryHud.dataset.typeShape = shape;
+  if (victoryHud.style.getPropertyValue("--vt-columns") !== `${layout.columns}`)
+    victoryHud.style.setProperty("--vt-columns", `${layout.columns}`);
+  victoryTrackerRows = layout.rows;
+  return {rows:layout.rows, type:layout.type, focusRank};
+}
+let victoryTrackerRows = null;
 
 function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victoryhud")) {
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!tracks.length) return;
-  const capacity = DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud);
+  const {rows, type, focusRank} =
+    fitVictoryTracker(victoryHud, tracks, DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : null);
   for (const track of tracks) {
-    for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
+    for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries()) {
       // A player looking through their own fog should never disappear merely
       // because three rivals lead a path. Keep that one row in addition to
       // the capacity the panel can otherwise show — except on the dedicated
       // display, whose two rows per path are the whole point of the space.
-      entry.hidden = index >= capacity &&
+      const hidden = index >= rows &&
         (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true");
+      if (entry.hidden !== hidden) entry.hidden = hidden;
+    }
   }
+  if (type === null) return;
+  // The row count is settled by height. Width can only take the type down, and
+  // never below the floor: past that a long name ends in an ellipsis instead.
+  const names = [...victoryHud.querySelectorAll(".victory-entry:not([hidden]) .victory-civ")];
+  const key = `${victoryHud.dataset.typeShape}|${tracks[0].clientWidth}|${type}|${rows}|` +
+    names.map(name => name.textContent).join();
+  if (key !== victoryTypeGuard.key) {
+    applyVictoryType(victoryHud, type, rows, focusRank);
+    const stretch = Math.max(1, ...names.map(name => name.scrollWidth / Math.max(1, name.clientWidth)));
+    victoryTypeGuard = {key, type:Math.max(VICTORY_TYPE_FLOOR, Math.floor(type / stretch * 2) / 2)};
+  }
+  applyVictoryType(victoryHud, Math.min(type, victoryTypeGuard.type), rows, focusRank);
 }
 
 // The turn plate is the standings' left cell: the world's age and turn first,
@@ -24889,8 +25351,6 @@ function simulationStatsSection() {
         `<span class="sim-stat-name">${name}</span>` +
         `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
       .join("");
-  const body = rows ||
-    `<div class="sim-stats-empty">Finished games are recorded here, and the record persists between simulations.</div>`;
   const viewButton = view =>
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
     `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
@@ -24907,10 +25367,12 @@ function simulationStatsSection() {
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
       `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
     `</div>` +
-    `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
-    viewButton("civs") + viewButton("strategies") + viewButton("victories") +
-    `</div>` +
-    `<div class="sim-stats-rows">${body}</div>` +
+    // A ledger with nothing in it has no views to choose between, and the panel
+    // gives the whole section up until the first game finishes (`sim-stats-none`).
+    (games ? `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
+      viewButton("civs") + viewButton("strategies") + viewButton("victories") +
+      `</div>` +
+      `<div class="sim-stats-rows">${rows}</div>` : ``) +
     `</div></section>`;
 }
 
@@ -25129,8 +25591,6 @@ function playerHudOverview() {
   const focusPlayer = Number.isInteger(focusId)
     ? contenders.find(player => player.id === focusId)
     : null;
-  let defaultVictoryRows = Math.min(
-    DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   if (DEDICATED_DISPLAY) {
@@ -25154,15 +25614,10 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
-    const focusRank = focusPlayer
-      ? ranked.findIndex(player => player.id === focusPlayer.id)
-      : -1;
-    if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
-      Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" data-key="${track.id}" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
-      `<div class="victory-heading"><b>${track.label}</b></div>` +
+      `<div class="victory-heading"><b>${track.label}</b>` +
+      `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div></div>` +
       `<div class="victory-body">` +
-      `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
@@ -25191,15 +25646,10 @@ function playerHudOverview() {
     `<div class="victory-body"><p class="victory-none-note">Every path is switched off in Game setup, so this ` +
     `world plays to turn ${turnCapLabel()} and ends without a winner.</p></div></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
-  // Two floors for two orientations: one band per row down the rail, and one
-  // row of columns on a viewport too narrow to have a rail at all.
-  // One contender needs only a compact band. Three leaders take a taller one,
-  // and a watched player outside them adds exactly one more row. The outer
-  // tracker itself now fills the map/minimap seam; these remain the ribbon's
-  // internal content floors for its responsive rail and wide shapes.
-  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 20);
-  const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
-  const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
+  // How tall a band must be is settled by `fitVictoryTracker` from the room it
+  // measures. Width has no such pass: below this the columns of the short wide
+  // shape scroll sideways, soonest road first.
+  const victoryMinWidth = victoryCount * VICTORY_BAND_MIN_WIDTH + Math.max(0, victoryCount - 1) * 2;
   const overview =
     `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
     simulationStatsSection() +
@@ -25215,7 +25665,7 @@ function playerHudOverview() {
     `</div>` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
-    `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
+    `--victory-min-width:${victoryMinWidth}px">` +
     `${victoryBody}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
@@ -25466,11 +25916,13 @@ function drawPlayerHud() {
   // reading position so the next simulation frame cannot snap them back.
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
+  const standingsExisted = Boolean(hud.querySelector(".player-standings"));
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
     patchHudMarkup(victoryHud, overview);
   }
+  victoryHud.classList.toggle("sim-stats-none", !simulationStats[simulationStatsMode()]?.games);
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
   const highlightActing = highlightActingPlayerInHud();
@@ -25551,6 +26003,7 @@ function drawPlayerHud() {
   // The one place the column model becomes markup: the heading and every row
   // emit one cell per column from this list, in this order, so the table and
   // the viewer's saved arrangement cannot disagree.
+  syncPlayerHudShedColumns();
   const visibleColumns = visiblePlayerHudColumns();
   // The corner ✕ folds the standings in place and leaves the turn box; the
   // whole masthead is still switched from Display Settings. Each collapsed
@@ -25806,6 +26259,9 @@ function drawPlayerHud() {
   // innerHTML also replaced the plate seam; restamp its live automatic or
   // preferred width and accessibility range.
   syncTurnPlateWidth();
+  // The very first paint had no table to measure, and nothing else would ask
+  // again until the panel changed size.
+  if (!standingsExisted) refreshPlayerHudShedColumns();
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();

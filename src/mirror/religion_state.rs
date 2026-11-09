@@ -1,3 +1,6 @@
+//! Applies the observed religion state to the rebuilt board, matching cities
+//! by coordinates because native city ids are player-local.
+
 use super::*;
 
 /// Native city IDs are player-local, so match the observed coordinates after

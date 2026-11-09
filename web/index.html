@@ -913,26 +913,29 @@
     line-height: 1; text-transform: uppercase;
   }
   .turn-label { font-size: var(--type-control); }
+  /* Everything in this row is sized in em from the row, because the type fitter
+     scales the row as a unit and that is only exact if every part scales with
+     it. `safe` keeps an overflow on the right, where the fitter can measure it. */
   .turn-count {
-    min-width: 0; display: flex; flex-wrap: nowrap; align-items: baseline; justify-content: center;
-    column-gap: 5px; row-gap: 2px; margin: 3px 0 5px;
+    min-width: 0; display: flex; flex-wrap: nowrap; align-items: baseline; justify-content: safe center;
+    column-gap: .35em; row-gap: 2px; margin: 3px 0 5px; font-size: var(--type-control);
   }
+  .turn-count .turn-label { font-size: 1em; }
   .turn-count.turn-count-playing-on { flex-wrap: wrap; }
   .turn-progress {
-    flex: 1 1 auto; min-width: 0; width: auto;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
-    column-gap: 4px; white-space: nowrap;
+    flex: 0 0 auto; display: grid; grid-template-columns: auto auto; align-items: baseline;
+    column-gap: .3em; white-space: nowrap;
   }
   /* Late-game four-digit turns keep the same one-line reading by spending a
      little less space on its supporting labels, not by wrapping the number. */
-  .turn-count.turn-count-long { column-gap: 3px; }
-  .turn-count.turn-count-long .turn-progress { column-gap: 2px; }
+  .turn-count.turn-count-long { column-gap: .2em; }
+  .turn-count.turn-count-long .turn-progress { column-gap: .15em; }
   .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
   /* The live stopwatch, the plate's top section when the world is watched. */
   .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
   .turn-live {
     min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px;
-    margin: 0 0 4px; padding: 0 16px 4px; border-bottom: 1px solid #d7b66a24; white-space: nowrap;
+    margin: 0 0 4px; padding: 0 16px; white-space: nowrap;
   }
   .turn-live .turn-label { font-size: var(--type-small); }
   .turn-live b {
@@ -945,11 +948,11 @@
   }
   .victory-turn strong {
     min-width: 0; display: block; color: #f4d892;
-    font: 700 40px/1.1 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font: 700 2.85em/1.1 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-variant-numeric: tabular-nums; text-align: right; text-shadow: 0 2px 10px #0009;
   }
   .victory-turn .turn-total {
-    color: #8fa29a; font-size: var(--type-control); font-weight: 800; font-variant-numeric: tabular-nums;
+    color: #8fa29a; font-size: 1em; font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1; white-space: nowrap;
   }
   /* One label-and-value row per setting. The single track is never narrower
@@ -984,6 +987,8 @@
     justify-content: safe center; margin: 0 0 4px; color: #9fb0a9;
     font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
   }
+  /* The stopwatch and the pace read as one section; the rule closes it. */
+  .has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }
   /* The seam on the plate's right edge: the command deck's resize affordance
      brought inside the masthead. As a grid item overlapping the plate cell it
      rides the plate's edge at every density, leaning into the panel gap. */
@@ -1130,7 +1135,7 @@
      instead, keeping their circle and stopping at the old 4px. */
   .victory-dots { display: flex; align-items: center; gap: 2px; }
   .victory-dots i {
-    flex: 1 1 0; max-width: 4px; height: auto; aspect-ratio: 1;
+    flex: 1 1 0; max-width: var(--vt-meter, 4px); height: auto; aspect-ratio: 1;
     border-radius: 50%; background: #02070699;
     box-shadow: inset 0 0 0 1px #ffffff2b;
   }
@@ -1141,26 +1146,37 @@
      minimum keeps every band readable when the rail is too short; only then
      does it scroll. */
   .victory-ribbon {
-    min-height: max(100%, var(--victory-min-height, 396px)); display: grid;
-    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
+    min-height: 100%; display: grid;
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(var(--vt-band-min, 64px), 1fr));
     align-items: stretch; gap: 2px;
   }
+  /* Every --vt-* length below is written by fitVictoryTracker from the one type
+     size it chose, so the rows it counted are exactly the rows drawn here. The
+     band stands at its top: centred, paths of different heights put their
+     headings at different levels across the short wide shape. */
   .victory-track {
     container-type: inline-size; min-height: 0; display: flex; flex-direction: column;
-    justify-content: center; padding: 4px 5px;
+    justify-content: flex-start; padding: 4px 5px;
     color: var(--track); background: #ffffff03; border-top: 1px solid #ffffff0b;
   }
   .victory-track:first-child { border-top-color: transparent; }
-  /* Keep the path name directly above the civilization column. Its eight-pixel
-     inset lands just left of the names' ten-pixel dot gutter, so the label and
-     the race beneath it read as one left-aligned block. */
+  /* One line per heading: the path on the left, and on the right what the
+     figures below it count, directly above them. It used to take two, and every
+     path paid that second line whether it said "Techs" or nothing at all. The
+     line is a single flex row of its own height, so a label with no room wraps
+     out of sight whole rather than ending in "CAPIT…". */
   .victory-heading {
-    min-width: 0; display: flex; align-items: center; margin: 0 0 3px 8px;
+    min-width: 0; height: var(--vt-head, 13px); display: flex; flex-wrap: wrap;
+    align-items: baseline; justify-content: space-between; column-gap: .6em;
+    margin: 0 0 var(--vt-head-gap, 3px) var(--vt-name-inset, 10px); overflow: hidden;
     color: var(--track);
   }
   .victory-heading b {
-    min-width: 0; overflow: hidden; color: #dde5e1; font-size: var(--type-small);
-    letter-spacing: .03em; line-height: 1; text-overflow: ellipsis; white-space: nowrap;
+    flex: 0 1 auto; min-width: 0; overflow: hidden;
+    color: color-mix(in srgb, var(--track) 42%, #f2f6f4);
+    font-size: var(--vt-head-type, var(--type-small));
+    letter-spacing: .03em; line-height: var(--vt-head, 13px);
+    text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-body { min-width: 0; align-self: stretch; }
   .victory-none-note {
@@ -1168,15 +1184,20 @@
     line-height: 1.45; text-wrap: pretty;
   }
   .victory-subheading {
-    min-height: 9px; display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 6px;
-    margin: 0 0 3px 9px; color: #80938b; font-size: var(--type-caption); font-weight: 900;
-    letter-spacing: .04em; line-height: 1; text-transform: uppercase; white-space: nowrap;
+    flex: 0 0 auto; display: flex; gap: .4em; color: #a3b5ae;
+    font-size: var(--vt-sub-type, var(--type-caption)); font-weight: 800;
+    letter-spacing: .03em; line-height: var(--vt-head, 13px);
+    text-transform: uppercase; white-space: nowrap;
   }
-  .victory-subheading span { overflow: hidden; text-overflow: ellipsis; }
-  .victory-subheading span:first-child { text-align: left; }
-  .victory-subheading span:last-child { text-align: right; }
-  .victory-subheading.score { display: block; margin-left: 0; text-align: center; }
-  .victory-list { display: flex; flex-direction: column; gap: 3px; }
+  .victory-subheading span:empty { display: none; }
+  .victory-subheading span:not(:empty) + span::before { content: "· "; color: #7f928a; }
+  /* A split meter has a label for each half. When there is width for one, keep
+     the one standing over the figures. */
+  @container (max-width: 214px) {
+    .victory-subheading span:first-child { display: none; }
+    .victory-subheading span:not(:empty) + span::before { content: none; }
+  }
+  .victory-list { display: flex; flex-direction: column; gap: var(--vt-row-gap, 3px); }
   .victory-entry { min-width: 0; }
   .victory-entry[hidden] { display: none; }
   /* The civilization whose perspective is on screen — our own seat beside a
@@ -1200,20 +1221,23 @@
   /* The rows are already printed in rank order, so a leading rank number
      spent 13px per line restating the order. In a narrower victory rail that width
      is worth more as civilization name, which is what actually truncates. */
-  .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 4px; min-width: 0; height: 15px; }
-  .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
+  .victory-line {
+    display: grid; grid-template-columns: var(--vt-dot, 6px) minmax(0, 1fr) auto; align-items: center;
+    gap: var(--vt-dot-gap, 4px); min-width: 0; height: var(--vt-line, 15px);
+  }
+  .victory-civ-dot { width: var(--vt-dot, 6px); height: var(--vt-dot, 6px); border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
   .victory-civ {
     min-width: 0; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 0;
     color: #edf3f0; background: none; font-family: inherit;
-    font-size: var(--type-secondary); font-weight: 600; letter-spacing: .005em;
-    line-height: 1.1; text-align: left; text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, currentColor 36%, transparent);
-    text-underline-offset: 2px; text-overflow: ellipsis; white-space: nowrap;
-    transition: color .12s ease, text-decoration-color .12s ease;
+    font-size: var(--vt-name, var(--type-secondary)); font-weight: 600; letter-spacing: .005em;
+    line-height: var(--vt-line, 15px); text-align: left; text-overflow: ellipsis; white-space: nowrap;
+    transition: color .12s ease;
   }
+  /* The name is a link, but its meter sits a pixel beneath it: at rest an
+     underline made a second bar stacked on the real one, across every row. */
   .victory-civ:hover {
     transform: none; color: #fff; background: none; border-color: transparent;
-    text-decoration-color: currentColor;
+    text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 2px;
   }
   .victory-civ:focus-visible { outline: 1px solid var(--track); outline-offset: 2px; }
   .victory-civ:disabled {
@@ -1221,13 +1245,12 @@
     text-decoration: none;
   }
   .victory-value {
-    width: 42px; color: #c2d0ca; font-size: var(--type-small); line-height: 1; text-align: right;
+    color: #d3dfda; font-size: var(--vt-name, var(--type-small)); font-weight: 600;
+    line-height: var(--vt-line, 15px); text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .victory-value.single { font-size: var(--type-secondary); }
-  #victoryhud .victory-meter { height: 4.5px; margin: 0 0 0 9px; border-radius: 3px; }
-  #victoryhud .victory-meter.split { height: 6px; }
-  #victoryhud .victory-half { height: 4.5px; }
+  #victoryhud .victory-meter { height: var(--vt-meter, 4.5px); margin: 1px 0 0 var(--vt-name-inset, 10px); border-radius: 3px; }
+  #victoryhud .victory-half { height: var(--vt-meter, 4.5px); }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
     flex: 0 0 clamp(350px, 24vw, 390px); display: grid;
@@ -2313,14 +2336,26 @@
   .minimap-label {
     position: relative; display: flex; justify-content: center; padding: 1px 3px 5px;
     color: #b9c8c2; font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em;
-    text-transform: uppercase;
+    text-transform: uppercase; white-space: nowrap;
   }
+  /* One line whatever the frame: wrapped, the title took half of a small
+     frame's height away from the map. */
+  .minimap-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* The azimuthal chart needs the whole square, not a square with a title row
-     stolen from its north edge. Keep the label as chrome over the chart while
-     retaining its drag target and keyboard affordance. */
+     stolen from its north edge. The label is chrome over the chart that comes
+     up when the pointer or keyboard reaches for the frame, keeping its drag
+     target and keyboard affordance; at rest it would only sit on the north
+     pole. Without hover there is no way to summon it, so it stays. */
   .minimap-frame.minimap-world-planet .minimap-label {
     position: absolute; z-index: 2; top: 6px; left: 6px; right: 6px;
-    pointer-events: auto;
+    pointer-events: auto; border-radius: 6px; background: #090b0dc4;
+    transition: opacity .12s ease;
+  }
+  @media (hover: hover) {
+    .minimap-frame.minimap-world-planet:not(:hover):not(:focus-within) .minimap-label { opacity: 0; }
+    @container (max-width: 190px) {
+      .minimap-frame:not(:hover):not(:focus-within) .minimap-hint:not(.minimap-swap) { opacity: 0; }
+    }
   }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
@@ -2654,6 +2689,9 @@
     letter-spacing: .05em; text-transform: uppercase;
   }
   .spec-controls #restart-sim::before { content: "↻"; margin-right: 5px; font-size: var(--type-body); }
+  /* A narrow deck leaves this button a word and a glyph's width; the word was
+     running out over the button's own edge. */
+  #side[data-type-size="compact"] .spec-controls #restart-sim { padding-inline: 5px; letter-spacing: 0; }
   /* Choosing single player turns this one control into the way into that game,
      so it says which game it starts instead of leaving "Restart sim" over a
      single-player subtitle. A start is not a restart: the glyph changes too.
@@ -3343,7 +3381,7 @@
        minmax(300px, 42%) and the numbers took the remainder — so the figures
        got 27px each and ran together into one digit run. --hud-stat-gap is the
        gutter that keeps two adjacent numbers from reading as one. */
-    --hud-stat-min: 37px;
+    --hud-stat-min: 36px;
     --hud-stat-gap: 3px;
     /* Every data column is a *share* of the panel, never a pixel count, so the
        table refills whatever width it is given and a window resize simply
@@ -3375,6 +3413,10 @@
        every width. */
     --hud-closest-min: 48px;
     --hud-rank-min: 30px;
+    /* The corner close control stands over the end of the heading row. Rows and
+       heading both give up this lane, so the last column's head is never under
+       it and every column stays aligned with its own figures. */
+    --hud-close-gutter: 18px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
@@ -3453,7 +3495,7 @@
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
     grid-template-columns: var(--hud-tracks);
-    align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;
+    align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 var(--hud-close-gutter) 0 3px;
     border: 1px solid transparent;
     /* Every visible column at its own floor. A panel narrower than that no
        longer crushes the cells: the standings keep this width and scroll
@@ -3636,7 +3678,7 @@
     grid-template-columns: var(--hud-tracks);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; column-gap: var(--hud-stat-gap, 3px); row-gap: 0;
-    margin: 0; padding: 1px 4px 1px 3px;
+    margin: 0; padding: 1px var(--hud-close-gutter) 1px 3px;
     overflow: hidden; border-radius: 7px;
   }
   /* Watch-as sits in the same fixed track as the All button heading it, and it
@@ -3879,7 +3921,19 @@
   #victoryhud > .victory-region { grid-column: 1; grid-row: 2; min-height: 0; }
   /* Without a dragged height the stats keep their content height; the cap
      keeps a long ledger from swallowing the whole rail at the start. */
-  #victoryhud:not(.sim-stats-sized):not(.victory-collapsed) .sim-stats-body { max-height: 168px; }
+  #victoryhud:not(.sim-stats-sized):not(.victory-collapsed) .sim-stats-body { max-height: var(--sim-stats-cap, 168px); }
+  /* Before any game has finished the record has nothing to show, and the rail
+     is worth more to the race than to a placeholder. The section arrives with
+     its first result; until then the tracker's bar is the one that stands
+     under the panel's close control. */
+  #victoryhud.sim-stats-none { grid-template-rows: minmax(0, 1fr); }
+  #victoryhud.sim-stats-none > .sim-stats-region,
+  #victoryhud.sim-stats-none > .sim-stats-seam { display: none; }
+  #victoryhud.sim-stats-none > .victory-region { grid-row: 1; }
+  #victoryhud.sim-stats-none > .victory-region .hud-region-bar { margin-right: 27px; }
+  #victoryhud.sim-stats-none.victory-collapsed {
+    bottom: auto; height: auto; grid-template-rows: min-content;
+  }
   .sim-stats-body {
     flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px;
     padding: 0 3px 2px; overflow-y: auto; overscroll-behavior: contain;
@@ -4017,7 +4071,10 @@
   .widget-resize-handle[data-widget-resize="s"] { bottom: -1px; left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
   .widget-resize-handle[data-widget-resize="e"] { top: 12px; right: -1px; bottom: 12px; width: 8px; cursor: ew-resize; }
   .widget-resize-handle[data-widget-resize="w"] { top: 12px; bottom: 12px; left: -1px; width: 8px; cursor: ew-resize; }
-  .widget-resize-handle[data-widget-resize="ne"] { z-index: 6; top: -1px; right: -1px; width: 14px; height: 14px; cursor: nesw-resize; }
+  /* The close control sits in this corner and dismisses on pointerdown, so a
+     hand aiming to resize used to close the panel instead. The handle stands
+     above it now, over the outermost few pixels the ✕ does not need. */
+  .widget-resize-handle[data-widget-resize="ne"] { z-index: 9; top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
   .widget-resize-handle[data-widget-resize="nw"] { z-index: 6; top: -1px; left: -1px; width: 14px; height: 14px; cursor: nwse-resize; }
   .widget-resize-handle[data-widget-resize="se"] { z-index: 6; right: -1px; bottom: -1px; width: 14px; height: 14px; cursor: nwse-resize; }
   .widget-resize-handle[data-widget-resize="sw"] { z-index: 6; bottom: -1px; left: -1px; width: 14px; height: 14px; cursor: nesw-resize; }
@@ -4153,7 +4210,7 @@
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
       grid-template-rows: minmax(0, 1fr);
-      grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
+      grid-template-columns: repeat(var(--victory-rows, 6), minmax(0, 1fr));
     }
     .victory-track { border-top: 0; border-left: 1px solid #ffffff0b; }
     .victory-track:first-child { border-left-color: transparent; }
@@ -4161,7 +4218,7 @@
        pixels. Moving only the rows here slid every figure a pixel left of its
        own head at one end of the table and two pixels right of it at the
        other. */
-    #playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }
+    #playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px var(--hud-close-gutter); }
     .hud-head-stat { font-size: var(--type-micro); }
   }
   /* A wide browser can still leave a narrow map after the viewer opens the
@@ -4213,12 +4270,12 @@
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
     min-height: 0; width: max(100%, var(--victory-min-width, 514px));
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
+    grid-template-columns: repeat(var(--victory-rows, 6), minmax(0, 1fr));
   }
   #maparea.player-hud-compact .victory-track { border-top: 0; border-left: 1px solid #ffffff0b; }
   #maparea.player-hud-compact .victory-track:first-child { border-left-color: transparent; }
   #maparea.player-hud-compact #playerhud .diplomacy-card,
-  #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px; }
+  #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px var(--hud-close-gutter); }
   #maparea.player-hud-compact .hud-head-stat { font-size: var(--type-micro); }
   /* The dedicated display beside Civilization VI keeps one arrangement at
      every width (operator, 2026-10-30: "player hud can cover full top width.
@@ -4249,9 +4306,9 @@
   body.display-dedicated #maparea #victoryhud > .victory-region { grid-row: 1; }
   body.display-dedicated #maparea #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
   body.display-dedicated #maparea #victoryhud .victory-ribbon {
-    min-height: max(100%, var(--victory-min-height, 396px)); width: auto;
+    min-height: 100%; width: auto;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(var(--vt-band-min, 64px), 1fr));
   }
   body.display-dedicated #maparea #victoryhud .victory-track { border-left: 0; border-top: 1px solid #ffffff0b; }
   body.display-dedicated #maparea #victoryhud .victory-track:first-child { border-top-color: transparent; }
@@ -4306,40 +4363,49 @@
     --hud-row-height: 30px;
   }
 
-  /* The victory tracker has two useful shapes. A rail gives every path the
-     whole width; a short wide box gives every path a column. ResizeObserver
-     selects between them from the box's own aspect ratio, including after a
-     dragged edge crosses the threshold on a wide desktop. */
-  #victoryhud[data-type-shape="wide"] .hud-rail {
+  /* The victory tracker's three shapes. A rail gives every path the whole
+     width, a short wide box gives every path a column, and a box between the
+     two divides its paths into a few columns. fitVictoryTracker chooses one
+     from the room the tracker actually has, including after a dragged edge, and
+     its choice is the only one: `#maparea` keeps these above the narrow-window
+     rules, which assume a row of columns. */
+  #maparea #victoryhud[data-type-shape="wide"] .hud-rail {
     overflow-x: auto; overflow-y: hidden;
   }
-  #victoryhud[data-type-shape="wide"] .victory-ribbon {
+  #maparea #victoryhud[data-type-shape="wide"] .victory-ribbon {
     min-height: 0; width: max(100%, var(--victory-min-width, 514px));
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: repeat(var(--victory-rows, 6), minmax(112px, 1fr));
+    grid-template-columns: repeat(var(--victory-rows, 6), minmax(0, 1fr));
   }
-  #victoryhud[data-type-shape="wide"] .victory-track {
+  #maparea #victoryhud[data-type-shape="wide"] .victory-track {
     border-top: 0; border-left: 1px solid #ffffff0b;
   }
-  #victoryhud[data-type-shape="wide"] .victory-track:first-child { border-left-color: transparent; }
-  #victoryhud[data-type-shape="rail"] .hud-rail {
+  #maparea #victoryhud[data-type-shape="wide"] .victory-track:first-child { border-left-color: transparent; }
+  #maparea #victoryhud[data-type-shape="grid"] .hud-rail {
     overflow-x: hidden; overflow-y: auto;
   }
-  #victoryhud[data-type-shape="rail"] .victory-ribbon {
-    min-height: max(100%, var(--victory-min-height, 396px)); width: auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
+  #maparea #victoryhud[data-type-shape="grid"] .victory-ribbon {
+    min-height: 100%; width: auto;
+    grid-template-columns: repeat(var(--vt-columns, 2), minmax(0, 1fr));
+    grid-template-rows: none; grid-auto-rows: minmax(var(--vt-band-min, 64px), 1fr);
   }
-  #victoryhud[data-type-shape="rail"] .victory-track {
+  #maparea #victoryhud[data-type-shape="grid"] .victory-track,
+  #maparea #victoryhud[data-type-shape="grid"] .victory-track:first-child {
+    border-top: 1px solid #ffffff0b; border-left: 0;
+  }
+  #maparea #victoryhud[data-type-shape="rail"] .hud-rail {
+    overflow-x: hidden; overflow-y: auto;
+  }
+  #maparea #victoryhud[data-type-shape="rail"] .victory-ribbon {
+    min-height: 100%; width: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(var(--vt-band-min, 64px), 1fr));
+  }
+  #maparea #victoryhud[data-type-shape="rail"] .victory-track {
     border-left: 0; border-top: 1px solid #ffffff0b;
   }
-  #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
+  #maparea #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
   #victoryhud[data-type-size="compact"] > .hud-section-heading { padding-left: 10px; }
-  #victoryhud[data-type-size="compact"] .victory-subheading {
-    grid-template-columns: minmax(0, 1fr) 56px; gap: 3px; margin-left: 6px;
-    letter-spacing: 0;
-  }
-  #victoryhud[data-type-size="compact"] .victory-value { width: 56px; }
 
   /* A dossier's former four-column grid followed the viewport, so a 300px
      dossier on a 4K screen still tried to render four 70px ledgers. These
@@ -5814,7 +5880,7 @@
                   <span class="overlay-menu-title">Player standings<small>Roster, ratings &amp; per-civ metrics</small></span>
                 </summary>
                 <div class="overlay-menu-body">
-                  <div class="small overlay-menu-help">Check a column to show it; drag a row here — or a column heading in the table itself — to reorder. Headings sort, and the thin bar between two headings resizes them.</div>
+                  <div class="small overlay-menu-help">Check a column to show it; drag a row here — or a column heading in the table itself — to reorder. Headings sort, and the thin bar between two headings resizes them. A column that cannot be read at this window's width steps aside until there is room.</div>
                   <div class="hud-column-list" id="hud-column-list" role="group" aria-label="Player standings columns"></div>
                   <button class="ghost overlay-menu-reset" id="reset-hud-columns" type="button">Reset columns, order &amp; widths</button>
                 </div>

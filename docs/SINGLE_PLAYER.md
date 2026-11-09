@@ -569,9 +569,9 @@ Game.
 At the end of a simulation, the supervisor countdown remains in charge and
 the result screen has two choices:
 
-- **One more turn** resumes the same map, seed, and empires under the
-  next-victory rule: the exact result shown cannot immediately repeat, but a
-  different victory can end the continued world.
+- **One more turn** resumes the same map, seed, and empires with no turn limit
+  and no later victory able to end them. The world plays on until somebody
+  presses **Restart sim**.
 - **New Game** starts the next world immediately. Leaving the screen alone
   keeps the existing countdown behavior and starts that next world when it
   reaches zero.

@@ -1,3 +1,6 @@
+//! Live air-assault batches: drops sorties the export layer would withhold,
+//! and ends the batch at the next required observation.
+
 use super::Order;
 use civvis::ai::{AdvancedAi, AirCityAssault};
 use civvis::mirror::{Snapshot, StateSnapshot};

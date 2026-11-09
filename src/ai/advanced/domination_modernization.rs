@@ -1,3 +1,6 @@
+//! Keeps a Domination army current: walks obsolete land units back to upgrade
+//! ground and funds the cheapest resource-ready upgrades.
+
 use super::*;
 
 impl AdvancedAi {

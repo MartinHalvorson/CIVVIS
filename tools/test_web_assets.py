@@ -360,7 +360,7 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
                         overview.index("const victoryTracks = enabledVictoryTracks.map("))
         sync = source[source.index("function syncVictoryLeaderCapacity("):]
         sync = sync[:sync.index("\n}\n")]
-        self.assertIn("DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud)", sync)
+        self.assertIn("fitVictoryTracker(victoryHud, tracks, DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : null)", sync)
         # No third row for the viewed civilization on the dedicated display.
         self.assertIn('(DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true")', sync)
 
@@ -478,6 +478,60 @@ class TheDedicatedDisplayFollowsTheActiveArea(unittest.TestCase):
         self.assertIn("active area checks passed", done.stdout)
 
 
+VICTORY_FIT_SCENARIOS = r"""
+const clampPanelDimension = (value, low, high) => Math.min(high, Math.max(low, value));
+__BLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const layout = (width, height, total = 4, count = 6, focusRank = -1, fixedRows = null) =>
+  chooseVictoryLayout({width, height, count, total, focusRank, fixedRows});
+const brief = l => [l.columns, l.rows, l.type];
+
+eq(brief(layout(191, 649)), [1, 3, 15], "a laptop rail holds all six paths with three leaders");
+eq(brief(layout(1010, 92)), [6, 3, 13], "a short band is one row of columns with whole rows");
+eq(brief(layout(155, 458)), [1, 2, 14], "a narrow rail gives up the third leader, not the type");
+eq(layout(374, 593).columns, 2, "a widened rail divides into columns");
+eq(layout(374, 593).rows, 4, "and the columns buy back the leaders");
+eq(brief(layout(191, 449, 4, 6, 3)), [1, 1, 13.5], "a watched civilization takes the runner-up's place");
+eq(layout(191, 854, 4, 6, -1, 2).rows, 2, "the dedicated display always lists two");
+
+for (const total of [1, 2, 4, 8]) {
+  for (const width of [141, 155, 191, 312, 374, 572, 797, 1010]) {
+    for (let height = 30; height < 1400; height += 7) {
+      const fit = layout(width, height, total);
+      if (fit.rows >= DEFAULT_VICTORY_LEADERS && fit.type < VICTORY_TYPE_THIRD_ROW_FLOOR)
+        throw new Error(`a third leader cost too much type at ${width}x${height}: ${fit.type}`);
+      if (fit.type < VICTORY_TYPE_FLOOR)
+        throw new Error(`below the type floor at ${width}x${height}: ${fit.type}`);
+      if (victoryBandHeight(fit.rows, fit.type) > fit.room + 1e-6 && fit.type !== VICTORY_TYPE_FLOOR)
+        throw new Error(`a row was cut at ${width}x${height}: ${brief(fit)}`);
+    }
+  }
+}
+console.log("victory fit checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
+    """The arrangement, the leaders shown and the one type size are one decision
+    (operator, 2026-11-09: the tracker was "hard to read"). The numbers here are
+    real boxes measured in Chrome at common window sizes."""
+
+    def test_the_fit(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("const DEFAULT_VICTORY_LEADERS = 3;")
+        block = source[start:source.index("// Returns the arrangement and the rows")]
+        done = subprocess.run(
+            [NODE, "-e", VICTORY_FIT_SCENARIOS.replace("__BLOCK__", block)],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("victory fit checks passed", done.stdout)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class PublishedViewingDefaults(unittest.TestCase):
     def test_fresh_visitors_spin_with_two_turn_trails_and_saved_choices_win(self):
@@ -531,8 +585,9 @@ class SimulationWorldRotation(unittest.TestCase):
     def test_player_games_stay_still_and_simulations_keep_the_saved_preference(self):
         source = (ASSETS / "app.js").read_text(encoding="utf-8")
         start = source.index("function spinAvailable()")
-        block = source[start:source.index("function setWorldSpin(on)", start)]
+        block = source[start:source.index("function advanceWorldSpin(dt)", start)]
         scenarios = r'''
+const WORLD_SPIN_STORAGE_KEY = "spin", localStorage = {setItem() {}};
 let state = {}, SPEC = false, WORLD_SPIN = true;
 let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
 let cameraFollowManual = false, wraps = true;
@@ -555,6 +610,15 @@ REDUCED_MOTION_QUERY.matches = false; wraps = false;
 expect(!spinRunning(), "unwrapped world rotates");
 wraps = true; WORLD_SPIN = false;
 expect(!spinRunning(), "simulation ignores saved spin off");
+WORLD_SPIN = true; state = {view_player:1}; updateSpinButton();
+expect(!spinAvailable() && !spinRunning(), "the world keeps turning under a watched empire");
+expect(spinButton.disabled && spinButton.title.includes("watch one civilization"), "Watch as does not explain the hold");
+stopWorldSpin();
+expect(WORLD_SPIN, "looking around a watched empire cleared the saved rotation");
+state = {view_player:null}; updateSpinButton();
+expect(spinRunning() && !spinButton.disabled, "going back to All did not pick the turn up again");
+stopWorldSpin();
+expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)

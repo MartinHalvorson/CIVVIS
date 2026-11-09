@@ -2711,6 +2711,16 @@ fn the_result_screen_offers_the_between_game_interval() {
         "if (changed && finaleEndsAt !== null) { finaleEndsAt = performance.now() + betweenGameCountdownMs; finaleHold += 1; }"
     ));
     assert!(shim.contains("state.restart_hold = finaleHold;"));
+    // Nothing but a person replaces a world that is live or held: the count
+    // stands down for a pause, re-reads the world at its last moment, and the
+    // engine refuses to move on from anything that has not finished.
+    assert!(shim.contains("if (!finished || paused) {"));
+    assert!(
+        shim.contains("if (paused || current.finished !== true || current.seed !== state.seed) {")
+    );
+    assert!(include_str!("../wasm.rs").contains(
+        "(\"POST\", \"/next-game\") => with_session(|session| {\n            if session.game.is_finished() {"
+    ));
     // And a drawn battle is held and counted down like a won one: the
     // shim once looked only for a winner, so a Tactics draw in the
     // published build sat on "Preparing the next battle" for ever.
@@ -6817,13 +6827,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
     assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
-    // Every path keeps its top three plus the player's own civilization
-    // when that row is lower in this particular victory race — except on the
-    // dedicated display beside Civilization VI, which lists exactly two.
+    // Every path shows the leaders its room allows, and the watched
+    // civilization when that row is lower in this particular victory race and
+    // is budgeted for — except on the dedicated display beside Civilization
+    // VI, which lists exactly two. tools/test_web_assets.py runs the fit.
     assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
-    assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
+    assert!(EMBEDDED_INDEX.contains("const shown = rows => rows + (focusRank >= rows ? 1 : 0);"));
     assert!(EMBEDDED_INDEX.contains(
-        "entry.hidden = index >= capacity &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
+        "const hidden = index >= rows &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
     ));
     assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
     assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
@@ -7129,7 +7140,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // its own figures by up to a pixel, in opposite directions at the two
     // ends of the table.
     assert!(EMBEDDED_INDEX.contains(
-        "align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;\n    \
+        "align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 var(--hud-close-gutter) 0 3px;\n    \
              border: 1px solid transparent;"
     ), "the heading has the row's border box, or the columns skew across the table");
     // For the same reason the heading gives up its inline padding wherever
@@ -7137,12 +7148,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // the skew it was moved to close.
     assert!(
         EMBEDDED_INDEX.contains(
-            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }"
+            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px var(--hud-close-gutter); }"
         ),
         "the heading is a row of the same table and gives up the same pixels"
     );
     assert_eq!(
-        EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(),
+        EMBEDDED_INDEX
+            .matches("padding: 1px var(--hud-close-gutter) 1px 3px;")
+            .count(),
         1,
         "the row's inline padding is written once, and the heading matches it"
     );
@@ -12489,7 +12502,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('until_next_victory', false)\"\n            title=\"Keep this world playing until a different victory ends it.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('indefinite', false)\"\n            title=\"Keep this world playing. Nothing ends it until you press Restart sim.\">One more turn</button>"
     ));
     assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
     assert!(EMBEDDED_INDEX.contains(">New Game</button>"));
@@ -14205,9 +14218,18 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
             "a turning world must yield to whatever else is aiming the camera: {guard}"
         );
     }
-    // The watched-empire reframe arrives ten times a second. Left to
-    // argue with the turn it would win every observation, so it waits.
-    assert!(js.contains("!dragState && !touchGesture && !spinRunning())"));
+    // Watch as frames one empire and keeps it framed, so the world holds
+    // still for it rather than carrying that empire off the stage.
+    assert!(
+        js.split_once("function spinAvailable()")
+            .expect("the spin's availability test")
+            .1
+            .split_once('}')
+            .expect("the end of spinAvailable")
+            .0
+            .contains("if (Number.isInteger(state?.view_player)) return false;"),
+        "a turning world would carry the watched empire off the stage"
+    );
     assert_eq!(
         js.matches("takeCameraControl(); stopWorldSpin();").count(),
         3,

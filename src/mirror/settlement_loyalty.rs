@@ -1,3 +1,6 @@
+//! The host's per-plot settlement loyalty warnings: the newest reading for
+//! this frame, handed to the game as `NativeSettlementPressure`.
+
 use super::{line_ranges_containing, Snapshot, StateSnapshot};
 use crate::game::{Game, NativeSettlementPressure};
 use serde::Deserialize;

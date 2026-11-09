@@ -1,3 +1,6 @@
+//! Moves a queued live Campus order to the site
+//! `AdvancedAi::native_campus_above_sea_position` picks.
+
 use super::*;
 
 pub(super) fn retarget(
