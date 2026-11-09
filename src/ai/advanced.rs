@@ -8420,6 +8420,10 @@ pub struct AdvancedAi {
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
     russia_settles_the_tundra: bool,
+    /// `religion-seat-first-shrine`: a Religion-target founder's first Shrine
+    /// takes the queue. See `advanced/religion_seat_first_shrine.rs`. Off by
+    /// default.
+    religion_seat_first_shrine: bool,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -19820,10 +19824,11 @@ impl AdvancedAi {
                     self.domination_defensive_temple(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
-            // A founder's newly claimed Faith building has not banked its
-            // first hammer yet, but ordinary rescoring must let it start.
+            // A founder's Faith building or replacement Holy Site has not
+            // banked its first hammer yet; ordinary rescoring lets it start.
             let faith_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 self.religion_seat_faith_building_reserved(g, pid, cid, plan, item)
+                    || self.religion_seat_recovery_site_reserved(g, pid, cid, plan, item)
             });
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
@@ -26054,6 +26059,13 @@ impl AdvancedAi {
             }
         }
         Self::surge_release_field_slot(g, held_field_slot);
+        // `religion-seat-first-shrine`: the founder's first Shrine, after every
+        // ordinary writer so none of them takes the head back, and before the
+        // defence handoffs below, which may. An earlier claim here was
+        // journalled on t40-49 of civvis-20261109T142418Z and overwritten by a
+        // Monument and an Archer the same turn. See
+        // `advanced/religion_seat_first_shrine.rs`.
+        self.claim_religion_seat_first_shrine(g, pid, &plan);
         // `capital-walls-before-the-surprise`: the original capital's Walls,
         // or its defender, after every ordinary writer (the opening book and
         // both governors), before the paused finishes and the defence
@@ -26347,6 +26359,8 @@ mod religion_prophet_queue;
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
 /// `religion-seat-flips-the-cheapest`: see
+/// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
+mod religion_seat_first_shrine;
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.

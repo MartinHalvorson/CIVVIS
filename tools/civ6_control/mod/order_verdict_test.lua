@@ -71,6 +71,7 @@ GameInfo.Types = {
 	PROJECT_ENHANCE_DISTRICT_HOLY_SITE = { Hash = 104, Kind = "KIND_PROJECT" },
 	DISTRICT_LAVRA = { Hash = 105, Kind = "KIND_PROJECT" },
 	DISTRICT_CAMPUS = { Hash = 106, Kind = "KIND_PROJECT" },
+	BUILDING_SHRINE = { Hash = 107, Kind = "KIND_PROJECT" },
 }
 GameInfo.DistrictReplaces = function()
 	local rows = { { CivUniqueDistrictType = "DISTRICT_LAVRA", ReplacesDistrictType = "DISTRICT_HOLY_SITE" } }
@@ -468,6 +469,13 @@ local lavra, lavraWhy = applyOrder(player, PID,
 check("lavra reaches host", lavra, true)
 check("lavra names its build", lavraWhy, "DISTRICT_LAVRA")
 check("lavra replaces settler", host.cities[42].current, 105)
+-- The first Shrine is what buys a Missionary, so it passes the same lock.
+host.cities[42].current = 101
+local shrine, shrineWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "BUILDING_SHRINE" }, 16)
+check("shrine reaches host", shrine, true)
+check("shrine names its build", shrineWhy, "BUILDING_SHRINE")
+check("shrine replaces settler", host.cities[42].current, 107)
 host.cities[42].current = 101
 local campus, campusWhy = applyOrder(player, PID,
 	{ kind = "produce", subject = 42, verb = "DISTRICT_CAMPUS" }, 16)

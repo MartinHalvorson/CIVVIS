@@ -46,6 +46,9 @@
 //! there and 102 live. Religious units can be bought only in a Holy Site city.
 //! With `religion-seat-builds-holy-sites` a founder of three or more cities
 //! claims one in its best idle city of two or more citizens, one a turn.
+//! If a founder has lost every completed Holy Site, recovery instead restores
+//! one legal site before the city-count floor, ahead of ordinary work. Units,
+//! Walls, repairs and threatened cities retain their queues.
 //! Live Khmer Deity civvis-20261109T022744Z, the first Religion seat at that
 //! rung, founded at t32 but at t75 held one Holy Site in five cities, a Shrine
 //! and no Prasat 14 turns after Theology, and earned 8 Faith a turn: an idle
@@ -246,7 +249,7 @@ impl AdvancedAi {
     }
 
     /// Whether `city` holds `family` or a civilization's replacement for it.
-    fn city_holds_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
+    pub(super) fn city_holds_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
         city.buildings.iter().any(|building| {
             building.as_str() == family
                 || g.rules
@@ -377,6 +380,10 @@ impl AdvancedAi {
                 }
             }
         }
+        if self.religion_seat_needs_a_site(g, pid) {
+            self.claim_religion_seat_recovery_site(g, pid, plan, only_city);
+            return;
+        }
         if only_city.is_none() {
             self.religion_seat_claims_a_holy_site(g, pid);
         }
@@ -411,6 +418,159 @@ impl AdvancedAi {
             && g.city_religion(city) == Some(religion)
             && g.city_has_district_family(city, crate::name!("holy_site"))
             && Self::production_commitment_is_legal(g, pid, cid, item)
+    }
+
+    /// A founded Religion seat with no completed Holy Site must replace its
+    /// lost source before ordinary expansion's three-city floor applies.
+    fn religion_seat_needs_a_site(&self, g: &Game, pid: usize) -> bool {
+        self.religion_seat_builds_holy_sites
+            && self.base.book_pos >= 4
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            && g.players[pid].religion.is_some()
+            && !g
+                .player_city_ids(pid)
+                .into_iter()
+                .any(|cid| g.city_has_district_family(&g.cities[&cid], crate::name!("holy_site")))
+    }
+
+    /// Reserve a legal recovery Holy Site through ordinary rescoring. A
+    /// completed (even pillaged) site ends this special recovery path.
+    pub(super) fn religion_seat_recovery_site_reserved(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        if !matches!(item, Item::District { district, .. }
+            if g.district_family(*district) == "holy_site")
+            || !self.religion_seat_needs_a_site(g, pid)
+        {
+            return false;
+        }
+        let city = &g.cities[&cid];
+        plan.threatened_city != Some(cid)
+            && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            && g.city_religion(city) == g.players[pid].religion.as_deref()
+            && Self::production_commitment_is_legal(g, pid, cid, item)
+    }
+
+    fn religion_seat_recovery_city_available(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        let city = &g.cities[&cid];
+        plan.threatened_city != Some(cid)
+            && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            && g.city_religion(city) == g.players[pid].religion.as_deref()
+            && !city
+                .queue
+                .first()
+                .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+            && Self::faith_building_may_displace(g, city.queue.first())
+    }
+
+    /// Replace a lost Faith source, including in a one- or two-city remnant.
+    /// Ordinary buildings/projects may wait; units, Walls and repairs keep
+    /// their queues. A paused foundation is resumed before a new one is laid.
+    fn claim_religion_seat_recovery_site(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        only_city: Option<u32>,
+    ) -> bool {
+        if !self.religion_seat_needs_a_site(g, pid) {
+            return false;
+        }
+        let cities = g.player_city_ids(pid);
+        let mut pending = BTreeSet::new();
+        for cid in &cities {
+            if !Self::religion_seat_recovery_city_available(g, pid, *cid, plan) {
+                continue;
+            }
+            let city = &g.cities[cid];
+            let placed = city
+                .queue
+                .iter()
+                .filter_map(|item| match item {
+                    Item::District { district, pos }
+                        if g.district_family(*district) == "holy_site" =>
+                    {
+                        Some((*district, *pos))
+                    }
+                    _ => None,
+                })
+                .chain(city.owned_tiles.iter().filter_map(|pos| {
+                    g.map
+                        .get(*pos)
+                        .and_then(|tile| tile.district_foundation.as_ref())
+                        .filter(|foundation| g.district_family(foundation.district) == "holy_site")
+                        .map(|foundation| (foundation.district, *pos))
+                }));
+            for (district, pos) in placed {
+                if Self::production_commitment_is_legal(
+                    g,
+                    pid,
+                    *cid,
+                    &Item::District { district, pos },
+                ) {
+                    pending.insert(pos);
+                }
+            }
+        }
+        let mut best: Option<(f64, f64, u32, Pos, Item)> = None;
+        for cid in cities {
+            if only_city.is_some_and(|wanted| wanted != cid)
+                || !Self::religion_seat_recovery_city_available(g, pid, cid, plan)
+            {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let Item::District { district, pos } = &item else {
+                    continue;
+                };
+                if g.district_family(*district) != "holy_site"
+                    || (!pending.is_empty() && !pending.contains(pos))
+                {
+                    continue;
+                }
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_remaining_cost_for_city(pid, cid, &item)
+                        / g.city_yields(cid).production.max(0.5)
+                });
+                let faith = g.district_site_yields(*district, *pos).faith;
+                let better =
+                    best.as_ref()
+                        .is_none_or(|(old_turns, old_faith, old_city, old_pos, _)| {
+                            old_turns
+                                .total_cmp(&turns)
+                                .then(faith.total_cmp(old_faith))
+                                .then(old_city.cmp(&cid))
+                                .then(old_pos.cmp(pos))
+                                .is_gt()
+                        });
+                if better {
+                    best = Some((turns, faith, cid, *pos, item));
+                }
+            }
+        }
+        let Some((turns, _, city, _, item)) = best else {
+            return false;
+        };
+        if g.cities[&city].queue.first() == Some(&item) {
+            return true;
+        }
+        if g.apply(pid, &Action::Produce { city, item }).is_err() {
+            return false;
+        }
+        think!(self.journal(), Faith, Decision,
+            "{} starts a replacement Holy Site", g.cities[&city].name;
+            "religion-seat-builds-holy-sites: no completed Holy Site remains; restore the source before the expansion floor ({turns:.1} turns)");
+        true
     }
 
     /// `religion-seat-builds-holy-sites`: the idle city of ours with the best

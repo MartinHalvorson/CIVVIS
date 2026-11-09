@@ -1633,6 +1633,9 @@ local function unitProgress(unit)
 		promotions = promotions,
 		build_charges = try(function() return unit:GetBuildCharges(); end, 0),
 		spread_charges = try(function() return unit:GetSpreadCharges(); end, 0),
+		-- UnitPanel.lua:2255. A Guru's heals are their own pool: its spread
+		-- charges read 0, so the mirror thought all 21 Gurus of 2026-11-09 empty.
+		heal_charges = try(function() return unit:GetReligiousHealCharges(); end, nil),
 		religion = religion,
 	};
 end
@@ -8663,6 +8666,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			promotions = progress.promotions,
 			build_charges = progress.build_charges,
 			spread_charges = progress.spread_charges,
+			heal_charges = progress.heal_charges,
 			religion = progress.religion,
 			combat = row ~= nil and (row.Combat or 0) or 0,
 			ranged = row ~= nil and (row.RangedCombat or 0) or 0,
@@ -16150,6 +16154,7 @@ local function applyOrder(player, pid, row, turn)
 		-- back until turn 23 in civvis-20261109T070122Z.
 		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
 			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+			or resolved == "BUILDING_SHRINE"
 			or CivvisK.replacesHolySite(resolved);
 		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
 			or walkingSettlers >= 2;
