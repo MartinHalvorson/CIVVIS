@@ -882,7 +882,7 @@
   .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
   .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: grid; grid-template-rows: auto auto minmax(0, 1fr); align-items: start;
+    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); align-items: start;
     padding: 6px 7px 7px; overflow: hidden; color: var(--gold-bright);
     background: linear-gradient(155deg, #d7b66a1c, #d7b66a08);
     border: 1px solid #d7b66a30; text-align: center;
@@ -908,7 +908,7 @@
   .turn-count.turn-count-long .turn-progress { column-gap: 2px; }
   .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
   /* The live stopwatch, the plate's top section when the world is watched. */
-  .victory-turn.has-live-time { grid-template-rows: auto auto auto minmax(0, 1fr); }
+  .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
   .turn-live {
     min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px;
     margin: 0 0 4px; padding: 0 16px 4px; border-bottom: 1px solid #d7b66a24; white-space: nowrap;
@@ -956,6 +956,13 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
+  /* Watch pace sits alone between the stopwatch and the age, in the settings
+     block's type. `safe` starts an overflowing row at its left edge, so the
+     type fitter's scrollWidth still measures all of it. */
+  .turn-pace-line {
+    justify-content: safe center; margin: 0 0 4px; color: #9fb0a9;
+    font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
+  }
   /* The seam on the plate's right edge: the command deck's resize affordance
      brought inside the masthead. As a grid item overlapping the plate cell it
      rides the plate's edge at every density, leaning into the panel gap. */
@@ -1015,24 +1022,26 @@
      has wide-monitor room, while a viewer's dragged width remains decisive. */
   #playerhud.turn-plate-wide .victory-turn {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     column-gap: 10px; align-items: center;
   }
-  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 1; text-align: left; }
+  #playerhud.turn-plate-wide .turn-pace-line { grid-column: 1 / -1; grid-row: 1; }
+  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 2; text-align: left; }
   #playerhud.turn-plate-wide .turn-count {
-    grid-column: 2; grid-row: 1; margin: 0; justify-content: flex-end;
+    grid-column: 2; grid-row: 2; margin: 0; justify-content: flex-end;
   }
   #playerhud.turn-plate-wide .turn-settings {
-    grid-column: 1 / -1; grid-row: 2; align-self: start;
+    grid-column: 1 / -1; grid-row: 3; align-self: start;
     grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
   }
   /* The map, level and speed line is one reading: it keeps the whole width. */
   #playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }
-  #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto minmax(0, 1fr); }
+  #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto auto minmax(0, 1fr); }
   #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; }
+  #playerhud.turn-plate-wide .has-live-time .turn-pace-line { grid-row: 2; }
   #playerhud.turn-plate-wide .has-live-time .turn-era,
-  #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 2; }
-  #playerhud.turn-plate-wide .has-live-time .turn-settings { grid-row: 3; }
+  #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 3; }
+  #playerhud.turn-plate-wide .has-live-time .turn-settings { grid-row: 4; }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
