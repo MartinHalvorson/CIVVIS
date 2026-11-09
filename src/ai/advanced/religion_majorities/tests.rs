@@ -126,7 +126,7 @@ fn host_majority_overrules_visible_cities_but_missing_host_data_is_not_conversio
 
 #[test]
 fn home_defense_and_other_lanes_keep_their_spreads() {
-    let (mut g, mut ai, city, uid) = campaign();
+    let (mut g, mut ai, _, uid) = campaign();
     ai.enable_religion_finishes_majorities();
     g.players[1].is_minor = true;
     ai.retarget(VictoryTarget::Culture);
