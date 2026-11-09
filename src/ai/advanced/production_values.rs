@@ -1354,10 +1354,17 @@ impl AdvancedAi {
             // when its repair project is legal, so put that answer ahead of a
             // multi-turn unit without weakening the evidence gate above.
             let defence = Self::outer_defense_repair_item(g, pid, city).unwrap_or(defence);
-            let defence = self
-                .firepower_for_garrison(g, pid, city, &defence)
-                .unwrap_or(defence);
             let counter = self.spear_for_local_horse(g, pid, city, &defence, committed.as_ref());
+            let defence = if counter.is_none()
+                && committed
+                    .as_ref()
+                    .is_none_or(|item| !Self::active_queue_answers_siege(g, item))
+            {
+                self.firepower_for_garrison(g, pid, city, &defence)
+                    .unwrap_or(defence)
+            } else {
+                defence
+            };
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
             let wall_damage = g
                 .city_max_wall_hp(&g.cities[&city])
