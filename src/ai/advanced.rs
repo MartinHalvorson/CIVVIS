@@ -8416,6 +8416,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-first-shrine`: a Religion-target founder's first Shrine
+    /// takes the queue. See `advanced/religion_seat_first_shrine.rs`. Off by
+    /// default.
+    religion_seat_first_shrine: bool,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -25780,6 +25784,9 @@ impl AdvancedAi {
         // `religion-seat-builds-holy-sites`: a founder's Shrine and Temple
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
+        // `religion-seat-first-shrine`: the founder's first Shrine, ahead of
+        // the claims below. See `advanced/religion_seat_first_shrine.rs`.
+        self.claim_religion_seat_first_shrine(g, pid, &plan);
         self.claim_religion_seat_faith_economy(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
@@ -26329,6 +26336,8 @@ mod religion_prophet_queue;
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
 /// `religion-seat-flips-the-cheapest`: see
+/// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
+mod religion_seat_first_shrine;
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.

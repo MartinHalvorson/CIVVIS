@@ -246,7 +246,7 @@ impl AdvancedAi {
     }
 
     /// Whether `city` holds `family` or a civilization's replacement for it.
-    fn city_holds_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
+    pub(super) fn city_holds_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
         city.buildings.iter().any(|building| {
             building.as_str() == family
                 || g.rules
