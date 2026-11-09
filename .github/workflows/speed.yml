@@ -56,12 +56,22 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: 0
+      CIVVIS_BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
-      # Full history: the baseline is the pull request's own base commit, and
-      # a shallow clone cannot check it out.
+      # Build the same two pinned trees without downloading the repository's
+      # full history (17 GB on the verification host). Fetching the baseline
+      # explicitly makes it available even when it is outside this shallow tip.
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Fetch pinned paired-cost baseline
+        run: |
+          candidate="$(git rev-parse HEAD)"
+          git fetch --no-tags --depth=1 origin "$CIVVIS_BASE_SHA"
+          test "$(git rev-parse --verify 'FETCH_HEAD^{commit}')" = "$CIVVIS_BASE_SHA"
+          test "$(git rev-parse HEAD)" = "$candidate"
 
       # Nothing that can change simulator cost? Then say so and finish green.
       # The empty claim commit that opens every task PR lands here too: its
@@ -69,7 +79,9 @@ jobs:
       - name: Is there anything to measure?
         id: scope
         run: |
-          changed="$(git diff --name-only ${{ github.event.pull_request.base.sha }}...HEAD)"
+          # Compare the actual build inputs, not an ancestry query across a
+          # deliberately shallow boundary. The paired builds use these trees.
+          changed="$(git diff --name-only "$CIVVIS_BASE_SHA" HEAD)"
           if printf '%s\n' "$changed" | grep -qE '^(src/|data/|Cargo\.toml$|Cargo\.lock$|tools/speed_ab\.py$|\.github/workflows/speed\.yml$)'; then
             echo "measure=true" >> "$GITHUB_OUTPUT"
           else
@@ -111,7 +123,7 @@ jobs:
       - name: Build the baseline (the pull request's base commit)
         if: steps.scope.outputs.measure == 'true'
         run: |
-          git checkout --detach ${{ github.event.pull_request.base.sha }}
+          git checkout --detach "$CIVVIS_BASE_SHA"
           cargo build --profile ci --bin civvis --locked
           cp target/ci/civvis /tmp/civvis-baseline
           git checkout --force -
