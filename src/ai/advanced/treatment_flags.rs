@@ -102,8 +102,21 @@ impl AdvancedAi {
         /// `culture-faith-opens-at-the-theaters`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_opens_at_the_theaters => enable_culture_faith_opens_at_the_theaters, disable_culture_faith_opens_at_the_theaters;
+        /// `domination-clock-every-rung`: an assigned Domination lane leaves its
+        /// development half at 30% of the clock at every difficulty. See
+        /// `AdvancedAi::domination_clock_every_rung`.
+        domination_clock_every_rung => enable_domination_clock_every_rung, disable_domination_clock_every_rung;
+        /// `domination-spends-the-stock`: a Domination seat's delegated governor
+        /// takes a resource-priced melee unit whenever a city can start one.
+        /// See `AdvancedAi::domination_spends_the_stock`.
+        domination_spends_the_stock => enable_domination_spends_the_stock, disable_domination_spends_the_stock;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
+        /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
+        /// lane passes the peak edge against a target at 60% or less of its
+        /// 30-turn peak, at 1.5 times what it has left. See
+        /// `AdvancedAi::gutted_rival_passes_the_edge`.
+        gutted_rival_passes_the_edge => enable_gutted_rival_passes_the_edge, disable_gutted_rival_passes_the_edge;
         // ---- append: l-o --------------------------------------------
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;

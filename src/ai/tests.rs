@@ -10950,6 +10950,41 @@ fn military_picker_preserves_city_capturing_melee() {
     assert!(!g.rules.units[melee].has_ranged_attack());
 }
 
+/// `domination-spends-the-stock`: with the flag lent and the stock to pay for
+/// it, the combined-arms pick takes a resource-priced melee unit where the
+/// alternation would take a shooter. Without the stock it does not.
+#[test]
+fn a_lent_flag_spends_the_stock_on_priced_melee() {
+    let mut g = Game::new_full(2, 20, 14, 91_770, 120, 0, false);
+    let settler = g
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|id| g.units[id].kind == "settler")
+        .unwrap();
+    g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    g.players[0]
+        .techs
+        .extend([crate::name!("archery"), crate::name!("iron_working")]);
+    let cid = g.player_city_ids(0)[0];
+    let mut ai = BasicAi::new();
+    ai.prefers_priced_melee = true;
+
+    let without_stock = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
+    assert!(g.rules.units[without_stock].has_ranged_attack());
+
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 30.0);
+    let with_stock = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
+    let spec = &g.rules.units[with_stock];
+    assert!(!spec.has_ranged_attack());
+    assert!(spec.resource_cost > 0.0);
+
+    ai.prefers_priced_melee = false;
+    let flag_off = ai.combined_arms_unit(&g, 0, cid, 2, 0).unwrap();
+    assert!(g.rules.units[flag_off].has_ranged_attack());
+}
+
 #[test]
 fn military_units_capture_adjacent_enemy_civilians_by_moving() {
     let mut game = Game::new_full(2, 20, 14, 91_769, 120, 0, false);

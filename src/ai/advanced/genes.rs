@@ -5444,6 +5444,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
     Gene { tag: "culture-faith-opens-at-the-theaters", field: "culture_faith_opens_at_the_theaters", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_opens_at_the_theaters, disable: AdvancedAi::disable_culture_faith_opens_at_the_theaters },
+    // `domination-clock-every-rung`: the Domination lane's development half
+    // ends at 30% of the clock at every difficulty. Opt-in; see the field.
+    Gene { tag: "domination-clock-every-rung", field: "domination_clock_every_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_clock_every_rung, disable: AdvancedAi::disable_domination_clock_every_rung },
+    // `domination-spends-the-stock`: a Domination seat's delegated governor
+    // takes a resource-priced melee unit whenever a city can start one.
+    // Opt-in; see the field.
+    Gene { tag: "domination-spends-the-stock", field: "domination_spends_the_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_spends_the_stock, disable: AdvancedAi::disable_domination_spends_the_stock },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5453,6 +5460,10 @@ pub const GENES: &[Gene] = &[
     // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
     Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: g-k ------------------------------------------------
+    // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
+    // passes the peak edge against a target at 60% or less of its 30-turn
+    // peak. Opt-in; see the field.
+    Gene { tag: "gutted-rival-passes-the-edge", field: "gutted_rival_passes_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_gutted_rival_passes_the_edge, disable: AdvancedAi::disable_gutted_rival_passes_the_edge },
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // First-slot ranged support. Leaves later recon settings unchanged;
