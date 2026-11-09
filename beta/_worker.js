@@ -204,13 +204,43 @@ async function fileReport(request, env, url) {
   return answer(201, { url: issue.html_url || "", number: issue.number });
 }
 
+// The two files that are most of a first visit. publish.sh writes a `.br` beside
+// each at brotli's slowest setting; Cloudflare's own on-the-fly compression
+// favours speed and comes out about 30% larger on the engine.
+//
+// The test lane only, for now. This module is deployment-global, so it reaches
+// the front page without a promotion, and Pages' handling of these files can be
+// proven only on the real runtime. Widen this once /test has shown it working.
+const PRECOMPRESSED = /^\/test\/(?:civvis\.wasm|assets\/app\.js)$/;
+
+/// The harder-compressed copy of this file, if there is one and the browser
+/// can read it. Workers rewrites a request's own `Accept-Encoding`, so what the
+/// visitor's browser actually said comes from `request.cf`.
+async function precompressedCopy(request, env, url) {
+  if (request.method !== "GET" || !PRECOMPRESSED.test(url.pathname)) return null;
+  const accepted = request.cf?.clientAcceptEncoding ?? request.headers.get("Accept-Encoding") ?? "";
+  if (!/\bbr\b/.test(accepted)) return null;
+  const file = new URL(url);
+  file.pathname += ".br";
+  file.search = "";
+  const copy = await env.ASSETS.fetch(new Request(file, {
+    method: "GET",
+    headers: { "Accept-Encoding": "identity" },
+  }));
+  // Pages answers an unknown path with the root page, and a build made on a
+  // machine without brotli has no copies, so only a real file counts.
+  if (!copy.ok || /text\/html/.test(copy.headers.get("Content-Type") || "")) return null;
+  return copy;
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
-  const response = await env.ASSETS.fetch(request);
-  const headers = new Headers(response.headers);
   const url = new URL(request.url);
   const path = url.pathname;
+  const copy = await precompressedCopy(request, env, url);
+  const response = copy || await env.ASSETS.fetch(request);
+  const headers = new Headers(response.headers);
 
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -231,6 +261,14 @@ async function asset(request, env, gated) {
     // HTML and legacy/unversioned URLs are moving pointers. Revalidate them on
     // every visit so an old page or hand-written URL cannot pin a past build.
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
+  }
+  if (copy) {
+    headers.set("Content-Encoding", "br");
+    headers.set("Vary", "Accept-Encoding");
+    if (path.endsWith(".js")) headers.set("Content-Type", "text/javascript; charset=utf-8");
+    // `manual`: these bytes are already encoded, so the runtime must not encode
+    // them again or decode them to re-encode at a weaker setting.
+    return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });
   }
   return new Response(response.body, { status: response.status, headers });
 }
