@@ -69,7 +69,14 @@ GameInfo.Types = {
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
 	UNIT_ARCHER = { Hash = 103, Kind = "KIND_UNIT" },
 	PROJECT_ENHANCE_DISTRICT_HOLY_SITE = { Hash = 104, Kind = "KIND_PROJECT" },
+	DISTRICT_LAVRA = { Hash = 105, Kind = "KIND_PROJECT" },
+	DISTRICT_CAMPUS = { Hash = 106, Kind = "KIND_PROJECT" },
 }
+GameInfo.DistrictReplaces = function()
+	local rows = { { CivUniqueDistrictType = "DISTRICT_LAVRA", ReplacesDistrictType = "DISTRICT_HOLY_SITE" } }
+	local at = 0
+	return function() at = at + 1; return rows[at] end
+end
 GameInfo.CommemorationTypes = {
 	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
 	[19] = { CommemorationType = "COMMEMORATION_SCIENTIFIC" },
@@ -449,6 +456,24 @@ local prayed, prayedWhy = applyOrder(player, PID,
 check("founding race reaches host", prayed, true)
 check("founding race names its build", prayedWhy, "PROJECT_ENHANCE_DISTRICT_HOLY_SITE")
 check("founding race replaces settler", host.cities[42].current, 104)
+
+-- Russia's Lavra is the same race under its own type: civvis-20261109T140800Z
+-- had it refused at t7 as `opening_settler_in_progress`. Another civ's unique
+-- district gets no such pass. One city, so the opening lock is what decides.
+local secondCity = host.cities[43]
+host.cities[43] = nil
+host.cities[42].current = 101
+local lavra, lavraWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "DISTRICT_LAVRA" }, 16)
+check("lavra reaches host", lavra, true)
+check("lavra names its build", lavraWhy, "DISTRICT_LAVRA")
+check("lavra replaces settler", host.cities[42].current, 105)
+host.cities[42].current = 101
+local campus, campusWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "DISTRICT_CAMPUS" }, 16)
+check("campus stays behind the settler", campus, false)
+check("campus names the refusal", campusWhy, "opening_settler_in_progress")
+host.cities[43] = secondCity
 
 -- Reproduce the stalled one-city opening: two live Settlers are already
 -- waiting for routes. The bridge must let the governor stop a third queue.
