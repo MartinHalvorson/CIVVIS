@@ -24,6 +24,7 @@ The scope tracker is deliberately simple — a stack of blocks, pushed on
 `function`/`do`/`then`/`else`/`repeat` and popped on `end`/`until`. That is not a
 full Lua parser, so treat findings as leads. It finds the bug it was written for,
 and the test at the bottom of this file proves it still does.
+`tools/test_check_scope.py` holds the shipped mod to zero findings.
 
     python3 tools/civ6_control/check_scope.py tools/civ6_control/mod/*.lua
     python3 tools/civ6_control/check_scope.py --self-test
@@ -62,6 +63,28 @@ KNOWN_GLOBALS = {
     "ActionTypes", "CityCommandResults", "CivilizationLevelTypes", "EndTurnBlockingTypes",
     "InterfaceModeTypes", "Modding", "Network", "PlayerOperations",
     "ServerType", "SlotStatus", "TurnLimitTypes",
+    "ActivityTypes", "AutoProfiler", "Cities", "CityDestroyDirectives",
+    "CityOperationResults", "CityProductionDirectives", "CombatManager",
+    "CombatResultParameters", "CombatTypes", "CombatVisType", "ComponentType",
+    "DealAgreementTypes", "DealDirection", "DealItemTypes", "DealManager",
+    "DealProposalAction", "DefenseTypes", "DiplomacyResponseTypes", "DirectionTypes",
+    "GameClimate", "GlobalParameters", "MilitaryFormationTypes", "Options",
+    "OperationResultsTypes", "PromiseTypes", "TerrainManager", "UIManager",
+    "UnitCommandResults", "UnitOperationMoveModifiers", "UnitOperationResults",
+    "UserConfiguration",
+}
+
+# Globals of the shipped screens `CivvisControlAutoClose.lua` is loaded into.
+# They belong to the screen, so the file itself never defines them.
+HOST_SCREEN_GLOBALS = {
+    "Close", "CloseFocusedState", "DefaultHandlers", "ExitConversationMode",
+    "GetStatementMood", "InputHandler", "LateInitialize", "OnAccept", "OnButton1",
+    "OnButton4", "OnCancel", "OnClose", "OnClosePopup", "OnContinue", "OnHide",
+    "OnHideScreen", "OnHistoricMoments", "OnMovieExitOrFinished", "OnPass",
+    "OnPopupOpen", "OnRefuseDeal", "OnSelectConversationDiplomacyStatement",
+    "OnSelectInitialDiplomacyStatement", "OnShow", "PopupDialog", "ReleaseEventLock",
+    "Styles", "g_OtherPlayer", "m_PopupDialog", "ms_ActiveSessionID",
+    "ms_currentViewMode",
 }
 
 KEYWORDS = {
@@ -71,6 +94,8 @@ KEYWORDS = {
 }
 
 NAME = r"[A-Za-z_]\w*"
+LONG_COMMENT = re.compile(r"--\[(=*)\[")
+LONG_STRING = re.compile(r"\[(=*)\[")
 TOKEN = re.compile(r"--\[(=*)\[|--[^\n]*|\[(=*)\[|\"|'|" + NAME + r"|\S")
 
 
@@ -79,7 +104,7 @@ def strip_noise(text: str) -> str:
     out, i, n = [], 0, len(text)
     while i < n:
         if text.startswith("--", i):
-            m = re.match(r"--\[(=*)\[", text[i:])
+            m = LONG_COMMENT.match(text, i)
             if m:
                 close = "]" + "=" * len(m.group(1)) + "]"
                 j = text.find(close, i)
@@ -90,7 +115,7 @@ def strip_noise(text: str) -> str:
             out.append(re.sub(r"[^\n]", " ", text[i:j]))
             i = j
             continue
-        m = re.match(r"\[(=*)\[", text[i:])
+        m = LONG_STRING.match(text, i) if text[i] == "[" else None
         if m:
             close = "]" + "=" * len(m.group(1)) + "]"
             j = text.find(close, i)
@@ -114,7 +139,7 @@ def strip_noise(text: str) -> str:
 def tokenize(text: str) -> list[tuple[str, int]]:
     tokens = []
     for line_no, line in enumerate(text.splitlines(), 1):
-        for m in re.finditer(NAME + r"|[=,\.\:\(\)\{\}\[\]]|\S", line):
+        for m in re.finditer(r"\d[\w.]*|" + NAME + r"|[=,\.\:\(\)\{\}\[\]]|\S", line):
             tokens.append((m.group(0), line_no))
     return tokens
 
@@ -205,7 +230,16 @@ def analyse(text: str) -> tuple[list[tuple[int, str]], set[str], set[str]]:
             # A named function DEFINES that name. Without recording it,
             # `function Initialize()` reported as an undeclared read of
             # `Initialize` — the definition accusing itself.
-            if re.fullmatch(NAME, tok) and tok not in KEYWORDS:
+            # `function CivvisBoard.cap()` defines a field and names a table
+            # the file made elsewhere. Counting it as a definition made every
+            # use of `CivvisBoard` before that line a "scope slip": 175 false
+            # findings, which is why nothing ran this file.
+            if (
+                re.fullmatch(NAME, tok)
+                and tok not in KEYWORDS
+                and tokens[i - 1][0] == "function"
+                and tokens[i + 1][0] not in (".", ":")
+            ):
                 scopes[0].add(tok)
                 all_locals.add(tok)
             i += 1
@@ -249,6 +283,47 @@ def analyse(text: str) -> tuple[list[tuple[int, str]], set[str], set[str]]:
         i += 1
 
     return slips, all_locals, globals_read
+
+
+def defined_globals(text: str) -> set[str]:
+    """Names this file creates as globals: `function X()` and `X = ...`."""
+    clean = strip_noise(text)
+    names = set(re.findall(r"^\s*function\s+(" + NAME + r")\s*\(", clean, re.M))
+    names |= set(re.findall(r"^\s*(" + NAME + r")\s*=[^=]", clean, re.M))
+    return names
+
+
+def included_modules(text: str) -> set[str]:
+    """Stems this script pulls in with `include("X")`."""
+    return set(re.findall(r"""\binclude\s*\(\s*["']([\w.]+)["']\s*\)""", text))
+
+
+def unexplained_globals(text: str, siblings: dict[str, str] | None = None) -> set[str]:
+    """Globals read here that nothing explains: the shape of a misspelt name.
+
+    Not known to the engine, not created by this file or a sibling it includes,
+    not probed before use. `orderSettler` reading an undeclared `id` is the case
+    this exists for.
+    """
+    _, all_locals, globals_read = analyse(text)
+    included: set[str] = set()
+    for stem in included_modules(text):
+        if siblings and stem in siblings:
+            included |= defined_globals(siblings[stem])
+    return (
+        globals_read
+        - all_locals
+        - guarded_names(text)
+        - defined_globals(text)
+        - included
+        - HOST_SCREEN_GLOBALS
+    )
+
+
+def slip_names(text: str) -> list[tuple[int, str]]:
+    """Each use of a name that is a local somewhere else, and not here."""
+    slips, all_locals, _ = analyse(text)
+    return [(line, name) for line, name in slips if name in all_locals]
 
 
 def check(path: pathlib.Path, show_globals: bool) -> int:
@@ -324,7 +399,12 @@ def main() -> int:
     # than no guard, because it is quoted as evidence. It reported green on the
     # very edit that added `chooseEnvoy`. Same family as `install.py` with no
     # args exiting 0 having installed nothing.
-    paths = args.paths or sorted((pathlib.Path(__file__).parent / "mod").glob("*.lua"))
+    # The `_test.lua` files stub the engine, so what they read is not evidence.
+    paths = args.paths or sorted(
+        path
+        for path in (pathlib.Path(__file__).parent / "mod").glob("*.lua")
+        if not path.name.endswith("_test.lua")
+    )
     total = sum(check(p, args.globals) for p in paths)
     if not paths:
         print("FAIL: no Lua files found to check — refusing to report success")
