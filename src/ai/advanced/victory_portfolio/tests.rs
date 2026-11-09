@@ -133,8 +133,8 @@ fn the_published_science_clock_expects_growth_and_the_planner_does_not() {
     let (planner_finish, shown_finish) = (planner.finish_turn.unwrap(), shown.finish_turn.unwrap());
     assert!(shown_finish < planner_finish);
     assert!(
-        shown_finish > 100.0 + (planner_finish - 100.0) / 3.0,
-        "growth is shaded down, not a guess that the game ends tomorrow"
+        shown_finish > 100.0 + g.science_victory_points_needed(0) * YieldGrowth::EXPECTED.flight,
+        "no amount of growth skips the flight"
     );
     assert_eq!(shown.bottleneck, planner.bottleneck);
     assert_eq!(shown.confidence, planner.confidence);

@@ -35,7 +35,6 @@ struct YieldGrowth {
     /// Science and production, which grow alike in recorded host games.
     economy: f64,
     tourism: f64,
-    faith: f64,
     /// Share of an expedition's distance-over-speed clock it will really take.
     /// Laser stations raise its speed in flight.
     flight: f64,
@@ -49,10 +48,13 @@ impl YieldGrowth {
     /// science and production rose with a power of about 1.7 of the turn, with
     /// a quarter of seats under 1.1, and flights took about half of
     /// distance over launch speed.
+    ///
+    /// Faith has no curve. A Religious clock is bound by the conversions still
+    /// to make, and it already reads short of simulated Religious wins before
+    /// any growth is added.
     const EXPECTED: Self = Self {
         economy: 1.25,
         tourism: 1.25,
-        faith: 0.75,
         flight: 0.7,
     };
 
@@ -60,7 +62,6 @@ impl YieldGrowth {
         Self {
             economy: k,
             tourism: k,
-            faith: k,
             flight: 1.0,
         }
     }
@@ -345,7 +346,7 @@ impl AdvancedAi {
             result.push(match target {
                 VictoryTarget::Science => Self::forecast_science(g, pid, yields, old, growth),
                 VictoryTarget::Culture => Self::forecast_culture(g, pid, yields, old, growth),
-                VictoryTarget::Religion => Self::forecast_religion(g, pid, yields, growth),
+                VictoryTarget::Religion => Self::forecast_religion(g, pid, yields),
                 VictoryTarget::Diplomacy => Self::forecast_diplomacy(g, pid, old),
                 VictoryTarget::Domination => Self::forecast_domination(g, pid),
                 VictoryTarget::Score => Self::forecast_score(g, pid),
@@ -609,12 +610,7 @@ impl AdvancedAi {
         forecast
     }
 
-    fn forecast_religion(
-        g: &Game,
-        pid: usize,
-        yields: Yields,
-        growth: YieldGrowth,
-    ) -> VictoryEstimate {
+    fn forecast_religion(g: &Game, pid: usize, yields: Yields) -> VictoryEstimate {
         let mut forecast =
             VictoryEstimate::new(VictoryTarget::Religion, 0.0, "religion_foundation");
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -690,12 +686,7 @@ impl AdvancedAi {
             forecast.bottleneck = "faith_income".into();
             return forecast;
         }
-        forecast.preparation_turns = grown_turns(
-            funding / yields.faith.max(1.0),
-            0.0,
-            growth.faith,
-            growth_origin(g),
-        );
+        forecast.preparation_turns = funding / yields.faith.max(1.0);
         forecast.finish(
             g.turn,
             forecast.preparation_turns + f64::from(farthest) / 2.0 + missing_cities as f64 * 3.0,
