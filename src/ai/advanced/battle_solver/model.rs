@@ -235,6 +235,10 @@ pub struct Weights {
     pub enemy_retreat_hp: i16,
     /// Our retreat threshold in rollouts.
     pub our_retreat_hp: i16,
+    /// Chance a modelled enemy takes a favourable strike. Below one because
+    /// the real AI does not always swing when it could; one is the prudent
+    /// reading and the setting the benches use.
+    pub enemy_aggression: f32,
 }
 
 impl Default for Weights {
@@ -246,6 +250,7 @@ impl Default for Weights {
             haste: 0.92,
             enemy_retreat_hp: 25,
             our_retreat_hp: 40,
+            enemy_aggression: 1.0,
         }
     }
 }
@@ -336,6 +341,37 @@ impl<'b> Sim<'b> {
             count += 1;
         }
         count
+    }
+
+    /// A blow's strengths for the exact volley: the attacker's after its
+    /// wound penalty, the defence before the target's.
+    pub fn blow_bases(&self, i: usize, j: usize) -> (f32, f32) {
+        let (a, d) = (self.s.units[i], self.s.units[j]);
+        let n = self.b.n;
+        if a.shoots() {
+            (
+                effective_strength(self.b.ranged_att[i * n + j], a.hp as i32),
+                self.b.ranged_def[i * n + j] + 3.0 * d.fort as f32
+                    + self.b.defense[d.tile as usize],
+            )
+        } else {
+            let (att, _) = self.melee_strengths(i, j);
+            let support = self.b.support[d.side as usize]
+                * self.adjacent_friends(d.side, d.tile, j, false) as f32;
+            let river = if self.b.crosses_river(a.tile, d.tile) {
+                5.0
+            } else {
+                0.0
+            };
+            (
+                att,
+                self.b.melee_def[i * n + j]
+                    + 3.0 * d.fort as f32
+                    + self.b.defense[d.tile as usize]
+                    + support
+                    + river,
+            )
+        }
     }
 
     /// `melee_exchange_strengths`, read from the model.
@@ -722,7 +758,7 @@ impl<'b> Sim<'b> {
     /// The scripted player's turn for one unit.
     fn act(&mut self, i: usize, posture: Posture) {
         let me = self.s.units[i];
-        if !me.alive() || (me.mp == 0 && me.attacks == 0) {
+        if !me.alive() || me.mp == 0 {
             return;
         }
         self.flood(i);
@@ -886,6 +922,12 @@ impl<'b> Sim<'b> {
                         best = Some((stand, Aim::City(c as u8)));
                     }
                 }
+            }
+        }
+        if side == THEIRS && self.w.enemy_aggression < 1.0 {
+            let swings = (self.roll(i) - 0.8) / 0.4 < self.w.enemy_aggression;
+            if !swings {
+                best = None;
             }
         }
         if let Some((stand, aim)) = best {

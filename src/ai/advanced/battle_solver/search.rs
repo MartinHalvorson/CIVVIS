@@ -409,7 +409,6 @@ impl<'b> Searcher<'b> {
     }
 
     fn forecast(&mut self, plan: &[(usize, Line)], posture: Posture, samples: u32) -> Forecast {
-        let b = self.b;
         let (start_own, start_enemy) = {
             self.sim.reset(self.init, self.seed);
             (self.sim.own_alive(), self.sim.enemy_alive())
@@ -455,27 +454,22 @@ impl<'b> Searcher<'b> {
         targets.sort_unstable();
         targets.dedup();
         for j in targets {
-            let def = {
-                let target = self.init.units[j as usize];
-                b.ranged_def[j as usize * self.b.n + j as usize]
-                    + 3.0 * target.fort as f32
-                    + b.defense[target.tile as usize]
-            };
-            let blows: Vec<f32> = plan
+            // Shots land first, so they lead the volley.
+            let mut blows: Vec<(bool, (f32, f32))> = plan
                 .iter()
                 .filter(|(_, line)| line.aim == Aim::Unit(j))
                 .map(|(i, _)| {
-                    let unit = self.init.units[*i];
-                    if unit.shoots() {
-                        self.sim.ranged_strengths(*i, j as usize).0
-                    } else {
-                        self.sim.melee_strengths(*i, j as usize).0
-                    }
+                    (
+                        !self.init.units[*i].shoots(),
+                        self.sim.blow_bases(*i, j as usize),
+                    )
                 })
                 .collect();
+            blows.sort_by_key(|(melee, _)| *melee);
+            let blows: Vec<(f32, f32)> = blows.into_iter().map(|(_, blow)| blow).collect();
             f.kills.push((
                 Aim::Unit(j),
-                kill_probability(self.init.units[j as usize].hp as i32, def, &blows),
+                kill_probability(self.init.units[j as usize].hp as i32, &blows),
             ));
         }
         f
@@ -532,7 +526,7 @@ pub fn solve(
         .units
         .iter()
         .enumerate()
-        .filter(|(_, u)| u.alive() && u.side == OURS && (u.mp > 0 || u.attacks > 0))
+        .filter(|(_, u)| u.alive() && u.side == OURS && u.mp > 0)
         .map(|(i, _)| i)
         .collect();
     let choices: Vec<Choices> = ours

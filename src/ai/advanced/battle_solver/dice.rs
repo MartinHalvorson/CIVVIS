@@ -70,26 +70,25 @@ pub fn roll_pmf(att: f32, def: f32) -> Vec<(i32, f64)> {
 pub struct VolleyDist {
     /// `hp[k]` = probability the target stands at `k` hit points; 0 = dead.
     pub hp: [f64; 101],
-    /// Defender base strength before the wound penalty.
-    pub def_base: f32,
 }
 
 impl VolleyDist {
-    pub fn new(hp: i32, def_base: f32) -> Self {
+    pub fn new(hp: i32) -> Self {
         let mut dist = [0.0; 101];
         dist[hp.clamp(0, 100) as usize] = 1.0;
-        Self { hp: dist, def_base }
+        Self { hp: dist }
     }
 
-    /// Land one blow of `att` (already through the attacker's wound penalty).
-    pub fn strike(&mut self, att: f32) {
+    /// Land one blow: `att` is already through the attacker's wound penalty,
+    /// `def_base` is this blow's defence before the target's own.
+    pub fn strike(&mut self, att: f32, def_base: f32) {
         let mut next = [0.0f64; 101];
         next[0] = self.hp[0];
         for (hp, &p) in self.hp.iter().enumerate().skip(1) {
             if p <= 0.0 {
                 continue;
             }
-            for (dmg, roll) in roll_pmf(att, effective_strength(self.def_base, hp as i32)) {
+            for (dmg, roll) in roll_pmf(att, effective_strength(def_base, hp as i32)) {
                 next[(hp as i32 - dmg).max(0) as usize] += p * roll;
             }
         }
@@ -104,13 +103,14 @@ impl VolleyDist {
     }
 }
 
-/// `P(the blows kill a target at `hp`)`, each blow given as the attacker's
-/// strength after its own wound penalty. Exact, including the target's wound
-/// penalty after each hit.
-pub fn kill_probability(hp: i32, def_base: f32, blows: &[f32]) -> f64 {
-    let mut dist = VolleyDist::new(hp, def_base);
-    for &att in blows {
-        dist.strike(att);
+/// `P(the blows kill a target at `hp`)`. Each blow is the attacker's strength
+/// after its own wound penalty and the defence that blow meets before the
+/// target's wound penalty, since a melee blow and a shot read different
+/// defences. Exact, including the target's wound penalty after each hit.
+pub fn kill_probability(hp: i32, blows: &[(f32, f32)]) -> f64 {
+    let mut dist = VolleyDist::new(hp);
+    for &(att, def_base) in blows {
+        dist.strike(att, def_base);
     }
     dist.p_killed()
 }
@@ -160,7 +160,7 @@ mod tests {
         // Two equal blows on a wounded target: each lands harder than the
         // last, because the target's strength falls as it is hit.
         let (hp, def, att) = (70, 30.0f32, 30.0f32);
-        let exact = kill_probability(hp, def, &[att, att]);
+        let exact = kill_probability(hp, &[(att, def), (att, def)]);
         // Read at full strength each blow centres at 30, and 60 < 70: the
         // mean reading says this kill cannot happen.
         assert!(mean_damage(att, def) * 2.0 < hp as f32);
@@ -168,13 +168,13 @@ mod tests {
         // stands at -3 for the first blow and about -6 for the second.
         assert!(exact > 0.6 && exact < 0.75, "{exact}");
         // And it is never above what three blows give.
-        assert!(kill_probability(hp, def, &[att, att, att]) > exact);
+        assert!(kill_probability(hp, &[(att, def), (att, def), (att, def)]) > exact);
     }
 
     #[test]
     fn a_hard_kill_and_an_impossible_one_read_as_such() {
-        assert!((kill_probability(10, 20.0, &[40.0]) - 1.0).abs() < 1e-9);
-        assert_eq!(kill_probability(100, 40.0, &[20.0]), 0.0);
+        assert!((kill_probability(10, &[(40.0, 20.0)]) - 1.0).abs() < 1e-9);
+        assert_eq!(kill_probability(100, &[(20.0, 40.0)]), 0.0);
         let p: f64 = roll_pmf(45.0, 20.0)
             .iter()
             .filter(|(dmg, _)| *dmg >= 70)

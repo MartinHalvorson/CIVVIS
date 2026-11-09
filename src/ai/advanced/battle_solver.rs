@@ -67,6 +67,7 @@ impl AdvancedAi {
         self.battle_planner_ordered.contains(&uid)
             || self.unit_is_reserved(uid)
             || self.active_siege_member(g, pid, uid)
+            || self.staging_siege_member(g, pid, uid)
             || self.guard_is_reserved_for_civilian(uid)
     }
 
