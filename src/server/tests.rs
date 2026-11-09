@@ -4696,9 +4696,10 @@ fn the_planet_gpu_binding_precedes_the_saved_hud_layout_replay() {
 }
 
 /// Map search is deliberately a client-side read of the observation the
-/// browser already owns. It must use exact sight rather than remembered
-/// tiles, understand the named things that can occupy a tile, and paint
-/// the same result on both supported map projections.
+/// browser already owns. Like Civ VI's own panel it covers every revealed
+/// tile while listing units only in exact sight, understands the named
+/// things the game indexes on a plot, and paints the same result on both
+/// supported map projections.
 #[test]
 fn browser_search_lights_every_matching_visible_tile() {
     let sidebar = EMBEDDED_INDEX
@@ -4719,7 +4720,7 @@ fn browser_search_lights_every_matching_visible_tile() {
         .expect("keyboard shortcuts");
     assert!(
         lenses_at < search_at && search_at < shortcuts_at,
-        "map lenses should sit above visible-tile search, immediately before keyboard shortcuts"
+        "map lenses should sit above map search, immediately before keyboard shortcuts"
     );
     assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
     assert!(sidebar.contains("id=\"map-search-civ\""));
@@ -4731,21 +4732,30 @@ fn browser_search_lights_every_matching_visible_tile() {
     assert!(EMBEDDED_INDEX.contains("#map-search {\n    min-width: 0; padding: 6px 7px;"));
     assert!(
         !EMBEDDED_INDEX.contains("#map-search {\n    position: absolute;"),
-        "the visible-tile search must not float over the map"
+        "the map search must not float over the map"
     );
 
     let matcher = EMBEDDED_INDEX
-        .split_once("function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {")
+        .split_once(
+            "function computeMapSearchMatches(st, query, civFilter = mapSearchCivId, exclude = mapSearchExclude) {",
+        )
         .expect("map search matcher")
         .1
         .split_once("\nfunction mapSearchMatches() {")
         .expect("end of map search matcher")
         .0;
+    assert!(matcher.contains("new Set(st.map.tiles.map(tile => key(tile.pos)))"));
     assert!(matcher.contains("new Set((st.visible || []).map(key))"));
     assert!(
-        !matcher.contains("turn_visible"),
-        "search must not reveal remembered tiles outside exact sight"
+        matcher.contains("if (!visible.has(key(unit.pos))) continue;"),
+        "a unit is found only while it is in exact sight, as in Civ VI"
     );
+    assert!(
+        !matcher.contains("turn_visible"),
+        "revealed tiles and exact sight are the only two scopes Civ VI's search uses"
+    );
+    // Every plot fact `GetPlotSearchTerms` indexes that the observation
+    // carries. A field missing here is a term the game finds and this cannot.
     for field in [
         "tile.terrain",
         "tile.feature",
@@ -4754,21 +4764,78 @@ fn browser_search_lights_every_matching_visible_tile() {
         "tile.district",
         "tile.planned_district",
         "tile.wonder",
+        "tile.hills",
+        "tile.river",
+        "tile.road",
+        "tile.appeal",
+        "tile.continent",
+        "tile.pillaged",
+        "tile.fallout_until",
+        "tile.coastal_lowland",
+        "tile.flooded",
+        "tile.submerged",
+        "tile.drought",
+        "tile.storm",
         "st.cities",
         "st.units",
         "st.camps",
+        "city.buildings",
+        "city.citizens?.specialists",
+        "item.wonder",
+        "unit.formation",
     ] {
         assert!(matcher.contains(field), "map search ignores {field}");
+    }
+    for term in [
+        "\"Owned\"",
+        "\"Unclaimed\"",
+        "\"Water\"",
+        "\"Impassable\"",
+        "\"Natural Wonder\"",
+        "\"Under Construction\"",
+        "\"Contamination\"",
+        "\"Specialist\"",
+        "\"City Center\"",
+        "\"Melee\"",
+        "\"Ranged\"",
+        "\"Siege\"",
+        "\"Land Combat\"",
+        "\"Naval Combat\"",
+        "\"Air Combat\"",
+        "\"Corps\"",
+        "\"Army\"",
+        "\"Fleet\"",
+        "\"Armada\"",
+        "forest:\"Woods\"",
+        "jungle:\"Rainforest\"",
+        "goody_hut:\"Tribal Village\"",
+        "barbarian_camp:\"Barbarian Outpost\"",
+    ] {
+        assert!(matcher.contains(term), "map search cannot find {term}");
     }
     assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
     assert!(matcher.contains("if (selectedCiv && String(owner) !== selectedCiv) return;"));
     assert!(
         matcher.contains("if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);")
     );
-    assert!(EMBEDDED_INDEX.contains("function mapSearchVisibleCivilizations(st)"));
+    assert!(
+        matcher.contains("if (excludedWords.some(word => mapSearchWordFound(haystack, word))) continue;"),
+        "the exclude box is Civ VI's search filter: none of its terms may match"
+    );
+    assert!(
+        EMBEDDED_INDEX.contains(
+            "if (needle.split(\" \").every(word => mapSearchWordFound(haystack, word))) return true;"
+        ),
+        "every word typed must match, in any order, as in Civ VI"
+    );
+    assert!(sidebar.contains("id=\"map-search-exclude\" type=\"search\""));
+    assert!(sidebar.contains("id=\"map-search-suggestions\" role=\"listbox\""));
+    assert!(EMBEDDED_INDEX.contains("function mapSearchSuggestions(typed, st = state) {"));
+    assert!(EMBEDDED_INDEX.contains("function mapSearchKnownCivilizations(st)"));
     assert!(EMBEDDED_INDEX
         .contains("player && !player.is_barbarian && player.civ && owners.has(String(player.id))"));
-    assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+    assert!(EMBEDDED_INDEX
+        .contains("for (const unit of st.units || []) if (visible.has(key(unit.pos))) noteOwner(unit.owner);"));
     let civilization_sync = EMBEDDED_INDEX
         .split_once("function syncMapSearchCivilizations(st = state) {")
         .expect("civilization-filter synchronizer")
@@ -4807,7 +4874,7 @@ fn browser_search_lights_every_matching_visible_tile() {
         .0;
     assert!(
         !lens_setter.contains("mapSearch"),
-        "a lens must not clear an active visible-tile search"
+        "a lens must not clear an active map search"
     );
 }
 
@@ -6297,7 +6364,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
             && map_lenses < visible_tile_search
             && visible_tile_search < keyboard_shortcuts,
         "left panel should show controls, display settings, game setup, the AI strategy dossier, \
-             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
+             world logs, government, map lenses, map search and then keyboard shortcuts"
     );
     assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
     assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
@@ -6455,7 +6522,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
     // Lenses are a docked panel at the deck's lower edge: collapsed by
     // default, saved with the other disclosures, and always at the bottom
-    // of the screen in reading order — lenses, then visible-tile search,
+    // of the screen in reading order — lenses, then map search,
     // then keyboard shortcuts — so changing the map perspective never
     // requires scrolling the command sections.
     let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
