@@ -24,7 +24,7 @@ fn number<T: std::str::FromStr>(args: &[String], flag: &str, default: &str) -> T
         .unwrap_or_else(|_| panic!("invalid {flag}"))
 }
 
-fn snapshot(game: &Game) -> Value {
+fn snapshot(game: &Game, clock_growth: &[f64]) -> Value {
     let odds = civvis::odds::table(game, |_| 1500.0_f64);
     let leading_score = game
         .players
@@ -47,6 +47,23 @@ fn snapshot(game: &Game) -> Value {
                 yields[3] += y.faith;
             }
             let races = game.victory_races(*pid, leading_score);
+            let clocks: Vec<Value> = clock_growth
+                .iter()
+                .map(|k| {
+                    let lanes: Vec<Value> = AdvancedAi::victory_forecasts_growing(game, *pid, *k)
+                        .into_iter()
+                        .map(|forecast| {
+                            json!([
+                                forecast.target.as_str(),
+                                forecast.finish_turn,
+                                forecast.confidence,
+                                forecast.bottleneck,
+                            ])
+                        })
+                        .collect();
+                    json!([k, lanes])
+                })
+                .collect();
             json!({
                 "pid": pid, "alive": player.alive, "start": odds.start,
                 "now": odds.now, "prior_elo": odds.prior_elo,
@@ -58,6 +75,11 @@ fn snapshot(game: &Game) -> Value {
                            races.diplomatic, races.domination],
                 "exoplanet": [races.exoplanet_distance, races.exoplanet_distance_target,
                               races.exoplanet_speed],
+                "clocks": clocks,
+                "published": AdvancedAi::victory_clocks(game, *pid)
+                    .into_iter()
+                    .map(|forecast| json!([forecast.target.as_str(), forecast.finish_turn]))
+                    .collect::<Vec<_>>(),
             })
         })
         .collect();
@@ -67,7 +89,7 @@ fn snapshot(game: &Game) -> Value {
 /// Read-only replay against a recorded host outcome. The counterfactual clears
 /// only city-total knowledge: every other observation is identical. It is the
 /// pre-fix odds path, without rerunning or changing a single game action.
-fn replay(path: &str, every: u32) {
+fn replay(path: &str, every: u32, clock_growth: &[f64]) {
     let path = std::path::Path::new(path);
     let summary: Value = serde_json::from_str(
         &std::fs::read_to_string(path.join("summary.json")).expect("read summary"),
@@ -108,7 +130,7 @@ fn replay(path: &str, every: u32) {
         }
         let game = civvis::mirror::rebuild_from_state(&board, &state, players, 1, turns, 0).game;
         let before = civvis::odds::table_with_located_cities(&game, |_| 1500.0_f64);
-        let mut sample = snapshot(&game);
+        let mut sample = snapshot(&game, clock_growth);
         for seat in sample["seats"].as_array_mut().expect("seats") {
             let pid = seat["pid"].as_u64().expect("seat id") as usize;
             seat["legacy_now"] = json!(before[&pid].now);
@@ -149,6 +171,7 @@ fn main() {
         "--map",
         "--human-seat",
         "--replay",
+        "--clock-growth",
     ];
     let (pairs, remainder) = args[1..].as_chunks::<2>();
     assert!(remainder.is_empty(), "every option needs a value");
@@ -170,9 +193,13 @@ fn main() {
     let height: i32 = number(&args, "--height", "22");
     let city_states: usize = number(&args, "--city-states", "2");
     let every: u32 = number(&args, "--every", "10");
+    let clock_growth: Vec<f64> = option(&args, "--clock-growth", "0")
+        .split(',')
+        .map(|k| k.parse().expect("invalid --clock-growth"))
+        .collect();
     if args.iter().any(|arg| arg == "--replay") {
         assert!(every > 0);
-        replay(&option(&args, "--replay", ""), every);
+        replay(&option(&args, "--replay", ""), every, &clock_growth);
         return;
     }
     let controller = option(&args, "--controller", "basic");
@@ -223,7 +250,7 @@ fn main() {
             if sampled_turn != Some(game.turn)
                 && (game.turn == 1 || game.turn.is_multiple_of(every))
             {
-                samples.push(snapshot(&game));
+                samples.push(snapshot(&game, &clock_growth));
                 sampled_turn = Some(game.turn);
             }
             let pid = game.current;

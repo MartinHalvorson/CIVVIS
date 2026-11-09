@@ -2337,7 +2337,7 @@ function closestVictoryTitle(player) {
   const others = rest.length
     ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${closestVictoryTurnsLabel(count)}`).join(", ")}`
     : "";
-  return `${head}${others} · the victory planner's estimate at today's pace`;
+  return `${head}${others} · the victory planner's estimate, expecting the economy to keep growing`;
 }
 
 function comparePlayerHudSortValues(left, right) {

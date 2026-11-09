@@ -11314,8 +11314,8 @@ fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_p
         annotated += 1;
         let id = player["id"].as_u64().unwrap() as usize;
         well_formed(&player["victory_eta"]);
-        // The head is the planner's own soonest central clock.
-        let soonest = crate::ai::AdvancedAi::victory_forecasts(&session.game, id)
+        // The head is the soonest published clock.
+        let soonest = crate::ai::AdvancedAi::victory_clocks(&session.game, id)
             .into_iter()
             .filter_map(|forecast| forecast.finish_turn)
             .map(|finish| (finish - f64::from(session.game.turn)).max(0.0).round() as i64)

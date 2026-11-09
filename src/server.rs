@@ -3507,10 +3507,11 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
 /// How far each road to a win is for one major, as `[victory, turns]` pairs,
 /// soonest first — the standings' Closest victory column reads the head.
 ///
-/// The turns are the victory planner's own central clock
-/// (`AdvancedAi::victory_forecasts`), not a meter extrapolated by the page:
-/// that forecaster already prices the research, the launch production, the
-/// tourism race against every defender and the capitals still to take. A
+/// The turns are the victory planner's own clocks read with the economy
+/// still growing (`AdvancedAi::victory_clocks`), not a meter extrapolated by
+/// the page: that forecaster already prices the research, the launch
+/// production, the tourism race against every defender and the capitals still
+/// to take. A
 /// road it cannot yet put a clock on — no religion founded, no army able to
 /// take a capital — is left out rather than guessed at, so a seat with no
 /// such road at all sends an empty list. Ties keep the victory order the
@@ -3521,7 +3522,7 @@ fn victory_eta_json(game: &Game, pid: usize) -> Option<Value> {
         return None;
     }
     let now = f64::from(game.turn);
-    let mut etas: Vec<(&str, i64)> = AdvancedAi::victory_forecasts(game, pid)
+    let mut etas: Vec<(&str, i64)> = AdvancedAi::victory_clocks(game, pid)
         .into_iter()
         .filter_map(|forecast| {
             forecast.finish_turn.map(|finish| {

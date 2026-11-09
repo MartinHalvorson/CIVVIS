@@ -67,6 +67,104 @@ fn forecast(g: &Game, target: VictoryTarget) -> VictoryEstimate {
         .unwrap()
 }
 
+fn published(g: &Game, target: VictoryTarget) -> VictoryEstimate {
+    AdvancedAi::victory_clocks(g, 0)
+        .into_iter()
+        .find(|forecast| forecast.target == target)
+        .unwrap()
+}
+
+/// Everything researched, a pad standing, and the economy set by hand, so the
+/// only clocks left are launch production and the flight.
+fn ready_to_launch(turn: u32, science: f64) -> Game {
+    let mut g = world();
+    g.turn = turn;
+    g.players[0].techs = g.rules.techs.keys().cloned().collect();
+    let cid = g.player_city_ids(0)[0];
+    let pos = g.cities[&cid].pos;
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), pos);
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        0,
+        Yields {
+            science,
+            ..Yields::default()
+        },
+    );
+    g
+}
+
+#[test]
+fn growth_is_a_shorter_clock_that_flat_income_leaves_alone() {
+    assert_eq!(grown_turns(40.0, 12.0, 0.0, 100.0), 40.0);
+    assert_eq!(grown_turns(0.0, 12.0, 1.25, 100.0), 0.0);
+    let grown = grown_turns(40.0, 0.0, 1.25, 100.0);
+    assert!(grown < 40.0 && grown > 30.0, "{grown}");
+    assert!(
+        grown_turns(40.0, 30.0, 1.25, 100.0) < grown,
+        "a build begun later is paid for by a larger economy"
+    );
+}
+
+#[test]
+fn growth_reads_the_same_at_every_game_speed() {
+    let online = grown_turns(60.0, 10.0, 1.25, 100.0);
+    let standard = grown_turns(120.0, 20.0, 1.25, 200.0);
+    assert!(
+        (standard - 2.0 * online).abs() < 1e-9,
+        "{online} {standard}"
+    );
+}
+
+#[test]
+fn a_young_empire_is_not_extrapolated_from_turn_one() {
+    let mut g = world();
+    g.turn = 1;
+    assert_eq!(growth_origin(&g), 25.0);
+    g.turn = 90;
+    assert_eq!(growth_origin(&g), 90.0);
+}
+
+#[test]
+fn the_published_science_clock_expects_growth_and_the_planner_does_not() {
+    let g = ready_to_launch(100, 20.0);
+    let planner = forecast(&g, VictoryTarget::Science);
+    let shown = published(&g, VictoryTarget::Science);
+    let (planner_finish, shown_finish) = (planner.finish_turn.unwrap(), shown.finish_turn.unwrap());
+    assert!(shown_finish < planner_finish);
+    assert!(
+        shown_finish > 100.0 + g.science_victory_points_needed(0) * YieldGrowth::EXPECTED.flight,
+        "no amount of growth skips the flight"
+    );
+    assert_eq!(shown.bottleneck, planner.bottleneck);
+    assert_eq!(shown.confidence, planner.confidence);
+}
+
+#[test]
+fn a_published_flight_counts_the_lasers_still_to_come() {
+    let mut g = world();
+    g.turn = 180;
+    expedition(&mut g, 0, 20.0);
+    assert_eq!(
+        forecast(&g, VictoryTarget::Science).finish_turn,
+        Some(210.0)
+    );
+    assert_eq!(
+        published(&g, VictoryTarget::Science).finish_turn,
+        Some(180.0 + 30.0 * YieldGrowth::EXPECTED.flight)
+    );
+}
+
+#[test]
+fn a_clock_with_no_road_stays_without_one() {
+    let g = world();
+    assert_eq!(published(&g, VictoryTarget::Religion).finish_turn, None);
+    assert_eq!(forecast(&g, VictoryTarget::Religion).finish_turn, None);
+}
+
 #[test]
 fn expedition_uses_the_observed_finish_line_and_speed() {
     let mut g = world();
@@ -166,6 +264,31 @@ fn culture_must_overtake_a_growing_defender() {
         "a currently smaller defender can still outgrow tourism"
     );
     assert_eq!(fast.bottleneck, "tourism_growth");
+    assert_eq!(
+        published(&g, VictoryTarget::Culture).finish_turn,
+        None,
+        "growth cannot invent a finish the defenders still outrun"
+    );
+}
+
+#[test]
+fn the_published_culture_clock_closes_the_gap_on_a_rising_curve() {
+    let mut g = world();
+    g.turn = 150;
+    let mut observe = |pid: usize, foreign: Option<usize>, domestic: Option<usize>| {
+        let seat = Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(pid)
+            .or_default();
+        seat.foreign_tourists = foreign;
+        seat.domestic_tourists = domestic;
+    };
+    observe(0, Some(50), None);
+    observe(1, None, Some(100));
+    observe(2, None, Some(90));
+    Arc::make_mut(&mut g.observed_tourism_per_turn).insert(0, 600.0);
+    let planner = forecast(&g, VictoryTarget::Culture).finish_turn.unwrap();
+    let shown = published(&g, VictoryTarget::Culture).finish_turn.unwrap();
+    assert!(shown < planner && shown > 150.0, "{planner} {shown}");
 }
 
 #[test]
