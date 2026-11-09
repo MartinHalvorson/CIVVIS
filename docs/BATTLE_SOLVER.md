@@ -111,9 +111,9 @@ pooled line past z 1.5 is cities taken by turn 100 (+0.14, z 2.0, 5 up and
 0 down), one of eleven lines read, so it is a lead and not a result. Khmer's
 score loss is the line to recheck before arming on that seat.
 
-This is the same shape `docs/TACTICS.md` records for one-turn joint tactics: a
-large bench gain that does not reach the whole game. The seat records final
-counts only, so these runs cannot say whether the in-game kill ratio moved.
+`docs/TACTICS.md` records the same shape for one-turn joint tactics: a large
+bench gain and an inconclusive whole-game read. The seat records final counts
+only, so these runs cannot say whether the in-game kill ratio moved.
 
 What the tuning found: the assumed enemy matters most. Modelling a greedy,
 always-swinging enemy read **−100** on combined arms and **−88** on melee;
@@ -136,9 +136,11 @@ only worth buying with a better enemy model. Raising the budget from 2,400 to
 The solver computes the fight it is shown. Four things limit how much that is
 worth, in the order they bind:
 
-1. **Being in the fight with comparable units.** Of 765 live Lv 7 unit losses,
-   580 were single blows from out-teched units. Damage is exponential in the
-   strength gap, so no ordering of attacks recovers a 30-strength deficit.
+1. **Being in the fight with comparable units.** Of 765 live Lv 7 military
+   losses (2026-11-04 census), 580 died to one hit, and the healthy units among
+   them were mostly archers and spearmen (15–25 strength) beside Line Infantry
+   and Machine Guns (55–70). Damage is exponential in the strength gap, so no
+   ordering of attacks recovers a 30-strength deficit.
 2. **Knowing what the enemy will do.** The tuning's largest swing came from the
    assumed enemy (−100 to +262), and depth made things worse because the model
    is wrong. A model fitted to the host's recorded moves is what makes a horizon
