@@ -1404,7 +1404,10 @@ impl AdvancedAi {
                 (Self::active_queue_answers_siege(g, item)
                     || finish_campus
                     || paused_finish.as_ref() == Some(*item))
-                    && g.can_produce(pid, city, item)
+                    // The host may already have paid this defender's Iron.
+                    // Reuse the governor's continuation gate instead of
+                    // asking whether the depleted stock can start another.
+                    && Self::production_commitment_is_legal(g, pid, city, item)
             }) {
                 // A fresh defensive head can be refined, but only after all
                 // existing unsafe-queue rescues. Keep the same damage/city
@@ -1868,3 +1871,6 @@ impl AdvancedAi {
         }
     }
 }
+
+#[cfg(test)]
+mod paid_host_defender_tests;
