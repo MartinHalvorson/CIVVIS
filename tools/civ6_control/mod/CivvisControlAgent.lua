@@ -20320,7 +20320,7 @@ CivvisQueue.drain = function(player, pid, turn)
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
 				elseif ready and entry.expect ~= nil and not arrived and not spent
-						and entry.wait < grace and not cannot_land then
+						and entry.wait < grace and not cannot_land and not entry.noop_no_path then
 					-- (A walk the host's path lands on a later turn cannot be the
 					-- one that arrives later this tick: `cannot_land` above.)
 					-- An operation-ended event can precede the host's move
@@ -20800,6 +20800,9 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 	end
 	local afterFallback = attempt ~= nil and attempt.turn == turn and attempt.fallback == true;
 	local why = CivvisBoard.classifyNoop(player, pid, unit, ux, uy, wantX, wantY, moves);
+	-- A queue with follow-up rows re-reads its watch every tick. One stuck leg
+	-- was probed and reported up to 27 times; it is the same answer.
+	if entry.noop_named == why then return false; end
 	local native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start");
 	-- ★ A WALK IN FLIGHT IS NOT A NO-OP. The host answers "cannot start" with no
 	-- reasons while it is still walking the unit we sent. Seven live games, read
@@ -20809,6 +20812,10 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 			and string.find(tostring(native.operation_failure), "no_reasons", 1, true) then
 		return false;
 	end
+	entry.noop_named = why;
+	-- The host says no route exists, so waiting out the grace cannot change it:
+	-- of 293 such legs in seven games, none reached the wanted plot.
+	if why == "no_path" then entry.noop_no_path = true; end
 	CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;
 	local stalled = not entry.stall_resolved and entry.stall_probe or nil;
 	if stalled ~= nil then entry.stall_resolved = true; end
@@ -23995,7 +24002,7 @@ CivvisQueue.onLocalTurnEnd = function()
 		scale = CivvisClock.scale,
 		-- Locks still held by a UI context as our turn ends (the AutoClose
 		-- ledger); a normal turn ends with none.
-		held_locks = try(function() return ExposedMembers.CivvisEventLocks.count; end, nil),
+		held_locks = try(function() return ExposedMembers.CivvisEventLocks and ExposedMembers.CivvisEventLocks.count; end, nil),
 	});
 	pcall(CivvisQueue.checkTimescaleClock);
 end;
