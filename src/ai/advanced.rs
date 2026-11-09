@@ -8369,6 +8369,11 @@ pub struct AdvancedAi {
     /// behind the world. See
     /// `advanced/parity_upgrades_before_it_buys.rs`.
     parity_upgrades_before_it_buys_2: bool,
+    /// `parity-upgrades-before-it-buys-3`: version one, with a unit obsolete
+    /// by our own technology (not the world era's clock), on the parity path
+    /// and the base wartime defender purchases. See
+    /// `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys_3: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -11802,6 +11807,7 @@ impl AdvancedAi {
             outmatched_war_prices_the_army: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
+            parity_upgrades_before_it_buys_3: false,
             pillaged_districts_repair_first: false,
             queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
@@ -16797,7 +16803,7 @@ impl AdvancedAi {
             }
         }
         let Some(unit) = candidates.into_iter().find(|unit| {
-            self.parity_buy_barred(g, unit, ours, theirs).is_none()
+            self.parity_buy_barred(g, pid, unit, ours, theirs).is_none()
                 && g.unit_purchase_cost(pid, contact, unit, "gold")
                     .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
         }) else {
@@ -26172,6 +26178,7 @@ impl AdvancedAi {
         // `parity-upgrades-before-it-buys-2`: the base defender purchases
         // read this. See `advanced/parity_upgrades_before_it_buys.rs`.
         self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
+        self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
         self.base.plaza_serves_science =

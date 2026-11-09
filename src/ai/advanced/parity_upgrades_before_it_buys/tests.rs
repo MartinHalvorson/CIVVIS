@@ -69,17 +69,26 @@ fn parity_buys_neither_out_of_reach_nor_obsolete() {
     on.enable_parity_upgrades_before_it_buys();
 
     game.world_era = 0;
-    assert_eq!(off.parity_buy_barred(&game, "warrior", 100.0, 500.0), None);
     assert_eq!(
-        on.parity_buy_barred(&game, "warrior", 100.0, 200.0),
+        off.parity_buy_barred(&game, 0, "warrior", 100.0, 500.0),
+        None
+    );
+    assert_eq!(
+        on.parity_buy_barred(&game, 0, "warrior", 100.0, 200.0),
         Some("out_of_reach")
     );
-    assert_eq!(on.parity_buy_barred(&game, "warrior", 112.0, 200.0), None);
+    assert_eq!(
+        on.parity_buy_barred(&game, 0, "warrior", 112.0, 200.0),
+        None
+    );
 
     game.world_era = game.unit_era("warrior") + PARITY_BUY_ERAS_BEHIND;
     assert_eq!(
-        on.parity_buy_barred(&game, "warrior", 112.0, 200.0),
+        on.parity_buy_barred(&game, 0, "warrior", 112.0, 200.0),
         Some("obsolete")
     );
-    assert_eq!(off.parity_buy_barred(&game, "warrior", 112.0, 200.0), None);
+    assert_eq!(
+        off.parity_buy_barred(&game, 0, "warrior", 112.0, 200.0),
+        None
+    );
 }

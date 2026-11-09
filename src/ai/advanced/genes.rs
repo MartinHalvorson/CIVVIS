@@ -5443,6 +5443,14 @@ pub const GENES: &[Gene] = &[
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
+    // Version three of `parity-upgrades-before-it-buys`: version two's bar
+    // measured the world era, which at Online speed is a clock (era 2 at turn
+    // 51, era 5 at 111), so it refused nearly every gold military purchase
+    // from turn 51, early-war defenders included (disarmed 2026-11-05). Here a
+    // unit is obsolete at three or more eras behind our own newest technology,
+    // on the parity path and the base wartime purchases. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

@@ -1240,6 +1240,11 @@ struct EnvelopeChange {
 /// more behind the world era is obsolete to buy.
 pub(crate) const OBSOLETE_BUY_ERAS_BEHIND: usize = 2;
 
+/// `parity-upgrades-before-it-buys-3`: a unit this many eras or more behind
+/// the newest technology we know is obsolete to buy. Three, not two: a Science
+/// beeline reaches one high-era technology long before the rest of the tree.
+pub(crate) const OBSOLETE_BUY_TECH_ERAS_BEHIND: usize = 3;
+
 #[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
@@ -2722,6 +2727,11 @@ pub struct BasicAi {
     /// [`OBSOLETE_BUY_ERAS_BEHIND`] or more eras behind the world. False
     /// otherwise and on a bare `BasicAi`.
     pub(crate) obsolete_military_buys_barred: bool,
+    /// `parity-upgrades-before-it-buys-3`: set by `AdvancedAi` each turn
+    /// while the gene is on. `buy_gold_military` then buys no unit
+    /// [`OBSOLETE_BUY_TECH_ERAS_BEHIND`] or more eras behind our newest
+    /// technology. False otherwise and on a bare `BasicAi`.
+    pub(crate) obsolete_buys_read_our_techs: bool,
     /// `plaza-serves-the-scientist`: set by `AdvancedAi` each turn while the
     /// gene is on and the seat aims at Science; the Government Plaza's tier
     /// buildings are then the Ancestral Hall and the Intelligence Agency
@@ -3876,6 +3886,7 @@ impl BasicAi {
             garrison_call_cache: None,
             spy_training_paused: false,
             obsolete_military_buys_barred: false,
+            obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -4292,6 +4303,7 @@ impl BasicAi {
             garrison_call_cache: None,
             spy_training_paused: false,
             obsolete_military_buys_barred: false,
+            obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
