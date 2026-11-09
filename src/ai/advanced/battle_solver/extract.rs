@@ -390,7 +390,7 @@ pub(super) fn snapshot(
             }
         }
         if units[i].flags & (F_RANGED | F_SIEGE) != 0 {
-            let range = units[i].range as u8;
+            let range = units[i].range;
             for (t, _) in &reach {
                 for j in 0..n {
                     if units[j].side == units[i].side {

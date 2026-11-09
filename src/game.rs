@@ -507,6 +507,9 @@ mod amenities;
 /// Barbarians: camps, raids, scouts, and clearing a camp. See
 /// `game/barbarians.rs`.
 mod barbarians;
+/// Battle board: the engine reads a local battle solver takes once per fight.
+/// See `game/battle_board.rs`.
+mod battle_board;
 /// Boosts: eurekas and inspirations, their triggers and progress, and tree
 /// completion. See `game/boosts.rs`.
 mod boosts;
@@ -522,7 +525,6 @@ mod city_states;
 /// Combat: attack range and reach, strength and bonuses, city strikes, XP
 /// and promotions. See `game/combat.rs`.
 mod combat;
-mod battle_board;
 mod combat_forecast;
 pub use combat_forecast::CombatForecast;
 /// Completion: finishing a city's item, wonder effects, and placing new

@@ -1096,11 +1096,13 @@ impl<'b> Sim<'b> {
                 let mut lowest = i16::MAX;
                 for j in 0..self.s.units.len() {
                     let other = self.s.units[j];
-                    if other.alive() && other.side != side && self.b.d(tile, other.tile) <= 2 {
-                        if other.hp < lowest {
-                            lowest = other.hp;
-                            target = Some(j);
-                        }
+                    if other.alive()
+                        && other.side != side
+                        && self.b.d(tile, other.tile) <= 2
+                        && other.hp < lowest
+                    {
+                        lowest = other.hp;
+                        target = Some(j);
                     }
                 }
                 if let Some(j) = target {
