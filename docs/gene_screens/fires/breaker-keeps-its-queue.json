@@ -1,17 +1,17 @@
 {
   "batch": {
-    "complete_games": 3,
-    "complete_seats": 18,
-    "completion": 0.125,
-    "partial": true,
-    "read": "⚠⚠ PARTIAL SCREEN · 18 of 144 intended seats (12.5%) · seeds 31004800..31004823 reserved — a truncated run, not a completed one",
+    "complete_games": 24,
+    "complete_seats": 144,
+    "completion": 1.0,
+    "partial": false,
+    "read": "screen complete · 144 of 144 intended seats (100.0%) · seeds 31004800..31004823 reserved",
     "seed_window": [
       31004800,
       31004823
     ],
     "seed_window_played": [
       31004800,
-      31004802
+      31004823
     ],
     "target_games": 24,
     "target_seats": 144
@@ -26,14 +26,14 @@
   "drift": {
     "batch": {
       "culture": 0.3333333333333333,
-      "diplomatic": 0.0,
+      "diplomatic": 0.125,
       "domination": 0.0,
       "religious": 0.0,
-      "science": 0.3333333333333333,
-      "score": 0.3333333333333333,
+      "science": 0.4166666666666667,
+      "score": 0.125,
       "unfinished": 0.0
     },
-    "games": 3,
+    "games": 24,
     "live_ladder": {
       "games": 287,
       "shares": {
@@ -61,45 +61,52 @@
   "endings": {
     "by_kind": {
       "culture": {
-        "games": 1,
-        "median_turn": 165,
-        "seats": 6,
+        "games": 8,
+        "median_turn": 179,
+        "seats": 48,
         "share": 0.3333333333333333,
+        "won_by_field": 0
+      },
+      "diplomatic": {
+        "games": 3,
+        "median_turn": 225,
+        "seats": 18,
+        "share": 0.125,
         "won_by_field": 0
       },
       "science": {
-        "games": 1,
-        "median_turn": 195,
-        "seats": 6,
-        "share": 0.3333333333333333,
+        "games": 10,
+        "median_turn": 197,
+        "seats": 60,
+        "share": 0.4166666666666667,
         "won_by_field": 0
       },
       "score": {
-        "games": 1,
+        "games": 3,
         "median_turn": 250,
-        "seats": 6,
-        "share": 0.3333333333333333,
+        "seats": 18,
+        "share": 0.125,
         "won_by_field": 0
       }
     },
-    "games": 3,
+    "games": 24,
     "lanes": {
-      "domestic_mean": 88.16666666666667,
-      "dvp_mean": 3.5,
+      "domestic_mean": 101.63194444444444,
+      "dvp_mean": 3.826388888888889,
       "dvp_required": 20,
-      "rival_dvp_mean": 11.0,
-      "rival_tourists_mean": 51.0,
-      "seats_where_somebody_reached_the_threshold": 0.0,
-      "tourists_mean": 21.72222222222222
+      "rival_dvp_mean": 11.51388888888889,
+      "rival_tourists_mean": 79.6875,
+      "seats_where_somebody_reached_the_threshold": 0.125,
+      "tourists_mean": 27.63888888888889
     },
     "lost_to": {
       "culture": 0.2777777777777778,
-      "diplomatic": 0.0,
+      "diplomatic": 0.10416666666666667,
       "religious": 0.0,
-      "science": 0.2777777777777778
+      "science": 0.3472222222222222
     },
     "unit": "games, and the seats of those games",
-    "won_by_field": 15
+    "won_by_field": 120
   },
   "families": [
     {
@@ -125,7 +132,7 @@
         },
         {
           "label": "naval-recon-3",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -205,7 +212,7 @@
         },
         {
           "label": "settler-guard-holds-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -258,7 +265,7 @@
         },
         {
           "label": "amenity-project-preemption",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -311,7 +318,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -382,7 +389,7 @@
         },
         {
           "label": "district-coverage-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -441,7 +448,7 @@
         },
         {
           "label": "settler-target-hysteresis-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -488,7 +495,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -553,7 +560,7 @@
         },
         {
           "label": "early-contact-window",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -606,7 +613,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -671,7 +678,7 @@
         },
         {
           "label": "recovery-reads-the-war",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -724,7 +731,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -789,7 +796,7 @@
         },
         {
           "label": "culture-lane-forecast",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -848,7 +855,7 @@
         },
         {
           "label": "diplomatic-lane-forecast",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -913,7 +920,7 @@
         },
         {
           "label": "air-surge-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -972,7 +979,7 @@
         },
         {
           "label": "power-the-laboratory-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1031,7 +1038,7 @@
         },
         {
           "label": "campus-adjacency-threshold-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1084,7 +1091,7 @@
         },
         {
           "label": "district-planning",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1149,7 +1156,7 @@
         },
         {
           "label": "missionary-last-charge-explores-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1202,7 +1209,7 @@
         },
         {
           "label": "pass-picket",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1267,7 +1274,7 @@
         },
         {
           "label": "city-campaign-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1320,7 +1327,7 @@
         },
         {
           "label": "science-victory-drive",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1385,7 +1392,7 @@
         },
         {
           "label": "eureka-chasing-builder-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1450,7 +1457,7 @@
         },
         {
           "label": "coalition-before-war-3",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1530,7 +1537,7 @@
         },
         {
           "label": "government-ladder-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1604,7 +1611,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1681,7 +1688,7 @@
         },
         {
           "label": "never-an-empty-queue-3",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1761,7 +1768,7 @@
         },
         {
           "label": "first-builder-reserve-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -1808,7 +1815,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1873,7 +1880,7 @@
         },
         {
           "label": "native-emergency-purchase",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1932,7 +1939,7 @@
         },
         {
           "label": "boost-first-research",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -1991,7 +1998,7 @@
         },
         {
           "label": "treasury-at-work-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2056,7 +2063,7 @@
         },
         {
           "label": "swap-rotation-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -2115,7 +2122,7 @@
         },
         {
           "label": "coastal-city-sites-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -2174,7 +2181,7 @@
         },
         {
           "label": "capture-go-or-stand-down-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -2221,7 +2228,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2292,7 +2299,7 @@
         },
         {
           "label": "settler-backlog-brake-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -2339,7 +2346,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2431,7 +2438,7 @@
         },
         {
           "label": "connect-the-luxury",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2484,7 +2491,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2570,7 +2577,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2629,7 +2636,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2715,7 +2722,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2813,7 +2820,7 @@
         },
         {
           "label": "early-project-restraint-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -2860,7 +2867,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -2931,7 +2938,7 @@
         },
         {
           "label": "battle-planner-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3011,7 +3018,7 @@
         },
         {
           "label": "chase-every-boost",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3064,7 +3071,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3135,7 +3142,7 @@
         },
         {
           "label": "builder-workforce-recovery-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3209,7 +3216,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3307,7 +3314,7 @@
         },
         {
           "label": "expansion-best-idle-city-2",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         }
@@ -3360,7 +3367,7 @@
         },
         {
           "label": "research-building-catchup",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3440,7 +3447,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3499,7 +3506,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3558,7 +3565,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3617,7 +3624,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3676,7 +3683,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3735,7 +3742,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3794,7 +3801,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3880,7 +3887,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -3966,7 +3973,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4025,7 +4032,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4084,7 +4091,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4170,7 +4177,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4229,7 +4236,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4288,7 +4295,7 @@
       "cells": [
         {
           "label": "off",
-          "seats": 18,
+          "seats": 144,
           "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
@@ -4344,153 +4351,153 @@
     }
   ],
   "family_wise_z": 2.2414014778976137,
-  "games": 3,
+  "games": 24,
   "genes": [
     {
-      "adjusted_pp": -25.000000000000007,
-      "adjusted_se_pp": 25.298221281347033,
+      "adjusted_pp": 5.381165919282506,
+      "adjusted_se_pp": 6.952542356005606,
       "civics_inspired_share_pp": {
-        "diff": -0.3665753538470824,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 5.687263256572137,
-        "z": -0.06445549244154859
+        "diff": -1.3259479636917817,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 1.3977889763643063,
+        "z": -0.9486038208289599
       },
-      "compute_cost_pct": null,
-      "compute_cost_se_pct": null,
-      "cost_games": null,
+      "compute_cost_pct": 3.410038379380614,
+      "compute_cost_se_pct": 18.18179515603843,
+      "cost_games": 24,
       "done_delta_pp": 0.0,
       "done_se_pp": 0.0,
       "forgotten_delta_pp": 0.0,
       "forgotten_se_pp": 0.0,
-      "n_off": 15,
-      "n_on": 3,
-      "read": "share HURTS **",
-      "science_end": {
-        "diff": -58.19166000000007,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 21.931457556538817,
-        "z": -2.6533421159985946
-      },
-      "science_pace": {
-        "diff": 0.0,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 1.4047538337136984,
-        "z": 0.0
-      },
-      "seats": 18,
-      "share_delta_pp": -2.366772907915049,
-      "share_resolves_pp": 1.7676466222070408,
-      "share_se_pp": 0.6313023650739431,
-      "share_z": -3.7490322210939824,
-      "tag": "breaker-keeps-its-queue",
-      "techs_boosted_share_pp": {
-        "diff": -3.689933053493874,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 1.9043463163146224,
-        "z": -1.9376376144832734
-      },
-      "techs_end": {
-        "diff": -4.066666666666663,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 4.50817200368563,
-        "z": -0.9020655519225937
-      },
-      "time_cost_pct": null,
-      "time_cost_se_pct": null,
-      "win_delta_pp": -20.000000000000007,
-      "win_off": 0.2,
-      "win_on": 0.0,
-      "win_resolves_pp": 70.8350195877717,
-      "win_se_pp": 25.298221281347033,
-      "win_tranches": [
-        {
-          "games": 3,
-          "position": "latest",
-          "seats": 18,
-          "win_delta_pp": -20.000000000000007,
-          "win_se_pp": 25.298221281347033,
-          "win_z": -0.7905694150420951
-        }
-      ],
-      "win_z": -0.7905694150420951
-    },
-    {
-      "adjusted_pp": 25.0,
-      "adjusted_se_pp": 15.356489157983317,
-      "civics_inspired_share_pp": {
-        "diff": 15.002153058359582,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 5.334829049059502,
-        "z": 2.8121150500603895
-      },
-      "compute_cost_pct": null,
-      "compute_cost_se_pct": null,
-      "cost_games": null,
-      "done_delta_pp": 0.0,
-      "done_se_pp": 0.0,
-      "forgotten_delta_pp": 0.0,
-      "forgotten_se_pp": 0.0,
-      "n_off": 15,
-      "n_on": 3,
+      "n_off": 105,
+      "n_on": 39,
       "read": "~",
       "science_end": {
-        "diff": 89.57889999999992,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 96.70869497891145,
-        "z": 0.9262755538117201
+        "diff": 9.340750501831451,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 26.246491898245115,
+        "z": 0.355885675618843
       },
       "science_pace": {
-        "diff": 1.6000000000000014,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 3.2103167029645734,
-        "z": 0.49839319545092803
+        "diff": 0.7728937728937666,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 0.6740657559166585,
+        "z": 1.146614801463564
       },
-      "seats": 18,
-      "share_delta_pp": 2.363161576804873,
-      "share_resolves_pp": 10.804529296068637,
-      "share_se_pp": 3.858760462881656,
-      "share_z": 0.6124146858911539,
-      "tag": "breaker-to-the-fastest",
+      "seats": 144,
+      "share_delta_pp": 0.9680062257692079,
+      "share_resolves_pp": 3.4530065923663216,
+      "share_se_pp": 1.233216640130829,
+      "share_z": 0.7849441811509407,
+      "tag": "breaker-keeps-its-queue",
       "techs_boosted_share_pp": {
-        "diff": 2.634479376181716,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 1.2678154518010374,
-        "z": 2.077967556271079
+        "diff": -1.4757837576903086,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 0.8873926921278484,
+        "z": -1.6630560188089643
       },
       "techs_end": {
-        "diff": 16.333333333333343,
-        "n_off": 15,
-        "n_on": 3,
-        "se": 11.78894648640239,
-        "z": 1.3854786220441786
+        "diff": 0.4366300366300351,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 1.956144836106229,
+        "z": 0.22320946208623366
       },
-      "time_cost_pct": null,
-      "time_cost_se_pct": null,
-      "win_delta_pp": 20.0,
-      "win_off": 0.13333333333333333,
-      "win_on": 0.3333333333333333,
-      "win_resolves_pp": 68.12694033934007,
-      "win_se_pp": 24.33105012119288,
+      "time_cost_pct": 1.7892214540293265,
+      "time_cost_se_pct": 19.16677599215982,
+      "win_delta_pp": 5.274725274725273,
+      "win_off": 0.1523809523809524,
+      "win_on": 0.20512820512820512,
+      "win_resolves_pp": 18.976905442166895,
+      "win_se_pp": 6.777466229345319,
       "win_tranches": [
         {
-          "games": 3,
+          "games": 24,
           "position": "latest",
-          "seats": 18,
-          "win_delta_pp": 20.0,
-          "win_se_pp": 24.33105012119288,
-          "win_z": 0.8219949365267863
+          "seats": 144,
+          "win_delta_pp": 5.274725274725273,
+          "win_se_pp": 6.777466229345319,
+          "win_z": 0.7782739295529907
         }
       ],
-      "win_z": 0.8219949365267863
+      "win_z": 0.7782739295529907
+    },
+    {
+      "adjusted_pp": 5.38116591928251,
+      "adjusted_se_pp": 7.2976325923583385,
+      "civics_inspired_share_pp": {
+        "diff": 2.2660459319554036,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 1.313802938794583,
+        "z": 1.724798951990856
+      },
+      "compute_cost_pct": 17.339772920262657,
+      "compute_cost_se_pct": 37.41108959426572,
+      "cost_games": 24,
+      "done_delta_pp": 0.0,
+      "done_se_pp": 0.0,
+      "forgotten_delta_pp": 0.0,
+      "forgotten_se_pp": 0.0,
+      "n_off": 105,
+      "n_on": 39,
+      "read": "~",
+      "science_end": {
+        "diff": 3.446136172161175,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 27.158120861126534,
+        "z": 0.12689155445559158
+      },
+      "science_pace": {
+        "diff": 0.38608058608058116,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 0.7131959843563117,
+        "z": 0.5413386986874786
+      },
+      "seats": 144,
+      "share_delta_pp": 0.06767834135374962,
+      "share_resolves_pp": 3.173648019030153,
+      "share_se_pp": 1.1334457210821975,
+      "share_z": 0.0597102623398069,
+      "tag": "breaker-to-the-fastest",
+      "techs_boosted_share_pp": {
+        "diff": -1.974337900151589,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 1.1562810640424148,
+        "z": -1.707489607456865
+      },
+      "techs_end": {
+        "diff": 3.073992673992663,
+        "n_off": 105,
+        "n_on": 39,
+        "se": 2.275989755656427,
+        "z": 1.350617974598959
+      },
+      "time_cost_pct": 24.12278817892566,
+      "time_cost_se_pct": 41.88804939500517,
+      "win_delta_pp": 5.274725274725273,
+      "win_off": 0.1523809523809524,
+      "win_on": 0.20512820512820512,
+      "win_resolves_pp": 20.820997297073735,
+      "win_se_pp": 7.43607046324062,
+      "win_tranches": [
+        {
+          "games": 24,
+          "position": "latest",
+          "seats": 144,
+          "win_delta_pp": 5.274725274725273,
+          "win_se_pp": 7.43607046324062,
+          "win_z": 0.709343100068818
+        }
+      ],
+      "win_z": 0.709343100068818
     }
   ],
   "kind": "gene_screen_analysis",
@@ -5645,11 +5652,11 @@
     "genes": 2,
     "power": 0.8,
     "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
-    "share_pp": 10.804529296068637,
-    "win_pp": 70.8350195877717
+    "share_pp": 3.4530065923663216,
+    "win_pp": 20.820997297073735
   },
   "rival_mix": null,
-  "seats": 18,
+  "seats": 144,
   "shape": "standard",
   "victory_masks": null
 }
