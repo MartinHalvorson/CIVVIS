@@ -456,9 +456,11 @@ mod siege_support;
 /// The baseline controller's unit turn: `military_step`, tactics, retreat and
 /// healing, barbarians, exploration and villages. See `ai/unit_turn.rs`.
 mod unit_turn;
+mod walls_under_fire;
 /// `Weights`: the strategy weights steering `BasicAi`. See `ai/weights.rs`.
 mod weights;
 
+mod slinger_first;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::victory_portfolio::{
     DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,
@@ -1239,6 +1241,11 @@ struct EnvelopeChange {
 /// `parity-upgrades-before-it-buys` (both versions): a unit this many eras or
 /// more behind the world era is obsolete to buy.
 pub(crate) const OBSOLETE_BUY_ERAS_BEHIND: usize = 2;
+
+/// `parity-upgrades-before-it-buys-3`: a unit this many eras or more behind
+/// the newest technology we know is obsolete to buy. Three, not two: a Science
+/// beeline reaches one high-era technology long before the rest of the tree.
+pub(crate) const OBSOLETE_BUY_TECH_ERAS_BEHIND: usize = 3;
 
 #[derive(Clone)]
 pub struct BasicAi {
@@ -2722,6 +2729,11 @@ pub struct BasicAi {
     /// [`OBSOLETE_BUY_ERAS_BEHIND`] or more eras behind the world. False
     /// otherwise and on a bare `BasicAi`.
     pub(crate) obsolete_military_buys_barred: bool,
+    /// `parity-upgrades-before-it-buys-3`: set by `AdvancedAi` each turn
+    /// while the gene is on. `buy_gold_military` then buys no unit
+    /// [`OBSOLETE_BUY_TECH_ERAS_BEHIND`] or more eras behind our newest
+    /// technology. False otherwise and on a bare `BasicAi`.
+    pub(crate) obsolete_buys_read_our_techs: bool,
     /// `plaza-serves-the-scientist`: set by `AdvancedAi` each turn while the
     /// gene is on and the seat aims at Science; the Government Plaza's tier
     /// buildings are then the Ancestral Hall and the Intelligence Agency
@@ -2988,6 +3000,8 @@ pub struct BasicAi {
     pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
+    /// Opt-in first-slot ranged support; later recon behavior stays enabled.
+    pub(crate) opening_ranged_support: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -3880,6 +3894,7 @@ impl BasicAi {
             garrison_call_cache: None,
             spy_training_paused: false,
             obsolete_military_buys_barred: false,
+            obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -3917,6 +3932,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
@@ -4297,6 +4313,7 @@ impl BasicAi {
             garrison_call_cache: None,
             spy_training_paused: false,
             obsolete_military_buys_barred: false,
+            obsolete_buys_read_our_techs: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -4334,6 +4351,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
@@ -5756,6 +5774,11 @@ impl BasicAi {
             }
             // Reserve the first slot before population-two Settler genes can
             // claim it. Successful production consumes exactly one book slot.
+            if self.play_slinger_first_opening(g, pid, *cid) {
+                military += 1;
+                ranged += 1;
+                continue;
+            }
             if self.play_scout_first_opening(g, pid, *cid) {
                 continue;
             }
@@ -6496,8 +6519,10 @@ impl BasicAi {
     /// defender. A siege piece belongs at a distant enemy wall and cannot
     /// hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        let bleeding =
-            self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+        let bleeding = self.garrison_under_fire
+            && g.cities
+                .get(&cid)
+                .is_some_and(|city| city.hp < 200 || Self::walls_need_local_defense(g, pid, cid));
         if !bleeding {
             return None;
         }

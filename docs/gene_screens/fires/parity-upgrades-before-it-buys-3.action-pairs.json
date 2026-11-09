@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "parity-upgrades-before-it-buys-3",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Ten live Lv 8 Deity Online war turns where the live seat bought an old unit with Gold. Six late Heavy Chariots: civvis-20261105T095229Z t145, t147, t155, t161, t166, 114422Z t162. Four early defenders, turns version two's world-era bar refused from turn 51: 102328Z t54 Warrior, 111305Z t56 Archer, 114422Z t63 Archer, 131016Z t60 Horseman. Each is the run's events.jsonl through the turn's first state frame and nothing after it, queried with the run's own requested genome on a frozen ci-profile civvis_orders built from the branch. Every off arm reproduces the live purchase. 6 on arms change: all six Heavy Chariots are refused (a Monument, a Trader or Gold kept). All four early defenders are unchanged. Four more registered early cases are archived but not members: their off arm did not reproduce the live purchase.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-parity-upgrades-before-it-buys-3.native-queries.tar.xz",
+    "sha256": "0b9fb578f531d58ab6de4dee9773578897c1c6f287ccf73499da1d737bb0a06f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}
