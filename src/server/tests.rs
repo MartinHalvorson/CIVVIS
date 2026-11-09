@@ -2810,7 +2810,7 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
     assert!(player_hud.contains("playerHudStats(p,"));
-    assert!(player_hud.contains("victoryHud.innerHTML = overview;"));
+    assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
@@ -4696,9 +4696,10 @@ fn the_planet_gpu_binding_precedes_the_saved_hud_layout_replay() {
 }
 
 /// Map search is deliberately a client-side read of the observation the
-/// browser already owns. It must use exact sight rather than remembered
-/// tiles, understand the named things that can occupy a tile, and paint
-/// the same result on both supported map projections.
+/// browser already owns. Like Civ VI's own panel it covers every revealed
+/// tile while listing units only in exact sight, understands the named
+/// things the game indexes on a plot, and paints the same result on both
+/// supported map projections.
 #[test]
 fn browser_search_lights_every_matching_visible_tile() {
     let sidebar = EMBEDDED_INDEX
@@ -4719,7 +4720,7 @@ fn browser_search_lights_every_matching_visible_tile() {
         .expect("keyboard shortcuts");
     assert!(
         lenses_at < search_at && search_at < shortcuts_at,
-        "map lenses should sit above visible-tile search, immediately before keyboard shortcuts"
+        "map lenses should sit above map search, immediately before keyboard shortcuts"
     );
     assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
     assert!(sidebar.contains("id=\"map-search-civ\""));
@@ -4731,21 +4732,30 @@ fn browser_search_lights_every_matching_visible_tile() {
     assert!(EMBEDDED_INDEX.contains("#map-search {\n    min-width: 0; padding: 6px 7px;"));
     assert!(
         !EMBEDDED_INDEX.contains("#map-search {\n    position: absolute;"),
-        "the visible-tile search must not float over the map"
+        "the map search must not float over the map"
     );
 
     let matcher = EMBEDDED_INDEX
-        .split_once("function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {")
+        .split_once(
+            "function computeMapSearchMatches(st, query, civFilter = mapSearchCivId, exclude = mapSearchExclude) {",
+        )
         .expect("map search matcher")
         .1
         .split_once("\nfunction mapSearchMatches() {")
         .expect("end of map search matcher")
         .0;
+    assert!(matcher.contains("new Set(st.map.tiles.map(tile => key(tile.pos)))"));
     assert!(matcher.contains("new Set((st.visible || []).map(key))"));
     assert!(
-        !matcher.contains("turn_visible"),
-        "search must not reveal remembered tiles outside exact sight"
+        matcher.contains("if (!visible.has(key(unit.pos))) continue;"),
+        "a unit is found only while it is in exact sight, as in Civ VI"
     );
+    assert!(
+        !matcher.contains("turn_visible"),
+        "revealed tiles and exact sight are the only two scopes Civ VI's search uses"
+    );
+    // Every plot fact `GetPlotSearchTerms` indexes that the observation
+    // carries. A field missing here is a term the game finds and this cannot.
     for field in [
         "tile.terrain",
         "tile.feature",
@@ -4754,21 +4764,81 @@ fn browser_search_lights_every_matching_visible_tile() {
         "tile.district",
         "tile.planned_district",
         "tile.wonder",
+        "tile.hills",
+        "tile.river",
+        "tile.road",
+        "tile.appeal",
+        "tile.continent",
+        "tile.pillaged",
+        "tile.fallout_until",
+        "tile.coastal_lowland",
+        "tile.flooded",
+        "tile.submerged",
+        "tile.drought",
+        "tile.storm",
         "st.cities",
         "st.units",
         "st.camps",
+        "city.buildings",
+        "city.citizens?.specialists",
+        "item.wonder",
+        "unit.formation",
     ] {
         assert!(matcher.contains(field), "map search ignores {field}");
+    }
+    for term in [
+        "\"Owned\"",
+        "\"Unclaimed\"",
+        "\"Water\"",
+        "\"Impassable\"",
+        "\"Natural Wonder\"",
+        "\"Under Construction\"",
+        "\"Contamination\"",
+        "\"Specialist\"",
+        "\"City Center\"",
+        "\"Melee\"",
+        "\"Ranged\"",
+        "\"Siege\"",
+        "\"Land Combat\"",
+        "\"Naval Combat\"",
+        "\"Air Combat\"",
+        "\"Corps\"",
+        "\"Army\"",
+        "\"Fleet\"",
+        "\"Armada\"",
+        "forest:\"Woods\"",
+        "jungle:\"Rainforest\"",
+        "goody_hut:\"Tribal Village\"",
+        "barbarian_camp:\"Barbarian Outpost\"",
+    ] {
+        assert!(matcher.contains(term), "map search cannot find {term}");
     }
     assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
     assert!(matcher.contains("if (selectedCiv && String(owner) !== selectedCiv) return;"));
     assert!(
         matcher.contains("if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);")
     );
-    assert!(EMBEDDED_INDEX.contains("function mapSearchVisibleCivilizations(st)"));
+    assert!(
+        matcher.contains(
+            "if (excludedWords.some(word => mapSearchWordFound(haystack, word))) continue;"
+        ),
+        "the exclude box is Civ VI's search filter: none of its terms may match"
+    );
+    assert!(
+        EMBEDDED_INDEX.contains(
+            "if (needle.split(\" \").every(word => mapSearchWordFound(haystack, word))) return true;"
+        ),
+        "every word typed must match, in any order, as in Civ VI"
+    );
+    assert!(sidebar.contains("id=\"map-search-exclude\" type=\"search\""));
+    assert!(sidebar.contains("id=\"map-search-suggestions\" role=\"listbox\""));
+    assert!(EMBEDDED_INDEX.contains("function mapSearchSuggestions(typed, st = state) {"));
+    assert!(EMBEDDED_INDEX.contains("function mapSearchKnownCivilizations(st)"));
     assert!(EMBEDDED_INDEX
         .contains("player && !player.is_barbarian && player.civ && owners.has(String(player.id))"));
-    assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+    assert!(EMBEDDED_INDEX.contains(
+        "for (const unit of st.units || []) if (visible.has(key(unit.pos))) noteOwner(unit.owner);"
+    ));
     let civilization_sync = EMBEDDED_INDEX
         .split_once("function syncMapSearchCivilizations(st = state) {")
         .expect("civilization-filter synchronizer")
@@ -4807,7 +4877,7 @@ fn browser_search_lights_every_matching_visible_tile() {
         .0;
     assert!(
         !lens_setter.contains("mapSearch"),
-        "a lens must not clear an active visible-tile search"
+        "a lens must not clear an active map search"
     );
 }
 
@@ -6297,7 +6367,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
             && map_lenses < visible_tile_search
             && visible_tile_search < keyboard_shortcuts,
         "left panel should show controls, display settings, game setup, the AI strategy dossier, \
-             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
+             world logs, government, map lenses, map search and then keyboard shortcuts"
     );
     assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
     assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
@@ -6366,10 +6436,11 @@ fn browser_orders_controls_interface_setup_and_logs() {
         // Best record first: win rate, then the most wins at that rate.
         ".sort(compareSimulationRecords)",
         "return b.w * aGames - a.w * bGames\n    || b.w - a.w\n",
-        // A running simulation must not send the ledger back to its top.
-        "if (!fresh?.isEqualNode(live)) return false;",
-        "if (!repaintBesideArenaStats(victoryHud, overview)) {",
-        "if (statsBody) statsBody.scrollTop = statsScroll;",
+        // A running simulation must not send the ledger back to its top, nor
+        // take the tracker's scroll box out from under the wheel.
+        "patchHudMarkup(victoryHud, overview);",
+        "const HUD_PATCH_KEEPS = new Set([\"hidden\", \"style\", \"data-fit-clipped\"]);",
+        "#victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(arena_stats_contract),
@@ -6455,7 +6526,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
     // Lenses are a docked panel at the deck's lower edge: collapsed by
     // default, saved with the other disclosures, and always at the bottom
-    // of the screen in reading order — lenses, then visible-tile search,
+    // of the screen in reading order — lenses, then map search,
     // then keyboard shortcuts — so changing the map perspective never
     // requires scrolling the command sections.
     let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
@@ -11243,8 +11314,8 @@ fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_p
         annotated += 1;
         let id = player["id"].as_u64().unwrap() as usize;
         well_formed(&player["victory_eta"]);
-        // The head is the planner's own soonest central clock.
-        let soonest = crate::ai::AdvancedAi::victory_forecasts(&session.game, id)
+        // The head is the soonest published clock.
+        let soonest = crate::ai::AdvancedAi::victory_clocks(&session.game, id)
             .into_iter()
             .filter_map(|forecast| forecast.finish_turn)
             .map(|finish| (finish - f64::from(session.game.turn)).max(0.0).round() as i64)
@@ -14180,6 +14251,42 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
              that lies about what the map is doing"
     );
     assert!(EMBEDDED_INDEX.contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
+}
+
+/// The spin button means every world, not only the one units stand on: a
+/// body with its ground on the canvas turns at the Earth's pace, in the
+/// direction a drag to the right sends the ground.
+#[test]
+fn the_spin_turns_every_world_showing_its_ground() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    assert!(body_of("function advanceWorldSpin(dt)").contains("advanceSkyWorldSpin(dt);"));
+    let sky = body_of("function advanceSkyWorldSpin(dt)");
+    assert!(sky.contains("if (skyOnCanvas(place) && skyGroundFade(place) > 0)"));
+    assert!(sky.contains("skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;"));
+    // A world can now turn under an arrival, so the flight settles once
+    // whether it aims at the landing site or at the limb.
+    let end = body_of("function skyLaunchEnd(");
+    assert!(end.contains("const seat = launch.aimsAtLimb ? null : skyLandingSeats("));
+    assert!(end.contains("if (launch.seatSeen)"));
+    assert!(end.contains("launch.aimsAtLimb = true;"));
+}
+
+/// A launch crossing the stage has no depth. Reading one anyway made NaN,
+/// `|| 1` hid it, and the hull was stretched by its speed in pixels: a
+/// needle about six times a rocket's length going past the Moon.
+#[test]
+fn a_rocket_on_a_route_with_no_depth_keeps_its_own_length() {
+    let js = EMBEDDED_APP_JS;
+    assert!(js.contains("const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;"));
+    assert!(!js.contains("const depth = limb ? (ahead.z - behind.z) * limb.r : 0;"));
 }
 
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did

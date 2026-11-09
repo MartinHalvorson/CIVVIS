@@ -314,46 +314,8 @@ impl Game {
             return Yields::default();
         }
         // The ground first; everything below this line is the owner's own —
-        // their techs, their civics, their improvements. ⚠ The Nazca Line loop
-        // that follows stays here rather than moving down with the ground: two
-        // of its four terms read the owner's civics and techs, and a Nazca Line
-        // stands inside a border by construction, so an unowned neighbour of
-        // one is an edge the split does not need to carry.
+        // their techs, their civics, their improvements.
         let mut yields = self.ground_tile_yields(pos, tile);
-        for neighbor in self.nbrs(pos) {
-            let adjacent = &self.map.tiles[&neighbor];
-            if adjacent.pillaged || adjacent.improvement.as_deref() != Some("nazca_line") {
-                continue;
-            }
-            let effects = &self.rules.improvements["nazca_line"].effects;
-            yields.faith += effects.get("adjacent_faith").copied().unwrap_or(0.0);
-            if tile.resource.is_some() {
-                yields.faith += effects
-                    .get("adjacent_resource_faith")
-                    .copied()
-                    .unwrap_or(0.0);
-            }
-            if tile.terrain == "desert"
-                && self.players[pid]
-                    .civics
-                    .contains(&crate::name!("civil_service"))
-            {
-                yields.food += effects
-                    .get("adjacent_desert_food_after_civil_service")
-                    .copied()
-                    .unwrap_or(0.0);
-            }
-            if !tile.hills
-                && self.players[pid]
-                    .techs
-                    .contains(&crate::name!("mass_production"))
-            {
-                yields.production += effects
-                    .get("adjacent_flat_production_after_mass_production")
-                    .copied()
-                    .unwrap_or(0.0);
-            }
-        }
         match tile.improvement.as_deref() {
             Some("mine") => yields.production += self.tree_effect(pid, "mine_production"),
             Some("pasture") => {
@@ -2285,9 +2247,7 @@ impl Game {
             self.governor_effect(city.owner, city.id, "science_per_pop") * city.pop as f64;
         ys.culture +=
             self.governor_effect(city.owner, city.id, "culture_per_pop") * city.pop as f64;
-        ys.gold += (self.governor_effect(city.owner, city.id, "gold_per_citizen")
-            + self.governor_effect(city.owner, city.id, "gold_per_pop"))
-            * city.pop as f64;
+        ys.gold += self.governor_effect(city.owner, city.id, "gold_per_pop") * city.pop as f64;
         let active_specialty_districts = city
             .districts
             .iter()

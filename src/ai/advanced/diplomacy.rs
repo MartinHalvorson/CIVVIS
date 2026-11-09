@@ -2149,6 +2149,12 @@ impl AdvancedAi {
         if self.religious_interception_opening(g, pid) {
             return;
         }
+        // `faith-strike-wipes-the-spreaders`: the war on a rival faith on the
+        // turn several of its spreaders can be condemned at once. The turn's
+        // one declaration. See `advanced/faith_strike.rs`.
+        if self.faith_strike_opening(g, pid) {
+            return;
+        }
         // `faith-war-before-the-flip`: a defensive war on a founder whose
         // spreaders work our cities before our majority flips. The turn's one
         // declaration. See `advanced/faith_war_before_the_flip.rs`.

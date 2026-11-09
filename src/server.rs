@@ -4,7 +4,6 @@
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -3429,7 +3428,44 @@ fn query_value<'a>(target: &'a str, key: &str) -> Option<&'a str> {
 /// and either way the same builder produces the same shape every turn. Kinds
 /// are tagged so that `null`, `false` and `0` cannot agree by coincidence, and
 /// numbers are tagged by how they read back so `1` and `1.0` do not either.
-fn hash_json(value: &Value, into: &mut DefaultHasher) {
+/// What a tile's mark is folded through. Marks are only ever compared with one
+/// another inside one process, so this has to be quick rather than keyed: every
+/// tile is hashed on every frame, field by field, and SipHash made that about a
+/// sixth of the browser engine's whole frame.
+struct TileMarkHasher(u64);
+
+impl TileMarkHasher {
+    fn word(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for TileMarkHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.word(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u8(&mut self, value: u8) {
+        self.word(u64::from(value));
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.word(value);
+    }
+    fn write_i64(&mut self, value: i64) {
+        self.word(value as u64);
+    }
+    fn write_usize(&mut self, value: usize) {
+        self.word(value as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+fn hash_json(value: &Value, into: &mut TileMarkHasher) {
     match value {
         Value::Null => 0u8.hash(into),
         Value::Bool(flag) => {
@@ -3468,7 +3504,7 @@ fn hash_json(value: &Value, into: &mut DefaultHasher) {
 }
 
 fn tile_mark(tile: &Value) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = TileMarkHasher(0);
     hash_json(tile, &mut hasher);
     hasher.finish()
 }
@@ -3507,10 +3543,11 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
 /// How far each road to a win is for one major, as `[victory, turns]` pairs,
 /// soonest first — the standings' Closest victory column reads the head.
 ///
-/// The turns are the victory planner's own central clock
-/// (`AdvancedAi::victory_forecasts`), not a meter extrapolated by the page:
-/// that forecaster already prices the research, the launch production, the
-/// tourism race against every defender and the capitals still to take. A
+/// The turns are the victory planner's own clocks read with the economy
+/// still growing (`AdvancedAi::victory_clocks`), not a meter extrapolated by
+/// the page: that forecaster already prices the research, the launch
+/// production, the tourism race against every defender and the capitals still
+/// to take. A
 /// road it cannot yet put a clock on — no religion founded, no army able to
 /// take a capital — is left out rather than guessed at, so a seat with no
 /// such road at all sends an empty list. Ties keep the victory order the
@@ -3521,7 +3558,7 @@ fn victory_eta_json(game: &Game, pid: usize) -> Option<Value> {
         return None;
     }
     let now = f64::from(game.turn);
-    let mut etas: Vec<(&str, i64)> = AdvancedAi::victory_forecasts(game, pid)
+    let mut etas: Vec<(&str, i64)> = AdvancedAi::victory_clocks(game, pid)
         .into_iter()
         .filter_map(|forecast| {
             forecast.finish_turn.map(|finish| {

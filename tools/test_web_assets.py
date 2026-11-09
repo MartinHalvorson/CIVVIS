@@ -276,6 +276,32 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     one stray click that hid the players overlay hid it for every game after —
     on 2026-09-10 the display beside a live Emperor game showed a bare map."""
 
+    def test_victory_tracker_keeps_its_scroll_box_and_ranks_by_estimate(self):
+        # Operator, 2026-11-09: "trying to scroll doesn't really seem to work",
+        # and the paths should stand "closest to victory based on our
+        # estimation".
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        draw = source[source.index("function drawPlayerHud() {"):]
+        draw = draw[:draw.index("\n}\n")]
+        self.assertIn("patchHudMarkup(victoryHud, overview);", draw)
+        self.assertNotIn("victoryHud.innerHTML", draw)
+        # A keyed path keeps its element when the order changes, and what the
+        # later passes write on a row survives the repaint.
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        self.assertIn('class="victory-track" data-key="${track.id}"', overview)
+        self.assertIn('data-key="${player.id}" data-victory-focus=', overview)
+        self.assertIn('new Set(["hidden", "style", "data-fit-clipped"])', source)
+        # The planner's clock orders the paths everywhere but the dedicated
+        # display, which keeps its own meter ranking.
+        self.assertIn("rankVictoryTracksBySoonest(enabledVictoryTracks, contenders);", overview)
+        road = source[source.index("function victoryRoadTurns("):]
+        road = road[:road.index("\n}\n")]
+        self.assertIn("player.victory_eta?.find(", road)
+        self.assertIn('road === "score"', road)
+        page = (REPO / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("#victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }", page)
+
     def test_dedicated_mode_shows_the_player_hud_and_victory_tracker(self):
         source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
         gate = source.index('get("display") === "dedicated"')

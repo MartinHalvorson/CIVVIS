@@ -12,17 +12,31 @@
 //!
 //! With the gene on, a Religion-target seat that has founded and has Theology
 //! beelines Reformed Church. Off, or on any other lane, nothing changes.
+//!
+//! The existing `religion-seat-fields-apostles` treatment first reaches
+//! Theology itself. Native Russia civvis-20261109T154422Z founded at t19,
+//! but at t49 took Games and Recreation toward Divine Right and only reached
+//! Theology at t81. A later government's prerequisites must not postpone the
+//! Temple that enables the treatment's Apostles. The caller still puts the
+//! first government and urgent civic goals ahead of this ordinary lane goal.
 
 use super::*;
 
 impl AdvancedAi {
-    /// The civic this seat's Religion lane reaches for after Theology.
+    /// Reach the Apostle unlock, then the separately enabled later Faith civic.
     pub(super) fn religion_seat_civic_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
         let player = &g.players[pid];
+        if self.active_victory_target(g) != Some(VictoryTarget::Religion)
+            || player.religion.is_none()
+        {
+            return None;
+        }
+        let has_theology = player.civics.contains(&crate::name!("theology"));
+        if self.religion_seat_fields_apostles && !has_theology {
+            return Some("theology");
+        }
         (self.religion_seat_reaches_reformed_church
-            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
-            && player.religion.is_some()
-            && player.civics.contains(&crate::name!("theology"))
+            && has_theology
             && !player.civics.contains(&crate::name!("reformed_church")))
         .then_some("reformed_church")
     }

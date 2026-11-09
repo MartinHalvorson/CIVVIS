@@ -6725,6 +6725,13 @@ pub struct AdvancedAi {
     /// 050249Z, 054003Z and 071914Z). Opt-in.
     domination_spends_the_stock: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
+    /// turn several of its spreaders can be condemned at once. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_wipes_the_spreaders: bool,
+    /// `faith-strike-wipes-the-spreaders`: the turn each rival was last
+    /// struck.
+    faith_strike_last: BTreeMap<usize, u32>,
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
     embassy_finds_the_capital_2: bool,
@@ -7445,6 +7452,10 @@ pub struct AdvancedAi {
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
     // ---- append: g-k ------------------------------------------------
+    /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
+    /// walks to the wounded of its faith instead of at the nearest rival. See
+    /// `advanced/guru_walks_to_the_wounded.rs`. Off by default.
+    guru_walks_to_the_wounded: bool,
     /// `government-reach-pays-the-switch`: a seat holding its listed
     /// government takes `government-capacity-fallback`'s reach only for a
     /// real gain in slots. See `advanced/government_reach.rs`. Off by default.
@@ -10592,6 +10603,8 @@ mod last_two_capitals;
 mod launched_racer;
 
 mod city_memory;
+/// `faith-strike-wipes-the-spreaders`: see `advanced/faith_strike.rs`.
+mod faith_strike;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
@@ -10837,6 +10850,7 @@ mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
+mod guru_walks_to_the_wounded;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 

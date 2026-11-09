@@ -737,8 +737,8 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
-let mapSearchQuery = "", mapSearchCivId = "";
-let mapSearchCache = {state:null, rules:null, query:"", civ:"", matches:new Set()};
+let mapSearchQuery = "", mapSearchExclude = "", mapSearchCivId = "";
+let mapSearchCache = {state:null, rules:null, query:"", exclude:"", civ:"", matches:new Set()};
 // Map verb buttons arm their next click rather than acting on the spot. The
 // flag lives with the other map modes because `modeline()` reads it early.
 let interfaceMode = null;
@@ -2337,7 +2337,7 @@ function closestVictoryTitle(player) {
   const others = rest.length
     ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${closestVictoryTurnsLabel(count)}`).join(", ")}`
     : "";
-  return `${head}${others} · the victory planner's estimate at today's pace`;
+  return `${head}${others} · the victory planner's estimate, expecting the economy to keep growing`;
 }
 
 function comparePlayerHudSortValues(left, right) {
@@ -4517,6 +4517,7 @@ function advanceWorldSpin(dt) {
     // the pole is the same motion as dragging the globe eastward, without
     // borrowing the screen's idea of which way that is.
     applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));
+    advanceSkyWorldSpin(dt);
     return true;
   }
   // A flat chart's copies are the same world over again, so the camera simply
@@ -4525,6 +4526,20 @@ function advanceWorldSpin(dt) {
   // every wrapped reading is taken about.
   cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;
   return true;
+}
+// The button means every world, at the one pace, in the same direction a drag
+// to the right sends the ground. Only those showing their ground on the canvas
+// need the turn: the rest are a disc of one colour or nowhere to be seen, and
+// each keeps the face it was last turned to until somebody flies out to it.
+function advanceSkyWorldSpin(dt) {
+  if (planetMainUsesChart()) return;
+  const radius = planetEarthRadius();
+  const [centerX, centerY] = planetEarthCenter(radius);
+  for (const body of visibleSkyBodies()) {
+    const place = skyPlacement(body, radius, centerX, centerY);
+    if (skyOnCanvas(place) && skyGroundFade(place) > 0)
+      skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;
+  }
 }
 if (spinButton) spinButton.onclick = () => setWorldSpin(!WORLD_SPIN);
 updateSpinButton();
@@ -18927,9 +18942,19 @@ function skyLaunchEnd(launch, player, place, crews,
       return {x:route.shipX, y:route.shipY};
     }
   }
-  const seat = skyLandingSeats(place, launchCrew)
+  // A turning world can carry a landing site over the horizon, or bring one up
+  // from behind it, while the rocket is on its way. Which of the two this flight
+  // aims at is settled once, so neither swings it across the disc: a site that
+  // sets is aimed at where it was last seen.
+  const seat = launch.aimsAtLimb ? null : skyLandingSeats(place, launchCrew)
     .find(entry => entry.player.id === player.id);
-  if (seat) return {x:seat.x, y:seat.y};
+  if (seat) {
+    launch.seatSeen = {x:(seat.x - place.x) / place.r, y:(seat.y - place.y) / place.r};
+    return {x:seat.x, y:seat.y};
+  }
+  if (launch.seatSeen)
+    return {x:place.x + launch.seatSeen.x * place.r, y:place.y + launch.seatSeen.y * place.r};
+  launch.aimsAtLimb = true;
   // A stable landing site can be around the back of a close-up world. Aim for
   // the Earth-facing limb in that case: the rocket disappears behind the body
   // and the permanent marker remains correctly hidden with its site.
@@ -19481,8 +19506,13 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const ahead = pointAt(Math.min(1, progress + .004));
   const behind = pointAt(Math.max(0, progress - .004));
   const dx = ahead.x - behind.x, dy = ahead.y - behind.y, across = Math.hypot(dx, dy);
-  // A rocket flying at the viewer is shorter than one crossing the picture.
-  const depth = limb ? (ahead.z - behind.z) * limb.r : 0;
+  // A rocket flying at the viewer is shorter than one crossing the picture. A
+  // route laid out on the stage has no depth to read, and must not be asked for
+  // one: `undefined - undefined` is NaN, `NaN || 1` is one, and the hull came out
+  // as many times its own length as the rocket moved pixels per step, which is
+  // the needle that crossed the Moon.
+  const climb = ahead.z - behind.z;
+  const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;
   const lean = Math.max(.45, across / (Math.hypot(across, depth) || 1));
   const colour = pcol(player.id);
   const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now) : 1;
@@ -24867,7 +24897,7 @@ function simulationStatsSection() {
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
     `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
     `title="${SIM_STATS_VIEWS[view].title}">${SIM_STATS_VIEWS[view].label}</button>`;
-  return `<section class="hud-region sim-stats-region" aria-labelledby="sim-stats-title">` +
+  return `<section class="hud-region sim-stats-region" data-key="sim-stats" aria-labelledby="sim-stats-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
@@ -24925,12 +24955,6 @@ function hudTurnPlate() {
     ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
       `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
-  // The turn regime is the world's rule, not a viewer choice — the product
-  // rolls only sequential worlds, so the plate simply names what the world
-  // on screen is playing. A research build launched with `--turn-structure
-  // simultaneous` still reads honestly here.
-  const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
-  const turnStructureValue = `<b>${turnStructureName}</b>`;
   // The map first, as the lobby names it: how many civilizations were dealt
   // and on which script ("4P Pangaea"). The dealt count includes the fallen.
   const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
@@ -25014,8 +25038,7 @@ function hudTurnPlate() {
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
-    `${turnStructureName.toLowerCase()} turns`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -25048,8 +25071,56 @@ function hudTurnPlate() {
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
-    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `</div></section>`;
+}
+
+// How many turns until this seat wins by this road, as near as the page can
+// tell. The victory planner's clock comes first: `victory_eta`, the estimate
+// the Closest victory column reads. A road it has not priced, or a rival's
+// under your fog, falls back on the public meter once the seat is past halfway,
+// at the pace that got it there. Score's meter only measures the turn limit
+// running out, so it is never read this way.
+const VICTORY_METER_READ_FROM = 50;
+function victoryRoadTurns(player, road) {
+  const priced = player.victory_eta?.find(([id]) => id === road)?.[1];
+  if (priced !== null && priced !== undefined && Number.isFinite(Number(priced))) return Number(priced);
+  const meter = +victoryMetric(player, road).progress || 0;
+  if (road === "score" || meter < VICTORY_METER_READ_FROM) return Infinity;
+  return reportedTurn() * (100 - meter) / meter;
+}
+
+// What to watch right now: the road somebody is estimated to finish first
+// stands on top (operator, 2026-11-09). Science earns the top of the early game
+// on its own clock, and roads nobody can price yet keep the standing order
+// behind the priced ones. Estimates wobble by a turn or two from one turn to
+// the next, so a road has to be clearly sooner to pass the one above it;
+// measured over three games that took one top band from 15 changes to 4
+// without changing which road led at the end.
+let victoryTrackOrder = [];
+function rankVictoryTracksBySoonest(tracks, contenders) {
+  const standing = new Map(tracks.map((track, index) => [track.id, index]));
+  const soonest = new Map(tracks.map(track => [track.id, Math.min(Infinity,
+    ...contenders.map(player => victoryRoadTurns(player, track.id)))]));
+  const overtakes = (below, above) => {
+    const belowTurns = soonest.get(below.id), aboveTurns = soonest.get(above.id);
+    if (!Number.isFinite(aboveTurns))
+      return Number.isFinite(belowTurns) || standing.get(below.id) < standing.get(above.id);
+    return aboveTurns - belowTurns > Math.max(3, aboveTurns * .1);
+  };
+  const shownAt = track => {
+    const at = victoryTrackOrder.indexOf(track.id);
+    return at < 0 ? tracks.length + standing.get(track.id) : at;
+  };
+  tracks.sort((a, b) => shownAt(a) - shownAt(b));
+  for (let moved = true; moved;) {
+    moved = false;
+    for (let at = 0; at + 1 < tracks.length; at++) {
+      if (!overtakes(tracks[at + 1], tracks[at])) continue;
+      [tracks[at], tracks[at + 1]] = [tracks[at + 1], tracks[at]];
+      moved = true;
+    }
+  }
+  victoryTrackOrder = tracks.map(track => track.id);
 }
 
 function playerHudOverview() {
@@ -25070,6 +25141,8 @@ function playerHudOverview() {
     const leading = new Map(enabledVictoryTracks.map(track => [track.id,
       Math.max(0, ...contenders.map(player => +victoryMetric(player, track.id).progress || 0))]));
     enabledVictoryTracks.sort((a, b) => leading.get(b.id) - leading.get(a.id));
+  } else {
+    rankVictoryTracksBySoonest(enabledVictoryTracks, contenders);
   }
   const victoryTracks = enabledVictoryTracks.map(track => {
     const researchField = track.id === "science" ? "techs"
@@ -25088,7 +25161,7 @@ function playerHudOverview() {
       : -1;
     if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
-    return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
+    return `<section class="victory-track" data-key="${track.id}" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><b>${track.label}</b></div>` +
       `<div class="victory-body">` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
@@ -25101,7 +25174,7 @@ function playerHudOverview() {
         const empireTitle = capital
           ? `View ${player.civ}'s empire from its capital, ${capital.name}`
           : `${player.civ} has no capital to view`;
-        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-victory-focus="${isFocus}" ` +
+        return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-key="${player.id}" data-victory-focus="${isFocus}" ` +
           `style="--civ:${pcol(player.id)}" title="${focusLabel}#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<button type="button" class="victory-civ" data-hud-action="capital" data-hud-civ="${player.id}" ` +
@@ -25135,7 +25208,7 @@ function playerHudOverview() {
     `<button class="sim-stats-seam" type="button" data-sim-stats-seam role="separator" ` +
     `aria-orientation="horizontal" aria-label="Simulation stats height; drag or use arrow keys, double-click resets" ` +
     `title="Drag to divide the panel · double-click resets"></button>` +
-    `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
+    `<section class="hud-region victory-region" data-key="victory" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
@@ -25331,23 +25404,59 @@ function playerHudStats(player, rank) {
 let hudHtml = "", victoryHudHtml = "";
 
 // The victory tracker repaints whenever one of its numbers moves, which is
-// most frames of a running simulation, but the Arena Stats ledger changes only
-// when a game ends. Rebuilding it with the tracker sent the list back to the
-// top and cut off any wheel gesture in flight, so while its markup is unchanged
-// the ledger stays in the document and only its neighbours are replaced.
-function repaintBesideArenaStats(victoryHud, overview) {
-  const live = victoryHud.querySelector(".sim-stats-region");
-  if (!live) return false;
+// most frames of a running simulation. Replacing its markup took the scroll box
+// out from under the wheel several times a second: a gesture in flight died
+// with the old element, and the position put back on the new one then slid
+// toward the top as its spare rows folded away (operator, 2026-11-09: "trying
+// to scroll doesn't really seem to work"). So a repaint edits the nodes already
+// in the document, and a node with a `data-key` follows its key when the order
+// changes.
+//
+// What the markup does not name is left alone: the leader-capacity pass writes
+// `hidden`, the type fitter writes a font size and its clipped mark, and both
+// run again straight after every repaint.
+const HUD_PATCH_KEEPS = new Set(["hidden", "style", "data-fit-clipped"]);
+const hudPatchKey = node => node.getAttribute?.("data-key") ?? null;
+
+function patchHudAttributes(live, fresh) {
+  for (const {name} of [...live.attributes])
+    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
+  for (const {name, value} of fresh.attributes)
+    if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+}
+
+function patchHudChildren(live, fresh) {
+  const keyed = new Map();
+  for (const node of live.childNodes)
+    if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+  let cursor = live.firstChild;
+  for (const want of [...fresh.childNodes]) {
+    const key = hudPatchKey(want);
+    const held = key === null ? cursor : keyed.get(key);
+    if (!held || held.nodeName !== want.nodeName || hudPatchKey(held) !== key) {
+      live.insertBefore(want, cursor);
+      continue;
+    }
+    if (held === cursor) cursor = cursor.nextSibling;
+    else live.insertBefore(held, cursor);
+    if (held.nodeType === Node.ELEMENT_NODE) {
+      patchHudAttributes(held, want);
+      patchHudChildren(held, want);
+    } else if (held.nodeValue !== want.nodeValue) {
+      held.nodeValue = want.nodeValue;
+    }
+  }
+  while (cursor) {
+    const spent = cursor;
+    cursor = cursor.nextSibling;
+    spent.remove();
+  }
+}
+
+function patchHudMarkup(root, markup) {
   const next = document.createElement("template");
-  next.innerHTML = overview;
-  const fresh = next.content.querySelector(".sim-stats-region");
-  if (!fresh?.isEqualNode(live)) return false;
-  const nodes = [...next.content.childNodes];
-  const seat = nodes.indexOf(fresh);
-  for (const node of [...victoryHud.childNodes]) if (node !== live) node.remove();
-  live.before(...nodes.slice(0, seat));
-  live.after(...nodes.slice(seat + 1));
-  return true;
+  next.innerHTML = markup;
+  patchHudChildren(root, next.content);
 }
 
 function drawPlayerHud() {
@@ -25355,23 +25464,14 @@ function drawPlayerHud() {
   const victoryHud = document.getElementById("victoryhud");
   const priorBounds = mapFocusBounds();
   const priorFocus = currentMapFocusWorld();
-  // State updates are frequent in spectator mode. Preserve each rail's exact
-  // reading position so a person can browse an off-screen victory path
-  // without the next simulation frame snapping the HUD back to the leader.
-  const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
-  const statsScroll = victoryHud.querySelector(".sim-stats-body")?.scrollTop || 0;
+  // State updates are frequent in spectator mode. Preserve the standings' exact
+  // reading position so the next simulation frame cannot snap them back.
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
-    if (!repaintBesideArenaStats(victoryHud, overview)) {
-      victoryHud.innerHTML = overview;
-      const statsBody = victoryHud.querySelector(".sim-stats-body");
-      if (statsBody) statsBody.scrollTop = statsScroll;
-    }
-    const rail = victoryHud.querySelector(".hud-rail");
-    if (rail && victoryScroll) rail.scrollTop = victoryScroll;
+    patchHudMarkup(victoryHud, overview);
   }
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
@@ -26317,7 +26417,9 @@ function civDossier(p, rank, relation) {
 // applies to the narrow-viewport layout, where the paths sit in a row again.
 document.getElementById("victoryhud").addEventListener("wheel", event => {
   const rail = event.target.closest(".hud-rail");
-  if (!rail || rail.scrollHeight > rail.clientHeight ||
+  // Ask how the rail scrolls, not whether its content is taller: a row of paths
+  // clips a few pixels of height on purpose, and that must not disarm the wheel.
+  if (!rail || getComputedStyle(rail).overflowY !== "hidden" ||
       rail.scrollWidth <= rail.clientWidth ||
       Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
   rail.scrollLeft += event.deltaY;
@@ -31381,30 +31483,55 @@ function normalizeMapSearch(value) {
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 }
+// A search repaints with every new frame, and nearly every term on the board
+// is one of the same few hundred rule ids and place names.
+const mapSearchNormalizedTerms = new Map();
+function mapSearchHaystack(values) {
+  let haystack = " ";
+  for (const value of values) {
+    if (value === null || value === undefined || value === false) continue;
+    let term = mapSearchNormalizedTerms.get(value);
+    if (term === undefined) {
+      term = normalizeMapSearch(value);
+      mapSearchNormalizedTerms.set(value, term);
+    }
+    haystack += term + " ";
+  }
+  return haystack;
+}
+// One typed word against a tile's terms. Civ VI matches a term from its start,
+// so "ice" must not light every Rice and Spices tile. From four letters on a
+// word may also sit inside a longer name ("ship" finds Battleship), and a
+// plural finds its singular ("mines", "hills").
+function mapSearchWordFound(haystack, word) {
+  const singular = word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word;
+  return singular.length > 3 ? haystack.includes(singular) : haystack.includes(" " + singular);
+}
 function mapSearchTextMatches(values, query) {
   const needle = normalizeMapSearch(query);
   if (!needle) return false;
-  const haystack = normalizeMapSearch(values.filter(value => value !== null && value !== undefined).join(" "));
-  if (haystack.includes(needle)) return true;
+  const haystack = mapSearchHaystack(values);
+  // Civ VI requires every word typed, in any order and from any of the tile's
+  // terms: "iron mine" is a tile with Iron and a Mine, not that exact phrase.
+  if (needle.split(" ").every(word => mapSearchWordFound(haystack, word))) return true;
   // Display names and protocol names differ only in their word boundaries:
   // "space port", "space-port", and `spaceport` should find one another.
   const compactNeedle = needle.replaceAll(" ", "");
-  return compactNeedle.length > 2 && haystack.replaceAll(" ", "").includes(compactNeedle);
+  return compactNeedle.length > 3 && haystack.replaceAll(" ", "").includes(compactNeedle);
 }
-function mapSearchVisibleCivilizations(st) {
+function mapSearchKnownCivilizations(st) {
   if (!st?.map?.tiles) return [];
-  // A civilization is available to the filter only when the current view
-  // actually contains one of its tiles, cities, or units. The player roster
+  // A civilization is available to the filter only when the viewer's map
+  // actually holds one of its tiles, cities, or units. The player roster
   // alone can include names the viewer has not met, so it is never enough.
   const visible = new Set((st.visible || []).map(key));
   const owners = new Set();
-  const noteOwner = (pos, owner) => {
-    if (Array.isArray(pos) && visible.has(key(pos)) && owner !== null && owner !== undefined)
-      owners.add(String(owner));
+  const noteOwner = owner => {
+    if (owner !== null && owner !== undefined) owners.add(String(owner));
   };
-  for (const tile of st.map.tiles) noteOwner(tile.pos, tile.owner);
-  for (const city of st.cities || []) noteOwner(city.pos, city.owner);
-  for (const unit of st.units || []) noteOwner(unit.pos, unit.owner);
+  for (const tile of st.map.tiles) noteOwner(tile.owner);
+  for (const city of st.cities || []) noteOwner(city.owner);
+  for (const unit of st.units || []) if (visible.has(key(unit.pos))) noteOwner(unit.owner);
   return (st.players || []).filter(player =>
     player && !player.is_barbarian && player.civ && owners.has(String(player.id))
   );
@@ -31420,8 +31547,8 @@ function syncMapSearchCivilizations(st = state) {
   const select = document.getElementById("map-search-civ");
   if (!select) return false;
   const wanted = mapSearchCivId || select.value;
-  const civilizations = mapSearchVisibleCivilizations(st);
-  const entries = [["", "All visible civilizations"],
+  const civilizations = mapSearchKnownCivilizations(st);
+  const entries = [["", "All civilizations"],
     ...civilizations.map(player => [String(player.id), player.civ])];
   const optionsChanged = !mapSearchCivilizationOptions(select, entries);
   // A native select is allowed to own its expanded picker until the viewer
@@ -31445,68 +31572,242 @@ function syncMapSearchCivilizations(st = state) {
   if (optionsChanged || selectionChanged) mapSearchCache.state = null;
   return optionsChanged || selectionChanged || disabledChanged;
 }
-function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {
+function computeMapSearchMatches(st, query, civFilter = mapSearchCivId, exclude = mapSearchExclude) {
   const matches = new Set();
   const needle = normalizeMapSearch(query);
   const selectedCiv = String(civFilter || "");
   if (!st?.map?.tiles || (!needle && !selectedCiv)) return matches;
+  const excludedWords = normalizeMapSearch(exclude).split(" ").filter(Boolean);
+  const wantsTerms = !!needle || excludedWords.length > 0;
 
-  // Exact sight, rather than explored memory, is the privacy boundary. A
-  // search must never disclose a district or army hidden by the viewer's fog.
+  // Civ VI searches every plot the player has revealed, and so does this. The
+  // observation holds only revealed tiles, each as the viewer last saw it, so
+  // a match tells them nothing the map on screen does not already show. Units
+  // are the exception the game makes too: they need exact sight.
+  const revealed = new Set(st.map.tiles.map(tile => key(tile.pos)));
   const visible = new Set((st.visible || []).map(key));
   const terms = new Map();
   const add = (pos, owner, ...values) => {
-    if (!Array.isArray(pos) || !visible.has(key(pos))) return;
+    if (!Array.isArray(pos) || !revealed.has(key(pos))) return;
     if (selectedCiv && String(owner) !== selectedCiv) return;
     const at = key(pos), held = terms.get(at);
     if (held) held.push(...values); else terms.set(at, values);
   };
-  const districtTerms = district => {
-    if (!district) return [];
-    const replaced = RULES?.districts?.[district]?.replaces;
-    return [district, `${district} district`, replaced, replaced && `${replaced} district`];
-  };
   const players = new Map((st.players || []).map(player => [player.id, player]));
+  const cities = new Map((st.cities || []).map(city => [city.id, city]));
 
-  for (const tile of st.map.tiles) {
-    const planned = tile.planned_district?.district;
-    const owner = players.get(tile.owner);
+  for (const tile of st.map.tiles)
     add(tile.pos, tile.owner,
-      tile.terrain, tile.terrain && `${tile.terrain} terrain`,
-      tile.feature, tile.feature && `${tile.feature} feature`,
-      tile.resource, tile.resource && `${tile.resource} resource`,
-      tile.improvement, tile.improvement && `${tile.improvement} improvement`,
-      ...districtTerms(tile.district), ...districtTerms(planned),
-      planned && `planned ${planned}`,
-      tile.wonder, tile.wonder && `${tile.wonder} wonder`,
-      tile.owner_city_name,
-      owner?.civ, owner?.leader);
-  }
+      ...(wantsTerms ? mapSearchTileTerms(st, tile, players.get(tile.owner), cities) : []));
   for (const city of st.cities || []) {
     const owner = players.get(city.owner);
-    add(city.pos, city.owner, city.name, "city", city.is_capital && "capital",
+    add(city.pos, city.owner, city.name, "City", "City Center", city.is_capital && "Capital",
         city.religion, owner?.civ, owner?.leader);
+    const pillaged = new Set(city.pillaged_buildings || []);
+    for (const building of city.buildings || [])
+      add(mapSearchBuildingTile(city, building), city.owner, "Building",
+          ...mapSearchNames(building), pillaged.has(building) && "Pillaged");
+    for (const district of city.citizens?.specialists || [])
+      add(city.districts?.[district], city.owner, "Specialist");
+    for (const item of city.queue || [])
+      if (item.wonder) add(item.pos, city.owner, "Wonder", ...mapSearchNames(item.wonder), "Under Construction");
   }
   for (const unit of st.units || []) {
+    if (!visible.has(key(unit.pos))) continue;
     const owner = players.get(unit.owner);
-    add(unit.pos, unit.owner, unit.type, unit.type && `${unit.type} unit`, owner?.civ, owner?.leader);
+    add(unit.pos, unit.owner, ...mapSearchUnitTerms(unit), owner?.civ, owner?.leader);
   }
-  for (const camp of st.camps || []) add(camp, null, "barbarian camp", "camp");
+  for (const camp of st.camps || []) add(camp, null, "barbarian camp", "camp", "Barbarian Outpost");
 
-  for (const [at, values] of terms)
+  for (const [at, values] of terms) {
+    if (excludedWords.length) {
+      const haystack = mapSearchHaystack(values);
+      if (excludedWords.some(word => mapSearchWordFound(haystack, word))) continue;
+    }
     if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);
+  }
   return matches;
+}
+// What Civ VI prints for things CIVVIS files under another id. Everything not
+// listed here already reads the same once its id is title-cased; the list was
+// made by comparing every shipped GameInfo row's English name with the rules.
+const MAP_SEARCH_GAME_NAMES = {
+  forest:"Woods", jungle:"Rainforest", burning_forest:"Burning Woods",
+  burning_jungle:"Burning Rainforest", burnt_forest:"Burnt Woods", burnt_jungle:"Burnt Rainforest",
+  kilimanjaro:"Mount Kilimanjaro", vesuvius:"Mount Vesuvius",
+  walls:"Ancient Walls", temple_artemis:"Temple of Artemis",
+  goody_hut:"Tribal Village", barbarian_camp:"Barbarian Outpost", meteor_goody:"Meteor Site",
+  mound:"Cahokia Mounds", maori_pa:"Pā", ancient_tower_defense:"Barricade",
+  ancient_trap_defense:"Trap", modern_tower_defense:"Reinforced Barricade",
+  modern_trap_defense:"Modernized Trap", kongo_shield_bearer:"Ngao Mbeba", khevsureti:"Khevsur",
+};
+function mapSearchNames(id) {
+  return MAP_SEARCH_GAME_NAMES[id] ? [id, MAP_SEARCH_GAME_NAMES[id]] : [id];
+}
+// Indexed by `tile.road`, the shipped PlacementValue ladder.
+const MAP_SEARCH_ROUTE_NAMES = [null, "Ancient Road", "Classical Road", "Industrial Road",
+  "Modern Road", "Railroad"];
+// Indexed by severity minus one, least severe first.
+const MAP_SEARCH_DISASTER_NAMES = {
+  drought:["Major Drought", "Withering Drought"],
+  hurricane:["Category-4 Hurricane", "Category-5 Hurricane"],
+  tornado:["Tornado Family", "Tornado Outbreak"],
+  blizzard:["Significant Blizzard", "Crippling Blizzard"],
+  dust_storm:["Gradient Dust Storm", "Haboob Dust Storm"],
+};
+function mapSearchStormName(st, kind) {
+  // A tile records only the storm's class, so its severity is known only while
+  // every active storm of that class agrees on one.
+  const severities = new Set((st.storms || []).filter(storm => storm.kind === kind)
+    .map(storm => storm.severity));
+  return severities.size === 1 ? MAP_SEARCH_DISASTER_NAMES[kind]?.[[...severities][0] - 1] : null;
+}
+function mapSearchDroughtName(st, tile) {
+  const at = key(tile.pos);
+  const drought = (st.droughts || []).find(row => (row.tiles || []).some(pos => key(pos) === at));
+  return drought ? MAP_SEARCH_DISASTER_NAMES.drought[drought.severity - 1] : null;
+}
+function mapSearchDistrictTerms(district) {
+  if (!district) return [];
+  const replaced = RULES?.districts?.[district]?.replaces;
+  return ["District", ...mapSearchNames(district), replaced];
+}
+// Civ VI's `GetPlotSearchTerms`, read off this viewer's tile record: the same
+// categories in the same order (owner, terrain, feature, resource, route,
+// appeal, continent, wonder, improvement, yields, then the district), followed
+// by the Gathering Storm additions.
+function mapSearchTileTerms(st, tile, owner, cities) {
+  const terrain = ruleSpec("terrains", tile.terrain);
+  const feature = ruleSpec("features", tile.feature);
+  const planned = tile.planned_district?.district;
+  const values = [
+    owner ? "Owned" : "Unclaimed", owner?.civ, owner?.leader,
+    tile.owner_city_name || cities.get(tile.owner_city)?.name,
+    tile.terrain, terrain?.water && "Water", tile.hills && "Hills", tile.river && "River",
+    tileImpassable(tile) && "Impassable", tile.pillaged && "Pillaged",
+  ];
+  if (tile.feature)
+    values.push("Feature", ...mapSearchNames(tile.feature), feature?.natural_wonder && "Natural Wonder");
+  if (tile.resource) {
+    const resourceClass = ruleSpec("resources", tile.resource)?.class;
+    values.push("Resource", ...mapSearchNames(tile.resource), resourceClass && `${resourceClass} Resource`);
+  }
+  if (tile.road > 0) values.push("Route", MAP_SEARCH_ROUTE_NAMES[tile.road]);
+  // Appeal is live-only, so a remembered tile has none to report.
+  if (Number.isFinite(tile.appeal) && (!terrain?.water || feature?.natural_wonder))
+    values.push(appealBand(tile.appeal));
+  if (Number.isInteger(tile.continent))
+    values.push(CONTINENT_NAMES[tile.continent] || `Continent ${tile.continent + 1}`);
+  if (tile.wonder) values.push("Wonder", ...mapSearchNames(tile.wonder));
+  if (tile.improvement) values.push("Improvement", ...mapSearchNames(tile.improvement));
+  // The panel reads a plain tile's own yields, but what stands on a district
+  // tile is the district's output rather than the ground it replaced.
+  const yields = tile.district || tile.wonder ? tile.district_yields : tileYieldFull(tile);
+  for (const kind of TILE_TIP_YIELD_ORDER)
+    if (Number(yields?.[kind]) > 0) values.push(titleCase(kind));
+  if (Number(tile.fallout_until) > 0 && Number(tile.fallout_until) >= st.turn)
+    values.push("Contamination", "Fallout");
+  values.push(...mapSearchDistrictTerms(tile.district), ...mapSearchDistrictTerms(planned),
+    planned && "Under Construction", planned && "Planned");
+  if (tile.coastal_lowland > 0) {
+    const meters = tile.coastal_lowland;
+    values.push("Coastal Lowland", `Coastal Lowland: ${meters} Meter${meters === 1 ? "" : "s"}`);
+  }
+  if (tile.flooded) values.push("Flooded");
+  if (tile.submerged) values.push("Submerged");
+  if (tile.drought) values.push("Drought", mapSearchDroughtName(st, tile));
+  if (tile.storm) values.push("Storm", tile.storm, mapSearchStormName(st, tile.storm));
+  return values;
+}
+// The tile a finished building stands on. A unique district stands in for the
+// one its buildings name, and the city's own buildings are on the City Center.
+function mapSearchBuildingTile(city, building) {
+  const home = RULES?.buildings?.[building]?.district;
+  for (const [district, pos] of Object.entries(city.districts || {}))
+    if (district === home || RULES?.districts?.[district]?.replaces === home) return pos;
+  return city.pos;
+}
+// The panel's unit block. Its "Melee", "Ranged" and "Siege" are simply which
+// strengths a unit has, so an Archer is honestly both of the first two.
+function mapSearchUnitTerms(unit) {
+  const spec = ruleSpec("units", unit.type);
+  const naval = spec?.domain === "sea";
+  const formationClass = spec?.domain === "air" ? "Air Combat"
+    : spec?.class === "military" ? (naval ? "Naval Combat" : "Land Combat")
+    : spec?.class === "support" ? "Support" : "Civilian";
+  return ["Unit", ...mapSearchNames(unit.type), formationClass,
+    Number(spec?.strength) > 0 && "Melee",
+    Number(spec?.ranged_strength) > 0 && "Ranged",
+    Number(spec?.bombard_strength) > 0 && "Siege",
+    unit.formation === 1 && (naval ? "Fleet" : "Corps"),
+    unit.formation === 2 && (naval ? "Armada" : "Army")];
 }
 function mapSearchMatches() {
   const query = normalizeMapSearch(mapSearchQuery);
+  const exclude = normalizeMapSearch(mapSearchExclude);
   const civ = mapSearchCivId || "";
   if (mapSearchCache.state !== state || mapSearchCache.rules !== RULES ||
-      mapSearchCache.query !== query || mapSearchCache.civ !== civ) {
+      mapSearchCache.query !== query || mapSearchCache.exclude !== exclude ||
+      mapSearchCache.civ !== civ) {
     mapSearchCache = {
-      state, rules:RULES, query, civ, matches:computeMapSearchMatches(state, query, civ),
+      state, rules:RULES, query, exclude, civ, matches:computeMapSearchMatches(state, query, civ, exclude),
     };
   }
   return mapSearchCache.matches;
+}
+// The names that can pop up while typing: Civ VI's `PopulateSuggestionData`,
+// less the few terms this board can never match, so that nothing offered
+// comes back empty for lack of data.
+const MAP_SEARCH_SUGGESTED_TERMS = [
+  "Owned", "Unclaimed", "Pillaged", "Contamination", "Under Construction",
+  "River", "Mountain", "Hills", "Water", "Impassable", "Feature", "Natural Wonder", "Wonder",
+  "Building", "District", "Specialist", "City Center", "Capital", "Improvement", "Resource",
+  "Bonus Resource", "Luxury Resource", "Strategic Resource", "Route",
+  "Food", "Production", "Gold", "Science", "Culture", "Faith",
+  "Breathtaking", "Charming", "Average", "Uninviting", "Disgusting",
+  "Unit", "Army", "Corps", "Armada", "Fleet", "Melee", "Ranged", "Siege",
+  "Land Combat", "Support", "Civilian", "Naval Combat", "Air Combat",
+  "Storm", "Drought", "Coastal Lowland", "Coastal Lowland: 1 Meter", "Coastal Lowland: 2 Meters",
+  "Coastal Lowland: 3 Meters", "Submerged", "Flooded",
+  ...MAP_SEARCH_ROUTE_NAMES.filter(Boolean), ...Object.values(MAP_SEARCH_DISASTER_NAMES).flat(),
+];
+let mapSearchVocabulary = {rules:null, terms:[]};
+function mapSearchRuleTerms() {
+  if (mapSearchVocabulary.rules !== RULES) {
+    const terms = [...MAP_SEARCH_SUGGESTED_TERMS];
+    for (const kind of ["terrains", "features", "buildings", "wonders", "districts",
+                        "improvements", "resources", "units"])
+      for (const id of Object.keys(RULES?.[kind] || {})) terms.push(MAP_SEARCH_GAME_NAMES[id] || titleCase(id));
+    for (const [id, spec] of Object.entries(RULES?.terrains || {}))
+      if (!spec.water && spec.passable !== false) terms.push(`${titleCase(id)} (Hills)`);
+    mapSearchVocabulary = {rules:RULES, terms};
+  }
+  return mapSearchVocabulary.terms;
+}
+function mapSearchSuggestions(typed, st = state) {
+  const needle = normalizeMapSearch(typed);
+  if (!needle) return [];
+  // The game's list holds only rule names. Places the viewer already knows are
+  // just as searchable, so they are offered too.
+  const places = new Set([
+    ...mapSearchKnownCivilizations(st).map(player => player.civ),
+    ...(st?.cities || []).map(city => city.name),
+  ]);
+  for (const tile of st?.map?.tiles || [])
+    if (Number.isInteger(tile.continent)) places.add(CONTINENT_NAMES[tile.continent]);
+  const words = needle.split(" ");
+  const rank = text => text === needle ? 0 : text.startsWith(needle) ? 1
+    : ` ${text}`.includes(` ${needle}`) ? 2 : 3;
+  const found = new Map();
+  for (const term of [...mapSearchRuleTerms(), ...places]) {
+    if (!term) continue;
+    const text = normalizeMapSearch(term);
+    if (!found.has(text) && words.every(word => mapSearchWordFound(` ${text} `, word)))
+      found.set(text, term);
+  }
+  return [...found.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .slice(0, 10).map(([, term]) => term);
 }
 function syncMapSearchStatus(matches = mapSearchMatches()) {
   const search = document.getElementById("map-search");
@@ -31517,20 +31818,116 @@ function syncMapSearchStatus(matches = mapSearchMatches()) {
   const count = matches.size;
   status.hidden = !active;
   status.textContent = active ? String(count) : "";
-  const message = `${count} visible${selected ? ` ${selected}` : ""} ${count === 1 ? "tile" : "tiles"}`;
+  const message = `${count}${selected ? ` ${selected}` : ""} ${count === 1 ? "tile" : "tiles"}`;
   status.setAttribute("aria-label", message);
   status.title = message;
   search.classList.toggle("no-match", active && count === 0);
 }
 function refreshMapSearch() {
   mapSearchQuery = document.getElementById("map-search-input").value;
+  mapSearchExclude = document.getElementById("map-search-exclude").value;
   mapSearchCache.state = null;
   syncMapSearchStatus();
   if (state) draw();
 }
 const mapSearchInput = document.getElementById("map-search-input");
+const mapSearchExcludeInput = document.getElementById("map-search-exclude");
 const mapSearchCiv = document.getElementById("map-search-civ");
 mapSearchInput.addEventListener("input", refreshMapSearch);
+mapSearchExcludeInput.addEventListener("input", refreshMapSearch);
+// An empty box offers what the game's does: recent searches, seeded with its
+// own examples. The exclude box's say "with no improvement" and "with no Library".
+const mapSearchRecent = new Map([
+  [mapSearchInput, ["Strategic Resource", "Luxury Resource", "Tribal Village", "Antiquity Site"]],
+  [mapSearchExcludeInput, ["Improvement", "Library"]],
+]);
+const mapSearchSuggestionList = document.getElementById("map-search-suggestions");
+let mapSearchSuggestionField = null, mapSearchSuggestionPick = -1;
+function rememberMapSearch(field) {
+  const typed = field.value.trim();
+  if (!typed) return;
+  const recent = mapSearchRecent.get(field).filter(term => term !== typed);
+  mapSearchRecent.set(field, [typed, ...recent].slice(0, 5));
+}
+function hideMapSearchSuggestions() {
+  mapSearchSuggestionList.hidden = true;
+  mapSearchSuggestionPick = -1;
+  mapSearchSuggestionField?.setAttribute("aria-expanded", "false");
+  mapSearchSuggestionField?.removeAttribute("aria-activedescendant");
+}
+function markMapSearchSuggestion(index) {
+  mapSearchSuggestionPick = index;
+  [...mapSearchSuggestionList.children].forEach((option, at) =>
+    option.setAttribute("aria-selected", at === index ? "true" : "false"));
+  if (index >= 0) {
+    mapSearchSuggestionField.setAttribute("aria-activedescendant", mapSearchSuggestionList.children[index].id);
+    mapSearchSuggestionList.children[index].scrollIntoView({block:"nearest"});
+  } else mapSearchSuggestionField.removeAttribute("aria-activedescendant");
+}
+function showMapSearchSuggestions(field) {
+  const terms = field.value.trim() ? mapSearchSuggestions(field.value) : mapSearchRecent.get(field);
+  mapSearchSuggestionField = field;
+  mapSearchSuggestionPick = -1;
+  mapSearchSuggestionList.replaceChildren(...terms.map((term, at) => {
+    const option = document.createElement("div");
+    option.id = `map-search-suggestion-${at}`;
+    option.className = "map-search-suggestion";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", "false");
+    option.textContent = term;
+    return option;
+  }));
+  mapSearchSuggestionList.hidden = terms.length === 0;
+  field.setAttribute("aria-expanded", terms.length ? "true" : "false");
+  field.removeAttribute("aria-activedescendant");
+}
+function acceptMapSearchSuggestion(field, term) {
+  field.value = term;
+  refreshMapSearch();
+  rememberMapSearch(field);
+  hideMapSearchSuggestions();
+}
+// Holding the press keeps focus in the box, so its blur cannot close the list
+// before the click on a suggestion lands.
+mapSearchSuggestionList.addEventListener("mousedown", event => event.preventDefault());
+mapSearchSuggestionList.addEventListener("click", event => {
+  const option = event.target.closest(".map-search-suggestion");
+  if (option && mapSearchSuggestionField) acceptMapSearchSuggestion(mapSearchSuggestionField, option.textContent);
+});
+for (const field of [mapSearchInput, mapSearchExcludeInput]) {
+  field.addEventListener("focus", () => showMapSearchSuggestions(field));
+  field.addEventListener("input", () => showMapSearchSuggestions(field));
+  field.addEventListener("blur", hideMapSearchSuggestions);
+  field.addEventListener("keydown", event => {
+    const open = !mapSearchSuggestionList.hidden;
+    const count = mapSearchSuggestionList.children.length;
+    if (open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      event.preventDefault(); event.stopPropagation();
+      const next = mapSearchSuggestionPick + (event.key === "ArrowDown" ? 1 : -1);
+      markMapSearchSuggestion(next >= count ? -1 : next < -1 ? count - 1 : next);
+    } else if (event.key === "Tab" && open && field.value.trim() && count) {
+      // The game's Tab completes the top suggestion.
+      event.preventDefault();
+      acceptMapSearchSuggestion(field, mapSearchSuggestionList.children[Math.max(mapSearchSuggestionPick, 0)].textContent);
+    } else if (event.key === "Enter") {
+      event.preventDefault(); event.stopPropagation();
+      if (open && mapSearchSuggestionPick >= 0)
+        acceptMapSearchSuggestion(field, mapSearchSuggestionList.children[mapSearchSuggestionPick].textContent);
+      else { rememberMapSearch(field); hideMapSearchSuggestions(); }
+    } else if (event.key === "Escape" && open) {
+      // One press closes the list; the box's own Escape waits for the next.
+      event.preventDefault(); event.stopImmediatePropagation();
+      hideMapSearchSuggestions();
+    }
+  });
+}
+mapSearchExcludeInput.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  event.preventDefault(); event.stopPropagation();
+  if (mapSearchExcludeInput.value) {
+    mapSearchExcludeInput.value = ""; refreshMapSearch();
+  } else mapSearchExcludeInput.blur();
+});
 mapSearchCiv.addEventListener("change", () => {
   mapSearchCivId = mapSearchCiv.value;
   mapSearchCache.state = null;

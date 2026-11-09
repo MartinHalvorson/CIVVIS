@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "guru-walks-to-the-wounded",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 10 boards of one live Deity Russia Religious-target game (civvis-20261109T173049Z), the first full game recorded with a Guru's heal charges, each the run's events.jsonl cut at frame 0 of a turn where our Guru had moves and heals left, a wounded unit of its faith stood at least two tiles away, and a rival religious unit was known. Both arms run one frozen civvis_orders --resumed built from the branch with the run's own requested genome; the on arm adds --with guru-walks-to-the-wounded. The Guru's orders differ on 5 of 10 boards; on 2 of them the on arm reaches a wounded friend and heals that turn where the off arm only walks.",
+  "archive": {
+    "path": "docs/eval/2026-11-09-guru-walks-to-the-wounded.native-queries.tar.xz",
+    "sha256": "e7bcf41a30a4255e0940c4c4cc86019adb09d11b07bf919eccab80ddf52d9e6f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json"
+  ]
+}
