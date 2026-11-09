@@ -692,7 +692,7 @@ impl Game {
         self.units.get(&uid).is_some_and(|unit| {
             let spec = &self.rules.units[unit.kind];
             let class = &spec.promotion_class;
-            if class == "rock_band" {
+            if matches!(class.as_str(), "rock_band" | "religious_apostle") {
                 if let Some(menu) = self.host_band_promotions.get(&uid) {
                     if menu.held == unit.promotions {
                         return menu
@@ -769,9 +769,9 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect();
-        // Native bands draw their own three choices. A current offer is stronger
-        // evidence than simulated randomness or earlier rejected choices.
-        if class == "rock_band" {
+        // Native bands and Apostles draw their own three choices. A current offer
+        // is stronger evidence than simulated randomness or earlier rejected choices.
+        if matches!(class, "rock_band" | "religious_apostle") {
             if let Some(menu) = self.host_band_promotions.get(&uid) {
                 if menu.held == unit.promotions {
                     available.retain(|name| menu.offered.contains(name));

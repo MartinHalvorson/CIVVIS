@@ -4553,7 +4553,8 @@ fn host_unavailable_wonders_from(
         .collect()
 }
 
-/// Translate current native Rock Band choices onto mirrored unit ids.
+/// Translate current native Rock Band and Apostle choices onto mirrored unit
+/// ids. Both draw a limited menu the simulator's own draw cannot predict.
 fn host_band_promotions_from(
     state: &StateSnapshot,
     unit_ids: &BTreeMap<u32, i64>,
@@ -4563,9 +4564,11 @@ fn host_band_promotions_from(
         .iter()
         .filter_map(|(uid, native)| {
             let unit = state.units.iter().find(|unit| unit.id == *native)?;
-            if unit.kind != "UNIT_ROCK_BAND" {
-                return None;
-            }
+            let class = match unit.kind.as_str() {
+                "UNIT_ROCK_BAND" => "rock_band",
+                "UNIT_APOSTLE" => "religious_apostle",
+                _ => return None,
+            };
             let offered = unit.offered_promotions.as_ref()?;
             let names = offered
                 .iter()
@@ -4574,7 +4577,7 @@ fn host_band_promotions_from(
                     rules
                         .promotions
                         .get(name)
-                        .is_some_and(|spec| spec.class == "rock_band")
+                        .is_some_and(|spec| spec.class == class)
                 })
                 .map(|name| Name::new(&name))
                 .collect();
