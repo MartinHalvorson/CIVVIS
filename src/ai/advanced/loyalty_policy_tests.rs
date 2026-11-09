@@ -1,6 +1,7 @@
 //! Occupied policy seats during a measured Loyalty emergency.
 
 use super::*;
+use crate::game::GovernorState;
 
 /// The native t132 policy shape: every Monarchy slot filled, an established
 /// governor, and a city above the old level alarm but under nine turns from
@@ -103,6 +104,7 @@ fn frozen_loyalty_repair_keeps_the_wanted_envoy_card() {
 fn stable_or_distant_decline_does_not_displace_the_envoy_card() {
     for rate in [0.0, 1.0, -0.25] {
         let (mut g, ai, cid) = emergency();
+        g.cities.get_mut(&cid).unwrap().loyalty = 40.0;
         std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(cid, rate);
         assert!(!ai.loyalty_policy_needed(&g, 0));
         ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);

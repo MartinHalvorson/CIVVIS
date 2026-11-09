@@ -22,6 +22,9 @@ Both runs nevertheless produced the same political actions: promote Amani,
 remove Colonization and Discipline, and slot Limes and Urban Planning.
 The original binary's stamped source revision `39374cfea82c` and this task's
 base have byte-identical `src/ai/advanced/policies.rs`.
+These resumed one-shot arms do not reproduce persistent controller history;
+their complete native action lists match each other but differ from the
+original live decision.
 
 The on-arm journal put Praetorium first in the religion portfolio. Its
 ordinary replacement rule protected every wanted card, including Merchant
