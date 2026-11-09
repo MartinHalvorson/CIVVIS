@@ -749,8 +749,12 @@ fn foreign_ministry_halves_levies_and_buffs_city_state_units() {
     assert_eq!(game.units[&warrior].levied_from, None);
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 27.0);
 
-    // The +4 is the Suzerain's: without one the unit fights at its own strength.
-    game.players[0].envoys.clear();
+    // Take the Ministry away and the Suzerain's +4 goes with it.
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .retain(|building| building != "foreign_ministry");
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 23.0);
 }
 
