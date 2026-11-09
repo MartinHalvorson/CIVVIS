@@ -14,6 +14,7 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -2765,6 +2766,193 @@ class TheRowCarriesTheSpaceRace(unittest.TestCase):
         self.assertIn("**launch_mark_columns(summary)", ladder)
         self.assertEqual(play.count('summary["launch_marks"] = launches'), 2)
         self.assertIn('partial["launch_marks"] = launches', play)
+
+
+class TheProgressMarksGradeAGameWithoutAWin(unittest.TestCase):
+    """At a 1% win rate wins cannot tell a good change from a bad one, so every
+    row carries the economy, the religious race and what we have conquered.
+    All of it already crosses the bridge on every `state` board."""
+
+    @staticmethod
+    def _events(path: Path, records: list[dict]) -> Path:
+        path.write_text("".join(json.dumps(r) + "\n" for r in records),
+                        encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _board(turn: int, frame: int = 0, **extra) -> dict:
+        board = {
+            "kind": "state", "turn": turn, "frame": frame,
+            "science": 40.26, "trade_capacity": 2,
+            "trade_routes": [{"trader": 1}],
+            "public_stats": {"population": 30, "production": 61.04},
+            "cities_following_religion": 4,
+            "cities": [{"name": "Rome", "original_owner": 0}],
+            "rivals": [],
+        }
+        board.update(extra)
+        return board
+
+    def _read(self, read, records: list[dict]):
+        with TemporaryDirectory() as tmp:
+            return read(self._events(Path(tmp) / "events.jsonl", records))
+
+    def test_each_mark_reads_its_first_frame_and_the_best_of_each_rival_field(self):
+        rivals = [
+            {"science": 90.04, "public_stats": {
+                "city_count": 5, "population": 20, "production": 300.0}},
+            # Most cities, least science: the bests come from different rivals.
+            {"science": 12.0, "public_stats": {
+                "city_count": 9, "population": 50, "production": 80.0},
+             # What we have SEEN of it, which must not be read as its size.
+             "cities": [{"name": "Only one we saw"}]},
+        ]
+        marks = self._read(civ6_ladder.economy_marks, [
+            self._board(50, rivals=rivals),
+            self._board(50, frame=1, science=999.0, rivals=rivals),
+        ])
+        self.assertEqual(set(marks), {"50"})
+        self.assertEqual(marks["50"], {
+            "cities": 1, "population": 30, "science": 40.3, "production": 61.0,
+            "districts": 0, "campuses": 0, "trade_routes": 1, "trade_capacity": 2,
+            "rival_cities": 9, "rival_population": 50,
+            "rival_science": 90.0, "rival_production": 300.0,
+        })
+
+    def test_only_finished_specialty_districts_count(self):
+        cities = [{"districts": [
+            {"type": "DISTRICT_CITY_CENTER", "complete": True},
+            {"type": "DISTRICT_WONDER", "complete": True},
+            {"type": "DISTRICT_CAMPUS", "complete": True},
+            {"type": "DISTRICT_SEOWON", "complete": True},
+            {"type": "DISTRICT_HOLY_SITE", "complete": True},
+            {"type": "DISTRICT_CAMPUS", "complete": False},
+        ]}]
+        mark = self._read(civ6_ladder.economy_marks,
+                          [self._board(75, cities=cities)])["75"]
+        self.assertEqual((mark["districts"], mark["campuses"]), (3, 2))
+
+    def test_a_continuation_opening_past_a_mark_does_not_report_it(self):
+        """A `-contN` segment's first board at t137 is not the empire at t50."""
+        marks = self._read(civ6_ladder.economy_marks, [
+            self._board(137), self._board(150)])
+        self.assertEqual(set(marks), {"150"})
+
+    def test_a_frame_missing_on_the_mark_reads_the_next_one(self):
+        self.assertEqual(set(self._read(civ6_ladder.economy_marks, [
+            self._board(49), self._board(52)])), {"50"})
+        self.assertEqual(set(self._read(civ6_ladder.economy_marks, [
+            self._board(49), self._board(53)])), set())
+
+    def test_an_unreadable_figure_is_unknown_and_never_negative(self):
+        mark = self._read(civ6_ladder.economy_marks, [self._board(
+            50, science=-1, trade_capacity=-1,
+            public_stats={"population": -1, "production": -1},
+            trade_routes=None,
+            rivals=[{"science": -1, "public_stats": {"city_count": -1}}])])["50"]
+        for field in ("population", "science", "production", "trade_routes",
+                      "trade_capacity", "rival_cities", "rival_science",
+                      "rival_population", "rival_production"):
+            self.assertIsNone(mark[field], field)
+
+    def test_silence_without_the_export(self):
+        bare = {"kind": "state", "turn": 50}
+        self.assertIsNone(self._read(civ6_ladder.economy_marks, [bare]))
+        self.assertIsNone(self._read(civ6_ladder.religion_marks, [bare]))
+        self.assertIsNone(self._read(civ6_ladder.conquest_marks, [bare]))
+
+    def test_the_religious_race_counts_majorities_and_dates_the_founding(self):
+        ours = "RELIGION_BUDDHISM"
+        rivals = [{"player": 1, "religion": ours},
+                  {"player": 2, "religion": "RELIGION_ISLAM"},
+                  {"player": 3}]
+        def verified(turn, verb="SPREAD_RELIGION"):
+            return {"kind": "order_verified", "turn": turn, "verb": verb}
+        marks = self._read(civ6_ladder.religion_marks, [
+            self._board(1),
+            self._board(18, founded_religion=ours),
+            verified(50), verified(51), verified(100), verified(101), verified(151),
+            verified(60, verb="MOVE_TO"),
+            {"kind": "order_failed", "turn": 60, "verb": "SPREAD_RELIGION"},
+            self._board(100, founded_religion=ours, rivals=rivals,
+                        cities_following_religion=7),
+            self._board(160, founded_religion=ours, rivals=rivals[:2],
+                        cities_following_religion=9),
+        ])
+        self.assertEqual(marks["religion"], ours)
+        self.assertEqual(marks["founded_turn"], 18)
+        self.assertEqual(marks["spreads"],
+                         {"1-50": 1, "51-100": 2, "101-150": 1, "151+": 1})
+        self.assertEqual(marks["at"], {"100": {
+            "turn": 100, "rivals": 3, "converted": 1, "cities_following": 7}})
+        self.assertEqual(marks["last"], {
+            "turn": 160, "rivals": 2, "converted": 1, "cities_following": 9})
+
+    def test_no_religion_converts_nobody(self):
+        marks = self._read(civ6_ladder.religion_marks, [
+            self._board(100, rivals=[{"player": 1}])])
+        self.assertIsNone(marks["religion"])
+        self.assertEqual(marks["at"]["100"]["converted"], 0)
+
+    def test_a_continuation_cannot_date_a_founding_it_opened_after(self):
+        marks = self._read(civ6_ladder.religion_marks, [
+            self._board(112, founded_religion="RELIGION_BUDDHISM")])
+        self.assertEqual(marks["religion"], "RELIGION_BUDDHISM")
+        self.assertIsNone(marks["founded_turn"])
+
+    def test_conquest_counts_only_a_major_s_capital_as_a_capital(self):
+        cities = [
+            {"name": "Rome", "original_owner": 0, "original_capital": True},
+            {"name": "Babylon", "original_owner": 1, "original_capital": True},
+            {"name": "Rapiqum", "original_owner": 1, "original_capital": False},
+            {"name": "Hunza", "original_owner": 10, "original_capital": True},
+        ]
+        marks = self._read(civ6_ladder.conquest_marks, [
+            {"kind": "seat", "local_player": 0},
+            self._board(100, cities=cities[:1], rivals=[{"player": 1}]),
+            self._board(150, cities=cities, rivals=[{"player": 1}],
+                        minors=[{"player": 10}]),
+        ])
+        self.assertEqual(marks["at"]["100"],
+                         {"turn": 100, "capitals": 0, "cities": 0})
+        self.assertEqual(marks["at"]["150"],
+                         {"turn": 150, "capitals": 1, "cities": 3})
+        self.assertEqual(marks["last"], marks["at"]["150"])
+
+    def test_conquest_needs_to_know_who_we_are(self):
+        self.assertIsNone(self._read(civ6_ladder.conquest_marks, [self._board(100)]))
+
+    def test_a_reading_that_fails_costs_only_itself(self):
+        """Every summary path calls this, and a surprise must not lose the row."""
+        def broken(_path):
+            raise KeyError("surprise")
+        with patch.object(civ6_ladder, "PROGRESS_MARKS", (
+                ("economy_marks", civ6_ladder.economy_marks),
+                ("religion_marks", broken))):
+            marks = self._read(civ6_ladder.progress_marks, [self._board(50)])
+        self.assertEqual(set(marks), {"economy_marks"})
+
+    def test_the_row_carries_them_and_an_old_summary_reads_none(self):
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-s", "economy_marks": {"50": {"cities": 3}},
+            "religion_marks": {"religion": "RELIGION_X"},
+            "conquest_marks": {"at": {}},
+        })
+        self.assertEqual(entry["economy_marks"], {"50": {"cities": 3}})
+        self.assertEqual(entry["religion_marks"], {"religion": "RELIGION_X"})
+        self.assertEqual(entry["conquest_marks"], {"at": {}})
+        old = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        for field, _ in civ6_ladder.PROGRESS_MARKS:
+            self.assertIsNone(old[field], field)
+
+    def test_every_path_that_writes_a_summary_carries_them(self):
+        """Including the shutdown hook, which ends most Emperor games."""
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertEqual(play.count(
+            'summary.update(civ6_ladder.progress_marks(run_dir / "events.jsonl"))'), 2)
+        self.assertEqual(play.count(
+            'partial.update(civ6_ladder.progress_marks(run_dir / "events.jsonl"))'), 1)
 
 
 # ⚠⚠ AT THE END, AND IT HAS TO STAY THERE. This guard used to sit two thirds
