@@ -682,6 +682,7 @@ fn stranded_founder(cities: usize) -> (Game, AdvancedAi, u32) {
     }
     g.players[0].civ = "Russia".into();
     g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].techs.insert(crate::name!("pottery"));
     g.players[0].faith = 0.0;
     if cities == 2 {
         let second = g.found_city_for(0, (6, 15), None);
@@ -810,7 +811,11 @@ fn source_recovery_leaves_a_completed_pillaged_site_for_repairs() {
     for pillaged in [false, true] {
         let (mut g, ai, home) = stranded_founder(2);
         install_test_district(&mut g, home, "lavra");
-        for pos in g.cities[&home].districts[&crate::name!("lavra")].clone() {
+        for pos in g.cities[&home]
+            .districts
+            .positions(crate::name!("lavra"))
+            .to_vec()
+        {
             g.map.tiles.get_mut(&pos).unwrap().pillaged = pillaged;
         }
         let plan = recovery_plan(&ai, &g);
@@ -858,9 +863,7 @@ fn source_recovery_resumes_one_foundation_then_builds_its_shrine() {
         .get_mut(&city)
         .unwrap()
         .districts
-        .entry(district)
-        .or_default()
-        .push(pos);
+        .insert(district, pos);
     let tile = g.map.tiles.get_mut(&pos).unwrap();
     tile.district = Some(district);
     tile.district_foundation = None;
@@ -940,4 +943,45 @@ fn source_recovery_respects_a_host_refusal() {
     }
     ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
     assert_eq!(recovery_claims(&g), 0);
+}
+
+#[test]
+fn source_recovery_uses_the_host_quoted_fastest_city() {
+    let (mut g, ai, home) = stranded_founder(2);
+    let fast = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != home)
+        .unwrap();
+    for (cid, turns) in [(home, 9.0), (fast, 2.0)] {
+        let item = g
+            .producible_items(0, cid)
+            .into_iter()
+            .find(|item| {
+                matches!(item,
+            Item::District { district, .. } if *district == "lavra")
+            })
+            .unwrap();
+        std::sync::Arc::make_mut(&mut g.host_buildable)
+            .entry(cid)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(46.0),
+                    turns: Some(turns),
+                },
+            );
+    }
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert!(
+        matches!(g.cities[&fast].queue.first(), Some(Item::District { district, .. }) if *district == "lavra")
+    );
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("granary")
+        })
+    );
 }
