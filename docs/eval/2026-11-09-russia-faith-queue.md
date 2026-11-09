@@ -46,8 +46,9 @@ Civilization-specific Temple replacements must use their building family.
 Emergency military decisions and insolvency retain their current precedence.
 No new global preference or unconditional Russia pantheon choice is implied.
 
-A full-turn regression and production-hint regression must fail on the old
-code, then pass for both Shrine and Temple. Test the hint with and without
+The original regression failed on the old code: the production hint chose a
+Settler instead of the expected Shrine. The patched full-turn and hint tests
+passed in the Rust CI suite for both Shrine and Temple. The hint is tested with and without
 `hint-runs-the-claims`: religious queue correctness must not depend on that
 separate opt-in treatment. Include another victory target, the treatment off,
 a newly attacked city, a threatened city, an unavailable building, an absent
@@ -67,3 +68,25 @@ Source functions are in `src/ai/advanced.rs` and
 `PrereqDistrict="DISTRICT_HOLY_SITE"` and defines `BUILDING_TEMPLE` with
 `PrereqCivic="CIVIC_THEOLOGY"`; the policy relies on the existing full legality
 gate rather than bypassing those requirements.
+
+## Validation result
+
+The pre-change regression command was:
+`cargo test --profile ci --locked faith_economy_survives_the_full_turn_and_production_hint --lib -- --nocapture`.
+Its assertion failed with `Some(Unit { unit: "settler" })` instead of
+`Some(Building { building: "shrine" })`.
+
+The full Rust CI job in run `42637027386`, attempt 1, passed the new full-turn,
+hint, safety/scope, unique Temple, and city-isolation tests. The job's test
+runner covered 7,638 cases. The local duplicate patched build was terminated
+after this CI result to free the host's resources; no local patched-test pass
+is claimed. Rust quality, published build and paired-cost checks also passed.
+The separate Lua control-mod job timed out twice in
+`deferred_build_hint_test.lua`. Standalone Lua 5.1.5 reproduced the timeout;
+an instruction-budget diagnostic located the catch-all fixture stub's
+nonterminating `GameInfo.DistrictReplaces()` iterator. The fixture now supplies
+a terminating empty iterator because it models no unique districts. All 143
+glob-discovered mod test files passed under standalone Lua 5.1.5 after that
+fixture repair. The earlier embedded-Lua diagnostic used a hook that the
+production helper's `pcall` caught, so it was not valid evidence of a pass;
+the standalone interpreter results replace it.
