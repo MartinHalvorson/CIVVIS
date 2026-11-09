@@ -332,6 +332,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
 | `religion-seat-builds-holy-sites` | off (unmeasured) | `religion-seat-builds-holy-sites`: a Religion-target founder claims a Holy Site in each idle city without one. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
+| `religion-seat-earns-its-prophet` | off (unmeasured) | Opt-in gene `religion-seat-earns-its-prophet`; see `Self::religion_seat_earns_its_prophet`. | 1 \| 1 |
 | `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
 | `religion-seat-flips-the-cheapest` | off (unmeasured) | `religion-seat-flips-the-cheapest`: a Religion-target founder's spreaders go where a charge buys the most of the victory. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
