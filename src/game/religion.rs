@@ -621,6 +621,29 @@ impl Game {
         uid: u32,
         target: Pos,
     ) -> Option<(f64, f64, i32)> {
+        self.theological_exchange_reading(uid, target, false)
+    }
+
+    /// [`Self::theological_exchange_preview`] with the strength a live host
+    /// adds to a theological fight beyond [`Self::theological_strength`]: each
+    /// side's difficulty bonus and its visibility edge over the other. The
+    /// host's own preview of 75 religious strikes on 2026-11-09 named "+4
+    /// Combat Strength bonus due to difficulty" on 68 defenders and "+3" or
+    /// "+6 Intel on opponent's movements" on 55.
+    pub(crate) fn theological_exchange_with_host_edge(
+        &self,
+        uid: u32,
+        target: Pos,
+    ) -> Option<(f64, f64, i32)> {
+        self.theological_exchange_reading(uid, target, true)
+    }
+
+    fn theological_exchange_reading(
+        &self,
+        uid: u32,
+        target: Pos,
+        host_edge: bool,
+    ) -> Option<(f64, f64, i32)> {
         let attacker = self.units.get(&uid)?;
         let attacker_religion = attacker.religion.clone()?;
         let defender_id = self.units_at(target).into_iter().find(|other_id| {
@@ -634,14 +657,23 @@ impl Game {
         })?;
         let defender = &self.units[&defender_id];
         let defender_religion = defender.religion.clone()?;
+        let edge = |owner: usize, opponent: usize| {
+            if host_edge {
+                self.handicap_combat_strength(owner) + self.visibility_combat_bonus(owner, opponent)
+            } else {
+                0.0
+            }
+        };
         let att = effective_strength(
             self.theological_strength(attacker)
-                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion),
+                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion)
+                + edge(attacker.owner, defender.owner),
             attacker.hp,
         );
         let def = effective_strength(
             self.theological_strength(defender)
-                + self.religious_alliance_combat_bonus(defender.owner, &attacker_religion),
+                + self.religious_alliance_combat_bonus(defender.owner, &attacker_religion)
+                + edge(defender.owner, attacker.owner),
             defender.hp,
         );
         Some((

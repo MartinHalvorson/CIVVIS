@@ -320,9 +320,11 @@ check("…with how long since our turn ended", has(stall, '"waited":30.1'), true
 check("…and which views were up", has(stall, '"visible":["DiplomacyActionView"]'), true)
 check("…and the core's own busy flag", has(stall, '"core_busy":false'), true)
 check("…and every UI event lock still held, by context", has(stall, '"ctx":"WonderBuiltPopup","id":7'), true)
+check("…with a record behind it, or the game never writes it to the log", #events("ai_phase_stall_flush"), 1)
 now = 70.0
 check("once per turn", queue.checkAiPhaseStall(), false)
 check("…one event", #events("ai_phase_stall"), 1)
+check("…one record behind it", #events("ai_phase_stall_flush"), 1)
 turnNow = 9
 now = 90.0
 check("a turn that advanced is never a stall", queue.checkAiPhaseStall(), false)

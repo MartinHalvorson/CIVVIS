@@ -124,6 +124,15 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// Opt-in gene `russia-settles-the-tundra`; see
+        /// `advanced/russia_tundra.rs`.
+        russia_settles_the_tundra => enable_russia_settles_the_tundra, disable_russia_settles_the_tundra;
+        /// Opt-in gene `religion-seat-first-shrine`; see
+        /// `advanced/religion_seat_first_shrine.rs`.
+        religion_seat_first_shrine => enable_religion_seat_first_shrine, disable_religion_seat_first_shrine;
+        /// Opt-in gene `religion-seat-guards-the-race`; see
+        /// `advanced/religion_seat_guards_the_race.rs`.
+        religion_seat_guards_the_race => enable_religion_seat_guards_the_race, disable_religion_seat_guards_the_race;
         /// Opt-in gene `religion-seat-earns-its-prophet`; see
         /// [`Self::religion_seat_earns_its_prophet`].
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
@@ -147,6 +156,9 @@ impl AdvancedAi {
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
+        /// Opt-in gene `theology-fights-count-the-host-edge`; see
+        /// `advanced/theology_fights.rs`.
+        theology_fights_count_the_host_edge => enable_theology_fights_count_the_host_edge, disable_theology_fights_count_the_host_edge;
     }
 
     toggles! {

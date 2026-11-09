@@ -121,7 +121,13 @@ impl AdvancedAi {
             candidates.push(SettlementWorkTile {
                 pos: work,
                 ring: g.wdist(pos, work),
-                yields: self.site_work_yields(g, work, tile),
+                yields: {
+                    let mut paid = self.site_work_yields(g, work, tile);
+                    // `russia-settles-the-tundra`: zero with the gene off and
+                    // for any other civilization.
+                    paid.add(self.mother_russia_tile_yields(g, pid, tile));
+                    paid
+                },
                 resource_value,
             });
         }

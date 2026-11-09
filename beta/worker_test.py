@@ -130,14 +130,30 @@ globalThis.fetch = async (resource, init) => {
   return realFetch(resource, init);
 };
 
-window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides }) => {
+// A deployment that holds `.br` copies: those are real files, anything else is
+// the same stand-in as above.
+const compressedEnv = {
+  ASSETS: {
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      return new Response("asset:" + path, {
+        status: 200,
+        headers: { "Content-Type": path.endsWith(".br") ? "application/octet-stream" : "text/html" },
+      });
+    },
+  },
+};
+
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
   if (json !== undefined) init.body = JSON.stringify(json);
   if (cookie) init.headers = { Cookie: cookie };
+  const request = new Request("https://civvis.ai" + path, init);
+  if (accepts) Object.defineProperty(request, "cf", { value: { clientAcceptEncoding: accepts } });
   const response = await worker.fetch(
-    new Request("https://civvis.ai" + path, init),
-    { ...env, ...(overrides || {}) },
+    request,
+    { ...env, ...(compressed ? compressedEnv : {}), ...(overrides || {}) },
   );
   return {
     status: response.status,
@@ -146,6 +162,8 @@ window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides }
     contentType: response.headers.get("Content-Type"),
     robots: response.headers.get("X-Robots-Tag"),
     cacheControl: response.headers.get("Cache-Control"),
+    contentEncoding: response.headers.get("Content-Encoding"),
+    vary: response.headers.get("Vary"),
     body: await response.text(),
   };
 };
@@ -296,6 +314,47 @@ def main(argv: list[str] | None = None) -> int:
         off = hit(path="/", env={"ROOT_REDIRECT": "off"})
         check(problems, "ROOT_REDIRECT=off still serves the site",
               off["status"] == 200 and off["body"].strip() == "asset:/")
+
+        print("==> the engine and renderer are served at maximum compression")
+        engine = hit(path="/test/civvis.wasm?v=abc", accepts="gzip, br", compressed=True)
+        check(problems, "the engine is served from its .br copy",
+              engine["body"] == "asset:/test/civvis.wasm.br" and engine["contentEncoding"] == "br",
+              f"got {engine['body']!r} {engine['contentEncoding']!r}")
+        check(problems, "the compressed engine is still application/wasm",
+              engine["contentType"] == "application/wasm", f"got {engine['contentType']!r}")
+        check(problems, "the compressed engine stays immutable",
+              "immutable" in (engine["cacheControl"] or ""), f"got {engine['cacheControl']!r}")
+        check(problems, "the copy says it varies by encoding",
+              engine["vary"] == "Accept-Encoding", f"got {engine['vary']!r}")
+        lane = hit(path="/test/assets/app.js?v=abc", accepts="br", compressed=True)
+        check(problems, "the test lane has its own copy",
+              lane["body"] == "asset:/test/assets/app.js.br" and lane["contentEncoding"] == "br"
+              and "javascript" in (lane["contentType"] or ""),
+              f"got {lane['body']!r} {lane['contentEncoding']!r} {lane['contentType']!r}")
+        plain = hit(path="/test/civvis.wasm?v=abc", accepts="gzip", compressed=True)
+        check(problems, "a browser without brotli gets the plain file",
+              plain["body"] == "asset:/test/civvis.wasm" and plain["contentEncoding"] is None,
+              f"got {plain['body']!r} {plain['contentEncoding']!r}")
+        missing = hit(path="/test/civvis.wasm?v=abc", accepts="br")
+        check(problems, "a build with no copies falls back to the plain file",
+              missing["body"] == "asset:/test/civvis.wasm" and missing["contentEncoding"] is None,
+              f"got {missing['body']!r} {missing['contentEncoding']!r}")
+        other = hit(path="/test/assets/app_setup.js?v=abc", accepts="br", compressed=True)
+        check(problems, "only the named files look for a copy",
+              other["body"] == "asset:/test/assets/app_setup.js", f"got {other['body']!r}")
+        root = hit(path="/civvis.wasm?v=abc", accepts="br", compressed=True)
+        check(problems, "the front page serves its own copy",
+              root["body"] == "asset:/civvis.wasm.br" and root["contentEncoding"] == "br"
+              and root["contentType"] == "application/wasm",
+              f"got {root['body']!r} {root['contentEncoding']!r} {root['contentType']!r}")
+        renderer = hit(path="/assets/app.js?v=abc", accepts="br", compressed=True)
+        check(problems, "and its renderer",
+              renderer["body"] == "asset:/assets/app.js.br" and renderer["contentEncoding"] == "br",
+              f"got {renderer['body']!r} {renderer['contentEncoding']!r}")
+        nested = hit(path="/home/civvis.wasm", accepts="br", compressed=True)
+        check(problems, "a like-named file elsewhere looks for no copy",
+              nested["body"] == "asset:/home/civvis.wasm" and nested["contentEncoding"] is None,
+              f"got {nested['body']!r}")
 
         print("==> the pages that are meant to be public are public")
         # /home is a real directory now; the worker just passes it through and

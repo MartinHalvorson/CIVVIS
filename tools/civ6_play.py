@@ -824,6 +824,162 @@ def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
     }
 
 
+# ★ OPERATOR 2026-11-09: "if we are targeting a religious victory, we should
+# also restart if we lose our own religion as a religious victory will not
+# happen then."
+#
+# Our religion is lost when no city anywhere follows it. The host's count covers
+# foreign cities too (`cities_following_religion`, GetNumCitiesFollowingReligion),
+# and with no following city we cannot buy another Missionary or Apostle of it.
+# It only counts as lost after we have seen a follower, so the founding turn
+# cannot trip it, and only after three game turns running, so one city flipping
+# back and forth cannot. Applies to a seat whose target is the religious victory.
+# On with CIVVIS_RESTART_ON_RELIGION_LOST=1 in the verification policy.
+RELIGION_LOST_POLICY_KEY = "CIVVIS_RESTART_ON_RELIGION_LOST"
+RELIGION_LOST_TURNS = 3
+
+
+def religion_lost_policy(path: Path | None = None) -> bool:
+    """Whether the policy turns the lost-religion restart on."""
+    return read_policy_value(RELIGION_LOST_POLICY_KEY, path) == "1"
+
+
+def religion_lost_reading(state: dict, event: dict) -> dict | None:
+    """Fold one record into the religion watch; a verdict once the loss holds."""
+    if event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    religion = event.get("founded_religion")
+    followers = event.get("cities_following_religion")
+    if (not isinstance(turn, int) or isinstance(turn, bool) or not religion
+            or not isinstance(followers, int) or isinstance(followers, bool)):
+        return None
+    if followers > 0:
+        state["religion_followed"] = True
+        state.pop("religion_lost_since", None)
+        return None
+    if not state.get("religion_followed"):
+        return None
+    since = state.setdefault("religion_lost_since", turn)
+    if turn - since + 1 < RELIGION_LOST_TURNS:
+        return None
+    return {
+        "rule": "religion_lost",
+        "turn": turn,
+        "lost_turn": since,
+        "religion": religion,
+        "fires": True,
+    }
+
+
+# ★ OPERATOR 2026-11-09: "if we are targeting a religious victory and don't
+# found a religion, we should restart too". Same switch as the lost religion.
+#
+# We can no longer found one once the host reports the Prophet class exhausted
+# and no Prophet of ours is pending. The class can read exhausted while a
+# Prophet we already earned walks to its Holy Site (founded two turns later in
+# civvis-20261109T022744Z), which is what `prophet_pending` covers; a record
+# without that field says nothing. Held for the same three turns running.
+PROPHET_CLASS = "GREAT_PERSON_CLASS_PROPHET"
+
+
+def religion_never_founded_reading(state: dict, event: dict) -> dict | None:
+    """Fold one record into the founding watch; a verdict once founding is closed."""
+    if event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    exhausted = event.get("great_person_exhausted")
+    # `founded_religion` is absent until we found one; `founded_religions`, the
+    # whole world's list, is what shows the record carries religion data at all.
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(event.get("founded_religions"), list)
+            or not isinstance(exhausted, list)):
+        return None
+    if (event.get("founded_religion") or event.get("prophet_pending") is not False
+            or PROPHET_CLASS not in exhausted):
+        state.pop("no_religion_since", None)
+        return None
+    since = state.setdefault("no_religion_since", turn)
+    if turn - since + 1 < RELIGION_LOST_TURNS:
+        return None
+    return {
+        "rule": "religion_never_founded",
+        "turn": turn,
+        "lost_turn": since,
+        "fires": True,
+    }
+
+
+# ★ OPERATOR 2026-11-09: "we should restart if we ever have 8 or more less
+# cities than someone".
+#
+# Each agent `state` record carries our `public_stats.city_count` and each met
+# rival's, which is that rival's whole empire, seen or not. A civilization we
+# have not met is not in `rivals`, so it cannot trigger this. "Ever" is why one
+# reading fires: no turn floor, no run of turns, no race-lead spare. A failed
+# read is -1 and says nothing. On with CIVVIS_RESTART_CITY_DEFICIT=8 in the
+# verification policy; 0 or absent is off.
+#
+# Replayed on the 74 games retained on 2026-11-09: it fires in 38, at a median
+# of turn 138. None of the 74 was a win, so the replay cannot say what the rule
+# would have done to a winning game.
+CITY_DEFICIT_POLICY_KEY = "CIVVIS_RESTART_CITY_DEFICIT"
+
+
+def parse_city_deficit(value: str | None) -> int:
+    """How many cities behind a rival retires the game, from `8`; 0 = off."""
+    if value is None or value == "":
+        return 0
+    try:
+        deficit = int(value)
+    except ValueError:
+        deficit = -1
+    if deficit < 0:
+        print(f"[policy] ignoring {CITY_DEFICIT_POLICY_KEY}={value!r}: "
+              "not a count of cities such as 8", flush=True)
+        return 0
+    return deficit
+
+
+def city_deficit_policy(path: Path | None = None) -> int:
+    """The policy's city deficit; 0 (off) when unset or invalid."""
+    return parse_city_deficit(read_policy_value(CITY_DEFICIT_POLICY_KEY, path))
+
+
+def _city_count(record: object) -> float | int | None:
+    """The `public_stats.city_count` of a state record or rival; None when unread."""
+    stats = record.get("public_stats") if isinstance(record, dict) else None
+    return _nonnegative_metric(stats.get("city_count")) if isinstance(stats, dict) else None
+
+
+def city_deficit_reading(event: dict, deficit: int) -> dict | None:
+    """The verdict when this agent `state` record has a met rival `deficit` cities ahead."""
+    if deficit <= 0 or event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    ours = _city_count(event)
+    rivals = event.get("rivals")
+    if (not isinstance(turn, int) or isinstance(turn, bool) or ours is None
+            or not isinstance(rivals, list)):
+        return None
+    readable = [rival for rival in rivals if _city_count(rival) is not None]
+    if not readable:
+        return None
+    leader = max(readable, key=_city_count)
+    most = _city_count(leader)
+    if most - ours < deficit:
+        return None
+    return {
+        "rule": "city_deficit",
+        "turn": turn,
+        "ours": ours,
+        "leader": leader.get("civ"),
+        "leader_cities": most,
+        "deficit": most - ours,
+        "fires": True,
+    }
+
+
 # ★ A seat that leads a victory race is not retired on Production. Live 10-31
 # (6p Continents, Diplomatic lane): civvis-20261031T015208Z-cont2 was retired
 # at turn 187 on 19 Diplomatic Victory points against the best rival's 11
@@ -5004,6 +5160,22 @@ def play(args: argparse.Namespace) -> int:
         print(f"[policy] a game that loses its capital or one of the first "
               f"{early_city_count} cities it founded is retired "
               "(operator 2026-11-04)", flush=True)
+    # Operator 2026-11-09: see `city_deficit_reading`.
+    city_deficit = getattr(args, "restart_on_city_deficit", None)
+    city_deficit = (city_deficit_policy() if city_deficit is None
+                    else parse_city_deficit(str(city_deficit)))
+    args.restart_on_city_deficit = city_deficit
+    if city_deficit > 0:
+        print(f"[policy] a game {city_deficit} or more cities behind any rival we "
+              "have met is retired (operator 2026-11-09)", flush=True)
+    # Operator 2026-11-09: see `religion_lost_reading`.
+    religion_lost = getattr(args, "restart_on_religion_lost", None)
+    religion_lost = religion_lost_policy() if religion_lost is None else bool(religion_lost)
+    args.restart_on_religion_lost = religion_lost
+    if religion_lost and getattr(args, "civvis_victory", None) == "religious":
+        print(f"[policy] a religious-victory game that cannot found a religion, or "
+              f"whose religion has no followers, for {RELIGION_LOST_TURNS} turns "
+              "running is retired (operator 2026-11-09)", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -5716,6 +5888,9 @@ def _play(args: argparse.Namespace) -> int:
     production_share_from = online_turns(production_share_from, getattr(args, "speed", None))
     production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, getattr(args, "speed", None))
     early_city_count = getattr(args, "restart_on_early_city_lost", None) or 0
+    city_deficit = getattr(args, "restart_on_city_deficit", None) or 0
+    religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
+                          and getattr(args, "civvis_victory", None) == "religious")
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -6446,6 +6621,34 @@ def _play(args: argparse.Namespace) -> int:
                       f"first {early_city_count} cities, held lost since turn "
                       f"{reading['lost_turn']}) — retiring so the next game starts "
                       "(operator 2026-11-04)", flush=True)
+                return abandon_with_retire(reading)
+        # ★ OPERATOR 2026-11-09: a religious win cannot happen without our
+        # religion. See `religion_lost_reading`.
+        if religion_lost_rule:
+            reading = religion_lost_reading(state, event)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: no city has followed "
+                      f"{reading['religion']} since turn {reading['lost_turn']} — "
+                      "retiring so the next game starts (operator 2026-11-09)",
+                      flush=True)
+                return abandon_with_retire(reading)
+            # Arabia's Last Prophet arrives after the class closes.
+            if not str(args.leader or "").startswith("LEADER_SALADIN"):
+                reading = religion_never_founded_reading(state, event)
+                if reading is not None and reading.get("fires"):
+                    print(f"[abandon] turn {reading['turn']}: no religion founded and "
+                          f"no Great Prophet left since turn {reading['lost_turn']} — "
+                          "retiring so the next game starts (operator 2026-11-09)",
+                          flush=True)
+                    return abandon_with_retire(reading)
+        # ★ OPERATOR 2026-11-09: see `city_deficit_reading`.
+        if city_deficit > 0:
+            reading = city_deficit_reading(event, city_deficit)
+            if reading is not None:
+                print(f"[abandon] turn {reading['turn']}: {reading['ours']} cities against "
+                      f"{reading['leader_cities']} for {reading['leader']}, "
+                      f"{reading['deficit']} behind — retiring so the next game starts "
+                      "(operator 2026-11-09)", flush=True)
                 return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
@@ -7361,6 +7564,17 @@ def main(argv: list[str] | None = None) -> int:
                          "first N cities it founded (0 = off); unset reads "
                          f"{EARLY_CITY_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-04)")
+    ap.add_argument("--restart-on-city-deficit", type=int, default=None,
+                    help="retire a game N or more cities behind any rival it has "
+                         "met (0 = off); unset reads "
+                         f"{CITY_DEFICIT_POLICY_KEY} from the host's verification "
+                         "policy file (operator 2026-11-09)")
+    ap.add_argument("--restart-on-religion-lost", type=int, default=None,
+                    help="retire a religious-victory game once it cannot found a "
+                         "religion or no city follows the one it founded "
+                         "(1 = on, 0 = off); unset reads "
+                         f"{RELIGION_LOST_POLICY_KEY} from the host's verification "
+                         "policy file (operator 2026-11-09)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")

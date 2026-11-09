@@ -540,3 +540,502 @@ fn the_race_takes_a_busy_queue_for_its_holy_site() {
     assert_eq!(site(false), None, "off: only an idle queue");
     assert!(site(true).is_some(), "on: the Settler's queue");
 }
+
+/// Native Russia 140800Z t50 chose a Shrine in the turn pass, then its
+/// production hint chose a Granary. The hint must run the same Faith claim.
+#[test]
+fn faith_economy_survives_the_full_turn_and_production_hint() {
+    for (temple, hint_claims) in [(false, false), (true, false), (false, true), (true, true)] {
+        let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+        ai.skip_opening_book();
+        ai.enable_religion_seat_builds_holy_sites();
+        if hint_claims {
+            ai.enable_hint_runs_the_claims();
+        }
+        g.players[0].techs.insert(crate::name!("astrology"));
+        g.players[0].civics.insert(crate::name!("theology"));
+        g.players[0].pantheon = Some("divine_spark".into());
+        g.players[0].faith = 0.0;
+        g.cities.get_mut(&home).unwrap().pop = 4;
+        if temple {
+            build_temple(&mut g, home, "shrine");
+        }
+        let expected = Item::Building {
+            building: crate::name::Name::new(if temple { "temple" } else { "shrine" }),
+        };
+        let mut plan = ai.assess(&g, 0);
+        plan.threatened_city = None;
+        ai.plan = Some(plan);
+        assert_eq!(
+            ai.preview_live_production(&g, 0, home),
+            Some(expected.clone()),
+            "the production hint must keep the Faith building, temple={temple}"
+        );
+        ai.take_turn(&mut g, 0);
+        assert_eq!(
+            g.cities[&home].queue.first(),
+            Some(&expected),
+            "the complete turn must keep the Faith building, temple={temple}"
+        );
+    }
+}
+
+#[test]
+fn faith_building_reservation_keeps_its_safety_and_scope_gates() {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    ai.skip_opening_book();
+    ai.enable_religion_seat_builds_holy_sites();
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].civics.insert(crate::name!("theology"));
+    let mut plan = ai.assess(&g, 0);
+    plan.threatened_city = None;
+    let shrine = Item::Building {
+        building: crate::name!("shrine"),
+    };
+    let holds = |ai: &AdvancedAi, g: &Game, plan: &StrategicPlan, item: &Item| {
+        ai.religion_seat_faith_building_reserved(g, 0, home, plan, item)
+    };
+    assert!(holds(&ai, &g, &plan, &shrine));
+    let mut off = ai.clone();
+    off.disable_religion_seat_builds_holy_sites();
+    assert!(!holds(&off, &g, &plan, &shrine));
+    let mut other_lane = AdvancedAi::targeting(VictoryTarget::Science);
+    other_lane.skip_opening_book();
+    other_lane.enable_religion_seat_builds_holy_sites();
+    assert!(!holds(&other_lane, &g, &plan, &shrine));
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(home);
+    assert!(!holds(&ai, &g, &threatened, &shrine));
+    let mut attacked = g.clone();
+    attacked.cities.get_mut(&home).unwrap().last_attacked = g.turn;
+    assert!(!holds(&ai, &attacked, &plan, &shrine));
+    let mut unavailable = g.clone();
+    unavailable.players[0]
+        .techs
+        .remove(&crate::name!("astrology"));
+    assert!(!holds(&ai, &unavailable, &plan, &shrine));
+    let mut no_site = g.clone();
+    no_site.cities.get_mut(&home).unwrap().districts.clear();
+    assert!(!holds(&ai, &no_site, &plan, &shrine));
+    let mut not_founded = g.clone();
+    not_founded.players[0].religion = None;
+    assert!(!holds(&ai, &not_founded, &plan, &shrine));
+    assert!(!holds(
+        &ai,
+        &g,
+        &plan,
+        &Item::Building {
+            building: crate::name!("granary")
+        }
+    ));
+
+    // The Prasat is a Temple family member, not a special-cased spelling.
+    g.players[0].civ = "Khmer".into();
+    build_temple(&mut g, home, "shrine");
+    let prasat = Item::Building {
+        building: crate::name!("prasat"),
+    };
+    assert!(g.can_produce(0, home, &prasat));
+    assert!(holds(&ai, &g, &plan, &prasat));
+}
+
+#[test]
+fn faith_hint_claims_only_the_requested_city() {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    let second = g.found_city_for(0, (6, 15), None);
+    install_test_district(&mut g, second, "holy_site");
+    g.cities
+        .get_mut(&second)
+        .unwrap()
+        .pressure
+        .insert("Buddhism".into(), 500.0);
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].faith = 0.0;
+    ai.skip_opening_book();
+    ai.enable_religion_seat_builds_holy_sites();
+    let mut plan = ai.assess(&g, 0);
+    plan.threatened_city = None;
+    ai.claim_religion_seat_faith_hint(&mut g, 0, &plan, second);
+    assert!(
+        g.cities[&home].queue.is_empty(),
+        "the earlier city's queue is untouched"
+    );
+    assert_eq!(
+        g.cities[&second].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("shrine")
+        })
+    );
+}
+
+fn stranded_founder(cities: usize) -> (Game, AdvancedAi, u32) {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    let sites = g
+        .cities
+        .get_mut(&home)
+        .unwrap()
+        .districts
+        .remove(crate::name!("holy_site"))
+        .unwrap();
+    for site in sites {
+        g.map.tiles.get_mut(&site).unwrap().district = None;
+    }
+    g.players[0].civ = "Russia".into();
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].techs.insert(crate::name!("pottery"));
+    g.players[0].faith = 0.0;
+    if cities == 2 {
+        let second = g.found_city_for(0, (6, 15), None);
+        g.cities
+            .get_mut(&second)
+            .unwrap()
+            .pressure
+            .insert("Buddhism".into(), 500.0);
+    }
+    for cid in g.player_city_ids(0) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pop = 4;
+        city.queue = vec![Item::Building {
+            building: crate::name!("granary"),
+        }];
+    }
+    ai.skip_opening_book();
+    ai.enable_religion_seat_builds_holy_sites();
+    (g, ai, home)
+}
+
+#[test]
+fn a_founder_recovers_a_lavra_below_three_cities() {
+    for cities in [2, 1] {
+        let (mut g, ai, _) = stranded_founder(cities);
+        let mut plan = ai.assess(&g, 0);
+        plan.threatened_city = None;
+        ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+        let sites: Vec<_> = g
+            .player_city_ids(0)
+            .into_iter()
+            .filter(|cid| {
+                matches!(g.cities[cid].queue.first(), Some(Item::District { district, .. })
+                if *district == "lavra")
+            })
+            .collect();
+        assert_eq!(
+            sites.len(),
+            1,
+            "restore one Lavra with {cities} cities, ahead of ordinary buildings"
+        );
+    }
+}
+
+fn recovery_plan(ai: &AdvancedAi, g: &Game) -> StrategicPlan {
+    let mut plan = ai.assess(g, 0);
+    plan.threatened_city = None;
+    plan
+}
+
+fn recovery_claims(g: &Game) -> usize {
+    g.player_city_ids(0)
+        .into_iter()
+        .filter(|cid| {
+            matches!(g.cities[cid].queue.first(), Some(Item::District { district, .. })
+            if g.district_family(*district) == "holy_site")
+        })
+        .count()
+}
+
+#[test]
+fn source_recovery_keeps_its_scope_and_safety_gates() {
+    let (g, ai, home) = stranded_founder(1);
+    for case in [
+        "off",
+        "opening",
+        "other target",
+        "not founded",
+        "foreign faith",
+        "threatened",
+        "attacked",
+        "no astrology",
+    ] {
+        let mut board = g.clone();
+        let mut controller = ai.clone();
+        let mut plan = recovery_plan(&controller, &board);
+        match case {
+            "off" => controller.disable_religion_seat_builds_holy_sites(),
+            "opening" => controller.base.book_pos = 0,
+            "other target" => {
+                controller = AdvancedAi::targeting(VictoryTarget::Science);
+                controller.skip_opening_book();
+                controller.enable_religion_seat_builds_holy_sites();
+            }
+            "not founded" => board.players[0].religion = None,
+            "foreign faith" => {
+                let c = board.cities.get_mut(&home).unwrap();
+                c.pressure.clear();
+                c.pressure.insert("Hinduism".into(), 1000.0);
+            }
+            "threatened" => plan.threatened_city = Some(home),
+            "attacked" => board.cities.get_mut(&home).unwrap().last_attacked = board.turn,
+            "no astrology" => {
+                board.players[0].techs.remove(&crate::name!("astrology"));
+            }
+            _ => unreachable!(),
+        }
+        controller.claim_religion_seat_faith_economy(&mut board, 0, &plan);
+        assert_eq!(recovery_claims(&board), 0, "{case}");
+    }
+}
+
+#[test]
+fn source_recovery_does_not_replace_units_walls_or_repairs() {
+    let (g, ai, home) = stranded_founder(1);
+    let plan = recovery_plan(&ai, &g);
+    for item in [
+        Item::Unit {
+            unit: crate::name!("warrior"),
+        },
+        Item::Building {
+            building: crate::name!("walls"),
+        },
+        Item::Repair {
+            repair: crate::name!("district"),
+            pos: (6, 8),
+        },
+        Item::Project {
+            project: crate::name!("repair_outer_defenses"),
+        },
+        Item::Project {
+            project: crate::name!("repair_encampment"),
+        },
+    ] {
+        let mut board = g.clone();
+        board.cities.get_mut(&home).unwrap().queue = vec![item.clone()];
+        ai.claim_religion_seat_faith_economy(&mut board, 0, &plan);
+        assert_eq!(board.cities[&home].queue.first(), Some(&item));
+    }
+}
+
+#[test]
+fn source_recovery_leaves_a_completed_pillaged_site_for_repairs() {
+    for pillaged in [false, true] {
+        let (mut g, ai, home) = stranded_founder(2);
+        install_test_district(&mut g, home, "lavra");
+        for pos in g.cities[&home]
+            .districts
+            .positions(crate::name!("lavra"))
+            .to_vec()
+        {
+            g.map.tiles.get_mut(&pos).unwrap().pillaged = pillaged;
+        }
+        let plan = recovery_plan(&ai, &g);
+        ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+        assert_eq!(
+            recovery_claims(&g),
+            0,
+            "pillaged={pillaged}: the remaining site is not lost"
+        );
+    }
+}
+
+#[test]
+fn source_recovery_resumes_one_foundation_then_builds_its_shrine() {
+    let (mut g, ai, _) = stranded_founder(2);
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    let city = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| matches!(g.cities[cid].queue.first(), Some(Item::District { .. })))
+        .unwrap();
+    let item = g.cities[&city].queue[0].clone();
+    let Item::District { district, pos } = item.clone() else {
+        unreachable!()
+    };
+    assert!(g.map.tiles[&pos].district_foundation.is_some());
+    g.apply(
+        0,
+        &Action::Produce {
+            city,
+            item: Item::Building {
+                building: crate::name!("granary"),
+            },
+        },
+    )
+    .unwrap();
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(g.cities[&city].queue.first(), Some(&item));
+    assert_eq!(recovery_claims(&g), 1);
+    assert!(ai.religion_seat_recovery_site_reserved(&g, 0, city, &plan, &item));
+    // Observe the district's completion, as a new native export would.
+    g.cities.get_mut(&city).unwrap().queue.clear();
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(district, pos);
+    let tile = g.map.tiles.get_mut(&pos).unwrap();
+    tile.district = Some(district);
+    tile.district_foundation = None;
+    assert!(!ai.religion_seat_recovery_site_reserved(&g, 0, city, &plan, &item));
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(
+        g.cities[&city].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("shrine")
+        })
+    );
+}
+
+#[test]
+fn source_recovery_survives_complete_turns_and_requested_city_hints() {
+    for delegated in [false, true] {
+        for hints in [false, true] {
+            let (mut g, mut ai, home) = stranded_founder(2);
+            if delegated {
+                ai.enable_lane_delegates_production_2();
+            }
+            if hints {
+                ai.enable_hint_runs_the_claims();
+            }
+            ai.enable_granary_claims_the_bound_queue();
+            let target = g
+                .player_city_ids(0)
+                .into_iter()
+                .find(|cid| *cid != home)
+                .unwrap();
+            ai.plan = Some(recovery_plan(&ai, &g));
+            assert!(matches!(ai.preview_live_production(&g, 0, target),
+                Some(Item::District { district, .. }) if district == "lavra"));
+            assert_eq!(
+                recovery_claims(&g),
+                0,
+                "preview does not mutate the native board"
+            );
+            ai.take_turn(&mut g, 0);
+            assert!(
+                recovery_claims(&g) >= 1,
+                "delegated={delegated}, hints={hints}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_recovery_uses_a_legal_one_citizen_slot() {
+    let (mut g, ai, home) = stranded_founder(1);
+    g.cities.get_mut(&home).unwrap().pop = 1;
+    let plan = recovery_plan(&ai, &g);
+    assert!(g.producible_items(0, home).iter().any(|item| matches!(item,
+        Item::District { district, .. } if *district == "lavra")));
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(recovery_claims(&g), 1);
+}
+
+#[test]
+fn source_recovery_respects_a_host_refusal() {
+    let (mut g, ai, home) = stranded_founder(1);
+    let plan = recovery_plan(&ai, &g);
+    let sites: Vec<_> = g
+        .producible_items(0, home)
+        .into_iter()
+        .filter(|item| {
+            matches!(item,
+        Item::District { district, .. } if *district == "lavra")
+        })
+        .collect();
+    assert!(!sites.is_empty());
+    for site in sites {
+        std::sync::Arc::make_mut(&mut g.blocked_production)
+            .entry(home)
+            .or_default()
+            .insert(Game::production_block_key(&site));
+    }
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(recovery_claims(&g), 0);
+}
+
+#[test]
+fn source_recovery_uses_the_host_quoted_fastest_city() {
+    let (mut g, ai, home) = stranded_founder(2);
+    let fast = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != home)
+        .unwrap();
+    for (cid, turns) in [(home, 9.0), (fast, 2.0)] {
+        let item = g
+            .producible_items(0, cid)
+            .into_iter()
+            .find(|item| {
+                matches!(item,
+            Item::District { district, .. } if *district == "lavra")
+            })
+            .unwrap();
+        std::sync::Arc::make_mut(&mut g.host_buildable)
+            .entry(cid)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(46.0),
+                    turns: Some(turns),
+                },
+            );
+    }
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert!(
+        matches!(g.cities[&fast].queue.first(), Some(Item::District { district, .. }) if *district == "lavra")
+    );
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("granary")
+        })
+    );
+}
+
+#[test]
+fn source_recovery_can_defer_an_ordinary_project() {
+    let (mut g, ai, home) = stranded_founder(1);
+    install_test_district(&mut g, home, "campus");
+    let project = Item::Project {
+        project: crate::name!("campus_research_grants"),
+    };
+    assert!(g.can_produce(0, home, &project));
+    g.cities.get_mut(&home).unwrap().queue = vec![project];
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    assert_eq!(recovery_claims(&g), 1);
+}
+
+#[test]
+fn source_recovery_does_not_freeze_behind_a_threatened_foundation() {
+    let (mut g, ai, _) = stranded_founder(2);
+    let plan = recovery_plan(&ai, &g);
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &plan);
+    let held = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| matches!(g.cities[cid].queue.first(), Some(Item::District { .. })))
+        .unwrap();
+    let safe = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != held)
+        .unwrap();
+    let mut threatened = plan;
+    threatened.threatened_city = Some(held);
+    g.cities.get_mut(&held).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+    ai.claim_religion_seat_faith_economy(&mut g, 0, &threatened);
+    assert_eq!(
+        g.cities[&held].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("warrior")
+        })
+    );
+    assert!(
+        matches!(g.cities[&safe].queue.first(), Some(Item::District { district, .. }) if *district == "lavra")
+    );
+}
