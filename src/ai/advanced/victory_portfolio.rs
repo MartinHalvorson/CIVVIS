@@ -44,10 +44,10 @@ impl YieldGrowth {
     const FLAT: Self = Self::uniform(0.0);
 
     /// What a published clock assumes, deliberately short of what recorded
-    /// games did so that a clock errs late. Across 52 finished Deity host games
+    /// games did so that a clock errs late. Across 66 audited Deity host games
     /// science and production rose with a power of about 1.7 of the turn, with
-    /// a quarter of seats under 1.1, and flights took about half of
-    /// distance over launch speed.
+    /// a quarter of seats under 1.1. In 43 Science wins, flights in progress
+    /// took about 0.63 of distance over current speed.
     ///
     /// Faith has no curve. A Religious clock is bound by the conversions still
     /// to make, and it already reads short of simulated Religious wins before
