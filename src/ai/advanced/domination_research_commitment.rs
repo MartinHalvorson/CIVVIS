@@ -1,3 +1,6 @@
+//! The research a Domination army still needs: the catch-up threshold, and
+//! the placed Campus that opens its research buildings.
+
 use super::*;
 
 impl AdvancedAi {

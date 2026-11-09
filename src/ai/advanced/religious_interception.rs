@@ -1,3 +1,7 @@
+//! Opening a war to condemn a rival spreader at home: the power it needs, the
+//! match-point exception, and the peace that follows once the threat has
+//! gone.
+
 use super::*;
 
 pub(super) fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Vec<u32> {

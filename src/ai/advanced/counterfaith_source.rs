@@ -1,3 +1,7 @@
+//! When conversion closes a seat's last source of its defensive faith, the
+//! remaining spreaders reopen recruitment before spending themselves on
+//! ordinary targets.
+
 use super::*;
 
 impl AdvancedAi {
