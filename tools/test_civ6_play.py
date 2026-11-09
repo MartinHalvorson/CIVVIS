@@ -1528,6 +1528,8 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_roster_resolves_requested_leader_to_rendered_name(self) -> None:
         self.assertEqual(civ6_play.leader_display_name("LEADER_JADWIGA"), "Jadwiga")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_JAYAVARMAN"),
+                         "Jayavarman VII")
 
     @needs_pillow
     def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:
