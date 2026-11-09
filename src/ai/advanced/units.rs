@@ -440,6 +440,12 @@ impl AdvancedAi {
             return self.advanced_missionary_step(g, pid, uid, offensive);
         }
 
+        // `guru-walks-to-the-wounded`: a Guru cannot start a fight, so it goes
+        // to its patients instead of at the nearest rival.
+        if let Some(target) = self.guru_walk_target(g, pid, uid) {
+            return self.religious_step_toward_range(g, pid, uid, target, 1);
+        }
+
         let target = g
             .units
             .values()
