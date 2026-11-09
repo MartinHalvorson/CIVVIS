@@ -52,7 +52,9 @@ fn corps_budget(delegated: bool, enabled: bool) -> (Game, AdvancedAi) {
     let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
     build_temple(&mut g, home, "shrine");
     build_temple(&mut g, home, "temple");
+    g.players[0].techs.insert(crate::name!("astrology"));
     g.players[0].civics.insert(crate::name!("theology"));
+    g.players[0].pantheon = Some("divine_spark".into());
     g.players[0].faith = 300.0;
     ai.enable_engine_faith_price();
     ai.enable_religion_lane_spreads_from_founding();
@@ -74,6 +76,14 @@ fn corps_budget(delegated: bool, enabled: bool) -> (Game, AdvancedAi) {
     (g, ai)
 }
 
+fn bought_corps_unit(g: &Game, kind: &str) -> bool {
+    g.log.since(0).any(|(pid, action)| {
+        *pid == 0
+            && matches!(action, Action::Buy { unit, currency, .. }
+                if unit == kind && currency == "faith")
+    })
+}
+
 /// Both routine city dispatches run after the Apostle buyer. On the recorded
 /// t179 native board the latter saved, then the former bought a Missionary.
 #[test]
@@ -81,18 +91,12 @@ fn the_complete_turn_keeps_the_apostle_bank_in_both_city_dispatches() {
     for delegated in [false, true] {
         let (mut off, mut control) = corps_budget(delegated, false);
         crate::ai::Ai::take_turn(&mut control, &mut off, 0);
-        assert!(off
-            .units
-            .values()
-            .any(|u| u.owner == 0 && u.kind == "missionary"));
+        assert!(bought_corps_unit(&off, "missionary"));
 
         let (mut g, mut ai) = corps_budget(delegated, true);
         crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
         assert_eq!(g.players[0].faith, 300.0, "delegated={delegated}");
-        assert!(!g
-            .units
-            .values()
-            .any(|u| u.owner == 0 && u.kind == "missionary"));
+        assert!(!bought_corps_unit(&g, "missionary"));
     }
 }
 
@@ -107,10 +111,7 @@ fn the_managed_corps_still_buys_for_a_converted_home_city() {
         .pressure
         .insert("Hinduism".into(), 500.0);
     crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
-    assert!(g
-        .units
-        .values()
-        .any(|u| u.owner == 0 && u.kind == "missionary"));
+    assert!(bought_corps_unit(&g, "missionary"));
     assert_eq!(g.players[0].faith, 100.0);
 }
 
@@ -119,10 +120,7 @@ fn the_managed_corps_spends_its_bank_when_the_apostle_is_funded() {
     let (mut g, mut ai) = corps_budget(true, true);
     g.players[0].faith = 500.0;
     crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
-    assert!(g
-        .units
-        .values()
-        .any(|u| u.owner == 0 && u.kind == "apostle"));
+    assert!(bought_corps_unit(&g, "apostle"));
     assert_eq!(g.players[0].faith, 100.0);
 }
 
