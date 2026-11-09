@@ -343,9 +343,18 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "only the named files look for a copy",
               other["body"] == "asset:/test/assets/app_setup.js", f"got {other['body']!r}")
         root = hit(path="/civvis.wasm?v=abc", accepts="br", compressed=True)
-        check(problems, "the front page keeps Cloudflare's compression until /test proves this",
-              root["body"] == "asset:/civvis.wasm" and root["contentEncoding"] is None,
-              f"got {root['body']!r} {root['contentEncoding']!r}")
+        check(problems, "the front page serves its own copy",
+              root["body"] == "asset:/civvis.wasm.br" and root["contentEncoding"] == "br"
+              and root["contentType"] == "application/wasm",
+              f"got {root['body']!r} {root['contentEncoding']!r} {root['contentType']!r}")
+        renderer = hit(path="/assets/app.js?v=abc", accepts="br", compressed=True)
+        check(problems, "and its renderer",
+              renderer["body"] == "asset:/assets/app.js.br" and renderer["contentEncoding"] == "br",
+              f"got {renderer['body']!r} {renderer['contentEncoding']!r}")
+        nested = hit(path="/home/civvis.wasm", accepts="br", compressed=True)
+        check(problems, "a like-named file elsewhere looks for no copy",
+              nested["body"] == "asset:/home/civvis.wasm" and nested["contentEncoding"] is None,
+              f"got {nested['body']!r}")
 
         print("==> the pages that are meant to be public are public")
         # /home is a real directory now; the worker just passes it through and

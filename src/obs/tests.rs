@@ -1,5 +1,65 @@
 use super::*;
 
+/// The three largest arrays of the document are built once and moved in. Named
+/// inside `json!` they are serialized a second time, element by element, which
+/// was an eighth of the worker's time on a spectated turn.
+#[test]
+fn the_state_document_moves_its_largest_arrays_in_rather_than_copying_them() {
+    let game = Game::new(2, 24, 18, 91_143, 60, 0);
+    let observed = observation_spectator(&game, 0);
+    assert_eq!(
+        observed["map"]["tiles"].as_array().map(Vec::len),
+        Some(game.map.tiles.len()),
+        "the spectator's document still carries every tile"
+    );
+    assert_eq!(
+        observed["units"].as_array().map(Vec::len),
+        Some(game.units.len()),
+        "and every unit"
+    );
+    assert!(observed["cities"].is_array(), "and the city list");
+
+    let source = include_str!("../obs.rs");
+    for assignment in [
+        "observation[\"map\"][\"tiles\"] = Value::Array(tiles);",
+        "observation[\"units\"] = Value::Array(units);",
+        "observation[\"cities\"] = Value::Array(cities);",
+    ] {
+        assert!(source.contains(assignment), "missing {assignment}");
+    }
+}
+
+/// `Session::state` holds one memo across the whole document, because a frame
+/// otherwise derives each city's yields, citizens and amenities again for the
+/// city list, the player totals and the victory forecasts: a fifth of a
+/// late-game turn. The memo may only ever save work.
+#[test]
+fn a_memo_held_across_the_document_changes_nothing_in_it() {
+    let game = Game::new(3, 32, 20, 77_001, 60, 0);
+    let plain = observation_spectator(&game, 0);
+    let memo = game.query_memo();
+    assert_eq!(observation_spectator(&game, 0), plain);
+    drop(memo);
+    assert_eq!(
+        observation_spectator(&game, 0),
+        plain,
+        "and it leaves no residue"
+    );
+
+    let server = include_str!("../server.rs");
+    let state = server
+        .split("pub fn state(&self) -> Value {")
+        .nth(1)
+        .expect("Session::state");
+    assert!(
+        state
+            .trim_start()
+            .starts_with("// A frame asks the same questions"),
+        "the memo opens before anything is derived"
+    );
+    assert!(state.contains("let _memo = self.game.query_memo();"));
+}
+
 /// Pointing at a unit is a question asked through the same fog the
 /// observation was built with, and it has to answer with the same
 /// discipline: the omniscient spectator is told everything, a seat is told

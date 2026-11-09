@@ -2640,6 +2640,10 @@ impl Session {
     }
 
     pub fn state(&self) -> Value {
+        // A frame asks the same questions of every city from several directions:
+        // the city list, each player's totals, the victory forecasts. Nothing
+        // changes while the document is built, so each is answered once.
+        let _memo = self.game.query_memo();
         if self.params.spectate {
             let g = &self.game;
             let summary_pid = self.acting_major();
