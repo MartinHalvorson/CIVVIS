@@ -415,8 +415,14 @@ fn main() {
             );
         }
     }
-    let mut forced =
-        tags(text(&args, "--with-file").and_then(|path| std::fs::read_to_string(home(&path)).ok()));
+    let mut forced = text(&args, "--with-file").map_or_else(Vec::new, |path| {
+        let path = home(&path);
+        let body = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            eprintln!("cannot read --with-file {path}: {error}");
+            std::process::exit(2);
+        });
+        tags(Some(body))
+    });
     let with = tags(text(&args, "--with"));
     for tag in with.iter().chain(tags(text(&args, "--without")).iter()) {
         if civvis::ai::gene(tag).is_none() {
