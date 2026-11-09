@@ -8538,6 +8538,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawSoloHud();
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
+  // That was a complete paint, so the animation loop's clock starts from it:
+  // otherwise animTick paints the same world again in the very same frame, and
+  // every turn costs the map twice.
+  lastIdleDraw = performance.now();
   drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
@@ -15025,9 +15029,28 @@ function planetStageCenter() {
 // it gets wrong the way old maps did — stretched sideways round the rim rather
 // than squashed flat against an edge — which is the whole reason a flat chart
 // of a round world was believable for as long as it was.
+// A frame projects some sixteen thousand points through one camera, and the
+// camera's angles only change between frames.
+const PLANET_PROJECT_TRIG = {latitude:NaN, longitude:NaN, roll:NaN,
+                             cosLat:1, sinLat:0, cosLon:1, sinLon:0, cosRoll:1, sinRoll:0};
+function planetProjectTrig(camera) {
+  const trig = PLANET_PROJECT_TRIG, roll = camera.roll || 0;
+  if (trig.latitude !== camera.latitude) {
+    trig.latitude = camera.latitude;
+    trig.cosLat = Math.cos(camera.latitude); trig.sinLat = Math.sin(camera.latitude);
+  }
+  if (trig.longitude !== camera.longitude) {
+    trig.longitude = camera.longitude;
+    trig.cosLon = Math.cos(camera.longitude); trig.sinLon = Math.sin(camera.longitude);
+  }
+  if (trig.roll !== roll) {
+    trig.roll = roll;
+    trig.cosRoll = Math.cos(roll); trig.sinRoll = Math.sin(roll);
+  }
+  return trig;
+}
 function planetProject(point, camera, scale, centerX, centerY) {
-  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
-  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const {cosLat, sinLat, cosLon, sinLon, cosRoll, sinRoll} = planetProjectTrig(camera);
   const along = cosLon * point[0] + sinLon * point[1];
   const east = -sinLon * point[0] + cosLon * point[1];
   const north = -sinLat * along + cosLat * point[2];
@@ -15036,7 +15059,6 @@ function planetProject(point, camera, scale, centerX, centerY) {
   // Roll the hemisphere in the picture plane, which leaves what is in front of
   // the camera alone: the same rigid turn a flat board gets, so world north
   // lands in the same screen direction at the same yaw in either topology.
-  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
   let spread = radius;
   if (camera.chart) {
     // The angle from what the viewer is centred on, laid down as a length.
@@ -15260,7 +15282,10 @@ function planetPaintPath(context, cell, bleed = 0.8) {
   context.beginPath();
   appendPlanetPaintPath(context, cell, bleed);
 }
+// Half a dozen layers ask this of the same cell in one frame, and a frame's
+// cell records are built fresh by planetCells, so the first answer holds.
 function planetCellInradius(cell) {
+  if (cell.inradius !== undefined) return cell.inradius;
   const {points, center} = cell;
   let inradius = Infinity;
   for (let index = 0; index < points.length; index++) {
@@ -15271,7 +15296,7 @@ function planetCellInradius(cell) {
     inradius = Math.min(inradius,
       Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / length);
   }
-  return Number.isFinite(inradius) ? inradius : 0;
+  return cell.inradius = Number.isFinite(inradius) ? inradius : 0;
 }
 
 function pointInsidePlanetCell(x, y, points) {
