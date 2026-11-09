@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-earns-its-prophet",
+  "scope": "Same-input isolated proposal activation on captured native Deity Khmer civvis-20261109T031713Z t17/22/27/28 frame0. All four preselected cases retained. Both one-shot --resumed arms use the same candidate binary, actual captured bytes, and frozen434tag source-supported policy context including the companion race and older Prophet-points policies; on adds only this tag. At17 and22 the capital keeps Holy Site Prayers instead of Settler; closed-race27/28 are unchanged. The later post-founder cheapest-conversion tag is unavailable in this source and explicitly omitted in force_context.json; none of these unfounded cases can activate its scoring guard. This is not the original persistent controller history, host execution, the full current operator configuration, or a strength estimate.",
+  "source_commit": "21b1a9885d322985c877407baf840f728aff98fe",
+  "archive": {
+    "path": "docs/eval/2026-11-09-religion-seat-earns-its-prophet.native-queries.tar.xz",
+    "sha256": "442f6082a77a4922ffc5db57ba53f6032515089c7f55050cc098998f926dea00"
+  },
+  "members": [
+    "native-prophet-pairs-04/t17-f0/result.json",
+    "native-prophet-pairs-04/t22-f0/result.json",
+    "native-prophet-pairs-04/t27-f0/result.json",
+    "native-prophet-pairs-04/t28-f0/result.json"
+  ]
+}

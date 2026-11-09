@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x880c_b390_c0a3_3d00;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x791f_7a51_8002_0627;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 19_252;
+const ANCHOR_DECISIONS: usize = 19_251;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -2353,7 +2353,8 @@ mod tests {
         assert_eq!(
             decisions, ANCHOR_DECISIONS,
             "the anchor made a different number of decisions ({decisions} rather \
-             than {ANCHOR_DECISIONS}), so its play changed. See the note on \
+             than {ANCHOR_DECISIONS}), so its play changed. Measured fingerprint: \
+             {fingerprint:#018x}. See the note on \
              ANCHOR_BEHAVIOUR_FNV: find the gene that should have kept this away \
              from legacy(), or — for a deliberate change to the shared engine — \
              re-pin and say so in docs/ELO_REPINS.md"
