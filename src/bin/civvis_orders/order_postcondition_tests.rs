@@ -1211,6 +1211,31 @@ fn empire_choices_are_read_back_from_the_frame() {
 }
 
 #[test]
+fn a_guru_heal_is_verified_by_its_own_charges() {
+    let guru = |heals: i32| {
+        let mut unit = unit(7, "UNIT_GURU", 3, 3);
+        unit.spread_charges = Some(0);
+        unit.heal_charges = Some(heals);
+        unit
+    };
+    let heal = order("unit", Some(7), Some("RELIGIOUS_HEAL"), None);
+    let mut before = frame(120);
+    before.units = vec![guru(3)];
+    let mut spent = frame(121);
+    spent.units = vec![guru(2)];
+    assert_eq!(
+        verify_order(&heal, 120, &before, &spent, &no_tiles(), &[]),
+        Verdict::Verified
+    );
+    let mut unspent = frame(121);
+    unspent.units = vec![guru(3)];
+    assert_eq!(
+        verify_order(&heal, 120, &before, &unspent, &no_tiles(), &[]),
+        Verdict::Failed("charge_not_spent".to_string())
+    );
+}
+
+#[test]
 fn unit_states_are_read_back_from_the_unit() {
     let mut before = frame(70);
     let mut builder = unit(3, "UNIT_BUILDER", 4, 4);

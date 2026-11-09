@@ -8618,8 +8618,16 @@ fn verify_unit_order(
         }
         "SPREAD_RELIGION" | "RELIGIOUS_HEAL" | "REMOVE_HERESY" | "LAUNCH_INQUISITION"
         | "CONVERT_BARBARIANS" => {
+            // A Guru's heals are their own pool; its spread charges read 0.
+            let pool = |unit: &civvis::mirror::StateUnit| {
+                if op == "RELIGIOUS_HEAL" {
+                    unit.heal_charges
+                } else {
+                    unit.spread_charges
+                }
+            };
             let spent = matches!(
-                (was.and_then(|u| u.spread_charges), now.and_then(|u| u.spread_charges)),
+                (was.and_then(pool), now.and_then(pool)),
                 (Some(b), Some(a)) if a < b
             );
             if now.is_none() || spent {

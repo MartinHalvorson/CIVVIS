@@ -8420,6 +8420,14 @@ pub struct AdvancedAi {
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
     russia_settles_the_tundra: bool,
+    /// `religion-seat-first-shrine`: a Religion-target founder's first Shrine
+    /// takes the queue. See `advanced/religion_seat_first_shrine.rs`. Off by
+    /// default.
+    religion_seat_first_shrine: bool,
+    /// `religion-seat-guards-the-race`: a Religion-target seat repairs a
+    /// pillaged Holy Site at once and keeps a Prayers project finishing this
+    /// turn. See `advanced/religion_seat_guards_the_race.rs`. Off by default.
+    religion_seat_guards_the_race: bool,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -9810,6 +9818,10 @@ pub struct AdvancedAi {
     /// theological fight only when the mean exchange kills the defender or
     /// trades evenly and survives. See `advanced/theology_fights.rs`. Off by default.
     theology_fights_only_to_win: bool,
+    /// `theology-fights-count-the-host-edge`: the theological fight reading
+    /// also counts each side's difficulty bonus and its visibility edge. See
+    /// `advanced/theology_fights.rs`. Off by default.
+    theology_fights_count_the_host_edge: bool,
     /// `trader-fills-the-idle-route`: while a trade route slot stands
     /// empty, the safe origin that trains a Trader soonest puts one at the
     /// head of its queue ahead of the governor's rescoring. See
@@ -19820,10 +19832,11 @@ impl AdvancedAi {
                     self.domination_defensive_temple(g, pid, cid, item)
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
-            // A founder's newly claimed Faith building has not banked its
-            // first hammer yet, but ordinary rescoring must let it start.
+            // A founder's Faith building or replacement Holy Site has not
+            // banked its first hammer yet; ordinary rescoring lets it start.
             let faith_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 self.religion_seat_faith_building_reserved(g, pid, cid, plan, item)
+                    || self.religion_seat_recovery_site_reserved(g, pid, cid, plan, item)
             });
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
@@ -25744,6 +25757,8 @@ impl AdvancedAi {
         // `near-done-work-finishes`: every city's head before any production
         // writer runs. Empty while the gene is off.
         let near_done_heads = self.near_done_heads(g, pid);
+        // `religion-seat-guards-the-race`: Prayers heads before any writer.
+        let race_guard_heads = self.race_guard_heads(g, pid);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
@@ -26054,6 +26069,13 @@ impl AdvancedAi {
             }
         }
         Self::surge_release_field_slot(g, held_field_slot);
+        // `religion-seat-first-shrine`: the founder's first Shrine, after every
+        // ordinary writer so none of them takes the head back, and before the
+        // defence handoffs below, which may. An earlier claim here was
+        // journalled on t40-49 of civvis-20261109T142418Z and overwritten by a
+        // Monument and an Archer the same turn. See
+        // `advanced/religion_seat_first_shrine.rs`.
+        self.claim_religion_seat_first_shrine(g, pid, &plan);
         // `capital-walls-before-the-surprise`: the original capital's Walls,
         // or its defender, after every ordinary writer (the opening book and
         // both governors), before the paused finishes and the defence
@@ -26068,6 +26090,10 @@ impl AdvancedAi {
         // and before the pad holds and the defence handoffs below. Exact
         // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
         self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
+        // `religion-seat-guards-the-race`: Prayers finishing this turn and a
+        // pillaged Holy Site's repair, after every ordinary writer. See
+        // `advanced/religion_seat_guards_the_race.rs`.
+        self.claim_religion_seat_guards_the_race(g, pid, &plan, &race_guard_heads);
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);
@@ -26347,10 +26373,15 @@ mod religion_prophet_queue;
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
 /// `religion-seat-flips-the-cheapest`: see
+/// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
+mod religion_seat_first_shrine;
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+/// `religion-seat-guards-the-race`: see
+/// `advanced/religion_seat_guards_the_race.rs`.
+mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;

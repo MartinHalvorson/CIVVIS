@@ -339,8 +339,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
 | `religion-seat-earns-its-prophet` | off (unmeasured) | Opt-in gene `religion-seat-earns-its-prophet`; see `Self::religion_seat_earns_its_prophet`. | 1 \| 1 |
 | `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
+| `religion-seat-first-shrine` | off (unmeasured) | Opt-in gene `religion-seat-first-shrine`; see `advanced/religion_seat_first_shrine.rs`. | 1 \| 1 |
 | `religion-seat-flips-the-cheapest` | off (unmeasured) | `religion-seat-flips-the-cheapest`: a Religion-target founder's spreaders go where a charge buys the most of the victory. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
+| `religion-seat-guards-the-race` | off (unmeasured) | Opt-in gene `religion-seat-guards-the-race`; see `advanced/religion_seat_guards_the_race.rs`. | 1 \| 1 |
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
@@ -386,6 +388,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
+| `theology-fights-count-the-host-edge` | off (unmeasured) | Opt-in gene `theology-fights-count-the-host-edge`; see `advanced/theology_fights.rs`. | 1 \| 1 |
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |

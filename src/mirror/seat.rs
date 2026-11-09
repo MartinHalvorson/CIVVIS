@@ -542,6 +542,7 @@ pub(super) fn apply_unit_observation(
         .build_charges
         .into_iter()
         .chain(state.spread_charges)
+        .chain(state.heal_charges)
         .filter(|charges| *charges >= 0)
         .max();
     // Naturalists and Archaeologists execute DESIGNATE_PARK / EXCAVATE,

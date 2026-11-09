@@ -988,6 +988,9 @@ pub struct StateUnit {
     pub build_charges: Option<i32>,
     #[serde(default)]
     pub spread_charges: Option<i32>,
+    /// A Guru's own heal pool; its spread charges read 0.
+    #[serde(default)]
+    pub heal_charges: Option<i32>,
     /// The religion physically carried by a religious unit, by Firaxis type name.
     #[serde(default)]
     pub religion: Option<String>,

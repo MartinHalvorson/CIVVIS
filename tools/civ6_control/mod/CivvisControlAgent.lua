@@ -1633,6 +1633,9 @@ local function unitProgress(unit)
 		promotions = promotions,
 		build_charges = try(function() return unit:GetBuildCharges(); end, 0),
 		spread_charges = try(function() return unit:GetSpreadCharges(); end, 0),
+		-- UnitPanel.lua:2255. A Guru's heals are their own pool: its spread
+		-- charges read 0, so the mirror thought all 21 Gurus of 2026-11-09 empty.
+		heal_charges = try(function() return unit:GetReligiousHealCharges(); end, nil),
 		religion = religion,
 	};
 end
@@ -8663,6 +8666,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			promotions = progress.promotions,
 			build_charges = progress.build_charges,
 			spread_charges = progress.spread_charges,
+			heal_charges = progress.heal_charges,
 			religion = progress.religion,
 			combat = row ~= nil and (row.Combat or 0) or 0,
 			ranged = row ~= nil and (row.RangedCombat or 0) or 0,
@@ -16150,6 +16154,7 @@ local function applyOrder(player, pid, row, turn)
 		-- back until turn 23 in civvis-20261109T070122Z.
 		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
 			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+			or resolved == "BUILDING_SHRINE"
 			or CivvisK.replacesHolySite(resolved);
 		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
 			or walkingSettlers >= 2;
@@ -24013,6 +24018,13 @@ CivvisQueue.checkAiPhaseStall = function()
 		active_players = active, open_sessions = sessions, visible = visible,
 		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
 	});
+	-- ★★ LOAD-BEARING: THIS RECORD DELIVERS THE STALL. The game writes its
+	-- latest `Automation.Log` record only when the next one is logged, and in
+	-- a real hang nothing else is. 16 of the 17 wedge handoffs of 2026-11-08
+	-- and 11-09 ended with `ai_phase_stall` as Civ's last record, and none of
+	-- those 16 reached the watchdog, which waited out its silence clocks and a
+	-- forced end turn instead (about 160 s).
+	emit("ai_phase_stall_flush", { turn = turn });
 	return true;
 end;
 
