@@ -1,4 +1,4 @@
-use super::super::AdvancedAi;
+use super::super::{AdvancedAi, GrandStrategy, StrategicPlan};
 use super::MISSION_RETRY_TURNS;
 use crate::game::{Action, Game};
 
@@ -60,4 +60,71 @@ fn a_rival_just_asked_waits_before_the_next_ask() {
     assert!(!ai.mission_partner_open(&game, 0, 2), "asked this turn");
     game.turn += game.standard_duration(MISSION_RETRY_TURNS);
     assert!(ai.mission_partner_open(&game, 0, 2), "the wait is over");
+}
+
+fn peaceful_culture_plan(game: &Game) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    }
+}
+
+#[test]
+fn a_neutral_contact_gets_a_mission_during_its_only_odd_turn_window() {
+    for enabled in [false, true] {
+        let mut game = three_majors();
+        game.turn = 17;
+        game.players[1]
+            .observed_diplomatic_state
+            .insert(0, "UNFRIENDLY".into());
+        game.players[2]
+            .observed_diplomatic_state
+            .insert(0, "NEUTRAL".into());
+        let plan = peaceful_culture_plan(&game);
+        let mut ai = AdvancedAi::new();
+        if enabled {
+            ai.enable_delegations_reach_every_rival();
+        }
+
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+
+        assert_eq!(game.diplomatic_mission_to(0, 2).is_some(), enabled);
+        assert!(game.diplomatic_mission_to(0, 1).is_none());
+        // By the next turn the live host can already refuse this rival. The
+        // delegation must have been sent while the Neutral window existed.
+        game.turn += 1;
+        game.players[2]
+            .observed_diplomatic_state
+            .insert(0, "UNFRIENDLY".into());
+        let next_plan = peaceful_culture_plan(&game);
+        ai.advanced_diplomacy(&mut game, 0, &next_plan);
+        assert_eq!(game.diplomatic_mission_to(0, 2).is_some(), enabled);
+        assert!(game.diplomatic_mission_to(0, 1).is_none());
+    }
+}
+
+#[test]
+fn host_refused_partners_do_not_consume_the_mission_or_retry_clock() {
+    for mood in ["UNFRIENDLY", "DENOUNCED", "WAR"] {
+        let mut game = three_majors();
+        for other in [1, 2] {
+            game.players[other]
+                .observed_diplomatic_state
+                .insert(0, mood.into());
+        }
+        let plan = peaceful_culture_plan(&game);
+        let mut ai = AdvancedAi::new();
+        ai.enable_delegations_reach_every_rival();
+
+        ai.advanced_diplomacy(&mut game, 0, &plan);
+
+        assert!(game.diplomatic_mission_to(0, 1).is_none());
+        assert!(game.diplomatic_mission_to(0, 2).is_none());
+        assert!(ai.delegations_asked.is_empty());
+    }
 }
