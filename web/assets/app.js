@@ -4455,9 +4455,13 @@ const spinButton = document.getElementById("spin");
 // rather than merely being a default. Before the first observation the world's
 // shape is unknown and the control stays live: there is simply nothing yet for
 // the turn to move. Player games hold still; rotation belongs to AI simulations.
+// Watch as holds still too: it frames one empire and keeps it framed, and a
+// turning world would carry that empire off the stage. WORLD_SPIN is left as it
+// was, so going back to All picks the turn up again.
 function spinAvailable() {
   if (state && !SPEC) return false;
   if (REDUCED_MOTION_QUERY.matches) return false;
+  if (Number.isInteger(state?.view_player)) return false;
   return !state || mapWrapsX();
 }
 // Whether it is turning this instant. Anything that is deliberately pointing
@@ -4477,6 +4481,8 @@ function updateSpinButton() {
     ? "Reduced motion is on, so the world holds still"
     : state && !SPEC
     ? "World rotation is available only in AI simulations"
+    : Number.isInteger(state?.view_player)
+    ? "The world holds still while you watch one civilization"
     : !available
     ? "This world does not come back on itself, so it has nothing to turn about"
     : WORLD_SPIN ? "Stop the world turning" : "Let the world turn";
@@ -4493,9 +4499,10 @@ function setWorldSpin(on) {
 // held still, so a drag stops it — and stops it for good rather than for the
 // moment, because a map that resumed drifting the instant a viewer let go of
 // it would have to be caught again every time they looked away. The button is
-// how it comes back.
+// how it comes back. A world already held still has nothing to stop, so looking
+// around a watched empire does not cost the turn waiting back at All.
 function stopWorldSpin() {
-  if (WORLD_SPIN) setWorldSpin(false);
+  if (WORLD_SPIN && spinAvailable()) setWorldSpin(false);
 }
 // One tick of the turn. `dt` is milliseconds and a whole turn is the period,
 // so the pace holds however the frames fall — within the fifty-millisecond
@@ -8394,15 +8401,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
   }
-  // A turning world and an empire kept in frame are two answers to where the
-  // camera should be, and this one arrives ten times a second: left to argue,
-  // the reframe would win every observation and the spin would show as a
-  // shiver rather than a turn. So the standing, stated preference outranks the
-  // automatic convenience, and the flag is only stepped over rather than
-  // cleared — stopping the spin hands the watched empire its framing straight
-  // back.
+  // The watched empire stays in frame as it grows. A watched world never turns
+  // (see spinAvailable), so only a hand on the camera can overrule this.
   else if (watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
-           !cameraFollowManual && !dragState && !touchGesture && !spinRunning())
+           !cameraFollowManual && !dragState && !touchGesture)
     setObservedPlayersView(true);
   const errEl = document.getElementById("err");
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
