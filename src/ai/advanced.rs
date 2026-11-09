@@ -7766,6 +7766,8 @@ pub struct AdvancedAi {
     /// `military-alliance-shield-2`: its own asks by partner and kind, by the
     /// turn asked and whether the partner was a declared friend then.
     military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
+    /// Opt-in first capital slot for ranged support; later recon flags are unchanged.
+    opening_ranged_support: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -11804,6 +11806,7 @@ impl AdvancedAi {
             // ---- append: l-o ----------------------------------------
             nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
+            opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
             pillaged_districts_repair_first: false,

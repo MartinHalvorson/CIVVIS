@@ -3052,6 +3052,23 @@ impl AdvancedAi {
         self.base.scout_first_opening = false;
     }
 
+    /// Whether the opening-only ranged-support experiment is enabled.
+    pub fn opening_ranged_support(&self) -> bool {
+        self.opening_ranged_support
+    }
+
+    /// Replace the capital's first opening slot with legal ranged support.
+    pub fn enable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = true;
+        self.base.opening_ranged_support = true;
+    }
+
+    /// Restore the ordinary opener without changing later recon settings.
+    pub fn disable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = false;
+        self.base.opening_ranged_support = false;
+    }
+
     /// After its current production completes, let a population-two capital
     /// start the next legal Settler before ordinary production ranking. The
     /// baseline governor retains the city-target, site, and emergency gates.

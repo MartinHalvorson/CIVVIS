@@ -333,6 +333,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
+| `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
 | `outclassed-siege-stands-down` | off (unmeasured) | Opt-in gene `outclassed-siege-stands-down`; see `Self::outclassed_siege_stands_down`. | 1 \| 1 |
 | `outmatched-war-prices-the-army` | off (unmeasured) | Opt-in gene `outmatched-war-prices-the-army`; see `advanced/outmatched_war_prices_the_army.rs`. | 1 \| 1 |
 | `parallel-library-backlog` | off (unmeasured) | Coordinate a quoted opening Library and backlog Builder. | 1 \| 1 |
