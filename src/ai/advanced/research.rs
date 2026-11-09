@@ -1133,6 +1133,12 @@ impl AdvancedAi {
                 // usefully precede the government's policy capacity"; tier 2
                 // is where two thirds of that capacity actually is, and no
                 // lane ever asks for it.
+                // See `advanced/religion_seat_reformed_church.rs`: ahead of the
+                // government ladder, which otherwise walks the seat to a later
+                // government and past the civic this lane needs.
+                _ if self.religion_seat_civic_goal(g, pid).is_some() => {
+                    self.religion_seat_civic_goal(g, pid)
+                }
                 _ if self.government_ladder_goal(g, pid, objective).is_some() => {
                     self.government_ladder_goal(g, pid, objective)
                 }
@@ -1163,8 +1169,6 @@ impl AdvancedAi {
                 {
                     Some("theology")
                 }
-                // See `advanced/religion_seat_reformed_church.rs`.
-                GrandStrategy::Religion => self.religion_seat_civic_goal(g, pid),
                 _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
