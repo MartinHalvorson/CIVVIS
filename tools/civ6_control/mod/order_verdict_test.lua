@@ -68,6 +68,7 @@ GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
 	UNIT_ARCHER = { Hash = 103, Kind = "KIND_UNIT" },
+	PROJECT_ENHANCE_DISTRICT_HOLY_SITE = { Hash = 104, Kind = "KIND_PROJECT" },
 }
 GameInfo.CommemorationTypes = {
 	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
@@ -80,6 +81,7 @@ CityOperationTypes = {
 	PARAM_QUEUE_DESTINATION_LOCATION = "queue_destination",
 	PARAM_UNIT_TYPE = "unit_type",
 	PARAM_BUILDING_TYPE = "building_type",
+	PARAM_PROJECT_TYPE = "project_type",
 }
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k) end
@@ -153,8 +155,10 @@ CityManager = {
 	RequestOperation = function(city, op, params)
 		local c = host.cities[city:GetID()]
 		host.cityOps[#host.cityOps + 1] = { city = city:GetID(), op = op,
-			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) }
-		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) end
+			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]
+				or params[CityOperationTypes.PARAM_PROJECT_TYPE]) }
+		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]
+			or params[CityOperationTypes.PARAM_PROJECT_TYPE]) end
 	end,
 }
 function host.arrive(id)
@@ -436,6 +440,15 @@ local defended, defenseWhy = applyOrder(player, PID,
 check("opening defense reaches host", defended, true)
 check("opening defense names its build", defenseWhy, "UNIT_ARCHER")
 check("opening defense replaces settler", host.cities[42].current, 103)
+
+-- The founding race's Prayers also reach the host past a protected Settler:
+-- the Prophets run out while the opening Settler is still in the capital.
+host.cities[42].current = 101
+local prayed, prayedWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "PROJECT_ENHANCE_DISTRICT_HOLY_SITE" }, 16)
+check("founding race reaches host", prayed, true)
+check("founding race names its build", prayedWhy, "PROJECT_ENHANCE_DISTRICT_HOLY_SITE")
+check("founding race replaces settler", host.cities[42].current, 104)
 
 -- Reproduce the stalled one-city opening: two live Settlers are already
 -- waiting for routes. The bridge must let the governor stop a third queue.

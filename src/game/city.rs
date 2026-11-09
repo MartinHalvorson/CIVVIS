@@ -3322,4 +3322,7 @@ mod hidden_resource_improvement_tests;
 mod hidden_resource_district_tests;
 
 #[cfg(test)]
+mod hidden_resource_wonder_tests;
+
+#[cfg(test)]
 mod builder_ownership_tests;

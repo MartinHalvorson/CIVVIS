@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "exalted-goddess-buys-the-coastal-guard",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live run civvis-20261105T151911Z (Indonesia/Gitarja, Deity Online science), turn 66, queried with the run's own forced genome (the tags this binary carries) on a ci-profile civvis_orders built from this branch merged with #4429. The off arm issues no Faith purchase, as the live game never did; the on arm adds purchase_faith UNIT_QUADRIREME in city 131073. Across every second turn of t30-172 in 151911Z, 175215Z and 154638Z the gene changed orders on 3 turns, all in 151911Z (Quadrireme t66, Caravel t108 and t110; one-shot replays carry no cooldown).",
+  "archive": {
+    "path": "docs/eval/2026-11-05-exalted-goddess-buys-the-coastal-guard.native-queries.tar.xz",
+    "sha256": "e01e777ff2396fca2c8819944de0090b0ec288b68e61fc08ee93f8b7f2a27122"
+  },
+  "members": [
+    "native-queries-01/0000/result.json"
+  ]
+}

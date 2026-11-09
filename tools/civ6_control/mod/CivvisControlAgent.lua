@@ -765,7 +765,8 @@ local function resolveActions()
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
-		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REMOVE_IMPROVEMENT",
+		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_BUILD_IMPROVEMENT_ADJACENT",
+		"UNITOPERATION_REMOVE_IMPROVEMENT",
 		"UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
 		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
 		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
@@ -4456,6 +4457,24 @@ local function cityReligion(city)
 	local row = GameInfo.Religions[id];
 	return row ~= nil and row.ReligionType or nil;
 end
+
+-- BEGIN visible foreign city religion
+-- ReligionScreen.lua:1075-1076 reads CityReligion:GetMajorityReligion().
+-- For foreign cities use only a currently visible plot. A failed read is an
+-- unknown, while a successful -1 is an observed absence of majority.
+function CivvisReligionState.visibleCity(pid, city)
+	local visible = try(function()
+		return PlayersVisibility[pid]:IsVisible(city:GetX(), city:GetY());
+	end, false);
+	if visible ~= true then return false, nil; end
+	local ok, id = pcall(function() return city:GetReligion():GetMajorityReligion(); end);
+	if not ok or type(id) ~= "number" then return false, nil; end
+	if id < 0 then return true, nil; end
+	local row = GameInfo.Religions[id];
+	if row == nil or type(row.ReligionType) ~= "string" then return false, nil; end
+	return true, row.ReligionType;
+end
+-- END visible foreign city religion
 
 local function cityNextReligion(city)
 	local id = try(function() return city:GetReligion():GetNextReligion(); end, -1);
@@ -8757,7 +8776,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 						-- only defence strength tells them apart.
 						local theirDef, theirDmg, theirMax, theirWallDmg, theirWallMax =
 							cityDefence(cx, cy);
+						local religionObserved, majorityReligion = CivvisReligionState.visibleCity(pid, city);
 						theirCities[#theirCities + 1] = {
+							religion_observed = religionObserved,
+							religion = majorityReligion,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
@@ -9340,7 +9362,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 					if plotRevealed(pid, cx, cy) then
 						local strength, damage, maxDamage, wallDamage, maxWallDamage =
 							cityDefence(cx, cy);
+						local religionObserved, majorityReligion = CivvisReligionState.visibleCity(pid, city);
 						theirCities[#theirCities + 1] = {
+							religion_observed = religionObserved,
+							religion = majorityReligion,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
@@ -11342,6 +11367,9 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						-- every turn; both join the signature so the record the
 						-- board reads between sweeps is this turn's.
 						.. (try(function() return plot:GetAppeal(); end, 0) or 0) .. ":"
+						-- A park changes no improvement, owner or appeal. Its
+						-- own flag must invalidate the delta too (PlotToolTip.lua:743).
+						.. (try(function() return plot:IsNationalPark(); end, false) and 1 or 0) .. ":"
 						.. (try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) and 1 or 0);
 				end
 				local key = y * width + x;
@@ -16097,7 +16125,13 @@ local function applyOrder(player, pid, row, turn)
 				and ((requestedUnit.Combat or 0) > 0
 					or (requestedUnit.RangedCombat or 0) > 0
 					or (requestedUnit.Bombard or 0) > 0));
-		local releaseOpening = immediateThreat or requestedDefense or walkingSettlers >= 2;
+		-- The Holy Site and its Prayers are the founding race. The Prophets run
+		-- out near turn 39 at Deity, and a refused order here held the Holy Site
+		-- back until turn 23 in civvis-20261109T070122Z.
+		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
+			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE";
+		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
+			or walkingSettlers >= 2;
 		if releaseOpening then CivvisOpeningSettlerLocks[cityId] = nil; end
 		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
@@ -17163,6 +17197,17 @@ local function applyOrder(player, pid, row, turn)
 			-- whatever this tile allows", which is what the shipped button does.
 			local wanted = string.match(verb, "^IMPROVE:(.+)$");
 			local row2 = wanted ~= nil and GameInfo.Improvements[wanted] or nil;
+			-- Expansion2_Improvements.xml:88-89 marks Ski Resorts and tunnels
+			-- BuildOnAdjacentPlot in Improvements_XP2. WorldInput_Expansion2.lua:
+			-- 36-43 sends their target/name with BUILD_IMPROVEMENT_ADJACENT.
+			-- BUILD_IMPROVEMENT refuses the mountain from the Builder's land tile.
+			local adjacent = row2 ~= nil and try(function()
+				local extra = GameInfo.Improvements_XP2[wanted];
+				return extra ~= nil and (extra.BuildOnAdjacentPlot == true
+					or extra.BuildOnAdjacentPlot == 1);
+			end, false);
+			local buildOperation = OP[adjacent and "UNITOPERATION_BUILD_IMPROVEMENT_ADJACENT"
+				or "UNITOPERATION_BUILD_IMPROVEMENT"];
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x or try(function() return unit:GetX(); end, -1);
 			params[UnitOperationTypes.PARAM_Y] = y or try(function() return unit:GetY(); end, -1);
@@ -17219,7 +17264,7 @@ local function applyOrder(player, pid, row, turn)
 					return false, "already_" .. wanted;
 				end
 			end
-			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+			if operate(unit, buildOperation, params) then
 				-- ★★★★★ REPORT THE SUCCESS, or the board learns four turns late.
 				--
 				-- The same rule `found` already follows: "REPORT THE SUCCESS TOO,
@@ -17326,9 +17371,11 @@ local function applyOrder(player, pid, row, turn)
 			-- The DECISION worth keeping is "improve this tile" — which tile is CIVVIS's
 			-- call. Which improvement is legal there is the game's call, and dropping the
 			-- name asks it exactly that, the same as the shipped build button.
-			if row2 ~= nil then
+			-- The adjacent operation needs its named improvement; dropping the
+			-- name could choose different work from the requested Ski Resort.
+			if row2 ~= nil and not adjacent then
 				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = nil;
-				if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+				if operate(unit, buildOperation, params) then
 					return true, "IMPROVE_ANY";
 				end
 			end
@@ -17455,7 +17502,7 @@ local function applyOrder(player, pid, row, turn)
 			local tile_improvement = plot ~= nil and typeName("Improvements",
 				"ImprovementType",
 				try(function() return plot:GetImprovementType(); end, -1)) or nil;
-			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			local why = refusalReason(unit, buildOperation,
 			                          params);
 			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
 			-- GATES THE WORK.
@@ -17489,9 +17536,7 @@ local function applyOrder(player, pid, row, turn)
 			                          moves = moves, charges = charges,
 			                          tile_owner = tile_owner,
 			                          tile_improvement = tile_improvement,
-			                          can_operate = canOperate(unit,
-			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
-			                              params),
+			                          can_operate = canOperate(unit, buildOperation, params),
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
@@ -17941,6 +17986,70 @@ CivvisCongressTargetIndex = function(targets, player)
 		if tonumber(t) == want then return idx; end
 	end
 	return nil;
+end
+
+-- Preserve the public inputs BEFORE requesting a vote. Outcomes alone cannot
+-- reconstruct the offered target indices or the public preference indicators.
+-- Shipped Expansion2/UI/Additions/WorldCongressPopup.lua:627-650 displays
+-- FavoredPlayerIDs/DisfavoredPlayerIDs; :908-923 preserves PossibleTargets'
+-- original indices while sorting only the displayed names; :968 says those
+-- non-player targets are unlocalized names. The snapshot uses supplied tables.
+-- Bare global: the main chunk is at its local/register limit.
+CivvisCongressChoiceContext = function(rtype, row, config, candidates, request)
+	row = type(row) == "table" and row or {};
+	config = type(config) == "table" and config or {};
+	request = type(request) == "table" and request or {};
+	local function scalar(value)
+		return type(value) == "string" or type(value) == "boolean"
+			or (type(value) == "number" and value == value
+				and value ~= math.huge and value ~= -math.huge);
+	end
+	local function object(source)
+		local copy = {};
+		for key, value in pairs(type(source) == "table" and source or {}) do
+			if type(key) == "string" and scalar(value) then copy[key] = value; end
+		end
+		return copy;
+	end
+	local function list(source, field, zeroBased)
+		local copy, complete = {}, type(source) == "table";
+		for index, value in pairs(type(source) == "table" and source or {}) do
+			if type(index) == "number" and scalar(index) and index >= 1 and index == math.floor(index)
+				and (type(value) == "string" or type(value) == "number") and scalar(value) then
+				copy[#copy + 1] = { index = index, [field] = value };
+				if zeroBased then copy[#copy].selection = index - 1; end
+			else
+				complete = false;
+			end
+		end
+		table.sort(copy, function(a, b) return a.index < b.index; end);
+		return copy, complete;
+	end
+	local targets, targetsComplete = list(row.PossibleTargets, "target", true);
+	local favored, favoredComplete = list(row.FavoredPlayerIDs, "player", false);
+	local disfavored, disfavoredComplete = list(row.DisfavoredPlayerIDs, "player", false);
+	local choice = object(request);
+	local target = nil;
+	for _, offered in ipairs(targets) do
+		if offered.selection == request.selection then target = offered.target; break; end
+	end
+	choice.target = target;
+	local rivals = {};
+	for _, candidate in ipairs(type(candidates) == "table" and candidates or {}) do
+		rivals[#rivals + 1] = object(candidate);
+	end
+	return {
+		schema = 1, turn = scalar(request.turn) and request.turn or nil, resolution = rtype,
+		native_resolution_type = scalar(row.Type) and row.Type or nil,
+		target_type = scalar(row.TargetType) and row.TargetType or nil,
+		lane = type(config.VictoryLane) == "string" and config.VictoryLane or nil,
+		lane_known = type(config.VictoryLane) == "string",
+		diplomatic_racer = CivvisDiploRacer(config), congress_racer = CivvisCongressRacer(config),
+		possible_targets = targets, targets_complete = targetsComplete,
+		requested_target_known = target ~= nil, requested = choice, rivals = rivals,
+		favored_players = favored, favored_players_known = favoredComplete,
+		disfavored_players = disfavored, disfavored_players_known = disfavoredComplete,
+	};
 end
 
 -- The Diplomatic Victory denial: option B on `leader` when the ballot offers
@@ -24673,7 +24782,7 @@ local function tick()
 		-- free vote goes to the option that is not a ban. Nothing here is a
 		-- claim about winning a resolution: the point is that a session the
 		-- seat sat out is now one it takes part in, cheaply, every time.
-		local function voteWorldCongress(pid)
+		local function voteWorldCongress(pid, ballotTurn)
 			local wc = Game.GetWorldCongress();
 			if wc == nil then return 0, 0, "no_congress"; end
 			local resolutions = wc:GetResolutions(pid);
@@ -25184,6 +25293,25 @@ local function tick()
 					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
 					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
 					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
+					-- This records inputs and the pending request, not acceptance or
+					-- a prediction. The later native review/verdict remains the readback.
+					local contextOK, contextError = pcall(function()
+						emit("wc_ballot_context", CivvisCongressChoiceContext(rtype, r, cfg, candidates, {
+							turn = ballotTurn, stage = resolutions.Stage, resolution_hash = info.Hash,
+							option = option, selection = selection - 1, votes = votes,
+							favor_at_ballot = favorNow, favor_entering_congress = favorEntering,
+							favor_after_allocations = favor, spent_requested = spent,
+							diplomatic_resolution_mode = mode,
+							leader = leader, leader_points = leaderPoints,
+							threat = threat, threat_progress = threatProgress,
+							racer_slowed = racerSlowed,
+						}));
+					end);
+					if not contextOK then
+						pcall(emit, "wc_ballot_context_failed", {
+							turn = ballotTurn, resolution = rtype, why = tostring(contextError),
+						});
+					end
 					-- Match the shipped OnAccept request: one operation carries the
 					-- complete vote count. A successful pcall records a request,
 					-- not acceptance; GetReview verifies the complete selection.
@@ -25246,7 +25374,7 @@ local function tick()
 					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_RESOLUTION");
 			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
-			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
+			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid, ballotTurn);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
 			-- `spent` is the modeled request cost, not a confirmed charge.
 			-- Player operations are queued: the immediate Favor read can precede
@@ -25767,7 +25895,7 @@ local function tick()
 								                  why = "cast_at_popup", source = "blocker" });
 							elseif seen.forfeits >= 2 then
 								seen.voted_turn = turn;
-								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid);
+								local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(pid, turn);
 								emit("wc_vote", { turn = turn, cast = cast, spent = spent,
 								                  why = why, leader = leader,
 								                  leader_points = leaderPoints,

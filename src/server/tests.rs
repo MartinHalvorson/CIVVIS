@@ -3076,7 +3076,9 @@ fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
     // The single dossier has the spare height formerly allocated to a
     // separate reasoning card. Its trail scrolls inside the dossier while
     // the world chronicles keep their measured floors.
-    assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 0; min-height: 460px; }"));
+    assert!(
+        EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 auto; min-height: min-content; }")
+    );
     assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
     assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
     assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
@@ -3085,7 +3087,7 @@ fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
     assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
     assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
     assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
-    assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
+    assert!(EMBEDDED_INDEX.contains("Logged by ${civ.civ}'s agent as it decides"));
 }
 
 /// Watching a battlefield, the deck reads tactically.
@@ -3143,7 +3145,7 @@ fn browser_reads_a_battlefield_deck_as_ai_tactics() {
         EMBEDDED_INDEX.contains("const wantTitle = tactics ? \"AI Tactics\" : \"AI strategy\";")
     );
     assert!(EMBEDDED_INDEX
-        .contains("const wantHeading = tactics ? \"Battle plans\" : \"Grand strategy\";"));
+        .contains("const wantHeading = tactics ? \"Battle plans\" : liveSeat ? \"Live seat\" : \"Grand strategy\";"));
     // A battle is understood by comparing the sides' plans, not by
     // flipping a picker between them: every side still standing gets a
     // block, while the picker keeps scoping the decision factors below.
@@ -5227,6 +5229,17 @@ fn the_gene_program_route_reports_the_ledger_and_vouches_for_armed_tags() {
     }
     let genes = answer["genes"].as_array().unwrap();
     assert!(!genes.is_empty());
+    // The panel's figures are the committed ranking's: every ranked gene
+    // carries a whole row, and the sample behind them is stated.
+    assert!(answer["ranking"]["seats"].as_u64().unwrap() > 0);
+    assert!(answer["ranking"]["newest_end"].is_string());
+    let ranked: Vec<&Value> = genes.iter().filter(|gene| gene["rank"].is_u64()).collect();
+    assert!(!ranked.is_empty());
+    for gene in ranked {
+        assert!(gene["diff_points"].is_number(), "{gene}");
+        let helps = gene["p_helps"].as_f64().unwrap();
+        assert!((0.0..=100.0).contains(&helps), "{gene}");
+    }
     for gene in genes {
         let tag = gene["tag"].as_str().unwrap();
         assert!(crate::ai::gene(tag).is_some(), "unknown tag {tag}");
@@ -5293,7 +5306,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
     assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
     assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
-    assert!(EMBEDDED_INDEX.contains("9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"));
+    assert!(EMBEDDED_INDEX
+        .contains("${9 * pixel}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"));
     for illegible in [
         "font-size: 5.5px",
         "font-size: 6px",
@@ -14457,9 +14471,43 @@ fn the_map_area_is_a_rectangle_the_viewer_can_set() {
             "the ground outside the map area's {edge} edge must be dimmed"
         );
     }
-    // The fitted world runs to the bottom of the screen. The zoom dock
-    // floats over it like every other lower instrument, so the uncovered
-    // rectangle must not carve a strip out for it.
+    // The zoom dock floats over the world like every other lower
+    // instrument, so the uncovered rectangle must not carve a strip out
+    // for it. A fitted map on a world with a sky stops just above the
+    // Earth/Moon/Mars row instead, and that belongs to the fit alone: a
+    // hand-set area is returned before it, and the strip outlasts the bar
+    // so a zoom that takes the bar down does not resize the map under it.
+    let wanted = EMBEDDED_INDEX
+        .split_once("function wantedMapAreaInsets()")
+        .expect("the wanted map-area insets")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the wanted map-area insets")
+        .0;
+    let hand_set = wanted
+        .find("if (!MAP_AREA.auto) {")
+        .expect("the hand-set area branch");
+    let fitted = wanted
+        .find("bottom:Math.max(height - box.bottom, skyBarClearance())")
+        .expect("a fitted map stops above the sky bar");
+    assert!(hand_set < fitted, "a hand-set area must ignore the sky bar");
+    let clearance = EMBEDDED_INDEX
+        .split_once("function skyBarClearance()")
+        .expect("the sky bar clearance")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the sky bar clearance")
+        .0;
+    for piece in [
+        "if (responsivePanelGeometry.compact || !skyNavAvailable()) return 0;",
+        "if (measured) skyBarHeight = measured;",
+        "skyBarHeight + hudWidgetGap();",
+    ] {
+        assert!(
+            clearance.contains(piece),
+            "the sky bar clearance is missing {piece}"
+        );
+    }
     let uncovered = EMBEDDED_INDEX
         .split_once("function uncoveredMapBox(origin, width, height)")
         .expect("the uncovered-map measurement")
@@ -14579,6 +14627,28 @@ fn browser_covers_every_empire_decision() {
 /// "the deployment genome" for weeks while the code seated the stock agent;
 /// this pins the seat to `enable_native_deployment` by its whole decision
 /// stream, so neither half can move without the other.
+#[test]
+fn the_strategy_panel_names_the_agent_the_site_seats() {
+    // The panel's Agent row tells a viewer every major is the rule-based
+    // CIVVIS agent and that no model is playing. Both halves are facts about
+    // this tree, so they are held here rather than left as copy.
+    let mut params = current();
+    params.spectate = true;
+    let session = Session::new(params);
+    for (seat, player) in session.game.players.iter().enumerate() {
+        if !player.is_minor && !player.is_barbarian {
+            assert_eq!(session.seated_strategy_name(seat), Some("advanced"));
+        }
+    }
+    let embedded = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
+    assert!(
+        !embedded.join(crate::elo::VALUENET_FILE).exists(),
+        "a shipped value net makes the panel's \"no neural network\" untrue"
+    );
+    assert!(EMBEDDED_INDEX.contains("It uses no language model and no neural network"));
+    assert!(EMBEDDED_INDEX.contains("row(\"Agent\", \"CIVVIS Advanced AI\", SITE_AGENT_STORY)"));
+}
+
 #[test]
 fn every_site_major_plays_the_native_deployment_genome() {
     use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};

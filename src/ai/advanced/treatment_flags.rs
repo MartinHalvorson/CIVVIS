@@ -106,6 +106,23 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// Opt-in gene `religion-seat-earns-its-prophet`; see
+        /// [`Self::religion_seat_earns_its_prophet`].
+        religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
+        /// See `advanced/religion_seat_reformed_church.rs`.
+        religion_seat_reaches_reformed_church => enable_religion_seat_reaches_reformed_church, disable_religion_seat_reaches_reformed_church;
+        /// See `advanced/religion_seat_flips_the_cheapest.rs`.
+        religion_seat_flips_the_cheapest => enable_religion_seat_flips_the_cheapest, disable_religion_seat_flips_the_cheapest;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_builds_holy_sites => enable_religion_seat_builds_holy_sites, disable_religion_seat_builds_holy_sites;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_fields_apostles => enable_religion_seat_fields_apostles, disable_religion_seat_fields_apostles;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_presses_the_campaign => enable_religion_seat_presses_the_campaign, disable_religion_seat_presses_the_campaign;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_races_the_prophet => enable_religion_seat_races_the_prophet, disable_religion_seat_races_the_prophet;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_takes_the_faith_beliefs => enable_religion_seat_takes_the_faith_beliefs, disable_religion_seat_takes_the_faith_beliefs;
         /// Keep a committed Science launch or laser ahead of paused districts.
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.
@@ -2067,6 +2084,8 @@ impl AdvancedAi {
         /// Opt-in gene `religion-lane-spreads-from-founding`; see
         /// [`Self::religion_lane_spreads_from_founding`].
         religion_lane_spreads_from_founding => enable_religion_lane_spreads_from_founding, disable_religion_lane_spreads_from_founding;
+        /// Opt-in `religion-finishes-majorities`; see `religion_majorities.rs`.
+        religion_finishes_majorities => enable_religion_finishes_majorities, disable_religion_finishes_majorities;
         /// Opt-in gene `board-ignores-the-faith-war`; see
         /// [`Self::board_ignores_the_faith_war`].
         board_ignores_the_faith_war => enable_board_ignores_the_faith_war, disable_board_ignores_the_faith_war;
@@ -2279,6 +2298,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
+        /// Opt-in gene `parity-upgrades-before-it-buys-3`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_3 => enable_parity_upgrades_before_it_buys_3, disable_parity_upgrades_before_it_buys_3;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
@@ -3051,6 +3073,18 @@ impl AdvancedAi {
     pub fn disable_scout_first_opening(&mut self) {
         self.scout_first_opening = false;
         self.base.scout_first_opening = false;
+    }
+
+    /// Replace the capital's first opening slot with legal ranged support.
+    pub fn enable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = true;
+        self.base.opening_ranged_support = true;
+    }
+
+    /// Restore the ordinary opener without changing later recon settings.
+    pub fn disable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = false;
+        self.base.opening_ranged_support = false;
     }
 
     /// After its current production completes, let a population-two capital
@@ -5385,6 +5419,17 @@ impl AdvancedAi {
     /// The twin of `enable_field_reads_the_tile_it_leaves`.
     pub fn disable_field_reads_the_tile_it_leaves(&mut self) {
         self.field_reads_the_tile_it_leaves = false;
+    }
+
+    /// Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see
+    /// [`Self::exalted_goddess_buys_the_coastal_guard`].
+    pub fn enable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = true;
+    }
+
+    /// The twin of `enable_exalted_goddess_buys_the_coastal_guard`.
+    pub fn disable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = false;
     }
 
     // ---- append: a-b ------------------------------------------------

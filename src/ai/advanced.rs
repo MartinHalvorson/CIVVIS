@@ -27,6 +27,7 @@ mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
 mod assessment;
+mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
 /// steps. See `advanced/builders.rs`.
 mod builders;
@@ -41,6 +42,9 @@ mod domination_governors;
 mod domination_land_first;
 mod domination_modernization;
 mod domination_siege_milestones;
+/// `exalted-goddess-buys-the-coastal-guard`: see
+/// `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+mod exalted_goddess_buys_the_coastal_guard;
 /// Production values: the values `production_value` reads, defensive items,
 /// and the queue redirects. See `advanced/production_values.rs`.
 mod production_values;
@@ -2076,6 +2080,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// Host clearing-operation cooldowns, replaced for each fresh Native frame.
+    refused_builder_operations: BTreeMap<u32, BTreeSet<Name>>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
     /// `(last observed turn, consecutive idle-turn count)` for cities whose
@@ -7393,6 +7399,13 @@ pub struct AdvancedAi {
     /// counts a hostile stepping into the tile the unit asked about leaves.
     /// See `advanced/battle_planner.rs`. Off by default.
     field_reads_the_tile_it_leaves: bool,
+    /// `exalted-goddess-buys-the-coastal-guard`: an Indonesian coastal city
+    /// under threat buys a naval guard with Faith. See
+    /// `advanced/exalted_goddess_buys_the_coastal_guard.rs`. Off by default.
+    exalted_goddess_buys_the_coastal_guard: bool,
+    /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
+    /// bought its guard. Empty with the gene off.
+    exalted_goddess_guard_bought: BTreeMap<u32, u32>,
     // ---- append: g-k ------------------------------------------------
     /// `government-reach-pays-the-switch`: a seat holding its listed
     /// government takes `government-capacity-fallback`'s reach only for a
@@ -7770,6 +7783,8 @@ pub struct AdvancedAi {
     /// `military-alliance-shield-2`: its own asks by partner and kind, by the
     /// turn asked and whether the partner was a declared friend then.
     military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
+    /// Opt-in first capital slot for ranged support; later recon flags are unchanged.
+    opening_ranged_support: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -8353,6 +8368,35 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-reaches-reformed-church`: a Religion-target founder
+    /// beelines Reformed Church after Theology. See
+    /// `advanced/religion_seat_reformed_church.rs`. Off by default.
+    religion_seat_reaches_reformed_church: bool,
+    /// `religion-seat-flips-the-cheapest`: a Religion-target founder's
+    /// spreaders go where a charge buys the most of the victory. See
+    /// `advanced/religion_seat_flips_the_cheapest.rs`. Off by default.
+    religion_seat_flips_the_cheapest: bool,
+    /// `religion-seat-fields-apostles`: a Religion-target founder on the
+    /// offensive saves its Faith for an Apostle-led corps. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_fields_apostles: bool,
+    /// `religion-seat-builds-holy-sites`: a Religion-target founder claims a
+    /// Holy Site in each idle city without one. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_builds_holy_sites: bool,
+    /// `religion-seat-presses-the-campaign`: a Religion-target founder's corps
+    /// yields only to a killing blow, and its Apostles take a winnable fight
+    /// before they step away. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_presses_the_campaign: bool,
+    /// `religion-seat-races-the-prophet`: a Religion-target seat that has not
+    /// founded takes any queue for its Holy Site and then runs Prayers. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_races_the_prophet: bool,
+    /// `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds
+    /// on the Faith-scaling founder beliefs first. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_takes_the_faith_beliefs: bool,
     /// A committed, legal Science project keeps its queue ahead of a paused
     /// district. Independent opt-in; see `paused_district_finish.rs`.
     paused_district_spares_the_launch: bool,
@@ -8373,6 +8417,11 @@ pub struct AdvancedAi {
     /// behind the world. See
     /// `advanced/parity_upgrades_before_it_buys.rs`.
     parity_upgrades_before_it_buys_2: bool,
+    /// `parity-upgrades-before-it-buys-3`: version one, with a unit obsolete
+    /// by our own technology (not the world era's clock), on the parity path
+    /// and the base wartime defender purchases. See
+    /// `advanced/parity_upgrades_before_it_buys.rs`.
+    parity_upgrades_before_it_buys_3: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
     /// Off by default.
@@ -8390,11 +8439,19 @@ pub struct AdvancedAi {
     /// starts its Holy Site the turn Astrology allows it. See
     /// `advanced/religion_seat_founds_first.rs`. Off by default.
     religion_seat_founds_first: bool,
+    /// `religion-seat-earns-its-prophet`: a Religion-target seat with an open
+    /// Prophet race reserves a safe, idle Holy Site for Shrine or Prayers
+    /// before the opening book and expansion. See `religion_prophet_queue.rs`.
+    /// Off by default.
+    religion_seat_earns_its_prophet: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
     /// See `advanced/religion_lane_spreads.rs`. Off by default.
     religion_lane_spreads_from_founding: bool,
+    /// Religion campaigns spend foreign charges only on living major holdouts.
+    /// See `advanced/religion_majorities.rs`. Off by default.
+    religion_finishes_majorities: bool,
     /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
     /// plan's `desired_cities` at the live Immortal field's city curve plus
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
@@ -10383,6 +10440,7 @@ mod religion_lane;
 mod religion_lane_hands_over;
 /// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
 mod religion_lane_spreads;
+mod religion_majorities;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
@@ -10514,6 +10572,9 @@ mod delegations_reach_every_rival;
 /// `advanced/foothold_faces_the_capital.rs`.
 mod foothold_faces_the_capital;
 // `formations-heed-refusals`. See `advanced/formation_refusals.rs`.
+/// Forcing replies: pricing the enemy's strongest answer to an attack. See
+/// `advanced/forcing_reply.rs`.
+mod forcing_reply;
 mod formation_refusals;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
@@ -11044,6 +11105,9 @@ mod siege_under_the_wing;
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
 mod spaceport_above_sea;
+/// The Science lane's launch sites: how many Spaceports it wants, which cities
+/// carry them, and what those cities build. See `advanced/spaceports.rs`.
+mod spaceports;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
@@ -11800,12 +11864,16 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             early_cities_keep_their_distance: false,
             field_reads_the_tile_it_leaves: false,
+            exalted_goddess_buys_the_coastal_guard: false,
+            exalted_goddess_guard_bought: BTreeMap::new(),
             // ---- append: g-k ----------------------------------------
             // ---- append: l-o ----------------------------------------
             nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
+            opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
+            parity_upgrades_before_it_buys_3: false,
             pillaged_districts_repair_first: false,
             queue_claim_turns: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
@@ -11984,6 +12052,11 @@ impl AdvancedAi {
             .map(|(_, guard)| *guard)
             .filter(|guard| g.units.get(guard).is_some_and(|unit| unit.owner == pid))
             .collect()
+    }
+
+    /// Whether the opening-only ranged-support experiment is enabled.
+    pub fn opening_ranged_support(&self) -> bool {
+        self.opening_ranged_support
     }
 
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
@@ -16801,7 +16874,7 @@ impl AdvancedAi {
             }
         }
         let Some(unit) = candidates.into_iter().find(|unit| {
-            self.parity_buy_barred(g, unit, ours, theirs).is_none()
+            self.parity_buy_barred(g, pid, unit, ours, theirs).is_none()
                 && g.unit_purchase_cost(pid, contact, unit, "gold")
                     .is_some_and(|cost| bank + f64::EPSILON >= BORDER_PARITY_RESERVE + cost)
         }) else {
@@ -17823,6 +17896,8 @@ impl AdvancedAi {
         if active_naturalists == 0
             && !g.national_park_sites(pid).is_empty()
             && portfolio_budget + f64::EPSILON >= g.naturalist_purchase_cost(pid)
+            // See `advanced/culture_band_bank.rs`.
+            && !self.culture_band_bank_holds_naturalists(g, pid)
         {
             for city in g.player_city_ids(pid) {
                 if g.apply(
@@ -18014,6 +18089,12 @@ impl AdvancedAi {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            // A ship is Faith-purchasable only under Gitarja, and only
+            // `exalted-goddess-buys-the-coastal-guard` buys one: this scorer
+            // never could, and keeps it that way.
+            if matches!(g.rules.units[unit].domain.as_deref(), Some("sea")) {
                 continue;
             }
             // A native quote can fit above the reserve long before the
@@ -18413,574 +18494,6 @@ impl AdvancedAi {
                 base + 2_800.0
             }
             _ => -10_000.0,
-        }
-    }
-
-    /// The number of Spaceports the current Science plan is allowed to keep
-    /// building. The milestones deliberately stage the investment; the hard
-    /// cap is a guard for the generic production governor as well as the
-    /// dedicated space-race pass.
-    ///
-    /// An adaptive controller has no explicit `victory_target`, so its
-    /// ordinary Science commitment is the launch chain itself. Before that
-    /// chain starts, the generic Spaceport valuation retains its historical
-    /// behavior.
-    fn adaptive_science_spaceport_lane(&self, g: &Game, pid: usize) -> bool {
-        if !self.victory_planning || self.victory_target.is_some() || !g.victory_conditions.science
-        {
-            return false;
-        }
-        [
-            "launch_earth_satellite",
-            "launch_moon_landing",
-            "launch_mars_colony",
-            "exoplanet_expedition",
-        ]
-        .into_iter()
-        .any(|project| {
-            g.players[pid].science_projects.contains(project)
-                || Self::science_project_is_queued(g, pid, project)
-        })
-    }
-
-    fn science_spaceport_target(&self, g: &Game, pid: usize) -> usize {
-        let city_count = g.player_city_ids(pid).len();
-        if city_count == 0 {
-            return 0;
-        }
-        let completed = &g.players[pid].science_projects;
-        let earth_satellite_started = !completed.contains("launch_earth_satellite")
-            && Self::science_project_is_queued(g, pid, "launch_earth_satellite");
-        let adaptive_science = self.adaptive_science_spaceport_lane(g, pid);
-        let desired = if self.science_drive_active()
-            || (self.victory_planning
-                && (self.space_race_lane(g, pid)
-                    || self.raced_target() == Some(VictoryTarget::Science)))
-            || adaptive_science
-        {
-            // The drive starts its second pad as soon as the Earth Satellite
-            // is underway, so it is ready for the later parallel laser phase.
-            Self::science_drive_desired_pads(completed).max(
-                if self.victory_planning
-                    && Self::science_project_is_queued(g, pid, "launch_mars_colony")
-                {
-                    3
-                } else if earth_satellite_started {
-                    2
-                } else {
-                    1
-                },
-            )
-        } else if self.space_race_lane(g, pid)
-            || self.raced_target() == Some(VictoryTarget::Science)
-        {
-            if completed.contains("launch_mars_colony") {
-                3
-            } else if completed.contains("launch_moon_landing") {
-                2
-            } else {
-                1
-            }
-        } else {
-            1
-        };
-        desired.min(SCIENCE_SPACEPORT_CAP).min(city_count)
-    }
-
-    /// A standing Spaceport keeps a city busy with one project at a time;
-    /// another one there cannot create useful parallelism.
-    fn city_has_spaceport(g: &Game, cid: u32) -> bool {
-        let pad = crate::name!("spaceport");
-        g.cities[&cid]
-            .districts
-            .keys()
-            .any(|district| g.district_family(*district) == pad)
-    }
-
-    /// A placed district is a commitment before it is a completed district.
-    /// Civilization VI removes the district from the production queue as soon
-    /// as the player chooses its plot, while the host state reports the plot
-    /// as `complete: false`. The mirror preserves that fact on the tile, not
-    /// in `City::districts` or `City::queue`.
-    fn city_has_spaceport_foundation(g: &Game, cid: u32) -> bool {
-        let pad = crate::name!("spaceport");
-        g.cities[&cid].owned_tiles.iter().any(|position| {
-            g.map
-                .get(*position)
-                .and_then(|tile| tile.district_foundation.as_ref())
-                .is_some_and(|foundation| g.district_family(foundation.district) == pad)
-        })
-    }
-
-    /// A queued Spaceport is a real future launch site even when another item
-    /// precedes it in the city queue.
-    fn city_queues_spaceport(g: &Game, cid: u32) -> bool {
-        let pad = crate::name!("spaceport");
-        g.cities[&cid].queue.iter().any(|item| {
-            matches!(item, Item::District { district, .. }
-                if g.district_family(*district) == pad)
-        })
-    }
-
-    /// An uncompleted launch project is a real race commitment as soon as it
-    /// is in a city queue. It can sit behind another item while the first pad
-    /// is still finishing that item, but the next Spaceport can already be
-    /// built in parallel in another city.
-    fn science_project_is_queued(g: &Game, pid: usize, project: &str) -> bool {
-        g.player_city_ids(pid).into_iter().any(|cid| {
-            g.cities[&cid]
-                .queue
-                .iter()
-                .any(|item| matches!(item, Item::Project { project: queued } if queued == project))
-        })
-    }
-
-    /// A city can expose the same in-progress pad through both the queue and
-    /// its foundation on a native board. Count the city once, so changing the
-    /// queue item does not turn one placed pad into two commitments.
-    fn city_has_spaceport_commitment(g: &Game, cid: u32) -> bool {
-        Self::city_has_spaceport(g, cid)
-            || Self::city_queues_spaceport(g, cid)
-            || Self::city_has_spaceport_foundation(g, cid)
-    }
-
-    /// Count every standing, placed, and queued Spaceport. Queue depth matters:
-    /// a pad behind a project still consumes one of the race's deliberately
-    /// small launch-site budget, and a placed foundation remains committed
-    /// after Civilization VI removes it from the queue.
-    fn science_spaceport_commitments(g: &Game, pid: usize) -> usize {
-        g.player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| Self::city_has_spaceport_commitment(g, *cid))
-            .count()
-    }
-
-    /// Cities that can carry the still-unfilled Spaceport slots, in production
-    /// order. A queued or placed pad counts as a candidate so an already-good
-    /// commitment is retained; a completed pad is permanent and therefore
-    /// outside this list.
-    fn science_spaceport_candidates(&self, g: &Game, pid: usize) -> Vec<u32> {
-        let pad = crate::name!("spaceport");
-        let _memo = g.query_memo();
-        let mut candidates: Vec<u32> = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| {
-                !Self::city_has_spaceport(g, *cid)
-                    && (Self::city_has_spaceport_commitment(g, *cid)
-                        || g.district_sites(*cid, pad).into_iter().any(|pos| {
-                            g.can_produce(pid, *cid, &Item::District { district: pad, pos })
-                        }))
-            })
-            .collect();
-        candidates.sort_by(|left, right| {
-            g.city_yields(*right)
-                .production
-                .total_cmp(&g.city_yields(*left).production)
-                .then_with(|| left.cmp(right))
-        });
-        candidates
-    }
-
-    /// The unfinished launch-site cities the plan should retain. Completed
-    /// pads cannot be moved, so a legacy run that already has three simply
-    /// stops every additional queue rather than trying to undo them.
-    fn science_spaceport_retained_cities(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
-        let completed = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| Self::city_has_spaceport(g, *cid))
-            .count();
-        let target = self
-            .science_spaceport_target(g, pid)
-            .max(completed)
-            .min(SCIENCE_SPACEPORT_CAP);
-        let candidates = self.science_spaceport_candidates(g, pid);
-        let committed: Vec<u32> = candidates
-            .iter()
-            .copied()
-            .filter(|cid| Self::city_has_spaceport_commitment(g, *cid))
-            .collect();
-        // Preserve cities that have already paid the irreversible placement
-        // cost first. Only genuinely uncommitted cities may fill the slots
-        // left after those foundations and queued pads are accounted for.
-        let mut retained: BTreeSet<u32> = committed
-            .iter()
-            .copied()
-            .take(target.saturating_sub(completed))
-            .collect();
-        let open = target.saturating_sub(completed + committed.len());
-        retained.extend(
-            candidates
-                .into_iter()
-                .filter(|cid| !Self::city_has_spaceport_commitment(g, *cid))
-                .take(open),
-        );
-        retained
-    }
-
-    /// Whether this city is one of the highest-production cities still needed
-    /// for a Science Spaceport. This is consulted by the generic production
-    /// scorer, which otherwise sees each city in isolation and can start a
-    /// fourth (or seventh) pad after the dedicated pass has done its work.
-    fn science_spaceport_city_is_admitted(&self, g: &Game, pid: usize, cid: u32) -> bool {
-        self.science_spaceport_retained_cities(g, pid)
-            .contains(&cid)
-    }
-
-    /// Replace surplus or slower in-progress Spaceports with the best useful
-    /// local work. `Action::Produce` banks the paused district progress, so a
-    /// future genuine need can resume it; meanwhile the city can finish its
-    /// research/production infrastructure or, once that is exhausted, run a
-    /// deliberately valued district project.
-    fn rebalance_science_spaceport_queues(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        let pad = crate::name!("spaceport");
-        let retained = self.science_spaceport_retained_cities(g, pid);
-        let completed = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| Self::city_has_spaceport(g, *cid))
-            .count();
-        let target = self
-            .science_spaceport_target(g, pid)
-            .max(completed)
-            .min(SCIENCE_SPACEPORT_CAP);
-        let excess: Vec<u32> = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter(|cid| {
-                !retained.contains(cid)
-                    && matches!(
-                        g.cities[cid].queue.first(),
-                        Some(Item::District { district, .. })
-                            if g.district_family(*district) == pad
-                    )
-            })
-            .collect();
-        if excess.is_empty() {
-            return;
-        }
-
-        let mut counts = self.counts(g, pid);
-        for cid in excess {
-            let replacement = {
-                let _memo = g.query_memo();
-                let items: Vec<Item> = g
-                    .producible_items(pid, cid)
-                    .into_iter()
-                    .filter(|item| {
-                        !matches!(item, Item::District { district, .. }
-                            if g.district_family(*district) == pad)
-                    })
-                    .collect();
-                let normally_valued = items
-                    .iter()
-                    .cloned()
-                    .map(|item| {
-                        let value = self.card_boosted_value(
-                            g,
-                            pid,
-                            cid,
-                            &item,
-                            self.production_value(g, pid, cid, &item, plan, &counts),
-                        );
-                        (value, format!("{item:?}"), item)
-                    })
-                    .filter(|(value, _, _)| *value > -1_000.0)
-                    .max_by(|left, right| {
-                        left.0
-                            .total_cmp(&right.0)
-                            .then_with(|| right.1.cmp(&left.1))
-                    });
-                // Every ordinary production score can correctly go negative
-                // late in a game. That must not leave
-                // an already-illegal fourth Spaceport running, though. In
-                // that exceptional case reclaim the queue for a concrete
-                // repair/building, a Builder, or finally a Science/Industrial
-                // project. The ordinary scorer above remains the route used
-                // whenever it has a viable local choice.
-                normally_valued.or_else(|| {
-                    items
-                        .into_iter()
-                        .filter_map(|item| {
-                            let fallback_rank = match &item {
-                                Item::Repair { .. } => 4,
-                                Item::Building { .. } => 3,
-                                Item::Unit { unit } if *unit == "builder" => 2,
-                                Item::Project { project }
-                                    if g.rules.projects.get(project).is_some_and(|spec| {
-                                        spec.district.is_some_and(|district| {
-                                            matches!(
-                                                g.district_family(district).as_str(),
-                                                "campus" | "industrial_zone"
-                                            )
-                                        })
-                                    }) =>
-                                {
-                                    1
-                                }
-                                _ => return None,
-                            };
-                            Some((fallback_rank, format!("{item:?}"), item))
-                        })
-                        .max_by(|left, right| {
-                            left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1))
-                        })
-                        .map(|(_, description, item)| (0.0, description, item))
-                })
-            };
-            let Some((score, _, item)) = replacement else {
-                continue;
-            };
-            if g.apply(
-                pid,
-                &Action::Produce {
-                    city: cid,
-                    item: item.clone(),
-                },
-            )
-            .is_err()
-            {
-                continue;
-            }
-            if self.journal().wants(crate::reasoning::Level::Decision) {
-                let city_name = g.cities[&cid].name.clone();
-                think!(self.journal(), Cities, Decision,
-                       "{} replaces an excess Spaceport", city_name;
-                       "the Science plan keeps at most {target} launch sites; {} is worth {score:.0}",
-                       Self::plain_item(&item));
-            }
-            counts.add_item(g, &item);
-        }
-    }
-
-    /// The science lane's production pass: the Spaceport queues rebalanced,
-    /// then `science_production`.
-    fn space_race_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if self.victory_target == Some(VictoryTarget::Domination) {
-            return;
-        }
-        self.rebalance_science_spaceport_queues(g, pid, plan);
-        self.science_production(g, pid);
-        self.repair_stalled_science_project_queues(g, pid);
-    }
-
-    /// Reclaim a committed science queue whose Spaceport has been pillaged.
-    ///
-    /// `Game::process_city` correctly stalls a launch project while every
-    /// Spaceport in that city is pillaged, but the strategic governor normally
-    /// treats a non-empty queue as a commitment and never asks the repair menu
-    /// again. That makes a spy or raid turn a recoverable infrastructure loss
-    /// into an indefinitely frozen race: `Item::Repair { repair: "district" }`
-    /// is legal, but the queue head hides it. Switching through `Produce` banks
-    /// the project's progress by its normal item key, repairs the launch site,
-    /// and lets the next science pass resume the same rung.
-    fn repair_stalled_science_project_queues(&self, g: &mut Game, pid: usize) {
-        if self.raced_target() != Some(VictoryTarget::Science)
-            && !self.science_endgame_committed(g, pid)
-        {
-            return;
-        }
-        let is_science_project = |project: &str| {
-            matches!(
-                project,
-                "launch_earth_satellite"
-                    | "launch_moon_landing"
-                    | "launch_mars_colony"
-                    | "exoplanet_expedition"
-                    | "lagrange_laser_station"
-                    | "terrestrial_laser_station"
-            )
-        };
-        for cid in g.player_city_ids(pid) {
-            let Some(Item::Project { project }) = g.cities[&cid].queue.first() else {
-                continue;
-            };
-            if !is_science_project(project) {
-                continue;
-            }
-            let spaceports: Vec<crate::Pos> = g.cities[&cid]
-                .districts
-                .iter()
-                .filter_map(|(district, position)| {
-                    (g.district_family(*district) == "spaceport").then_some(*position)
-                })
-                .collect();
-            if spaceports.is_empty()
-                || spaceports
-                    .iter()
-                    .any(|position| !g.map.tiles[position].pillaged)
-            {
-                continue;
-            }
-            let Some(repair) = spaceports.into_iter().find_map(|position| {
-                let repair = Item::Repair {
-                    repair: crate::name!("district"),
-                    pos: position,
-                };
-                g.can_produce(pid, cid, &repair).then_some(repair)
-            }) else {
-                continue;
-            };
-            let project_name = project.to_string();
-            if g.apply(
-                pid,
-                &Action::Produce {
-                    city: cid,
-                    item: repair.clone(),
-                },
-            )
-            .is_ok()
-                && self.journal().wants(crate::reasoning::Level::Decision)
-            {
-                think!(self.journal(), Cities, Decision,
-                    "{} repairs its pillaged Spaceport before resuming {}",
-                    g.cities[&cid].name, project_name;
-                    "the committed launch queue was stalled because every Spaceport district was inactive; its progress remains banked by item");
-            }
-        }
-    }
-
-    fn science_production(&self, g: &mut Game, pid: usize) {
-        if self.victory_target == Some(VictoryTarget::Domination) {
-            return;
-        }
-        if self.schedule_science_endgame(g, pid) {
-            self.science_spaceport_production(g, pid);
-            return;
-        }
-        // See `lane_space_race`: every gate below asks for an EXPLICITLY
-        // assigned Science target, so the adaptive agent production ships —
-        // which has no target at all — races the space race at one pad, and
-        // only in a city with nothing else queued. One answer per turn; the
-        // three tests below read it.
-        let races_science = self.space_race_lane(g, pid);
-        let completed = g.players[pid].science_projects.clone();
-        let project = if !completed.contains("launch_earth_satellite") {
-            "launch_earth_satellite"
-        } else if !completed.contains("launch_moon_landing") {
-            "launch_moon_landing"
-        } else if !completed.contains("launch_mars_colony") {
-            "launch_mars_colony"
-        } else if !completed.contains("exoplanet_expedition") {
-            "exoplanet_expedition"
-        } else {
-            "lagrange_laser_station"
-        };
-        let project_item = Item::Project {
-            project: Name::new(project),
-        };
-        let parallel_project = matches!(
-            project,
-            "lagrange_laser_station" | "terrestrial_laser_station"
-        );
-        let already_queued = !parallel_project
-            && g.player_city_ids(pid).iter().any(|cid| {
-                matches!(
-                    g.cities[cid].queue.first(),
-                    Some(Item::Project { project: queued }) if queued == project
-                )
-            });
-        if !already_queued {
-            let project_city = {
-                let _memo = g.query_memo();
-                g.player_city_ids(pid)
-                    .into_iter()
-                    .filter(|cid| {
-                        g.cities[cid]
-                            .districts
-                            .contains_key(crate::name!("spaceport"))
-                            && g.can_produce(pid, *cid, &project_item)
-                            && !matches!(
-                                g.cities[cid].queue.first(),
-                                Some(Item::Project { project: queued }) if queued == project
-                            )
-                            && (races_science
-                                || self.raced_target() == Some(VictoryTarget::Science)
-                                || g.cities[cid].queue.is_empty())
-                    })
-                    .min_by(|a, b| {
-                        if races_science || self.raced_target() == Some(VictoryTarget::Science) {
-                            Self::science_project_build_turns(g, pid, *a, &project_item)
-                                .total_cmp(&Self::science_project_build_turns(
-                                    g,
-                                    pid,
-                                    *b,
-                                    &project_item,
-                                ))
-                                .then_with(|| a.cmp(b))
-                        } else {
-                            g.city_yields(*b)
-                                .production
-                                .total_cmp(&g.city_yields(*a).production)
-                                .then_with(|| a.cmp(b))
-                        }
-                    })
-            };
-            if let Some(city) = project_city {
-                let _ = g.apply(
-                    pid,
-                    &Action::Produce {
-                        city,
-                        item: project_item,
-                    },
-                );
-                return;
-            }
-        }
-
-        self.science_spaceport_production(g, pid);
-    }
-
-    fn science_spaceport_production(&self, g: &mut Game, pid: usize) {
-        let races_science = self.space_race_lane(g, pid);
-        let city_ids = g.player_city_ids(pid);
-        if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
-            return;
-        }
-        let mut best: Option<(f64, u32, Pos)> = None;
-        for cid in city_ids {
-            if Self::city_has_spaceport_commitment(g, cid) {
-                continue;
-            }
-            if !self.science_spaceport_city_is_admitted(g, pid, cid) {
-                continue;
-            }
-            if !races_science
-                && self.raced_target() != Some(VictoryTarget::Science)
-                && !g.cities[&cid].queue.is_empty()
-            {
-                continue;
-            }
-            for item in g.producible_items(pid, cid) {
-                let Item::District { district, pos } = item else {
-                    continue;
-                };
-                if g.district_family(district) != "spaceport" {
-                    continue;
-                }
-                let production = g.city_yields(cid).production;
-                if best
-                    .map(|old| {
-                        production > old.0 || (production == old.0 && (cid, pos) < (old.1, old.2))
-                    })
-                    .unwrap_or(true)
-                {
-                    best = Some((production, cid, pos));
-                }
-            }
-        }
-        if let Some((_, city, pos)) = best {
-            let _ = g.apply(
-                pid,
-                &Action::Produce {
-                    city,
-                    item: Item::District {
-                        district: crate::name!("spaceport"),
-                        pos,
-                    },
-                },
-            );
         }
     }
 
@@ -19677,6 +19190,11 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
+                // The named Religion seat has already paid for its Holy Site;
+                // its open Prophet race keeps Prayers ahead of another Settler.
+                if self.religion_prophet_project_reserved(g, pid, cid) {
+                    return None;
+                }
                 let redirectable = match g.cities[&cid].queue.first() {
                     Some(Item::Project { project }) => {
                         let spec = &g.rules.projects[project];
@@ -20235,11 +19753,13 @@ impl AdvancedAi {
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
             // `prophet-builds-its-site`: likewise the Holy Site a Prophet
-            // waits on.
+            // waits on. The queue claim also keeps the open race's Prayers
+            // through routine rescoring, after explicit defense handling.
             let race_shrine_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     (self.race_shrine_committed(g, pid, cid, item)
-                        || self.prophet_site_committed(g, pid, cid, item))
+                        || self.prophet_site_committed(g, pid, cid, item)
+                        || self.religion_prophet_project_reserved(g, pid, cid))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             // `early-settler-floor`: the floor's Settler finishes before
@@ -24089,263 +23609,6 @@ impl AdvancedAi {
             .or(Some(UNKNOWN_OBJECTIVE_STRENGTH))
     }
 
-    /// Candidate attacks on one tactical victim. `Game::legal_actions` also
-    /// enumerates production, diplomacy, spies, purchases, every movement,
-    /// and every other unit target; calling it at each reply-search node made
-    /// late-game turns spend most of their time proving irrelevant actions
-    /// irrelevant. Build the small target-specific superset here and let
-    /// `Game::apply` remain the authoritative legality check.
-    fn forcing_attacks_to(
-        position: &Game,
-        enemy: usize,
-        victim_pos: Pos,
-        only_unit: Option<u32>,
-    ) -> Vec<Action> {
-        let mut replies = Vec::new();
-        for unit in position.units.values().filter(|unit| {
-            unit.owner == enemy && only_unit.is_none_or(|candidate| candidate == unit.id)
-        }) {
-            if unit.moves_left <= 0.0 || unit.attacks_left <= 0 {
-                continue;
-            }
-            let spec = &position.rules.units[unit.kind];
-            let distance = position.wdist(unit.pos, victim_pos);
-            if spec.domain.as_deref() == Some("air") {
-                if distance <= position.unit_attack_range(unit.id) {
-                    replies.push(Action::AirStrike {
-                        unit: unit.id,
-                        target: victim_pos,
-                    });
-                }
-                continue;
-            }
-            if spec.class != "military" || position.is_embarked(unit) {
-                continue;
-            }
-            if spec.has_ranged_attack() && distance <= position.unit_attack_range(unit.id) {
-                replies.push(Action::Ranged {
-                    unit: unit.id,
-                    target: victim_pos,
-                });
-            }
-            if spec.is_melee_capable() && distance == 1 {
-                replies.push(Action::Attack {
-                    unit: unit.id,
-                    target: victim_pos,
-                });
-            }
-        }
-        if only_unit.is_none() {
-            for city in position.cities.values().filter(|city| city.owner == enemy) {
-                // ★★★★ THE CALLER PROVES THESE ILLEGAL BY CLONING THE WHOLE
-                // GAME. Every reply this function returns is tried as
-                // `let mut branch = position.clone(); if branch.apply(..).is_err()
-                // { continue; }` — so a city with no walls left, a spent
-                // strike, no Encampment, or a victim three tiles away cost a
-                // full game copy to establish something the city already
-                // knew. Both strikes were pushed unconditionally for every
-                // enemy city at every forcing node. These are the engine's own
-                // preconditions from `do_city_strike` and
-                // `do_encampment_strike`, asked before the copy rather than
-                // after it; the branch was discarded either way, so no search
-                // value moves. Range only — line of sight and the
-                // occupied-tile rules stay where they are, because those the
-                // clone must still answer.
-                if position.city_can_strike(city) && position.wdist(city.pos, victim_pos) <= 2 {
-                    replies.push(Action::CityStrike {
-                        city: city.id,
-                        target: victim_pos,
-                    });
-                }
-                for district in position.defending_districts(city) {
-                    if position.defending_district_can_strike(city, &district)
-                        && position.wdist(district.pos, victim_pos) <= 2
-                    {
-                        replies.push(
-                            position
-                                .defending_district_strike_action(city.id, &district, victim_pos),
-                        );
-                    }
-                }
-            }
-        }
-        replies
-    }
-
-    /// One-ply-then-extend search depth used to price a forcing reply: the
-    /// direct reply ply, plus one further extension ply chosen by
-    /// [`Self::forcing_reply_line`]'s own recursion. Named so the value only
-    /// has to be justified once, at its declaration, instead of read back
-    /// out of a bare `2` at the call site in
-    /// [`Self::forcing_reply_penalty_from_position`].
-    const FORCING_REPLY_DEPTH: usize = 2;
-
-    /// Chess-style move-ordering width: after every forcing reply at a node
-    /// is generated and scored, only this many of the strongest
-    /// captures/checks are extended into another ply. Named so the value is
-    /// documented once instead of read back out of a bare `.take(4)`.
-    const FORCING_REPLY_WIDTH: usize = 4;
-
-    /// Debug text for one forcing-reply candidate, used only as a sort
-    /// tie-break key when two candidates already share the same primary
-    /// score (see the `sort_by` in [`Self::forcing_reply_line`]). Takes the
-    /// raw `Action`(s) rather than a precomputed `String` so the
-    /// (allocating) `Debug` formatting happens lazily, inside the
-    /// comparator's `then_with`, and only for the rare pair that actually
-    /// ties — every other candidate never pays for a label at all.
-    fn forcing_reply_label(reply: &Action, followup: &Option<Action>) -> String {
-        match followup {
-            Some(followup) => format!("{reply:?} -> {followup:?}"),
-            None => format!("{reply:?}"),
-        }
-    }
-
-    fn forcing_reply_line(
-        work_pool: Option<&Arc<WorkPool>>,
-        position: &Game,
-        enemy: usize,
-        victim: u32,
-        depth: usize,
-    ) -> f64 {
-        if depth == 0 || !position.units.contains_key(&victim) {
-            return 0.0;
-        }
-        let victim_hp = position.units[&victim].hp;
-        let victim_pos = position.units[&victim].pos;
-        let replies = Self::forcing_attacks_to(position, enemy, victim_pos, None);
-
-        let mut reply_branches = Vec::new();
-        let mut direct_attackers = BTreeSet::new();
-        for reply in replies {
-            let reply_unit = match &reply {
-                Action::Attack { unit, .. }
-                | Action::Ranged { unit, .. }
-                | Action::AirStrike { unit, .. } => Some(*unit),
-                _ => None,
-            };
-            direct_attackers.extend(reply_unit);
-            let reply_hp =
-                reply_unit.and_then(|unit| position.units.get(&unit).map(|candidate| candidate.hp));
-            let mut branch = position.clone();
-            if branch.apply(enemy, &reply).is_err() {
-                continue;
-            }
-            // `reply` itself (not a formatted String) is stored so its Debug
-            // text is only built lazily, in the sort tie-break below.
-            reply_branches.push((reply, None, branch, reply_unit, reply_hp));
-        }
-
-        // A Civ unit can normally move and attack in the same turn. Search
-        // only one-step forcing approaches whose resulting position already
-        // has a legal attack on the victim. This is the tactical analogue of
-        // a check extension: it closes the horizon gap around an exposed
-        // capture without admitting every quiet movement into quiescence.
-        let mobile_attackers: Vec<u32> = position
-            .units
-            .values()
-            .filter(|unit| unit.owner == enemy && !direct_attackers.contains(&unit.id))
-            .filter(|unit| {
-                let spec = &position.rules.units[unit.kind];
-                spec.class == "military"
-                    && spec.domain.as_deref() != Some("air")
-                    && position.wdist(unit.pos, victim_pos)
-                        <= position.unit_attack_range(unit.id) + 2
-            })
-            .map(|unit| unit.id)
-            .collect();
-        for attacker in mobile_attackers {
-            let reply_hp = position.units[&attacker].hp;
-            for to in position
-                .nbrs(position.units[&attacker].pos)
-                .into_iter()
-                .filter(|to| position.can_move(attacker, *to))
-            {
-                let movement = Action::Move { unit: attacker, to };
-                let mut moved = position.clone();
-                if moved.apply(enemy, &movement).is_err() {
-                    continue;
-                }
-                let followups = Self::forcing_attacks_to(&moved, enemy, victim_pos, Some(attacker));
-                for followup in followups {
-                    let mut branch = moved.speculative_clone();
-                    if branch.apply(enemy, &followup).is_err() {
-                        continue;
-                    }
-                    reply_branches.push((
-                        movement.clone(),
-                        Some(followup),
-                        branch,
-                        Some(attacker),
-                        Some(reply_hp),
-                    ));
-                }
-            }
-        }
-
-        let mut ordered = Vec::new();
-        for (reply, followup, branch, reply_unit, reply_hp) in reply_branches {
-            let loss = branch
-                .units
-                .get(&victim)
-                .map(|unit| (victim_hp - unit.hp).max(0) as f64)
-                .unwrap_or(victim_hp as f64 + 35.0);
-            let counter_loss = match (reply_unit, reply_hp) {
-                (Some(unit), Some(hp)) => branch
-                    .units
-                    .get(&unit)
-                    .map(|unit| (hp - unit.hp).max(0) as f64)
-                    .unwrap_or(hp as f64 + 20.0),
-                _ => 0.0,
-            };
-            ordered.push((
-                (loss - 0.35 * counter_loss).max(0.0),
-                reply,
-                followup,
-                branch,
-            ));
-        }
-
-        // Chess-style move ordering keeps the extension bounded: examine all
-        // forcing replies at the frontier, but only extend the
-        // FORCING_REPLY_WIDTH strongest captures/checks into another
-        // focus-fire action. The tie-break Debug text is built lazily,
-        // inside `then_with`, so it is only paid for the rare pair of
-        // candidates that actually share the same primary score.
-        ordered.sort_by(|left, right| {
-            right.0.total_cmp(&left.0).then_with(|| {
-                Self::forcing_reply_label(&left.1, &left.2)
-                    .cmp(&Self::forcing_reply_label(&right.1, &right.2))
-            })
-        });
-        let continuations = ordered
-            .into_iter()
-            .take(Self::FORCING_REPLY_WIDTH)
-            .collect::<Vec<_>>();
-        let values = match work_pool {
-            Some(pool) if continuations.len() > 1 => {
-                let nested_pool = Arc::clone(pool);
-                pool.map_owned(continuations, move |(immediate, _, _, branch)| {
-                    immediate
-                        + Self::forcing_reply_line(
-                            Some(&nested_pool),
-                            &branch,
-                            enemy,
-                            victim,
-                            depth - 1,
-                        )
-                })
-            }
-            _ => continuations
-                .into_iter()
-                .map(|(immediate, _, _, branch)| {
-                    immediate
-                        + Self::forcing_reply_line(work_pool, &branch, enemy, victim, depth - 1)
-                })
-                .collect(),
-        };
-        values.into_iter().fold(0.0_f64, f64::max)
-    }
-
     /// Make a candidate battlefield action on a clone and value the exact
     /// result before extending opponent replies. This is the principal-search
     /// half of the tactical evaluator: static exchange remains useful for
@@ -24599,12 +23862,6 @@ impl AdvancedAi {
         REASONS.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
     }
 
-    fn note_illegal_attack(why: &str) {
-        if let Ok(mut tally) = Self::illegal_attack_tally().lock() {
-            *tally.entry(why.to_string()).or_insert(0) += 1;
-        }
-    }
-
     /// Every reason the model has refused an attack this process, commonest
     /// first. The live bridge prints it so a run says which rule is refusing
     /// its army rather than leaving 45 silent declines in a war.
@@ -24618,206 +23875,6 @@ impl AdvancedAi {
             .collect();
         rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         rows
-    }
-
-    /// Price the enemy's forcing reply on a board an exact attack has already
-    /// produced, instead of on a second clone of the same world.
-    ///
-    /// ⚠ EXACT BY CONSTRUCTION, AND THE ARGUMENT IS SHORT: `Game::apply` is
-    /// the ONLY mutation `tactical_attack_result_in` makes — everything else
-    /// it touches is a read — so the board it hands back is bit-for-bit the
-    /// board `forcing_reply_penalty_owned` used to build by cloning again and
-    /// applying the same action. The three arms below reproduce that function's
-    /// behaviour case for case, including the refusal reason it reports and the
-    /// 135.0 it charges an attacker that did not survive its own attack.
-    fn forcing_reply_penalty_applied(
-        work_pool: Option<Arc<WorkPool>>,
-        after: &mut Game,
-        applied: AppliedAttack,
-        pid: usize,
-        uid: u32,
-        action: &Action,
-    ) -> f64 {
-        match applied {
-            AppliedAttack::Refused(why) => {
-                Self::note_illegal_attack(&why);
-                return 1_000.0;
-            }
-            AppliedAttack::NotScored => {
-                // Nothing was applied, because there was no attack to score.
-                // This is the one arm that still pays an apply, and it is the
-                // arm that used to pay a clone as well.
-                if let Err(why) = after.apply(pid, action) {
-                    Self::note_illegal_attack(&why);
-                    return 1_000.0;
-                }
-            }
-            AppliedAttack::Applied => {}
-        }
-        if !after.units.contains_key(&uid) {
-            return 135.0;
-        }
-        Self::forcing_reply_penalty_from_position(work_pool.as_ref(), after, pid, &[uid])
-    }
-
-    /// Price the strongest forcing reply from an already-resolved friendly
-    /// position.  Most callers have one exposed attacker; a coordinated
-    /// volley passes both surviving bodies so the opponent is allowed to pick
-    /// whichever member of the pair is actually vulnerable.
-    fn forcing_reply_penalty_from_position(
-        work_pool: Option<&Arc<WorkPool>>,
-        after: &Game,
-        pid: usize,
-        victims: &[u32],
-    ) -> f64 {
-        let victims: Vec<u32> = victims
-            .iter()
-            .copied()
-            .filter(|uid| after.units.contains_key(uid))
-            .collect();
-        if victims.is_empty() {
-            return 0.0;
-        }
-        let enemies: Vec<usize> = after
-            .players
-            .iter()
-            .filter(|player| player.id != pid && player.alive && after.is_at_war(pid, player.id))
-            .map(|player| player.id)
-            .collect();
-        let mut worst_reply = 0.0_f64;
-        // With one front there is no clone to save, so retain the original
-        // path exactly. The broad geometry scan only earns its keep when it
-        // can eliminate one or more other warring seats.
-        let has_multiple_enemies = enemies.len() > 1;
-
-        for enemy in enemies {
-            if has_multiple_enemies
-                && !Self::enemy_can_force_a_reply_against_any(after, enemy, &victims)
-            {
-                continue;
-            }
-            let mut reply_position = after.speculative_clone();
-            reply_position.current = enemy;
-            for unit in reply_position
-                .units
-                .values_mut()
-                .filter(|unit| unit.owner == enemy)
-            {
-                // Only attacks are searched, so a generous movement budget
-                // merely restores next-turn attack availability; it cannot
-                // manufacture a move-and-attack line in this one-ply search.
-                unit.moves_left = 100.0;
-                unit.attacks_left = 1;
-                unit.acted = false;
-                unit.zoc_stopped = false;
-            }
-            for city in reply_position
-                .cities
-                .values_mut()
-                .filter(|city| city.owner == enemy)
-            {
-                city.struck = false;
-                city.encampment_struck = false;
-                city.encampment_extra_strikes_used = 0;
-                for district in &mut city.defending_districts {
-                    district.struck = false;
-                    district.extra_strikes_used = 0;
-                }
-            }
-            for victim in &victims {
-                worst_reply = worst_reply.max(Self::forcing_reply_line(
-                    work_pool,
-                    &reply_position,
-                    enemy,
-                    *victim,
-                    Self::FORCING_REPLY_DEPTH,
-                ));
-            }
-        }
-        worst_reply
-    }
-
-    /// Whether an enemy can *possibly* make one of the forcing replies this
-    /// search admits on its next turn.  A negative answer is enough to avoid
-    /// cloning the whole board for that enemy; a positive answer deliberately
-    /// remains only a broad prefilter and the cloned `Game::apply` below is
-    /// still the authority on terrain, line of sight, occupancy, and costs.
-    ///
-    /// The reply position resets the enemy's moves, attacks, and city strikes
-    /// before searching it.  This predicate must therefore not use their
-    /// current availability.  It mirrors the geometry of `forcing_attacks_to`:
-    /// direct air strikes, direct or one-step land attacks, and city or
-    /// encampment strikes.  City checks are intentionally looser than the
-    /// engine (range only), which preserves every uncertain branch rather than
-    /// proving a legal counterattack away from the search.
-    fn enemy_can_force_a_reply_against_any(position: &Game, enemy: usize, victims: &[u32]) -> bool {
-        let unit_can_reach_a_victim = position
-            .units
-            .values()
-            .filter(|unit| unit.owner == enemy)
-            .any(|unit| {
-                let spec = &position.rules.units[unit.kind];
-                let reach = position.unit_attack_range(unit.id);
-                if spec.domain.as_deref() == Some("air") {
-                    return victims.iter().any(|victim| {
-                        position
-                            .units
-                            .get(victim)
-                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach)
-                    });
-                }
-                spec.class == "military"
-                    && victims.iter().any(|victim| {
-                        position
-                            .units
-                            .get(victim)
-                            .is_some_and(|victim| position.wdist(unit.pos, victim.pos) <= reach + 2)
-                    })
-                    && !position.is_embarked(unit)
-            });
-        if unit_can_reach_a_victim {
-            return true;
-        }
-
-        position
-            .cities
-            .values()
-            .filter(|city| city.owner == enemy)
-            .any(|city| {
-                victims.iter().any(|victim| {
-                    let Some(victim) = position.units.get(victim) else {
-                        return false;
-                    };
-                    position.wdist(city.pos, victim.pos) <= 2
-                        || position
-                            .defending_districts(city)
-                            .any(|district| position.wdist(district.pos, victim.pos) <= 2)
-                })
-            })
-    }
-
-    /// Price a forcing reply against an untouched board, cloning and applying
-    /// the action here.
-    ///
-    /// The tactical picker no longer takes this route — it hands over the board
-    /// its own attack evaluation already applied — so this is the entry point
-    /// for a caller holding nothing but `&Game`. `AppliedAttack::NotScored` is
-    /// exactly that statement: nothing has been applied to this board yet.
-    ///
-    /// Production uses the applied form, while the focused regression tests
-    /// retain this `&Game` door to assert the same reply cost directly. Keep
-    /// that test contract out of release builds.
-    #[cfg(test)]
-    fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
-        let mut after = g.speculative_clone();
-        Self::forcing_reply_penalty_applied(
-            self.work_pool.clone(),
-            &mut after,
-            AppliedAttack::NotScored,
-            pid,
-            uid,
-            action,
-        )
     }
 
     #[cfg(test)]
@@ -26176,6 +25233,7 @@ impl AdvancedAi {
         // `parity-upgrades-before-it-buys-2`: the base defender purchases
         // read this. See `advanced/parity_upgrades_before_it_buys.rs`.
         self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
+        self.base.obsolete_buys_read_our_techs = self.obsolete_buys_read_our_techs();
         // `plaza-serves-the-scientist` (and version 2, which carries it): the
         // Plaza's tier list reads this.
         self.base.plaza_serves_science =
@@ -26189,6 +25247,9 @@ impl AdvancedAi {
         // race takes Science before the turn reads its target. See
         // `advanced/religion_lane_hands_over.rs`.
         self.hand_over_a_lost_religion_lane(g, pid);
+        // `religion-seat-takes-the-faith-beliefs`: read by the founding in
+        // `BasicAi`'s ancillary pass, after any hand-over above.
+        self.base.founder_takes_the_faith_beliefs = self.founder_takes_the_faith_beliefs(g);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -26394,6 +25455,9 @@ impl AdvancedAi {
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
             || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city)
+            // `exalted-goddess-buys-the-coastal-guard`: Faith before Gold.
+            // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+            || self.exalted_goddess_coastal_guard(g, pid)
             // `threatened-city-buys-its-defender`: see
             // `advanced/threatened_city_purchase.rs`.
             || self.threatened_city_defender_purchase(g, pid, plan.threatened_city);
@@ -26626,11 +25690,22 @@ impl AdvancedAi {
         // the city reaches the host's floor, whether or not the book is still
         // in play. See `opening_settler_waits`.
         self.base.play_pending_book_settler(g, pid);
+        // Keep a completed Holy Site in the still-open Prophet race before
+        // the book or expansion takes its next idle queue.
+        self.claim_religion_prophet_queue(g, pid, &plan);
         // `religion-seat-founds-first`: a Religion-target seat's Holy Site in
         // the first idle city, inside the book and before the third city.
         // Exact no-op while the gene is off. See
         // `advanced/religion_seat_founds_first.rs`.
         self.claim_religion_seat_holy_site(g, pid, &plan);
+        // `religion-seat-races-the-prophet`: Prayers in the finished Holy Site
+        // city until our Prophet comes. See
+        // `advanced/religion_seat_fields_apostles.rs`.
+        self.claim_religion_seat_prayers(g, pid, &plan);
+        // `religion-seat-builds-holy-sites`: a founder's Shrine and Temple
+        // ahead of the ordinary claims, then more Holy Sites. See
+        // `advanced/religion_seat_fields_apostles.rs`.
+        self.claim_religion_seat_faith_economy(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -27174,8 +26249,18 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+mod religion_prophet_queue;
+/// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
+/// see `advanced/religion_seat_fields_apostles.rs`.
+mod religion_seat_fields_apostles;
+/// `religion-seat-flips-the-cheapest`: see
+/// `advanced/religion_seat_flips_the_cheapest.rs`.
+mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+/// `religion-seat-reaches-reformed-church`: see
+/// `advanced/religion_seat_reformed_church.rs`.
+mod religion_seat_reformed_church;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout

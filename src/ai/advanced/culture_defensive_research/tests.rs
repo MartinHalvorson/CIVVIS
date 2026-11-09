@@ -314,6 +314,10 @@ fn exposed_queue_does_not_retask_a_walled_noncapital_or_non_domination_city() {
         .unwrap()
         .buildings
         .push(crate::name!("walls"));
+    // This control represents intact walls, not outer defenses already
+    // destroyed by the adjacent attacker.
+    let full_walls = g.city_max_wall_hp(&g.cities[&city]);
+    g.cities.get_mut(&city).unwrap().wall_hp = full_walls;
     g.cities.get_mut(&city).unwrap().is_capital = false;
     assert!(ai
         .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)

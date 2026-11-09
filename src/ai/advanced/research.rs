@@ -13,6 +13,7 @@
 use super::*;
 
 mod culture_education;
+mod walls_interrupt;
 
 /// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
 /// gains on a Science aim under the gene, Guilds (its prerequisite) half: the
@@ -280,7 +281,11 @@ impl AdvancedAi {
             plan.strategy
         };
         let revealed_launch_switch = self.revealed_launch_research_switch(g, pid);
-        if g.players[pid].research.is_none() || revealed_launch_switch.is_some() {
+        let walls_switch = self.capital_walls_research_switch(g, pid);
+        if g.players[pid].research.is_none()
+            || revealed_launch_switch.is_some()
+            || walls_switch.is_some()
+        {
             // Every candidate's value reads the empire's science rate, and a
             // comparator asks for two values per comparison: under one memo
             // each city's yields are derived once for the whole choice.
@@ -894,12 +899,13 @@ impl AdvancedAi {
                         .unwrap_or(ordinary)
                 })
             };
-            // Reconsider an in-flight path only for the observed milestone,
-            // and only when the ordinary priority ladder also gives it the slot.
+            // Reconsider an in-flight path only for an observed milestone or
+            // the existing capital warning, when the priority ladder agrees.
             let pick = pick.filter(|tech| {
                 g.players[pid].research.is_none()
                     || (revealed_launch_switch == Some(tech.as_str())
                         && forced_goal == Some(tech.as_str()))
+                    || (walls_switch == Some(tech.as_str()) && forced_goal == Some(tech.as_str()))
             });
             if let Some(tech) = pick {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -1127,6 +1133,12 @@ impl AdvancedAi {
                 // usefully precede the government's policy capacity"; tier 2
                 // is where two thirds of that capacity actually is, and no
                 // lane ever asks for it.
+                // See `advanced/religion_seat_reformed_church.rs`: ahead of the
+                // government ladder, which otherwise walks the seat to a later
+                // government and past the civic this lane needs.
+                _ if self.religion_seat_civic_goal(g, pid).is_some() => {
+                    self.religion_seat_civic_goal(g, pid)
+                }
                 _ if self.government_ladder_goal(g, pid, objective).is_some() => {
                     self.government_ladder_goal(g, pid, objective)
                 }
