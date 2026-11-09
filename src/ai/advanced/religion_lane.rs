@@ -767,6 +767,8 @@ impl AdvancedAi {
             _ => 80.0,
         };
         let reserve = self.conversion_faith_reserve(g, pid, reserve)
+            // See `advanced/culture_band_bank.rs`.
+            + self.culture_band_bank(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
             + self.inquisition_faith_reserve(g, pid)
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).

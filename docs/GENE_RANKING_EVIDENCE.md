@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `acropolis-before-the-deterrent` | off (unmeasured) | `acropolis-before-the-deterrent`: see `advanced/acropolis_before_the_deterrent.rs`. | 1 \| 1 |
 | `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `alliance-remembers-the-refusal` | off (unmeasured) | Opt-in gene `alliance-remembers-the-refusal`; see `Self::alliance_remembers_the_refusal`. | 1 \| 1 |
 | `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
@@ -226,6 +227,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
+| `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
