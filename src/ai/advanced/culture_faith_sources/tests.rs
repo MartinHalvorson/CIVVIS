@@ -331,12 +331,7 @@ fn two_theaters_open_the_sources_before_an_amphitheater_when_the_gene_is_on() {
             .get_mut(&cid)
             .unwrap()
             .buildings
-            .retain(|building| {
-                !g.rules.buildings[building]
-                    .district
-                    .as_deref()
-                    .is_some_and(|d| d == "theater_square")
-            });
+            .retain(|building| *building != "amphitheater");
     }
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
     ai.enable_culture_faith_opens_at_the_theaters();
