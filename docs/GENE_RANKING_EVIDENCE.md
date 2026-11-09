@@ -334,11 +334,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
+| `opening-ranged-support` | off (unmeasured) | Replace the capital's first opening slot with legal ranged support. | 1 \| 1 |
 | `outclassed-siege-stands-down` | off (unmeasured) | Opt-in gene `outclassed-siege-stands-down`; see `Self::outclassed_siege_stands_down`. | 1 \| 1 |
 | `outmatched-war-prices-the-army` | off (unmeasured) | Opt-in gene `outmatched-war-prices-the-army`; see `advanced/outmatched_war_prices_the_army.rs`. | 1 \| 1 |
 | `parallel-library-backlog` | off (unmeasured) | Coordinate a quoted opening Library and backlog Builder. | 1 \| 1 |
-| `parity-upgrades-before-it-buys` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
-| `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 2 |
+| `parity-upgrades-before-it-buys` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
+| `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
+| `parity-upgrades-before-it-buys-3` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-3`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
 | `paused-district-spares-the-launch` | off (unmeasured) | Keep a committed Science launch or laser ahead of paused districts. | 1 \| 1 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-earns-the-launch` | off (unmeasured) | Opt-in committed launch relocation; see `governor_dividends/pingala_launch`. | 1 \| 1 |
@@ -364,6 +366,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-builds-holy-sites` | off (unmeasured) | `religion-seat-builds-holy-sites`: a Religion-target founder claims a Holy Site in each idle city without one. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
 | `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
+| `religion-seat-flips-the-cheapest` | off (unmeasured) | `religion-seat-flips-the-cheapest`: a Religion-target founder's spreaders go where a charge buys the most of the victory. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |

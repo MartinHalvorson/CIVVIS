@@ -5449,7 +5449,12 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
+    // First-slot ranged support. Leaves later recon settings unchanged;
+    // the opening Scout is displaced. No Native strength claim.
+    Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
+    // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
+    Gene { tag: "religion-seat-flips-the-cheapest", field: "religion_seat_flips_the_cheapest", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_flips_the_cheapest, disable: AdvancedAi::disable_religion_seat_flips_the_cheapest },
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
@@ -5463,6 +5468,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
     // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
     Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
+    // Version three of `parity-upgrades-before-it-buys`: version two's bar
+    // measured the world era, which at Online speed is a clock (era 2 at turn
+    // 51, era 5 at 111), so it refused nearly every gold military purchase
+    // from turn 51, early-war defenders included (disarmed 2026-11-05). Here a
+    // unit is obsolete at three or more eras behind our own newest technology,
+    // on the parity path and the base wartime purchases. See
+    // `advanced/parity_upgrades_before_it_buys.rs`.
+    Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
