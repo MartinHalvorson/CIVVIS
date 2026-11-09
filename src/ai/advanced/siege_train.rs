@@ -1392,7 +1392,15 @@ fn anvil_orders_for(
         g.map
             .get(pos)
             .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
-            && g.unit_ids_at(pos).iter().all(|id| g.units[id].owner == pid)
+            && g.unit_ids_at(pos).iter().all(|id| {
+                let unit = &g.units[id];
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && (land.contains(id)
+                        || spec.class != "military"
+                        || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        || g.is_embarked(unit))
+            })
     };
     let occupant = g
         .unit_ids_at(city.pos)
@@ -1401,7 +1409,11 @@ fn anvil_orders_for(
         .find(|id| land.contains(id));
 
     // 1. The city tile.
-    let wounded = heals
+    // The formation may rotate its own members, but cannot promise a post
+    // another land combat unit holds. Native spawns can already overlap a
+    // garrison; retaining that tile as the shooter's post keeps it there.
+    let city_open = open(city.pos);
+    let wounded = (heals && city_open)
         .then(|| {
             land.iter()
                 .copied()
@@ -1419,7 +1431,7 @@ fn anvil_orders_for(
                 taken.insert(relieved);
             }
         }
-    } else {
+    } else if city_open {
         let garrison = land
             .iter()
             .copied()
@@ -1493,7 +1505,8 @@ fn anvil_orders_for(
         .collect();
     for uid in rest {
         let here = g.units[&uid].pos;
-        if g.wdist(here, city.pos) <= 2 && here != city.pos && !taken.contains(&here) {
+        if g.wdist(here, city.pos) <= 2 && here != city.pos && !taken.contains(&here) && open(here)
+        {
             posts.insert(uid, here);
             taken.insert(here);
             continue;
@@ -6147,6 +6160,10 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod ownership_tests;
+
+#[cfg(test)]
+#[path = "siege_train/anvil_held_posts_tests.rs"]
+mod anvil_held_posts_tests;
 
 #[cfg(test)]
 mod phantom_capture_tests;
