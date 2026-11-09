@@ -1627,7 +1627,7 @@ function syncResponsivePanelGeometry() {
       wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
     wideMinimapHeight = wideMinimapWidth;
   }
-  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
+  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
   style.setProperty("--panel-gap", `${gap}px`);
@@ -2105,6 +2105,8 @@ let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
 // until asked for. A saved layout still decides for itself.
 const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta", "plan"];
 let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
+// Columns the viewer wants that the panel has no readable room for right now.
+let playerHudShedColumns = new Set();
 const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
 let playerHudReorderGesture = null;
@@ -2219,11 +2221,81 @@ function playerHudColumnExists(column) {
   return Boolean(column) && (!column.exists || column.exists());
 }
 
-function visiblePlayerHudColumns() {
+// The columns the viewer has asked for, whether or not the panel can seat them.
+function wantedPlayerHudColumns() {
   return playerHudColumnOrder
     .map(key => PLAYER_HUD_COLUMN_BY_KEY.get(key))
     .filter(column => playerHudColumnExists(column) &&
       !playerHudHiddenColumns.has(column.key));
+}
+
+function visiblePlayerHudColumns() {
+  return wantedPlayerHudColumns().filter(column => !playerHudShedColumns.has(column.key));
+}
+
+// ── Which columns the panel can seat ───────────────────────────────────────
+//
+// Twenty-odd columns dividing a 900px table all come out too narrow to read:
+// "Mon…", "Gengh…", "Siege…". Past a point a column is worth more gone than
+// present, so when the table cannot give each column the width it needs to be
+// read, the least telling ones step aside in this order and every other column
+// takes up their room. They are not hidden in the viewer's model: their boxes
+// stay ticked in Display Settings and they come back as soon as there is room.
+//
+// A name a leader or an AI profile goes by is the first to go, since the
+// civilization beside it identifies the row. A column the viewer turned on
+// that a fresh table lacks is never shed, because they asked for it.
+const PLAYER_HUD_SHED_ORDER = [
+  "player", "leader", "win_start", "win_delta", "age", "nukes", "suzerain",
+  "wonders", "closest_victory", "food", "population", "rank", "faith", "gold", "culture",
+];
+const PLAYER_HUD_READABLE_WIDTH = {
+  lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo_delta:40,
+  win_start:24, win_delta:16, win:26, plan:70, closest_victory:60, age:40,
+  military:36, score:38,
+};
+const PLAYER_HUD_READABLE_STAT_WIDTH = 31;
+// Row padding, the close control's gutter and the row border.
+const PLAYER_HUD_TABLE_CHROME = 23;
+const PLAYER_HUD_READABLE_GAP = 3;
+
+// What a column needs to be read, and never less than the floor the stylesheet
+// holds it to at this width: a table seated below its floors would scroll.
+function playerHudSeatWidth(column, style) {
+  return Math.max(PLAYER_HUD_READABLE_WIDTH[column.key] ?? PLAYER_HUD_READABLE_STAT_WIDTH,
+                  parseFloat(style.getPropertyValue(column.min)) || 0);
+}
+
+// True when the set of seated columns changed, which needs a repaint.
+function syncPlayerHudShedColumns() {
+  const hud = document.getElementById("playerhud");
+  const tableWidth = hud?.querySelector(":scope > .player-standings")?.clientWidth;
+  if (!tableWidth) return false;
+  const style = getComputedStyle(hud);
+  const wanted = wantedPlayerHudColumns();
+  let need = PLAYER_HUD_TABLE_CHROME + PLAYER_HUD_READABLE_GAP * Math.max(0, wanted.length - 1) +
+    wanted.reduce((sum, column) => sum + playerHudSeatWidth(column, style), 0);
+  const shed = new Set();
+  for (const key of PLAYER_HUD_SHED_ORDER) {
+    if (need <= tableWidth) break;
+    const column = wanted.find(candidate => candidate.key === key);
+    if (!column) continue;
+    shed.add(key);
+    need -= playerHudSeatWidth(column, style) + PLAYER_HUD_READABLE_GAP;
+  }
+  if (shed.size === playerHudShedColumns.size &&
+      [...shed].every(key => playerHudShedColumns.has(key))) return false;
+  playerHudShedColumns = shed;
+  return true;
+}
+
+// A width change anywhere that moves the table's edge: the window, the deck,
+// the turn plate's seam. A column being dragged owns the table until it lands.
+function refreshPlayerHudShedColumns() {
+  if (playerHudColumnGesture || playerHudReorderGesture) return;
+  if (!syncPlayerHudShedColumns()) return;
+  syncPlayerHudColumns();
+  if (state && hudLayoutGesture?.name !== "players") drawPlayerHud();
 }
 
 // One bar per seam between two adjacent flexible columns. A fixed track such
@@ -2584,8 +2656,8 @@ function syncPlayerHudColumns(placeGrips = true) {
     : `minmax(${playerHudColumnMinExpr(column)}, ` +
       `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
   // Every column floor, one gutter per seam and the panel's own padding and
-  // border. 9px is that chrome: 4px + 3px padding, 2px border.
-  const tableMin = `calc(9px + ` +
+  // border, the padding on the right being the close control's gutter.
+  const tableMin = `calc(${PLAYER_HUD_TABLE_CHROME}px + ` +
     `${Math.max(0, columns.length - 1)} * var(--hud-stat-gap, 3px) + ` +
     columns.map(column => column.fixed ? `var(${column.min})`
       : playerHudColumnMinExpr(column)).join(" + ") + `)`;
@@ -3151,9 +3223,9 @@ const RESPONSIVE_TEXT_RULES = [
   // letter off. Half a point of type is invisible; a clipped head is not.
   {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
-  {selector:"#playerhud .diplomacy-civ", min:9, max:13},
-  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
-  {selector:"#playerhud .diplomacy-player", min:9, max:13},
+  {selector:"#playerhud .diplomacy-civ", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-leader-name", min:9, max:13, exact:true},
+  {selector:"#playerhud .diplomacy-player", min:9, max:13, exact:true},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
@@ -3172,15 +3244,12 @@ const RESPONSIVE_TEXT_RULES = [
   // inside the button at every width.
   {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
   {selector:"#playerhud .turn-era", min:12, max:17},
-  {selector:"#playerhud .turn-label", min:11, max:14},
-  {selector:"#playerhud .victory-turn strong", min:24, max:40},
-  {selector:"#playerhud .turn-total", min:10, max:14},
-  // A four-digit current turn needs its whole reading to remain together in
-  // the narrow plate. It is still fitted independently from the ordinary,
-  // deliberately large early-game turn number above.
-  {selector:"#playerhud .turn-count.turn-count-long .turn-label", min:10, max:11},
-  {selector:"#playerhud .turn-count.turn-count-long strong", min:14, max:26},
-  {selector:"#playerhud .turn-count.turn-count-long .turn-total", min:9, max:10},
+  {selector:"#playerhud .turn-live .turn-label", min:11, max:14},
+  // The word, the number and the cap are one reading and scale as one: every
+  // part is sized in em from this box. Fitted apart, the label and the cap each
+  // kept their full size because each fit on its own, and the turn number took
+  // what was left, which at a 148px plate printed turn 181 as "1..".
+  {selector:"#playerhud .turn-count", min:8, max:14, slack:2},
   // The settings block is fitted as one piece, not cell by cell. Its single
   // grid track holds the widest whole row, so the block's own overflow is the
   // exact amount it is too big by — and one size for every row is what keeps
@@ -3188,11 +3257,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   // Watch pace sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
-  {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
-  {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
-  {selector:"#victoryhud .victory-subheading span", min:9, max:11},
-  {selector:"#victoryhud .victory-civ", min:10, max:14},
-  {selector:"#victoryhud .victory-value", min:10, max:14},
+  {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   {selector:".dossier-window .dossier-title", min:11, max:18},
   {selector:".dossier-window .dossier-tag", min:9, max:11},
   {selector:".dossier-window .dossier-btn", min:10, max:14},
@@ -3211,6 +3276,7 @@ const RESPONSIVE_TYPE_ROOT_SELECTOR = [
   "#pedia", "#tree", "#empire", "#diplomacy", "#cityscreen", "#trade", "#capture-choice",
 ].join(",");
 const responsiveTypeRoots = new Set();
+const responsiveTextRange = document.createRange();
 let responsiveTypeFrame = 0;
 
 function responsiveTypeBand(root, width) {
@@ -3236,11 +3302,7 @@ function syncResponsiveTypeBox(root, width, height) {
     // width change crosses that band so every civilization remains visible.
     if (state && hudLayoutGesture?.name !== "players") drawPlayerHud();
   }
-  if (root.id === "victoryhud") {
-    const ratio = width / Math.max(1, height);
-    root.dataset.typeShape = width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260))
-      ? "wide" : "rail";
-  }
+  if (root.id === "playerhud") refreshPlayerHudShedColumns();
 }
 
 function scheduleResponsiveType(root) {
@@ -3318,8 +3380,18 @@ function fitResponsiveType() {
     // Inline line boxes commonly report one extra device-rounded pixel even
     // when every glyph is visible. Treat only a larger difference as real
     // overflow so that harmless rounding cannot ratchet text below its ceiling.
-    const widthFit = element.scrollWidth > room + 1
-      ? room / element.scrollWidth * .985 : 1;
+    //
+    // A cell that ends in an ellipsis cannot use that tolerance: the browser
+    // draws the ellipsis at a fraction of a pixel over, and scrollWidth rounds
+    // that away, so "Portugal" printed as "Portu…" at full size with room to
+    // spare a quarter-point down. `exact` measures the run itself.
+    let textWidth = element.scrollWidth, tolerance = 1;
+    if (rule.exact) {
+      responsiveTextRange.selectNodeContents(element);
+      textWidth = responsiveTextRange.getBoundingClientRect().width;
+      tolerance = 0;
+    }
+    const widthFit = textWidth > room + tolerance ? room / textWidth * .985 : 1;
     const heightFit = element.scrollHeight > availableHeight + 1
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
@@ -5003,6 +5075,7 @@ function applyTurnPlateWidth(width, persist = true) {
     ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), candidate)))
     : null;
   syncTurnPlateWidth();
+  refreshPlayerHudShedColumns();
   if (persist) {
     try {
       if (turnPlateWidth === null) localStorage.removeItem(TURN_PLATE_WIDTH_STORAGE_KEY);
@@ -24775,61 +24848,195 @@ const DEFAULT_VICTORY_LEADERS = 3;
 // only when it is one of them, and stands the paths nearest a win first.
 const DEDICATED_VICTORY_LEADERS = 2;
 
-// Measure the space the rendered track actually has instead of coupling this
-// behavior to a hard-coded widget height. This keeps custom layouts, keyboard
-// resizing, compact viewports, and future style changes in sync. All paths use
-// the same capacity so every band advances from top 3 to top 4 together;
-// science's slightly taller split meter sets the safe limit.
+// The tracker sizes itself as one instrument, and being able to read it comes
+// first. Its room decides, in this order: every path on screen, then type at a
+// comfortable size with three leaders on each, then further leaders, and with
+// all of that met the type grows to fill what is left. Short of that, a third
+// leader may cost a point of type but no more, because the runner-up in a race
+// is worth more than a third name nobody can read. Then the type gives way to
+// its floor to keep two leaders, and scrolling comes last, soonest road on top.
+// A row is either whole or not drawn.
 //
-// The bands are stacked, so each one gets an equal share of the rail rather
-// than the whole of it — dividing by the full height would ask every band to
-// print the entire table and leave the rail permanently scrolled.
-function victoryLeaderCapacity(victoryHud) {
-  const rail = victoryHud?.querySelector(".hud-rail");
-  const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
-  if (!rail || !tracks.length) return DEFAULT_VICTORY_LEADERS;
-  const ribbon = victoryHud.querySelector(".victory-ribbon");
-  const ribbonGap = parseFloat(getComputedStyle(ribbon || rail).rowGap) || 0;
-  // The ribbon's shape changes with the room it has: one band per row down the
-  // rail, and a single row of columns below 620px, where there is no rail. What
-  // a band actually gets is the rail divided by the number of grid rows, so
-  // count the rows the bands landed on rather than assuming any one shape.
-  const gridRows = Math.max(1, new Set(tracks.map(track => track.offsetTop)).size);
-  const share = (rail.clientHeight - ribbonGap * (gridRows - 1)) / gridRows;
-  let capacity = Infinity;
-  for (const track of tracks) {
-    const list = track.querySelector(".victory-list");
-    const entries = [...(list?.querySelectorAll(".victory-entry") || [])];
-    if (!entries.length) { capacity = 0; continue; }
-    const floor = Math.min(DEFAULT_VICTORY_LEADERS, entries.length);
-    const trackStyle = getComputedStyle(track);
-    const listStyle = getComputedStyle(list);
-    const rowHeight = entries[0].getBoundingClientRect().height;
-    const gap = parseFloat(listStyle.rowGap) || 0;
-    const fixedHeight = list.getBoundingClientRect().top -
-      track.getBoundingClientRect().top + (parseFloat(trackStyle.paddingBottom) || 0);
-    const fits = rowHeight > 0
-      ? Math.floor((share - fixedHeight + gap) / (rowHeight + gap))
-      : floor;
-    capacity = Math.min(capacity, Math.max(floor, fits));
-  }
-  const total = tracks[0].querySelectorAll(".victory-entry").length;
-  return Math.max(0, Math.min(total, Number.isFinite(capacity) ? capacity : total));
+// There is one type size for the whole tracker. Fitting each name on its own
+// printed "Gran Colombia" smaller than "Egypt" in the same list.
+const VICTORY_TYPE_FLOOR = 12;
+const VICTORY_TYPE_THIRD_ROW_FLOOR = 13;
+const VICTORY_TYPE_COMFORT = 14;
+const VICTORY_TYPE_CEILING = 18;
+// The band's own padding and its top border.
+const VICTORY_BAND_CHROME = 9;
+// A path is a column of about this width in the short wide shape: a common
+// civilization name, its figure and the row's gutters at the type floor.
+const VICTORY_BAND_MIN_WIDTH = 108;
+
+// Every length in a band comes from its type size, in one place, so the row
+// count below is computed from the same numbers the stylesheet then draws.
+function victoryBandMetrics(type) {
+  const line = Math.ceil(type * 1.2);
+  const meter = Math.max(3.5, Math.round(type * .64) / 2);
+  const rowGap = Math.max(2, Math.round(type * .18));
+  const head = Math.ceil(type * 1.04);
+  const headGap = Math.max(2, Math.round(type * .16));
+  const dot = Math.max(5, Math.round(type * .9) / 2);
+  const dotGap = Math.max(3, Math.round(type * .3));
+  return {line, meter, rowGap, head, headGap, dot, dotGap, pitch:line + 1 + meter + rowGap};
 }
+
+function victoryBandHeight(rows, type) {
+  const band = victoryBandMetrics(type);
+  return VICTORY_BAND_CHROME + band.head + band.headGap + rows * band.pitch - band.rowGap;
+}
+
+// `room` is one band's height and `total` the rows it could print. A fixed row
+// count (the dedicated display's two) only chooses the type. A watched
+// civilization ranked below the cut keeps its row, so that row is budgeted too.
+function fitVictoryBands({room, total, ceiling, floorRows, fixedRows = null, focusRank = -1}) {
+  const shown = rows => rows + (focusRank >= rows ? 1 : 0);
+  const fits = (rows, type) => victoryBandHeight(shown(rows), type) <= room;
+  const largest = (rows, top, bottom) => {
+    for (let type = top; type >= bottom; type -= .5) if (fits(rows, type)) return type;
+    return null;
+  };
+  if (fixedRows !== null) {
+    const rows = Math.min(fixedRows, total);
+    return {rows, type:largest(rows, ceiling, VICTORY_TYPE_FLOOR) ?? VICTORY_TYPE_FLOOR};
+  }
+  const wanted = Math.min(DEFAULT_VICTORY_LEADERS, total);
+  for (let rows = total; rows >= wanted; rows--)
+    if (fits(rows, VICTORY_TYPE_COMFORT))
+      return {rows, type:largest(rows, ceiling, VICTORY_TYPE_COMFORT)};
+  // A watched civilization outside the leaders takes the runner-up's place
+  // before the rail gives up and scrolls: "who leads, and where am I".
+  const floor = Math.max(1, Math.min(floorRows, total) - (focusRank >= floorRows ? 1 : 0));
+  for (let rows = wanted; rows >= floor; rows--) {
+    const bottom = rows >= DEFAULT_VICTORY_LEADERS ? VICTORY_TYPE_THIRD_ROW_FLOOR : VICTORY_TYPE_FLOOR;
+    const type = largest(rows, rows < wanted ? ceiling : VICTORY_TYPE_COMFORT, bottom);
+    if (type !== null) return {rows, type};
+  }
+  return {rows:floor, type:VICTORY_TYPE_FLOOR};
+}
+
+// A wider band can carry larger type before a name runs out of line.
+function victoryTypeCeiling(bandWidth) {
+  return clampPanelDimension(Math.floor(bandWidth / 6) / 2,
+                             VICTORY_TYPE_COMFORT, VICTORY_TYPE_CEILING);
+}
+
+function applyVictoryType(victoryHud, type, rows, focusRank) {
+  const band = victoryBandMetrics(type);
+  const values = {
+    "--vt-name":`${type}px`, "--vt-line":`${band.line}px`, "--vt-meter":`${band.meter}px`,
+    "--vt-row-gap":`${band.rowGap}px`, "--vt-head":`${band.head}px`,
+    "--vt-head-gap":`${band.headGap}px`, "--vt-dot":`${band.dot}px`, "--vt-dot-gap":`${band.dotGap}px`,
+    "--vt-name-inset":`${band.dot + band.dotGap}px`,
+    "--vt-head-type":`${Math.round(type * 1.72) / 2}px`,
+    "--vt-sub-type":`${Math.max(10, Math.round(type * 1.52) / 2)}px`,
+    "--vt-band-min":`${victoryBandHeight(rows + (focusRank >= rows ? 1 : 0), type)}px`,
+  };
+  for (const [name, value] of Object.entries(values))
+    if (victoryHud.style.getPropertyValue(name) !== value) victoryHud.style.setProperty(name, value);
+}
+
+// What the width guard last settled, so a repaint that changed only numbers
+// does not lay the tracker out a second time.
+let victoryTypeGuard = {key:"", type:0};
+
+// The arrangement is part of the fit. A tall box stands its paths in one rail,
+// a short wide one lays them out in a row, and a box dragged out to something
+// in between divides them into columns: widening a rail that had run out of
+// height used to buy nothing at all. Each arrangement is priced by what it lets
+// a reader read: type first, the width of a band limiting how large that type
+// can usefully be, then leaders up to four. Past four more names are not worth
+// splitting a rail for.
+const VICTORY_BAND_WIDTH_PER_TYPE = 9.5;
+const VICTORY_RIBBON_GAP = 2;
+
+function chooseVictoryLayout({width, height, count, total, focusRank, fixedRows}) {
+  const bandFit = (columns, floorRows) => {
+    const bandWidth = (width - VICTORY_RIBBON_GAP * (columns - 1)) / columns;
+    const gridRows = Math.ceil(count / columns);
+    const room = (height - VICTORY_RIBBON_GAP * (gridRows - 1)) / gridRows;
+    return {columns, bandWidth, room, ...fitVictoryBands({
+      room, total, fixedRows, focusRank, floorRows, ceiling:victoryTypeCeiling(bandWidth),
+    })};
+  };
+  if (fixedRows !== null) return bandFit(1, fixedRows);
+  let best = null, bestScore = -Infinity;
+  for (let columns = 1; columns <= count; columns++) {
+    const fit = bandFit(columns, 2);
+    if (columns > 1 && fit.bandWidth < VICTORY_BAND_MIN_WIDTH) break;
+    const seen = fit.rows + (focusRank >= fit.rows ? 1 : 0);
+    if (victoryBandHeight(seen, fit.type) > fit.room || seen < Math.min(2, total)) continue;
+    const legible = Math.min(fit.type, fit.bandWidth / VICTORY_BAND_WIDTH_PER_TYPE, VICTORY_TYPE_COMFORT);
+    const score = legible * 1000 + Math.min(fit.rows, DEFAULT_VICTORY_LEADERS) * 100 +
+      Math.min(fit.rows, 4) * 10 + fit.type;
+    if (score > bestScore) { best = fit; bestScore = score; }
+  }
+  if (best) return best;
+  // Nothing shows every path. A rail can scroll and keeps two leaders on each;
+  // a row of columns cannot, so it would sooner show one whole row.
+  const ratio = width / Math.max(1, height);
+  const row = count > 1 && width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260));
+  return bandFit(row ? count : 1, row ? 1 : 2);
+}
+
+// Returns the arrangement and the rows to show on every path, and the type to
+// draw them at. `type` is null when there is nothing to measure: a world with
+// no contenders yet, or a folded tracker, which keeps the fit it had.
+function fitVictoryTracker(victoryHud, tracks, fixedRows = null) {
+  const rail = victoryHud.querySelector(".hud-rail");
+  // A long Arena Stats ledger is worth a share of the panel, not the panel.
+  // It scrolls inside that share, and a dragged seam still overrides it.
+  const statsCap = `${Math.round(Math.min(168, victoryHud.clientHeight * .2))}px`;
+  if (victoryHud.style.getPropertyValue("--sim-stats-cap") !== statsCap)
+    victoryHud.style.setProperty("--sim-stats-cap", statsCap);
+  const total = tracks[0].querySelectorAll(".victory-entry").length;
+  if (!total) return {rows:0, type:null};
+  if (!rail?.clientHeight)
+    return {rows:victoryTrackerRows ?? Math.min(DEFAULT_VICTORY_LEADERS, total), type:null};
+  const focusRank = fixedRows !== null ? -1 : Math.max(-1, ...tracks.map(track =>
+    [...track.querySelectorAll(".victory-entry")]
+      .findIndex(entry => entry.dataset.victoryFocus === "true")));
+  const layout = chooseVictoryLayout({
+    width:rail.clientWidth, height:rail.clientHeight, count:tracks.length, total, focusRank, fixedRows,
+  });
+  const shape = layout.columns === 1 ? "rail" : layout.columns === tracks.length ? "wide" : "grid";
+  if (victoryHud.dataset.typeShape !== shape) victoryHud.dataset.typeShape = shape;
+  if (victoryHud.style.getPropertyValue("--vt-columns") !== `${layout.columns}`)
+    victoryHud.style.setProperty("--vt-columns", `${layout.columns}`);
+  victoryTrackerRows = layout.rows;
+  return {rows:layout.rows, type:layout.type, focusRank};
+}
+let victoryTrackerRows = null;
 
 function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victoryhud")) {
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!tracks.length) return;
-  const capacity = DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud);
+  const {rows, type, focusRank} =
+    fitVictoryTracker(victoryHud, tracks, DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : null);
   for (const track of tracks) {
-    for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
+    for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries()) {
       // A player looking through their own fog should never disappear merely
       // because three rivals lead a path. Keep that one row in addition to
       // the capacity the panel can otherwise show — except on the dedicated
       // display, whose two rows per path are the whole point of the space.
-      entry.hidden = index >= capacity &&
+      const hidden = index >= rows &&
         (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true");
+      if (entry.hidden !== hidden) entry.hidden = hidden;
+    }
   }
+  if (type === null) return;
+  // The row count is settled by height. Width can only take the type down, and
+  // never below the floor: past that a long name ends in an ellipsis instead.
+  const names = [...victoryHud.querySelectorAll(".victory-entry:not([hidden]) .victory-civ")];
+  const key = `${victoryHud.dataset.typeShape}|${tracks[0].clientWidth}|${type}|${rows}|` +
+    names.map(name => name.textContent).join();
+  if (key !== victoryTypeGuard.key) {
+    applyVictoryType(victoryHud, type, rows, focusRank);
+    const stretch = Math.max(1, ...names.map(name => name.scrollWidth / Math.max(1, name.clientWidth)));
+    victoryTypeGuard = {key, type:Math.max(VICTORY_TYPE_FLOOR, Math.floor(type / stretch * 2) / 2)};
+  }
+  applyVictoryType(victoryHud, Math.min(type, victoryTypeGuard.type), rows, focusRank);
 }
 
 // The turn plate is the standings' left cell: the world's age and turn first,
@@ -24889,8 +25096,6 @@ function simulationStatsSection() {
         `<span class="sim-stat-name">${name}</span>` +
         `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
       .join("");
-  const body = rows ||
-    `<div class="sim-stats-empty">Finished games are recorded here, and the record persists between simulations.</div>`;
   const viewButton = view =>
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
     `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
@@ -24907,10 +25112,12 @@ function simulationStatsSection() {
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
       `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
     `</div>` +
-    `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
-    viewButton("civs") + viewButton("strategies") + viewButton("victories") +
-    `</div>` +
-    `<div class="sim-stats-rows">${body}</div>` +
+    // A ledger with nothing in it has no views to choose between, and the panel
+    // gives the whole section up until the first game finishes (`sim-stats-none`).
+    (games ? `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
+      viewButton("civs") + viewButton("strategies") + viewButton("victories") +
+      `</div>` +
+      `<div class="sim-stats-rows">${rows}</div>` : ``) +
     `</div></section>`;
 }
 
@@ -25137,8 +25344,6 @@ function playerHudOverview() {
   const focusPlayer = Number.isInteger(focusId)
     ? contenders.find(player => player.id === focusId)
     : null;
-  let defaultVictoryRows = Math.min(
-    DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
   if (DEDICATED_DISPLAY) {
@@ -25162,15 +25367,10 @@ function playerHudOverview() {
           || (researchField ? (+bm[researchField] || 0) - (+am[researchField] || 0) : 0)
           || b.score - a.score || a.id - b.id;
       });
-    const focusRank = focusPlayer
-      ? ranked.findIndex(player => player.id === focusPlayer.id)
-      : -1;
-    if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
-      Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" data-key="${track.id}" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
-      `<div class="victory-heading"><b>${track.label}</b></div>` +
+      `<div class="victory-heading"><b>${track.label}</b>` +
+      `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div></div>` +
       `<div class="victory-body">` +
-      `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
@@ -25199,15 +25399,10 @@ function playerHudOverview() {
     `<div class="victory-body"><p class="victory-none-note">Every path is switched off in Game setup, so this ` +
     `world plays to turn ${turnCapLabel()} and ends without a winner.</p></div></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
-  // Two floors for two orientations: one band per row down the rail, and one
-  // row of columns on a viewport too narrow to have a rail at all.
-  // One contender needs only a compact band. Three leaders take a taller one,
-  // and a watched player outside them adds exactly one more row. The outer
-  // tracker itself now fills the map/minimap seam; these remain the ribbon's
-  // internal content floors for its responsive rail and wide shapes.
-  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 20);
-  const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
-  const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
+  // How tall a band must be is settled by `fitVictoryTracker` from the room it
+  // measures. Width has no such pass: below this the columns of the short wide
+  // shape scroll sideways, soonest road first.
+  const victoryMinWidth = victoryCount * VICTORY_BAND_MIN_WIDTH + Math.max(0, victoryCount - 1) * 2;
   const overview =
     `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
     simulationStatsSection() +
@@ -25223,7 +25418,7 @@ function playerHudOverview() {
     `</div>` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
-    `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
+    `--victory-min-width:${victoryMinWidth}px">` +
     `${victoryBody}</div></div></section>` + hudResizeHandles("victory tracker");
 
   return overview;
@@ -25474,11 +25669,13 @@ function drawPlayerHud() {
   // reading position so the next simulation frame cannot snap them back.
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
+  const standingsExisted = Boolean(hud.querySelector(".player-standings"));
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
     patchHudMarkup(victoryHud, overview);
   }
+  victoryHud.classList.toggle("sim-stats-none", !simulationStats[simulationStatsMode()]?.games);
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
   const highlightActing = highlightActingPlayerInHud();
@@ -25559,6 +25756,7 @@ function drawPlayerHud() {
   // The one place the column model becomes markup: the heading and every row
   // emit one cell per column from this list, in this order, so the table and
   // the viewer's saved arrangement cannot disagree.
+  syncPlayerHudShedColumns();
   const visibleColumns = visiblePlayerHudColumns();
   // The corner ✕ folds the standings in place and leaves the turn box; the
   // whole masthead is still switched from Display Settings. Each collapsed
@@ -25814,6 +26012,9 @@ function drawPlayerHud() {
   // innerHTML also replaced the plate seam; restamp its live automatic or
   // preferred width and accessibility range.
   syncTurnPlateWidth();
+  // The very first paint had no table to measure, and nothing else would ask
+  // again until the panel changed size.
+  if (!standingsExisted) refreshPlayerHudShedColumns();
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
