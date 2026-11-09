@@ -4510,6 +4510,7 @@ function advanceWorldSpin(dt) {
     // the pole is the same motion as dragging the globe eastward, without
     // borrowing the screen's idea of which way that is.
     applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));
+    advanceSkyWorldSpin(dt);
     return true;
   }
   // A flat chart's copies are the same world over again, so the camera simply
@@ -4518,6 +4519,20 @@ function advanceWorldSpin(dt) {
   // every wrapped reading is taken about.
   cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;
   return true;
+}
+// The button means every world, at the one pace, in the same direction a drag
+// to the right sends the ground. Only those showing their ground on the canvas
+// need the turn: the rest are a disc of one colour or nowhere to be seen, and
+// each keeps the face it was last turned to until somebody flies out to it.
+function advanceSkyWorldSpin(dt) {
+  if (planetMainUsesChart()) return;
+  const radius = planetEarthRadius();
+  const [centerX, centerY] = planetEarthCenter(radius);
+  for (const body of visibleSkyBodies()) {
+    const place = skyPlacement(body, radius, centerX, centerY);
+    if (skyOnCanvas(place) && skyGroundFade(place) > 0)
+      skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;
+  }
 }
 if (spinButton) spinButton.onclick = () => setWorldSpin(!WORLD_SPIN);
 updateSpinButton();
@@ -18925,9 +18940,19 @@ function skyLaunchEnd(launch, player, place, crews,
       return {x:route.shipX, y:route.shipY};
     }
   }
-  const seat = skyLandingSeats(place, launchCrew)
+  // A turning world can carry a landing site over the horizon, or bring one up
+  // from behind it, while the rocket is on its way. Which of the two this flight
+  // aims at is settled once, so neither swings it across the disc: a site that
+  // sets is aimed at where it was last seen.
+  const seat = launch.aimsAtLimb ? null : skyLandingSeats(place, launchCrew)
     .find(entry => entry.player.id === player.id);
-  if (seat) return {x:seat.x, y:seat.y};
+  if (seat) {
+    launch.seatSeen = {x:(seat.x - place.x) / place.r, y:(seat.y - place.y) / place.r};
+    return {x:seat.x, y:seat.y};
+  }
+  if (launch.seatSeen)
+    return {x:place.x + launch.seatSeen.x * place.r, y:place.y + launch.seatSeen.y * place.r};
+  launch.aimsAtLimb = true;
   // A stable landing site can be around the back of a close-up world. Aim for
   // the Earth-facing limb in that case: the rocket disappears behind the body
   // and the permanent marker remains correctly hidden with its site.
@@ -19479,8 +19504,13 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const ahead = pointAt(Math.min(1, progress + .004));
   const behind = pointAt(Math.max(0, progress - .004));
   const dx = ahead.x - behind.x, dy = ahead.y - behind.y, across = Math.hypot(dx, dy);
-  // A rocket flying at the viewer is shorter than one crossing the picture.
-  const depth = limb ? (ahead.z - behind.z) * limb.r : 0;
+  // A rocket flying at the viewer is shorter than one crossing the picture. A
+  // route laid out on the stage has no depth to read, and must not be asked for
+  // one: `undefined - undefined` is NaN, `NaN || 1` is one, and the hull came out
+  // as many times its own length as the rocket moved pixels per step, which is
+  // the needle that crossed the Moon.
+  const climb = ahead.z - behind.z;
+  const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;
   const lean = Math.max(.45, across / (Math.hypot(across, depth) || 1));
   const colour = pcol(player.id);
   const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now) : 1;
