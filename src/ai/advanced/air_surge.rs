@@ -94,6 +94,20 @@ pub(crate) const AIR_SURGE_GOAL_TECH: &str = "advanced_flight";
 /// [`AdvancedAi::air_surge_affordable`], which asks the question that actually
 /// matters — whether the chain and the wing fit in the turns that remain.
 pub(crate) const AIR_SURGE_TECH_HORIZON: usize = 12;
+/// `air-surge-2`, Domination lane: how far from the Bomber the research
+/// beeline starts without an appointment, wider than the appointment's own
+/// [`AIR_SURGE_TECH_HORIZON`].
+///
+/// ★★ THE BEELINE STARTED THIRTY TURNS LATE. Live King 20261001T080758Z had
+/// sixteen of the twenty-five chain technologies left at turn 76 and twelve
+/// at turn 107, and in between researched Engineering, Machinery,
+/// Construction, Military Engineering, Gunpowder and Metal Casting - about
+/// 2,000 base cost, nine turns of its later chain research - while its
+/// Trebuchet siege of Pella never dented 200 and then 300 walls. Advanced
+/// Flight landed at 156. The early conquest (archers) is over by sixteen
+/// out, and a threatened home still takes the slot for a nearer upgrade
+/// (`wartime_modernization_tech`).
+pub(crate) const AIR_SURGE_LANE_HORIZON: usize = 16;
 /// The sustainable wing ceiling. A Bomber consumes one Aluminum each turn, so
 /// an empire making four Aluminum per turn can keep four in the air. The
 /// actual target is capped by the income available after other Aluminum users;
@@ -1556,7 +1570,7 @@ impl AdvancedAi {
                 .contains(&Name::new(AIR_SURGE_GOAL_TECH))
             && g.player_city_ids(pid).len() >= 2
             && Self::air_surge_bomber(g, pid).is_some()
-            && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_TECH_HORIZON
+            && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_LANE_HORIZON
             && self.air_surge_affordable(g, pid)
     }
 

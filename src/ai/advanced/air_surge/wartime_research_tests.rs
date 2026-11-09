@@ -380,12 +380,31 @@ fn a_domination_seat_keeps_the_beeline_while_no_surge_is_appointed() {
                 for tech in held {
                     g.players[0].techs.remove(&tech);
                 }
-                assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > AIR_SURGE_TECH_HORIZON);
+                assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > AIR_SURGE_LANE_HORIZON);
             }
             _ => unreachable!(),
         }
         assert!(!ai.air_surge_lane_beeline(&g, 0), "{case}");
     }
+
+    // Live King 20261001T080758Z: sixteen chain technologies out at turn 76,
+    // twelve at 107, and six off-chain military technologies in between. The
+    // research beeline starts at sixteen; the appointment still waits for
+    // twelve.
+    let (mut g, ai, _) = unappointed();
+    let mut held: Vec<Name> = g.rules.tech_ancestors[AIR_SURGE_GOAL_TECH]
+        .iter()
+        .map(|tech| Name::new(tech))
+        .filter(|tech| g.players[0].techs.contains(tech))
+        .collect();
+    held.sort_by(|a, b| g.tech_cost(b.as_str()).total_cmp(&g.tech_cost(a.as_str())));
+    while AdvancedAi::air_surge_missing_techs(&g, 0) < AIR_SURGE_LANE_HORIZON {
+        let tech = held.remove(0);
+        g.players[0].techs.remove(&tech);
+    }
+    assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > AIR_SURGE_TECH_HORIZON);
+    assert!(ai.air_surge_lane_beeline(&g, 0), "the research beeline is on");
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
 }
 
 /// Live King 20261001T022028Z: with Castles (Medieval) unresearched the era
