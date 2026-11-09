@@ -97,8 +97,17 @@ impl AdvancedAi {
         culture_keeps_its_aesthetics => enable_culture_keeps_its_aesthetics, disable_culture_keeps_its_aesthetics;
         /// `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`.
         culture_banks_for_the_bands => enable_culture_banks_for_the_bands, disable_culture_banks_for_the_bands;
+        /// `domination-clock-every-rung`: an assigned Domination lane leaves its
+        /// development half at 30% of the clock at every difficulty. See
+        /// `AdvancedAi::domination_clock_every_rung`.
+        domination_clock_every_rung => enable_domination_clock_every_rung, disable_domination_clock_every_rung;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
+        /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
+        /// lane passes the peak edge against a target at 60% or less of its
+        /// 30-turn peak, at 1.5 times what it has left. See
+        /// `AdvancedAi::gutted_rival_passes_the_edge`.
+        gutted_rival_passes_the_edge => enable_gutted_rival_passes_the_edge, disable_gutted_rival_passes_the_edge;
         // ---- append: l-o --------------------------------------------
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
