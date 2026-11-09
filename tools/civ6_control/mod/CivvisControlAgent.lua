@@ -4457,6 +4457,24 @@ local function cityReligion(city)
 	return row ~= nil and row.ReligionType or nil;
 end
 
+-- BEGIN visible foreign city religion
+-- ReligionScreen.lua:1075-1076 reads CityReligion:GetMajorityReligion().
+-- For foreign cities use only a currently visible plot. A failed read is an
+-- unknown, while a successful -1 is an observed absence of majority.
+function CivvisReligionState.visibleCity(pid, city)
+	local visible = try(function()
+		return PlayersVisibility[pid]:IsVisible(city:GetX(), city:GetY());
+	end, false);
+	if visible ~= true then return false, nil; end
+	local ok, id = pcall(function() return city:GetReligion():GetMajorityReligion(); end);
+	if not ok or type(id) ~= "number" then return false, nil; end
+	if id < 0 then return true, nil; end
+	local row = GameInfo.Religions[id];
+	if row == nil or type(row.ReligionType) ~= "string" then return false, nil; end
+	return true, row.ReligionType;
+end
+-- END visible foreign city religion
+
 local function cityNextReligion(city)
 	local id = try(function() return city:GetReligion():GetNextReligion(); end, -1);
 	if id == nil or id < 0 then return nil; end
@@ -8757,7 +8775,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 						-- only defence strength tells them apart.
 						local theirDef, theirDmg, theirMax, theirWallDmg, theirWallMax =
 							cityDefence(cx, cy);
+						local religionObserved, majorityReligion = CivvisReligionState.visibleCity(pid, city);
 						theirCities[#theirCities + 1] = {
+							religion_observed = religionObserved,
+							religion = majorityReligion,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
@@ -9340,7 +9361,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 					if plotRevealed(pid, cx, cy) then
 						local strength, damage, maxDamage, wallDamage, maxWallDamage =
 							cityDefence(cx, cy);
+						local religionObserved, majorityReligion = CivvisReligionState.visibleCity(pid, city);
 						theirCities[#theirCities + 1] = {
+							religion_observed = religionObserved,
+							religion = majorityReligion,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
@@ -11342,6 +11366,9 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						-- every turn; both join the signature so the record the
 						-- board reads between sweeps is this turn's.
 						.. (try(function() return plot:GetAppeal(); end, 0) or 0) .. ":"
+						-- A park changes no improvement, owner or appeal. Its
+						-- own flag must invalidate the delta too (PlotToolTip.lua:743).
+						.. (try(function() return plot:IsNationalPark(); end, false) and 1 or 0) .. ":"
 						.. (try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) and 1 or 0);
 				end
 				local key = y * width + x;
