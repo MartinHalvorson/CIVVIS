@@ -197,17 +197,24 @@ fn hold_war(g: &mut Game, attacker: usize, until: u32) -> bool {
     false
 }
 
-fn replay(
-    base: &Game,
-    seed: u64,
-    seat: &Seat,
+struct ReplayOptions<'a> {
     attacker: usize,
     turns: u32,
     hold: bool,
     why: bool,
-    attacker_ai: &str,
+    attacker_ai: &'a str,
     declare_after: u32,
-) -> Outcome {
+}
+
+fn replay(base: &Game, seed: u64, seat: &Seat, options: ReplayOptions<'_>) -> Outcome {
+    let ReplayOptions {
+        attacker,
+        turns,
+        hold,
+        why,
+        attacker_ai,
+        declare_after,
+    } = options;
     let journal = civvis::reasoning::Journal::recording();
     let mut g = base.clone();
     g.rng = civvis::rng::Rng::new(seed);
@@ -456,12 +463,14 @@ fn main() {
                 &base,
                 9_100 + seed,
                 &seat,
-                attacker,
-                turns,
-                hold,
-                why && seed == 0,
-                &attacker_ai,
-                declare_after,
+                ReplayOptions {
+                    attacker,
+                    turns,
+                    hold,
+                    why: why && seed == 0,
+                    attacker_ai: &attacker_ai,
+                    declare_after,
+                },
             )
         }));
         let Ok(out) = run else {
