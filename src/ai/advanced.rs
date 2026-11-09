@@ -27,6 +27,7 @@ mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
 mod assessment;
+mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
 /// steps. See `advanced/builders.rs`.
 mod builders;
@@ -2076,6 +2077,8 @@ pub struct AdvancedAi {
     /// `advanced/chokepoints.rs`.
     narrows_atlas: RefCell<chokepoints::NarrowsAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
+    /// Host clearing-operation cooldowns, replaced for each fresh Native frame.
+    refused_builder_operations: BTreeMap<u32, BTreeSet<Name>>,
     /// The decisions above, tracked to completion. See `advanced/commitments.rs`.
     commitments: commitments::CommitmentLedger,
     /// `(last observed turn, consecutive idle-turn count)` for cities whose
@@ -8349,6 +8352,27 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-fields-apostles`: a Religion-target founder on the
+    /// offensive saves its Faith for an Apostle-led corps. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_fields_apostles: bool,
+    /// `religion-seat-builds-holy-sites`: a Religion-target founder claims a
+    /// Holy Site in each idle city without one. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_builds_holy_sites: bool,
+    /// `religion-seat-presses-the-campaign`: a Religion-target founder's corps
+    /// yields only to a killing blow, and its Apostles take a winnable fight
+    /// before they step away. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_presses_the_campaign: bool,
+    /// `religion-seat-races-the-prophet`: a Religion-target seat that has not
+    /// founded takes any queue for its Holy Site and then runs Prayers. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_races_the_prophet: bool,
+    /// `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds
+    /// on the Faith-scaling founder beliefs first. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_takes_the_faith_beliefs: bool,
     /// A committed, legal Science project keeps its queue ahead of a paused
     /// district. Independent opt-in; see `paused_district_finish.rs`.
     paused_district_spares_the_launch: bool,
@@ -17829,6 +17853,8 @@ impl AdvancedAi {
         if active_naturalists == 0
             && !g.national_park_sites(pid).is_empty()
             && portfolio_budget + f64::EPSILON >= g.naturalist_purchase_cost(pid)
+            // See `advanced/culture_band_bank.rs`.
+            && !self.culture_band_bank_holds_naturalists(g, pid)
         {
             for city in g.player_city_ids(pid) {
                 if g.apply(
@@ -25164,6 +25190,9 @@ impl AdvancedAi {
         // race takes Science before the turn reads its target. See
         // `advanced/religion_lane_hands_over.rs`.
         self.hand_over_a_lost_religion_lane(g, pid);
+        // `religion-seat-takes-the-faith-beliefs`: read by the founding in
+        // `BasicAi`'s ancillary pass, after any hand-over above.
+        self.base.founder_takes_the_faith_beliefs = self.founder_takes_the_faith_beliefs(g);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -25606,6 +25635,14 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/religion_seat_founds_first.rs`.
         self.claim_religion_seat_holy_site(g, pid, &plan);
+        // `religion-seat-races-the-prophet`: Prayers in the finished Holy Site
+        // city until our Prophet comes. See
+        // `advanced/religion_seat_fields_apostles.rs`.
+        self.claim_religion_seat_prayers(g, pid, &plan);
+        // `religion-seat-builds-holy-sites`: a founder's Shrine and Temple
+        // ahead of the ordinary claims, then more Holy Sites. See
+        // `advanced/religion_seat_fields_apostles.rs`.
+        self.claim_religion_seat_faith_economy(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -26149,6 +26186,9 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+/// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
+/// see `advanced/religion_seat_fields_apostles.rs`.
+mod religion_seat_fields_apostles;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 mod religious_interception;

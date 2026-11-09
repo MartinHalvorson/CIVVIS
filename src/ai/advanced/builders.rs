@@ -557,7 +557,7 @@ impl AdvancedAi {
         sidestep.is_some_and(|(_, _, position)| self.base.path_move(g, pid, uid, position))
     }
 
-    pub(super) fn advanced_builder_step(
+    pub(super) fn advanced_builder_step_unfiltered(
         &mut self,
         g: &mut Game,
         pid: usize,
