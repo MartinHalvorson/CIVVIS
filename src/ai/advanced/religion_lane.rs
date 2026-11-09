@@ -691,6 +691,9 @@ impl AdvancedAi {
             && !Self::religious_veto_spends(veto.as_ref())
             && self.religion_seat_saving_for_an_apostle(g, pid, &religion, ordinary_reserve)
         {
+            // BasicAi::cities may run after this pass. Its independent
+            // Missionary buyer must respect the bank we just chose to hold.
+            self.base.bank_faith_for_apostle = true;
             return;
         }
         for unit in priorities {

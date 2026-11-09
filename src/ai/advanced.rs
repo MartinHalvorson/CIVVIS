@@ -25567,16 +25567,13 @@ impl AdvancedAi {
             self.military_faith_spending_above(g, pid, &plan, reserve);
         }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
-        let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
-        // `religion-seat-fields-apostles`: this pass owns the corps budget,
-        // including urgent religious defence. BasicAi::cities runs later and
-        // must not buy a Missionary after we decide to save for an Apostle.
-        self.base.religious_unit_purchases_managed = self.victory_planning
-            && g.victory_conditions.religious
-            && self.religion_seat_corps_active(g, pid, offensive);
+        // `religion-seat-fields-apostles`: a positive saving decision below
+        // reaches the later city governor, and expires before the next pass.
+        self.base.bank_faith_for_apostle = false;
         if self.victory_planning && g.victory_conditions.religious {
             let committed =
                 plan.strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid);
+            let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
             // A secondary campaign spends only the bank above a substantial
             // reserve, leaving Culture agents able to buy Naturalists or Rock
             // Bands and every other plan able to react to an emergency.

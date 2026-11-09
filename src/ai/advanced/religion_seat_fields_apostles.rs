@@ -27,9 +27,8 @@
 //! - while an Apostle comes next and a city of ours could field one, holds the
 //!   Faith until the Apostle is payable. Worship buildings wait on the same
 //!   reserve.
-//! The routine city governor leaves religious-unit purchases to this pass,
-//! including its emergency defenders, so its later Missionary purchase cannot
-//! spend the Faith this pass just held for an Apostle.
+//! When this pass saves for an Apostle, the later routine city governor's
+//! Missionary purchase respects the same bank.
 //!
 //! A city of ours losing its faith, a rival's match point and the Inquisition
 //! all still spend at once. Before a Temple stands nothing is held, so the
@@ -107,7 +106,7 @@ const HOLY_SITE_POP_FLOOR: i32 = 2;
 
 impl AdvancedAi {
     /// Whether the corps gene acts for this seat.
-    pub(super) fn religion_seat_corps_active(&self, g: &Game, pid: usize, offensive: bool) -> bool {
+    fn religion_seat_corps_active(&self, g: &Game, pid: usize, offensive: bool) -> bool {
         self.religion_seat_fields_apostles
             && offensive
             && self.active_victory_target(g) == Some(VictoryTarget::Religion)
