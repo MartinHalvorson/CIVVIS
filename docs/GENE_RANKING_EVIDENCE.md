@@ -347,6 +347,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
+| `russia-settles-the-tundra` | off (unmeasured) | Opt-in gene `russia-settles-the-tundra`; see `advanced/russia_tundra.rs`. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
 | `saved-work-is-seen` | off (unmeasured) | Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`. | 1 \| 1 |
 | `science-campus-before-repeat-settler` | off (unmeasured) | A host-quoted short first Science Campus before a longer repeated Settler. | 1 \| 1 |
