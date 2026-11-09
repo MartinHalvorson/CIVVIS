@@ -831,9 +831,10 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
         if observed.pop > 0 {
             game.cities.get_mut(&cid).unwrap().pop = observed.pop;
         }
-        // The foreign-city exporter marks a successful, currently visible
-        // majority read, including a confirmed lack of majority. Missing or
-        // fogged observations must not manufacture a conversion or erase one.
+        // The foreign-city exporter marks a successful majority read of a
+        // revealed city, fogged or not (the Religion lens shows a human the
+        // same), including a confirmed lack of majority. A missing or failed
+        // observation must not manufacture a conversion or erase one.
         if game.cities[&cid].owner != 0 && observed.religion_observed == Some(true) {
             apply_city_religion(game.cities.get_mut(&cid).unwrap(), observed);
             Arc::make_mut(&mut game.observed_city_religion_markers).insert(cid);

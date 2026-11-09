@@ -4521,14 +4521,20 @@ local function cityReligion(city)
 end
 
 -- BEGIN visible foreign city religion
--- ReligionScreen.lua:1075-1076 reads CityReligion:GetMajorityReligion().
--- For foreign cities use only a currently visible plot. A failed read is an
--- unknown, while a successful -1 is an observed absence of majority.
+-- What a human sees on a rival city's banner with the Religion lens on, which
+-- includes a revealed city under fog. DLC/Expansion2/UI/CityBanners/
+-- CityBannerManager.lua:757-769 `CityBanner:IsVisible` is true for IsVisible
+-- OR IsRevealed, `RealizeReligion` (:3534-3547) calls `UpdateReligion` on every
+-- banner that passes it, and `UpdateReligion` (:1903-1918) reads
+-- `pCity:GetReligion():GetMajorityReligion()` from the live city. Base
+-- ReligionScreen.lua:1075-1076 reads the same accessor. An unrevealed city or a
+-- failed read is an unknown; a successful -1 is an observed absence of majority.
 function CivvisReligionState.visibleCity(pid, city)
-	local visible = try(function()
-		return PlayersVisibility[pid]:IsVisible(city:GetX(), city:GetY());
+	local shown = try(function()
+		local seat, x, y = PlayersVisibility[pid], city:GetX(), city:GetY();
+		return seat:IsVisible(x, y) or seat:IsRevealed(x, y);
 	end, false);
-	if visible ~= true then return false, nil; end
+	if shown ~= true then return false, nil; end
 	local ok, id = pcall(function() return city:GetReligion():GetMajorityReligion(); end);
 	if not ok or type(id) ~= "number" then return false, nil; end
 	if id < 0 then return true, nil; end
