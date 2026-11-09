@@ -19727,11 +19727,13 @@ impl AdvancedAi {
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
             // `prophet-builds-its-site`: likewise the Holy Site a Prophet
-            // waits on.
+            // waits on. The queue claim also keeps the open race's Prayers
+            // through routine rescoring, after explicit defense handling.
             let race_shrine_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     (self.race_shrine_committed(g, pid, cid, item)
-                        || self.prophet_site_committed(g, pid, cid, item))
+                        || self.prophet_site_committed(g, pid, cid, item)
+                        || self.religion_prophet_project_reserved(g, pid, cid))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             // `early-settler-floor`: the floor's Settler finishes before
