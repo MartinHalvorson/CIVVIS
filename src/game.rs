@@ -1737,6 +1737,10 @@ pub struct QueryCache {
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
     tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
+    /// `domestic_tourists` per player. Each seat's victory tracker reads every
+    /// rival's count and each count walks every player, which made one frame
+    /// cubic in the number of civilizations.
+    domestic_tourists: std::cell::RefCell<Option<BTreeMap<usize, i64>>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -1961,6 +1965,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.regional_slots.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
             *self.game.query_memo.tourism.borrow_mut() = None;
+            *self.game.query_memo.domestic_tourists.borrow_mut() = None;
         }
     }
 }
