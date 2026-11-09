@@ -15,7 +15,11 @@ local city = {
  GetY = function() return 31 end,
  GetReligion = function() return religion end,
 }
-local visibility = {IsVisible = function(_, x, y) assert(x == 24 and y == 31); return seen end}
+local revealed = true
+local visibility = {
+ IsVisible = function(_, x, y) assert(x == 24 and y == 31); return seen end,
+ IsRevealed = function(_, x, y) assert(x == 24 and y == 31); return revealed end,
+}
 local env = setmetatable({
  CivvisReligionState = {}, PlayersVisibility = {[0] = visibility},
  GameInfo = {Religions = {[1] = {ReligionType = "RELIGION_BUDDHISM"},
@@ -35,15 +39,30 @@ majority = -1
 observed, faith = observe()
 assert(observed == true and faith == nil)
 
--- Revelation alone is insufficient: neither fog nor visibility errors may
+-- The Religion lens shows a revealed city's live majority through fog
+-- (CityBannerManager.lua:757-769 `CityBanner:IsVisible`), so fog is not unknown.
+seen = false
+majority = 2
+reads = 0
+observed, faith = observe()
+assert(observed == true and faith == "RELIGION_ISLAM" and reads == 1, "fogged but revealed city reads")
+majority = -1
+observed, faith = observe()
+assert(observed == true and faith == nil, "fogged city with no majority is an observed absence")
+
+-- A city the seat has never revealed, or a failed visibility read, must not
 -- inspect the foreign city's current religion.
+majority = 1
 for _, hidden in ipairs({false, "visibility failure"}) do
  local before = reads
- visibility.IsVisible = function() if hidden then error(hidden) end; return false end
+ revealed = false
+ visibility.IsRevealed = function() if hidden then error(hidden) end; return false end
  observed, faith = observe()
  assert(observed == false and faith == nil and reads == before)
 end
-visibility.IsVisible = function() return true end
+visibility.IsRevealed = function() return true end
+revealed = true
+seen = true
 for _, bad in ipairs({"missing", "unsupported", "throws"}) do
  religion.GetMajorityReligion = function()
   if bad == "throws" then error("native read failed") end

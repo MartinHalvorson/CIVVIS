@@ -532,6 +532,85 @@ class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
         self.assertIn("victory fit checks passed", done.stdout)
 
 
+HUD_WINDOW_SCENARIOS = r"""
+const SPEC = false;
+__CONSTS__
+const stubHud = {style:{getPropertyValue:() => ""}};
+const document = {getElementById:id => id === "maparea" ? {clientHeight:900} : ribbonHost};
+const getComputedStyle = () => ({getPropertyValue:() => ""});
+const playerHudRowPitch = () => 32;
+let ribbonHost = null;
+__BLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const seats = n => Array.from({length:n}, (_, id) => ({id}));
+const keys = majors => new Map(majors.map(p => [p.id, "s" + p.id]));
+const plan = (n, scrollTop, clientHeight, locked = [], open = -1, cityRows = 0) => {
+  const majors = seats(n);
+  ribbonHost = {querySelector:() => clientHeight === null ? null : {scrollTop, clientHeight}};
+  return {majors, w:planPlayerHudWindow(majors, keys(majors),
+    new Set(locked.map(id => "s" + id)), open >= 0 ? majors[open] : null, cityRows)};
+};
+const built = ({majors, w}) => majors.map((p, i) => w.built(i) ? i : -1).filter(i => i >= 0);
+// A stock-sized table is never windowed: every row stays real.
+eq(plan(30, 0, 300).w, null, "thirty seats keep every row");
+// A hundred seats at the top: what shows, plus eight rows of overscan.
+const top = plan(100, 0, 320);
+eq(built(top), Array.from({length:19}, (_, i) => i), "first rows");
+// One spacer per unbuilt run, spanning exactly the rows it replaces.
+eq(top.majors.map((p, i) => top.w.built(i) ? "" : top.w.gap(i)).join("").match(/span (\d+)/g),
+   ["span 81"], "spacer spans the rest of the table");
+const middle = plan(100, 1600, 320);
+const seatsOf = built(middle);
+eq(seatsOf[0], 42, "eight above row 50");
+eq(seatsOf[seatsOf.length - 1], 68, "eight below");
+const gaps = middle.majors.map((p, i) => middle.w.built(i) ? "" : middle.w.gap(i)).join("").match(/span (\d+)/g);
+eq(gaps, ["span 42", "span 31"], "a spacer either side");
+// A locked row exists wherever the table is scrolled, so it can hold at an edge.
+eq(built(plan(100, 0, 320, [54])).includes(54), true, "locked row is built");
+// An open city list hangs under its seat: the rows below read back through it.
+const listed = plan(100, 0, 320, [], 2, 40);
+eq(built(listed).includes(2), true, "open seat is built");
+eq(built(listed).slice(-1)[0], 10, "the list fills the view, so overscan stops short of the rows under it");
+const deep = plan(100, 1600, 320, [], 2, 20);
+eq(built(deep).filter(i => i > 2)[0], 22, "the list's rows shift every later seat");
+// Scrolling near the edge of what exists asks for more; inside it does not.
+const live = plan(100, 0, 320);
+eq(live.w.stale({scrollTop:0, clientHeight:320}), false, "top of a fresh window");
+eq(live.w.stale({scrollTop:15 * 32, clientHeight:320}), true, "two rows from the unbuilt part");
+// The masthead takes its share of a 900px map in whole rows and never more.
+eq(playerHudSeatHeight(100, 900), 370, "ten rows and the chrome");
+eq(playerHudSeatHeight(8, 900), 306, "a table that fits stays whole");
+console.log("hud window checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
+    """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking
+    over the whole screen". A hundred rows also rebuilt 790 KB of markup a turn,
+    so only the rows near what is showing are built."""
+
+    def test_the_window(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        consts = source[source.index("const PLAYER_HUD_ROW_GAP = 2;"):
+                        source.index("function playerHudRowPitch()")]
+        heights = source[source.index("function playerHudSeatHeight"):
+                         source.index("const HUD_WIDGETS = {")]
+        window = source[source.index("function planPlayerHudWindow"):
+                        source.index("function refillPlayerHudWindow")]
+        chrome = source[source.index("const PLAYER_HUD_CHROME_HEIGHT ="):
+                        source.index("const PLAYER_HUD_ROW_GAP = 2;")]
+        script = HUD_WINDOW_SCENARIOS.replace("__CONSTS__", chrome + consts).replace(
+            "__BLOCK__", heights + window)
+        done = subprocess.run(
+            [NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("hud window checks passed", done.stdout)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class PublishedViewingDefaults(unittest.TestCase):
     def test_fresh_visitors_spin_with_two_turn_trails_and_saved_choices_win(self):
@@ -621,4 +700,124 @@ stopWorldSpin();
 expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+
+class PlanetEmpireNames(unittest.TestCase):
+    """A civ's name is a spot on the ground that the camera only projects."""
+
+    def source(self):
+        return (ASSETS / "app.js").read_text(encoding="utf-8")
+
+    def test_names_keep_the_grounds_time_and_are_not_lettered_per_frame(self):
+        source = self.source()
+        start = source.index("function drawPlanetGpuAnimationFrame()")
+        gpu_frame = source[start:source.index("\n}\n", start)]
+        self.assertIn("paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);", gpu_frame)
+        start = source.index("function drawPlanetEmpireLabels(")
+        painter = source[start:source.index("\n}\n", start)]
+        # fillText snaps its baseline to whole device pixels.
+        self.assertNotIn("fillText", painter)
+        self.assertIn("planetProject(label.at, camera, scale, centerX, centerY)", painter)
+        start = source.index("function animTick(now)")
+        self.assertIn("planetEmpireLabelsSettling()", source[start:])
+
+    @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+    def test_a_name_is_fixed_to_the_ground_while_the_world_turns(self):
+        source = self.source()
+        start = source.index("const PLANET_PROJECT_TRIG")
+        project = source[start:source.index("// ------------------------------------------------------- turning it by hand", start)]
+        start = source.index("const PLANET_MAJOR_CITY_LABEL_SCALE")
+        names = source[start:source.index("// While the GPU turns the ground on every display refresh", start)]
+        scenarios = r'''
+let T = 1000;
+const performance = {now:() => T};
+const DPR = 2, SKY_MARKERS = 100;
+function key(p) { return p[0] + "," + p[1]; }
+function jerseyLanes() { return ["#000", "#fff"]; }
+function planetMap() { return true; }
+function expect(condition, message) { if (!condition) throw Error(message); }
+let drawn = [];
+function fakeContext() {
+  return {globalAlpha:1, save() {}, restore() {}, setTransform() {}, strokeText() {}, fillText() {},
+    measureText:text => ({width:text.length * 8}),
+    drawImage(image, x, y, width, height) {
+      drawn.push({x:x + width / 2, y:y + height / 2, alpha:this.globalAlpha});
+    }};
+}
+const document = {createElement:() => ({width:0, height:0, getContext:fakeContext})};
+const COLUMNS = 40, ROWS = 20, cells = new Map(), blank = [];
+for (let i = 0; i < COLUMNS; i++) for (let j = 0; j < ROWS; j++) {
+  const longitude = 2 * Math.PI * i / COLUMNS - Math.PI;
+  const latitude = Math.PI * ((j + .5) / ROWS - .5);
+  cells.set(i + "," + j, {
+    center:[Math.cos(latitude) * Math.cos(longitude), Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)],
+    nbrs:[((i + 1) % COLUMNS) + "," + j, ((i + COLUMNS - 1) % COLUMNS) + "," + j, i + "," + (j + 1), i + "," + (j - 1)]});
+  blank.push([i, j]);
+}
+const PLANET = {cells};
+const store = PLANET_EMPIRE_LABELS;
+let players = [{civ:"Rome"}];
+let state;
+function world(rule) {
+  state = {players, map:{tiles:blank.map(([i, j]) => ({pos:[i, j], owner:rule(i, j)}))}};
+}
+const cameraAt = longitude => ({longitude, latitude:0, roll:0, radius:400});
+const RADIUS = 100, CENTER = 300;
+function paint(longitude, visible = new Set(), spectator = true) {
+  drawn = [];
+  drawPlanetEmpireLabels(fakeContext(), cameraAt(longitude), .25, RADIUS, CENTER, CENTER, visible, spectator);
+}
+const patch = (i, j) => i >= 18 && i <= 23 && j >= 7 && j <= 12 ? 0 : null;
+world(patch);
+paint(.2);
+expect(store.list.length === 1, "one territory must carry one name");
+const label = store.list[0], spot = label.target;
+for (let step = 0; step < 50; step++) {
+  T += 16;
+  const longitude = .2 + step * .02;
+  paint(longitude);
+  const truth = planetProject(spot, cameraAt(longitude), .25, CENTER, CENTER);
+  expect(drawn.length === 1, "a name in full view was not drawn");
+  expect(Math.abs(drawn[0].x - truth.x) < 1e-9 && Math.abs(drawn[0].y - truth.y) < 1e-9,
+         "a name left its spot on the ground as the world turned");
+  expect(label.target === spot, "turning the world moved a name's spot");
+}
+T += 16; paint(Math.PI);
+expect(drawn.length === 0, "a name was drawn through the far side of the world");
+
+world((i, j) => patch(i, j) ?? (i === 24 && j === 9 ? 0 : null));
+T += 16; paint(.2);
+expect(label.target === spot, "one tile of border growth moved a name");
+
+world((i, j) => i >= 20 && i <= 25 && j >= 7 && j <= 12 ? 0 : null);
+T += 16; paint(.2);
+expect(label.target !== spot, "a territory that really moved kept its old name spot");
+expect(label.at !== label.target && planetSpotNearness(label.at, spot) > planetSpotNearness(label.target, spot),
+       "a real move must glide rather than jump");
+expect(planetEmpireLabelsSettling(), "the map went idle during a glide");
+for (let step = 0; step < 400; step++) { T += 16; paint(.2); }
+expect(label.at === label.target, "a glide never arrived");
+expect(!planetEmpireLabelsSettling(), "settled names kept the painter awake");
+
+store.list = [];
+world(patch);
+const seen = new Set(["18,7", "18,8"]);
+T += 16; paint(.2, seen, false);
+const rim = cells.get("18,7").center;
+expect(store.list.length === 1 && planetSpotNearness(store.list[0].target, rim) > Math.cos(.15),
+       "a name's spot drew on tiles this viewer cannot see");
+
+store.list = [];
+players = [{civ:"Rome", met:false}];
+world(patch);
+T += 16; paint(.2);
+expect(store.list.length === 0 && drawn.length === 0, "an unmet civilization was named");
+
+players = [{civ:"Rome"}];
+world((i, j) => j >= 8 && j <= 11 ? 0 : null);
+T += 16; paint(.2);
+expect(store.list.length >= 3, "a territory round the whole world had nothing to name its far side");
+'''
+        done = subprocess.run([NODE, "-e", project + names + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
