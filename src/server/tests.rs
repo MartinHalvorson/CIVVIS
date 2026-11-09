@@ -7212,7 +7212,18 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
     assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
-    assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
+    // ...measured first and written after, or every grip forces a layout of
+    // the whole masthead.
+    let grips = EMBEDDED_INDEX
+        .split("function syncPlayerHudColumnGrips() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function playerHudColumnFloor").next())
+        .expect("grips");
+    let measured = grips
+        .find("placed.push({grip, x:Math.round(left.right - origin),")
+        .expect("measure");
+    let written = grips.find("grip.style.left = `${x}px`;").expect("write");
+    assert!(measured < written);
     // The fitter has to measure the cell: the figure is centered content in
     // its own grid, so its clientWidth and scrollWidth are always equal and
     // it can never report the overflow that would shrink it.
@@ -9929,6 +9940,94 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
     // dropped, so a zoomed-out footprint keeps its corners.
     assert!(planet.contains("if (distance >= 1 - 1e-6) {"));
     assert!(EMBEDDED_INDEX.contains("drawPlanetMiniViewportFootprint(projection);"));
+}
+
+#[test]
+fn closed_sidebar_sections_build_their_rows_only_when_opened() {
+    let reasoning = EMBEDDED_INDEX
+        .split("function drawReasoning() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function applyLogFilter").next())
+        .expect("reasoning panel");
+    // The log keeps accumulating with the panel closed: only the rows wait.
+    let absorbed = reasoning.find("absorbReasoning(state);").expect("absorb");
+    let guard = reasoning
+        .find("if (inClosedSidebarSection(el)) return;")
+        .expect("closed-section guard");
+    let built = reasoning.find("el.innerHTML = thoughts.map").expect("rows");
+    assert!(absorbed < guard && guard < built);
+
+    let events = EMBEDDED_INDEX
+        .split("function drawEvents() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("event log");
+    // The section's own label stays current; it is visible with the section shut.
+    let label = events.find("scope.textContent =").expect("label");
+    let guard = events
+        .find("if (inClosedSidebarSection(el)) return;")
+        .expect("closed-section guard");
+    let built = events.find("el.innerHTML = events.map").expect("rows");
+    assert!(label < guard && guard < built);
+
+    // Opening a section answers now, not on the next turn.
+    assert!(EMBEDDED_INDEX.contains("drawOpenedSidebarSection(section);"));
+    assert!(EMBEDDED_INDEX.contains("if (section.id === \"strategysec\") drawReasoning();"));
+    assert!(EMBEDDED_INDEX.contains("else if (section.id === \"eventsec\") drawEvents();"));
+}
+
+#[test]
+fn the_minimap_follows_a_moving_camera_on_its_own_budget_and_still_settles() {
+    assert!(EMBEDDED_INDEX.contains("const MINI_TURNING_PAINT_MS = 100;"));
+    assert!(EMBEDDED_INDEX.contains("const MAX_MINI_PAINT_SHARE = .05;"));
+    let tick = EMBEDDED_INDEX
+        .split("function animTick(now) {")
+        .nth(1)
+        .and_then(|tail| tail.split("requestAnimationFrame(animTick);\n").nth(1))
+        .expect("animation tick");
+    // Camera motion goes through the budget on both the GPU and Canvas paths;
+    // a detonation animates on the chart and keeps its full rate.
+    assert_eq!(
+        tick.matches("paintMiniWithCamera(now, userCameraMoving);")
+            .count(),
+        2
+    );
+    assert!(tick.contains("if (anim.blasts.length > 0) { drawMini();"));
+    // A skipped paint is owed: when the camera stops the chart catches up.
+    assert!(tick.contains("if (!cameraMoving && miniBehindCamera) {"));
+    // Every turn still gets its complete chart, outside this budget.
+    assert!(EMBEDDED_INDEX.contains("draw(); drawSide(newWorld); drawMini(); drawPlayerHud();"));
+}
+
+#[test]
+fn a_turn_paints_the_map_once_and_a_frame_keeps_what_it_has_worked_out() {
+    // The turn's own paint restarts the animation clock, or animTick repaints
+    // the identical world in the same frame.
+    let render = EMBEDDED_INDEX
+        .split("function render(st, recordChronicle = true")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawCaptureChoice").next())
+        .expect("render");
+    let painted = render
+        .find("draw(); drawSide(newWorld); drawMini();")
+        .expect("the turn's paint");
+    let clock = render
+        .find("lastIdleDraw = performance.now();")
+        .expect("the animation clock restarts");
+    assert!(painted < clock);
+    // Cell records are rebuilt per frame; the layers share one measurement.
+    assert!(EMBEDDED_INDEX.contains("if (cell.inradius !== undefined) return cell.inradius;"));
+    assert!(EMBEDDED_INDEX.contains("return cell.inradius = Number.isFinite(inradius)"));
+    let project = EMBEDDED_INDEX
+        .split("function planetProject(point, camera, scale, centerX, centerY) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function ").next())
+        .expect("planetProject");
+    assert!(project.contains("planetProjectTrig(camera)"));
+    assert!(
+        !project.contains("Math.cos("),
+        "angles belong to the camera, not the point"
+    );
 }
 
 #[test]

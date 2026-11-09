@@ -5495,10 +5495,14 @@ pub const GENES: &[Gene] = &[
     // on the parity path and the base wartime purchases. See
     // `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
+    // A Russian seat's site score reads Mother Russia's +1 Faith and +1
+    // Production on Tundra. See `advanced/russia_tundra.rs`.
+    Gene { tag: "russia-settles-the-tundra", field: "russia_settles_the_tundra", kind: Kind::OptIn, enable: AdvancedAi::enable_russia_settles_the_tundra, disable: AdvancedAi::disable_russia_settles_the_tundra },
     // A Religion-target founder's first Shrine takes the queue, since no
     // Missionary can be bought without one. See
     // `advanced/religion_seat_first_shrine.rs`.
     Gene { tag: "religion-seat-first-shrine", field: "religion_seat_first_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_first_shrine, disable: AdvancedAi::disable_religion_seat_first_shrine },
+||||||| 33a1f61f89
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

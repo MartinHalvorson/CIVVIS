@@ -1535,8 +1535,13 @@ end
 -- mirror could not tell a levelled Spy from a fresh one (both host level 1
 -- until the choice is made), and no live Spy was ever promoted: 99 of 99 on
 -- 2026-11-05 ended level 1, 81 of them holding the 15 XP of a pending choice.
+-- An Apostle's too: the host draws three of its nine promotions at birth and
+-- it takes one, once. 27 of 38 live Apostles on 2026-11-09 never took theirs,
+-- 26 of them refused a promotion the host was not offering.
 function CivvisRockBandPromotionChoices(unit, name)
-    if name ~= "UNIT_ROCK_BAND" and name ~= "UNIT_SPY" then return nil; end
+    if name ~= "UNIT_ROCK_BAND" and name ~= "UNIT_SPY" and name ~= "UNIT_APOSTLE" then
+        return nil;
+    end
     return try(function()
         local command = GameInfo.UnitCommands["UNITCOMMAND_PROMOTE"];
         if command == nil then return nil; end

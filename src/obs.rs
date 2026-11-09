@@ -481,7 +481,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         .map(|player| g.team_score_rank_key(player.id).0)
         .max()
         .unwrap_or(0);
-    json!({
+    // The three big arrays go in afterwards. `json!` copies whatever is named in
+    // it by serializing it again, and every frame of a spectated game was paying
+    // to rebuild thousands of tile, unit and city documents it had just made.
+    let mut observation = json!({
         "turn": g.turn,
         "max_turns": g.max_turns,
         // `max_turns` remains the setup value a successor game should inherit.
@@ -585,16 +588,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "max_religions": g.max_religions(),
             "natural_wonders": g.map_size().natural_wonders,
             "continents": g.map_size().continents,
-            "tiles": tiles,
         },
         "visible": vis.iter().filter(|v| g.map.tiles.contains_key(v))
             .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
         "turn_visible": turn_vis.iter().filter(|v| g.map.tiles.contains_key(v))
             .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
         "camps": camps,
-        "units": units,
         "spies": spies,
-        "cities": cities,
         "me": {
             "team": p.team,
             "gold": round1(p.gold), "faith": round1(p.faith),
@@ -1056,7 +1056,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // omniscient viewer watches whichever seat it is observing, so the
         // spectator log follows the same seat as the rest of the frame.
         "events": recent_events(g, pid, omniscient),
-    })
+    });
+    observation["map"]["tiles"] = Value::Array(tiles);
+    observation["units"] = Value::Array(units);
+    observation["cities"] = Value::Array(cities);
+    observation
 }
 
 /// Every conflict in progress, longest-running first, followed by the most
