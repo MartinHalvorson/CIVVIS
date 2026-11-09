@@ -385,7 +385,9 @@ impl AdvancedAi {
                 if self.early_settler_floor_holds(g, pid, cid, plan)
                     || self.bound_granary_holds(g, pid, cid, plan, item)
                     || self.capital_monument_holds(g, pid, cid, plan, item)
-                    || self.deterrence_unit_holds(g, pid, item)
+                    // See `advanced/acropolis_before_the_deterrent.rs`.
+                    || (self.deterrence_unit_holds(g, pid, item)
+                        && !self.quick_theater_passes_the_deterrent(g, turns))
                     || self.idle_route_trader_holds(g, pid, cid, plan, item)
                     || self.backlog_builder_holds(g, pid, cid, plan, item)
                     || self.capped_aqueduct_holds(g, pid, cid, plan, item)
