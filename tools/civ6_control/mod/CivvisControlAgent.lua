@@ -11342,6 +11342,9 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						-- every turn; both join the signature so the record the
 						-- board reads between sweeps is this turn's.
 						.. (try(function() return plot:GetAppeal(); end, 0) or 0) .. ":"
+						-- A park changes no improvement, owner or appeal. Its
+						-- own flag must invalidate the delta too (PlotToolTip.lua:743).
+						.. (try(function() return plot:IsNationalPark(); end, false) and 1 or 0) .. ":"
 						.. (try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) and 1 or 0);
 				end
 				local key = y * width + x;
