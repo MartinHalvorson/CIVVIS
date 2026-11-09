@@ -68,6 +68,11 @@ path = "src/bin/leader_study.rs"
 required-features = ["developer-tools"]
 
 [[bin]]
+name = "odds_export"
+path = "src/bin/odds_export.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
 name = "live_divergence"
 path = "src/bin/live_divergence.rs"
 required-features = ["developer-tools"]

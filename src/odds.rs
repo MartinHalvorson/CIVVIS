@@ -145,10 +145,6 @@ const LEAD_BASE: f64 = 0.15;
 // minimum-error point of the held forecast sweep while preserving the same
 // ordering signal. `LEAD_BASE + LEAD_SHARPEN` is therefore 1.25.
 const LEAD_SHARPEN: f64 = 1.10;
-/// The clock a world with no turn limit is judged against, so an endless game
-/// still ages instead of treating turn three as the last turn.
-const NOMINAL_HORIZON: f64 = 500.0;
-
 /// The Elo-to-Glicko scale: 400 / ln(10). Rating deviation lives on this scale
 /// when the forecast attenuates an uncertain rating difference.
 const ELO_PER_LOGIT: f64 = 173.717_792_761_797_6;
@@ -347,7 +343,7 @@ fn handicap_elo(game: &Game, pid: usize) -> f64 {
     let Some(player) = game.players.get(pid) else {
         return 0.0;
     };
-    if player.is_minor || player.is_barbarian {
+    if player.is_minor || player.is_barbarian || game.is_handicap_exempt(pid) {
         return 0.0;
     }
     let spec = game.difficulty_spec();
@@ -360,7 +356,10 @@ fn handicap_elo(game: &Game, pid: usize) -> f64 {
     }
     // Food is never handicapped, so the mean is taken over the five yields the
     // ladder actually scales.
-    let yields = game.handicap_yield_pct(pid);
+    // Pregame odds must remain pregame odds. `handicap_yield_pct` includes
+    // the late-science schedule at the *current* turn; reading it here made
+    // the published start forecast change when that schedule switched on.
+    let yields = game.handicap_yield_spec().ai_yield_pct;
     let mean_yield =
         (yields.production + yields.gold + yields.science + yields.culture + yields.faith) / 5.0;
     let bonus_units: usize = spec.ai_bonus_units.values().sum();
@@ -372,7 +371,8 @@ fn handicap_elo(game: &Game, pid: usize) -> f64 {
 }
 
 /// Whether this seat can still win: alive, and holding either a city or a
-/// settler to found one.
+/// settler to found one. Public city totals and hidden-city existence count
+/// on partial boards, just as they do for the engine's elimination check.
 ///
 /// The second half is the engine's own elimination rule (`check_elimination`)
 /// read a moment before it fires. A civilization whose last city fell is not
@@ -398,7 +398,7 @@ fn still_playing(game: &Game, pid: usize) -> bool {
         return !game.player_city_ids(pid).is_empty()
             || game.units.values().any(|unit| unit.owner == pid);
     }
-    !game.player_city_ids(pid).is_empty()
+    city_count(game, pid) > 0
         || game
             .units
             .values()
@@ -406,11 +406,25 @@ fn still_playing(game: &Game, pid: usize) -> bool {
 }
 
 fn no_city_penalty(game: &Game, pid: usize) -> f64 {
-    if game.turn > 10 && game.player_city_ids(pid).is_empty() {
+    if game.turn > 10 && city_count(game, pid) == 0 {
         NO_CITY_ELO
     } else {
         0.0
     }
+}
+
+/// The host's public empire count includes cities whose locations the mirror
+/// must not invent. A partial board's object count measures exploration,
+/// rather than the rival's economy. Never let a stale reading erase an
+/// actually represented city or known hidden-city existence.
+fn city_count(game: &Game, pid: usize) -> usize {
+    let represented = game.player_city_ids(pid).len();
+    game.observed_public_empire_stats
+        .get(&pid)
+        .and_then(|stats| stats.city_count)
+        .unwrap_or(represented)
+        .max(represented)
+        .max(usize::from(game.unseen_city_owners.contains(&pid)))
 }
 
 /// One seat's position, valued against the rest of the living field.
@@ -437,7 +451,7 @@ fn standing_elo(game: &Game, living: &[usize]) -> Vec<Standing> {
     let militaries: Vec<f64> = living.iter().map(|pid| game.military_power(*pid)).collect();
     let cities: Vec<f64> = living
         .iter()
-        .map(|pid| game.player_city_ids(*pid).len() as f64)
+        .map(|pid| city_count(game, *pid) as f64)
         .collect();
     let races: Vec<f64> = living
         .iter()
@@ -527,7 +541,9 @@ fn race_elo(pct: f64) -> f64 {
 ///
 /// A game that was decided and asked for one more turn has no limit left to
 /// run out, and is late by definition. A world with no limit at all is judged
-/// against a nominal one so that turn three is not treated as the last turn.
+/// against its speed's stock clock so that turn three is not treated as the
+/// last turn. A fixed 500 here made the same development age only half as
+/// quickly on Online and three times as quickly on Marathon.
 fn clock_progress(game: &Game) -> f64 {
     if game.played_on() {
         return 1.0;
@@ -536,7 +552,7 @@ fn clock_progress(game: &Game) -> f64 {
         limit if limit > 0 && limit < 100_000 => {
             (f64::from(game.turn) / f64::from(limit)).clamp(0.0, 1.0)
         }
-        _ => (f64::from(game.turn) / NOMINAL_HORIZON).clamp(0.0, 1.0),
+        _ => (f64::from(game.turn) / f64::from(game.speed_spec().turns.max(1))).clamp(0.0, 1.0),
     }
 }
 
