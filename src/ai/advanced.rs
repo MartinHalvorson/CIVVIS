@@ -8416,6 +8416,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-guards-the-race`: a Religion-target seat repairs a
+    /// pillaged Holy Site at once and keeps a Prayers project finishing this
+    /// turn. See `advanced/religion_seat_guards_the_race.rs`. Off by default.
+    religion_seat_guards_the_race: bool,
     /// `religion-seat-reaches-reformed-church`: a Religion-target founder
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
@@ -25726,6 +25730,8 @@ impl AdvancedAi {
         // `near-done-work-finishes`: every city's head before any production
         // writer runs. Empty while the gene is off.
         let near_done_heads = self.near_done_heads(g, pid);
+        // `religion-seat-guards-the-race`: Prayers heads before any writer.
+        let race_guard_heads = self.race_guard_heads(g, pid);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
@@ -26050,6 +26056,10 @@ impl AdvancedAi {
         // and before the pad holds and the defence handoffs below. Exact
         // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
         self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
+        // `religion-seat-guards-the-race`: Prayers finishing this turn and a
+        // pillaged Holy Site's repair, after every ordinary writer. See
+        // `advanced/religion_seat_guards_the_race.rs`.
+        self.claim_religion_seat_guards_the_race(g, pid, &plan, &race_guard_heads);
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);
@@ -26333,6 +26343,9 @@ mod religion_seat_fields_apostles;
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+/// `religion-seat-guards-the-race`: see
+/// `advanced/religion_seat_guards_the_race.rs`.
+mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;

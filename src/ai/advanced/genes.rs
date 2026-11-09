@@ -5495,6 +5495,10 @@ pub const GENES: &[Gene] = &[
     // on the parity path and the base wartime purchases. See
     // `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys-3", field: "parity_upgrades_before_it_buys_3", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_3, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_3 },
+    // A Religion-target seat repairs a pillaged Holy Site at once and keeps
+    // a Prayers project finishing this turn. See
+    // `advanced/religion_seat_guards_the_race.rs`.
+    Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
