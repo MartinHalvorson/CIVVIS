@@ -15745,6 +15745,21 @@ function planetGpuMapPaintMark(marks, item, context) {
   }
 }
 
+// What a mark is painted from besides its tile and the reader's settings: the
+// zooms at which a resource's plate, its word, a wonder's name and the fine
+// strokes come and go, and which way the sun throws a shadow. Sprites made on
+// one side of a step are not the marks of the other. A globe turned by hand
+// rolls the light with it on every frame, so that half waits for the hand to
+// let go, and then only follows a roll large enough to see.
+function planetGpuMapMarkDetail(map) {
+  const zoom = [RES_BADGE_DETAIL_SCALE, RES_WORD_LABEL_SCALE, WORLD_WONDER_LABEL_SCALE]
+    .map(step => cam.scale >= step ? 1 : 0).join("") + (FINE() ? 1 : 0);
+  if (map.markRoll === undefined ||
+      (Math.abs(cam.rot - map.markRoll) > .1 && !(dragState || touchGesture || cameraFlight)))
+    map.markRoll = cam.rot;
+  return zoom + "/" + map.markRoll;
+}
+
 function planetGpuMapMarks(gl, map, frame) {
   if (!(frame.scale > PLANET_STRATEGIC_DETAIL_SCALE)) return "";
   // The nearest power of two to the sprite size the disc centre wants, so a
@@ -15754,16 +15769,20 @@ function planetGpuMapMarks(gl, map, frame) {
     2 * PLANET_GPU_MAP_MARK_HALF * discCentre * DPR * PLANET_GPU_MAP_MARK_QUALITY)));
   slot = Math.max(16, Math.min(128, slot));
   const signature = [state.seed, SHOW_RESOURCES, RESOURCE_DISPLAY, SHOW_ARTIFACT_SITES,
-                     shouldDrawResourceBadges(), frame.spectator, state.view_player ?? ""].join("|");
+                     shouldDrawResourceBadges(), frame.spectator, state.view_player ?? "",
+                     planetGpuMapMarkDetail(map)].join("|");
   let marks = map.marks_;
   // While the camera zooms keep the sprites already made; they are only
-  // softer or sharper than wanted until it settles.
-  if (marks && marks.signature === signature && planetGpuMapSettling(map)) slot = marks.slot;
-  if (marks && marks.signature === signature && marks.slot === slot &&
+  // softer or sharper than wanted until it settles. The atlas is known by the
+  // size asked of it, not the size that fitted: a crowded map zoomed in asks
+  // for more than one texture holds, and must not be made again every frame
+  // for asking.
+  if (marks && marks.signature === signature && planetGpuMapSettling(map)) slot = marks.asked;
+  if (marks && marks.signature === signature && marks.asked === slot &&
       marks.state === state && marks.visible === frame.visible) return "";
   const started = performance.now();
   const {wanted, context} = planetGpuMapMarkKeys(frame);
-  if (!marks || marks.signature !== signature || marks.slot !== slot ||
+  if (!marks || marks.signature !== signature || marks.asked !== slot ||
       wanted.length > marks.capacity) {
     let size = slot, atlas = 0;
     for (; size >= 16; size /= 2) {
@@ -15774,7 +15793,7 @@ function planetGpuMapMarks(gl, map, frame) {
     if (size < 16) return "too many marks for one atlas";
     map.markCanvas.width = atlas;
     map.markCanvas.height = atlas;
-    marks = map.marks_ = {signature, slot:size, atlas, capacity:(atlas / size) ** 2,
+    marks = map.marks_ = {signature, asked:slot, slot:size, atlas, capacity:(atlas / size) ** 2,
                           context:map.markContext, slotOf:new Map(), keyOf:new Map(),
                           free:[], next:0, serial:(marks?.serial || 0) + 1, fresh:true};
   }
