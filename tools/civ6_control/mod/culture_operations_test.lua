@@ -122,8 +122,11 @@ assert(#choices == 2 and choices[1] == 'PROMOTION_GOES_TO' and choices[2] == 'PR
 assert(CivvisRockBandPromotionChoices(unit, 'UNIT_WARRIOR') == nil)
 local spyChoices = CivvisRockBandPromotionChoices(unit, 'UNIT_SPY')
 assert(#spyChoices == 2 and spyChoices[1] == 'PROMOTION_GOES_TO')
+local apostleChoices = CivvisRockBandPromotionChoices(unit, 'UNIT_APOSTLE')
+assert(#apostleChoices == 2 and apostleChoices[1] == 'PROMOTION_GOES_TO')
 promotionCan = false
 assert(#CivvisRockBandPromotionChoices(unit, 'UNIT_SPY') == 0)
+assert(#CivvisRockBandPromotionChoices(unit, 'UNIT_APOSTLE') == 0)
 assert(#CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == 0)
 promotionCan, promotionChoices = true, nil
 assert(CivvisRockBandPromotionChoices(unit, 'UNIT_ROCK_BAND') == nil)
