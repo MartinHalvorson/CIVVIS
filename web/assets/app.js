@@ -14674,6 +14674,16 @@ function planetGpuProgram(gl) {
   return program;
 }
 
+function planetGpuSoftwareRenderer(gl) {
+  try {
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || "");
+    return /swiftshader|llvmpipe|softpipe|software|basic render driver/i.test(renderer);
+  } catch (_) {
+    return false;
+  }
+}
+
 function createPlanetGpu() {
   if (PLANET_GPU?.failed) return null;
   if (PLANET_GPU?.gl) return PLANET_GPU;
@@ -14709,6 +14719,10 @@ function createPlanetGpu() {
         powerPreference: "high-performance",
       });
   } catch (_) {}
+  // Chrome can hand out a software rasterizer without flagging the caveat (a
+  // SwiftShader forced on the command line does): name it and refuse it the
+  // same way.
+  if (gl && PLANET_GPU_MAP && planetGpuSoftwareRenderer(gl)) gl = null;
   if (!gl) {
     canvas.remove();
     PLANET_GPU = {failed:true};
