@@ -92,21 +92,10 @@ fn the_apostle_cap_grows_with_the_cities_left_to_convert() {
     ai.enable_religion_seat_fields_apostles();
     assert_eq!(ai.religion_seat_apostle_cap(&g, 0, true, 2), 2, "Culture");
 
-    let (g, mut ai, _) = founder(9, VictoryTarget::Religion);
+    let (g, mut ai, _) = founder(7, VictoryTarget::Religion);
     ai.enable_religion_seat_fields_apostles();
-    let mut g = g;
-    for x in 0..24 {
-        g.found_city_for(1, (2 + 2 * x, 18), None);
-    }
-    for cid in g.player_city_ids(1) {
-        g.cities
-            .get_mut(&cid)
-            .unwrap()
-            .pressure
-            .insert("Hinduism".into(), 500.0);
-    }
     assert_eq!(
-        ai.religion_seat_apostle_cap(&g, 0, true, 2),
+        ai.religion_seat_apostle_cap(&g, 0, true, 5),
         APOSTLE_CAP_CEILING,
         "stops at the ceiling"
     );
@@ -134,6 +123,7 @@ fn apostles_lead_for_two_and_then_alternate() {
 fn the_bank_waits_only_for_an_apostle_a_city_can_field() {
     let (mut g, mut ai, home) = founder(7, VictoryTarget::Religion);
     ai.enable_religion_seat_fields_apostles();
+    g.players[0].civics.insert(crate::name!("theology"));
     g.players[0].faith = 10.0;
     assert!(
         !ai.religion_seat_saving_for_an_apostle(&g, 0, "Buddhism", 80.0),
