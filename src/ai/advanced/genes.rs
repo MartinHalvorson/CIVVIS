@@ -5459,6 +5459,10 @@ pub const GENES: &[Gene] = &[
     // buys the strongest ranged ship for Faith before the Gold defender buy.
     // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
     Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
+    // Hold the war on a rival faith until several of its spreaders can be
+    // condemned on the turn it is declared. Unpriced, off. See
+    // `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-wipes-the-spreaders", field: "faith_strike_wipes_the_spreaders", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_wipes_the_spreaders, disable: AdvancedAi::disable_faith_strike_wipes_the_spreaders },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
