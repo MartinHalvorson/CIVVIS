@@ -936,9 +936,8 @@ impl AdvancedAi {
                     && rival.science_projects.contains("exoplanet_expedition")
             })
             .map(|rival| {
-                ((g.science_victory_points_needed(rival.id)
-                    - g.science_victory_points(rival.id))
-                .max(0.0)
+                ((g.science_victory_points_needed(rival.id) - g.science_victory_points(rival.id))
+                    .max(0.0)
                     / g.exoplanet_speed(rival.id).max(1.0))
                 .ceil()
             })

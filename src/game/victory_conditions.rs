@@ -994,11 +994,7 @@ fn the_trip_is_as_long_as_the_game_speed_makes_it() {
         (crate::setup::GameSpeed::Marathon, 150.0),
     ] {
         g.game_speed = speed;
-        assert_eq!(
-            g.science_victory_points_needed(0),
-            light_years,
-            "{speed:?}"
-        );
+        assert_eq!(g.science_victory_points_needed(0), light_years, "{speed:?}");
         assert_eq!(
             g.victory_races(0, 0).exoplanet_distance_target,
             light_years,
