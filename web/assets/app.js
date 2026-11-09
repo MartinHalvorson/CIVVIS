@@ -1968,6 +1968,20 @@ const PLAYER_HUD_MIN_ROWS = 2;
 // Two civilization rows leave the turn plate room through its counter and
 // everything above it; its lower settings may use any height the roster adds.
 const PLAYER_HUD_MIN_HEIGHT = PLAYER_HUD_CHROME_HEIGHT + PLAYER_HUD_MIN_ROWS * PLAYER_HUD_ROW_PITCH;
+// How much of the map the masthead may cover before anybody asks it to: room
+// for a stock twelve-seat table on a 1080p window, and no more however many
+// civilizations the world holds. A hundred-seat table asked for 3,250px and
+// took the whole screen, map and victory tracker with it (operator 2026-11-09).
+// This bounds the height the table picks for itself; a dragged edge still
+// answers to the map alone, because that one is the viewer's own call.
+const PLAYER_HUD_DEFAULT_MAP_SHARE = .42;
+// A table longer than the largest stock world builds only the rows near what
+// is showing. Up to here every row is real, exactly as it always has been.
+const PLAYER_HUD_WINDOW_MIN_SEATS = 30;
+const PLAYER_HUD_WINDOW_OVERSCAN = 8;
+let playerHudWindow = null;
+let playerHudWindowFrame = 0;
+let playerHudRefillOnly = false;
 
 function playerHudRowPitch() {
   const hud = document.getElementById("playerhud");
@@ -1976,6 +1990,14 @@ function playerHudRowPitch() {
   const gap = Number.parseFloat(style?.getPropertyValue("--hud-row-gap"));
   return (Number.isFinite(height) ? height : PLAYER_HUD_ROW_HEIGHT) +
     (Number.isFinite(gap) ? gap : PLAYER_HUD_ROW_GAP);
+}
+
+// The height the seats take by default: every row while they fit the map's
+// share, and whole rows up to that share once they do not.
+function playerHudSeatHeight(seats, mapHeight) {
+  const room = Math.floor((mapHeight * PLAYER_HUD_DEFAULT_MAP_SHARE - PLAYER_HUD_CHROME_HEIGHT) /
+    playerHudRowPitch());
+  return playerHudContentHeight(Math.min(seats, Math.max(0, room)));
 }
 
 function playerHudContentHeight(rows) {
@@ -1990,9 +2012,10 @@ function playerHudContentHeight(rows) {
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
-  // very little of its height. The default height still ends at the final
-  // civilization row, but a dragged edge answers to nothing except the map
-  // itself: how much world the masthead covers is the viewer's own call. Its
+  // very little of its height. The default height ends at the final
+  // civilization row up to PLAYER_HUD_DEFAULT_MAP_SHARE of the map; a dragged
+  // edge answers to nothing except the map itself: how much world the masthead
+  // covers is the viewer's own call. Its
   // width is not (`fullWidth`): the operator, 2026-10-15, "tables and cols in
   // the top player hud box should expand to the full width of the window. not
   // ~1" from the edge". A dragged masthead used to keep a pixel width, rescaled
@@ -5487,8 +5510,9 @@ function pixelToHex(sx, sy) {
     // Cells are already clipped at the globe limb and stored in painter order.
     // Search front-to-back so a tile at the horizon never steals a click from
     // the face visibly above it.
-    for (let index = PLANET_HIT_CELLS.length - 1; index >= 0; index--) {
-      const cell = PLANET_HIT_CELLS[index];
+    const hitCells = planetHitCells();
+    for (let index = hitCells.length - 1; index >= 0; index--) {
+      const cell = hitCells[index];
       if (pointInsidePlanetCell(sx, sy, cell.points)) return cell.pos;
     }
     return null;
@@ -14561,6 +14585,9 @@ function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
 let PLANET = null;            // {frequency, corners, cells}
 let PLANET_WANTED = null;     // frequency currently being fetched
 let PLANET_HIT_CELLS = [];
+// What the last painted frame needs to answer a pointer: the cells, the tilt
+// reference, and whether those cells were only the ones carrying ink.
+let PLANET_HIT_FRAME = null;
 // Which tiles a state shows changes only when the state does, and the globe and
 // its chart ask on every frame.
 let tileSightState = null, tileSightVisible = null, tileSightTurn = null;
@@ -14890,7 +14917,12 @@ function drawPlanetGpuSurface(camera, radius, centerX, centerY) {
   gl.depthFunc(gl.LEQUAL);
   gl.disable(gl.BLEND);
   gl.drawArrays(gl.TRIANGLES, 0, gpu.vertices);
-  if (gl.getError() !== gl.NO_ERROR) {
+  // getError waits for the GPU process (5 ms a frame on a 58,000-tile globe).
+  // A rejected buffer shows on the first draws, so check those and then sample.
+  gpu.drawsSinceBuild = gpu.meshChecked === gpu.vertices ? gpu.drawsSinceBuild + 1 : 0;
+  gpu.meshChecked = gpu.vertices;
+  if ((gpu.drawsSinceBuild < 8 || gpu.drawsSinceBuild % 60 === 0) &&
+      gl.getError() !== gl.NO_ERROR) {
     // A browser can accept context creation yet reject a later large buffer or
     // framebuffer. Do not leave an opaque blank layer over the proven Canvas
     // renderer; retire this optional path for the session instead.
@@ -15360,12 +15392,14 @@ const PLANET_CHART_ANTIPODE_CELLS = 5;
 function planetChartAntipodeFloor() {
   return -Math.cos(Math.min(Math.PI / 2, PLANET_CHART_ANTIPODE_CELLS * (PLANET?.reach || 0)));
 }
-function planetCellGeometry(tile, camera, scale, centerX, centerY) {
+function planetCellGeometry(tile, camera, scale, centerX, centerY, behind = -Infinity) {
   const cell = PLANET?.cells.get(key(tile.pos));
   if (!cell) return null;
   const radius = camera.radius * scale;
   const center = planetProject(cell.center, camera, scale, centerX, centerY);
   if (camera.chart && center.z < planetChartAntipodeFloor()) return null;
+  // The far side of the world is half of every frame; it never needed corners.
+  if (center.z <= behind) return null;
   const points = cell.ids.map(id => planetProject(
     [PLANET.corners[3 * id], PLANET.corners[3 * id + 1], PLANET.corners[3 * id + 2]],
     camera, scale, centerX, centerY));
@@ -15418,6 +15452,20 @@ function planetPaintPath(context, cell, bleed = 0.8) {
 }
 // Half a dozen layers ask this of the same cell in one frame, and a frame's
 // cell records are built fresh by planetCells, so the first answer holds.
+// Worked out when a pointer asks. Nearly every frame nobody does, and this used
+// to copy every corner of every visible tile on each of them.
+function planetHitCells() {
+  if (PLANET_HIT_CELLS) return PLANET_HIT_CELLS;
+  const frame = PLANET_HIT_FRAME;
+  if (!frame) return PLANET_HIT_CELLS = [];
+  const cells = frame.inkOnly
+    ? planetCells(frame.camera, frame.scale, frame.centerX, frame.centerY) : frame.cells;
+  return PLANET_HIT_CELLS = cells.map(({tile, points, center}) => ({
+    pos:tile.pos,
+    points:points.map(point => planetGroundPoint(point, frame.centerY)),
+    z:center.z,
+  }));
+}
 function planetCellInradius(cell) {
   if (cell.inradius !== undefined) return cell.inradius;
   const {points, center} = cell;
@@ -15464,7 +15512,7 @@ function drawPlanetCoastlines(cells, visible, spectator) {
   for (const entry of cells) {
     const {tile, cell, points, center} = entry;
     if (!cell || isWater(tile)) continue;
-    const inradius = planetCellInradius({points, center});
+    const inradius = planetCellInradius(entry);
     if (!(inradius > PLANET_LANE_TILE / 8)) continue;
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     const alpha = planetStrategicAlpha(entry, visible, spectator);
@@ -15757,7 +15805,8 @@ function planetFeatureGlyph(tile) {
 // dropped. Shared by the map, the minimap, and hit testing so all three agree
 // on which half of the world is showing.
 function planetCells(camera, scale, centerX, centerY,
-                     reach = planetStageReach(centerX, centerY)) {
+                     reach = planetStageReach(centerX, centerY),
+                     tiles = state.map.tiles, onStageOnly = false) {
   const out = [];
   // Slightly past the horizon: a tile whose centre has just turned away still
   // has corners on this side, and dropping it early leaves a ring of bare ocean
@@ -15768,13 +15817,74 @@ function planetCells(camera, scale, centerX, centerY,
   // zoom, most of it a long way off the stage.
   const behind = camera.chart
     ? planetChartHorizon(camera, scale, reach) : -.03;
-  for (const tile of state.map.tiles) {
-    const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!geometry || geometry.center.z <= behind) continue;
+  // Past a cell's own size off the stage nothing it paints can reach the frame.
+  const slack = onStageOnly
+    ? Math.max(48, camera.radius * scale * 4 / Math.max(1, PLANET?.frequency || 1)) : 0;
+  for (const tile of tiles) {
+    const geometry = planetCellGeometry(tile, camera, scale, centerX, centerY, behind);
+    if (!geometry) continue;
+    if (onStageOnly) {
+      const {x, y} = geometry.center;
+      if (x < -slack || x > MAPW + slack) continue;
+      const groundY = planetGroundScreenY(y, centerY);
+      if (groundY < -slack || groundY > MAPH + slack) continue;
+    }
     out.push({tile, ...geometry});
   }
   out.sort((a, b) => a.center.z - b.center.z);
   return out;
+}
+
+// A world this large has more tiles than a browser can touch per frame in
+// script, so the omniscient view asks only for the ones that carry ink.
+const PLANET_INK_ONLY_MIN_TILES = 25000;
+function planetIsHuge() {
+  return (state?.map?.tiles?.length || 0) >= PLANET_INK_ONLY_MIN_TILES;
+}
+// Once the GPU surface has drawn every tile's ground, the Canvas above it needs
+// a tile only if it holds something Canvas draws at this scale: an owner's
+// frontier, a coast, a road or a natural wonder. Terrain marks start past the
+// GPU's scale and the units and cities are looked up on demand (planetFrameCellIndex).
+let planetInkTileMemo = {state:null, tiles:[]};
+function planetInkTiles() {
+  if (planetInkTileMemo.state === state) return planetInkTileMemo.tiles;
+  const tiles = state.map.tiles.filter(tile => {
+    if ((tile.owner !== null && tile.owner !== undefined) || hasRoad(tile) ||
+        isNaturalWonder(tile.feature)) return true;
+    if (isWater(tile)) return false;
+    const cell = PLANET?.cells.get(key(tile.pos));
+    return !!cell && cell.nbrs.some(next => {
+      const across = TMAP.get(next);
+      return !!across && isWater(across);
+    });
+  });
+  planetInkTileMemo = {state, tiles};
+  return tiles;
+}
+// One frame's cell for a tile key. Marking the world's own cell records costs a
+// pointer per drawn cell, where a Map of every drawn cell built a string each.
+// `project` answers for a tile the frame did not ask for, which the ink-only
+// frame needs: an army can stand on ground nothing else there has reason to draw.
+let planetFrameCellStamp = 0;
+function planetFrameCellIndex(cells, project = null) {
+  const stamp = ++planetFrameCellStamp;
+  for (const entry of cells) {
+    entry.cell.frameStamp = stamp;
+    entry.cell.frameEntry = entry;
+  }
+  return {
+    get(tileKey) {
+      const cell = PLANET?.cells.get(tileKey);
+      if (!cell) return undefined;
+      if (cell.frameStamp === stamp) return cell.frameEntry ?? undefined;
+      if (!project) return undefined;
+      const tile = TMAP.get(tileKey);
+      const geometry = tile ? project(tile) : null;
+      cell.frameStamp = stamp;
+      cell.frameEntry = geometry ? {tile, ...geometry} : null;
+      return cell.frameEntry ?? undefined;
+    },
+  };
 }
 
 // ------------------------------------------------------------- the sky beyond
@@ -20587,7 +20697,7 @@ function drawPlanetStrategicRoads(cells, visible, spectator) {
   const groups = {byWeight:new Map(), visible, spectator};
   for (const entry of cells) {
     const {tile, cell, points, center} = entry;
-    if (planetCellInradius(entry) < 3 || !hasRoad(tile)) continue;
+    if (!hasRoad(tile) || planetCellInradius(entry) < 3) continue;
     let linked = false;
     for (let side = 0; side < points.length; side++) {
       if (!hasRoad(TMAP.get(cell.nbrs[side]))) continue;
@@ -22721,7 +22831,8 @@ function drawPlanetMap() {
   const {visible, turnVisible} = tileSight();
   const spectator = !Number.isInteger(state.view_player);
   const empireLens = mapLens === "empire";
-  PLANET_HIT_CELLS = [];
+  PLANET_HIT_CELLS = null;
+  PLANET_HIT_FRAME = null;
 
   // At globe scale WebGL owns the opaque terrain surface while Canvas 2D keeps
   // its established strategic ink above it.  The overlay remains available
@@ -22805,16 +22916,20 @@ function drawPlanetMap() {
     }
   }
 
-  const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
+  // Only the view nobody is steering can stop at the inked tiles: a lens, a
+  // selection or a search paints whichever tiles it likes.
+  const inkOnly = gpuSurface && planetIsHuge() && spectator && !mapLens && !sel &&
+    !mapSearchMatches().size && !unitIntelLayers().length;
+  const cells = !earthInFrame ? []
+    : planetCells(camera, scale, centerX, centerY, undefined,
+                  inkOnly ? planetInkTiles() : state.map.tiles,
+                  planetIsHuge() && !gpuSurface);
+  PLANET_HIT_FRAME = {cells, camera, scale, centerX, centerY, inkOnly};
   if (!gpuSurface)
     drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   // A route is ground infrastructure on the globe too: draw it before the
   // frontier ribbon and before every terrain landmark that shares its tile.
   drawPlanetStrategicRoads(cells, turnVisible, spectator);
-  for (const {tile, points, center} of cells)
-    PLANET_HIT_CELLS.push({pos:tile.pos,
-                           points:points.map(point => planetGroundPoint(point, centerY)),
-                           z:center.z});
 
   // Frontiers go over the finished ground, the way they do on a flat board, and
   // below everything a viewer clicks. Under a coin-sized world a tile is a
@@ -22835,7 +22950,7 @@ function drawPlanetMap() {
       if (action.unit === sel.id && ["attack", "ranged", "theological_attack"].includes(action.type))
         highlighted.set(key(action.target), "#ff685e");
   }
-  for (const cell of cells) {
+  if (highlighted.size) for (const cell of cells) {
     const color = highlighted.get(key(cell.tile.pos));
     if (!color) continue;
     planetPath(cx, cell.points);
@@ -22885,7 +23000,9 @@ function drawPlanetMap() {
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
   const cellByKey = radius >= SKY_MARKERS
-    ? new Map(cells.map(cell => [key(cell.tile.pos), cell]))
+    ? planetFrameCellIndex(cells, inkOnly
+        ? tile => planetCellGeometry(tile, camera, scale, centerX, centerY, onSheet ?? -.03)
+        : null)
     : new Map();
   for (const city of state.cities) {
     const cell = cellByKey.get(key(city.pos));
@@ -26153,11 +26270,12 @@ function drawPlayerHud() {
   const cityRows = openCityPlayer
     ? openCities.length + (!openCities.length || hiddenCities > 0 ? 1 : 0) : 0;
   const mapArea = document.getElementById("maparea");
-  // The seats always fit as they did; the open list adds its rows to the
-  // masthead's height only as far as its share of the map area allows, and
-  // the rest of the list scrolls inside the ribbon.
+  // The seats take their row each, up to their share of the map; the open
+  // list adds its rows to the masthead's height only as far as its own share
+  // of the map area allows, and the rest of the list scrolls in the ribbon.
+  const seatHeight = playerHudSeatHeight(majors.length, mapArea.clientHeight);
   const cityRowsShown = Math.min(cityRows, Math.max(0, Math.floor(
-    (mapArea.clientHeight * PLAYER_HUD_CITY_LIST_MAP_SHARE - playerHudContentHeight(majors.length)) /
+    (mapArea.clientHeight * PLAYER_HUD_CITY_LIST_MAP_SHARE - seatHeight) /
       playerHudRowPitch())));
   const rows = Math.max(1, majors.length + cityRowsShown);
   const seats = seatKeysById(majors);
@@ -26168,10 +26286,12 @@ function drawPlayerHud() {
   // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
   // 2px gap under it. The fixed chrome and two-seat floor protect the turn
-  // counter; every additional civilization gets exactly one more row.
+  // counter; every additional civilization gets exactly one more row, until
+  // the masthead reaches its share of the map and the rest of the table scrolls.
   const requestedHeight = playerHudContentHeight(rows);
   if (!HUD_LAYOUT.players) {
-    mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
+    mapArea.style.setProperty("--player-hud-height",
+      `${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`);
   } else if (hudLayoutGesture?.name !== "players") {
     // A window can shrink under a saved height; the map bound still holds.
     const metrics = hudWidgetMetrics(hud);
@@ -26190,6 +26310,8 @@ function drawPlayerHud() {
   // the viewer's saved arrangement cannot disagree.
   syncPlayerHudShedColumns();
   const visibleColumns = visiblePlayerHudColumns();
+  const hudWindow = playerHudWindow = planPlayerHudWindow(
+    majors, seats, lockedKeys, openCityPlayer, cityRows);
   // The corner ✕ folds the standings in place and leaves the turn box; the
   // whole masthead is still switched from Display Settings. Each collapsed
   // half leaves a slim strip that brings it back.
@@ -26207,8 +26329,8 @@ function drawPlayerHud() {
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
     playerHudColumnGrips() + `</div>` +
-    `<div class="diplomacy-ribbon" role="list" aria-label="Player statistics" ` +
-    `style="--hud-rows:${rows}">` + majors.map(p => {
+    `<div class="diplomacy-ribbon${hudWindow ? " hud-windowed" : ""}" role="list" aria-label="Player statistics" ` +
+    `style="--hud-rows:${rows}">` + majors.map((p, seatIndex) => {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
       const rank = rankById.get(p.id);
@@ -26239,6 +26361,9 @@ function drawPlayerHud() {
         : p.friend ? "Declared Friend"
         : "Neutral standing";
       relationById.set(p.id, relation);
+      // Every seat's relation is still read above, because the open dossier
+      // windows ask for it; a row nobody can see stops at that.
+      if (hudWindow && !hudWindow.built(seatIndex)) return hudWindow.gap(seatIndex);
       const relationSummary = strategyText ? `${strategyText} · ${relation}` : relation;
       // A leader's agenda is public once you have met them, and so is roughly
       // how they feel about you. The glyph is the quick read; the tooltip
@@ -26424,6 +26549,19 @@ function drawPlayerHud() {
     reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
     return;
   }
+  const liveRibbon = playerHudRefillOnly ? hud.querySelector(".diplomacy-ribbon") : null;
+  if (liveRibbon) {
+    // A scroll reached the edge of the rows that exist. Only those change, in
+    // the same scroller, so a trackpad's momentum and the scroll position both
+    // survive it; the next state frame rebuilds the rest as it always does.
+    const next = document.createElement("template");
+    next.innerHTML = html;
+    liveRibbon.replaceChildren(...next.content.querySelector(".diplomacy-ribbon").children);
+    hudHtml = null;
+    syncPlayerLockPins();
+    reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
+    return;
+  }
   hudHtml = html;
   hud.innerHTML = html;
   syncPlayerHudEloFloor();
@@ -26451,6 +26589,59 @@ function drawPlayerHud() {
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
+}
+
+// A table longer than any stock world builds only the seats near what is
+// showing, plus the ones that must exist wherever the scroll is: a locked row
+// holds at an edge from anywhere in the table, and an open city list hangs
+// under its seat. Every run of unbuilt seats is one spacer spanning exactly
+// those grid rows, so the scrollbar still measures the whole table and every
+// built row stands at its true position.
+function planPlayerHudWindow(majors, seats, lockedKeys, openCityPlayer, cityRows) {
+  if (majors.length <= PLAYER_HUD_WINDOW_MIN_SEATS) return null;
+  const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
+  const pitch = playerHudRowPitch();
+  const openSeat = openCityPlayer ? majors.indexOf(openCityPlayer) : -1;
+  // A seat's grid row, read back through the city rows hanging above it.
+  const seatAtRow = row => openSeat < 0 || row <= openSeat ? row : Math.max(openSeat, row - cityRows);
+  const showing = box => ({top:seatAtRow(Math.floor(box.scrollTop / pitch)),
+                           bottom:seatAtRow(Math.ceil((box.scrollTop + box.clientHeight) / pitch))});
+  const view = ribbon ? showing(ribbon)
+    : {top:0, bottom:Math.ceil(document.getElementById("maparea").clientHeight / pitch)};
+  const first = Math.max(0, view.top - PLAYER_HUD_WINDOW_OVERSCAN);
+  const last = Math.min(majors.length - 1, view.bottom + PLAYER_HUD_WINDOW_OVERSCAN);
+  const kept = new Set();
+  majors.forEach((p, index) => {
+    if (p === openCityPlayer || lockedKeys.has(seats.get(p.id))) kept.add(index);
+  });
+  const built = index => (index >= first && index <= last) || kept.has(index);
+  return {
+    built,
+    gap(index) {
+      if (index > 0 && !built(index - 1)) return "";
+      let run = 1;
+      while (index + run < majors.length && !built(index + run)) run++;
+      return `<div class="hud-row-gap" style="grid-row:span ${run}" aria-hidden="true"></div>`;
+    },
+    // True once a viewer has scrolled to within two rows of the unbuilt part.
+    stale(box) {
+      const now = showing(box);
+      return (first > 0 && now.top < first + 2) ||
+        (last < majors.length - 1 && now.bottom > last - 2);
+    },
+  };
+}
+
+function refillPlayerHudWindow() {
+  playerHudWindowFrame = 0;
+  const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
+  if (!state || !ribbon || !playerHudWindow?.stale(ribbon)) return;
+  playerHudRefillOnly = true;
+  try { drawPlayerHud(); } finally { playerHudRefillOnly = false; }
+}
+function schedulePlayerHudWindowRefill() {
+  if (playerHudWindow && !playerHudWindowFrame)
+    playerHudWindowFrame = requestAnimationFrame(refillPlayerHudWindow);
 }
 
 // One row per city on the table's own tracks, under the seat that holds them.
@@ -26601,7 +26792,10 @@ function syncPlayerLockPins() {
   // reports the true row pitch even while rows are held.
   const style = getComputedStyle(ribbon);
   const gap = parseFloat(style.rowGap) || 2;
-  const pitch = cards.length > 1 && cards[1].offsetTop > cards[0].offsetTop
+  // Two neighbours measure the pitch, and a windowed table's first two cards
+  // need not be neighbours, so that one reads the row height it was laid out on.
+  const pitch = !ribbon.classList.contains("hud-windowed") &&
+    cards.length > 1 && cards[1].offsetTop > cards[0].offsetTop
     ? cards[1].offsetTop - cards[0].offsetTop
     : Math.max(1, (parseFloat(style.gridAutoRows) || 23) + gap);
   // The last row needs no gap under it, so the box shows one more row than a
@@ -26623,7 +26817,9 @@ function syncPlayerLockPins() {
 // cannot feed itself: the pins are `position: sticky`, so they take their own
 // space in the flow either way and toggling one never resizes the ribbon.
 const playerRibbonSizeObserver = typeof ResizeObserver === "function"
-  ? new ResizeObserver(() => { syncPlayerLockPins(); syncPlayerHudColumns(); })
+  ? new ResizeObserver(() => {
+      syncPlayerLockPins(); syncPlayerHudColumns(); schedulePlayerHudWindowRefill();
+    })
   : null;
 
 // CSS mode changes and showing a previously hidden overlay can resize the
@@ -26677,6 +26873,11 @@ function focusHudCity(cityId) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
+// The table's rows live inside a scroller that innerHTML replaces, and a
+// scroll event does not bubble, so this listens through the capture phase.
+hudRibbon.addEventListener("scroll", event => {
+  if (event.target.classList?.contains("diplomacy-ribbon")) schedulePlayerHudWindowRefill();
+}, {capture:true, passive:true});
 // A mouse wheel supplies vertical deltas even when the only overflow under it
 // is horizontal. Translate those notches so the whole HUD is usable without
 // trying to catch its scrollbar. A deliberately shortened roster keeps its
