@@ -105,6 +105,40 @@ fn the_full_turn_keeps_prayers_ahead_of_the_settler_handoff() {
 }
 
 #[test]
+fn the_full_race_keeps_prayers_ahead_of_the_later_shrine_writer() {
+    let (g, home) = opening();
+    let mut off = AdvancedAi::targeting(VictoryTarget::Religion);
+    off.enable_religion_seat_races_the_prophet();
+    off.enable_prophet_race_earns_its_points();
+    off.plan_city_target = true;
+    off.base.book_pos = 4;
+    let mut baseline = g.clone();
+    off.take_turn(&mut baseline, 0);
+    assert_eq!(
+        baseline.cities[&home].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("shrine"),
+        }),
+        "the fixture reaches the later race Shrine writer"
+    );
+
+    let mut on = treatment();
+    on.enable_religion_seat_races_the_prophet();
+    on.enable_prophet_race_earns_its_points();
+    on.plan_city_target = true;
+    on.base.book_pos = 4;
+    let mut candidate = g;
+    on.take_turn(&mut candidate, 0);
+    assert_eq!(
+        candidate.cities[&home].queue.first(),
+        Some(&Item::Project {
+            project: crate::name!("holy_site_prayers"),
+        }),
+        "the complete turn retains the committed Prophet project"
+    );
+}
+
+#[test]
 fn only_the_open_races_prayers_are_protected_from_settlement() {
     let (mut g, home) = opening();
     let prayers = Item::Project {

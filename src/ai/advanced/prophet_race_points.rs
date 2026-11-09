@@ -69,6 +69,9 @@ impl AdvancedAi {
             .filter(|cid| {
                 g.city_has_district_family(&g.cities[cid], crate::name!("holy_site"))
                     && !Self::city_has_shrine(g, *cid)
+                    // The queue claim keeps Prayers through this ordinary
+                    // upgrade too; settling is not the last queue writer.
+                    && !self.religion_prophet_project_reserved(g, pid, *cid)
                     && g.can_produce(pid, *cid, &item)
             })
             .map(|cid| (g.city_yields(cid).production, cid))

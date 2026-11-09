@@ -11,9 +11,10 @@
 //! and ordinary expansion. Use the existing religion lane's order: the first
 //! Shrine while no religion is founded, otherwise Holy Site Prayers. The
 //! fastest eligible city gets the claim. The ordinary settlement handoff
-//! cannot displace the open race's Prayers project. Never replace a queue
-//! or borrow a threatened or recently attacked city's production. The held opening-book
-//! Settler has already taken its queue before this claim runs.
+//! and Shrine reservation cannot displace the open race's Prayers project.
+//! Never replace a queue or borrow a threatened or recently attacked city's
+//! production. The held opening-book Settler has already taken its queue
+//! before this claim runs.
 //!
 //! This is independent of starting the site and exact no-op off, for another
 //! target, once founded, with a Prophet in hand, or when the host closes the
