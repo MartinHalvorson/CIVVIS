@@ -1021,7 +1021,10 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
 
     // One label, painted by both maps. The old mission-only text is gone.
     assert!(app.contains("return `${civName(launch.playerId)} ${goal} launch`.toUpperCase();"));
-    assert_eq!(app.matches("drawSkyLaunchLabel(launch, at.x, at.y").count(), 2);
+    assert_eq!(
+        app.matches("drawSkyLaunchLabel(launch, at.x, at.y").count(),
+        2
+    );
     assert!(!app.contains("\"EXOPLANET LAUNCH\""));
 
     assert!(
@@ -1042,9 +1045,8 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
 
     // The insertion moves the craft along its orbit and nothing else, and the
     // adjustment belongs to the world it was made in.
-    assert!(
-        app.contains("phase:6.283 * hash2(player.id, 7) + (anim.skyOrbitTrims.get(player.id) || 0),")
-    );
+    assert!(app
+        .contains("phase:6.283 * hash2(player.id, 7) + (anim.skyOrbitTrims.get(player.id) || 0),"));
     assert!(app.contains("anim.skyOrbitTrims.clear();"));
 
     // Both maps hold the craft back while its rocket flies, and fade the rocket
@@ -1052,8 +1054,10 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
     assert!(app.contains("deployed:skySatelliteDeployed(player.id, now)"));
     assert!(app.contains("deployed = skySatelliteDeployed(player.id, now);"));
     assert_eq!(
-        app.matches("launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1")
-            .count(),
+        app.matches(
+            "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1"
+        )
+        .count(),
         2
     );
 }
