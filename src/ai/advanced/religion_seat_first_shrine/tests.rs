@@ -22,6 +22,7 @@ fn founder(target: VictoryTarget) -> (Game, AdvancedAi, u32) {
     let home = g.player_city_ids(0)[0];
     install_test_district(&mut g, home, "holy_site");
     g.players[0].religion = Some("Buddhism".into());
+    g.players[0].techs.insert(crate::name!("astrology"));
     g.cities
         .get_mut(&home)
         .unwrap()
