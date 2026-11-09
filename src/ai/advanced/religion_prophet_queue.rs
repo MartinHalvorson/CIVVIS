@@ -10,8 +10,9 @@
 //! reserve one idle, unthreatened completed Holy Site before the opening book
 //! and ordinary expansion. Use the existing religion lane's order: the first
 //! Shrine while no religion is founded, otherwise Holy Site Prayers. The
-//! fastest eligible city gets the claim. Never replace a queue or borrow a
-//! threatened or recently attacked city's production. The held opening-book
+//! fastest eligible city gets the claim. The ordinary settlement handoff
+//! cannot displace the open race's Prayers project. Never replace a queue
+//! or borrow a threatened or recently attacked city's production. The held opening-book
 //! Settler has already taken its queue before this claim runs.
 //!
 //! This is independent of starting the site and exact no-op off, for another
@@ -21,19 +22,36 @@
 use super::*;
 
 impl AdvancedAi {
+    fn religion_prophet_race_queue_active(&self, g: &Game, pid: usize) -> bool {
+        self.religion_seat_earns_its_prophet
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            && g.players[pid].religion.is_none()
+            && !g.players[pid].prophet_pending
+            && !Self::prophet_class_exhausted(g, pid)
+            && self.prophet_race_open_for(g, pid)
+    }
+
+    /// A repeatable Prophet project is still a committed race, not spare
+    /// production for the ordinary settlement handoff. Military and emergency
+    /// queue writers retain their authority.
+    pub(super) fn religion_prophet_project_reserved(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: u32,
+    ) -> bool {
+        self.religion_prophet_race_queue_active(g, pid)
+            && matches!(g.cities[&city].queue.first(),
+                Some(Item::Project { project }) if project == "holy_site_prayers")
+    }
+
     pub(super) fn religion_prophet_queue(
         &self,
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item)> {
-        if !self.religion_seat_earns_its_prophet
-            || self.active_victory_target(g) != Some(VictoryTarget::Religion)
-            || g.players[pid].religion.is_some()
-            || g.players[pid].prophet_pending
-            || Self::prophet_class_exhausted(g, pid)
-            || !self.prophet_race_open_for(g, pid)
-        {
+        if !self.religion_prophet_race_queue_active(g, pid) {
             return None;
         }
         let cities = g.player_city_ids(pid);

@@ -19678,6 +19678,11 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
+                // The named Religion seat has already paid for its Holy Site;
+                // its open Prophet race keeps Prayers ahead of another Settler.
+                if self.religion_prophet_project_reserved(g, pid, cid) {
+                    return None;
+                }
                 let redirectable = match g.cities[&cid].queue.first() {
                     Some(Item::Project { project }) => {
                         let spec = &g.rules.projects[project];

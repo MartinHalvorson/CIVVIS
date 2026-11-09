@@ -85,6 +85,67 @@ fn a_shrine_hands_its_idle_queue_to_prayers() {
 }
 
 #[test]
+fn the_full_turn_keeps_prayers_ahead_of_the_settler_handoff() {
+    let (mut g, home) = opening();
+    g.cities
+        .get_mut(&home)
+        .unwrap()
+        .buildings
+        .push(crate::name!("shrine"));
+    let mut ai = treatment();
+    ai.plan_city_target = true;
+    ai.take_turn(&mut g, 0);
+    assert_eq!(
+        g.cities[&home].queue.first(),
+        Some(&Item::Project {
+            project: crate::name!("holy_site_prayers"),
+        }),
+        "the later governor must retain the Prophet project"
+    );
+}
+
+#[test]
+fn only_the_open_races_prayers_are_protected_from_settlement() {
+    let (mut g, home) = opening();
+    let prayers = Item::Project {
+        project: crate::name!("holy_site_prayers"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: home,
+            item: prayers.clone(),
+        },
+    )
+    .unwrap();
+    let mut on = treatment();
+    on.plan_city_target = true;
+    let mut plan = on.assess(&g, 0);
+    plan.strategy = GrandStrategy::Religion;
+    plan.desired_cities = 6;
+    let mut off = AdvancedAi::targeting(VictoryTarget::Religion);
+    off.plan_city_target = true;
+    let mut baseline = g.clone();
+    off.redirect_repeatable_projects_for_settlement_gap(&mut baseline, 0, &plan);
+    assert_eq!(
+        baseline.cities[&home].queue.first(),
+        Some(&Item::Unit {
+            unit: crate::name!("settler"),
+        }),
+        "the fixture reaches the actual Settler handoff"
+    );
+    on.redirect_repeatable_projects_for_settlement_gap(&mut g, 0, &plan);
+    assert_eq!(g.cities[&home].queue.first(), Some(&prayers));
+
+    g.players[0].live_great_person_exhausted = Some(["prophet".to_string()].into_iter().collect());
+    on.redirect_repeatable_projects_for_settlement_gap(&mut g, 0, &plan);
+    assert_eq!(
+        g.cities[&home].queue, baseline.cities[&home].queue,
+        "a host-closed race releases the project to normal expansion"
+    );
+}
+
+#[test]
 fn the_race_cannot_take_a_busy_or_threatened_queue() {
     let (g, home) = opening();
     let ai = treatment();
