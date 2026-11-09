@@ -2353,7 +2353,8 @@ mod tests {
         assert_eq!(
             decisions, ANCHOR_DECISIONS,
             "the anchor made a different number of decisions ({decisions} rather \
-             than {ANCHOR_DECISIONS}), so its play changed. See the note on \
+             than {ANCHOR_DECISIONS}), so its play changed. Measured fingerprint: \
+             {fingerprint:#018x}. See the note on \
              ANCHOR_BEHAVIOUR_FNV: find the gene that should have kept this away \
              from legacy(), or — for a deliberate change to the shared engine — \
              re-pin and say so in docs/ELO_REPINS.md"
