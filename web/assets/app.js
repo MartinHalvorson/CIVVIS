@@ -2011,29 +2011,28 @@ const PLAYER_HUD_COLUMNS = [
   {key:"win_start", label:"Win odds · start", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"win_delta", label:"Win odds trend", block:"identity", min:"--hud-odds-trend-min", width:.2},
   {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
-  {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
   // The soonest road to a win and how far away it is, as the victory planner
   // prices it: "science-39". The server sends every road it can put a clock
   // on, soonest first (`victory_eta`); this column reads the head of it.
   {key:"closest_victory", label:"Closest victory", block:"identity", min:"--hud-closest-min", width:2.035},
+  {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   // A column may declare when it exists at all. Everything without that test
-  // is a fact every game has from turn one; the nuclear stockpile is the one
-  // that has to be invented first, so it joins the table beside the military
-  // strength it changes the meaning of.
+  // is a fact of every world from turn one.
   // An arena has no empire behind it: the economy is a fixed grant, nothing
-  // is built or worshipped, and no city-state offers a suzerain. Those
-  // columns do not exist on a battlefield — like the nuclear stockpile
-  // before the bomb, they are not facts of that world, so they leave the
-  // Display Settings roster too. Cities, production and military remain: an
-  // arena can seat a city, and the fight is the point.
+  // is researched, built or worshipped, and no city-state offers a suzerain.
+  // Those columns do not exist on a battlefield — they are not facts of that
+  // world, so they leave the Display Settings roster too. Cities, production
+  // and military remain: an arena can seat a city, and the fight is the point.
+  // The nuclear stockpile stands beside the military strength it changes the
+  // meaning of, at nought until somebody builds a device.
   ...[["cities", "Cities"], ["population", "Population", worldStandingsInPlay],
       ["food", "Food", worldStandingsInPlay], ["production", "Production"],
       ["science", "Science", worldStandingsInPlay],
       ["culture", "Culture", worldStandingsInPlay],
       ["faith", "Faith", worldStandingsInPlay],
       ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
-      ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
+      ["nukes", "Nuclear stockpile", worldStandingsInPlay],
       ["suzerain", "Suzerainty", worldStandingsInPlay],
       ["wonders", "Wonders", worldStandingsInPlay],
       ["score", "Score", worldStandingsInPlay]]
@@ -2110,6 +2109,16 @@ try {
       rest.splice(at < 0 ? rest.length : at + 1, 0, "closest_victory");
       merged = rest;
     }
+    // Age used to stand just before Plan and Closest victory. A layout that
+    // still has it there moves with the default; a viewer who placed it
+    // anywhere else keeps that. Every save from here on carries the mark, so
+    // somebody who later puts Age back is not moved again.
+    const ageAt = merged.indexOf("age");
+    if (!saved.age_after_closest && merged[ageAt + 1] === "plan" &&
+        merged[ageAt + 2] === "closest_victory") {
+      merged.splice(ageAt, 1);
+      merged.splice(merged.indexOf("closest_victory") + 1, 0, "age");
+    }
     playerHudColumnOrder = merged;
   }
   if (Array.isArray(saved.hidden)) {
@@ -2124,8 +2133,8 @@ try {
         playerHudColumnMinPx.set(key, Math.min(Math.round(floor), 600));
     }
   // An all-hidden save would leave nothing to click to get the columns back —
-  // and a column this world has not invented yet cannot be the one thing
-  // keeping the table on screen.
+  // and a column this world does not have cannot be the one thing keeping the
+  // table on screen.
   if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
       .every(column => playerHudHiddenColumns.has(column.key)))
     playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
@@ -2137,43 +2146,14 @@ function savePlayerHudColumnLayout() {
       order: playerHudColumnOrder,
       hidden: [...playerHudHiddenColumns],
       min: Object.fromEntries(playerHudColumnMinPx),
+      age_after_closest: true,
     }));
   } catch (_) {}
 }
 
-// ── A column that does not exist yet ───────────────────────────────────────
-//
-// Every other standings figure is a fact of the world from the first turn:
-// a civilization always has cities, faith and a military, even when the count
-// is nought. A nuclear stockpile is not — for most of a game nobody on the
-// board *can* hold a device, and a column of zeroes down every row is a column
-// of noise in a table that is already competing for width.
-//
-// So the column arrives with the weapon and stays for the rest of the game.
-// What puts it there is the first civilization to finish the research that
-// unlocks nuclear devices: the moment the bomb becomes a thing this world
-// contains is the moment the standings start needing somewhere to say who has
-// one. It arrives a Manhattan Project ahead of the first device rather than
-// with it, so the column is already standing, at nought, while the race to
-// build the first one is the thing worth watching.
-//
-// That trigger is a world fact and names nobody, so it costs no seat any fog.
-// The two clauses after it ask the same question of the board itself, for a
-// page talking to a server too old to state it: a met civilization that has
-// finished the Manhattan Project, or that is holding devices, is proof the
-// research happened whether or not anybody said so.
-function nuclearStandingsInPlay() {
-  if (!state) return false;
-  return Boolean(state.nuclear_weapons_unlocked) ||
-    Boolean(state.players?.some(player =>
-      player.science_projects?.includes?.("manhattan_project") ||
-      playerNuclearStockpile(player) > 0));
-}
-
 // The empire columns exist where there is an empire: a Tactics arena grants
 // its economy instead of growing one, so those readings are not facts of a
-// battlefield world any more than the nuclear stockpile is a fact of the
-// Ancient Age.
+// battlefield world.
 function worldStandingsInPlay() {
   // The HUD column roster is composed during this file's own load, before
   // app_setup.js (which defines watchingBattlefield) has run. No world is
@@ -2188,9 +2168,9 @@ function playerNuclearStockpile(player) {
   return (+player.nuclear_devices || 0) + (+player.thermonuclear_devices || 0);
 }
 
-// A column the world has not invented yet is not in the table, and is not on
-// the Display Settings roster either — it is not a column the viewer has
-// hidden, so offering them a checkbox that changes nothing would be a lie.
+// A column this world does not have is not in the table, and is not on the
+// Display Settings roster either — it is not a column the viewer has hidden,
+// so offering them a checkbox that changes nothing would be a lie.
 function playerHudColumnExists(column) {
   return Boolean(column) && (!column.exists || column.exists());
 }
@@ -2980,8 +2960,8 @@ function setPlayerHudColumnVisible(key, visible) {
   const hidden = new Set(playerHudHiddenColumns);
   if (visible) hidden.delete(key); else hidden.add(key);
   // An empty table would leave nothing on screen to bring a column back. A
-  // column the world has not invented yet cannot be what is holding the table
-  // open, so it does not count towards this.
+  // column this world does not have cannot be what is holding the table open,
+  // so it does not count towards this.
   if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
       .every(other => hidden.has(other.key))) {
     renderHudColumnList();
