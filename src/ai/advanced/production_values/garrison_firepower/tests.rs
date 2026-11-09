@@ -140,3 +140,46 @@ fn unwalled_city_keeps_the_old_defender() {
     g.cities.get_mut(&cid).unwrap().wall_hp = 0;
     assert_eq!(answer(&mut g, cid, VictoryTarget::Culture), chariot());
 }
+
+#[test]
+fn horse_counter_keeps_priority_for_fresh_and_retained_queues() {
+    let mut results = Vec::new();
+    for retained in [false, true] {
+        let (mut g, cid, _, enemy) = fixture();
+        g.players[0].civ = "Greece".into();
+        g.players[0].techs.insert(crate::name!("bronze_working"));
+        g.units.get_mut(&enemy).unwrap().kind = crate::name!("cuirassier");
+        let heavy = Item::Unit {
+            unit: crate::name!("heavy_chariot"),
+        };
+        let hoplite = Item::Unit {
+            unit: crate::name!("hoplite"),
+        };
+        let menu = std::sync::Arc::make_mut(&mut g.host_buildable)
+            .get_mut(&cid)
+            .unwrap();
+        let entry = menu.get_mut(&Game::production_block_key(&heavy)).unwrap();
+        entry.turns = Some(3.0);
+        entry.cost = Some(16.0);
+        menu.insert(
+            Game::production_block_key(&hoplite),
+            crate::game::HostMenuEntry {
+                cost: Some(16.0),
+                turns: Some(2.0),
+            },
+        );
+        assert!(g.can_produce(0, cid, &hoplite));
+        if retained {
+            g.cities.get_mut(&cid).unwrap().queue.push(heavy);
+        }
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.enable_siege_preempts_the_queue();
+        ai.spears_answer_the_horse = true;
+        ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, Some(cid));
+        results.push((retained, g.cities[&cid].queue.first().cloned()));
+    }
+    let hoplite = Some(Item::Unit {
+        unit: crate::name!("hoplite"),
+    });
+    assert_eq!(results, vec![(false, hoplite.clone()), (true, hoplite)], "the existing faster, equal-cost anti-cavalry response keeps priority over ranged reinforcement");
+}
