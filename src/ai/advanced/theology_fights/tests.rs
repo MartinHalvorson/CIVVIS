@@ -144,3 +144,36 @@ fn the_rivals_intel_lowers_our_blow() {
         .expect("fixture: the exchange reads");
     assert!(with_intel < without_intel);
 }
+
+#[test]
+fn an_attacker_gets_no_holy_ground_in_the_host_reading() {
+    let (mut game, mine, target) = deity_duel();
+    let before = game
+        .theological_exchange_with_host_edge(mine, target)
+        .expect("fixture: the exchange reads");
+    let preview_before = game
+        .theological_exchange_preview(mine, target)
+        .expect("fixture: the exchange reads");
+    let here = game.units[&mine].pos;
+    let settler = game.spawn_unit("settler", 0, here);
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("fixture: a city on the attacker's tile");
+    let city = game.player_city_ids(0)[0];
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert("buddhism".to_string(), 100.0);
+    let (preview_dealt, _, _) = game
+        .theological_exchange_preview(mine, target)
+        .expect("fixture: the exchange reads");
+    assert!(
+        preview_dealt > preview_before.0,
+        "fixture: the plain preview credits an attacker on its faith's land"
+    );
+    assert_eq!(
+        game.theological_exchange_with_host_edge(mine, target)
+            .expect("fixture: the exchange reads"),
+        before,
+    );
+}
