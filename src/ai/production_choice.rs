@@ -97,9 +97,24 @@ impl BasicAi {
         // A walled enemy city is a wall problem, and only siege answers it.
         // Ask for that FIRST when one is in reach and the army has none, then
         // fall back to the ordinary melee/ranged alternation.
-        let want_ranged = melee > ranged;
+        let want_ranged = melee > ranged && !self.priced_melee_ready(g, pid, cid);
         self.best_military(g, pid, cid, Some(want_ranged))
             .or_else(|| self.best_military(g, pid, cid, None))
+    }
+
+    /// `domination-spends-the-stock`: whether this city can start a land melee
+    /// unit priced in a strategic resource. `can_produce` already requires
+    /// the stockpile to cover the price, so the stock limits how often this
+    /// fires. Always false unless a Domination seat lends the flag.
+    fn priced_melee_ready(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        self.prefers_priced_melee
+            && g.rules.units.iter().any(|(name, spec)| {
+                spec.class == "military"
+                    && spec.domain.as_deref() != Some("sea")
+                    && spec.is_melee_capable()
+                    && spec.resource_cost > 0.0
+                    && g.can_produce(pid, cid, &Item::Unit { unit: *name })
+            })
     }
 
     /// The sea's `recon_is_the_missing_arm`: no usable explorer, and water the

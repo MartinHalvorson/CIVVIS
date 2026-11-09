@@ -101,6 +101,10 @@ impl AdvancedAi {
         /// development half at 30% of the clock at every difficulty. See
         /// `AdvancedAi::domination_clock_every_rung`.
         domination_clock_every_rung => enable_domination_clock_every_rung, disable_domination_clock_every_rung;
+        /// `domination-spends-the-stock`: a Domination seat's delegated governor
+        /// takes a resource-priced melee unit whenever a city can start one.
+        /// See `AdvancedAi::domination_spends_the_stock`.
+        domination_spends_the_stock => enable_domination_spends_the_stock, disable_domination_spends_the_stock;
         // ---- append: e-f --------------------------------------------
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination

@@ -1945,6 +1945,11 @@ pub struct BasicAi {
     /// build a Spaceport or launch project. The King Gran Colombia game won
     /// by Science at turn 229 while its public plan remained Conquest.
     pub(crate) exclude_space_race: bool,
+    /// Lent every turn by an AdvancedAi seat with
+    /// `domination-spends-the-stock`: the delegated governor's combined-arms
+    /// pick takes a melee unit priced in a strategic resource whenever a city
+    /// can start one. See `BasicAi::priced_melee_ready`.
+    pub(crate) prefers_priced_melee: bool,
     /// Set every turn by an AdvancedAi seat assigned the Diplomatic lane
     /// (`diplomatic_lane_refuses_fossil_power`): the baseline governor builds
     /// no Coal or Oil Power Plant. Under the live `lane-delegates-production-2`
@@ -3784,6 +3789,7 @@ impl BasicAi {
             builder_before_the_army_3: false,
             builders_before_the_lent_floor: false,
             unique_unit_preference: false,
+            prefers_priced_melee: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,
@@ -4203,6 +4209,7 @@ impl BasicAi {
             builder_before_the_army_3: false,
             builders_before_the_lent_floor: false,
             unique_unit_preference: false,
+            prefers_priced_melee: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
             campus_before_the_army_3: false,

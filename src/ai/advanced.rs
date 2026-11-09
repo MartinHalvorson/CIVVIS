@@ -6698,6 +6698,15 @@ pub struct AdvancedAi {
     /// through turn 90, then 82 behind 300 by turn 120, and by the first
     /// declaration at turn 135 our best gun hit for 3.7 a shot. Opt-in.
     domination_clock_every_rung: bool,
+    /// `domination-spends-the-stock`: on an assigned Domination lane, the
+    /// delegated governor's combined-arms pick takes a melee unit priced in
+    /// a strategic resource whenever a city can start one, ahead of the 1:1
+    /// melee/ranged alternation. That alternation counts Scouts, Warriors
+    /// and Spearmen as melee, so the live Gran Colombia seat reaches turn
+    /// 100 with 6-8 Archers and 2-6 units that can take a city, while Horses
+    /// or Iron stand at the stockpile cap (civvis-20261109T024657Z,
+    /// 050249Z, 054003Z and 071914Z). Opt-in.
+    domination_spends_the_stock: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -14606,6 +14615,10 @@ impl AdvancedAi {
                 })
         })
         .flatten();
+        // `domination-spends-the-stock`: lent for the call; see the field.
+        let restore_priced_melee = self.base.prefers_priced_melee;
+        self.base.prefers_priced_melee = self.domination_spends_the_stock
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination);
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.space_race_excluded();
         // `culture-digs-one-museum`: the delegated governor picks this seat's
@@ -14639,6 +14652,7 @@ impl AdvancedAi {
         if !self.plan_city_target && !self.rapid_city_expansion_2 {
             self.culture_budgeted_base_cities(g, pid);
             self.base.reserve_floor = restore_reserve_floor;
+            self.base.prefers_priced_melee = restore_priced_melee;
             self.base.exclude_space_race = restore_space_race;
             self.base.digs_one_museum = restore_dig_museum;
             self.base.w.mil_per_city = restore_military;
@@ -14672,6 +14686,7 @@ impl AdvancedAi {
         }
         self.culture_budgeted_base_cities(g, pid);
         self.base.reserve_floor = restore_reserve_floor;
+        self.base.prefers_priced_melee = restore_priced_melee;
         self.base.exclude_space_race = restore_space_race;
         self.base.digs_one_museum = restore_dig_museum;
         self.base.w.city_target = restore_target;

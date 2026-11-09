@@ -5441,6 +5441,10 @@ pub const GENES: &[Gene] = &[
     // `domination-clock-every-rung`: the Domination lane's development half
     // ends at 30% of the clock at every difficulty. Opt-in; see the field.
     Gene { tag: "domination-clock-every-rung", field: "domination_clock_every_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_clock_every_rung, disable: AdvancedAi::disable_domination_clock_every_rung },
+    // `domination-spends-the-stock`: a Domination seat's delegated governor
+    // takes a resource-priced melee unit whenever a city can start one.
+    // Opt-in; see the field.
+    Gene { tag: "domination-spends-the-stock", field: "domination_spends_the_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_spends_the_stock, disable: AdvancedAi::disable_domination_spends_the_stock },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
