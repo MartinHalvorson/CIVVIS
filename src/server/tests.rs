@@ -2715,7 +2715,9 @@ fn the_result_screen_offers_the_between_game_interval() {
     // stands down for a pause, re-reads the world at its last moment, and the
     // engine refuses to move on from anything that has not finished.
     assert!(shim.contains("if (!finished || paused) {"));
-    assert!(shim.contains("if (paused || current.finished !== true || current.seed !== state.seed) {"));
+    assert!(
+        shim.contains("if (paused || current.finished !== true || current.seed !== state.seed) {")
+    );
     assert!(include_str!("../wasm.rs").contains(
         "(\"POST\", \"/next-game\") => with_session(|session| {\n            if session.game.is_finished() {"
     ));
