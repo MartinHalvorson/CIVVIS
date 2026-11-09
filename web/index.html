@@ -3322,10 +3322,10 @@
       minmax(var(--hud-odds-min), .55fr)
       minmax(var(--hud-odds-trend-min), .2fr)
       minmax(var(--hud-odds-min), .55fr)
-      minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr)
       minmax(var(--hud-closest-min), 2.035fr)
-      repeat(12, minmax(var(--hud-stat-min), 1fr));
+      minmax(var(--hud-ident-min), 1.3fr)
+      repeat(13, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
