@@ -1906,3 +1906,115 @@ fn a_detonation_glows_on_its_fireball_and_leaves_the_frame_alone() {
         "a detonation must not paint across the whole canvas"
     );
 }
+
+fn world_politics_game() -> Game {
+    let mut game = Game::new(4, 40, 24, 12_345, 60, 0);
+    let until = game.turn + 30;
+    for (first, second) in [(0, 1), (1, 0), (2, 3), (3, 2)] {
+        game.players[first].friends_until.insert(second, until);
+    }
+    let alliance = crate::game::AllianceState {
+        kind: "research".to_string(),
+        points: 0.0,
+        level: 2,
+        ends: game.turn + 20,
+    };
+    game.players[0].alliances.insert(1, alliance.clone());
+    game.players[1].alliances.insert(0, alliance);
+    game.at_war.insert((0, 2));
+    game
+}
+
+/// `players[]` says how each civilization stands with the seat being watched,
+/// so the question this panel answers needs one list of the whole world.
+#[test]
+fn world_politics_names_each_pair_once_under_its_strongest_bond() {
+    let game = world_politics_game();
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(
+        politics["bonds"],
+        json!([
+            {"first": 0, "second": 1, "kind": "alliance", "alliance": "research",
+             "level": 2, "until": game.turn + 20},
+            {"first": 2, "second": 3, "kind": "friendship", "until": game.turn + 30},
+        ]),
+        "an alliance replaces the friendship under it, and alliances list first"
+    );
+    assert_eq!(
+        politics["wars"],
+        json!([{"first": 0, "second": 2, "since": null}])
+    );
+    assert_eq!(politics["partial"], false);
+}
+
+#[test]
+fn world_politics_drops_a_pact_the_moment_it_lapses() {
+    let mut game = world_politics_game();
+    game.turn += 30;
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics["bonds"], json!([]));
+}
+
+/// A city-state follows its Suzerain, and barbarians and Free Cities fight
+/// everybody: rows for them would bury the pairs this list exists to show.
+#[test]
+fn world_politics_is_about_major_civilizations() {
+    let mut game = world_politics_game();
+    game.players[3].is_minor = true;
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(
+        politics["bonds"].as_array().unwrap().len(),
+        1,
+        "the friendship with a city-state is not listed: {politics}"
+    );
+}
+
+/// A seat knows the relations of civilizations it has met, and only those.
+#[test]
+fn world_politics_tells_a_seat_only_about_civilizations_it_has_met() {
+    let mut game = world_politics_game();
+    let nothing = observation(&game, 0)["world_politics"].clone();
+    assert_eq!(nothing["bonds"], json!([]));
+    assert_eq!(nothing["wars"], json!([]));
+
+    game.players[0].met.insert(1);
+    let one_met = observation(&game, 0)["world_politics"].clone();
+    assert_eq!(one_met["bonds"].as_array().unwrap().len(), 1);
+    assert_eq!(one_met["bonds"][0]["second"], 1);
+    assert_eq!(
+        one_met["wars"],
+        json!([]),
+        "the war with an unmet civilization stays out of this list"
+    );
+}
+
+/// The host never names a pact between two rivals, so a mirrored game has to
+/// say its list is partial. Rival wars it does report, with no start turn.
+#[test]
+fn world_politics_on_a_mirrored_seat_marks_what_the_host_withholds() {
+    let mut game = world_politics_game();
+    std::sync::Arc::make_mut(&mut game.observed_leader_types).insert(1, "LEADER_X".to_string());
+    std::sync::Arc::make_mut(&mut game.observed_rival_wars).insert((1, 3));
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics["partial"], true);
+    assert_eq!(
+        politics["wars"],
+        json!([
+            {"first": 0, "second": 2, "since": null},
+            {"first": 1, "second": 3, "since": null},
+        ])
+    );
+}
+
+#[test]
+fn world_politics_is_silent_on_a_battlefield() {
+    let mut game = world_politics_game();
+    game.map_script = crate::setup::MapScript::Battlefield;
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics["bonds"], json!([]));
+    assert_eq!(
+        politics["wars"],
+        json!([]),
+        "everyone fights on a battlefield"
+    );
+}
