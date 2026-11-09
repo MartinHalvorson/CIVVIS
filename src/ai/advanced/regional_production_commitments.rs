@@ -1,3 +1,6 @@
+//! Credits a regional production benefit once, against completed buildings
+//! and legal active commitments.
+
 use super::*;
 
 fn regional_group(building: Name, spec: &crate::rules::BuildingSpec) -> &str {

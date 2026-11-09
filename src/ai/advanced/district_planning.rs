@@ -311,7 +311,7 @@ impl AdvancedAi {
             crate::name!("campus"),
             crate::name!("holy_site"),
             crate::name!("industrial_zone"),
-            crate::name!("theater"),
+            crate::name!("theater_square"),
         ];
         if !nusantara.contains(&family) {
             return true;

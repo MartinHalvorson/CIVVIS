@@ -1,3 +1,7 @@
+//! Policy-card choices that protect a Domination economy: the income card
+//! funding the army through a cash crisis, and productive fallbacks for a
+//! multiplier with no current yield.
+
 use super::*;
 
 impl AdvancedAi {

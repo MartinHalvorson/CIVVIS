@@ -1,3 +1,7 @@
+//! Clears capture threats only on host-confirmed unit deaths, so a unit
+//! merely out of sight, or a simulated kill that may not land, keeps its
+//! threat on the books.
+
 use super::*;
 
 impl AdvancedAi {

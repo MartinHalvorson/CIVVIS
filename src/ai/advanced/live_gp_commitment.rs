@@ -1,3 +1,7 @@
+//! Production commitments for a recruited Great Person in the live game: the
+//! district and slot building its activation needs, so routine queue claims
+//! cannot undo them.
+
 use super::*;
 
 impl AdvancedAi {

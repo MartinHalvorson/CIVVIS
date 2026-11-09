@@ -1,3 +1,6 @@
+//! Original capitals and their founders for the host seat, which a moved
+//! Palace does not change (`WorldRankings.lua:1842-1848`).
+
 use super::*;
 
 /// Native Domination counts original capitals and their founders. The Palace

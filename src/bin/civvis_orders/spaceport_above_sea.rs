@@ -1,3 +1,6 @@
+//! Moves a queued live Spaceport order to the site
+//! `AdvancedAi::native_spaceport_above_sea_position` picks.
+
 use super::*;
 
 pub(super) fn retarget(
