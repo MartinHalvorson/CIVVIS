@@ -1,6 +1,7 @@
 -- Execute the shipped eligibility helper, export expressions, and recruitment
 -- branch against a native timeline. No UI/game fixture is needed for these
 -- isolated expressions; source extraction fails if their boundaries change.
+CivvisK = CivvisK or { guard = function(fn) pcall(fn) end, attempt = function(fn) return (pcall(fn)) end }
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local file = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = file:read("*a"); file:close()

@@ -1,4 +1,5 @@
 -- Native policy-change windows and the automatic slot filler.
+CivvisK = CivvisK or { guard = function(fn) pcall(fn) end, attempt = function(fn) return (pcall(fn)) end }
 local here = arg[0]:match("(.*)/[^/]*$") or ".";
 local f = assert(io.open(here .. "/CivvisControlAgent.lua", "r"));
 local source = f:read("*a"); f:close();
