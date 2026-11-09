@@ -765,7 +765,8 @@ local function resolveActions()
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL",
-		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REMOVE_IMPROVEMENT",
+		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_BUILD_IMPROVEMENT_ADJACENT",
+		"UNITOPERATION_REMOVE_IMPROVEMENT",
 		"UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
 		-- Parameterless Culture actions: Base/Assets/Gameplay/Data/UnitOperations.xml
 		-- :73 (park), :77 (excavate), and DLC/Expansion2/Data/Expansion2_UnitOperations.xml
@@ -17190,6 +17191,17 @@ local function applyOrder(player, pid, row, turn)
 			-- whatever this tile allows", which is what the shipped button does.
 			local wanted = string.match(verb, "^IMPROVE:(.+)$");
 			local row2 = wanted ~= nil and GameInfo.Improvements[wanted] or nil;
+			-- Expansion2_Improvements.xml:88-89 marks Ski Resorts and tunnels
+			-- BuildOnAdjacentPlot in Improvements_XP2. WorldInput_Expansion2.lua:
+			-- 36-43 sends their target/name with BUILD_IMPROVEMENT_ADJACENT.
+			-- BUILD_IMPROVEMENT refuses the mountain from the Builder's land tile.
+			local adjacent = row2 ~= nil and try(function()
+				local extra = GameInfo.Improvements_XP2[wanted];
+				return extra ~= nil and (extra.BuildOnAdjacentPlot == true
+					or extra.BuildOnAdjacentPlot == 1);
+			end, false);
+			local buildOperation = OP[adjacent and "UNITOPERATION_BUILD_IMPROVEMENT_ADJACENT"
+				or "UNITOPERATION_BUILD_IMPROVEMENT"];
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x or try(function() return unit:GetX(); end, -1);
 			params[UnitOperationTypes.PARAM_Y] = y or try(function() return unit:GetY(); end, -1);
@@ -17246,7 +17258,7 @@ local function applyOrder(player, pid, row, turn)
 					return false, "already_" .. wanted;
 				end
 			end
-			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+			if operate(unit, buildOperation, params) then
 				-- ★★★★★ REPORT THE SUCCESS, or the board learns four turns late.
 				--
 				-- The same rule `found` already follows: "REPORT THE SUCCESS TOO,
@@ -17353,9 +17365,11 @@ local function applyOrder(player, pid, row, turn)
 			-- The DECISION worth keeping is "improve this tile" — which tile is CIVVIS's
 			-- call. Which improvement is legal there is the game's call, and dropping the
 			-- name asks it exactly that, the same as the shipped build button.
-			if row2 ~= nil then
+			-- The adjacent operation needs its named improvement; dropping the
+			-- name could choose different work from the requested Ski Resort.
+			if row2 ~= nil and not adjacent then
 				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = nil;
-				if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+				if operate(unit, buildOperation, params) then
 					return true, "IMPROVE_ANY";
 				end
 			end
@@ -17482,7 +17496,7 @@ local function applyOrder(player, pid, row, turn)
 			local tile_improvement = plot ~= nil and typeName("Improvements",
 				"ImprovementType",
 				try(function() return plot:GetImprovementType(); end, -1)) or nil;
-			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			local why = refusalReason(unit, buildOperation,
 			                          params);
 			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
 			-- GATES THE WORK.
@@ -17516,9 +17530,7 @@ local function applyOrder(player, pid, row, turn)
 			                          moves = moves, charges = charges,
 			                          tile_owner = tile_owner,
 			                          tile_improvement = tile_improvement,
-			                          can_operate = canOperate(unit,
-			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
-			                              params),
+			                          can_operate = canOperate(unit, buildOperation, params),
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
