@@ -25104,9 +25104,19 @@ impl AdvancedAi {
         let overwhelming_ready = overwhelming_ready && !strike_held;
         let road_opening_ready = road_opening_ready && !strike_held;
         let moving_on_ready = moving_on_ready && !strike_held;
+        // EXPERIMENT: prey under CIVVIS_EXP_PREY times our power opens once
+        // the policy is ready, staged or not.
+        let exp_prey_ratio: f64 = std::env::var("CIVVIS_EXP_PREY")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0);
+        let exp_prey = exp_prey_ratio > 0.0
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.military_power(target) <= exp_prey_ratio * g.military_power(pid);
         let opens = close_enough
             && ((ready
                 && (staged
+                    || exp_prey
                     || air_ready
                     || religion_counter_ready
                     || culture_counter_ready
@@ -34418,6 +34428,18 @@ impl AdvancedAi {
         } else {
             desired_military
         };
+        // EXPERIMENT: CIVVIS_EXP_ARMY_MULT scales a Domination seat's target.
+        let exp_army_mult: f64 = std::env::var("CIVVIS_EXP_ARMY_MULT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1.0);
+        let desired_military = if exp_army_mult != 1.0
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        {
+            ((desired_military as f64) * exp_army_mult).ceil() as usize
+        } else {
+            desired_military
+        };
         let land_military = counts
             .military
             .saturating_sub(counts.naval + counts.aircraft);
@@ -37828,8 +37850,8 @@ impl AdvancedAi {
             0.0
         };
 
-        core_distance as f64 * 7.0
-            + military_distance as f64 * 5.0
+        core_distance as f64 * exp_weight("CIVVIS_EXP_CORE_DIST", 7.0)
+            + military_distance as f64 * exp_weight("CIVVIS_EXP_MIL_DIST", 5.0)
             + defenses
             + wall_breach_delay
             + local_balance
@@ -49720,3 +49742,12 @@ mod native_domination_activation_tests;
 
 #[cfg(test)]
 mod builder_job_safety_tests;
+
+/// EXPERIMENT ONLY (not for main): read a campaign weight from the
+/// environment so the siege replay harness can sweep it.
+fn exp_weight(key: &str, default: f64) -> f64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}

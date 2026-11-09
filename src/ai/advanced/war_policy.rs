@@ -283,6 +283,19 @@ impl AdvancedAi {
             == Some(super::VictoryTarget::Domination)
             && self.domination_counter_target(g, pid, target)
             && g.military_power(pid) >= 2.0 * g.military_power(target).max(1.0);
+        // EXPERIMENT: prey at or under CIVVIS_EXP_PREY times our power skips
+        // the Defend row and the staged ring.
+        let prey_ratio: f64 = std::env::var("CIVVIS_EXP_PREY")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0);
+        let prey = prey_ratio > 0.0
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && g.military_power(target) <= prey_ratio * g.military_power(pid);
+        if prey {
+            return Some(Ok(()));
+        }
+        let counter_at_mercy = counter_at_mercy || prey;
         if let Some(short) = self
             .requisitions()
             .into_iter()

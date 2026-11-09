@@ -467,6 +467,38 @@ impl AdvancedAi {
         if self.live_war_economy_requires_recovery(g, pid, &counts) {
             return None;
         }
+        // EXPERIMENT: CIVVIS_EXP_TAKERS = capture bodies wanted per gun before
+        // another gun is reserved.
+        let takers_per_gun: f64 = std::env::var("CIVVIS_EXP_TAKERS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0);
+        if takers_per_gun > 0.0 && counts.siege >= 1 {
+            let is_taker = |kind: &str| {
+                g.rules.units.get(kind).is_some_and(|spec| {
+                    spec.is_melee_capable()
+                        && spec.ranged_strength == 0.0
+                        && spec.bombard_strength == 0.0
+                        && !spec.siege
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                })
+            };
+            let owned = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|id| is_taker(g.units[id].kind.as_str()))
+                .count();
+            let queued = g
+                .player_city_ids(pid)
+                .into_iter()
+                .filter(|cid| {
+                    matches!(g.cities[cid].queue.first(), Some(Item::Unit { unit }) if is_taker(unit.as_str()))
+                })
+                .count();
+            if ((owned + queued) as f64) < takers_per_gun * counts.siege as f64 {
+                return None;
+            }
+        }
         // `breaker-supply-scales`: a high-walled target takes one gun per
         // hundred wall points, ordered in parallel. Live King
         // civvis-20261004T083931Z (game 50), dominant at turn 125 (351

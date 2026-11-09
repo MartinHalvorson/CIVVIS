@@ -148,7 +148,9 @@ fn replay(
     // `--why`: our seat's journal lines that name the target, to read why a
     // siege held where it did.
     if let Some(name) = why {
-        let needle = name.to_lowercase();
+        let needle = std::env::var("CIVVIS_WHY_MATCH")
+            .map(|text| text.to_lowercase())
+            .unwrap_or_else(|_| name.to_lowercase());
         for thought in journal.since(0).thoughts {
             if thought.player == 0 && thought.headline.to_lowercase().contains(&needle) {
                 let detail: String = thought.detail.chars().take(220).collect();
