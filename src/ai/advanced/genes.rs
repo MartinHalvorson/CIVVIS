@@ -2892,6 +2892,14 @@ pub const GENES: &[Gene] = &[
     // from the capital took their city, 0 of 42 named further out. See
     // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
     Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
+    // builder-before-the-army-3 armed, 56 live games: 21 unimproved worked
+    // tiles against 17 improved at t100 in the middle half; ten-city empires
+    // at the five-Builder cap. See `BasicAi::builder_cap_is_one_per_city`.
+    Gene { tag: "builder-cap-is-one-per-city", field: "builder_cap_is_one_per_city", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_cap_is_one_per_city, disable: AdvancedAi::disable_builder_cap_is_one_per_city },
+    // Live King 2026-10-05T092839Z: a camp beyond the second city kept the
+    // capital on barbarian defense t15-t47 with no Settler on the map. See
+    // `BasicAi::settler_before_distant_raiders`.
+    Gene { tag: "settler-before-distant-raiders", field: "settler_before_distant_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_distant_raiders, disable: AdvancedAi::disable_settler_before_distant_raiders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

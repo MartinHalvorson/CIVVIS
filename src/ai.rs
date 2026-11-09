@@ -2549,6 +2549,31 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
     pub(crate) builder_before_the_army_3: bool,
+    /// `builder-cap-is-one-per-city`: `builder_before_the_army_3`'s cap
+    /// raised from one Builder per two cities to one per city (it modifies
+    /// version 3 and does nothing without it). 56 live King games with
+    /// version 3 armed (2026-10-04T083931Z on) still worked 21 unimproved
+    /// land tiles against 17 improved at t100 in the middle half by
+    /// production, with 2.7 Builders; the n/2 cap bound in 19% of t70-120
+    /// samples (ten-city empires with 28-31 tiles waiting). A Builder costs
+    /// 37 production at t90 (median five turns) for three improvements.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-cap-is-one-per-city`.
+    pub(crate) builder_cap_is_one_per_city: bool,
+    /// `settler-before-distant-raiders`: a due Settler (`settler_due`)
+    /// outranks the barbarian-defense build (`barbarian_defense_item`: a
+    /// shooter, a defender, Walls) unless a hostile military unit stands
+    /// within `RAIDERS_AT_THE_GATES_RADIUS` of the city, and the opening's
+    /// barbarian-pressure swap of the capital's queue waits for the same
+    /// close threat. The alarm those builds answer fires on a camp within 7
+    /// tiles or a raider within 6, so a camp beyond the second city held the
+    /// capital on Archers, Warriors and Walls for 25 turns: live King
+    /// 2026-10-05T092839Z swapped its t14 Settler away at t15 and had no
+    /// Settler on the map from t15 to t47 (two cities at t50; recent games
+    /// held four to six). A besieged city still defends first.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `settler-before-distant-raiders`.
+    pub(crate) settler_before_distant_raiders: bool,
     /// `best_military` credits the civilization's own unique unit with
     /// `UNIQUE_UNIT_POWER_CREDIT` strength for the abilities its strength
     /// column omits — the Llanero's adjacency bonus and Gran Colombia's
@@ -5548,6 +5573,8 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            builder_cap_is_one_per_city: false,
+            settler_before_distant_raiders: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
@@ -6056,6 +6083,8 @@ impl BasicAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            builder_cap_is_one_per_city: false,
+            settler_before_distant_raiders: false,
             unique_unit_preference: false,
             campus_before_the_army: false,
             campus_before_the_army_2: false,
@@ -10179,7 +10208,12 @@ impl BasicAi {
             // Builder already in the capital's queue. This runs before the
             // pending-book Settler as well: a held opening cannot jump ahead
             // of the same local threat it was waiting to survive.
-            if let Some(item) = self.opening_barbarian_defense_item(g, pid, *cid) {
+            if let Some(item) = self
+                .opening_barbarian_defense_item(g, pid, *cid)
+                .filter(|_| {
+                    !self.settler_before_distant_raiders || Self::hostile_at_the_gates(g, pid, *cid)
+                })
+            {
                 let displaced = g.cities[cid].queue.first().cloned();
                 let displaces_settler =
                     matches!(&displaced, Some(Item::Unit { unit }) if unit == "settler");
@@ -12190,6 +12224,27 @@ impl BasicAi {
     /// melee-capable land defender, then walls once a compact local garrison
     /// exists. This branch is independent of the optional major-war defense
     /// experiment because barbarian pressure is a routine early-game hazard.
+    /// See `settler_before_distant_raiders`: how close a hostile must stand
+    /// before the barbarian-defense build outranks a due Settler.
+    const RAIDERS_AT_THE_GATES_RADIUS: i32 = 3;
+
+    /// Whether a barbarian raider, or a military unit of a major this empire
+    /// is at war with, stands within `RAIDERS_AT_THE_GATES_RADIUS` of the city.
+    pub(crate) fn hostile_at_the_gates(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        g.units.values().any(|unit| {
+            g.wdist(unit.pos, city.pos) <= Self::RAIDERS_AT_THE_GATES_RADIUS
+                && (Self::is_barbarian_raider(g, unit)
+                    || (unit.owner != pid
+                        && !g.players[unit.owner].is_minor
+                        && !g.players[unit.owner].is_barbarian
+                        && g.is_at_war(pid, unit.owner)
+                        && g.rules.units[unit.kind].class == "military"))
+        })
+    }
+
     pub(crate) fn barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         if self.minor
             || self.barb
@@ -12749,6 +12804,26 @@ impl BasicAi {
         if let Some(defence) = self.besieged_city_item(g, pid, cid) {
             return Some(defence);
         }
+        // `settler-before-distant-raiders`: a due Settler before the
+        // barbarian-defense build while no hostile stands at the gates.
+        if self.settler_before_distant_raiders
+            && !self.minor
+            && !self.barb
+            && self.barbarian_local_alarm_for_controller(g, pid, cid)
+            && !Self::hostile_at_the_gates(g, pid, cid)
+            && self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            let settler = Item::Unit {
+                unit: crate::name!("settler"),
+            };
+            if g.can_produce(pid, cid, &settler) {
+                think!(self.journal, Cities, Detail,
+                       "{} trains its Settler past distant raiders", g.cities[&cid].name;
+                       "the barbarian alarm is on but no hostile unit stands within {} tiles",
+                       Self::RAIDERS_AT_THE_GATES_RADIUS);
+                return Some(settler);
+            }
+        }
         if let Some(defence) = self.barbarian_defense_item(g, pid, cid) {
             return Some(defence);
         }
@@ -12952,7 +13027,13 @@ impl BasicAi {
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
+            let cap = if self.builder_cap_is_one_per_city {
+                n_cities
+            } else {
+                n_cities.div_ceil(2)
+            };
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders, cap)
+            {
                 return Some(builder);
             }
         }
@@ -15851,7 +15932,9 @@ impl BasicAi {
 
     /// See `builder_before_the_army_3`: a Builder while the empire holds (or
     /// has queued) fewer than one per three unimproved worked tiles, at most
-    /// one per two cities, and this city finishes one within
+    /// `cap` (one per two cities; one per city under
+    /// `builder_cap_is_one_per_city`), and this
+    /// city finishes one within
     /// `LENT_FLOOR_MAX_BUILD_TURNS`.
     pub(crate) fn builder_backlog_item(
         g: &Game,
@@ -15859,13 +15942,12 @@ impl BasicAi {
         cid: u32,
         n_cities: usize,
         builders: usize,
+        cap: usize,
     ) -> Option<Item> {
-        if n_cities < 2 || builders >= n_cities.div_ceil(2) {
+        if n_cities < 2 || builders >= cap {
             return None;
         }
-        let quota = Self::unimproved_worked_tiles(g, pid)
-            .div_ceil(3)
-            .min(n_cities.div_ceil(2));
+        let quota = Self::unimproved_worked_tiles(g, pid).div_ceil(3).min(cap);
         if builders >= quota {
             return None;
         }
@@ -24511,11 +24593,26 @@ mod tests {
     #[test]
     fn unimproved_worked_hills_call_another_builder_before_the_army() {
         let (mut game, cid) = founded_capital_fixture("BUILDERBACKLOG", 91_832);
-        game.cities.get_mut(&cid).unwrap().pop = 6;
+        game.cities.get_mut(&cid).unwrap().pop = 9;
         game.players[0].gold = 500.0;
         game.players[0].gold_per_turn = 5.0;
         game.players[0].techs.insert(crate::name!("mining"));
         let center = game.cities[&cid].pos;
+        // The second ring too, so nine citizens work nine bare hills.
+        let ring: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(center, *pos) == 2)
+            .collect();
+        for pos in ring {
+            game.map.tiles.get_mut(&pos).unwrap().owner_city = Some(cid);
+            let city = game.cities.get_mut(&cid).unwrap();
+            if !city.owned_tiles.contains(&pos) {
+                city.owned_tiles.push(pos);
+            }
+        }
         let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
         for position in owned {
             if position != center && game.map.tiles[&position].district.is_none() {
@@ -24528,14 +24625,15 @@ mod tests {
             }
         }
         assert!(
-            BasicAi::unimproved_worked_tiles(&game, 0) >= 4,
+            BasicAi::unimproved_worked_tiles(&game, 0) >= 7,
             "the fixture works unimproved hills: {}",
             BasicAi::unimproved_worked_tiles(&game, 0)
         );
         let pick = |version: u8, settlers: usize, builders: usize| {
             let mut ai = BasicAi::new();
             ai.builder_before_the_army_2 = version == 2;
-            ai.builder_before_the_army_3 = version == 3;
+            ai.builder_before_the_army_3 = version >= 3;
+            ai.builder_cap_is_one_per_city = version == 4;
             ai.pick_item(&game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
         };
         let is_builder =
@@ -24556,6 +24654,16 @@ mod tests {
             "the fixture is due a Settler"
         );
         assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
+        // `builder_cap_is_one_per_city` lifts the cap to one Builder per city.
+        assert!(
+            is_builder(&pick(4, 1, 2)),
+            "the per-city cap trains a third Builder for three cities"
+        );
+        assert_eq!(
+            pick(4, 1, 3),
+            pick(2, 1, 3),
+            "one Builder per city is the cap"
+        );
     }
 
     /// See `monument_first`: a city without a Monument builds it where the
@@ -26716,6 +26824,62 @@ mod tests {
         let snapshot = serde_json::to_value(&g).unwrap();
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, city, bid)
+    }
+
+    /// See `settler_before_distant_raiders`: with the barbarian alarm on but
+    /// the raider five tiles out, a due Settler takes the build the defense
+    /// step would have; with the raider at the gates, defense comes first.
+    #[test]
+    fn a_due_settler_trains_past_distant_raiders() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(91_871);
+        g.cities.get_mut(&city).unwrap().pop = 3;
+        // Walls are the defense step's answer once the shooter gap is closed.
+        g.players[0].techs.insert(crate::name!("masonry"));
+        g.players[0].gold = 500.0;
+        g.players[0].gold_per_turn = 5.0;
+        let center = g.cities[&city].pos;
+        let gates = g.units[&raider].pos;
+        let far = g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                g.wdist(center, **pos) == 5
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.unit_ids_at(**pos).is_empty()
+                    && g.city_at(**pos).is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("an open tile five out");
+        g.units.get_mut(&raider).unwrap().pos = far;
+        assert!(BasicAi::new().barbarian_local_alarm_for_controller(&g, 0, city));
+        assert!(!BasicAi::hostile_at_the_gates(&g, 0, city));
+        assert!(
+            BasicAi::new().settler_due(&g, 0, city, 1, 0),
+            "the fixture is due a Settler"
+        );
+        let pick = |g: &Game, on: bool| {
+            let mut ai = BasicAi::new();
+            ai.settler_before_distant_raiders = on;
+            ai.pick_item(g, 0, city, 1, 0, 1, 0, 0, 2, 1, 1)
+        };
+        let settler = Some(Item::Unit {
+            unit: crate::name!("settler"),
+        });
+        let stock = pick(&g, false);
+        assert_ne!(
+            stock, settler,
+            "the stock pick answers the alarm: {stock:?}"
+        );
+        assert_eq!(pick(&g, true), settler, "the due Settler goes first");
+        g.units.get_mut(&raider).unwrap().pos = gates;
+        assert!(BasicAi::hostile_at_the_gates(&g, 0, city));
+        assert_eq!(
+            pick(&g, true),
+            pick(&g, false),
+            "a raider at the gates keeps the defense"
+        );
     }
 
     #[test]

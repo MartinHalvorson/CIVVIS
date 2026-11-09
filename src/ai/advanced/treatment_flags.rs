@@ -5990,6 +5990,31 @@ impl AdvancedAi {
         self.conquest_opening_stays_near = false;
     }
 
+    /// See `BasicAi::builder_cap_is_one_per_city`: raises
+    /// `builder-before-the-army-3`'s cap; nothing without it.
+    pub fn enable_builder_cap_is_one_per_city(&mut self) {
+        self.builder_cap_is_one_per_city = true;
+        self.base.builder_cap_is_one_per_city = true;
+    }
+
+    /// The twin of `enable_builder_cap_is_one_per_city`.
+    pub fn disable_builder_cap_is_one_per_city(&mut self) {
+        self.builder_cap_is_one_per_city = false;
+        self.base.builder_cap_is_one_per_city = false;
+    }
+
+    /// See `BasicAi::settler_before_distant_raiders`.
+    pub fn enable_settler_before_distant_raiders(&mut self) {
+        self.settler_before_distant_raiders = true;
+        self.base.settler_before_distant_raiders = true;
+    }
+
+    /// The twin of `enable_settler_before_distant_raiders`.
+    pub fn disable_settler_before_distant_raiders(&mut self) {
+        self.settler_before_distant_raiders = false;
+        self.base.settler_before_distant_raiders = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

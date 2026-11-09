@@ -5315,6 +5315,9 @@ pub struct AdvancedAi {
     /// `builder-before-the-army-3`: version 2's first Builder, then one per
     /// three unimproved worked tiles. See `BasicAi::builder_before_the_army_3`.
     builder_before_the_army_3: bool,
+    /// `builder-cap-is-one-per-city`: version 3's Builder cap at one per city.
+    /// See `BasicAi::builder_cap_is_one_per_city`.
+    builder_cap_is_one_per_city: bool,
     /// A Great Person activation path does not resume over a queued district
     /// that already holds production. HostOnly gene `activation-resume-waits`
     /// (the activation needs come only from the live host); see
@@ -7538,6 +7541,10 @@ pub struct AdvancedAi {
     /// Opt-in gene `settler-before-the-navy`; see
     /// `BasicAi::settler_before_the_navy`.
     settler_before_the_navy: bool,
+    /// A due Settler before the barbarian-defense build while no hostile
+    /// stands within three tiles. Opt-in gene `settler-before-distant-raiders`;
+    /// see `BasicAi::settler_before_distant_raiders`.
+    settler_before_distant_raiders: bool,
     // ---- append: t-z ------------------------------------------------
     /// `war-bill-prices-the-tier-gap`: the campaign bill and the weaker-
     /// neighbour test price the unit tier a rival fields, not only its tech
@@ -9217,6 +9224,7 @@ impl AdvancedAi {
             builder_before_the_army: false,
             builder_before_the_army_2: false,
             builder_before_the_army_3: false,
+            builder_cap_is_one_per_city: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
             breaker_keeps_its_queue: false,
@@ -9553,6 +9561,7 @@ impl AdvancedAi {
             skip_the_prophet_race_2: false,
 
             settler_before_the_navy: false,
+            settler_before_distant_raiders: false,
             // ---- append: t-z ----------------------------------------
             war_bill_prices_the_tier_gap: false,
             upkeep_reserve: false,
