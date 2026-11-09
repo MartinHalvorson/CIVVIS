@@ -25160,12 +25160,6 @@ function hudTurnPlate() {
     ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
       `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
-  // The turn regime is the world's rule, not a viewer choice — the product
-  // rolls only sequential worlds, so the plate simply names what the world
-  // on screen is playing. A research build launched with `--turn-structure
-  // simultaneous` still reads honestly here.
-  const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
-  const turnStructureValue = `<b>${turnStructureName}</b>`;
   // The map first, as the lobby names it: how many civilizations were dealt
   // and on which script ("4P Pangaea"). The dealt count includes the fallen.
   const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
@@ -25249,8 +25243,7 @@ function hudTurnPlate() {
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
-    `${turnStructureName.toLowerCase()} turns`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -25283,7 +25276,6 @@ function hudTurnPlate() {
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
-    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `</div></section>`;
 }
 
