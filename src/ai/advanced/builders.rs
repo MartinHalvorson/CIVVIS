@@ -14,6 +14,7 @@
 
 use super::*;
 
+mod culture_ski_resorts;
 mod diagnostics;
 
 impl AdvancedAi {
