@@ -5449,6 +5449,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
     // A Religion-target founder's corps yields only to a killing blow; its Apostles fight first. Unpriced, off.
     Gene { tag: "religion-seat-presses-the-campaign", field: "religion_seat_presses_the_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_presses_the_campaign, disable: AdvancedAi::disable_religion_seat_presses_the_campaign },
+    // A Religion-target seat races its Holy Site and Prayers ahead of its queues until it founds. Unpriced, off.
+    Gene { tag: "religion-seat-races-the-prophet", field: "religion_seat_races_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_races_the_prophet, disable: AdvancedAi::disable_religion_seat_races_the_prophet },
     // A Religion-target founder spends no charge on a foreign city already showing its faith. Unpriced, off.
     Gene { tag: "religion-seat-reads-foreign-faith", field: "religion_seat_reads_foreign_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reads_foreign_faith, disable: AdvancedAi::disable_religion_seat_reads_foreign_faith },
     // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.

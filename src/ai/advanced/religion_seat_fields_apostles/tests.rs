@@ -57,6 +57,9 @@ fn every_gene_is_opt_in() {
     opt_in_off_in_both_controllers("religion-seat-presses-the-campaign", |ai| {
         ai.religion_seat_presses_the_campaign
     });
+    opt_in_off_in_both_controllers("religion-seat-races-the-prophet", |ai| {
+        ai.religion_seat_races_the_prophet
+    });
     opt_in_off_in_both_controllers("religion-seat-reads-foreign-faith", |ai| {
         ai.religion_seat_reads_foreign_faith
     });
@@ -423,4 +426,88 @@ fn a_banner_showing_our_faith_ends_the_campaign_there() {
         !ai.foreign_city_shows_our_faith(&g, 0, &city, "Buddhism"),
         "a Culture seat"
     );
+}
+
+/// A founding seat with a finished Holy Site and a queue full of Settlers.
+fn racing_seat() -> (Game, AdvancedAi, u32, StrategicPlan) {
+    let (mut g, ai, home) = founder(1, VictoryTarget::Religion);
+    g.players[0].religion = None;
+    g.players[1].religion = None;
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.cities.get_mut(&home).unwrap().pressure.clear();
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("settler"),
+    }];
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Religion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, home, plan)
+}
+
+fn runs_prayers(g: &Game, city: u32) -> bool {
+    matches!(g.cities[&city].queue.first(),
+        Some(Item::Project { project }) if project == "holy_site_prayers")
+}
+
+/// Prayers take the head of a Holy Site city's queue while the race is open.
+#[test]
+fn the_race_runs_prayers_ahead_of_the_queue() {
+    let (mut g, ai, home, plan) = racing_seat();
+    ai.claim_religion_seat_prayers(&mut g, 0, &plan);
+    assert!(!runs_prayers(&g, home), "gene off");
+
+    let (mut g, mut ai, home, plan) = racing_seat();
+    ai.enable_religion_seat_races_the_prophet();
+    ai.claim_religion_seat_prayers(&mut g, 0, &plan);
+    assert!(runs_prayers(&g, home), "{:?}", g.cities[&home].queue);
+}
+
+/// A threatened city, a pending Prophet, a founded faith and another lane all
+/// leave the queue alone.
+#[test]
+fn the_race_yields_when_it_should() {
+    let run = |tweak: &dyn Fn(&mut Game, &mut StrategicPlan, u32)| {
+        let (mut g, mut ai, home, mut plan) = racing_seat();
+        ai.enable_religion_seat_races_the_prophet();
+        tweak(&mut g, &mut plan, home);
+        ai.claim_religion_seat_prayers(&mut g, 0, &plan);
+        runs_prayers(&g, home)
+    };
+    assert!(!run(&|_, plan, home| plan.threatened_city = Some(home)));
+    assert!(!run(&|g, _, _| g.players[0].prophet_pending = true));
+    assert!(!run(
+        &|g, _, _| g.players[0].religion = Some("Buddhism".into())
+    ));
+    assert!(!run(&|g, _, home| {
+        g.cities.get_mut(&home).unwrap().last_attacked = g.turn;
+    }));
+
+    let (mut g, _, home, plan) = racing_seat();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_religion_seat_races_the_prophet();
+    ai.claim_religion_seat_prayers(&mut g, 0, &plan);
+    assert!(!runs_prayers(&g, home), "a Culture seat");
+}
+
+/// With the gene on the founding site may take a queue that holds a Settler.
+#[test]
+fn the_race_takes_a_busy_queue_for_its_holy_site() {
+    let site = |gene: bool| {
+        let (mut g, mut ai, home, plan) = racing_seat();
+        g.cities.get_mut(&home).unwrap().districts.clear();
+        ai.enable_religion_seat_founds_first();
+        if gene {
+            ai.enable_religion_seat_races_the_prophet();
+        }
+        ai.religion_seat_holy_site(&g, 0, &plan)
+            .map(|(city, _)| city)
+    };
+    assert_eq!(site(false), None, "off: only an idle queue");
+    assert!(site(true).is_some(), "on: the Settler's queue");
 }

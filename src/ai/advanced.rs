@@ -8362,6 +8362,10 @@ pub struct AdvancedAi {
     /// before they step away. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
     religion_seat_presses_the_campaign: bool,
+    /// `religion-seat-races-the-prophet`: a Religion-target seat that has not
+    /// founded takes any queue for its Holy Site and then runs Prayers. See
+    /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
+    religion_seat_races_the_prophet: bool,
     /// `religion-seat-reads-foreign-faith`: a Religion-target founder spends
     /// no charge on a foreign city whose banner already shows its faith. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
@@ -26651,6 +26655,10 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/religion_seat_founds_first.rs`.
         self.claim_religion_seat_holy_site(g, pid, &plan);
+        // `religion-seat-races-the-prophet`: Prayers in the finished Holy Site
+        // city until our Prophet comes. See
+        // `advanced/religion_seat_fields_apostles.rs`.
+        self.claim_religion_seat_prayers(g, pid, &plan);
         // `religion-seat-builds-holy-sites`: a founder's Shrine and Temple
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
