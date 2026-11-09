@@ -4483,6 +4483,9 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Spend foreign spreads on the civilizations still needed for victory.
+    // The host majority verdict includes unseen cities. See `religion_majorities.rs`.
+    Gene { tag: "religion-finishes-majorities", field: "religion_finishes_majorities", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_finishes_majorities, disable: AdvancedAi::disable_religion_finishes_majorities },
     // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
     // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
     // our own faith war on Macedon as "another major war", although
