@@ -103,6 +103,8 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// See `advanced/religion_seat_flips_the_cheapest.rs`.
+        religion_seat_flips_the_cheapest => enable_religion_seat_flips_the_cheapest, disable_religion_seat_flips_the_cheapest;
         /// See `advanced/religion_seat_fields_apostles.rs`.
         religion_seat_builds_holy_sites => enable_religion_seat_builds_holy_sites, disable_religion_seat_builds_holy_sites;
         /// See `advanced/religion_seat_fields_apostles.rs`.
@@ -2288,6 +2290,9 @@ impl AdvancedAi {
         /// Opt-in gene `parity-upgrades-before-it-buys-2`; see
         /// `advanced/parity_upgrades_before_it_buys.rs`.
         parity_upgrades_before_it_buys_2 => enable_parity_upgrades_before_it_buys_2, disable_parity_upgrades_before_it_buys_2;
+        /// Opt-in gene `parity-upgrades-before-it-buys-3`; see
+        /// `advanced/parity_upgrades_before_it_buys.rs`.
+        parity_upgrades_before_it_buys_3 => enable_parity_upgrades_before_it_buys_3, disable_parity_upgrades_before_it_buys_3;
         /// Opt-in gene `settler-shelters-from-the-war`; see
         /// `advanced/settler_shelters_from_the_war.rs`.
         settler_shelters_from_the_war => enable_settler_shelters_from_the_war, disable_settler_shelters_from_the_war;
@@ -3060,6 +3065,18 @@ impl AdvancedAi {
     pub fn disable_scout_first_opening(&mut self) {
         self.scout_first_opening = false;
         self.base.scout_first_opening = false;
+    }
+
+    /// Replace the capital's first opening slot with legal ranged support.
+    pub fn enable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = true;
+        self.base.opening_ranged_support = true;
+    }
+
+    /// Restore the ordinary opener without changing later recon settings.
+    pub fn disable_opening_ranged_support(&mut self) {
+        self.opening_ranged_support = false;
+        self.base.opening_ranged_support = false;
     }
 
     /// After its current production completes, let a population-two capital
@@ -5394,6 +5411,17 @@ impl AdvancedAi {
     /// The twin of `enable_field_reads_the_tile_it_leaves`.
     pub fn disable_field_reads_the_tile_it_leaves(&mut self) {
         self.field_reads_the_tile_it_leaves = false;
+    }
+
+    /// Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see
+    /// [`Self::exalted_goddess_buys_the_coastal_guard`].
+    pub fn enable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = true;
+    }
+
+    /// The twin of `enable_exalted_goddess_buys_the_coastal_guard`.
+    pub fn disable_exalted_goddess_buys_the_coastal_guard(&mut self) {
+        self.exalted_goddess_buys_the_coastal_guard = false;
     }
 
     // ---- append: a-b ------------------------------------------------

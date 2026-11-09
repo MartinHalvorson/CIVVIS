@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "opening-ranged-support",
+  "scope": "Two exact signed-Native OFF controls and two ON repeats; each stops at the first changed host order, turn 1 frame 2. No outcome or host-execution claim. The final source only relocates the unchanged getter mechanically.",
+  "archive": {
+    "path": "docs/eval/2026-11-09-opening-ranged-support.native-queries.tar.xz",
+    "sha256": "9dc08f8989c6cb0010febfa982a8e9aa996bcab3ca6084b2f0f2c57fff0d661b"
+  },
+  "members": [
+    "opening-prefix/result.json"
+  ]
+}
