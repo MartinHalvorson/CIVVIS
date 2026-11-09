@@ -257,9 +257,7 @@ impl<'b> Searcher<'b> {
                         if !me.fires_after_moving() && *t != me.tile {
                             continue;
                         }
-                        if b.d(*t, tile) as i32 <= me.range as i32
-                            && b.shot_visible(*t, tile)
-                        {
+                        if b.d(*t, tile) as i32 <= me.range as i32 && b.shot_visible(*t, tile) {
                             lines.push((
                                 Line {
                                     tile: *t,
@@ -353,14 +351,11 @@ impl<'b> Searcher<'b> {
                 let me = self.init.units[c.unit];
                 let found = c.lines.iter().position(|(line, _)| match posture {
                     Posture::Press => true,
-                    Posture::Hold => {
-                        line.tile == me.tile
-                    }
+                    Posture::Hold => line.tile == me.tile,
                     Posture::Withdraw => {
                         line.aim == Aim::None
                             || (me.shoots()
-                                && self.threat[line.tile as usize]
-                                    <= self.threat[me.tile as usize])
+                                && self.threat[line.tile as usize] <= self.threat[me.tile as usize])
                     }
                 });
                 found.unwrap_or(0)
@@ -413,12 +408,7 @@ impl<'b> Searcher<'b> {
         (picks, best)
     }
 
-    fn forecast(
-        &mut self,
-        plan: &[(usize, Line)],
-        posture: Posture,
-        samples: u32,
-    ) -> Forecast {
+    fn forecast(&mut self, plan: &[(usize, Line)], posture: Posture, samples: u32) -> Forecast {
         let b = self.b;
         let (start_own, start_enemy) = {
             self.sim.reset(self.init, self.seed);
@@ -467,7 +457,8 @@ impl<'b> Searcher<'b> {
         for j in targets {
             let def = {
                 let target = self.init.units[j as usize];
-                b.ranged_def[j as usize * self.b.n + j as usize] + 3.0 * target.fort as f32
+                b.ranged_def[j as usize * self.b.n + j as usize]
+                    + 3.0 * target.fort as f32
                     + b.defense[target.tile as usize]
             };
             let blows: Vec<f32> = plan
@@ -583,9 +574,7 @@ pub fn solve(
 
 #[cfg(test)]
 pub(super) mod tests {
-    use super::super::model::{
-        CitySpec, Unit, F_CAPTURES, F_RANGED, F_ZOC, MP,
-    };
+    use super::super::model::{CitySpec, Unit, F_CAPTURES, F_RANGED, F_ZOC, MP};
     use super::*;
 
     /// A flat `w`×`h` odd-r hex board of plains, no rivers.
@@ -629,7 +618,6 @@ pub(super) mod tests {
             defense: vec![0.0; tiles],
             land: vec![true; tiles],
             dist,
-            classes: 1,
             edge: vec![MP; tiles * 6],
             city_at: vec![u8::MAX; tiles],
             cities: Vec::new(),
@@ -714,7 +702,10 @@ pub(super) mod tests {
             soldier(4 * 10 + 8, THEIRS, 100),
         ];
         let mut b = plain_board(10, 10, &units, 0);
-        fill_strengths(&mut b, &[(30.0, 25.0), (30.0, 25.0), (20.0, 20.0), (20.0, 20.0)]);
+        fill_strengths(
+            &mut b,
+            &[(30.0, 25.0), (30.0, 25.0), (20.0, 20.0), (20.0, 20.0)],
+        );
         let s = State::new(&b, units, vec![]);
         let solution = solve(&b, &s, Objective::Field, FAST, Weights::default(), 7);
         let aimed: Vec<Aim> = solution.plan.iter().map(|(_, l)| l.aim).collect();
@@ -733,10 +724,18 @@ pub(super) mod tests {
             soldier(6 * 12 + 8, THEIRS, 100),
         ];
         let mut b = plain_board(12, 12, &units, 10);
-        fill_strengths(&mut b, &[(20.0, 20.0), (45.0, 40.0), (45.0, 40.0), (45.0, 40.0)]);
+        fill_strengths(
+            &mut b,
+            &[(20.0, 20.0), (45.0, 40.0), (45.0, 40.0), (45.0, 40.0)],
+        );
         let s = State::new(&b, units, vec![]);
         let solution = solve(&b, &s, Objective::Field, FAST, Weights::default(), 11);
-        assert_eq!(solution.posture, Posture::Withdraw, "{:?}", solution.by_posture);
+        assert_eq!(
+            solution.posture,
+            Posture::Withdraw,
+            "{:?}",
+            solution.by_posture
+        );
         let line = solution.plan[0].1;
         assert_eq!(line.aim, Aim::None, "{:?}", solution.plan);
     }
@@ -781,7 +780,11 @@ pub(super) mod tests {
         let s = State::new(&b, units, vec![(0, 0, THEIRS)]);
         let solution = solve(&b, &s, Objective::Capture(0), FAST, Weights::default(), 3);
         assert_eq!(solution.plan[0].1.aim, Aim::City(0), "{:?}", solution.plan);
-        assert!(solution.forecast.p_objective > 0.9, "{:?}", solution.forecast);
+        assert!(
+            solution.forecast.p_objective > 0.9,
+            "{:?}",
+            solution.forecast
+        );
         assert_eq!(solution.forecast.turns_to_objective, 0.0);
     }
 
@@ -805,7 +808,14 @@ pub(super) mod tests {
         fill_strengths(&mut b, &table);
         let s = State::new(&b, units, vec![]);
         let started = std::time::Instant::now();
-        let solution = solve(&b, &s, Objective::Field, Budget::DEFAULT, Weights::default(), 1);
+        let solution = solve(
+            &b,
+            &s,
+            Objective::Field,
+            Budget::DEFAULT,
+            Weights::default(),
+            1,
+        );
         let elapsed = started.elapsed().as_secs_f64();
         let per = elapsed / solution.rollouts as f64 * 1e6;
         println!(

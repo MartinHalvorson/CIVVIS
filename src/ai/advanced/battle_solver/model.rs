@@ -86,7 +86,6 @@ pub struct Board {
     pub land: Vec<bool>,
     /// `tiles`×`tiles` hex distance.
     pub dist: Vec<u8>,
-    pub classes: usize,
     /// `classes`×`tiles`×6 movement cost to enter each neighbour.
     pub edge: Vec<u16>,
     pub city_at: Vec<u8>,
@@ -346,8 +345,8 @@ impl<'b> Sim<'b> {
         let target = d.tile;
         let flank =
             self.b.flank[a.side as usize] * self.adjacent_friends(a.side, target, i, true) as f32;
-        let support =
-            self.b.support[d.side as usize] * self.adjacent_friends(d.side, target, j, false) as f32;
+        let support = self.b.support[d.side as usize]
+            * self.adjacent_friends(d.side, target, j, false) as f32;
         let river = if self.b.crosses_river(a.tile, target) {
             5.0
         } else {
@@ -430,7 +429,9 @@ impl<'b> Sim<'b> {
             self.kill(i);
             return;
         }
-        if dead && self.s.occ[target as usize] == NO_UNIT && self.b.city_at[target as usize] == NO_CITY
+        if dead
+            && self.s.occ[target as usize] == NO_UNIT
+            && self.b.city_at[target as usize] == NO_CITY
         {
             self.relocate(i, target);
         }
@@ -847,7 +848,9 @@ impl<'b> Sim<'b> {
                             me.hp as i32,
                         ),
                     );
-                    if self.s.city_wall[c] > 0 && self.s.city_hp[c] > 30 && taken * 2.0 > me.hp as f32
+                    if self.s.city_wall[c] > 0
+                        && self.s.city_hp[c] > 30
+                        && taken * 2.0 > me.hp as f32
                     {
                         continue;
                     }
@@ -860,7 +863,11 @@ impl<'b> Sim<'b> {
                             continue;
                         }
                         let free = self.s.occ[t as usize] == NO_UNIT || t == me.tile;
-                        if free && self.reachable_with(t).is_some_and(|k| k > 0 || t == me.tile) {
+                        if free
+                            && self
+                                .reachable_with(t)
+                                .is_some_and(|k| k > 0 || t == me.tile)
+                        {
                             stand = Some(t);
                             break;
                         }
@@ -895,14 +902,19 @@ impl<'b> Sim<'b> {
         if near == NO_TILE {
             return;
         }
-        let goal = if low || breaking { NO_TILE } else { self.goal(side, near) };
+        let goal = if low || breaking {
+            NO_TILE
+        } else {
+            self.goal(side, near)
+        };
         let mut pick = me.tile;
         let mut pick_score = f32::MIN;
         for k in 0..self.reach.len() {
             let (t, _) = self.reach[k];
             let enemy_gap = self.enemy_near(side, t).1 as f32;
             let score = if low || breaking {
-                enemy_gap * 3.0 + self.b.heal[t as usize][side as usize] as f32 * 0.1
+                enemy_gap * 3.0
+                    + self.b.heal[t as usize][side as usize] as f32 * 0.1
                     + self.b.defense[t as usize] * 0.1
             } else {
                 let closes = self.b.d(t, goal) as f32;
@@ -944,7 +956,7 @@ impl<'b> Sim<'b> {
     }
 
     /// Start of a side's turn: `turn.rs`'s heal, fresh moves, fortify.
-    fn begin_side(&mut self, side: u8) {
+    pub fn begin_side(&mut self, side: u8) {
         for i in 0..self.s.units.len() {
             let unit = self.s.units[i];
             if !unit.alive() || unit.side != side {
@@ -1034,7 +1046,7 @@ impl<'b> Sim<'b> {
     }
 
     /// One side's whole scripted turn: shooters first, then the line.
-    fn side_turn(&mut self, side: u8, posture: Posture) {
+    pub fn side_turn(&mut self, side: u8, posture: Posture) {
         self.order.clear();
         for (i, unit) in self.s.units.iter().enumerate() {
             if unit.alive() && unit.side == side {

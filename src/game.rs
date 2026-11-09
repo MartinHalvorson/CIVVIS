@@ -522,6 +522,7 @@ mod city_states;
 /// Combat: attack range and reach, strength and bonuses, city strikes, XP
 /// and promotions. See `game/combat.rs`.
 mod combat;
+mod battle_board;
 mod combat_forecast;
 pub use combat_forecast::CombatForecast;
 /// Completion: finishing a city's item, wonder effects, and placing new

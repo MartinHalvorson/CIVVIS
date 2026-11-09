@@ -47,8 +47,16 @@ pub fn roll_pmf(att: f32, def: f32) -> Vec<(i32, f64)> {
     // Everything rolled under 1.5 rounds to at most 1 and clamps to 1;
     // everything over 99.5 rounds to at least 100 and clamps to 100.
     for k in first..=last.max(first) {
-        let low_edge = if k <= 1 { f64::NEG_INFINITY } else { k as f64 - 0.5 };
-        let high_edge = if k >= 100 { f64::INFINITY } else { k as f64 + 0.5 };
+        let low_edge = if k <= 1 {
+            f64::NEG_INFINITY
+        } else {
+            k as f64 - 0.5
+        };
+        let high_edge = if k >= 100 {
+            f64::INFINITY
+        } else {
+            k as f64 + 0.5
+        };
         let overlap = high_edge.min(hi) - low_edge.max(lo);
         if overlap > 0.0 {
             pmf.push((k, overlap / width));
@@ -94,15 +102,6 @@ impl VolleyDist {
     pub fn p_killed(&self) -> f64 {
         self.hp[0]
     }
-
-    /// Expected hit points of the target after the volley so far.
-    pub fn mean_hp(&self) -> f64 {
-        self.hp
-            .iter()
-            .enumerate()
-            .map(|(k, p)| k as f64 * p)
-            .sum::<f64>()
-    }
 }
 
 /// `P(the blows kill a target at `hp`)`, each blow given as the attacker's
@@ -114,16 +113,6 @@ pub fn kill_probability(hp: i32, def_base: f32, blows: &[f32]) -> f64 {
         dist.strike(att);
     }
     dist.p_killed()
-}
-
-/// Chance a single rolled blow of `dmg_centre` is at least `hp`, the
-/// closed form `kill_probability` reaches for one blow on a fresh target.
-pub fn p_one_blow(att: f32, def: f32, hp: i32) -> f64 {
-    roll_pmf(att, def)
-        .iter()
-        .filter(|(dmg, _)| *dmg >= hp)
-        .map(|(_, p)| p)
-        .sum()
 }
 
 #[cfg(test)]
@@ -186,7 +175,11 @@ mod tests {
     fn a_hard_kill_and_an_impossible_one_read_as_such() {
         assert!((kill_probability(10, 20.0, &[40.0]) - 1.0).abs() < 1e-9);
         assert_eq!(kill_probability(100, 40.0, &[20.0]), 0.0);
-        let p = p_one_blow(45.0, 20.0, 70);
+        let p: f64 = roll_pmf(45.0, 20.0)
+            .iter()
+            .filter(|(dmg, _)| *dmg >= 70)
+            .map(|(_, p)| p)
+            .sum();
         assert!(p > 0.0 && p < 1.0, "{p}");
     }
 }
