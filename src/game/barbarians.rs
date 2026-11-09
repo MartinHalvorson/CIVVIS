@@ -97,6 +97,25 @@ impl Game {
     /// placements, so it works the sight out once and passes it in rather
     /// than re-sweeping the whole world per camp — the difference between one
     /// visibility pass and twenty on a globe seating twenty-one civilizations.
+    /// `Improvement_ValidFeatures` for the camp, which has no
+    /// `Improvement_ValidResources` row: none of 113 camps seen in live games
+    /// sat on a resource.
+    fn barbarian_camp_can_stand_on(tile: &Tile) -> bool {
+        tile.resource.is_none()
+            && tile.feature.as_deref().is_none_or(|feature| {
+                matches!(
+                    feature,
+                    "forest"
+                        | "jungle"
+                        | "marsh"
+                        | "floodplains"
+                        | "grassland_floodplains"
+                        | "plains_floodplains"
+                        | "volcanic_soil"
+                )
+            })
+    }
+
     pub(super) fn spawn_camp_unwatched(&mut self, watched: &TileBits) {
         // The shipped placement floors: 4 tiles from any city, 7 from another
         // camp. Both are clearance radii, so they are read off a disk around
@@ -148,25 +167,6 @@ impl Game {
             {
                 continue;
             }
-            // `Improvement_ValidFeatures` for the camp, and it has no
-            // `Improvement_ValidResources` row: none of 113 camps seen in
-            // live games sat on a resource.
-            if t.resource.is_some()
-                || t.feature.as_deref().is_some_and(|feature| {
-                    !matches!(
-                        feature,
-                        "forest"
-                            | "jungle"
-                            | "marsh"
-                            | "floodplains"
-                            | "grassland_floodplains"
-                            | "plains_floodplains"
-                            | "volcanic_soil"
-                    )
-                })
-            {
-                continue;
-            }
             if blocked.contains(pos) || self.sees(watched, *pos) {
                 continue;
             }
@@ -175,7 +175,16 @@ impl Game {
         if cands.is_empty() {
             return;
         }
-        let pos = cands[self.rng.below(cands.len())];
+        // One draw over every open plot, then the first plot from there a camp
+        // can stand on. Filtering before the draw would change which index
+        // every camp rolls, and so move the camps of every seeded world.
+        let first = self.rng.below(cands.len());
+        let Some(pos) = (0..cands.len())
+            .map(|step| cands[(first + step) % cands.len()])
+            .find(|pos| Self::barbarian_camp_can_stand_on(&self.map.tiles[pos]))
+        else {
+            return;
+        };
         self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         let coastal = self.nbrs(pos).into_iter().any(|neighbor| {
             self.map
