@@ -40,6 +40,10 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	end
 	return stub()
 end })
+-- The production path asks whether a requested type replaces a Holy Site.
+-- This fixture has no unique districts; the database iterator must terminate.
+-- The catch-all callable stub above returns another stub forever.
+GameInfo.DistrictReplaces = function() return function() return nil end end
 GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },

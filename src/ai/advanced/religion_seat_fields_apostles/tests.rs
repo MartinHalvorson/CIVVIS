@@ -540,3 +540,130 @@ fn the_race_takes_a_busy_queue_for_its_holy_site() {
     assert_eq!(site(false), None, "off: only an idle queue");
     assert!(site(true).is_some(), "on: the Settler's queue");
 }
+
+/// Native Russia 140800Z t50 chose a Shrine in the turn pass, then its
+/// production hint chose a Granary. The hint must run the same Faith claim.
+#[test]
+fn faith_economy_survives_the_full_turn_and_production_hint() {
+    for (temple, hint_claims) in [(false, false), (true, false), (false, true), (true, true)] {
+        let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+        ai.skip_opening_book();
+        ai.enable_religion_seat_builds_holy_sites();
+        if hint_claims {
+            ai.enable_hint_runs_the_claims();
+        }
+        g.players[0].techs.insert(crate::name!("astrology"));
+        g.players[0].civics.insert(crate::name!("theology"));
+        g.players[0].pantheon = Some("divine_spark".into());
+        g.players[0].faith = 0.0;
+        g.cities.get_mut(&home).unwrap().pop = 4;
+        if temple {
+            build_temple(&mut g, home, "shrine");
+        }
+        let expected = Item::Building {
+            building: crate::name::Name::new(if temple { "temple" } else { "shrine" }),
+        };
+        let mut plan = ai.assess(&g, 0);
+        plan.threatened_city = None;
+        ai.plan = Some(plan);
+        assert_eq!(
+            ai.preview_live_production(&g, 0, home),
+            Some(expected.clone()),
+            "the production hint must keep the Faith building, temple={temple}"
+        );
+        ai.take_turn(&mut g, 0);
+        assert_eq!(
+            g.cities[&home].queue.first(),
+            Some(&expected),
+            "the complete turn must keep the Faith building, temple={temple}"
+        );
+    }
+}
+
+#[test]
+fn faith_building_reservation_keeps_its_safety_and_scope_gates() {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    ai.skip_opening_book();
+    ai.enable_religion_seat_builds_holy_sites();
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].civics.insert(crate::name!("theology"));
+    let mut plan = ai.assess(&g, 0);
+    plan.threatened_city = None;
+    let shrine = Item::Building {
+        building: crate::name!("shrine"),
+    };
+    let holds = |ai: &AdvancedAi, g: &Game, plan: &StrategicPlan, item: &Item| {
+        ai.religion_seat_faith_building_reserved(g, 0, home, plan, item)
+    };
+    assert!(holds(&ai, &g, &plan, &shrine));
+    let mut off = ai.clone();
+    off.disable_religion_seat_builds_holy_sites();
+    assert!(!holds(&off, &g, &plan, &shrine));
+    let mut other_lane = AdvancedAi::targeting(VictoryTarget::Science);
+    other_lane.skip_opening_book();
+    other_lane.enable_religion_seat_builds_holy_sites();
+    assert!(!holds(&other_lane, &g, &plan, &shrine));
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(home);
+    assert!(!holds(&ai, &g, &threatened, &shrine));
+    let mut attacked = g.clone();
+    attacked.cities.get_mut(&home).unwrap().last_attacked = g.turn;
+    assert!(!holds(&ai, &attacked, &plan, &shrine));
+    let mut unavailable = g.clone();
+    unavailable.players[0]
+        .techs
+        .remove(&crate::name!("astrology"));
+    assert!(!holds(&ai, &unavailable, &plan, &shrine));
+    let mut no_site = g.clone();
+    no_site.cities.get_mut(&home).unwrap().districts.clear();
+    assert!(!holds(&ai, &no_site, &plan, &shrine));
+    let mut not_founded = g.clone();
+    not_founded.players[0].religion = None;
+    assert!(!holds(&ai, &not_founded, &plan, &shrine));
+    assert!(!holds(
+        &ai,
+        &g,
+        &plan,
+        &Item::Building {
+            building: crate::name!("granary")
+        }
+    ));
+
+    // The Prasat is a Temple family member, not a special-cased spelling.
+    g.players[0].civ = "Khmer".into();
+    build_temple(&mut g, home, "shrine");
+    let prasat = Item::Building {
+        building: crate::name!("prasat"),
+    };
+    assert!(g.can_produce(0, home, &prasat));
+    assert!(holds(&ai, &g, &plan, &prasat));
+}
+
+#[test]
+fn faith_hint_claims_only_the_requested_city() {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    let second = g.found_city_for(0, (6, 15), None);
+    install_test_district(&mut g, second, "holy_site");
+    g.cities
+        .get_mut(&second)
+        .unwrap()
+        .pressure
+        .insert("Buddhism".into(), 500.0);
+    g.players[0].techs.insert(crate::name!("astrology"));
+    g.players[0].faith = 0.0;
+    ai.skip_opening_book();
+    ai.enable_religion_seat_builds_holy_sites();
+    let mut plan = ai.assess(&g, 0);
+    plan.threatened_city = None;
+    ai.claim_religion_seat_faith_hint(&mut g, 0, &plan, second);
+    assert!(
+        g.cities[&home].queue.is_empty(),
+        "the earlier city's queue is untouched"
+    );
+    assert_eq!(
+        g.cities[&second].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("shrine")
+        })
+    );
+}

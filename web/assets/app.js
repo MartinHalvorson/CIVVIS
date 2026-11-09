@@ -24,6 +24,21 @@ let PLANET_GPU = null;
 // before it scrolls to the section. The lens dock and shortcut drawer below
 // the scroller are not sections of the deck; they keep their own state.
 const SIDEBAR_SECTIONS = "#side details.sidebar-section";
+// A closed section of the deck is a panel nobody is reading. What it reports
+// keeps accumulating in memory, and its rows are built when somebody opens it.
+// Building them every turn anyway was the most expensive thing the page did to
+// its own layout: the decision-factor log alone is 148 KB and 2,100 elements,
+// and asking where anything sits inside a closed section makes the browser lay
+// all of it out regardless.
+function inClosedSidebarSection(element) {
+  const section = element.closest(SIDEBAR_SECTIONS);
+  return !!section && !section.open;
+}
+function drawOpenedSidebarSection(section) {
+  if (!state || !section.open) return;
+  if (section.id === "strategysec") drawReasoning();
+  else if (section.id === "eventsec") drawEvents();
+}
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
     if (other !== section && other.open) other.open = false;
@@ -72,6 +87,7 @@ function initSidebarSections() {
       }
       saved[key] = section.open;
       remember();
+      drawOpenedSidebarSection(section);
     });
   }
   remember();
@@ -8522,6 +8538,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawSoloHud();
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
+  // That was a complete paint, so the animation loop's clock starts from it:
+  // otherwise animTick paints the same world again in the very same frame, and
+  // every turn costs the map twice.
+  lastIdleDraw = performance.now();
   drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
@@ -15009,9 +15029,28 @@ function planetStageCenter() {
 // it gets wrong the way old maps did — stretched sideways round the rim rather
 // than squashed flat against an edge — which is the whole reason a flat chart
 // of a round world was believable for as long as it was.
+// A frame projects some sixteen thousand points through one camera, and the
+// camera's angles only change between frames.
+const PLANET_PROJECT_TRIG = {latitude:NaN, longitude:NaN, roll:NaN,
+                             cosLat:1, sinLat:0, cosLon:1, sinLon:0, cosRoll:1, sinRoll:0};
+function planetProjectTrig(camera) {
+  const trig = PLANET_PROJECT_TRIG, roll = camera.roll || 0;
+  if (trig.latitude !== camera.latitude) {
+    trig.latitude = camera.latitude;
+    trig.cosLat = Math.cos(camera.latitude); trig.sinLat = Math.sin(camera.latitude);
+  }
+  if (trig.longitude !== camera.longitude) {
+    trig.longitude = camera.longitude;
+    trig.cosLon = Math.cos(camera.longitude); trig.sinLon = Math.sin(camera.longitude);
+  }
+  if (trig.roll !== roll) {
+    trig.roll = roll;
+    trig.cosRoll = Math.cos(roll); trig.sinRoll = Math.sin(roll);
+  }
+  return trig;
+}
 function planetProject(point, camera, scale, centerX, centerY) {
-  const cosLat = Math.cos(camera.latitude), sinLat = Math.sin(camera.latitude);
-  const cosLon = Math.cos(camera.longitude), sinLon = Math.sin(camera.longitude);
+  const {cosLat, sinLat, cosLon, sinLon, cosRoll, sinRoll} = planetProjectTrig(camera);
   const along = cosLon * point[0] + sinLon * point[1];
   const east = -sinLon * point[0] + cosLon * point[1];
   const north = -sinLat * along + cosLat * point[2];
@@ -15020,7 +15059,6 @@ function planetProject(point, camera, scale, centerX, centerY) {
   // Roll the hemisphere in the picture plane, which leaves what is in front of
   // the camera alone: the same rigid turn a flat board gets, so world north
   // lands in the same screen direction at the same yaw in either topology.
-  const cosRoll = Math.cos(camera.roll || 0), sinRoll = Math.sin(camera.roll || 0);
   let spread = radius;
   if (camera.chart) {
     // The angle from what the viewer is centred on, laid down as a length.
@@ -15244,7 +15282,10 @@ function planetPaintPath(context, cell, bleed = 0.8) {
   context.beginPath();
   appendPlanetPaintPath(context, cell, bleed);
 }
+// Half a dozen layers ask this of the same cell in one frame, and a frame's
+// cell records are built fresh by planetCells, so the first answer holds.
 function planetCellInradius(cell) {
+  if (cell.inradius !== undefined) return cell.inradius;
   const {points, center} = cell;
   let inradius = Infinity;
   for (let index = 0; index < points.length; index++) {
@@ -15255,7 +15296,7 @@ function planetCellInradius(cell) {
     inradius = Math.min(inradius,
       Math.abs((a.x - center.x) * ey - (a.y - center.y) * ex) / length);
   }
-  return Number.isFinite(inradius) ? inradius : 0;
+  return cell.inradius = Number.isFinite(inradius) ? inradius : 0;
 }
 
 function pointInsidePlanetCell(x, y, points) {
@@ -24923,11 +24964,12 @@ function hudTurnPlate() {
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `map ${mapRowValue}; ` +
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
+    `game speed ${speedName}; ` +
     `watch pace ${watchPace}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
-    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
+    `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
+    `${turnStructureName.toLowerCase()} turns`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -24955,11 +24997,11 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
     `<b>${escapeAttr(setupLine)}</b></div>` +
-    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
+    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `</div></section>`;
 }
 
@@ -29158,6 +29200,7 @@ function drawReasoning() {
   const sealed = livePause.available && !reasoningLog.thoughts.length;
   if (reasonTrack) reasonTrack.hidden = sealed;
   if (sealed) return;
+  if (inClosedSidebarSection(el)) return;
   syncReasonOptions();
   const {thoughts, hasMore, player} = reasonFilteredThoughts();
   const civ = player === null ? null : (state?.players || [])[player];
@@ -29298,6 +29341,8 @@ function drawEvents() {
   scope.title = narrowed
     ? `${view} — ${events.length} of ${held.length} entries match this filter`
     : view;
+  // The count above sits on the section's own label, so it stays current.
+  if (inClosedSidebarSection(el)) return;
   const signature = `${eventViewKey(state)}|${eventFilters.player}|${eventFilters.kind}|` +
     events.map(e => `${e.turn}:${e.icon}:${e.text}`).join("|");
   if (el.dataset.signature === signature) return;
@@ -35349,6 +35394,25 @@ if (new URL(location.href).searchParams.get("setup") === "1") {
 // the browser's actual refresh rhythm, capped at the requested 240 Hz rather
 // than assuming that every panel is a 60 Hz one.
 let lastIdleDraw = 0, lastMiniDraw = 0, drawCost = 8, gpuNeedsSettledPaint = false;
+// The corner chart redraws the whole world, so following the turning globe at
+// the map's own frame rate cost a tenth of the page's time for a picture that
+// drifts a fraction of a degree between frames. It follows on its own cadence
+// and never takes more than a twentieth of the thread. Every turn still gets
+// its complete chart from render(), which does not pass through here.
+const MINI_TURNING_PAINT_MS = 100;
+const MINI_DRAGGED_PAINT_MS = 1000 / 30;
+const MAX_MINI_PAINT_SHARE = .05;
+let miniPaintCost = 0, miniBehindCamera = false;
+function paintMiniWithCamera(now, dragged) {
+  const wait = Math.max(dragged ? MINI_DRAGGED_PAINT_MS : MINI_TURNING_PAINT_MS,
+                        miniPaintCost / MAX_MINI_PAINT_SHARE);
+  if (now - lastMiniDraw < wait) { miniBehindCamera = true; return; }
+  const t0 = performance.now();
+  drawMini();
+  miniPaintCost = miniPaintCost * .85 + (performance.now() - t0) * .15;
+  lastMiniDraw = now;
+  miniBehindCamera = false;
+}
 const MAX_PRESENTATION_HZ = 240;
 let lastAnimationRefreshSample = 0, animationRefreshMs = 1000 / 60;
 function animationRefreshInterval(now = performance.now()) {
@@ -35391,6 +35455,11 @@ function animTick(now) {
   const userCameraMoving = advanceUserCameraMotion(now);
   const followCameraMoving = advanceCameraFollow(now);
   const cameraMoving = userCameraMoving || followCameraMoving;
+  // The camera has stopped, so the chart gets the frame it was still owed.
+  if (!cameraMoving && miniBehindCamera) {
+    miniBehindCamera = false;
+    drawMini(); lastMiniDraw = now;
+  }
   const spinning = spinRunning();
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
@@ -35410,7 +35479,7 @@ function animTick(now) {
       // so it replaces rather than doubles the direct terrain draw below.
       draw();
       drawCost = drawCost * .85 + (performance.now() - t0) * .15;
-      if (now - lastMiniDraw > 1000 / 60) { drawMini(); lastMiniDraw = now; }
+      paintMiniWithCamera(now, userCameraMoving);
     } else drawPlanetGpuAnimationFrame();
     return;
   }
@@ -35436,7 +35505,8 @@ function animTick(now) {
     // A detonation animates on the minimap too, and unlike a camera move it can
     // happen while the camera sits perfectly still — so it has to ask for the
     // repaint itself or the world map would show nothing at all.
-    if (cameraMoving || anim.blasts.length > 0) { drawMini(); lastMiniDraw = now; }
+    if (anim.blasts.length > 0) { drawMini(); lastMiniDraw = now; miniBehindCamera = false; }
+    else if (cameraMoving) paintMiniWithCamera(now, userCameraMoving);
   }
 }
 requestAnimationFrame(animTick);
