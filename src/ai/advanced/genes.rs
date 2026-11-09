@@ -5436,6 +5436,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
     Gene { tag: "culture-banks-for-the-bands", field: "culture_banks_for_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_banks_for_the_bands, disable: AdvancedAi::disable_culture_banks_for_the_bands },
     // ---- append: e-f ------------------------------------------------
+    // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
+    // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
+    // seat banked 140-375 Faith by t60 and 600-950 by t140 with no religion
+    // and made no Faith purchase in three games. A threatened coastal city
+    // buys the strongest ranged ship for Faith before the Gold defender buy.
+    // See `advanced/exalted_goddess_buys_the_coastal_guard.rs`.
+    Gene { tag: "exalted-goddess-buys-the-coastal-guard", field: "exalted_goddess_buys_the_coastal_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_exalted_goddess_buys_the_coastal_guard, disable: AdvancedAi::disable_exalted_goddess_buys_the_coastal_guard },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
