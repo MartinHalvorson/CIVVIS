@@ -30,6 +30,8 @@ fn university_ready() -> (Game, Vec<u32>, Item, Item, AdvancedAi, StrategicPlan)
     assert!(game.can_produce(0, cities[0], &university));
     let mut ai = seat(VictoryTarget::Culture, true);
     ai.enable_campus_building_claims_the_queue();
+    // Keep the unrelated Settler reservation outside this queue-order test.
+    ai.base.w.city_target = cities.len() as f64;
     let mut plan = ai.assess(&game, 0);
     plan.threatened_city = None;
     (game, cities, university, museum, ai, plan)
