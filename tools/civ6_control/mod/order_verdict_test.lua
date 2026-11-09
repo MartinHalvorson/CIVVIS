@@ -81,6 +81,7 @@ CityOperationTypes = {
 	PARAM_QUEUE_DESTINATION_LOCATION = "queue_destination",
 	PARAM_UNIT_TYPE = "unit_type",
 	PARAM_BUILDING_TYPE = "building_type",
+	PARAM_PROJECT_TYPE = "project_type",
 }
 setmetatable(_G, { __index = function(_, k)
 	if EXPORTS[k] then return rawget(_G, k) end
@@ -154,8 +155,10 @@ CityManager = {
 	RequestOperation = function(city, op, params)
 		local c = host.cities[city:GetID()]
 		host.cityOps[#host.cityOps + 1] = { city = city:GetID(), op = op,
-			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) }
-		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]) end
+			item = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]
+				or params[CityOperationTypes.PARAM_PROJECT_TYPE]) }
+		if c ~= nil then c.current = (params[CityOperationTypes.PARAM_UNIT_TYPE] or params[CityOperationTypes.PARAM_BUILDING_TYPE]
+			or params[CityOperationTypes.PARAM_PROJECT_TYPE]) end
 	end,
 }
 function host.arrive(id)
