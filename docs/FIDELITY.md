@@ -1000,6 +1000,24 @@ about 2 Food and costs the map its legibility.
 The grant is still free ground only: a ring plot a neighbouring city already
 holds stays with that neighbour, exactly as for a full civilization.
 
+## Closed: what every city-state runs
+
+Read against the shipped rows on 2026-11-09.
+
+| Rule | Shipped | CIVVIS had |
+|---|---|---|
+| `MINOR_CIV_PRODUCTION_PENALTY` | -50% Production in a city-state's cities | nothing |
+| `MINOR_CIV_PRODUCTION_BUILDERS` | Builders +200% | nothing |
+| `MINOR_CIV_PRODUCTION_MILITARY` | military units +200% while `PLAYER_HAS_SMALL_MILITARY`, an inverted "at least 10 military units" | nothing |
+| `MINOR_CIV_PRODUCTION_WALLS` | `BUILDING_WALLS`, `BUILDING_CASTLE`, `BUILDING_STAR_FORT` +200% | nothing |
+| `MINOR_CIV_GOLD_MILITARY_UPGRADE` | upgrades cost no Gold | full price |
+| Preslav | the expansions' `RemoveData` deletes `MINOR_CIV_PRESLAV_UNIQUE_INFLUENCE_BONUS`. Its Suzerain gets +2 Loyalty per turn in a city with a Barracks or Stable, +2 for an Armory and +2 for a Military Academy | the deleted Base kit, cavalry +5 on hills |
+| Foreign Ministry | "City State units gain +4 Combat Strength if you are the City State's Suzerain (including Leveraged Units)", two rows | levied units only |
+
+Still to verify from this audit: the levy price, Jerusalem's Holy Sites, Tamar's
+and Hammurabi's Envoys, Cardiff's Power, and the Wolin, Vatican, Bandar Brunei,
+Auckland, Hunza and Mogadishu rows.
+
 ## Resolved: a city-state weighed nothing for itself
 
 Every city-state in a 406-turn spectator game sat at exactly 100 Loyalty while

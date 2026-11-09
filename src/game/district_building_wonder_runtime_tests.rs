@@ -736,7 +736,7 @@ fn foreign_ministry_halves_levies_and_buffs_city_state_units() {
     game.players[0].gold = 100.0;
 
     assert_eq!(game.levy_cost(0, minor), Some(20.0));
-    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 23.0);
+    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 27.0);
     game.do_levy_military(0, minor).unwrap();
     assert_eq!(game.units[&warrior].owner, 0);
     assert_eq!(game.units[&warrior].levied_from, Some(minor));
@@ -747,6 +747,10 @@ fn foreign_ministry_halves_levies_and_buffs_city_state_units() {
     game.process_levies(0);
     assert_eq!(game.units[&warrior].owner, minor);
     assert_eq!(game.units[&warrior].levied_from, None);
+    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 27.0);
+
+    // The +4 is the Suzerain's: without one the unit fights at its own strength.
+    game.players[0].envoys.clear();
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 23.0);
 }
 

@@ -16,6 +16,14 @@ use super::*;
 
 impl Game {
     pub fn upgrade_costs(&self, pid: usize, gold: f64, resources: f64) -> (f64, f64) {
+        // `MINOR_CIV_GOLD_MILITARY_UPGRADE`: a city-state upgrades for no Gold.
+        if self.players[pid].is_minor && !self.players[pid].is_barbarian {
+            return (
+                0.0,
+                resources
+                    * (1.0 - self.policy_effect(pid, "upgrade_resource_discount_pct") / 100.0),
+            );
+        }
         (
             gold * (1.0 - self.policy_effect(pid, "upgrade_gold_discount_pct") / 100.0),
             resources * (1.0 - self.policy_effect(pid, "upgrade_resource_discount_pct") / 100.0),

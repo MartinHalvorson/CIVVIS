@@ -350,6 +350,18 @@ impl Game {
             })
             .sum::<f64>();
         delta += self.city_building_effect(city, "loyalty_per_turn");
+        // Preslav, as the expansions rewrote it: `ADJUST_IDENTITY_PER_TURN` 2
+        // for its Suzerain, one row for a Barracks or a Stable (`TEST_ANY`),
+        // one for an Armory and one for a Military Academy.
+        if self.grants_city_state_unique_bonus(pid, "Preslav") {
+            let lines: [&[&str]; 3] = [&["barracks", "stable"], &["armory"], &["military_academy"]];
+            let held = lines.iter().filter(|families| {
+                families
+                    .iter()
+                    .any(|family| self.city_has_building_family(city, Name::new(family)))
+            });
+            delta += 2.0 * held.count() as f64;
+        }
         // Improvement loyalty is city-scoped even when the tile is not being
         // worked: Sweden's Open-Air Museum stabilizes its host city, and a
         // Spanish Mission beside an overseas City Center anchors that colony.
