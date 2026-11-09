@@ -29,7 +29,7 @@ fn fixture() -> (Game, StrategicPlan, u32) {
         let city = g.cities.get_mut(&cid).unwrap();
         // Rome starts with this building. The control needs a legal,
         // unfinished alternative, including after its current head changes.
-        city.buildings.remove(&crate::name!("monument"));
+        city.buildings.retain(|building| *building != "monument");
         city.queue = vec![monument()];
         city.production = 0.0;
         city.production_progress.clear();
