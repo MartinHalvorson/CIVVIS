@@ -5429,6 +5429,9 @@ pub const GENES: &[Gene] = &[
     // `advanced/diplo_statue_harbor.rs`.
     Gene { tag: "science-seat-builds-the-statue", field: "science_seat_builds_the_statue", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_builds_the_statue, disable: AdvancedAi::disable_science_seat_builds_the_statue },
     // ---- append: a-b ------------------------------------------------
+    // Every local fight is played forward for several rounds on a compact model
+    // and the joint turn is chosen by how the battle ends. Unpriced, off.
+    Gene { tag: "battle-solver", field: "battle_solver", kind: Kind::OptIn, enable: AdvancedAi::enable_battle_solver, disable: AdvancedAi::disable_battle_solver },
     // Wounded land units and siege strength against field troops set the research alarm. Unpriced, off.
     Gene { tag: "barbarian-research-prices-the-field", field: "barbarian_research_prices_the_field", kind: Kind::OptIn, enable: AdvancedAi::enable_barbarian_research_prices_the_field, disable: AdvancedAi::disable_barbarian_research_prices_the_field },
     // A Rock Band's concert level sets its breakup odds and how fast album

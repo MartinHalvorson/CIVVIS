@@ -1479,6 +1479,10 @@ impl AdvancedAi {
         }
         self.battle_planner_ordered = self.withdraw_before_kill_prepass(g, pid, plan);
         let withdrew = !self.battle_planner_ordered.is_empty();
+        // `battle-solver`: the fights it can work out to the end are settled
+        // here, and the planner below plays what it left. See
+        // `advanced/battle_solver.rs`.
+        let solved = self.run_battle_solver(g, pid, plan);
         self.battle_planner_recovering.retain(|uid| {
             g.units.get(uid).is_some_and(|unit| {
                 unit.owner == pid
@@ -1546,13 +1550,13 @@ impl AdvancedAi {
         // The caller's own rebuild after a strike is the version-one
         // contract and stands.
         if self.positions_plan_on() {
-            if struck || withdrew {
+            if struck || withdrew || solved {
                 self.rebuild_force_groups(g, pid, plan);
                 self.force_groups_dirty = false;
             }
             self.plan_positions(g, pid, plan, &mut field, &armed);
         }
-        struck || withdrew
+        struck || withdrew || solved
     }
 
     /// The kill plan alone — the ordered blows the search chose, before any

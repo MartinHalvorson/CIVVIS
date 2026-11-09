@@ -80,6 +80,8 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// `battle-solver`: see `advanced/battle_solver.rs`.
+        battle_solver => enable_battle_solver, disable_battle_solver;
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;

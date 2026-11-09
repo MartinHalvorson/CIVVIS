@@ -1055,6 +1055,11 @@ pub struct StrategyCensus {
     /// `safest-stand`: units the rotation found no zero-danger tile for and
     /// stood on the least dangerous one instead.
     pub battle_plan_fallbacks: u32,
+    pub battle_solver_fights: u32,
+    pub battle_solver_rollouts: u64,
+    pub battle_solver_lines: u32,
+    pub battle_solver_dropped: u32,
+    pub battle_solver_resolves: u32,
     /// `doomed-blow-veto`: units whose every blow would have left them dead
     /// next turn, taken from the ladder and given to the rotation.
     pub battle_plan_doomed: u32,
@@ -1160,6 +1165,11 @@ impl StrategyCensus {
         self.battle_plan_rotations += other.battle_plan_rotations;
         self.strike_reach_widened += other.strike_reach_widened;
         self.battle_plan_fallbacks += other.battle_plan_fallbacks;
+        self.battle_solver_fights += other.battle_solver_fights;
+        self.battle_solver_rollouts += other.battle_solver_rollouts;
+        self.battle_solver_lines += other.battle_solver_lines;
+        self.battle_solver_dropped += other.battle_solver_dropped;
+        self.battle_solver_resolves += other.battle_solver_resolves;
         self.battle_plan_doomed += other.battle_plan_doomed;
         self.battle_plan_slots += other.battle_plan_slots;
         self.battle_plan_positioned += other.battle_plan_positioned;
@@ -5124,6 +5134,9 @@ pub struct AdvancedAi {
     // ---- append: a-b ------------------------------------------------
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
+    /// `battle-solver`: play every local fight forward and choose the turn
+    /// by how the battle ends. See `advanced/battle_solver.rs`.
+    battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
@@ -10802,6 +10815,7 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;

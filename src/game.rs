@@ -507,6 +507,9 @@ mod amenities;
 /// Barbarians: camps, raids, scouts, and clearing a camp. See
 /// `game/barbarians.rs`.
 mod barbarians;
+/// Battle board: the engine reads a local battle solver takes once per fight.
+/// See `game/battle_board.rs`.
+mod battle_board;
 /// Boosts: eurekas and inspirations, their triggers and progress, and tree
 /// completion. See `game/boosts.rs`.
 mod boosts;

@@ -998,7 +998,7 @@ impl Game {
         bonus
     }
 
-    fn visibility_combat_bonus(&self, owner: usize, opponent: usize) -> f64 {
+    pub(in crate::game) fn visibility_combat_bonus(&self, owner: usize, opponent: usize) -> f64 {
         // Expansion1_Civilizations_Major.xml:186-187,636-643: Ortoo adds
         // another Amount=3, DeltaWithOpponent=true modifier to the major
         // civilization's ordinary +3. It belongs to Mongolia, including
