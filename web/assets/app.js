@@ -25337,7 +25337,7 @@ function drawPlayerHud() {
     if (!repaintBesideArenaStats(victoryHud, overview)) {
       victoryHud.innerHTML = overview;
       const statsBody = victoryHud.querySelector(".sim-stats-body");
-      if (statsBody && statsScroll) statsBody.scrollTop = statsScroll;
+      if (statsBody) statsBody.scrollTop = statsScroll;
     }
     const rail = victoryHud.querySelector(".hud-rail");
     if (rail && victoryScroll) rail.scrollTop = victoryScroll;
