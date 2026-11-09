@@ -1081,6 +1081,22 @@ struct TraceSample {
     near_housing: usize,
     #[serde(default)]
     near_housing_fed: usize,
+    /// LOCAL CENSUS (-07, never pushed): worked tiles, improved worked
+    /// tiles, their production and food, builders, charges, Industrial Zones.
+    #[serde(default)]
+    worked: usize,
+    #[serde(default)]
+    worked_improved: usize,
+    #[serde(default)]
+    worked_prod: f64,
+    #[serde(default)]
+    worked_food: f64,
+    #[serde(default)]
+    builders: usize,
+    #[serde(default)]
+    charges: i32,
+    #[serde(default)]
+    iz: usize,
 }
 
 impl TraceSample {
@@ -1091,6 +1107,32 @@ impl TraceSample {
         let mut holy_site = false;
         let mut walled = 0usize;
         let (mut near_housing, mut near_housing_fed) = (0usize, 0usize);
+        let (mut worked, mut worked_improved, mut worked_prod, mut worked_food, mut iz) =
+            (0usize, 0usize, 0.0f64, 0.0f64, 0usize);
+        for cid in &cities {
+            if let Some(city) = g.cities.get(cid) {
+                for pos in &g.city_citizen_plan(*cid).worked_tiles {
+                    if let Some(tile) = g.map.get(*pos) {
+                        worked += 1;
+                        if tile.improvement.is_some() {
+                            worked_improved += 1;
+                        }
+                        let y = g.rules.worked_tile_yields(tile);
+                        worked_prod += y.production;
+                        worked_food += y.food;
+                    }
+                }
+                if g.city_has_district_family(city, civvis::name!("industrial_zone")) {
+                    iz += 1;
+                }
+            }
+        }
+        let builders = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| g.units[uid].kind == "builder")
+            .count();
+        let charges = g.builder_charges(pid);
         for cid in &cities {
             let city_yields = g.city_yields(*cid);
             yields.add(city_yields);
@@ -1134,6 +1176,13 @@ impl TraceSample {
             walled,
             near_housing,
             near_housing_fed,
+            worked,
+            worked_improved,
+            worked_prod,
+            worked_food,
+            builders,
+            charges,
+            iz,
         }
     }
 }
@@ -2495,7 +2544,10 @@ fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64
     let delta = journal.since(cursor);
     for thought in delta.thoughts {
         let settler_line = thought.headline.starts_with("Settler held in")
-            || thought.headline.contains("may settle under the Recovery hold");
+            || thought.headline.contains("may settle under the Recovery hold")
+            || thought.headline.contains(" starts settler")
+            || thought.headline.contains(" starts a Settler")
+            || thought.headline.contains("starts the opening book's settler");
         if !settler_line
             && (!matches!(
                 thought.topic,
