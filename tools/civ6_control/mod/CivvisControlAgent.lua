@@ -24018,6 +24018,13 @@ CivvisQueue.checkAiPhaseStall = function()
 		active_players = active, open_sessions = sessions, visible = visible,
 		queued = try(function() return DiplomacyManager.HasQueuedSession(pid); end, nil),
 	});
+	-- ★★ LOAD-BEARING: THIS RECORD DELIVERS THE STALL. The game writes its
+	-- latest `Automation.Log` record only when the next one is logged, and in
+	-- a real hang nothing else is. 16 of the 17 wedge handoffs of 2026-11-08
+	-- and 11-09 ended with `ai_phase_stall` as Civ's last record, and none of
+	-- those 16 reached the watchdog, which waited out its silence clocks and a
+	-- forced end turn instead (about 160 s).
+	emit("ai_phase_stall_flush", { turn = turn });
 	return true;
 end;
 
