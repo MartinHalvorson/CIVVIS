@@ -74,6 +74,7 @@
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT] [--seat-pace]
 //!               [--rival-late-science PCT] [--rival-space-floor TECHS]
+//!               [--rival-war-pace PCT] [--rival-walls PCT] [--seat-civ CIV]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -114,6 +115,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::time::Instant;
+
+#[path = "gene_screen/rival_war_pace.rs"]
+mod rival_war_pace;
 
 /// ⭐ THE SCREEN. One shape, so two batches are comparable without an argument
 /// about which regime read which gene (operator, 2026-08-22). Six majors on
@@ -1063,6 +1067,20 @@ struct TraceSample {
     religion: bool,
     #[serde(default)]
     holy_site: bool,
+    /// ⭐ Cities standing behind walls (any wall hit points). The live census
+    /// of the Firaxis field's known cities reads 11% walled at turn 60, 38% at
+    /// 100, 53% at 150 and 64% at 200 (11-04, Standard Immortal), which is
+    /// what a chair's defence is calibrated against. Absent in older batches.
+    #[serde(default)]
+    walled: usize,
+    /// ⭐ Cities within 2 of their housing ceiling, and of those the ones
+    /// with more than 4 surplus food: the growth the ceiling holds back. Live
+    /// Deity Online reads 59% of city-turns t30-100 within 2, and 54% of
+    /// those over +4 food (11-04). Absent in older batches.
+    #[serde(default)]
+    near_housing: usize,
+    #[serde(default)]
+    near_housing_fed: usize,
 }
 
 impl TraceSample {
@@ -1071,9 +1089,21 @@ impl TraceSample {
         let mut yields = g.player_yield_extras(pid);
         let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
         let mut holy_site = false;
+        let mut walled = 0usize;
+        let (mut near_housing, mut near_housing_fed) = (0usize, 0usize);
         for cid in &cities {
-            yields.add(g.city_yields(*cid));
+            let city_yields = g.city_yields(*cid);
+            yields.add(city_yields);
             if let Some(city) = g.cities.get(cid) {
+                if g.city_housing_headroom(city) <= 2.0 {
+                    near_housing += 1;
+                    if city_yields.food - 2.0 * f64::from(city.pop) > 4.0 {
+                        near_housing_fed += 1;
+                    }
+                }
+                if g.city_max_wall_hp(city) > 0 {
+                    walled += 1;
+                }
                 population += i64::from(city.pop);
                 wonders += city.wonders.len();
                 districts += city.districts.len();
@@ -1101,6 +1131,9 @@ impl TraceSample {
             districts,
             religion: g.players[pid].religion.is_some(),
             holy_site,
+            walled,
+            near_housing,
+            near_housing_fed,
         }
     }
 }
@@ -1127,6 +1160,23 @@ struct Row {
     /// included. Empty — and so absent — without the flag, or with none landed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     project_turns: BTreeMap<String, u32>,
+    /// ⭐ `--rival-war-pace`: the turns a rival chair declared war on this
+    /// seat through the knob ([`rival_war_pace`]). Empty — and absent —
+    /// without the flag.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    rival_war_turns: Vec<u32>,
+    /// ⭐ `--trace` or `--rival-war-pace`: the turns this seat entered a war
+    /// with another major, whoever declared it — the live ladder's war
+    /// census, for calibrating the knob. Empty — and absent — otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    war_starts: Vec<u32>,
+    /// ⭐ `--trace` or `--rival-war-pace`: cities this seat founded and
+    /// somebody else held at raw turn 100, and cities it had captured by
+    /// then — the live ladder's turn-100 marks. `None` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_lost_100: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cities_taken_100: Option<usize>,
     /// `game` for a screened seat. (Files written by the earlier paired designs
     /// also hold `anchor` rows; those are skipped by every estimate here.)
     kind: String,
@@ -1961,6 +2011,20 @@ struct Header {
     /// before a space project, or 0 for none, which every earlier file played.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_space_floor: u32,
+    /// ⭐ `--rival-war-pace` (2026-11-04): the odds multiplier, in percent, on
+    /// the rival chairs' live-fitted declaration hazard, or 0 for no knob,
+    /// which every earlier file played. See [`rival_war_pace`].
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_war_pace: u32,
+    /// ⭐ `--rival-walls` (2026-11-04): the share of a chair's cities, in
+    /// percent, that may raise walls, or 0 for every city, which every earlier
+    /// file played. See [`rival_war_pace::veto_walls`].
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_walls: u32,
+    /// ⭐ `--seat-civ` (2026-11-05): the civilization every measured seat
+    /// plays, or empty for the shuffled draw, which every earlier file played.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    seat_civ: String,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2370,6 +2434,16 @@ struct Profile {
     /// ⭐ `--rival-space-floor`: the techs a rival chair needs before a space
     /// project (`GameOptions::ai_space_tech_floor`).
     rival_space_floor: Option<u32>,
+    /// ⭐ `--rival-war-pace`: the rival chairs' declaration odds on the
+    /// measured seats, in percent of the live-fitted hazard
+    /// ([`rival_war_pace`]). `None` is no knob.
+    rival_war_pace: Option<u32>,
+    /// ⭐ `--rival-walls`: the share of a chair's cities that may raise walls
+    /// ([`rival_war_pace::veto_walls`]). `None` is no knob.
+    rival_walls: Option<u32>,
+    /// ⭐ `--seat-civ`: the civilization every measured seat plays
+    /// ([`seated_civs`]). `None` keeps the shuffled draw.
+    seat_civ: Option<String>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2475,6 +2549,52 @@ fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64
     delta.cursor
 }
 
+/// ⭐ `--seat-civ`: the lobby's civilization list for this game. The measured
+/// seat rotates with the game index, so the list names every seat up to and
+/// including it: the measured seats play `seat_civ`, the seats before them
+/// draw distinct Civilization VI civilizations from a seed-keyed shuffle, and
+/// the engine fills the rest as before. Empty (the shuffled draw) without the
+/// flag, so every earlier batch seats exactly as it did.
+fn seated_civs(profile: &Profile, game: usize, seed: u64) -> Vec<String> {
+    let Some(seat_civ) = &profile.seat_civ else {
+        return Vec::new();
+    };
+    let measured: Vec<usize> = (0..profile.players)
+        .filter(|&index| {
+            !profile.rivals
+                || rival_offset(profile.players, game, profile.rival_chairs, index).is_none()
+        })
+        .collect();
+    let Some(&last) = measured.iter().max() else {
+        return Vec::new();
+    };
+    let mut pool: Vec<String> = civvis::leader_roster::all()
+        .iter()
+        .filter(|record| {
+            record.available
+                && record.civ != *seat_civ
+                && civvis::leader_roster::uses_civ6_mechanics(&record.civ)
+        })
+        .map(|record| record.civ.clone())
+        .collect();
+    pool.sort();
+    pool.dedup();
+    let mut rng = Rng::new(seed ^ 0x5345_4154_4349_5600);
+    for i in (1..pool.len()).rev() {
+        pool.swap(i, rng.below(i + 1));
+    }
+    let mut others = pool.into_iter();
+    (0..=last)
+        .map(|index| {
+            if measured.contains(&index) {
+                seat_civ.clone()
+            } else {
+                others.next().unwrap_or_default()
+            }
+        })
+        .collect()
+}
+
 fn play_game(
     profile: &Profile,
     genes: &[Gene],
@@ -2533,6 +2653,7 @@ fn play_game(
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
+        civs: seated_civs(profile, game, seed),
         victory_conditions: victories,
         difficulty: difficulty.clone(),
         handicap_exempt,
@@ -2623,7 +2744,64 @@ fn play_game(
     let mut trajectories = vec![Vec::new(); world.players.len()];
     let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
     let mut project_turns: Vec<BTreeMap<String, u32>> = vec![BTreeMap::new(); world.players.len()];
-    run_game_observed(&mut world, &mut ais, |g| {
+    // ⭐ `--trace` / `--rival-war-pace`: the live ladder's war census for each
+    // measured seat — the turns it entered a war with another major, and its
+    // cities lost and taken at raw turn 100.
+    let war_census =
+        profile.trace || profile.rival_war_pace.is_some() || profile.rival_walls.is_some();
+    let mut war_starts: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
+    let mut at_war_with: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); world.players.len()];
+    let mut marks_100: Option<Vec<(usize, usize)>> = None;
+    // ⭐ `--rival-war-pace`: the rival chairs roll the live declaration
+    // hazard ahead of their turns. Without the flag nothing is wrapped and the
+    // loop below plays the bare seats, byte for byte as before.
+    let measured: Vec<usize> = majors
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            pinned.get(*index).copied().flatten().is_none() && rival_chair(*index).is_none()
+        })
+        .map(|(_, &pid)| pid)
+        .collect();
+    let chairs: BTreeSet<usize> = majors
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| rival_chair(*index).is_some())
+        .map(|(_, &pid)| pid)
+        .collect();
+    let mut observe = |g: &Game| {
+        if war_census {
+            for &seat in &measured {
+                for &other in &majors {
+                    let war = other != seat && g.is_at_war(seat, other);
+                    if war && at_war_with[seat].insert(other) {
+                        war_starts[seat].push(g.turn);
+                    } else if !war {
+                        at_war_with[seat].remove(&other);
+                    }
+                }
+            }
+            if marks_100.is_none() && g.turn >= 100 {
+                marks_100 = Some(
+                    (0..g.players.len())
+                        .map(|seat| {
+                            let lost = g
+                                .cities
+                                .values()
+                                .filter(|city| city.original_owner == seat && city.owner != seat)
+                                .count();
+                            let taken = g.players[seat]
+                                .counters
+                                .get("captures")
+                                .copied()
+                                .unwrap_or(0)
+                                .max(0) as usize;
+                            (lost, taken)
+                        })
+                        .collect(),
+                );
+            }
+        }
         if let Some(journal) = &journal {
             journal_cursor = drain_journal(journal, journal_cursor, &mut journal_lines);
         }
@@ -2668,7 +2846,34 @@ fn play_game(
         if techs_at_live_pace.is_none() && g.turn >= LIVE_PACE_GAME_TURN {
             techs_at_live_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
         }
-    });
+    };
+    let mut rival_war_turns: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
+    if profile.rival_war_pace.is_some() || profile.rival_walls.is_some() {
+        let pct = profile.rival_war_pace.unwrap_or(0);
+        let mut paced: Vec<rival_war_pace::PacedSeat> = ais
+            .drain(..)
+            .enumerate()
+            .map(|(pid, ai)| {
+                let pace = chairs.contains(&pid).then(|| rival_war_pace::Pace {
+                    pct,
+                    walls_pct: profile.rival_walls,
+                    seed,
+                    targets: measured.clone(),
+                });
+                rival_war_pace::PacedSeat::new(ai, pace)
+            })
+            .collect();
+        run_game_observed(&mut world, &mut paced, &mut observe);
+        for seat in &mut paced {
+            for &(turn, _, target) in &seat.declared {
+                rival_war_turns[target].push(turn);
+            }
+        }
+        ais = paced.into_iter().map(|seat| seat.ai).collect();
+    } else {
+        run_game_observed(&mut world, &mut ais, &mut observe);
+    }
+    drop(observe);
     if let Some(journal) = &journal {
         drain_journal(journal, journal_cursor, &mut journal_lines);
         let path = format!("{}.journal.{seed}.txt", profile.journal_base);
@@ -2699,6 +2904,12 @@ fn play_game(
             row.trajectory = trajectories[seat].clone();
             row.trace = std::mem::take(&mut traces[seat]);
             row.project_turns = std::mem::take(&mut project_turns[seat]);
+            row.rival_war_turns = std::mem::take(&mut rival_war_turns[seat]);
+            if war_census && this_rival.is_none() {
+                row.war_starts = std::mem::take(&mut war_starts[seat]);
+                row.cities_lost_100 = marks_100.as_ref().map(|marks| marks[seat].0);
+                row.cities_taken_100 = marks_100.as_ref().map(|marks| marks[seat].1);
+            }
             row.victory_portfolio = Some(ais[seat].victory_portfolio_report());
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
@@ -2831,6 +3042,10 @@ fn row_for_seat(
         trajectory: Vec::new(),
         trace: Vec::new(),
         project_turns: BTreeMap::new(),
+        rival_war_turns: Vec::new(),
+        war_starts: Vec::new(),
+        cities_lost_100: None,
+        cities_taken_100: None,
         kind: "game".to_string(),
         game: index,
         pair: 0,
@@ -5106,6 +5321,9 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_victory_pace != found.rival_victory_pace
                                 || first.rival_late_science != found.rival_late_science
                                 || first.rival_space_floor != found.rival_space_floor
+                                || first.rival_war_pace != found.rival_war_pace
+                                || first.rival_walls != found.rival_walls
+                                || first.seat_civ != found.seat_civ
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -6030,6 +6248,21 @@ fn calibration_read(header: &Header) -> String {
             header.rival_space_floor
         ));
     }
+    if !header.seat_civ.is_empty() {
+        line.push_str(&format!(", the measured seat plays {}", header.seat_civ));
+    }
+    if header.rival_walls > 0 {
+        line.push_str(&format!(
+            ", walls in {}% of the chairs' cities",
+            header.rival_walls
+        ));
+    }
+    if header.rival_war_pace > 0 {
+        line.push_str(&format!(
+            ", wars on the measured seats at {}% of the live declaration odds",
+            header.rival_war_pace
+        ));
+    }
     line
 }
 
@@ -6859,6 +7092,39 @@ fn main() {
         );
         std::process::exit(2);
     }
+    // ⭐ `--rival-war-pace PCT`: the rival chairs declare on the measured
+    // seats with the live-fitted hazard, its odds at PCT percent. See
+    // `rival_war_pace`.
+    let rival_war_pace = present(&args, "--rival-war-pace")
+        .then(|| number(&args, "--rival-war-pace", 100).clamp(1, 10_000) as u32);
+    // ⭐ `--rival-walls PCT`: only PCT percent of a chair's cities may raise
+    // walls; the rest build a soldier (`rival_war_pace::veto_walls`).
+    let rival_walls = present(&args, "--rival-walls")
+        .then(|| number(&args, "--rival-walls", 100).clamp(0, 100) as u32);
+    // ⭐ `--seat-civ CIV`: every measured seat plays CIV (the live seat's
+    // civilization), the rest of the field drawn as before. See `seated_civs`.
+    let seat_civ = text(&args, "--seat-civ");
+    if let Some(civ) = &seat_civ {
+        if !civvis::leader_roster::all()
+            .iter()
+            .any(|record| record.available && record.civ == *civ)
+        {
+            eprintln!("--seat-civ {civ}: not a selectable civilization");
+            std::process::exit(2);
+        }
+    }
+    if seat_civ.is_some() && !rivals {
+        eprintln!(
+            "--seat-civ names the measured seat beside the rival chairs, so it needs --rivals"
+        );
+        std::process::exit(2);
+    }
+    if (rival_war_pace.is_some() || rival_walls.is_some()) && !rivals {
+        eprintln!(
+            "--rival-war-pace and --rival-walls act on the rival chairs, so they need --rivals"
+        );
+        std::process::exit(2);
+    }
     if (rival_rung.is_some() || rival_pace) && !faithful {
         eprintln!("--rival-rung and --rival-pace calibrate the faithful field, so they need --rivals {FAITHFUL_KIND}");
         std::process::exit(2);
@@ -7215,6 +7481,9 @@ fn main() {
         rival_victory_pace: rival_victory_pace.unwrap_or(0),
         rival_late_science: rival_late_science.unwrap_or(0),
         rival_space_floor: rival_space_floor.unwrap_or(0),
+        rival_war_pace: rival_war_pace.unwrap_or(0),
+        rival_walls: rival_walls.unwrap_or(0),
+        seat_civ: seat_civ.clone().unwrap_or_default(),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7278,6 +7547,9 @@ fn main() {
         rival_victory_pace,
         rival_late_science,
         rival_space_floor,
+        rival_war_pace,
+        rival_walls,
+        seat_civ,
         rival_chairs,
         handicap_rivals,
         journal_seeds,
@@ -7512,6 +7784,9 @@ mod tests {
             rival_victory_pace: 0,
             rival_late_science: 0,
             rival_space_floor: 0,
+            rival_war_pace: 0,
+            rival_walls: 0,
+            seat_civ: String::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -7530,6 +7805,10 @@ mod tests {
             trajectory: Vec::new(),
             trace: Vec::new(),
             project_turns: BTreeMap::new(),
+            rival_war_turns: Vec::new(),
+            war_starts: Vec::new(),
+            cities_lost_100: None,
+            cities_taken_100: None,
             kind: "game".into(),
             game,
             pair: 0,
@@ -9081,6 +9360,9 @@ mod tests {
             districts: 12,
             religion: true,
             holy_site: true,
+            walled: 0,
+            near_housing: 0,
+            near_housing_fed: 0,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
