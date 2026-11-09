@@ -7445,6 +7445,10 @@ pub struct AdvancedAi {
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
     // ---- append: g-k ------------------------------------------------
+    /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
+    /// walks to the wounded of its faith instead of at the nearest rival. See
+    /// `advanced/guru_walks_to_the_wounded.rs`. Off by default.
+    guru_walks_to_the_wounded: bool,
     /// `government-reach-pays-the-switch`: a seat holding its listed
     /// government takes `government-capacity-fallback`'s reach only for a
     /// real gain in slots. See `advanced/government_reach.rs`. Off by default.
@@ -10825,6 +10829,7 @@ mod battle_solver;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
+mod guru_walks_to_the_wounded;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 

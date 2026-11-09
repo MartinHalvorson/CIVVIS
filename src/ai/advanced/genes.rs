@@ -5464,6 +5464,9 @@ pub const GENES: &[Gene] = &[
     // passes the peak edge against a target at 60% or less of its 30-turn
     // peak. Opt-in; see the field.
     Gene { tag: "gutted-rival-passes-the-edge", field: "gutted_rival_passes_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_gutted_rival_passes_the_edge, disable: AdvancedAi::disable_gutted_rival_passes_the_edge },
+    // Live 11-09: 21 Gurus spent 80 turns within 4 tiles of a wounded friend
+    // and 13 beside one, and walked at rivals that killed 8 of 16 they hit.
+    Gene { tag: "guru-walks-to-the-wounded", field: "guru_walks_to_the_wounded", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_walks_to_the_wounded, disable: AdvancedAi::disable_guru_walks_to_the_wounded },
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // First-slot ranged support. Leaves later recon settings unchanged;

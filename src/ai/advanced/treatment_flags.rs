@@ -117,6 +117,9 @@ impl AdvancedAi {
         /// 30-turn peak, at 1.5 times what it has left. See
         /// `AdvancedAi::gutted_rival_passes_the_edge`.
         gutted_rival_passes_the_edge => enable_gutted_rival_passes_the_edge, disable_gutted_rival_passes_the_edge;
+        /// Opt-in gene `guru-walks-to-the-wounded`; see
+        /// `advanced/guru_walks_to_the_wounded.rs`.
+        guru_walks_to_the_wounded => enable_guru_walks_to_the_wounded, disable_guru_walks_to_the_wounded;
         // ---- append: l-o --------------------------------------------
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
