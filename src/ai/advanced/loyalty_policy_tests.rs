@@ -173,6 +173,26 @@ fn the_repair_does_not_borrow_an_ordinary_lanes_wildcard_seat() {
 }
 
 #[test]
+fn the_existing_unwanted_wildcard_fallback_still_works() {
+    let (mut g, ai, _) = emergency();
+    g.players[0].government = Some("oligarchy".into());
+    g.players[0].policies = ["discipline", "feudal_contract", "scripture", "god_king"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    assert!(AdvancedAi::policy_swap_fits(
+        &g,
+        0,
+        &crate::name!("god_king"),
+        "praetorium"
+    ));
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
+    assert!(has(&g, "praetorium"));
+    assert!(!has(&g, "god_king"));
+    assert!(has(&g, "scripture"));
+}
+
+#[test]
 fn an_active_bankruptcy_drain_keeps_its_paying_envoy_card() {
     let (mut g, mut ai, _) = emergency();
     ai.bankruptcy_exits_the_drain = true;

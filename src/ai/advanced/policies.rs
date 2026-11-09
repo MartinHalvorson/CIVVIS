@@ -1018,21 +1018,6 @@ impl AdvancedAi {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
                     }
-                    // A full deck otherwise protects every wanted card, even
-                    // when Praetorium leads the emergency portfolio. Native
-                    // Russia 20261109T210123Z t132 kept Merchant Confederation
-                    // and missed its last free window before the revolt.
-                    // Take only the same typed seat; do not borrow a lane's
-                    // wildcard or displace another timed emergency.
-                    if loyalty_policy_needed && card == "praetorium" {
-                        return g.rules.policies[current].slot == "diplomatic"
-                            && current.as_str() != "communications_office"
-                            && !culture_defense_cards.contains(&current.as_str())
-                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
-                            && !drain_cards
-                                .iter()
-                                .any(|(gold_card, _)| *gold_card == current.as_str());
-                    }
                     // `medina-quarter-houses-the-districts`: the housing card may
                     // take an ordinary Economic card's slot (wanted or not),
                     // never a spared production card or a protected one.
@@ -1106,6 +1091,21 @@ impl AdvancedAi {
                         || self.domination_multiplier_reclaims_fallback(
                             g, card, current.as_str(), &unproductive_economic_cards,
                         )
+                        // A full deck otherwise protects every wanted card,
+                        // even when Praetorium leads the emergency portfolio.
+                        // Native Russia 20261109T210123Z t132 kept Merchant
+                        // Confederation and missed its last free window.
+                        // Only this additional permission is same-type: the
+                        // ordinary unwanted-card fallback above still works.
+                        || (loyalty_policy_needed
+                            && card == "praetorium"
+                            && g.rules.policies[current].slot == "diplomatic"
+                            && current.as_str() != "communications_office"
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && !drain_cards
+                                .iter()
+                                .any(|(gold_card, _)| *gold_card == current.as_str()))
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.

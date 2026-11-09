@@ -44,8 +44,9 @@ free-window path only.
 
 When the existing `loyalty-rate-alarm` repair requests Praetorium for a
 governed city within its existing 20-turn measured runway, the policy pass
-may replace a wanted diplomatic card. Other typed cards and their wildcard
-capacity remain protected. Culture-defense cards, a timed Nobel Peace
+may replace a wanted diplomatic card. Other wanted typed cards and their
+wildcard capacity remain protected. The existing fallback for an unwanted
+card in a wildcard seat is preserved. Culture-defense cards, a timed Nobel Peace
 Favor card, Communications Office, and a paying card needed by an active
 bankruptcy drain are not donors. Ordinary card availability, deck-fit and
 host-window checks still apply. The replacement journal now explains the
@@ -66,7 +67,8 @@ other settlement, production and governor consumers.
 Regression coverage exercises a completely occupied native-shaped deck,
 retention against the paying envoy card on a second pass, the off arm,
 stable/recovering/distant decline, absence of a governor or the prerequisite,
-a closed host window, occupied wildcard capacity in Oligarchy, and a
+a closed host window, occupied wildcard capacity in Oligarchy, the existing
+unwanted-wildcard fallback, and a
 bankruptcy drain that must keep its paying card.
 
 Local diagnostic artifacts are under
