@@ -12,6 +12,8 @@
 
 use super::*;
 
+mod culture_education;
+
 /// `spies-steal-the-lead`: the civic value Diplomatic Service (Spy capacity)
 /// gains on a Science aim under the gene, Guilds (its prerequisite) half: the
 /// scale of the lanes' own civic bonuses below (Diplomacy +60 for Political
@@ -307,6 +309,7 @@ impl AdvancedAi {
                 }
             }
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
+            let culture_education_goal = self.culture_education_goal(g, pid);
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
             // adaptive seat that is already driving) is a different contract:
@@ -671,6 +674,11 @@ impl AdvancedAi {
                 _ if science_harbor_goal.is_some() => science_harbor_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
+                // Libraries are a paid-for foundation for the Culture lane's
+                // expensive tourism technologies. Open Universities before
+                // its Printing/Radio chain; emergencies and military goals
+                // above retain the slot, and existing research is untouched.
+                _ if culture_education_goal.is_some() => culture_education_goal,
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
