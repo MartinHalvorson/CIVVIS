@@ -5244,6 +5244,8 @@ function runHudFoldPress(event) {
     event.preventDefault();
     event.stopPropagation();
     rememberSimStatsView(view.dataset.simStatsView);
+    // Another table opens at its own top, not at the last one's offset.
+    view.closest(".sim-stats-body").scrollTop = 0;
     if (state) drawPlayerHud();
     return true;
   }
@@ -24243,6 +24245,19 @@ function describeSimulationRecord(row) {
   if (row.d) parts.push(`${row.d} draw${row.d === 1 ? "" : "s"}`);
   return parts.join(", ");
 }
+// Best record first: win rate, then the most wins at that rate, so an
+// undefeated name with ten wins stands above one with a single win. The rates
+// are cross-multiplied so 1–1 and 2–2 tie exactly. Equal rates and wins can
+// still differ in losses against draws, and every winless row ties at zero, so
+// the fewer losses read better.
+function compareSimulationRecords([aName, a], [bName, b]) {
+  const aGames = a.w + a.l + a.d;
+  const bGames = b.w + b.l + b.d;
+  return b.w * aGames - a.w * bGames
+    || b.w - a.w
+    || a.l - b.l
+    || aName.localeCompare(bName);
+}
 // The persistent record above the victory tracker: this mode's games and
 // average length, then the win–loss ledger by civilization or by controlling
 // player or AI profile, or its wins by victory type — whichever view was
@@ -24268,9 +24283,7 @@ function simulationStatsSection() {
       })
       .join("")
     : Object.entries(table)
-      .sort(([aName, a], [bName, b]) => b.w - a.w
-        || (b.w + b.l + b.d) - (a.w + a.l + a.d)
-        || aName.localeCompare(bName))
+      .sort(compareSimulationRecords)
       .map(([name, row]) =>
         `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${describeSimulationRecord(row)}`)}">` +
         `<span class="sim-stat-name">${name}</span>` +
@@ -24742,6 +24755,26 @@ function playerHudStats(player, rank) {
 // a real change keeps both the follow and the dossier buttons pressable.
 let hudHtml = "", victoryHudHtml = "";
 
+// The victory tracker repaints whenever one of its numbers moves, which is
+// most frames of a running simulation, but the Arena Stats ledger changes only
+// when a game ends. Rebuilding it with the tracker sent the list back to the
+// top and cut off any wheel gesture in flight, so while its markup is unchanged
+// the ledger stays in the document and only its neighbours are replaced.
+function repaintBesideArenaStats(victoryHud, overview) {
+  const live = victoryHud.querySelector(".sim-stats-region");
+  if (!live) return false;
+  const next = document.createElement("template");
+  next.innerHTML = overview;
+  const fresh = next.content.querySelector(".sim-stats-region");
+  if (!fresh?.isEqualNode(live)) return false;
+  const nodes = [...next.content.childNodes];
+  const seat = nodes.indexOf(fresh);
+  for (const node of [...victoryHud.childNodes]) if (node !== live) node.remove();
+  live.before(...nodes.slice(0, seat));
+  live.after(...nodes.slice(seat + 1));
+  return true;
+}
+
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
   const victoryHud = document.getElementById("victoryhud");
@@ -24751,12 +24784,17 @@ function drawPlayerHud() {
   // reading position so a person can browse an off-screen victory path
   // without the next simulation frame snapping the HUD back to the leader.
   const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
+  const statsScroll = victoryHud.querySelector(".sim-stats-body")?.scrollTop || 0;
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
   const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
-    victoryHud.innerHTML = overview;
+    if (!repaintBesideArenaStats(victoryHud, overview)) {
+      victoryHud.innerHTML = overview;
+      const statsBody = victoryHud.querySelector(".sim-stats-body");
+      if (statsBody) statsBody.scrollTop = statsScroll;
+    }
     const rail = victoryHud.querySelector(".hud-rail");
     if (rail) rail.scrollTop = victoryScroll;
   }
