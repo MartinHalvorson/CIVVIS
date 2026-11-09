@@ -5476,6 +5476,13 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `campaign-second-front-waits-for-the-staging`: the campaign's second
+    /// front opens only once the first front's siege has more than
+    /// `second_front_staging::SECOND_FRONT_STAGED_UNITS` units staged, a city
+    /// was taken within `second_front_staging::SECOND_FRONT_CAPTURE_TURNS`,
+    /// or the new target's clock is urgent. See
+    /// `advanced/second_front_staging.rs`.
+    campaign_second_front_waits_for_the_staging: bool,
     /// `city-under-fire-ranks-first`: a city of ours that lost health since
     /// the last assessment, or was struck within the last turn, with a
     /// hostile soldier within [`objective_board::CAPITAL_DEFENSE_CONTACT`] is
@@ -8030,6 +8037,12 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `campaign-second-front-waits-for-the-staging`: cities we took from
+    /// another owner, by city id, and the turn we first held each.
+    second_front_captures: BTreeMap<u32, u32>,
+    /// `campaign-second-front-waits-for-the-staging`: the turn each rival's
+    /// "waits for the staging" line was last journalled. Journal only.
+    second_front_staging_noted: BTreeMap<usize, u32>,
     /// The gates each held second front last read and the turn it was
     /// journalled, so the journal repeats a held counter once per
     /// `SECOND_FRONT_HELD_NOTE_TURNS`. Journal only; see
@@ -9331,6 +9344,10 @@ mod medina_quarter;
 /// `no-third-war`: see `advanced/no_third_war.rs`.
 mod no_third_war;
 
+/// `campaign-second-front-waits-for-the-staging`: see
+/// `advanced/second_front_staging.rs`.
+mod second_front_staging;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10625,6 +10642,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            campaign_second_front_waits_for_the_staging: false,
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),
@@ -11022,6 +11040,8 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_captures: BTreeMap::new(),
+            second_front_staging_noted: BTreeMap::new(),
             second_front_held_noted: BTreeMap::new(),
             silent_counter_noted: BTreeMap::new(),
             siege_budget_projects_the_seal: false,
@@ -11585,6 +11605,8 @@ impl AdvancedAi {
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
         self.observe_domination_siege_milestones(g, pid);
+        // See `advanced/second_front_staging.rs`. Nothing with the gene off.
+        self.observe_second_front_staging(g, pid);
         let cities = g.player_city_ids(pid).len();
         if cities > self.last_city_count {
             // `last_campaign_progress` also powers the established diplomacy

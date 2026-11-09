@@ -4008,6 +4008,12 @@ pub const GENES: &[Gene] = &[
     // 137 turns at war with three majors took no city. See
     // `advanced/no_third_war.rs`.
     Gene { tag: "no-third-war", field: "no_third_war", kind: Kind::OptIn, enable: AdvancedAi::enable_no_third_war, disable: AdvancedAi::disable_no_third_war },
+    // The campaign's second front opens only once the first front's siege
+    // has more than four units staged or took a city in 15 turns, or the new
+    // target's clock is urgent: two offensive wars converted 5.6 captures per
+    // 1,000 turns against 25.8 for one. See
+    // `advanced/second_front_staging.rs`.
+    Gene { tag: "campaign-second-front-waits-for-the-staging", field: "campaign_second_front_waits_for_the_staging", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_second_front_waits_for_the_staging, disable: AdvancedAi::disable_campaign_second_front_waits_for_the_staging },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

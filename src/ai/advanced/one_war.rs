@@ -2789,6 +2789,16 @@ impl AdvancedAi {
     /// Kongo's 1,347. Kongo, holding Kabasa (the last capital Domination
     /// needed) and past its Exoplanet launch at 198, won on Science at 216.
     pub(crate) fn one_war_second_front(&self, g: &Game, pid: usize) -> Option<usize> {
+        // See `campaign_second_front_wait`
+        // (`campaign-second-front-waits-for-the-staging`).
+        self.one_war_second_front_unstaged(g, pid)
+            .filter(|rival| self.campaign_second_front_wait(g, pid, *rival).is_none())
+    }
+
+    /// The second front before `campaign-second-front-waits-for-the-staging`
+    /// reads the first front's staging. Identical to `one_war_second_front`
+    /// with that gene off.
+    pub(crate) fn one_war_second_front_unstaged(&self, g: &Game, pid: usize) -> Option<usize> {
         // See `domination_finish_front`: no new war while the war that ends
         // the game stands.
         if self.domination_finish_front(g, pid).is_some() {

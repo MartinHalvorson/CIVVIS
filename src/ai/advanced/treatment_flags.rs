@@ -7926,6 +7926,17 @@ impl AdvancedAi {
         self.no_third_war = false;
     }
 
+    /// Opt-in gene `campaign-second-front-waits-for-the-staging`; see
+    /// `advanced/second_front_staging.rs`.
+    pub fn enable_campaign_second_front_waits_for_the_staging(&mut self) {
+        self.campaign_second_front_waits_for_the_staging = true;
+    }
+
+    /// The twin of `enable_campaign_second_front_waits_for_the_staging`.
+    pub fn disable_campaign_second_front_waits_for_the_staging(&mut self) {
+        self.campaign_second_front_waits_for_the_staging = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
