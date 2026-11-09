@@ -10013,7 +10013,10 @@ fn a_turn_paints_the_map_once_and_a_frame_keeps_what_it_has_worked_out() {
         .and_then(|tail| tail.split("function ").next())
         .expect("planetProject");
     assert!(project.contains("planetProjectTrig(camera)"));
-    assert!(!project.contains("Math.cos("), "angles belong to the camera, not the point");
+    assert!(
+        !project.contains("Math.cos("),
+        "angles belong to the camera, not the point"
+    );
 }
 
 #[test]
