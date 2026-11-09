@@ -27,8 +27,8 @@ restore a district which no surviving city owns.
 ## Recovery behavior
 
 Retain the normal three-city expansion floor. Under the existing Holy Site
-construction treatment, a founded Religion-target seat with no completed
-Holy Site instead restores one legal site in a city following its faith.
+construction treatment and after its existing opening-book phase, a founded
+Religion-target seat with no completed Holy Site restores one legal site in a city following its faith.
 A completed pillaged district stays on the repair path. Units, Walls,
 repairs (including defensive repair projects), threatened cities and recently
 attacked cities retain their queues.
@@ -74,3 +74,9 @@ projects as well as ordinary `Item::Repair` queues. Its reservation and hint
 coverage includes a threatened foundation with another safe city available;
 ordinary projects remain deferrable. The district fixture uses the engine's
 `Districts` API and provides Pottery for its legal Granary queue.
+
+The optimized Rust suite in CI run `42655447439` passed the initial recovery
+regressions, including complete turns and host-quoted timing. Its separate
+quality job reported a needless generic borrow in the fixture; that borrow is
+corrected in the follow-up. Defensive project and unsafe-foundation follow-ups
+require the final CI run rather than borrowing that earlier result.

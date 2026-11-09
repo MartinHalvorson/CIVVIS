@@ -748,6 +748,7 @@ fn source_recovery_keeps_its_scope_and_safety_gates() {
     let (g, ai, home) = stranded_founder(1);
     for case in [
         "off",
+        "opening",
         "other target",
         "not founded",
         "foreign faith",
@@ -760,6 +761,7 @@ fn source_recovery_keeps_its_scope_and_safety_gates() {
         let mut plan = recovery_plan(&controller, &board);
         match case {
             "off" => controller.disable_religion_seat_builds_holy_sites(),
+            "opening" => controller.base.book_pos = 0,
             "other target" => {
                 controller = AdvancedAi::targeting(VictoryTarget::Science);
                 controller.skip_opening_book();
