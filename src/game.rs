@@ -1369,6 +1369,10 @@ struct VisionFrame {
 /// The folded suzerain-of-every-minor map, beside the diplomacy epoch (see
 /// `Game::diplomacy_epoch`) it was built from.
 type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>;
+/// Everything `suzerain_of` reads: the players' envoys and governors, the
+/// cities their governors sit in, and the turn their establishment counts
+/// from. Players and cities bump their counters at every mutable access.
+type SuzerainStamp = (u64, u64, u32);
 /// Per-pid shared-vision viewer sets, beside the diplomacy epoch they were
 /// built from. Indexed by pid; a pid nobody has asked about this epoch keeps
 /// its slot `None` rather than being folded speculatively.
@@ -1737,6 +1741,14 @@ pub struct QueryCache {
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
     tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
+    /// The air-patrol list from the last unit-roster epoch it was built on.
+    /// Every route search is its own memo scope, and on a 250-seat world each
+    /// one walked every unit in the game to learn that nobody is patrolling.
+    air_patrols_stable: std::cell::RefCell<Option<(u64, AirPatrols)>>,
+    /// `suzerain_of` per city-state from the last moment nothing it reads
+    /// changed. Most scopes follow an action that touched neither envoys nor
+    /// cities, and the answer walks every major.
+    suzerain_stable: std::cell::RefCell<Option<(SuzerainStamp, BTreeMap<usize, Option<usize>>)>>,
     /// `domestic_tourists` per player. Each seat's victory tracker reads every
     /// rival's count and each count walks every player, which made one frame
     /// cubic in the number of civilizations.

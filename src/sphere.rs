@@ -131,10 +131,12 @@ const DISTANCE_ROW_ADMISSION_HITS: u16 = 8;
 /// those rows then stand for the start-placement candidates of a world that
 /// has moved on. Only worlds that large ever reach this tier.
 const RECENT_ROW_BYTES: usize = 48 * 1024 * 1024;
-/// Endpoints remembered as seen once, so that a row is only built for an
-/// endpoint that comes back. One-off comparisons stay on the point-to-point
-/// search, which costs about a quarter of a row.
+/// Endpoints whose recent misses are being counted.
 const RECENT_ADMISSION_SLOTS: usize = 1 << 12;
+/// Misses an endpoint must collect before it earns a row. A row costs about as
+/// much as three or four point-to-point searches at frequency 76, so this is
+/// the point at which the searches it replaces have paid for it.
+const RECENT_ADMISSION_MISSES: u8 = 3;
 
 /// Lattice points are matched between rhombi by rounding to this grid. The
 /// closest two distinct tiles ever come is about `2/n` radians of arc, which
@@ -223,8 +225,8 @@ struct RecentRows {
     /// last passed it.
     rows: Vec<(u32, Box<[u16]>, bool)>,
     hand: usize,
-    /// `seen[endpoint % slots] == endpoint + 1` once an endpoint has missed.
-    seen: Vec<u32>,
+    /// Misses per endpoint, as `seen[endpoint % slots] == (endpoint + 1, misses)`.
+    seen: Vec<(u32, u8)>,
 }
 
 thread_local! {
@@ -241,7 +243,7 @@ impl RecentRows {
             *self = RecentRows {
                 frequency: sphere.frequency,
                 capacity: (RECENT_ROW_BYTES / row_bytes).max(1),
-                seen: vec![0; RECENT_ADMISSION_SLOTS],
+                seen: vec![(0, 0); RECENT_ADMISSION_SLOTS],
                 ..RecentRows::default()
             };
         }
@@ -252,14 +254,15 @@ impl RecentRows {
                 return Some(entry.1[other as usize]);
             }
         }
-        // Two distinct endpoints can both be returning; the destination is the
-        // one a caller's loop usually holds still, as in `cache_source`.
-        let source = if self.returned(to) {
-            to
-        } else if self.returned(from) {
-            from
-        } else {
-            return None;
+        // Two distinct endpoints can both have earned a row; the destination
+        // is the one a caller's loop usually holds still, as in `cache_source`.
+        // Both are counted either way.
+        let to_earned = self.miss(to);
+        let from_earned = self.miss(from);
+        let source = match (to_earned, from_earned) {
+            (true, _) => to,
+            (_, true) => from,
+            _ => return None,
         };
         let row = sphere.search_all(source);
         let distance = row[if source == from { to } else { from } as usize];
@@ -267,13 +270,22 @@ impl RecentRows {
         Some(distance)
     }
 
-    /// Whether `endpoint` has missed before; records it either way.
-    fn returned(&mut self, endpoint: u32) -> bool {
+    /// Count a miss at `endpoint`; `true` once it has earned a row. The count
+    /// starts over then, so a row that is later evicted has to earn its way
+    /// back rather than being rebuilt on its next miss.
+    fn miss(&mut self, endpoint: u32) -> bool {
         let slot = endpoint as usize % self.seen.len();
         let mark = endpoint + 1;
-        let returned = self.seen[slot] == mark;
-        self.seen[slot] = mark;
-        returned
+        let entry = &mut self.seen[slot];
+        if entry.0 != mark {
+            *entry = (mark, 0);
+        }
+        entry.1 = entry.1.saturating_add(1);
+        let earned = entry.1 >= RECENT_ADMISSION_MISSES;
+        if earned {
+            entry.1 = 0;
+        }
+        earned
     }
 
     fn remember(&mut self, endpoint: u32, row: Box<[u16]>) {
@@ -1578,7 +1590,7 @@ mod tests {
         let mut recent = RecentRows {
             frequency: globe.frequency,
             capacity: 3,
-            seen: vec![0; RECENT_ADMISSION_SLOTS],
+            seen: vec![(0, 0); RECENT_ADMISSION_SLOTS],
             ..RecentRows::default()
         };
         let mut bits = 0x2545_F491_4F6C_DD1D_u64;
