@@ -1530,6 +1530,10 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.leader_display_name("LEADER_JADWIGA"), "Jadwiga")
         self.assertEqual(civ6_play.leader_display_name("LEADER_JAYAVARMAN"),
                          "Jayavarman VII")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_PETER_GREAT"), "Peter")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_T_ROOSEVELT"),
+                         "Teddy Roosevelt")
+        self.assertEqual(civ6_play.leader_display_name("LEADER_QIN"), "Qin Shi Huang")
 
     @needs_pillow
     def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:

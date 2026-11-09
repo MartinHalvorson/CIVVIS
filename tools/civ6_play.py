@@ -2557,12 +2557,30 @@ def _menu_label_matches(observed: str, wanted: str) -> bool:
     return previous[-1] <= 2
 
 
+# Leaders whose picker label cannot be derived from the Firaxis type or from
+# data/civs.json. Values are the shipped en_US LOC_LEADER_*_NAME text. A wrong
+# label never finds its row, so the launch ends without playing a turn.
+LEADER_PICKER_LABELS = {
+    "LEADER_BARBAROSSA": "Frederick Barbarossa",
+    "LEADER_ELEANOR_FRANCE": "Eleanor of Aquitaine (France)",
+    "LEADER_HARDRADA": "Harald Hardrada",
+    "LEADER_HOJO": "Hojo Tokimune",
+    "LEADER_JAYAVARMAN": "Jayavarman VII",
+    "LEADER_LAURIER": "Wilfrid Laurier",
+    "LEADER_MVEMBA": "Mvemba a Nzinga",
+    "LEADER_PEDRO": "Pedro II",
+    "LEADER_PETER_GREAT": "Peter",
+    "LEADER_QIN": "Qin Shi Huang",
+    "LEADER_T_ROOSEVELT": "Teddy Roosevelt",
+}
+
+
 def leader_display_name(leader: str) -> str:
     """Resolve a Firaxis leader type to the label CIVVIS expects on the picker."""
-    # The shipped English picker includes the regnal number; the Firaxis
-    # type omits it (Indonesia_Khmer_ConfigText.xml, LOC_LEADER_JAYAVARMAN_NAME).
-    if leader == "LEADER_JAYAVARMAN":
-        return "Jayavarman VII"
+    # The picker shows each leader's shipped English LOC_LEADER_*_NAME, which
+    # the Firaxis type does not spell out for these rows.
+    if leader in LEADER_PICKER_LABELS:
+        return LEADER_PICKER_LABELS[leader]
     requested = _normalized_label(leader.removeprefix("LEADER_"))
     try:
         roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
