@@ -324,10 +324,9 @@ pub(crate) const START_DISTANCE_MINOR_MAJOR: i32 = 6;
 /// another city-state.
 pub(crate) const START_DISTANCE_MINOR_MINOR: i32 = 5;
 
-/// Shipped `START_DISTANCE_MINOR_NATURAL_WONDER`: a city-state keeps this much
-/// clear of a Natural Wonder. (`START_DISTANCE_MAJOR_NATURAL_WONDER` is 2, and
-/// major placement already satisfies it — measured 0 violations in 96 starts —
-/// because Natural Wonder tiles are excluded from the candidate set outright.)
+/// Shipped `START_DISTANCE_MINOR_NATURAL_WONDER`. `__NaturalWonderBuffer`
+/// rejects a site with a Natural Wonder inside this range, the distance itself
+/// included, so the nearest legal site stands one tile farther out.
 pub(crate) const START_DISTANCE_MINOR_NATURAL_WONDER: i32 = 3;
 
 /// Shipped `START_DISTANCE_MAJOR_NATURAL_WONDER`.
@@ -1422,7 +1421,7 @@ pub(super) fn place_starts_and_finish(
             .filter(|position| {
                 wonders
                     .iter()
-                    .all(|wonder| wm.distance(*position, *wonder) >= floor)
+                    .all(|wonder| wm.distance(*position, *wonder) > floor)
             })
             .collect();
         if clear.len() >= needed {

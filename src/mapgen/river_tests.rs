@@ -4291,9 +4291,9 @@ fn stock_map_profiles_produce_spread_and_complete_spawn_sets() {
 #[test]
 fn starts_keep_the_shipped_standoff_from_natural_wonders() {
     // START_DISTANCE_MINOR_NATURAL_WONDER 3 and
-    // START_DISTANCE_MAJOR_NATURAL_WONDER 2. Majors already satisfied
-    // theirs because Natural Wonder tiles are not candidates at all;
-    // city-states did not, landing inside 3 about one time in eighteen.
+    // START_DISTANCE_MAJOR_NATURAL_WONDER 2. `__NaturalWonderBuffer` walks
+    // every plot within that range, so a wonder at exactly the distance
+    // refuses the site as well.
     let rules = Rules::embedded();
     for seed in 0..6u64 {
         let mut rng = Rng::new(61_000 + seed);
@@ -4324,11 +4324,55 @@ fn starts_keep_the_shipped_standoff_from_natural_wonders() {
                 START_DISTANCE_MINOR_NATURAL_WONDER
             };
             assert!(
-                nearest >= floor,
-                "seed {seed}: start {index} sits {nearest} from a Natural Wonder, inside {floor}"
+                nearest > floor,
+                "seed {seed}: start {index} sits {nearest} from a Natural Wonder, within {floor}"
             );
         }
     }
+}
+
+#[test]
+fn each_world_type_spreads_the_lakes_its_shipped_script_asks_for() {
+    // `numLargeLakes` in each script, over the `Continents` column of Maps.xml:
+    // Duel 1, Tiny 2, Small 3, Standard 4, Large 5, Huge 6.
+    let rows: [(MapScript, [usize; 6]); 6] = [
+        (MapScript::Lakes, [4, 8, 12, 16, 20, 24]),
+        (MapScript::Pangaea, [2, 3, 5, 6, 8, 9]),
+        (MapScript::Continents, [1, 2, 3, 4, 5, 6]),
+        (MapScript::SmallContinents, [1, 2, 3, 4, 5, 6]),
+        (MapScript::InlandSea, [1, 1, 2, 2, 3, 3]),
+        (MapScript::Islands, [1, 1, 2, 2, 3, 3]),
+    ];
+    for (script, budgets) in rows {
+        for (index, expected) in budgets.into_iter().enumerate() {
+            assert_eq!(
+                large_lake_budget(script, index + 1),
+                expected,
+                "{script:?} with {} continents",
+                index + 1
+            );
+        }
+    }
+}
+
+#[test]
+fn marsh_rainforest_and_woods_share_the_gathering_storm_roll() {
+    // Expansion2's FeatureGenerator.lua, all three features:
+    // `GetRandomNumber(450, ...) <= iScore`. A plot with no neighbours scores
+    // 300, so 301 of the 450 values take it.
+    let mut rng = Rng::new(62_000);
+    let draws = 30_000usize;
+    let lone = (0..draws)
+        .filter(|_| feature_roll_takes(&mut rng, 0))
+        .count();
+    let expected = draws * 301 / 450;
+    assert!(
+        lone.abs_diff(expected) < draws / 100,
+        "a lone plot took the feature {lone} times in {draws}, expected about {expected}"
+    );
+    // Two or three neighbours score 450, which the roll cannot exceed.
+    assert!((0..2_000).all(|_| feature_roll_takes(&mut rng, 2)));
+    assert!((0..2_000).all(|_| feature_roll_takes(&mut rng, 3)));
 }
 
 /// `__MinorMajorCivBuffer` rejects a city-state site within

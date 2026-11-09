@@ -867,6 +867,20 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
+## Closed: three Gathering Storm map rolls
+
+Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09. `n` is
+the `Continents` column of `Maps` for the map size.
+
+| Rule | Shipped | CIVVIS had |
+|---|---|---|
+| Marsh, Rainforest and Woods roll | `FeatureGenerator.lua`: `GetRandomNumber(450, ...) <= iScore` for all three, so a plot with no neighbours passes two times in three. The Base script's roll is 300. | 300 for Marsh and Woods, 450 for Rainforest |
+| Lakes spread past one plot (`numLargeLakes`) | Lakes `4n`, Pangaea `ceil(1.5n)`, Continents and Small Continents `n`, Inland Sea and Island Plates `ceil(n/2)` | Continents `n/2`, Pangaea and Inland Sea `n`, Small Continents and Islands none |
+| Start standoff from a Natural Wonder | `__NaturalWonderBuffer` refuses a site with a wonder within `START_DISTANCE_MAJOR_NATURAL_WONDER` 2 or `START_DISTANCE_MINOR_NATURAL_WONDER` 3, that distance included | A wonder at exactly that distance was allowed |
+
+The shipped buffer is skipped under the Legendary Start setting. CIVVIS has no
+such setting, so the buffer always applies.
+
 ## Closed: major start spacing
 
 `START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`
