@@ -423,6 +423,74 @@ fn a_race_near_its_threshold_all_but_settles_the_game() {
     assert!((total(&racing, |seat| seat.now) - 1.0).abs() < 1e-9);
 }
 
+/// The Science meter reads nothing until the first launch, so before then the
+/// road to that victory is the tech lead, and it counts only while Science can
+/// still end the game.
+#[test]
+fn a_tech_lead_is_the_road_to_science() {
+    let mut game = even_table(4, "prince", &[]);
+    for pid in 0..4 {
+        found_capital(&mut game, pid);
+    }
+    game.turn = 120;
+    let techs: Vec<_> = game.rules.techs.keys().take(24).cloned().collect();
+    game.players[1].techs.extend(techs);
+    let science_open = table(&game, flat);
+    assert_eq!(
+        game.victory_races(1, 0).science,
+        0.0,
+        "no launch yet, so the meter cannot see it"
+    );
+    game.victory_conditions.science = false;
+    let science_closed = table(&game, flat);
+    assert!(
+        science_open[&1].now > science_closed[&1].now,
+        "with Science open the tech lead is worth more: {} vs {}",
+        science_open[&1].now,
+        science_closed[&1].now
+    );
+    assert!((total(&science_open, |seat| seat.now) - 1.0).abs() < 1e-9);
+}
+
+/// A banked lead outranks a bigger reading on a race that can be taken back:
+/// 55% of the Diplomatic race is further from a win than 45% of the Science one.
+#[test]
+fn a_half_finished_contested_race_counts_for_less_than_its_meter() {
+    let mut game = even_table(4, "prince", &[]);
+    for pid in 0..4 {
+        found_capital(&mut game, pid);
+    }
+    game.turn = 150;
+    game.players[0].dvp = 11;
+    for project in ["launch_earth_satellite", "launch_moon_landing"] {
+        game.players[1].science_projects.insert(project.to_string());
+    }
+    let odds = table(&game, flat);
+    assert!(
+        odds[&0].race_pct > odds[&1].race_pct,
+        "the meters still read as they did: {} vs {}",
+        odds[&0].race_pct,
+        odds[&1].race_pct
+    );
+    assert!(
+        odds[&1].now > odds[&0].now,
+        "but the banked race is the likelier win: {} vs {}",
+        odds[&1].now,
+        odds[&0].now
+    );
+}
+
+/// Holding your own capital is where every seat starts. It is not a sixth of a
+/// Domination victory, and finishing the race must still read as finished.
+#[test]
+fn the_share_every_seat_holds_for_free_is_not_progress() {
+    assert_eq!(beyond_free_share(25.0, 25.0), 0.0);
+    assert_eq!(beyond_free_share(10.0, 25.0), 0.0, "a lost capital is not negative");
+    assert!((beyond_free_share(50.0, 25.0) - 100.0 / 3.0).abs() < 1e-9);
+    assert_eq!(beyond_free_share(100.0, 25.0), 100.0);
+    assert_eq!(beyond_free_share(40.0, 100.0), 40.0, "no share left to remove");
+}
+
 /// The same lead is worth more with less clock left to overturn it.
 #[test]
 fn the_same_lead_is_worth_more_late() {
