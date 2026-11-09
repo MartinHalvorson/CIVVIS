@@ -642,7 +642,7 @@ Fifty-four rows, in five groups that need five different decisions.
 | group | rows | what it needs |
 |---|---:|---|
 | Great Person units | 9 | a decision, not content: CIVVIS models Great People as `data/great_people.json` entries with charges, not as map units, so `UNIT_GREAT_GENERAL` and its eight siblings have no `units.json` shape to take. Owned by the Great People roster, not by `units.json`. |
-| Barbarian-only units | 2 | a roster flag. `barbarian_horseman` (Combat 20, 3 Movement, cost 40) and `barbarian_horse_archer` (Combat 10, Ranged 15, Range 1, 3 Movement, cost 35) are the horse camps' raiders. `Game::barbarian_unit_pool` selects on `spec.buildable && spec.unique_to.is_none()`, so a unit no major can build is excluded from the pool that is supposed to contain it. Add a `barbarian_only` field to `UnitSpec` and admit it in both `barbarian_unit_pool` and `barbarian_naval_unit_pool`. ⚠ This changes what every camp spawns, so it moves every recorded barbarian screen. |
+| Barbarian-only units | 2 | closed. `barbarian_horseman` (Combat 20, 3 Movement, cost 40) and `barbarian_horse_archer` (Combat 10, Ranged 15, Range 1, 3 Movement, cost 35) are raised by horse camps, see "Closed: Barbarian camps belong to their tribes". ⚠ That changed what every camp spawns, so barbarian screens recorded before it do not compare. |
 | Alternate-leader uniques | 6 | leader-gated content. The Hetairoi (Alexander), Longship (Hardrada), Black Army (Matthias Corvinus), Janissary (Suleiman), Rough Rider (Teddy Roosevelt) and Redcoat (Victoria) hang off a `LeaderTraits` row, not a `CivilizationTraits` one. `unique_to` names a civilization, so these need a leader-scoped gate first. |
 | Civilization uniques, civ shipped | 36 | ordinary content work, and the largest reachable block. Each needs a `units.json` row with `unique_to` and `replaces`, its numbers from `Units`, and its ability expressed with a **live** effect key. ⚠ The ability is the whole risk: a unique unit added with correct stats and a silent ability is a build option that does nothing. Check the key against the ninety live promotion/unit effect keys before adding the row, and ship a test that the effect fires. |
 | Unresolved trait | 1 | `babylonian_sabum_kibittum` hangs off a trait that does not resolve to a plain `CivilizationTraits` row, so which gate it needs has to be settled before it is modelled. |
@@ -920,6 +920,38 @@ the Loyalty entry describes two penalty steps (below 75, below 25) where
 gives Ecstatic a +10% yield bonus where `Happinesses.NonFoodYieldModifier`
 ships +20. Both readings were used to "correct" already-correct engine code.
 Cite a table and a column, not a sentence.
+
+## Closed: Barbarian camps belong to their tribes
+
+`Base/Assets/Gameplay/Data/Barbarians.xml` ships three tribes: `TRIBE_NAVAL`
+(`IsCoastal`), `TRIBE_CAVALRY` (`RequiredResource="RESOURCE_HORSES"
+ResourceRange="3"`) and `TRIBE_MELEE`. Each names the unit class it raises per
+role in `MeleeTag`, `RangedTag` and `ScoutTag`. CIVVIS had one pool of every
+land unit and one of every ship, so horse camps did not exist and a foot camp
+could raise Heavy Chariots. `Game::barbarian_camp_tribe` and
+`barbarian_tribe_pool` now apply the rows.
+
+Measured on the 45 newest live games on 2026-11-09, 1,186 Barbarian units, by
+the camp within 6 tiles of each unit's first sighting:
+
+| | camp with Horses within 3 | camp without |
+|---|---:|---:|
+| horse units | 27 | 2 |
+| foot units | 3 | 287 |
+
+Horses count only once revealed, which is the likely source of the few
+disagreements. Heavy cavalry was 1 of the 1,186. All 113 camps seen were clear
+of resources, on open ground or on the Forest, Jungle, Marsh and Floodplains
+that `Improvement_ValidFeatures` allows, so camp placement now requires both.
+
+Still not modelled, because the rules live in the compiled game:
+
+- `TurnsToWarriorSpawn` (10 naval, 15 melee, 25 cavalry). A CIVVIS camp raises
+  nothing until its Scout reports.
+- Boldness (`BARBARIAN_BOLDNESS_*`, `RaidingBoldness` 10, `CityAttackBoldness`
+  25), and with it the *Attack* bands of `BarbarianAttackForces` and the
+  `Barbarian City Assault` operation. Rare live: 5 siege units and 3 Battering
+  Rams among the 1,186.
 
 ## Resolved: buying a tile with Gold
 
