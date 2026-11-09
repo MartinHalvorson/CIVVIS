@@ -39,6 +39,7 @@ fn seat_board(target: VictoryTarget, pillaged: bool) -> (Game, AdvancedAi, u32, 
     let tile = game.map.tiles.get_mut(&site).unwrap();
     tile.district = Some(crate::name!("holy_site"));
     tile.pillaged = pillaged;
+    game.players[0].techs.insert(crate::name!("astrology"));
     game.current = 0;
     game.turn = 20;
     let mut ai = AdvancedAi::targeting(target);
