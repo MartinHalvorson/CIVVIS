@@ -103,6 +103,8 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// See `advanced/religion_seat_reformed_church.rs`.
+        religion_seat_reaches_reformed_church => enable_religion_seat_reaches_reformed_church, disable_religion_seat_reaches_reformed_church;
         /// See `advanced/religion_seat_flips_the_cheapest.rs`.
         religion_seat_flips_the_cheapest => enable_religion_seat_flips_the_cheapest, disable_religion_seat_flips_the_cheapest;
         /// See `advanced/religion_seat_fields_apostles.rs`.

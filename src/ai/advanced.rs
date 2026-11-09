@@ -8364,6 +8364,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-reaches-reformed-church`: a Religion-target founder
+    /// beelines Reformed Church after Theology. See
+    /// `advanced/religion_seat_reformed_church.rs`. Off by default.
+    religion_seat_reaches_reformed_church: bool,
     /// `religion-seat-flips-the-cheapest`: a Religion-target founder's
     /// spreaders go where a charge buys the most of the victory. See
     /// `advanced/religion_seat_flips_the_cheapest.rs`. Off by default.
@@ -26234,6 +26238,9 @@ mod religion_seat_fields_apostles;
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+/// `religion-seat-reaches-reformed-church`: see
+/// `advanced/religion_seat_reformed_church.rs`.
+mod religion_seat_reformed_church;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout

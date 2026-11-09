@@ -823,7 +823,9 @@ fn a_launched_satellite_crosses_a_flat_board_as_a_ground_track() {
     // and the flat board draw the same launch rather than two of them.
     assert!(INDEX.contains("function skyOrbit(player) {"));
     assert!(INDEX.contains("const SKY_SATELLITE_ALTITUDE_SCALE = 1.7;"));
-    assert!(INDEX.contains("const {inclination, node, phase, pace} = skyOrbit(player);"));
+    assert!(INDEX.contains(
+        "function skySatelliteOrbit(player, index, radius, elements = skyOrbit(player)) {"
+    ));
     assert!(INDEX.contains("const orbit = skyOrbit(player);"));
     // The ground track itself: the orbit's own latitude and longitude, less
     // the turn the world made under it.
@@ -901,7 +903,6 @@ fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
     assert!(index.contains("function queueSkyLaunches(prev, next"));
     assert!(index.contains("if (!SHOW_ROCKET_ANIMATIONS || !prev || !next"));
     assert!(index.contains("function drawSkyLaunches(crews, placements"));
-    assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, 1, fade);"));
     assert!(index.contains("function flatLaunchRoute(launch, player)"));
     assert!(index.contains("function drawFlatLaunches(now)"));
     assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel, fade);"));
@@ -987,24 +988,23 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
         .split_once("function drawSkyCaption(")
         .unwrap()
         .0;
-    assert!(painter.contains("const film = place ? skyLaunchFilmRoute(skyLaunchFilm("));
+    assert!(painter.contains("const film = skyGlobeFlight("));
     assert!(painter.contains("const at = pointAt(progress);"));
-    assert!(app.contains(
-        "pointAt:progress => skyLaunchPoint(film.start, film.end, progress, bend, ease)"
-    ));
+    assert!(app.contains("const film = skyLaunchFilm(start,"));
     assert!(
         !painter.contains("skyOnStage("),
         "the film is already fitted to the stage; culling it again drops its ending"
     );
-    // Neither ring may be drawn at a point where the frame merely cut the route.
-    assert!(painter.contains("progress < .22 && !film.entering"));
+    // Neither the ignition nor the arrival may be drawn at a point where the
+    // frame merely cut the route.
+    assert!(painter.contains("progress < .3 && !film.entering"));
     assert!(painter.contains("progress > .82 && !film.leaving"));
 
     let film = app
         .split_once("function skyLaunchFilm(")
         .unwrap()
         .1
-        .split_once("function skyLaunchEase(")
+        .split_once("function skyRocketGeometry(")
         .unwrap()
         .0;
     // A route wholly in the picture keeps its true endpoints however short it
@@ -1019,47 +1019,74 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
 fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
     let app = include_str!("../../web/assets/app.js");
 
-    // One label, painted by both maps. The old mission-only text is gone.
-    assert!(app.contains("return `${civName(launch.playerId)} ${goal} launch`.toUpperCase();"));
-    assert_eq!(
-        app.matches("drawSkyLaunchLabel(launch, at.x, at.y").count(),
-        2
-    );
+    // One label, painted by every map. The old mission-only text is gone.
+    assert!(app.contains("return `${civName(launch.playerId)} ${goal}`.toUpperCase();"));
+    assert!(app.contains("drawSkyLaunchLabel(launch, at.x, at.y"));
     assert!(!app.contains("\"EXOPLANET LAUNCH\""));
 
     assert!(
         app.contains("satellite:{project:SKY_CHAIN.satellite, duration:3200, rocket:\"orbital\"}")
     );
 
-    // The point aimed at reaches the orbit's own rate exactly at the end, while
-    // the blend from the pad flattens out, so the velocity carries over.
+    // The range flown reaches the orbit's own rate exactly at the end, while
+    // the height has already levelled off, so the velocity carries over.
     let ascent = app
-        .split_once("function skySatelliteAscent(")
+        .split_once("function skySatelliteClimb(")
         .unwrap()
         .1
-        .split_once("function skySatelliteInsertion(")
+        .split_once("function skySatellitePlan(")
         .unwrap()
         .0;
-    assert!(ascent.contains("endAngle - sweep * (1 - p) * p * p"));
-    assert!(ascent.contains("p * p * (3 - 2 * p)"));
+    assert!(ascent.contains("const early = 3 * range - sweep, late = sweep - 2 * range;"));
+    assert!(ascent.contains("from + early * p * p + late * p * p * p"));
 
-    // The insertion moves the craft along its orbit and nothing else, and the
-    // adjustment belongs to the world it was made in.
-    assert!(app
-        .contains("phase:6.283 * hash2(player.id, 7) + (anim.skyOrbitTrims.get(player.id) || 0),"));
-    assert!(app.contains("anim.skyOrbitTrims.clear();"));
+    // The orbit a launch settles belongs to the world it was flown in.
+    assert!(app.contains("...anim.skySettledOrbits.get(player.id),"));
+    assert!(app.contains("anim.skySettledOrbits.clear();"));
 
-    // Both maps hold the craft back while its rocket flies, and fade the rocket
-    // over the same stretch, so neither is ever missing or doubled.
+    // Both maps hold the craft back while its rocket flies, and the rocket
+    // fades over the same stretch, so neither is ever missing or doubled.
     assert!(app.contains("deployed:skySatelliteDeployed(player.id, now)"));
     assert!(app.contains("deployed = skySatelliteDeployed(player.id, now);"));
-    assert_eq!(
-        app.matches(
-            "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1"
-        )
-        .count(),
-        2
+    assert!(app.contains(
+        "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1"
+    ));
+}
+
+/// A launch is a flight through the world rather than a line drawn on the
+/// picture: it leaves the real Spaceport, goes east the way the planet turns,
+/// and is hidden by the planet for as long as the planet is in the way. Whoever
+/// is watching still gets to see it, from any camera.
+#[test]
+fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
+    let app = include_str!("../../web/assets/app.js");
+
+    // From the pad, and east.
+    assert!(
+        app.contains("const cell = launch.originPos && PLANET?.cells.get(key(launch.originPos));")
     );
+    assert!(app.contains("across > 1e-6 ? [-pad[1] / across, pad[0] / across, 0] : [1, 0, 0]"));
+    assert!(app.contains("const bend = -east * (.34 + order * .08);"));
+
+    // A turning world is planned for, and the route is in its frame.
+    assert!(app.contains("camera.longitude - 2 * Math.PI * ms / WORLD_SPIN_PERIOD_MS"));
+
+    // A satellite's orbit is swung round to pass over the pad it went up from.
+    assert!(app.contains(
+        "Math.atan2(pad[1], pad[0]) -\n      Math.atan2(Math.sin(from) * Math.cos(inclination), Math.cos(from));"
+    ));
+
+    // The planet hides what is behind it, cutting a rocket at the limb.
+    assert!(
+        app.contains("point.z < 0 &&\n    Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r")
+    );
+    assert!(app.contains("if (limb && at.z < 0) {"));
+
+    // Nobody misses one: the hidden part of a flight is hurried through, a
+    // launch nowhere in the picture crosses it, and a chart still shows them.
+    assert!(app.contains("else launch.emerges = step / 40;"));
+    assert!(app.contains("launch.crossing = true;"));
+    assert!(app.contains("if (camera.chart) drawChartLaunches(camera, radius, centerX, centerY);"));
 }
 
 #[test]
