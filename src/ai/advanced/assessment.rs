@@ -465,6 +465,17 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // LOCAL EXPERIMENT ONLY (never pushed): a fixed city target for the
+        // measured seat, read from the environment, so one binary can play
+        // every arm of a target sweep. Rival chairs (which carry a pace) keep
+        // their own curve.
+        let desired_cities = match std::env::var("CIVVIS_EXPERIMENT_CITY_TARGET")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            Some(n) if self.rival_city_pace.is_none() => n.max(cities.len()),
+            _ => desired_cities,
+        };
         // `rival-pace`: a calibrated rival chair settles to the live field's
         // curve, last so that no widening above can lift it back. See
         // `advanced/rival_pace.rs`.
