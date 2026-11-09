@@ -14483,6 +14483,7 @@ fn native_apostle_choices_replace_the_simulated_offer() {
     mirror.sync(&snapshot, &state, 0);
     assert!(mirror.game.available_promotions(uid).is_empty());
     assert!(!mirror.game.promotion_pending(uid));
+}
 
 /// A Guru's spread charges read 0 on the host, and its heals are a separate
 /// pool. All 21 live Gurus of 2026-11-09 therefore mirrored as empty and none
@@ -14541,7 +14542,6 @@ fn a_guru_reads_its_heal_charges_and_can_heal() {
     mirror.sync(&snapshot, &state, 0);
     assert_eq!(mirror.game.units[&uid].charges, 0);
     assert!(!can_heal(&mirror), "a spent Guru has nothing to heal with");
-||||||| 90a32a32ac
 }
 
 #[test]
