@@ -25579,6 +25579,9 @@ impl AdvancedAi {
             self.military_faith_spending_above(g, pid, &plan, reserve);
         }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
+        // `religion-seat-fields-apostles`: a positive saving decision below
+        // reaches the later city governor, and expires before the next pass.
+        self.base.bank_faith_for_apostle = false;
         if self.victory_planning && g.victory_conditions.religious {
             let committed =
                 plan.strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid);

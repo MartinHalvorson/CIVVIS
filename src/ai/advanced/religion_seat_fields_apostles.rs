@@ -27,6 +27,8 @@
 //! - while an Apostle comes next and a city of ours could field one, holds the
 //!   Faith until the Apostle is payable. Worship buildings wait on the same
 //!   reserve.
+//! When this pass saves for an Apostle, the later routine city governor's
+//! Missionary purchase respects the same bank.
 //!
 //! A city of ours losing its faith, a rival's match point and the Inquisition
 //! all still spend at once. Before a Temple stands nothing is held, so the
