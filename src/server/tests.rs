@@ -6349,6 +6349,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "function bumpSimulationVictory(table, victory) {",
         "bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));",
         "viewButton(\"civs\") + viewButton(\"strategies\") + viewButton(\"victories\")",
+        // Best record first: win rate, then the most wins at that rate.
+        ".sort(compareSimulationRecords)",
+        "return b.w * aGames - a.w * bGames\n    || b.w - a.w\n",
+        // A running simulation must not send the ledger back to its top.
+        "if (!fresh?.isEqualNode(live)) return false;",
+        "if (!repaintBesideArenaStats(victoryHud, overview)) {",
+        "if (statsBody) statsBody.scrollTop = statsScroll;",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(arena_stats_contract),
