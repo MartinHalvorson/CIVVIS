@@ -65,6 +65,13 @@
 //! adjacent to the Settler — the one whose zone of control holds it — is
 //! preferred.
 //!
+//! Ranged guards also shoot military units at war with their owner: the shot
+//! leaves the guard beside its Settler. In Native Deity Pericles Culture
+//! `civvis-20261109T073331Z`, the Barbarian-only target filter held Athens's
+//! Archer beside a sheltered Settler throughout the Indian siege. Removing
+//! only that Settler from the captured turn-33 input released a legal shot.
+//! Major-war melee attacks keep their ordinary planner; they can leave the post.
+//!
 //! The same operator-armed `siege-preempts-the-queue` treatment also exposes
 //! the existing major-war city handoff to the live bridge when the current
 //! battlefront names a threatened city. A visible hostile with a legal
@@ -400,7 +407,8 @@ impl AdvancedAi {
     }
 
     /// `guard-breaks-the-pin`: the guard standing on its Settler's tile
-    /// strikes a barbarian unit in reach when the exchange is worth it.
+    /// strikes a Barbarian, or shoots another wartime military unit, when
+    /// the exchange is worth it. A ranged shot keeps the pair stacked.
     /// `true` when a blow was struck (the guard's turn is spent).
     pub(super) fn guard_breaks_the_pin(
         &mut self,
@@ -412,9 +420,6 @@ impl AdvancedAi {
         if !self.guard_breaks_the_pin {
             return false;
         }
-        let Some(barb) = g.barb_pid else {
-            return false;
-        };
         let Some(unit) = g.units.get(&uid).cloned() else {
             return false;
         };
@@ -439,7 +444,7 @@ impl AdvancedAi {
             .raiders_covering(g, settler_pos);
         let mut best: Option<(f64, Pos, bool, String)> = None;
         for raider in g.units.values().filter(|raider| {
-            raider.owner == barb
+            (g.barb_pid == Some(raider.owner) || (ranged && g.is_at_war(pid, raider.owner)))
                 && g.rules.units[raider.kind].class == "military"
                 && (1..=range).contains(&g.wdist(raider.pos, unit.pos))
         }) {
@@ -506,7 +511,7 @@ mod tests {
     use crate::ai::advanced::{GrandStrategy, StrategicPlan};
 
     /// Two founded capitals, no units anywhere, no camps, player 0 to move.
-    fn siege_board(seed: u64) -> (Game, u32, Pos) {
+    pub(super) fn siege_board(seed: u64) -> (Game, u32, Pos) {
         let mut game = Game::new_full(2, 30, 20, seed, 120, 0, true);
         for player in 0..2 {
             let settler = game
@@ -529,7 +534,7 @@ mod tests {
     }
 
     /// Open land tiles exactly `distance` from `home`, in a stable order.
-    fn open_ring(game: &Game, home: Pos, distance: i32) -> Vec<Pos> {
+    pub(super) fn open_ring(game: &Game, home: Pos, distance: i32) -> Vec<Pos> {
         let mut ring: Vec<Pos> = game
             .map
             .tiles
@@ -838,3 +843,7 @@ mod tests {
         assert_eq!(game.units[&raider].hp, 100);
     }
 }
+
+#[cfg(test)]
+#[path = "siege_response/major_guard_tests.rs"]
+mod major_guard_tests;
