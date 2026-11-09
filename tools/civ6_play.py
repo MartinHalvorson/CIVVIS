@@ -2559,6 +2559,10 @@ def _menu_label_matches(observed: str, wanted: str) -> bool:
 
 def leader_display_name(leader: str) -> str:
     """Resolve a Firaxis leader type to the label CIVVIS expects on the picker."""
+    # The shipped English picker includes the regnal number; the Firaxis
+    # type omits it (Indonesia_Khmer_ConfigText.xml, LOC_LEADER_JAYAVARMAN_NAME).
+    if leader == "LEADER_JAYAVARMAN":
+        return "Jayavarman VII"
     requested = _normalized_label(leader.removeprefix("LEADER_"))
     try:
         roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())

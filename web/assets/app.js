@@ -18766,13 +18766,93 @@ function skyLaunchEnd(launch, player, place, crews,
           y:place.y - dy / span * place.r * .82};
 }
 
-function skyLaunchPoint(start, end, progress, bend) {
-  const eased = easeIO(Math.max(0, Math.min(1, progress)));
+function skyLaunchPoint(start, end, progress, bend, ease = easeIO) {
+  const eased = ease(Math.max(0, Math.min(1, progress)));
   const dx = end.x - start.x, dy = end.y - start.y;
   const span = Math.hypot(dx, dy) || 1;
   const arc = Math.min(span * .18, 46) * Math.sin(Math.PI * eased) * bend;
   return {x:start.x + dx * eased - dy / span * arc,
           y:start.y + dy * eased + dx / span * arc};
+}
+
+// How much of the straight line from `a` to `b` lies inside a box, as the pair
+// of fractions along it where it goes in and comes out. Null when it misses.
+function skyLineSpanInBox(a, b, box) {
+  let enter = 0, leave = 1;
+  for (const [origin, delta, low, high] of [[a.x, b.x - a.x, box.left, box.right],
+                                            [a.y, b.y - a.y, box.top, box.bottom]]) {
+    if (!delta) {
+      if (origin < low || origin > high) return null;
+      continue;
+    }
+    const first = (low - origin) / delta, second = (high - origin) / delta;
+    enter = Math.max(enter, Math.min(first, second));
+    leave = Math.min(leave, Math.max(first, second));
+    if (enter >= leave) return null;
+  }
+  return [enter, leave];
+}
+
+// The longest stretch of a line the viewer can see. `margin` carries the whole
+// rocket past the edge of the frame or under a panel before the stretch ends.
+function skyLaunchVisibleStretch(start, end, margin) {
+  const stage = skyLineSpanInBox(start, end,
+    {left:-margin, top:-margin, right:MAPW + margin, bottom:MAPH + margin});
+  if (!stage) return null;
+  let open = [stage];
+  for (const box of skyWidgetBoxes()) {
+    const inset = Math.min(margin, (box.right - box.left) / 2, (box.bottom - box.top) / 2);
+    const hidden = skyLineSpanInBox(start, end, {
+      left:box.left + inset, top:box.top + inset,
+      right:box.right - inset, bottom:box.bottom - inset,
+    });
+    if (!hidden) continue;
+    open = open.flatMap(([from, to]) =>
+      [[from, Math.min(to, hidden[0])], [Math.max(from, hidden[1]), to]])
+      .filter(([from, to]) => to > from);
+  }
+  if (!open.length) return null;
+  const [from, to] = open.reduce((best, span) =>
+    span[1] - span[0] > best[1] - best[0] ? span : best);
+  const dx = end.x - start.x, dy = end.y - start.y;
+  return {
+    start:{x:start.x + dx * from, y:start.y + dy * from},
+    end:{x:start.x + dx * to, y:start.y + dy * to},
+    entering:from > 0, leaving:to < 1,
+    pixels:(to - from) * Math.hypot(dx, dy),
+  };
+}
+
+// What a launch actually shows. The true route is not something the stage can
+// hold: with the Earth filling the frame the Moon is some twenty thousand
+// pixels away and Mars is millions, so a rocket spending its film on that line
+// was out of the picture almost at once, and the next turn arriving a moment
+// later looked as though it had cut the launch off. The film is the part of the
+// route in view, played for its whole length; a route already entirely in the
+// picture comes back unchanged. Zoomed in past the limb, none of the route is
+// in view, so the rocket climbs over the ground toward the same destination.
+function skyLaunchFilm(start, end, margin, centerX, centerY) {
+  const seen = skyLaunchVisibleStretch(start, end, margin);
+  if (seen && (seen.pixels >= margin * 1.5 || (!seen.entering && !seen.leaving))) return seen;
+  if (centerX < 0 || centerX > MAPW || centerY < 0 || centerY > MAPH) return seen;
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const span = Math.hypot(dx, dy) || 1, reach = MAPW + MAPH + 2 * margin;
+  const climb = skyLaunchVisibleStretch({x:centerX, y:centerY},
+    {x:centerX + dx / span * reach, y:centerY + dy / span * reach}, margin);
+  if (!climb) return seen;
+  return {...climb, entering:false, pixels:climb.pixels / 2,
+          start:{x:(climb.start.x + climb.end.x) / 2,
+                 y:(climb.start.y + climb.end.y) / 2}};
+}
+
+// A rocket arriving at a world slows into it. One that is only leaving the
+// picture is still picking up speed as it goes, and one flying in from outside
+// the frame is already moving when it comes into view.
+function skyLaunchEase(film) {
+  if (film.entering && film.leaving) return progress => progress;
+  if (film.leaving) return progress => progress * progress;
+  if (film.entering) return progress => 1 - (1 - progress) * (1 - progress);
+  return easeIO;
 }
 
 // All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
@@ -18916,16 +18996,18 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
     const place = flight && placements.get(flight.body);
     if (!player || !place) continue;
     const progress = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
-    const start = skyLaunchStart(player, place, radius, centerX, centerY);
-    const end = skyLaunchEnd(launch, player, place, crews,
-                             radius, centerX, centerY);
-    const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
-    const at = skyLaunchPoint(start, end, progress, bend);
     const size = Math.max(3, Math.min(7, radius * .065));
     const rocket = skyRocketGeometry(flight.rocket, size);
-    if (!skyOnStage(at.x, at.y, Math.max(36, rocket.length))) continue;
-    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
-    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
+    const film = skyLaunchFilm(
+      skyLaunchStart(player, place, radius, centerX, centerY),
+      skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY),
+      Math.max(36, rocket.length), centerX, centerY);
+    if (!film) continue;
+    const {start, end} = film, ease = skyLaunchEase(film);
+    const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
+    const at = skyLaunchPoint(start, end, progress, bend, ease);
+    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend, ease);
+    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend, ease);
     const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
     const colour = pcol(player.id);
     cx.save();
@@ -18934,7 +19016,7 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
     cx.globalAlpha = .22; cx.strokeStyle = colour; cx.lineWidth = 1;
     cx.setLineDash([2, 6]); cx.beginPath();
     for (let step = 0; step <= 32; step++) {
-      const point = skyLaunchPoint(start, end, step / 32, bend);
+      const point = skyLaunchPoint(start, end, step / 32, bend, ease);
       step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
     }
     cx.stroke(); cx.setLineDash([]);
@@ -18942,18 +19024,19 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
     const travelledSteps = Math.max(1, Math.ceil(progress * 32));
     for (let step = 0; step <= travelledSteps; step++) {
       const point = skyLaunchPoint(start, end,
-        progress * step / travelledSteps, bend);
+        progress * step / travelledSteps, bend, ease);
       step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
     }
     cx.stroke();
 
     // Ignition expands off Earth's limb; landings answer it with a smaller
     // arrival ring. The expedition instead hands straight into its live lane.
-    if (progress < .22) {
+    // A film cut off by the frame shows neither at the cut.
+    if (progress < .22 && !film.entering) {
       cx.globalAlpha = (1 - progress / .22) * .65;
       cx.strokeStyle = colour; cx.lineWidth = 1.5;
       cx.beginPath(); cx.arc(start.x, start.y, size * (1 + progress * 12), 0, 7); cx.stroke();
-    } else if (launch.mission !== "expedition" && progress > .82) {
+    } else if (launch.mission !== "expedition" && progress > .82 && !film.leaving) {
       cx.globalAlpha = (progress - .82) / .18 * .52;
       cx.strokeStyle = colour; cx.lineWidth = 1.2;
       cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
