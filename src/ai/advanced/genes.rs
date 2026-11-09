@@ -3474,6 +3474,12 @@ pub const GENES: &[Gene] = &[
     // turns or never fell. A recovering melee unit near a falling city stays
     // in the fight. See `AdvancedAi::falling_city_calls`.
     Gene { tag: "falling-city-outranks-the-heal", field: "falling_city_outranks_the_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_outranks_the_heal, disable: AdvancedAi::disable_falling_city_outranks_the_heal },
+    // G433 (civvis-20261008T192219Z): four Bombers flew 90 of 100 sorties
+    // at one neutralised Nubian Encampment inside the wall sortie's guard
+    // radius while every siege target stood at 400 walls. The guard and
+    // reliever slots take only tiles a hostile soldier stands on. See
+    // `hostile_soldier_at` in `siege_train`.
+    Gene { tag: "wall-sortie-skips-the-encampment", field: "wall_sortie_skips_the_encampment", kind: Kind::OptIn, enable: AdvancedAi::enable_wall_sortie_skips_the_encampment, disable: AdvancedAi::disable_wall_sortie_skips_the_encampment },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

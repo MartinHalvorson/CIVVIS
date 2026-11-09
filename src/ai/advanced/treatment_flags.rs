@@ -7120,6 +7120,17 @@ impl AdvancedAi {
         self.falling_city_outranks_the_heal = false;
     }
 
+    /// Opt-in gene `wall-sortie-skips-the-encampment`; see
+    /// [`Self::wall_sortie_skips_the_encampment`].
+    pub fn enable_wall_sortie_skips_the_encampment(&mut self) {
+        self.wall_sortie_skips_the_encampment = true;
+    }
+
+    /// The twin of `enable_wall_sortie_skips_the_encampment`.
+    pub fn disable_wall_sortie_skips_the_encampment(&mut self) {
+        self.wall_sortie_skips_the_encampment = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

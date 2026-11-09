@@ -202,3 +202,58 @@ fn a_siege_whose_train_is_far_off_leaves_the_ordinary_choice() {
         })
     );
 }
+
+/// `wall-sortie-skips-the-encampment`: an enemy Encampment two tiles from a
+/// city of ours, with no soldier on it, takes the wall sortie's guard slot
+/// with the gene off; with it on, the bomber opens the besieged city's walls.
+#[test]
+fn a_bare_encampment_beside_our_city_does_not_outrank_the_walls_under_the_gene() {
+    for gene in [false, true] {
+        let (mut g, bomber, enemy, enemy_at, _) = bomber_over_a_siege(false);
+        let home = g.player_city_ids(0)[0];
+        let home_at = g.cities[&home].pos;
+        let base = g.units[&bomber].pos;
+        let range = g.rules.units["bomber"].range;
+        let camp = g
+            .wring(home_at, 2)
+            .into_iter()
+            .find(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    !g.rules.is_water(tile) && g.rules.is_passable(tile)
+                }) && g.units_at(*pos).is_empty()
+                    && g.city_at(*pos).is_none()
+                    && *pos != base
+                    && g.wdist(*pos, base) <= range
+            })
+            .expect("fixture: an Encampment tile beside our city");
+        {
+            let tile = g.map.tiles.get_mut(&camp).unwrap();
+            tile.district = Some(crate::name!("encampment"));
+            tile.owner_city = Some(enemy);
+        }
+        // Live G433's Encampment stood at 20 health and 0 walls, healing
+        // between strikes: each sortie read a little damage done.
+        g.cities.get_mut(&enemy).unwrap().encampment_hp = 20;
+        assert!(g.encampment_at(camp).is_some(), "fixture: the Encampment stands");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        besieging(&mut ai, &g, enemy);
+        ai.enable_bombers_open_the_siege_walls();
+        if gene {
+            ai.enable_wall_sortie_skips_the_encampment();
+        }
+        let legal = g.legal_doctrine_actions(0, bomber);
+        let camp_strike = Action::AirStrike { unit: bomber, target: camp };
+        assert!(legal.contains(&camp_strike), "fixture: the Encampment is a legal strike");
+        assert!(
+            ai.air_strike_value(&g, 0, bomber, camp, &plan()) > 0.0,
+            "fixture: the Encampment strike is worth something"
+        );
+        let choice = ai.siege_wall_sortie(&g, 0, bomber, &legal, &plan());
+        let expected = if gene { enemy_at } else { camp };
+        assert_eq!(
+            choice,
+            Some(Action::AirStrike { unit: bomber, target: expected }),
+            "gene {gene}"
+        );
+    }
+}
