@@ -14173,6 +14173,42 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
     assert!(EMBEDDED_INDEX.contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
 }
 
+/// The spin button means every world, not only the one units stand on: a
+/// body with its ground on the canvas turns at the Earth's pace, in the
+/// direction a drag to the right sends the ground.
+#[test]
+fn the_spin_turns_every_world_showing_its_ground() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    assert!(body_of("function advanceWorldSpin(dt)").contains("advanceSkyWorldSpin(dt);"));
+    let sky = body_of("function advanceSkyWorldSpin(dt)");
+    assert!(sky.contains("if (skyOnCanvas(place) && skyGroundFade(place) > 0)"));
+    assert!(sky.contains("skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;"));
+    // A world can now turn under an arrival, so the flight settles once
+    // whether it aims at the landing site or at the limb.
+    let end = body_of("function skyLaunchEnd(");
+    assert!(end.contains("const seat = launch.aimsAtLimb ? null : skyLandingSeats("));
+    assert!(end.contains("if (launch.seatSeen)"));
+    assert!(end.contains("launch.aimsAtLimb = true;"));
+}
+
+/// A launch crossing the stage has no depth. Reading one anyway made NaN,
+/// `|| 1` hid it, and the hull was stretched by its speed in pixels: a
+/// needle about six times a rocket's length going past the Moon.
+#[test]
+fn a_rocket_on_a_route_with_no_depth_keeps_its_own_length() {
+    let js = EMBEDDED_APP_JS;
+    assert!(js.contains("const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;"));
+    assert!(!js.contains("const depth = limb ? (ahead.z - behind.z) * limb.r : 0;"));
+}
+
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
 /// not make them navigable. Sixty-five notches is a distance nobody
 /// scrolls, and every one of them has to be aimed over empty space. So the
