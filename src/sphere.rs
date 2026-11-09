@@ -517,6 +517,34 @@ impl Sphere {
         RECENT_ROWS.with(|recent| recent.borrow_mut().distance(self, from, to))
     }
 
+    /// [`Sphere::distance`] for a caller that only needs to know how the answer
+    /// compares with `cap`: the exact distance while it is at most `cap`, and
+    /// `cap + 1` for anything farther, so `min` over many candidates and
+    /// comparisons against `cap` read exactly as they would on the true value.
+    ///
+    /// Most rules ask how far something is in order to discard everything more
+    /// than a few tiles away. Inside the precomputed ring that takes a binary
+    /// search; past it, the landmark bound settles nearly every remaining pair
+    /// without a row or a search.
+    pub fn distance_capped(&self, a: Pos, b: Pos, cap: i32) -> i32 {
+        let beyond = cap.saturating_add(1);
+        let (Some(from), Some(to)) = (self.index_of(a), self.index_of(b)) else {
+            return hex::wdistance(a, b, self.width).min(beyond);
+        };
+        if from == to {
+            return 0.min(beyond);
+        }
+        let ring = &self.ring_indices[from as usize];
+        if let Ok(at) = ring.binary_search_by_key(&to, |(index, _)| *index) {
+            return (ring[at].1 as i32).min(beyond);
+        }
+        // Not in the ring, so farther than `RING_RADIUS`.
+        if cap <= RING_RADIUS || self.lower_bound(from, to) as i32 > cap {
+            return beyond;
+        }
+        self.distance(a, b).min(beyond)
+    }
+
     /// One exact, caller-owned distance row for algorithms that deliberately
     /// compare a known anchor with most of the world. Unlike [`Sphere::distance`]
     /// this does not consume a slot in the shared opportunistic cache; callers
@@ -1578,6 +1606,31 @@ mod tests {
             let (from, to) = ((draw() % tiles) as u32, (draw() % tiles) as u32);
             let exact = globe.search_all(from)[to as usize];
             assert_eq!(globe.search_between(from, to), exact, "{from} to {to}");
+        }
+    }
+
+    #[test]
+    fn a_capped_distance_is_the_true_distance_up_to_the_cap() {
+        let globe = sphere(16);
+        let positions: Vec<Pos> = globe.positions().collect();
+        let tiles = positions.len() as u64;
+        let mut bits = 0x1234_5678_9ABC_DEF1_u64;
+        let mut draw = move || {
+            bits ^= bits << 13;
+            bits ^= bits >> 7;
+            bits ^= bits << 17;
+            bits
+        };
+        for _ in 0..1_500 {
+            let (from, to) = ((draw() % tiles) as usize, (draw() % tiles) as usize);
+            let true_distance = globe.search_all(from as u32)[to] as i32;
+            for cap in [0, 1, 2, 5, 6, 7, 9, 12, 40, 200] {
+                assert_eq!(
+                    globe.distance_capped(positions[from], positions[to], cap),
+                    true_distance.min(cap + 1),
+                    "{from} to {to} at cap {cap}"
+                );
+            }
         }
     }
 
