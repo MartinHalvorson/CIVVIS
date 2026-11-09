@@ -8386,6 +8386,11 @@ pub struct AdvancedAi {
     /// starts its Holy Site the turn Astrology allows it. See
     /// `advanced/religion_seat_founds_first.rs`. Off by default.
     religion_seat_founds_first: bool,
+    /// `religion-seat-earns-its-prophet`: a Religion-target seat with an open
+    /// Prophet race reserves a safe, idle Holy Site for Shrine or Prayers
+    /// before the opening book and expansion. See `religion_prophet_queue.rs`.
+    /// Off by default.
+    religion_seat_earns_its_prophet: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
@@ -26622,6 +26627,9 @@ impl AdvancedAi {
         // the city reaches the host's floor, whether or not the book is still
         // in play. See `opening_settler_waits`.
         self.base.play_pending_book_settler(g, pid);
+        // Keep a completed Holy Site in the still-open Prophet race before
+        // the book or expansion takes its next idle queue.
+        self.claim_religion_prophet_queue(g, pid, &plan);
         // `religion-seat-founds-first`: a Religion-target seat's Holy Site in
         // the first idle city, inside the book and before the third city.
         // Exact no-op while the gene is off. See
@@ -27170,6 +27178,7 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+mod religion_prophet_queue;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 mod religious_interception;

@@ -4598,6 +4598,8 @@ pub const GENES: &[Gene] = &[
     // third. A Religion-target seat's first idle queue after Astrology starts
     // it. See `advanced/religion_seat_founds_first.rs`.
     Gene { tag: "religion-seat-founds-first", field: "religion_seat_founds_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_founds_first, disable: AdvancedAi::disable_religion_seat_founds_first },
+    // A completed Holy Site keeps earning a Prophet before expansion. Unpriced, off.
+    Gene { tag: "religion-seat-earns-its-prophet", field: "religion_seat_earns_its_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_earns_its_prophet, disable: AdvancedAi::disable_religion_seat_earns_its_prophet },
     // Live Immortal 6-major seats 2026-10-31 denounced every rival with a
     // seen pad ("their space race is a science threat"): 111516Z all four at
     // t142-150 and again every 21 turns, 104757Z 41 times, 094146Z 49. Every

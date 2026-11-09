@@ -2119,6 +2119,9 @@ impl AdvancedAi {
         /// Opt-in gene `religion-seat-founds-first`; see
         /// [`Self::religion_seat_founds_first`].
         religion_seat_founds_first => enable_religion_seat_founds_first, disable_religion_seat_founds_first;
+        /// Opt-in gene `religion-seat-earns-its-prophet`; see
+        /// [`Self::religion_seat_earns_its_prophet`].
+        religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
         /// Opt-in gene `science-denounce-names-the-leader`; see
         /// [`Self::science_denounce_names_the_leader`].
         science_denounce_names_the_leader => enable_science_denounce_names_the_leader, disable_science_denounce_names_the_leader;
