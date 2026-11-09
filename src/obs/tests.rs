@@ -1020,7 +1020,7 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
     let app = include_str!("../../web/assets/app.js");
 
     // One label, painted by every map. The old mission-only text is gone.
-    assert!(app.contains("return `${civName(launch.playerId)} ${goal} launch`.toUpperCase();"));
+    assert!(app.contains("return `${civName(launch.playerId)} ${goal}`.toUpperCase();"));
     assert!(app.contains("drawSkyLaunchLabel(launch, at.x, at.y"));
     assert!(!app.contains("\"EXOPLANET LAUNCH\""));
 

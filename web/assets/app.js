@@ -16113,7 +16113,7 @@ function skySatelliteDeployed(playerId, now) {
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
   const goal = launch.mission === "expedition" ? "exoplanet" : launch.mission;
-  return `${civName(launch.playerId)} ${goal} launch`.toUpperCase();
+  return `${civName(launch.playerId)} ${goal}`.toUpperCase();
 }
 // `stage` is the frame in the caller's coordinates. A name long enough to say
 // Gran Colombia would otherwise lose its ends whenever a rocket flies near the
