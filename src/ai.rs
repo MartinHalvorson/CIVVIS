@@ -456,6 +456,7 @@ mod siege_support;
 /// The baseline controller's unit turn: `military_step`, tactics, retreat and
 /// healing, barbarians, exploration and villages. See `ai/unit_turn.rs`.
 mod unit_turn;
+mod walls_under_fire;
 /// `Weights`: the strategy weights steering `BasicAi`. See `ai/weights.rs`.
 mod weights;
 
@@ -6490,8 +6491,10 @@ impl BasicAi {
     /// defender. A siege piece belongs at a distant enemy wall and cannot
     /// hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        let bleeding =
-            self.garrison_under_fire && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+        let bleeding = self.garrison_under_fire
+            && g.cities.get(&cid).is_some_and(|city| {
+                city.hp < 200 || Self::walls_need_local_defense(g, pid, cid)
+            });
         if !bleeding {
             return None;
         }
