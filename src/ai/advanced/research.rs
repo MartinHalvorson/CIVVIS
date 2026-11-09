@@ -1133,9 +1133,9 @@ impl AdvancedAi {
                 // usefully precede the government's policy capacity"; tier 2
                 // is where two thirds of that capacity actually is, and no
                 // lane ever asks for it.
-                // See `advanced/religion_seat_reformed_church.rs`: ahead of the
-                // government ladder, which otherwise walks the seat to a later
-                // government and past the civic this lane needs.
+                // The Apostle treatment reaches Theology before a later
+                // government's prerequisites; its separate later-civic gene
+                // continues to Reformed Church. See `religion_seat_reformed_church`.
                 _ if self.religion_seat_civic_goal(g, pid).is_some() => {
                     self.religion_seat_civic_goal(g, pid)
                 }
