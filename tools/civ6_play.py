@@ -5834,6 +5834,9 @@ def attached_summary(args: argparse.Namespace, config: dict, state: dict,
         launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
         if launches:
             summary["launch_marks"] = launches
+        # And what a change can be graded on when wins are too rare to: the
+        # economy against the best rival, the religious race, and conquest.
+        summary.update(civ6_ladder.progress_marks(run_dir / "events.jsonl"))
         revisions = civ6_ladder.decider_revisions(run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
@@ -6154,6 +6157,7 @@ def _play(args: argparse.Namespace) -> int:
             launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
             if launches:
                 partial["launch_marks"] = launches
+            partial.update(civ6_ladder.progress_marks(run_dir / "events.jsonl"))
         except Exception:  # noqa: BLE001 - best-effort evidence at exit
             pass
         try:
@@ -7307,6 +7311,9 @@ def _play(args: argparse.Namespace) -> int:
         launches = civ6_ladder.launch_marks(run_dir / "events.jsonl")
         if launches:
             summary["launch_marks"] = launches
+        # And what a change can be graded on when wins are too rare to: the
+        # economy against the best rival, the religious race, and conquest.
+        summary.update(civ6_ladder.progress_marks(run_dir / "events.jsonl"))
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

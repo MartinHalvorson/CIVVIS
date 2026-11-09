@@ -1,3 +1,6 @@
+//! Independent combat state for a non-center defending district, kept by
+//! position so a city can hold more than one.
+
 use super::*;
 
 /// A non-center district's independent combat state. Encampment-family saves

@@ -1,3 +1,7 @@
+//! Snapshots which cities may start the empire's first Spaceport before
+//! speculative actions run, so a planned foundation the live bridge never
+//! places cannot authorize a slow first pad elsewhere.
+
 use super::*;
 
 impl AdvancedAi {

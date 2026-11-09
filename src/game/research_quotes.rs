@@ -1,3 +1,7 @@
+//! Research eligibility, prerequisites and remaining cost as the live host
+//! quotes them (`TechTree.lua`), used instead of the model's estimate when
+//! observed.
+
 use super::*;
 
 /// Native TechTree.lua:1112/1114 quotes, already adjusted by the host. Progress

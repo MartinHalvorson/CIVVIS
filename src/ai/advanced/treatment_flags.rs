@@ -80,6 +80,9 @@ impl AdvancedAi {
     // `tools/test_treatment_append_points.py` holds the block below to its size.
     toggles! {
         // ---- append: a-b --------------------------------------------
+        /// Opt-in gene `apostle-evangelizes-unspent`; see
+        /// `advanced/apostle_evangelizes_unspent.rs`.
+        apostle_evangelizes_unspent => enable_apostle_evangelizes_unspent, disable_apostle_evangelizes_unspent;
         /// `battle-solver`: see `advanced/battle_solver.rs`.
         battle_solver => enable_battle_solver, disable_battle_solver;
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that

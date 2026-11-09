@@ -114,8 +114,6 @@ impl Game {
             .map(|source| self.city_building_effect(source, "enemy_spy_level_reduction"))
             .sum::<f64>();
         levels += protected_by_consulate;
-        // Victor's Security Expert defends the city he governs.
-        levels += self.governor_effect(city.owner, city.id, "city_spy_defense");
         levels as i64
     }
 

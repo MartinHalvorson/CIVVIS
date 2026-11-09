@@ -1,3 +1,7 @@
+//! A founder's defence of its faith: the defensive Inquisition, the Faith
+//! reserved for it, and the Apostles and spreaders kept covering source
+//! cities.
+
 use super::*;
 
 impl AdvancedAi {

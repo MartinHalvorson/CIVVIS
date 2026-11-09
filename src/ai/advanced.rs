@@ -5132,6 +5132,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `apostle-evangelizes-unspent`: an Apostle that has spent a charge
+    /// stops asking to Evangelize. See
+    /// `advanced/apostle_evangelizes_unspent.rs`. Off by default.
+    apostle_evangelizes_unspent: bool,
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
     /// `battle-solver`: play every local fight forward and choose the turn
@@ -10783,6 +10787,8 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
+/// `apostle-evangelizes-unspent`: see `advanced/apostle_evangelizes_unspent.rs`.
+mod apostle_evangelizes_unspent;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.

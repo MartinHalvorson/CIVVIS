@@ -11,5 +11,30 @@
     "power_source_nuclear": "Descriptive label; see power_source_coal.",
     "ai_value": "Descriptive hint on nazca_line, not an effect: the engine values improvements from their yields, and no valuation reads a data-supplied score. Left in the data because the shipped database carries it.",
     "scenario_only": "Descriptive marker. All eleven carriers are already `unbuildable: true`, which is the gate that actually keeps them out of an ordinary game; see the note at src/rules.rs:3137."
+  },
+  "names": {
+      "cinnamon": "Zanzibar's two suzerain luxuries. They exist only as this grant, so data/resources.json has no row for them (Civ VI's RESOURCE_CINNAMON and RESOURCE_CLOVES are not placed on the map).",
+      "cloves": "See cinnamon.",
+      "unknown": "Sentinel terrain for a tile a hypothetical view has never seen. Not a ruleset row by design; player_view.rs writes it and the fog checks compare against it."
+  },
+  "effect_reads": {
+      "building_food": "Generic district yield arm: district_building_yields reads all six yields, and today only building_gold and building_science are shipped.",
+      "building_production": "See building_food.",
+      "building_culture": "See building_food.",
+      "building_faith": "See building_food.",
+      "citizen_faith": "Generic specialist yield arm beside citizen_food, citizen_science, citizen_culture and the rest; no shipped building pays Faith per specialist.",
+      "powered_faith": "Generic powered-building yield arm beside powered_science, powered_culture and the rest; no shipped building pays Faith when powered.",
+      "trade_food": "Trade-route yield family: read beside trade_gold and trade_production. No shipped card pays Food on every route. Runtime modifier attachments can still carry the key.",
+      "domestic_trade_gold": "See trade_food: the domestic slot of that family, pinned to zero by age_tests.rs.",
+      "international_trade_gold": "See trade_food: the international slot of that family.",
+      "international_trade_production": "See trade_food: the international slot of that family.",
+      "policy_trade_route_capacity": "See trade_food: pinned to zero by age_tests.rs. Route capacity ships through gov_effects and wonders.",
+      "spy_mission_time_pct": "Building slot of the policy key spy_time_pct; no shipped building shortens Spy missions.",
+      "unit_starting_xp": "Built-unit grant loop reads every building in the city; no shipped building grants flat starting XP. The percent keys (naval_unit_xp_pct and friends) are what ships.",
+      "empire_amenity": "Wonder amenity slot read beside amenity and regional_range; no shipped wonder pays amenities empire-wide this way.",
+      "empire_tile_appeal": "Sibling of empire_appeal, which is the key shipped wonders carry.",
+      "faith_tourism_after_conservation": "Sibling of tourism_after_conservation for a building whose Faith yield converts; no shipped building carries it.",
+      "military_promotion": "Fallback for modded named Great People, per the comment at the read; great_person_runtime_tests.rs pins it.",
+      "naval_promotion": "See military_promotion."
   }
 }

@@ -1,5 +1,7 @@
 # AI Development Guide
 
+⚠ Much of this guide describes the system as it stood before the gene screen, and parts of it name tools and modules that are gone. For how the AI works today start with [ARCHITECTURE.md](ARCHITECTURE.md), [GENE_SCREEN.md](GENE_SCREEN.md) and `python3 tools/codemap.py <words>`, which searches the code as it is now.
+
 ⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
 
 ⚠ `civvis tournament`, `civvis league`, `civvis arena` and `civvis rating` were removed in #2357 (2026-08-23) with the league and the Elo ledgers (`docs/closed/LEAGUE.md`, `docs/closed/RATING.md`). Their commands in this document are likewise the record, not instructions.
@@ -22,7 +24,6 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | city-state or barbarian | `BasicAi` |
 | human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
 | explicit fair-play arm | `AdvancedAi::fog_honest()` (opt-in; screened, not strength-promoted) |
-| `neural` / `policy` | `BasicAi` / champion-weight `AdvancedAi` fallback because no value net ships |
 | `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
 
 The shipped tree contains and embeds `data/evolved/best.json`; it contains no
@@ -32,12 +33,10 @@ auto`, seeds a mutable runtime roster from `data/league`, and excludes
 `league_only` entries from live seating. Without a league, the server uses
 stock `AdvancedAi` for every non-human major.
 
-There are seven concrete `Ai` implementations: `RandomAi`, `BasicAi`,
-`AdvancedAi`, `NeuralAi`, `StrategicAi`, `PolicyAi`, and
-`ProductionSearchAi`. They are not a linear strength ladder.
-`ProductionSearchAi` is a retained negative result, while the generic
-`Oracle<A>` wrapper is diagnostic-only and cannot be selected as a rated
-entrant.
+There are four concrete `Ai` implementations: `RandomAi`, `BasicAi`,
+`AdvancedAi`, and `StrategicAi`. They are not a linear strength ladder. The
+generic `Oracle<A>` wrapper is diagnostic-only and cannot be selected as a
+rated entrant.
 
 The real Civilization VI tooling does not transplant this controller whole.
 (`tools/civ6_strategy.py`, which exported the economic subset of a

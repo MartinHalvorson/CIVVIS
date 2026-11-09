@@ -567,36 +567,7 @@ impl Game {
         if self.congress_effect_active("world_religion", "A", religion) {
             strength += 10.0;
         }
-        if self
-            .map
-            .get(unit.pos)
-            .and_then(|tile| tile.owner_city)
-            .and_then(|cid| self.cities.get(&cid))
-            .is_some_and(|city| self.city_religion(city) == Some(religion))
-        {
-            strength += 5.0;
-        }
-        if self.wdisk(unit.pos, 1).into_iter().any(|position| {
-            let Some(tile) = self.map.get(position) else {
-                return false;
-            };
-            tile.district.is_some_and(|district| {
-                self.district_is_family(district, crate::name!("holy_site"))
-            }) && tile
-                .owner_city
-                .and_then(|cid| self.cities.get(&cid))
-                .is_some_and(|city| self.city_religion(city) == Some(religion))
-        }) {
-            strength += 5.0;
-        }
-        if self
-            .religion_founder(religion)
-            .and_then(|founder| self.players[founder].holy_city)
-            .and_then(|cid| self.cities.get(&cid))
-            .is_some_and(|city| city.owned_tiles.contains(&unit.pos))
-        {
-            strength += 15.0;
-        }
+        strength += self.theological_holy_ground(unit, religion);
         // The unit's own id never stands beside its own tile; the filter
         // matters only to a probe read off its tile (see
         // `theological_exchange_preview_with_defender_at`).
@@ -610,6 +581,43 @@ impl Game {
                         **id != unit.id && self.units[id].religion.as_deref() == Some(religion)
                     })
                     .count() as f64
+    }
+
+    /// The tile-bound part of [`Self::theological_strength`]: land of a city
+    /// of this faith, beside one of its Holy Sites, and its Holy City's land.
+    fn theological_holy_ground(&self, unit: &Unit, religion: &str) -> f64 {
+        let mut ground = 0.0;
+        if self
+            .map
+            .get(unit.pos)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|cid| self.cities.get(&cid))
+            .is_some_and(|city| self.city_religion(city) == Some(religion))
+        {
+            ground += 5.0;
+        }
+        if self.wdisk(unit.pos, 1).into_iter().any(|position| {
+            let Some(tile) = self.map.get(position) else {
+                return false;
+            };
+            tile.district.is_some_and(|district| {
+                self.district_is_family(district, crate::name!("holy_site"))
+            }) && tile
+                .owner_city
+                .and_then(|cid| self.cities.get(&cid))
+                .is_some_and(|city| self.city_religion(city) == Some(religion))
+        }) {
+            ground += 5.0;
+        }
+        if self
+            .religion_founder(religion)
+            .and_then(|founder| self.players[founder].holy_city)
+            .and_then(|cid| self.cities.get(&cid))
+            .is_some_and(|city| city.owned_tiles.contains(&unit.pos))
+        {
+            ground += 15.0;
+        }
+        ground
     }
 
     /// The exchange a `TheologicalAttack` from `uid` on `target` would resolve,
@@ -630,6 +638,10 @@ impl Game {
     /// host's own preview of 75 religious strikes on 2026-11-09 named "+4
     /// Combat Strength bonus due to difficulty" on 68 defenders and "+3" or
     /// "+6 Intel on opponent's movements" on 55.
+    ///
+    /// It also takes the attacker's Holy Ground back out: in 346 previews
+    /// from 2026-11-05 to 11-09 the term appears on 79 defenders and on no
+    /// attacker, including attackers standing on their own faith's land.
     pub(crate) fn theological_exchange_with_host_edge(
         &self,
         uid: u32,
@@ -664,8 +676,13 @@ impl Game {
                 0.0
             }
         };
+        let attacker_ground = if host_edge {
+            self.theological_holy_ground(attacker, &attacker_religion)
+        } else {
+            0.0
+        };
         let att = effective_strength(
-            self.theological_strength(attacker)
+            self.theological_strength(attacker) - attacker_ground
                 + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion)
                 + edge(attacker.owner, defender.owner),
             attacker.hp,

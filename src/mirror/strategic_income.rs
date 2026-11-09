@@ -1,3 +1,6 @@
+//! Reconciles the host's gross strategic-resource income; existing unit and
+//! power demand is charged by its own consumers.
+
 use super::*;
 
 /// Reconcile gross income, not net stockpile change: existing unit/power demand

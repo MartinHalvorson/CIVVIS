@@ -1,3 +1,7 @@
+//! Shared warning for research and production: a visible stronger land
+//! attacker within reach of an unwalled city, or of a walled original capital
+//! during a major war.
+
 use super::{
     AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget, IMMINENT_ATTACK_STRENGTH_RATIO,
 };
