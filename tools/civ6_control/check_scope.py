@@ -326,6 +326,25 @@ def slip_names(text: str) -> list[tuple[int, str]]:
     return [(line, name) for line, name in slips if name in all_locals]
 
 
+def duplicate_definitions(text: str) -> dict[str, list[int]]:
+    """Top-level functions assigned more than once, with their lines.
+
+    The last assignment wins when the file loads and Lua says nothing. Two
+    `CivvisBoard.adjacentPlots` with different return shapes left the move
+    fallback reading nil for every neighbour, in every game, for two months.
+    """
+    lines: dict[str, list[int]] = {}
+    for number, line in enumerate(strip_noise(text).split("\n"), 1):
+        if line[:1].isspace():
+            continue
+        match = re.match(r"function\s+([A-Za-z_][\w.:]*)\s*\(", line) or re.match(
+            r"([A-Za-z_][\w.]*)\s*=\s*function\b", line
+        )
+        if match:
+            lines.setdefault(match.group(1), []).append(number)
+    return {name: where for name, where in lines.items() if len(where) > 1}
+
+
 def check(path: pathlib.Path, show_globals: bool) -> int:
     text = path.read_text()
     slips, all_locals, globals_read = analyse(text)
@@ -339,6 +358,9 @@ def check(path: pathlib.Path, show_globals: bool) -> int:
             print(f"{path}:{line}: scope slip: '{name}' is a local elsewhere "
                   f"in this file but is not in scope here")
             findings += 1
+    for name, where in sorted(duplicate_definitions(text).items()):
+        print(f"{path}: '{name}' is defined {len(where)} times, at lines {where}; the last wins")
+        findings += 1
     if show_globals:
         unguarded = globals_read - all_locals - guarded_names(text)
         for name in sorted(unguarded):

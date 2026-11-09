@@ -941,6 +941,264 @@ def launch_mark_columns(summary: dict) -> dict:
     return {column: marks.get(column) for column in LAUNCH_COLUMNS}
 
 
+#: The turns `economy_marks` reads. At Deity the gap opens in the first fifty
+#: turns, before `BOOST_MARK_TURNS` first looks: 3 cities and 10 science against
+#: the best rival's 5 and 69 at t50 (80 games, 2026-11-08/09).
+ECONOMY_MARK_TURNS = (50, 75, 100, 150)
+
+#: The turns `religion_marks` and `conquest_marks` read, besides the last board.
+VICTORY_MARK_TURNS = (100, 150)
+
+#: How far past its mark a board may sit and still read as that mark. It covers
+#: a frame missing on the mark turn; it is short because a `-contN` segment
+#: opens mid-game, and "at or after" would report that segment's first board,
+#: at t137 say, as the empire at t50.
+MARK_TURN_WINDOW = 2
+
+#: The Campus and the two civilization replacements for it, as
+#: `civ6_race_audit.py` counts them.
+CAMPUS_DISTRICTS = frozenset(
+    {"DISTRICT_CAMPUS", "DISTRICT_SEOWON", "DISTRICT_OBSERVATORY"})
+
+#: Plot types that hold a district entry and are not a built specialty district.
+UNCOUNTED_DISTRICTS = frozenset({"DISTRICT_CITY_CENTER", "DISTRICT_WONDER"})
+
+#: The bands `religion_marks` counts landed spreads in: (first turn, last turn).
+SPREAD_BANDS = ((1, 50), (51, 100), (101, 150), (151, None))
+
+
+def _readable_rate(value) -> float | None:
+    """One per-turn host figure to a tenth, or None under `_readable_metric`'s
+    rule for what the host could not be asked."""
+    if _readable_metric(value) is None:
+        return None
+    return round(float(value), 1)
+
+
+def _boards_at(events_path: Path, marks: tuple[int, ...], field: str
+               ) -> tuple[dict[int, dict], dict | None]:
+    """The first board of each mark turn, and the run's last board.
+
+    `field` is the key whose presence says the mod exported this reading: a
+    `state` frame without it is not a board for this question. The first frame
+    of a turn is the opening board, the rule `tech_marks` follows; a mark no
+    frame fell near is simply absent (`MARK_TURN_WINDOW`).
+    """
+    first: dict[int, dict] = {}
+    last = None
+    for event in events_of(events_path):
+        if (not isinstance(event, dict) or event.get("kind") != "state"
+                or field not in event or not isinstance(event.get("turn"), int)):
+            continue
+        last = event
+        for mark in marks:
+            if mark <= event["turn"] <= mark + MARK_TURN_WINDOW:
+                first.setdefault(mark, event)
+    return first, last
+
+
+def _economy_reading(board: dict) -> dict:
+    """One mark's economy. Rival figures are the best per field, so they may
+    come from different rivals, and cover only the rivals this seat has met."""
+    cities = [city for city in board.get("cities") or [] if isinstance(city, dict)]
+    finished = [district.get("type")
+                for city in cities
+                for district in city.get("districts") or []
+                if isinstance(district, dict)
+                and district.get("complete") is not False
+                and district.get("type") not in UNCOUNTED_DISTRICTS]
+    stats = board.get("public_stats") or {}
+    routes = board.get("trade_routes")
+    rivals = [rival for rival in board.get("rivals") or [] if isinstance(rival, dict)]
+
+    def best(read) -> float | None:
+        known = [value for value in map(read, rivals) if value is not None]
+        return max(known) if known else None
+
+    return {
+        "cities": len(cities),
+        "population": _readable_metric(stats.get("population")),
+        "science": _readable_rate(board.get("science")),
+        "production": _readable_rate(stats.get("production")),
+        "districts": len(finished),
+        "campuses": sum(1 for kind in finished if kind in CAMPUS_DISTRICTS),
+        "trade_routes": len(routes) if isinstance(routes, list) else None,
+        "trade_capacity": _readable_metric(board.get("trade_capacity")),
+        # `public_stats`, not `rivals[].cities`: that list holds only the
+        # cities this seat has seen.
+        "rival_cities": best(lambda rival: _readable_metric(
+            (rival.get("public_stats") or {}).get("city_count"))),
+        "rival_population": best(lambda rival: _readable_metric(
+            (rival.get("public_stats") or {}).get("population"))),
+        "rival_science": best(lambda rival: _readable_rate(rival.get("science"))),
+        "rival_production": best(lambda rival: _readable_rate(
+            (rival.get("public_stats") or {}).get("production"))),
+    }
+
+
+def economy_marks(events_path: Path) -> dict | None:
+    """Our empire against the best rival's at t50, t75, t100 and t150.
+
+    ⭐ WHY THIS ROW EXISTS. A 1% win rate cannot grade a change, and every game
+    produces these numbers. Inside our own Deity games cities at t75 track
+    science at t100 (r = 0.69, 57 games) and that tracks techs at t150
+    (r = 0.88, 48 games), so the early marks are the ones a change can move and
+    a batch can read. Keys are strings, the shape the row has after JSON.
+
+    `None` when no frame carried `public_stats`, a mod predating that export.
+    """
+    boards, last = _boards_at(events_path, ECONOMY_MARK_TURNS, "public_stats")
+    if last is None:
+        return None
+    return {str(mark): _economy_reading(board) for mark, board in boards.items()}
+
+
+def _religion_reading(board: dict) -> dict:
+    """One board of the religious race, by the shipped screen's own test.
+
+    `rivals[].religion` is `GetReligionInMajorityOfCities`, what the religion
+    tab checks to mark a civilization converted (`WorldRankings.lua:2049`).
+    `rivals` is the living majors this seat has met, so `converted` can only be
+    read against it: a religious victory needs every major.
+    """
+    religion = board.get("founded_religion")
+    rivals = [rival for rival in board.get("rivals") or [] if isinstance(rival, dict)]
+    return {
+        "turn": board.get("turn"),
+        "rivals": len(rivals),
+        "converted": sum(1 for rival in rivals
+                         if religion and rival.get("religion") == religion),
+        "cities_following": _readable_metric(board.get("cities_following_religion")),
+    }
+
+
+def _spread_band(turn) -> str | None:
+    """The `SPREAD_BANDS` label a turn falls in, or None for an unreadable one."""
+    if isinstance(turn, bool) or not isinstance(turn, int):
+        return None
+    for first, last in SPREAD_BANDS:
+        if turn >= first and (last is None or turn <= last):
+            return f"{first}+" if last is None else f"{first}-{last}"
+    return None
+
+
+def religion_marks(events_path: Path) -> dict | None:
+    """How far our religion has got: the founding, each mark, the last board,
+    and how many spreads landed when.
+
+    ``{"religion": r, "founded_turn": t, "spreads": {"1-50": n, ...},
+    "at": {"100": {...}, "150": {...}}, "last": {...}}``.
+
+    `founded_turn` is None when this segment opened with the religion already
+    founded: a `-contN` board at t112 does not date a t18 founding. `spreads`
+    counts verified `SPREAD_RELIGION` orders.
+
+    `None` when no frame carried `cities_following_religion`, a mod predating
+    that export.
+    """
+    boards, last = _boards_at(
+        events_path, VICTORY_MARK_TURNS, "cities_following_religion")
+    if last is None:
+        return None
+    spreads = {_spread_band(first): 0 for first, _ in SPREAD_BANDS}
+    religion = founded_turn = first_turn = None
+    for event in events_of(events_path):
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") == "order_verified":
+            if event.get("verb") == "SPREAD_RELIGION":
+                band = _spread_band(event.get("turn"))
+                if band is not None:
+                    spreads[band] += 1
+        elif (event.get("kind") == "state" and religion is None
+                and isinstance(event.get("turn"), int)):
+            if first_turn is None:
+                first_turn = event["turn"]
+            if event.get("founded_religion"):
+                religion = event["founded_religion"]
+                founded_turn = event["turn"] if event["turn"] > first_turn else None
+    return {
+        "religion": religion,
+        "founded_turn": founded_turn,
+        "spreads": spreads,
+        "at": {str(mark): _religion_reading(board) for mark, board in boards.items()},
+        "last": _religion_reading(last),
+    }
+
+
+def _conquest_reading(board: dict, local_player: int, majors: set) -> dict:
+    """What one board shows us holding that someone else founded."""
+    taken = [city for city in board.get("cities") or []
+             if isinstance(city, dict)
+             and type(city.get("original_owner")) is int
+             and city["original_owner"] != local_player]
+    return {
+        "turn": board.get("turn"),
+        "capitals": sum(1 for city in taken
+                        if city.get("original_capital")
+                        and city["original_owner"] in majors),
+        "cities": len(taken),
+    }
+
+
+def conquest_marks(events_path: Path) -> dict | None:
+    """Rival original capitals we hold, and cities we hold that another player
+    founded, at t100, t150 and the last board.
+
+    A domination victory needs every major's original capital, so a city-state's
+    capital counts under `cities` and not `capitals`. Majors are the players
+    seen in `rivals` during the run, as `civ6_conquest` classifies them.
+
+    `None` without a `seat` event naming us or any board carrying `cities`.
+    """
+    boards, last = _boards_at(events_path, VICTORY_MARK_TURNS, "cities")
+    if last is None:
+        return None
+    local_player = None
+    majors: set = set()
+    for event in events_of(events_path):
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") == "seat" and type(event.get("local_player")) is int:
+            local_player = event["local_player"]
+        elif event.get("kind") == "state":
+            majors.update(rival.get("player") for rival in event.get("rivals") or []
+                          if isinstance(rival, dict))
+    if local_player is None:
+        return None
+    return {
+        "at": {str(mark): _conquest_reading(board, local_player, majors)
+               for mark, board in boards.items()},
+        "last": _conquest_reading(last, local_player, majors),
+    }
+
+
+#: The ledger fields `progress_marks` fills, each read by the function it names.
+PROGRESS_MARKS = (
+    ("economy_marks", economy_marks),
+    ("religion_marks", religion_marks),
+    ("conquest_marks", conquest_marks),
+)
+
+
+def progress_marks(events_path: Path) -> dict:
+    """The three progress readings of one run, for its summary and ledger row.
+
+    A reading that cannot be taken is left out. This is the one place that
+    swallows a failure: every path that writes a summary calls it, and a parser
+    surprise here would otherwise cost the game its ledger row.
+    """
+    marks = {}
+    for field, read in PROGRESS_MARKS:
+        try:
+            reading = read(events_path)
+        except Exception:  # noqa: BLE001 - evidence must never cost the row
+            continue
+        if reading:
+            marks[field] = reading
+    return marks
+
+
 def open_events(events_path: Path):
     """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
     if events_path.suffix == ".gz":
@@ -1680,6 +1938,11 @@ def entry_from(summary: dict) -> dict:
         # four launches before a rival wins at t213–228; this is how far the
         # seat got. See `launch_marks`.
         **launch_mark_columns(summary),
+        # ⭐ PROGRESS EVERY GAME PRODUCES: the economy against the best rival at
+        # t50-t150, the religious race and what we have conquered. Nested, as
+        # `combat` is: flat they would be some forty columns. `None` on a run
+        # that predates them. See `progress_marks`.
+        **{field: summary.get(field) for field, _ in PROGRESS_MARKS},
     }
 
 
