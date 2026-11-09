@@ -103,6 +103,12 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_builds_holy_sites => enable_religion_seat_builds_holy_sites, disable_religion_seat_builds_holy_sites;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_fields_apostles => enable_religion_seat_fields_apostles, disable_religion_seat_fields_apostles;
+        /// See `advanced/religion_seat_fields_apostles.rs`.
+        religion_seat_takes_the_faith_beliefs => enable_religion_seat_takes_the_faith_beliefs, disable_religion_seat_takes_the_faith_beliefs;
         /// Keep a committed Science launch or laser ahead of paused districts.
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.

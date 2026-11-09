@@ -1,0 +1,386 @@
+//! `religion-seat-fields-apostles`: a Religion-target founder on the offensive
+//! buys Apostles first and saves its Faith for them, and
+//! `religion-seat-takes-the-faith-beliefs`: it founds on the founder beliefs
+//! that pay Faith.
+//!
+//! **Why (live King, 2026-11-01).** civvis-20261101T071051Z, a Religion seat,
+//! held every city of its own and flipped no rival majority from about 49
+//! verified spreads. It lost 17 Missionaries, had no Apostle until t200 and
+//! fought no theological battle. Faith ran at 135 a turn. The host's purchase
+//! list shows only what the bank can pay for: London at t150 listed Missionary
+//! 110, Inquisitor 90 and Guru 120 with no Apostle at 189 Faith, then Apostle
+//! 240 at 258 Faith at t180. So `unit_purchase_cost` answers `None` until the
+//! price is banked, "Apostle first" falls through to a Missionary, and that
+//! purchase spends the bank the Apostle was waiting for.
+//!
+//! **Why an Apostle.** A Missionary carries 200 pressure a charge and removes
+//! 10% of rival pressure; an Apostle carries 220 and removes 25%, and it is the
+//! only unit that can clear the rival spreaders that kill Missionaries. Its
+//! promotions multiply a charge (Translator +200% in foreign lands).
+//!
+//! **What the corps gene does.** With the gene on, a Religion-target founder
+//! on the offensive:
+//! - raises the Apostle cap from 2 by one per six major-power cities not yet
+//!   following its faith, up to [`APOSTLE_CAP_CEILING`];
+//! - buys an Apostle first for the first two, then alternately with
+//!   Missionaries;
+//! - while an Apostle comes next and a city of ours could field one, holds the
+//!   Faith until the Apostle is payable. Worship buildings wait on the same
+//!   reserve.
+//!
+//! A city of ours losing its faith, a rival's match point and the Inquisition
+//! all still spend at once. Before a Temple stands nothing is held, so the
+//! early Missionaries that convert our own cities are unchanged.
+//!
+//! **What the belief gene does.** Live Deity founders take Pilgrimage in 102
+//! of 117 games and Lay Ministry in 114, while the shipped list tries Tithe
+//! first for every lane. A Religion-target seat tries Pilgrimage (Faith per
+//! following city, so the corps pays for itself as it converts), then Lay
+//! Ministry, then the shipped order.
+//!
+//! **What the Holy Site gene does.** `religious_production` builds one Holy
+//! Site and then only Shrines and Temples, so a founder at 7 cities earns 24
+//! Faith a turn at t100 in the Deity Khmer sim, against 45 for its rivals
+//! there and 102 live. Religious units can be bought only in a Holy Site city.
+//! With `religion-seat-builds-holy-sites` a founder of three or more cities
+//! claims one in its best idle city of two or more citizens, one a turn.
+//! Live Khmer Deity civvis-20261109T022744Z, the first Religion seat at that
+//! rung, founded at t32 but at t75 held one Holy Site in five cities, a Shrine
+//! and no Prasat 14 turns after Theology, and earned 8 Faith a turn: an idle
+//! queue never reached `religious_production`. So the gene also takes the
+//! head of a Holy Site city's queue for its Shrine and then its Temple, or the
+//! civilization's replacement, ahead of Districts and ordinary buildings, and
+//! buys either with Faith when the bank covers it.
+//!
+//! Off, or for a seat aiming elsewhere, nothing changes.
+
+use super::*;
+
+/// The Apostle cap's ceiling. Each carries three charges, so six are eighteen
+/// charges in the field, which covers the majorities of five rivals.
+const APOSTLE_CAP_CEILING: usize = 6;
+
+/// One more Apostle for this many major-power cities not yet following us.
+const CITIES_PER_APOSTLE: usize = 6;
+
+/// An Apostle's price against a Missionary's (`data/units.json`, 200 and 100),
+/// for a board where the host has not quoted an Apostle yet.
+const APOSTLE_PRICE_RATIO: f64 = 2.0;
+
+/// A Holy Site claim waits for this many cities, so the opening's Settlers
+/// keep their queues.
+const HOLY_SITE_EMPIRE_FLOOR: usize = 3;
+
+/// The smallest city that takes a Holy Site claim.
+const HOLY_SITE_POP_FLOOR: i32 = 2;
+
+impl AdvancedAi {
+    /// Whether the corps gene acts for this seat.
+    fn religion_seat_corps_active(&self, g: &Game, pid: usize, offensive: bool) -> bool {
+        self.religion_seat_fields_apostles
+            && offensive
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            && g.players[pid].religion.is_some()
+    }
+
+    /// Major-power cities we can see that do not follow this seat's faith.
+    fn unconverted_major_cities(g: &Game, pid: usize) -> usize {
+        let Some(religion) = g.players[pid].religion.as_deref() else {
+            return 0;
+        };
+        g.cities
+            .values()
+            .filter(|city| {
+                let owner = &g.players[city.owner];
+                city.owner != pid
+                    && owner.alive
+                    && !owner.is_minor
+                    && !owner.is_barbarian
+                    && g.city_religion(city) != Some(religion)
+            })
+            .count()
+    }
+
+    /// The Apostle cap. `shipped` with the gene off or on another target.
+    pub(super) fn religion_seat_apostle_cap(
+        &self,
+        g: &Game,
+        pid: usize,
+        offensive: bool,
+        shipped: usize,
+    ) -> usize {
+        if !self.religion_seat_corps_active(g, pid, offensive) {
+            return shipped;
+        }
+        (shipped + Self::unconverted_major_cities(g, pid).div_ceil(CITIES_PER_APOSTLE))
+            .min(APOSTLE_CAP_CEILING)
+            .max(shipped)
+    }
+
+    /// Whether the next religious unit is an Apostle: always for the first
+    /// two, then one for one with Missionaries.
+    pub(super) fn religion_seat_leads_with_apostles(
+        &self,
+        g: &Game,
+        pid: usize,
+        offensive: bool,
+        apostles: usize,
+        missionaries: usize,
+        apostle_cap: usize,
+    ) -> bool {
+        self.religion_seat_corps_active(g, pid, offensive)
+            && apostles < apostle_cap
+            && (apostles < 2 || apostles <= missionaries)
+    }
+
+    /// A city of ours that could field an Apostle once the Faith is banked:
+    /// our faith holds it, and it has a Holy Site with a Temple or the
+    /// civilization's replacement for one (the Khmer Prasat).
+    fn city_can_field_an_apostle(g: &Game, city: &crate::game::City, religion: &str) -> bool {
+        g.city_religion(city) == Some(religion)
+            && g.city_has_district_family(city, crate::name!("holy_site"))
+            && Self::city_holds_family(g, city, "temple")
+    }
+
+    /// The cheapest Apostle price this seat can see: the engine's quote where
+    /// it has one, else a Missionary's quote at the data's ratio. `None` when
+    /// no city of ours can field one.
+    fn religion_seat_apostle_price(&self, g: &Game, pid: usize, religion: &str) -> Option<f64> {
+        let cities: Vec<u32> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| Self::city_can_field_an_apostle(g, &g.cities[cid], religion))
+            .collect();
+        if cities.is_empty() {
+            return None;
+        }
+        let quote = |unit: &str, scale: f64| {
+            cities
+                .iter()
+                .filter_map(|cid| g.unit_purchase_cost(pid, *cid, unit, "faith"))
+                .map(|price| price * scale)
+                .min_by(f64::total_cmp)
+        };
+        quote("apostle", 1.0).or_else(|| quote("missionary", APOSTLE_PRICE_RATIO))
+    }
+
+    /// Whether this turn's Faith waits for an Apostle: one is next, a city of
+    /// ours can field it, and the bank cannot pay for it above `reserve`.
+    pub(super) fn religion_seat_saving_for_an_apostle(
+        &self,
+        g: &Game,
+        pid: usize,
+        religion: &str,
+        reserve: f64,
+    ) -> bool {
+        let Some(price) = self.religion_seat_apostle_price(g, pid, religion) else {
+            return false;
+        };
+        let faith = g.players[pid].faith;
+        let saving = faith + f64::EPSILON < price + reserve;
+        if saving {
+            think!(self.journal(), Faith, Detail,
+                "Saving for an Apostle";
+                "religion-seat-fields-apostles: {:.0} Faith banked against a price of {:.0} and a reserve of {:.0}; a cheaper unit bought now spends the bank the Apostle needs",
+                faith, price, reserve);
+        }
+        saving
+    }
+
+    /// Faith worship buildings leave banked while the corps saves. Zero with
+    /// the gene off, on another target, once the cap is met or when no city
+    /// of ours can field an Apostle.
+    pub(super) fn religion_seat_apostle_reserve(&self, g: &Game, pid: usize) -> f64 {
+        let Some(religion) = g.players[pid].religion.clone() else {
+            return 0.0;
+        };
+        if !self.religion_seat_corps_active(g, pid, true) {
+            return 0.0;
+        }
+        let apostles = self.founder_corps_count(g, pid, "apostle", &religion);
+        if apostles >= self.religion_seat_apostle_cap(g, pid, true, 2) {
+            return 0.0;
+        }
+        // A Temple pays for itself, so an unbuilt one comes before the corps.
+        let temple_owed = g.player_city_ids(pid).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            g.city_religion(city) == Some(religion.as_str())
+                && g.city_has_district_family(city, crate::name!("holy_site"))
+                && !Self::city_holds_family(g, city, "temple")
+        });
+        if temple_owed {
+            return 0.0;
+        }
+        self.religion_seat_apostle_price(g, pid, &religion)
+            .unwrap_or(0.0)
+    }
+
+    /// Whether `city` holds `family` or a civilization's replacement for it.
+    fn city_holds_family(g: &Game, city: &crate::game::City, family: &str) -> bool {
+        city.buildings.iter().any(|building| {
+            building.as_str() == family
+                || g.rules
+                    .buildings
+                    .get(building)
+                    .and_then(|spec| spec.replaces.as_deref())
+                    == Some(family)
+        })
+    }
+
+    /// Whether a queue head may give way to a Faith building: anything but a
+    /// unit, Walls or a Faith building already started. An idle queue always
+    /// may.
+    fn faith_building_may_displace(g: &Game, head: Option<&Item>) -> bool {
+        match head {
+            None => true,
+            Some(Item::District { .. } | Item::Project { .. }) => true,
+            Some(Item::Building { building }) => {
+                let family = g
+                    .rules
+                    .buildings
+                    .get(building)
+                    .and_then(|spec| spec.replaces)
+                    .unwrap_or(*building);
+                !matches!(family.as_str(), "shrine" | "temple" | "walls")
+                    && g.rules
+                        .buildings
+                        .get(building)
+                        .is_none_or(|spec| spec.outer_defense <= 0)
+            }
+            _ => false,
+        }
+    }
+
+    /// `religion-seat-builds-holy-sites`: the next Shrine or Temple a founder
+    /// owes, bought with Faith when the bank covers it and otherwise put at
+    /// the head of its city's queue; then a Holy Site in an idle city. One
+    /// claim a turn. A city under attack keeps its queue, and the opening book
+    /// keeps its four builds.
+    pub(super) fn claim_religion_seat_faith_economy(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.religion_seat_builds_holy_sites
+            || self.base.book_pos < 4
+            || self.active_victory_target(g) != Some(VictoryTarget::Religion)
+        {
+            return;
+        }
+        let Some(religion) = g.players[pid].religion.clone() else {
+            return;
+        };
+        let cities = g.player_city_ids(pid);
+        for family in ["shrine", "temple"] {
+            for cid in &cities {
+                let city = &g.cities[cid];
+                if g.city_religion(city) != Some(religion.as_str())
+                    || !g.city_has_district_family(city, crate::name!("holy_site"))
+                    || Self::city_holds_family(g, city, family)
+                    || plan.threatened_city == Some(*cid)
+                    || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
+                {
+                    continue;
+                }
+                let Some(Item::Building { building }) = BasicAi::civ_building(g, pid, *cid, family)
+                else {
+                    continue;
+                };
+                if g.building_faith_purchase_cost(pid, *cid, building.as_str())
+                    .is_some_and(|cost| g.players[pid].faith + f64::EPSILON >= cost)
+                    && g.apply(
+                        pid,
+                        &Action::BuyBuilding {
+                            city: *cid,
+                            building,
+                            currency: "faith".to_string(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    think!(self.journal(), Faith, Decision,
+                        "{} buys its {}", g.cities[cid].name, building;
+                        "religion-seat-builds-holy-sites: Faith earns the Faith that buys the corps");
+                    return;
+                }
+                if Self::faith_building_may_displace(g, g.cities[cid].queue.first())
+                    && g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: *cid,
+                            item: Item::Building { building },
+                        },
+                    )
+                    .is_ok()
+                {
+                    think!(self.journal(), Faith, Decision,
+                        "{} starts its {}", g.cities[cid].name, building;
+                        "religion-seat-builds-holy-sites: ahead of the queue it displaced, which keeps its progress");
+                    return;
+                }
+            }
+        }
+        self.religion_seat_claims_a_holy_site(g, pid);
+    }
+
+    /// `religion-seat-builds-holy-sites`: the idle city of ours with the best
+    /// Holy Site placement that has none, once founded. One claim a turn.
+    pub(super) fn religion_seat_claims_a_holy_site(&self, g: &mut Game, pid: usize) {
+        if !self.religion_seat_builds_holy_sites
+            || self.active_victory_target(g) != Some(VictoryTarget::Religion)
+            || g.players[pid].religion.is_none()
+            || g.player_city_ids(pid).len() < HOLY_SITE_EMPIRE_FLOOR
+        {
+            return;
+        }
+        let family = crate::name!("holy_site");
+        let mut best: Option<(f64, i32, u32, Item)> = None;
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if !city.queue.is_empty()
+                || city.pop < HOLY_SITE_POP_FLOOR
+                || g.city_has_district_family(city, family)
+            {
+                continue;
+            }
+            let pop = city.pop;
+            for item in g.producible_items(pid, cid) {
+                let Item::District { district, pos } = &item else {
+                    continue;
+                };
+                if g.district_family(*district) != "holy_site" {
+                    continue;
+                }
+                let faith = g.district_site_yields(*district, *pos).faith;
+                let better = best.as_ref().is_none_or(|(f, p, c, _)| {
+                    faith
+                        .total_cmp(f)
+                        .then(pop.cmp(p))
+                        .then(c.cmp(&cid))
+                        .is_gt()
+                });
+                if better {
+                    best = Some((faith, pop, cid, item.clone()));
+                }
+            }
+        }
+        if let Some((faith, _, city, item)) = best {
+            if g.apply(pid, &Action::Produce { city, item }).is_ok() {
+                think!(self.journal(), Faith, Decision,
+                    "{} claims a Holy Site", g.cities[&city].name;
+                    "religion-seat-builds-holy-sites: Faith and religious-unit purchases come from Holy Sites, and this site yields {:.0} Faith", faith);
+            }
+        }
+    }
+
+    /// Whether this seat's founding should try the Faith beliefs first. Read
+    /// by `BasicAi`'s founding, which cannot see the lane.
+    pub(super) fn founder_takes_the_faith_beliefs(&self, g: &Game) -> bool {
+        self.religion_seat_takes_the_faith_beliefs
+            && self.active_victory_target(g) == Some(VictoryTarget::Religion)
+    }
+}
+
+#[cfg(test)]
+mod tests;

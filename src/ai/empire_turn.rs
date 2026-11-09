@@ -29,6 +29,43 @@ impl BasicAi {
     /// same everywhere, so pricing them would be inventing weights rather than
     /// reading a board; the shipped order already ranks them against each
     /// other and continues to.
+    /// The founder beliefs a founding tries, in order. A Religion-target seat
+    /// asks for the Faith-scaling ones first
+    /// (`religion-seat-takes-the-faith-beliefs`; see
+    /// `advanced/religion_seat_fields_apostles.rs`). Every other founder
+    /// belief follows in the catalogue's order, so a founding never fails for
+    /// want of a listed one.
+    pub(super) fn founder_belief_order(&self, g: &Game) -> Vec<String> {
+        let listed: [&str; 5] = if self.founder_takes_the_faith_beliefs {
+            [
+                "pilgrimage",
+                "lay_ministry",
+                "tithe",
+                "world_church",
+                "cross_cultural_dialogue",
+            ]
+        } else {
+            [
+                "tithe",
+                "world_church",
+                "cross_cultural_dialogue",
+                "pilgrimage",
+                "religious_unity",
+            ]
+        };
+        let mut founders: Vec<String> = listed
+            .into_iter()
+            .filter(|belief| g.rules.beliefs.founder.contains_key(*belief))
+            .map(str::to_string)
+            .collect();
+        for belief in g.rules.beliefs.founder.keys() {
+            if !founders.contains(belief) {
+                founders.push(belief.clone());
+            }
+        }
+        founders
+    }
+
     fn pantheon_board_value(&self, g: &Game, pid: usize, belief: &str) -> f64 {
         let Some(spec) = g.rules.beliefs.pantheon.get(belief) else {
             return 0.0;
@@ -409,22 +446,7 @@ impl BasicAi {
                     followers.push(belief.clone());
                 }
             }
-            let mut founders: Vec<String> = [
-                "tithe",
-                "world_church",
-                "cross_cultural_dialogue",
-                "pilgrimage",
-                "religious_unity",
-            ]
-            .into_iter()
-            .filter(|belief| g.rules.beliefs.founder.contains_key(*belief))
-            .map(str::to_string)
-            .collect();
-            for belief in g.rules.beliefs.founder.keys() {
-                if !founders.contains(belief) {
-                    founders.push(belief.clone());
-                }
-            }
+            let founders = self.founder_belief_order(g);
             'found: for follower in followers {
                 for founder in &founders {
                     if g.apply(

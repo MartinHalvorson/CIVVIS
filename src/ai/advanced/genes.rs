@@ -5443,6 +5443,12 @@ pub const GENES: &[Gene] = &[
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },
+    // A Religion-target founder claims a Holy Site in each idle city. Unpriced, off.
+    Gene { tag: "religion-seat-builds-holy-sites", field: "religion_seat_builds_holy_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_builds_holy_sites, disable: AdvancedAi::disable_religion_seat_builds_holy_sites },
+    // A Religion-target founder saves for an Apostle-led corps. Unpriced, off.
+    Gene { tag: "religion-seat-fields-apostles", field: "religion_seat_fields_apostles", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_fields_apostles, disable: AdvancedAi::disable_religion_seat_fields_apostles },
+    // A Religion-target seat founds on Pilgrimage or Lay Ministry first. Unpriced, off.
+    Gene { tag: "religion-seat-takes-the-faith-beliefs", field: "religion_seat_takes_the_faith_beliefs", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_faith_beliefs, disable: AdvancedAi::disable_religion_seat_takes_the_faith_beliefs },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

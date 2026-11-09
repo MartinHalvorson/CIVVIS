@@ -435,6 +435,8 @@ impl AdvancedAi {
                 }
             }
         }
+        // See `advanced/religion_seat_fields_apostles.rs`.
+        self.religion_seat_claims_a_holy_site(g, pid);
     }
 
     /// Home religious defense for civilizations whose grand strategy is NOT
@@ -635,7 +637,9 @@ impl AdvancedAi {
                 ),
             ) + veto_spreaders
         };
-        let apostle_cap = if offensive { 2 } else { 0 };
+        // See `advanced/religion_seat_fields_apostles.rs`.
+        let apostle_cap =
+            self.religion_seat_apostle_cap(g, pid, offensive, if offensive { 2 } else { 0 });
         // `guru-heals-the-corps-2`: the defence has damaged units and no heal.
         let guru_defends = self.guru_defends_the_corps(g, pid);
         let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
@@ -664,6 +668,24 @@ impl AdvancedAi {
         } else {
             &["missionary", "apostle", "guru"]
         };
+        // `religion-seat-fields-apostles`: the Apostle comes first, and an
+        // Apostle the bank cannot pay for yet is saved for rather than spent
+        // on a cheaper unit. A city of ours losing its faith still buys.
+        let apostle_led = !inquisitor_corps_short
+            && self.religion_seat_leads_with_apostles(g, pid, offensive, apostles, missionaries, apostle_cap);
+        let priorities: &[&str] = if apostle_led {
+            &["apostle", "guru", "missionary"]
+        } else {
+            priorities
+        };
+        if apostle_led
+            && !home_under_pressure
+            && !match_point_defense
+            && !Self::religious_veto_spends(veto.as_ref())
+            && self.religion_seat_saving_for_an_apostle(g, pid, &religion, ordinary_reserve)
+        {
+            return;
+        }
         for unit in priorities {
             let cap = match *unit {
                 "missionary" => missionary_cap,
@@ -769,6 +791,8 @@ impl AdvancedAi {
         let reserve = self.conversion_faith_reserve(g, pid, reserve)
             // See `advanced/culture_band_bank.rs`.
             + self.culture_band_bank(g, pid)
+            // See `advanced/religion_seat_fields_apostles.rs`.
+            + self.religion_seat_apostle_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
             + self.inquisition_faith_reserve(g, pid)
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
