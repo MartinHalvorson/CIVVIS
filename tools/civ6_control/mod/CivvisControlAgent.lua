@@ -30,6 +30,21 @@ local cfg = CivvisControlConfig or {};
 -- and 66de612ed lost the whole agent at 212). Rarely used constants and
 -- per-run tables live here instead; add new ones here, not as top-level locals.
 CivvisK = {};
+-- Whether `name` is a civilization's own Holy Site. Russia's Lavra is ordered
+-- under its own type (`DistrictReplaces`, Districts.xml:34), so a test for
+-- DISTRICT_HOLY_SITE alone never sees it.
+function CivvisK.replacesHolySite(name)
+	local found = false;
+	pcall(function()
+		for row in GameInfo.DistrictReplaces() do
+			if row.ReplacesDistrictType == "DISTRICT_HOLY_SITE"
+					and row.CivUniqueDistrictType == name then
+				found = true;
+			end
+		end
+	end);
+	return found;
+end
 CivvisK.PREFIX = "CIVVISJSON ";
 
 -- The major-civilization UI validates each action separately, then opens its
@@ -16129,7 +16144,8 @@ local function applyOrder(player, pid, row, turn)
 		-- out near turn 39 at Deity, and a refused order here held the Holy Site
 		-- back until turn 23 in civvis-20261109T070122Z.
 		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
-			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE";
+			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+			or CivvisK.replacesHolySite(resolved);
 		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
 			or walkingSettlers >= 2;
 		if releaseOpening then CivvisOpeningSettlerLocks[cityId] = nil; end

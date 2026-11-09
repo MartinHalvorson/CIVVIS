@@ -24,6 +24,21 @@ let PLANET_GPU = null;
 // before it scrolls to the section. The lens dock and shortcut drawer below
 // the scroller are not sections of the deck; they keep their own state.
 const SIDEBAR_SECTIONS = "#side details.sidebar-section";
+// A closed section of the deck is a panel nobody is reading. What it reports
+// keeps accumulating in memory, and its rows are built when somebody opens it.
+// Building them every turn anyway was the most expensive thing the page did to
+// its own layout: the decision-factor log alone is 148 KB and 2,100 elements,
+// and asking where anything sits inside a closed section makes the browser lay
+// all of it out regardless.
+function inClosedSidebarSection(element) {
+  const section = element.closest(SIDEBAR_SECTIONS);
+  return !!section && !section.open;
+}
+function drawOpenedSidebarSection(section) {
+  if (!state || !section.open) return;
+  if (section.id === "strategysec") drawReasoning();
+  else if (section.id === "eventsec") drawEvents();
+}
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
     if (other !== section && other.open) other.open = false;
@@ -72,6 +87,7 @@ function initSidebarSections() {
       }
       saved[key] = section.open;
       remember();
+      drawOpenedSidebarSection(section);
     });
   }
   remember();
@@ -29158,6 +29174,7 @@ function drawReasoning() {
   const sealed = livePause.available && !reasoningLog.thoughts.length;
   if (reasonTrack) reasonTrack.hidden = sealed;
   if (sealed) return;
+  if (inClosedSidebarSection(el)) return;
   syncReasonOptions();
   const {thoughts, hasMore, player} = reasonFilteredThoughts();
   const civ = player === null ? null : (state?.players || [])[player];
@@ -29298,6 +29315,8 @@ function drawEvents() {
   scope.title = narrowed
     ? `${view} — ${events.length} of ${held.length} entries match this filter`
     : view;
+  // The count above sits on the section's own label, so it stays current.
+  if (inClosedSidebarSection(el)) return;
   const signature = `${eventViewKey(state)}|${eventFilters.player}|${eventFilters.kind}|` +
     events.map(e => `${e.turn}:${e.icon}:${e.text}`).join("|");
   if (el.dataset.signature === signature) return;
@@ -35349,6 +35368,25 @@ if (new URL(location.href).searchParams.get("setup") === "1") {
 // the browser's actual refresh rhythm, capped at the requested 240 Hz rather
 // than assuming that every panel is a 60 Hz one.
 let lastIdleDraw = 0, lastMiniDraw = 0, drawCost = 8, gpuNeedsSettledPaint = false;
+// The corner chart redraws the whole world, so following the turning globe at
+// the map's own frame rate cost a tenth of the page's time for a picture that
+// drifts a fraction of a degree between frames. It follows on its own cadence
+// and never takes more than a twentieth of the thread. Every turn still gets
+// its complete chart from render(), which does not pass through here.
+const MINI_TURNING_PAINT_MS = 100;
+const MINI_DRAGGED_PAINT_MS = 1000 / 30;
+const MAX_MINI_PAINT_SHARE = .05;
+let miniPaintCost = 0, miniBehindCamera = false;
+function paintMiniWithCamera(now, dragged) {
+  const wait = Math.max(dragged ? MINI_DRAGGED_PAINT_MS : MINI_TURNING_PAINT_MS,
+                        miniPaintCost / MAX_MINI_PAINT_SHARE);
+  if (now - lastMiniDraw < wait) { miniBehindCamera = true; return; }
+  const t0 = performance.now();
+  drawMini();
+  miniPaintCost = miniPaintCost * .85 + (performance.now() - t0) * .15;
+  lastMiniDraw = now;
+  miniBehindCamera = false;
+}
 const MAX_PRESENTATION_HZ = 240;
 let lastAnimationRefreshSample = 0, animationRefreshMs = 1000 / 60;
 function animationRefreshInterval(now = performance.now()) {
@@ -35391,6 +35429,11 @@ function animTick(now) {
   const userCameraMoving = advanceUserCameraMotion(now);
   const followCameraMoving = advanceCameraFollow(now);
   const cameraMoving = userCameraMoving || followCameraMoving;
+  // The camera has stopped, so the chart gets the frame it was still owed.
+  if (!cameraMoving && miniBehindCamera) {
+    miniBehindCamera = false;
+    drawMini(); lastMiniDraw = now;
+  }
   const spinning = spinRunning();
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
@@ -35410,7 +35453,7 @@ function animTick(now) {
       // so it replaces rather than doubles the direct terrain draw below.
       draw();
       drawCost = drawCost * .85 + (performance.now() - t0) * .15;
-      if (now - lastMiniDraw > 1000 / 60) { drawMini(); lastMiniDraw = now; }
+      paintMiniWithCamera(now, userCameraMoving);
     } else drawPlanetGpuAnimationFrame();
     return;
   }
@@ -35436,7 +35479,8 @@ function animTick(now) {
     // A detonation animates on the minimap too, and unlike a camera move it can
     // happen while the camera sits perfectly still — so it has to ask for the
     // repaint itself or the world map would show nothing at all.
-    if (cameraMoving || anim.blasts.length > 0) { drawMini(); lastMiniDraw = now; }
+    if (anim.blasts.length > 0) { drawMini(); lastMiniDraw = now; miniBehindCamera = false; }
+    else if (cameraMoving) paintMiniWithCamera(now, userCameraMoving);
   }
 }
 requestAnimationFrame(animTick);
