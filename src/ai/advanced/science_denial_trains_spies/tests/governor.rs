@@ -66,6 +66,10 @@ fn governor(target: VictoryTarget, enabled: bool) -> AdvancedAi {
     let mut ai = AdvancedAi::targeting(target);
     ai.preempt_margin = 1.25;
     ai.base.book_pos = 4;
+    // Give the legal filler a clear ordinary bid in every victory target.
+    // The off control must replace the Spy; the reservation must survive
+    // that same bid without changing the production scorer.
+    ai.base.w.p_building = 100.0;
     if enabled {
         ai.enable_science_denial_trains_spies();
     } else {
