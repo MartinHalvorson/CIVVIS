@@ -457,6 +457,66 @@ impl AdvancedAi {
         Some(acted)
     }
 
+    /// `religion-seat-races-the-prophet`: the city that produces most among
+    /// those with a finished Holy Site runs Prayers at the head of its queue
+    /// until our Prophet is earned. One claim a turn; a city under attack
+    /// keeps its queue.
+    pub(super) fn claim_religion_seat_prayers(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        let player = &g.players[pid];
+        if !self.religion_seat_races_the_prophet
+            || self.active_victory_target(g) != Some(VictoryTarget::Religion)
+            || player.religion.is_some()
+            || player.prophet_pending
+            || !self.prophet_race_open_for(g, pid)
+        {
+            return;
+        }
+        let prayers = Item::Project {
+            project: crate::name!("holy_site_prayers"),
+        };
+        let family = crate::name!("holy_site");
+        let best = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                let city = &g.cities[cid];
+                g.city_has_district_family(city, family)
+                    && plan.threatened_city != Some(*cid)
+                    && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
+            })
+            .max_by(|left, right| {
+                g.city_yields(*left)
+                    .production
+                    .total_cmp(&g.city_yields(*right).production)
+                    .then_with(|| right.cmp(left))
+            });
+        let Some(city) = best else {
+            return;
+        };
+        if g.cities[&city].queue.first() == Some(&prayers) || !g.can_produce(pid, city, &prayers) {
+            return;
+        }
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: prayers,
+            },
+        )
+        .is_ok()
+        {
+            think!(self.journal(), Faith, Decision,
+                "{} runs Prayers for the Prophet", g.cities[&city].name;
+                "religion-seat-races-the-prophet: {:.0} Prophet points of our own, and each Prayers completes for more of them than turns of the district's rate",
+                g.players[pid].gpp.get("prophet").copied().unwrap_or(0.0));
+        }
+    }
+
     /// Whether this seat's founding should try the Faith beliefs first. Read
     /// by `BasicAi`'s founding, which cannot see the lane.
     pub(super) fn founder_takes_the_faith_beliefs(&self, g: &Game) -> bool {
