@@ -8435,6 +8435,11 @@ pub struct AdvancedAi {
     /// starts its Holy Site the turn Astrology allows it. See
     /// `advanced/religion_seat_founds_first.rs`. Off by default.
     religion_seat_founds_first: bool,
+    /// `religion-seat-earns-its-prophet`: a Religion-target seat with an open
+    /// Prophet race reserves a safe, idle Holy Site for Shrine or Prayers
+    /// before the opening book and expansion. See `religion_prophet_queue.rs`.
+    /// Off by default.
+    religion_seat_earns_its_prophet: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
@@ -19181,6 +19186,11 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .filter_map(|cid| {
+                // The named Religion seat has already paid for its Holy Site;
+                // its open Prophet race keeps Prayers ahead of another Settler.
+                if self.religion_prophet_project_reserved(g, pid, cid) {
+                    return None;
+                }
                 let redirectable = match g.cities[&cid].queue.first() {
                     Some(Item::Project { project }) => {
                         let spec = &g.rules.projects[project];
@@ -19739,11 +19749,13 @@ impl AdvancedAi {
             // `prophet-race-earns-its-points`: the race's Shrine finishes
             // before routine rescoring can claim its Holy Site city.
             // `prophet-builds-its-site`: likewise the Holy Site a Prophet
-            // waits on.
+            // waits on. The queue claim also keeps the open race's Prayers
+            // through routine rescoring, after explicit defense handling.
             let race_shrine_commitment = plan.threatened_city != Some(cid)
                 && committed.as_ref().is_some_and(|(_, item)| {
                     (self.race_shrine_committed(g, pid, cid, item)
-                        || self.prophet_site_committed(g, pid, cid, item))
+                        || self.prophet_site_committed(g, pid, cid, item)
+                        || self.religion_prophet_project_reserved(g, pid, cid))
                         && Self::production_commitment_is_legal(g, pid, cid, item)
                 });
             // `early-settler-floor`: the floor's Settler finishes before
@@ -25674,6 +25686,9 @@ impl AdvancedAi {
         // the city reaches the host's floor, whether or not the book is still
         // in play. See `opening_settler_waits`.
         self.base.play_pending_book_settler(g, pid);
+        // Keep a completed Holy Site in the still-open Prophet race before
+        // the book or expansion takes its next idle queue.
+        self.claim_religion_prophet_queue(g, pid, &plan);
         // `religion-seat-founds-first`: a Religion-target seat's Holy Site in
         // the first idle city, inside the book and before the third city.
         // Exact no-op while the gene is off. See
@@ -26230,6 +26245,7 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+mod religion_prophet_queue;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
