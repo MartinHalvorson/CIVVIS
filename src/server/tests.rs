@@ -3076,7 +3076,9 @@ fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
     // The single dossier has the spare height formerly allocated to a
     // separate reasoning card. Its trail scrolls inside the dossier while
     // the world chronicles keep their measured floors.
-    assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 auto; min-height: min-content; }"));
+    assert!(
+        EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 auto; min-height: min-content; }")
+    );
     assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
     assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
     assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
