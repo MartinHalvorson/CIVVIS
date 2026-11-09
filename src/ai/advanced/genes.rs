@@ -5449,6 +5449,9 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
+    // First-slot ranged support. Leaves later recon settings unchanged;
+    // the opening Scout is displaced. No Native strength claim.
+    Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },

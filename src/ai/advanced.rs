@@ -7779,6 +7779,8 @@ pub struct AdvancedAi {
     /// `military-alliance-shield-2`: its own asks by partner and kind, by the
     /// turn asked and whether the partner was a declared friend then.
     military_alliance_shield_asks: BTreeMap<(usize, &'static str), (u32, bool)>,
+    /// Opt-in first capital slot for ranged support; later recon flags are unchanged.
+    opening_ranged_support: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -11851,6 +11853,7 @@ impl AdvancedAi {
             // ---- append: l-o ----------------------------------------
             nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
+            opening_ranged_support: false,
             // ---- append: p-r ----------------------------------------
             parity_upgrades_before_it_buys_2: false,
             parity_upgrades_before_it_buys_3: false,
@@ -12032,6 +12035,11 @@ impl AdvancedAi {
             .map(|(_, guard)| *guard)
             .filter(|guard| g.units.get(guard).is_some_and(|unit| unit.owner == pid))
             .collect()
+    }
+
+    /// Whether the opening-only ranged-support experiment is enabled.
+    pub fn opening_ranged_support(&self) -> bool {
+        self.opening_ranged_support
     }
 
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
