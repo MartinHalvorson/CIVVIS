@@ -7,8 +7,9 @@
 //! every concert a band survives. In the 25 turns before Cold War the seat
 //! earned a median of 1,204 Faith and spent 1,094 of it, on Missionaries,
 //! Walls, worship buildings and Great People, and reached the unlock with 241
-//! banked. That buys one band. The same window's spending would have bought
-//! five (a band costs 150 at Online, plus 50 for each earlier copy).
+//! banked. Native Pericles 20261109T011348Z-cont2 quoted its first four
+//! Online bands at 300, 350, 400 and 450 Faith: 1,500 in total. The former
+//! 900-Faith bank covered two of those bands, rather than four.
 //!
 //! **What the gene does.** While a live Culture target has researched Ideology
 //! or is researching Ideology or Cold War, and Cold War is not yet known, the
@@ -19,9 +20,9 @@
 
 use super::*;
 
-/// The first four Rock Bands at Standard speed (300 + 400 + 500 + 600): 900 at
-/// Online.
-const BAND_BANK_STANDARD: f64 = 1_800.0;
+/// The first four Rock Bands at Standard speed (600 + 700 + 800 + 900): 1,500
+/// at Online, matching the host's quoted purchase costs.
+const BAND_BANK_STANDARD: f64 = 3_000.0;
 
 /// Turns after an attack on a city during which the bank stands aside.
 const BAND_BANK_UNDER_FIRE_TURNS: u32 = 4;
@@ -58,6 +59,7 @@ impl AdvancedAi {
 mod tests {
     use super::*;
     use crate::game::Action;
+    use crate::setup::GameSpeed;
 
     fn board() -> Game {
         let mut g = Game::new_full(2, 30, 20, 79_208, 250, 0, false);
@@ -112,6 +114,53 @@ mod tests {
         let mut g = board();
         known(&mut g, "ideology");
         assert!(seat().culture_band_bank(&g, 0) > 0.0);
+    }
+
+    #[test]
+    fn the_bank_covers_four_actual_band_purchases_at_each_speed() {
+        for (speed, expected) in [
+            (GameSpeed::Online, [300.0, 350.0, 400.0, 450.0]),
+            (GameSpeed::Standard, [600.0, 700.0, 800.0, 900.0]),
+        ] {
+            let mut g = board();
+            g.game_speed = speed;
+            g.players[0].civ = "Greece".into();
+            known(&mut g, "ideology");
+            let bank = seat().culture_band_bank(&g, 0);
+
+            // Price by executing purchases, including the per-copy increase,
+            // on a throwaway board where the unit has just unlocked.
+            let mut unlocked = g.clone();
+            known(&mut unlocked, "cold_war");
+            unlocked.players[0].faith = 10_000.0;
+            let city = unlocked.player_city_ids(0)[0];
+            let mut spent = 0.0;
+            for price in expected {
+                let before = unlocked.players[0].faith;
+                unlocked
+                    .apply(
+                        0,
+                        &Action::Buy {
+                            city,
+                            unit: crate::name!("rock_band"),
+                            formation: 0,
+                            currency: "faith".into(),
+                        },
+                    )
+                    .unwrap();
+                assert_eq!(before - unlocked.players[0].faith, price);
+                spent += price;
+                // Each next purchase needs its civilian tile free; its price
+                // still counts every earlier purchase after the unit leaves.
+                let band = unlocked
+                    .player_unit_ids(0)
+                    .into_iter()
+                    .find(|uid| unlocked.units[uid].kind == "rock_band")
+                    .unwrap();
+                unlocked.remove_unit(band);
+            }
+            assert_eq!(bank, spent);
+        }
     }
 
     #[test]
