@@ -16124,7 +16124,13 @@ local function applyOrder(player, pid, row, turn)
 				and ((requestedUnit.Combat or 0) > 0
 					or (requestedUnit.RangedCombat or 0) > 0
 					or (requestedUnit.Bombard or 0) > 0));
-		local releaseOpening = immediateThreat or requestedDefense or walkingSettlers >= 2;
+		-- The Holy Site and its Prayers are the founding race. The Prophets run
+		-- out near turn 39 at Deity, and a refused order here held the Holy Site
+		-- back until turn 23 in civvis-20261109T070122Z.
+		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
+			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE";
+		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
+			or walkingSettlers >= 2;
 		if releaseOpening then CivvisOpeningSettlerLocks[cityId] = nil; end
 		local currentOpening = current;
 		local settlerRow = GameInfo.Types["UNIT_SETTLER"];

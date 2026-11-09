@@ -68,6 +68,7 @@ GameInfo.Types = {
 	UNIT_SETTLER = { Hash = 101, Kind = "KIND_UNIT" },
 	UNIT_SCOUT = { Hash = 102, Kind = "KIND_UNIT" },
 	UNIT_ARCHER = { Hash = 103, Kind = "KIND_UNIT" },
+	PROJECT_ENHANCE_DISTRICT_HOLY_SITE = { Hash = 104, Kind = "KIND_PROJECT" },
 }
 GameInfo.CommemorationTypes = {
 	[17] = { CommemorationType = "COMMEMORATION_INFRASTRUCTURE" },
@@ -436,6 +437,15 @@ local defended, defenseWhy = applyOrder(player, PID,
 check("opening defense reaches host", defended, true)
 check("opening defense names its build", defenseWhy, "UNIT_ARCHER")
 check("opening defense replaces settler", host.cities[42].current, 103)
+
+-- The founding race's Prayers also reach the host past a protected Settler:
+-- the Prophets run out while the opening Settler is still in the capital.
+host.cities[42].current = 101
+local prayed, prayedWhy = applyOrder(player, PID,
+	{ kind = "produce", subject = 42, verb = "PROJECT_ENHANCE_DISTRICT_HOLY_SITE" }, 16)
+check("founding race reaches host", prayed, true)
+check("founding race names its build", prayedWhy, "PROJECT_ENHANCE_DISTRICT_HOLY_SITE")
+check("founding race replaces settler", host.cities[42].current, 104)
 
 -- Reproduce the stalled one-city opening: two live Settlers are already
 -- waiting for routes. The bridge must let the governor stop a third queue.
