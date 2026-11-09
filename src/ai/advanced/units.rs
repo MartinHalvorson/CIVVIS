@@ -324,7 +324,12 @@ impl AdvancedAi {
             }
         }
 
-        if unit.kind == "apostle" && g.players[pid].religion_beliefs.len() < 4 {
+        // `apostle-evangelizes-unspent`: the host refuses an Apostle that has
+        // spent a charge. See `advanced/apostle_evangelizes_unspent.rs`.
+        if unit.kind == "apostle"
+            && g.players[pid].religion_beliefs.len() < 4
+            && self.apostle_may_evangelize(g, uid)
+        {
             let objective = if g.has_ability(pid, "taxis") {
                 GrandStrategy::Conquest
             } else {

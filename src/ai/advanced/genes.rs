@@ -5438,6 +5438,9 @@ pub const GENES: &[Gene] = &[
     // sales compound. Promote and tour for survival: `advanced/band_plays_its_stage.rs`.
     Gene { tag: "band-plays-its-stage", field: "band_plays_its_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_its_stage, disable: AdvancedAi::disable_band_plays_its_stage },
     Gene { tag: "acropolis-before-the-deterrent", field: "acropolis_before_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_acropolis_before_the_deterrent, disable: AdvancedAi::disable_acropolis_before_the_deterrent },
+    // An Apostle that has spent a charge stops asking to Evangelize, which
+    // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
+    Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
     // ---- append: c-d ------------------------------------------------
     Gene { tag: "culture-seat-drama-first", field: "culture_seat_drama_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_first, disable: AdvancedAi::disable_culture_seat_drama_first },
     Gene { tag: "culture-seat-drama-before-government", field: "culture_seat_drama_before_government", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_before_government, disable: AdvancedAi::disable_culture_seat_drama_before_government },
