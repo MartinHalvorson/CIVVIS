@@ -24167,6 +24167,13 @@ end;
 
 -- Active sessions and unanswered closed asks keep their reply window open.
 -- Each wait is bounded by DealAnswerHoldSeconds on the shared UI clock.
+--
+-- A session that has not reached its question yet is bounded by far less.
+-- Over 3,000 asks from 67 live games, 95% opened inside 6 s and none between
+-- 6 and 29 s; the rest are queued behind another session and do not open
+-- until the end turn goes through, so holding for them only spent the whole
+-- window: 233 holds, 96 minutes, 12% of those games' wall clock.
+CivvisTrade.OPENING_HOLD_SECONDS = 8;
 CivvisTrade.holdsEndTurn = function(turn)
 	-- Opening, asked and counter-wait sessions still own a live UI reply.
 	-- Native 20261108T084123Z t147 forced EndTurn between a queued opening
@@ -24178,6 +24185,8 @@ CivvisTrade.holdsEndTurn = function(turn)
 			local now = CivvisClock.now();
 			local limit = tonumber(cfg.DealAnswerHoldSeconds) or 30;
 			if limit ~= limit or limit == math.huge then limit = 30; end
+			local opening = session.reply_at == nil;
+			if opening then limit = math.min(limit, CivvisTrade.OPENING_HOLD_SECONDS); end
 			if type(now) == "number" and now >= at and now - at < limit then
 				if not session.end_turn_hold_reported then
 					session.end_turn_hold_reported = true;
@@ -24187,7 +24196,7 @@ CivvisTrade.holdsEndTurn = function(turn)
 			end
 			session.end_turn_hold_expired = true;
 			emit("deal_active_hold", { turn = turn, target = subject,
-				phase = "released", why = "expired_or_clock" });
+				phase = "released", why = opening and "opening_unasked" or "expired_or_clock" });
 		end
 	end
 	local hold = CivvisTrade.turnHold;

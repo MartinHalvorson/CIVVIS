@@ -823,6 +823,23 @@ do
 	queue.requestEndTurn(TURN, { REASON = "UserForced" })
 	check("an active session cannot hold beyond its deadline", endTurns, saved.ends + 2)
 	trade.close(7, 3, "test_expired")
+	-- An opening queued behind another session waits for the end turn itself.
+	TURN = 606
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock + 7.9
+	check("an opening is held just inside its own bound", trade.holdsEndTurn(TURN), true)
+	activeClock = activeClock + 0.2
+	check("an opening nobody asked through stops holding", trade.holdsEndTurn(TURN), false)
+	check("…naming why", eventField(lastEvent("deal_active_hold"), "why"), "opening_unasked")
+	trade.close(7, 3, "test_opening")
+	TURN = 607
+	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
+	activeClock = activeClock + 7.5
+	onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 1402 })
+	activeClock = activeClock + 29.5
+	check("a question asked at the bound still gets its full reply window",
+		trade.holdsEndTurn(TURN), true)
+	trade.close(7, 3, "test_late_ask")
 	TURN = 602
 	trade.ask(7, 3, "EQUALIZE", "trade", TURN)
 	TURN = 603
