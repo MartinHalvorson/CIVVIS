@@ -163,6 +163,12 @@ struct ConquestProgress {
     foreign_capitals_observed_held: BTreeSet<u32>,
     foreign_capitals_held_at_end: usize,
     own_original_capital_held_at_end: bool,
+    /// The air lane: when the focal seat first held Flight and Advanced
+    /// Flight, when its first Bomber stood, and the most it fielded at once.
+    flight_observed_turn: Option<u32>,
+    advanced_flight_observed_turn: Option<u32>,
+    first_bomber_observed_turn: Option<u32>,
+    peak_bombers: usize,
     #[serde(skip)]
     observed_actions: usize,
 }
@@ -202,6 +208,24 @@ impl ConquestProgress {
             }
         }
         self.observed_actions = g.log.len();
+        let techs = &g.players[0].techs;
+        if techs.iter().any(|tech| tech.as_str() == "flight") {
+            self.flight_observed_turn.get_or_insert(g.turn);
+        }
+        if techs.iter().any(|tech| tech.as_str() == "advanced_flight") {
+            self.advanced_flight_observed_turn.get_or_insert(g.turn);
+        }
+        let bombers = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == 0 && g.rules.units[unit.kind].promotion_class == "air_bomber"
+            })
+            .count();
+        if bombers > 0 {
+            self.first_bomber_observed_turn.get_or_insert(g.turn);
+        }
+        self.peak_bombers = self.peak_bombers.max(bombers);
         self.foreign_capitals_held_at_end = 0;
         self.own_original_capital_held_at_end = false;
         for city in g.cities.values().filter(|city| city.owner == 0) {
