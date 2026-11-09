@@ -889,12 +889,8 @@ impl AdvancedAi {
         if !due {
             return;
         }
-        let forecasts = Self::forecast_portfolio(
-            g,
-            pid,
-            self.portfolio.samples.get(&pid),
-            YieldGrowth::FLAT,
-        );
+        let forecasts =
+            Self::forecast_portfolio(g, pid, self.portfolio.samples.get(&pid), YieldGrowth::FLAT);
         let rival_finish = opponents(g, pid)
             .into_iter()
             .flat_map(|other| {

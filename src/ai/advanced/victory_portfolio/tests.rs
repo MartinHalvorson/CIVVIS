@@ -113,7 +113,10 @@ fn growth_is_a_shorter_clock_that_flat_income_leaves_alone() {
 fn growth_reads_the_same_at_every_game_speed() {
     let online = grown_turns(60.0, 10.0, 1.25, 100.0);
     let standard = grown_turns(120.0, 20.0, 1.25, 200.0);
-    assert!((standard - 2.0 * online).abs() < 1e-9, "{online} {standard}");
+    assert!(
+        (standard - 2.0 * online).abs() < 1e-9,
+        "{online} {standard}"
+    );
 }
 
 #[test]
@@ -145,7 +148,10 @@ fn a_published_flight_counts_the_lasers_still_to_come() {
     let mut g = world();
     g.turn = 180;
     expedition(&mut g, 0, 20.0);
-    assert_eq!(forecast(&g, VictoryTarget::Science).finish_turn, Some(210.0));
+    assert_eq!(
+        forecast(&g, VictoryTarget::Science).finish_turn,
+        Some(210.0)
+    );
     assert_eq!(
         published(&g, VictoryTarget::Science).finish_turn,
         Some(180.0 + 30.0 * YieldGrowth::EXPECTED.flight)
