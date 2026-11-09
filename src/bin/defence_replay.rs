@@ -370,15 +370,22 @@ fn main() {
     let rebuilt = civvis::mirror::rebuild_from_state(&snapshot, &state, players, 1, max_turns, 6);
     let base = rebuilt.game;
     let wanted = text(&args, "--attacker").unwrap_or_default().to_lowercase();
+    // An unseen major can retain alive=true while the reconstruction carries
+    // none of its cities or units. Such a placeholder cannot supply a replay.
+    let represented = |pid: usize| {
+        base.players[pid].alive
+            && (base.cities.values().any(|city| city.owner == pid)
+                || base.units.values().any(|unit| unit.owner == pid))
+    };
     let Some(attacker) = (1..base.players.len()).find(|&pid| {
         !wanted.is_empty()
-            && base.players[pid].alive
+            && represented(pid)
             && base.players[pid].civ.to_lowercase().contains(&wanted)
     }) else {
         let civs: Vec<String> = base
             .players
             .iter()
-            .filter(|player| player.alive)
+            .filter(|player| represented(player.id))
             .map(|player| player.civ.clone())
             .collect();
         eprintln!(
