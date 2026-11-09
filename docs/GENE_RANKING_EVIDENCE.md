@@ -388,6 +388,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
+| `theology-fights-count-the-host-edge` | off (unmeasured) | Opt-in gene `theology-fights-count-the-host-edge`; see `advanced/theology_fights.rs`. | 1 \| 1 |
 | `threatened-lane-lends-the-army` | off (unmeasured) | Opt-in gene `threatened-lane-lends-the-army`; see `advanced/threatened_lane_lends_the_army.rs`. | 1 \| 1 |
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |

@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "theology-fights-count-the-host-edge",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 10 boards from 6 live Deity Religious-target games of 2026-11-09, each the run's events.jsonl cut at frame 0 of a turn where our Apostle started a fight the host's own preview priced as a losing exchange with no kill (host strength gap -3 to -13). Two further chosen boards have no 'forced' list in their summary.json and are excluded. Both arms run one frozen civvis_orders --resumed built from the branch with the run's own requested genome; the on arm adds --with theology-fights-count-the-host-edge. The off arm orders the attack this frame on 8 boards, and the on arm on 2 of them; on the other 2 boards the frame's order for the unit is a promotion in both arms. Orders differ on 6 of 10.",
+  "archive": {
+    "path": "docs/eval/2026-11-09-theology-fights-count-the-host-edge.native-queries.tar.xz",
+    "sha256": "e765adfcf8614add3336a0385477e4f119540d329e74c39a97b726d84ace1e5e"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}
