@@ -108,10 +108,11 @@ fn the_full_turn_keeps_prayers_ahead_of_the_settler_handoff() {
 fn the_full_race_keeps_prayers_ahead_of_the_later_shrine_writer() {
     let (g, home) = opening();
     let mut off = AdvancedAi::targeting(VictoryTarget::Religion);
+    off.enable_enter_the_prophet_race_2();
     off.enable_religion_seat_races_the_prophet();
     off.enable_prophet_race_earns_its_points();
     off.plan_city_target = true;
-    off.base.book_pos = 4;
+    off.skip_opening_book();
     let mut baseline = g.clone();
     off.take_turn(&mut baseline, 0);
     assert_eq!(
@@ -123,10 +124,11 @@ fn the_full_race_keeps_prayers_ahead_of_the_later_shrine_writer() {
     );
 
     let mut on = treatment();
+    on.enable_enter_the_prophet_race_2();
     on.enable_religion_seat_races_the_prophet();
     on.enable_prophet_race_earns_its_points();
     on.plan_city_target = true;
-    on.base.book_pos = 4;
+    on.skip_opening_book();
     let mut candidate = g;
     on.take_turn(&mut candidate, 0);
     assert_eq!(
