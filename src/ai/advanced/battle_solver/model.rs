@@ -250,14 +250,14 @@ pub struct Weights {
 impl Default for Weights {
     fn default() -> Self {
         Self {
-            loss: 1.15,
-            alive_floor: 0.35,
+            loss: 1.25,
+            alive_floor: 0.6,
             objective_bonus: 150.0,
             haste: 0.92,
             enemy_retreat_hp: 25,
-            our_retreat_hp: 40,
-            enemy_aggression: 0.75,
-            tempo: 0.15,
+            our_retreat_hp: 30,
+            enemy_aggression: 0.5,
+            tempo: 0.4,
         }
     }
 }

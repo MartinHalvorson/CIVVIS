@@ -40,7 +40,7 @@ impl Budget {
     /// The live seat's budget: a few thousand rollouts per battle.
     pub const DEFAULT: Budget = Budget {
         rollouts: 2400,
-        horizon: 4,
+        horizon: 2,
         coarse: 6,
         fine: 40,
         max_lines: 9,
