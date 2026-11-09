@@ -1572,6 +1572,36 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
 /// "+2 from City Center" in Rome and "+2 from Wonder" in Mediolanum beside the
 /// specialty districts the model already paid.
 #[test]
+fn a_nazca_line_pays_each_neighbour_every_term_exactly_once() {
+    // GameplayDB ImprovementModifiers for IMPROVEMENT_NAZCA_LINE: FAITH,
+    // FAITH_RESOURCE, FOOD_DESERT_CIVIL_SERVICE and
+    // PRODUCTION_FLAT_MASS_PRODUCTION, each Amount 1.
+    let (mut game, cities) = game_with_capitals(1, 89_131);
+    let city = cities[0];
+    let target = owned_non_center_site(&game, city);
+    let line = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.cities[&city].owned_tiles.contains(position) && *position != game.cities[&city].pos
+        })
+        .expect("the capital ring contains adjacent owned sites");
+    prepare_improvement_site(&mut game, target, "desert", false);
+    prepare_improvement_site(&mut game, line, "desert", false);
+    game.map.tiles.get_mut(&target).unwrap().resource = Some(crate::name!("stone"));
+    game.players[0].civics.insert(crate::name!("civil_service"));
+    game.players[0]
+        .techs
+        .insert(crate::name!("mass_production"));
+    let bare = game.player_tile_yields(0, target, &game.map.tiles[&target]);
+    game.map.tiles.get_mut(&line).unwrap().improvement = Some(crate::name!("nazca_line"));
+    let paid = game.player_tile_yields(0, target, &game.map.tiles[&target]);
+    assert_close(paid.faith, bare.faith + 2.0);
+    assert_close(paid.food, bare.food + 1.0);
+    assert_close(paid.production, bare.production + 1.0);
+}
+
+#[test]
 fn nan_madol_pays_the_city_center_and_wonder_plots_too() {
     let (mut game, cities) = game_with_capitals(2, 77_101);
     let city = cities[0];
