@@ -94,7 +94,7 @@ fn replay(path: &str, every: u32) {
         winner < players,
         "replay requires stock free-for-all team IDs"
     );
-    let events = std::fs::read_to_string(path.join("events.jsonl")).expect("read events");
+    let events = path.join("events.jsonl");
     let mut samples = Vec::new();
     for turn in (every..end_turn).step_by(every as usize) {
         let Ok(board) = civvis::mirror::snapshot_from_events_at(&events, Some(turn)) else {
@@ -107,12 +107,7 @@ fn replay(path: &str, every: u32) {
             continue;
         }
         let game = civvis::mirror::rebuild_from_state(&board, &state, players, 1, turns, 0).game;
-        let mut old = game.clone();
-        old.unseen_city_owners.clear();
-        for stats in std::sync::Arc::make_mut(&mut old.observed_public_empire_stats).values_mut() {
-            stats.city_count = None;
-        }
-        let before = civvis::odds::table(&old, |_| 1500.0_f64);
+        let before = civvis::odds::table_with_located_cities(&game, |_| 1500.0_f64);
         let mut sample = snapshot(&game);
         for seat in sample["seats"].as_array_mut().expect("seats") {
             let pid = seat["pid"].as_u64().expect("seat id") as usize;
@@ -155,8 +150,8 @@ fn main() {
         "--human-seat",
         "--replay",
     ];
-    let pairs = args[1..].chunks_exact(2);
-    assert!(pairs.remainder().is_empty(), "every option needs a value");
+    let (pairs, remainder) = args[1..].as_chunks::<2>();
+    assert!(remainder.is_empty(), "every option needs a value");
     let mut seen = std::collections::BTreeSet::new();
     for pair in pairs {
         assert!(

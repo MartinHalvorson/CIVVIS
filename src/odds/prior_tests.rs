@@ -5,6 +5,7 @@ fn handicap_exempt_seats_receive_no_fictional_starting_units_or_era_boosts() {
     let mut options = GameOptions::new(4, 32, 22, 91_139, 250, 0);
     options.difficulty = "deity".to_string();
     options.handicap_exempt.insert(0);
+    options.handicap_exempt.insert(1);
     options.human_seats.insert(1);
     let game = Game::new_with(options);
     let odds = table(&game, flat);

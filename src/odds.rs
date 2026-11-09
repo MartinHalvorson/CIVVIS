@@ -31,9 +31,11 @@
 //!
 //! It is a rating-and-standing model, not a search. It does not read plans,
 //! count what a unit could reach next turn, or roll the game out. It also
-//! judges the whole board: like the Elo-implied share it replaces, a seat's
-//! odds are computed omnisciently and then withheld from a fogged viewer's
-//! ribbon row by row, rather than being re-derived from what that viewer knows.
+//! judges the whole board when one is available, withholding unfamiliar rows
+//! from a fogged viewer's ribbon. Partial host and decision boards use public
+//! empire totals without inventing hidden locations. An unobserved empire
+//! retains its prior with neutral standing evidence, rather than being called
+//! defeated. Missing city evidence also prevents a Mercy Rule verdict.
 //!
 //! ## Calibration
 //!
@@ -202,6 +204,30 @@ pub fn table<R>(game: &Game, prior_rating: impl Fn(usize) -> R) -> BTreeMap<usiz
 where
     R: Into<PriorRating>,
 {
+    table_impl(game, prior_rating, true)
+}
+
+/// Reference for replay audits: the former located-city treatment, including
+/// its missing-rival exclusions. Other observed standings remain identical.
+#[cfg(feature = "developer-tools")]
+pub fn table_with_located_cities<R>(
+    game: &Game,
+    prior_rating: impl Fn(usize) -> R,
+) -> BTreeMap<usize, SeatOdds>
+where
+    R: Into<PriorRating>,
+{
+    table_impl(game, prior_rating, false)
+}
+
+fn table_impl<R>(
+    game: &Game,
+    prior_rating: impl Fn(usize) -> R,
+    public_standings: bool,
+) -> BTreeMap<usize, SeatOdds>
+where
+    R: Into<PriorRating>,
+{
     let seats: Vec<usize> = game
         .players
         .iter()
@@ -270,13 +296,13 @@ where
     let living: Vec<usize> = seats
         .iter()
         .copied()
-        .filter(|pid| still_playing(game, *pid))
+        .filter(|pid| still_playing(game, *pid, public_standings))
         .collect();
     if living.is_empty() {
         return odds;
     }
 
-    let standing = standing_elo(game, &living);
+    let standing = standing_elo(game, &living, public_standings);
     let progress = clock_progress(game);
     let mean_prior = mean(
         &living
@@ -290,13 +316,13 @@ where
         .map(|(pid, position)| {
             (1.0 - PRIOR_FADE * progress) * (pregame_elo[seat_index(&seats, *pid)] - mean_prior)
                 + (LEAD_BASE + LEAD_SHARPEN * progress) * position.elo
-                - no_city_penalty(game, *pid)
+                - no_city_penalty(game, *pid, public_standings)
         })
         .collect();
     let individual_now = win_shares(&live_elo);
     for (index, pid) in living.iter().enumerate() {
         let seat = odds.get_mut(pid).expect("a living seat is at the table");
-        seat.standing_elo = standing[index].elo - no_city_penalty(game, *pid);
+        seat.standing_elo = standing[index].elo - no_city_penalty(game, *pid, public_standings);
         seat.race_pct = standing[index].race_pct;
     }
     // A defeated teammate cannot trigger a victory, but `winning_players`
@@ -321,6 +347,16 @@ where
 /// so the lowest living seat of the leading side is crowned and the normal
 /// team-victory credit does the rest.
 pub fn mercy_leader(game: &Game, threshold: f64) -> Option<usize> {
+    // A partial view cannot establish that an unobserved empire has lost.
+    // Missing city evidence must never end a rollout or a player's game.
+    if game.players.iter().any(|player| {
+        player.alive
+            && !player.is_minor
+            && !player.is_barbarian
+            && city_status_unknown(game, player.id)
+    }) {
+        return None;
+    }
     let odds = table(game, |_pid| 1500.0f64);
     odds.iter()
         .filter(|(pid, seat)| game.players[**pid].alive && seat.now >= threshold)
@@ -380,7 +416,7 @@ fn handicap_elo(game: &Game, pid: usize) -> f64 {
 /// army, no ground, and no way to take any — a win probability of zero rather
 /// than a small one. Saying so early costs nothing and stops a doomed empire
 /// from holding a few per cent of the table's win for the rest of a turn.
-fn still_playing(game: &Game, pid: usize) -> bool {
+fn still_playing(game: &Game, pid: usize, public_standings: bool) -> bool {
     let Some(player) = game.players.get(pid) else {
         return false;
     };
@@ -398,18 +434,54 @@ fn still_playing(game: &Game, pid: usize) -> bool {
         return !game.player_city_ids(pid).is_empty()
             || game.units.values().any(|unit| unit.owner == pid);
     }
-    city_count(game, pid) > 0
+    (public_standings && city_status_unknown(game, pid))
+        || counted_cities(game, pid, public_standings) > 0
         || game
             .units
             .values()
             .any(|unit| unit.owner == pid && unit.kind == "settler")
 }
 
-fn no_city_penalty(game: &Game, pid: usize) -> f64 {
-    if game.turn > 10 && city_count(game, pid) == 0 {
+fn no_city_penalty(game: &Game, pid: usize, public_standings: bool) -> f64 {
+    if public_standings && city_status_unknown(game, pid) {
+        return 0.0;
+    }
+    if game.turn > 10 && counted_cities(game, pid, public_standings) == 0 {
         NO_CITY_ELO
     } else {
         0.0
+    }
+}
+
+fn partial_board(game: &Game) -> bool {
+    !game.observed_public_empire_stats.is_empty() || !game.observed_score.is_empty()
+}
+
+fn city_status_unknown(game: &Game, pid: usize) -> bool {
+    !game.is_arena()
+        && partial_board(game)
+        && game.player_city_ids(pid).is_empty()
+        && !game.unseen_city_owners.contains(&pid)
+        && game
+            .observed_public_empire_stats
+            .get(&pid)
+            .and_then(|s| s.city_count)
+            .is_none()
+}
+
+fn position_known(game: &Game, pid: usize) -> bool {
+    !partial_board(game)
+        || game.observed_score.contains_key(&pid)
+        || game.observed_public_empire_stats.contains_key(&pid)
+        || !game.player_city_ids(pid).is_empty()
+        || game.unseen_city_owners.contains(&pid)
+}
+
+fn counted_cities(game: &Game, pid: usize, public_standings: bool) -> usize {
+    if public_standings {
+        city_count(game, pid)
+    } else {
+        game.player_city_ids(pid).len()
     }
 }
 
@@ -439,7 +511,7 @@ struct Standing {
 /// the game drops out: twice the mean Score is worth the same on turn 40 as on
 /// turn 400. The victory term is the seat's closest enabled race, which is the
 /// one measure that knows about *ending* the game rather than leading it.
-fn standing_elo(game: &Game, living: &[usize]) -> Vec<Standing> {
+fn standing_elo(game: &Game, living: &[usize], public_standings: bool) -> Vec<Standing> {
     let leading_score = game
         .players
         .iter()
@@ -451,27 +523,55 @@ fn standing_elo(game: &Game, living: &[usize]) -> Vec<Standing> {
     let militaries: Vec<f64> = living.iter().map(|pid| game.military_power(*pid)).collect();
     let cities: Vec<f64> = living
         .iter()
-        .map(|pid| city_count(game, *pid) as f64)
+        .map(|pid| counted_cities(game, *pid, public_standings) as f64)
         .collect();
     let races: Vec<f64> = living
         .iter()
         .map(|pid| best_race_pct(game, *pid, leading_score))
         .collect();
     let race_elo: Vec<f64> = races.iter().map(|pct| race_elo(*pct)).collect();
+    // Unmet seats contain placeholder zeros, not observed economic collapse.
+    // Center on the known field and give an unknown position neutral evidence;
+    // its actual chance still follows the table's pregame handicap and rating.
+    let known: Vec<bool> = living
+        .iter()
+        .map(|pid| !public_standings || position_known(game, *pid))
+        .collect();
+    let known_cities: Vec<bool> = living
+        .iter()
+        .map(|pid| !public_standings || !city_status_unknown(game, *pid))
+        .collect();
+    let known_mean = |values: &[f64], mask: &[bool]| {
+        let values: Vec<f64> = values
+            .iter()
+            .zip(mask)
+            .filter(|(_, known)| **known)
+            .map(|(value, _)| *value)
+            .collect();
+        mean(&values)
+    };
     let (mean_score, mean_military, mean_cities, mean_race) = (
-        mean(&scores),
-        mean(&militaries),
-        mean(&cities),
-        mean(&race_elo),
+        known_mean(&scores, &known),
+        known_mean(&militaries, &known),
+        known_mean(&cities, &known_cities),
+        known_mean(&race_elo, &known),
     );
     (0..living.len())
         .map(|i| Standing {
-            elo: LEAD_SCORE_ELO * log_ratio(scores[i], mean_score, SCORE_FLOOR)
-                + LEAD_MILITARY_ELO * log_ratio(militaries[i], mean_military, MILITARY_FLOOR)
-                + LEAD_CITY_ELO * log_ratio(cities[i], mean_cities, CITY_FLOOR)
-                + race_elo[i]
-                - mean_race,
-            race_pct: races[i],
+            elo: if known[i] {
+                LEAD_SCORE_ELO * log_ratio(scores[i], mean_score, SCORE_FLOOR)
+                    + LEAD_MILITARY_ELO * log_ratio(militaries[i], mean_military, MILITARY_FLOOR)
+                    + if known_cities[i] {
+                        LEAD_CITY_ELO * log_ratio(cities[i], mean_cities, CITY_FLOOR)
+                    } else {
+                        0.0
+                    }
+                    + race_elo[i]
+                    - mean_race
+            } else {
+                0.0
+            },
+            race_pct: if known[i] { races[i] } else { 0.0 },
         })
         .collect()
 }

@@ -27,7 +27,7 @@ fn unlimited_worlds_age_on_their_own_game_speed() {
 }
 
 #[test]
-fn explicit_caps_and_play_on_keep_their_actual_clock() {
+fn explicit_caps_and_the_unlimited_sentinel_keep_their_actual_clock() {
     let mut game = even_table(2, "prince", &[]);
     game.speed = "online".to_string();
     game.max_turns = 500;

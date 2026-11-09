@@ -12,6 +12,7 @@ The same seed in two profiles is rejected: its map is not an independent draw.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 from pathlib import Path
@@ -23,11 +24,17 @@ def load(paths):
     games = []
     seeds = set()
     for path in paths:
-        with Path(path).open() as source:
+        path = Path(path)
+        with (gzip.open(path, "rt") if path.suffix == ".gz" else path.open()) as source:
             for line_number, line in enumerate(source, 1):
                 game = json.loads(line)
                 if game.get("schema") != "civvis-odds-v1":
                     raise ValueError(f"{path}:{line_number}: unknown odds schema")
+                if type(game.get("seed")) is not int:
+                    raise ValueError("a game needs an integer seed")
+                if any(type(game.get(key)) is not int or game[key] <= 0
+                       for key in ("players", "max_turns", "end_turn")):
+                    raise ValueError("players and clocks must be positive integers")
                 if game["seed"] in seeds:
                     raise ValueError(f"duplicate seed {game['seed']}; keep maps independent")
                 seeds.add(game["seed"])
@@ -36,6 +43,8 @@ def load(paths):
                 if len(game["winners"]) != 1:
                     raise ValueError("this report requires free-for-all games")
                 turns = [sample["turn"] for sample in game["samples"]]
+                if not turns:
+                    raise ValueError("a completed game needs at least one pre-outcome forecast")
                 if turns != sorted(set(turns)):
                     raise ValueError("sample turns must be unique and increasing")
                 if turns and turns[-1] > game["end_turn"]:
@@ -53,7 +62,7 @@ def load(paths):
                 games.append(game)
     if not games:
         raise ValueError("no completed games")
-    return games
+    return sorted(games, key=lambda game: game["seed"])
 
 
 def validate_probabilities(values):
@@ -90,20 +99,38 @@ def interval(values, repeats=2000):
     return [estimates[int(repeats * .025)], estimates[min(repeats - 1, int(repeats * .975))]]
 
 
+def reliability(readings):
+    """Descriptive confidence bins; seats here are not independent trials."""
+    bins = [[] for _ in range(10)]
+    for probability, outcome in readings:
+        bins[min(9, int(probability * 10))].append((probability, outcome))
+    return [{"low": index / 10, "high": (index + 1) / 10,
+             "seats": len(values),
+             "predicted": statistics.mean(p for p, _ in values),
+             "observed": statistics.mean(outcome for _, outcome in values)}
+            for index, values in enumerate(bins) if values]
+
+
 def report(games, predict=None, phases=(.25, .5, .75, .9),
            baseline_field="now", candidate_field="start"):
     result = []
     for phase in phases:
         rows = []
+        readings = [[], []]
+        impossible_winners = [0, 0]
         for game in games:
             sample = at_phase(game, phase)
             if sample is None:
                 continue
             pids = [seat["pid"] for seat in sample["seats"]]
             winner = game["winners"][0]
-            baseline = score([seat[baseline_field] for seat in sample["seats"]], pids, winner)
-            candidate = score(predict(game, sample) if predict else
-                              [seat[candidate_field] for seat in sample["seats"]], pids, winner)
+            probabilities = ([seat[baseline_field] for seat in sample["seats"]],
+                             predict(game, sample) if predict else
+                             [seat[candidate_field] for seat in sample["seats"]])
+            baseline, candidate = [score(values, pids, winner) for values in probabilities]
+            for index, values in enumerate(probabilities):
+                readings[index].extend((p, float(pid == winner)) for pid, p in zip(pids, values))
+                impossible_winners[index] += values[pids.index(winner)] == 0
             rows.append((baseline, candidate))
         if not rows:
             continue
@@ -116,7 +143,10 @@ def report(games, predict=None, phases=(.25, .5, .75, .9),
                 "difference": statistics.mean(delta),
                 "difference_95": interval(delta),
             }
-        result.append({"phase": phase, "games": len(rows), "metrics": metrics})
+        labels = (baseline_field, "candidate" if predict else candidate_field)
+        result.append({"phase": phase, "games": len(rows), "metrics": metrics,
+                       "zero_probability_winners": dict(zip(labels, impossible_winners)),
+                       "reliability": dict(zip(labels, map(reliability, readings)))})
     return {"games": len(games), "phases": result}
 
 

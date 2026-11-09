@@ -1,0 +1,616 @@
+{
+  "games": 66,
+  "phases": [
+    {
+      "phase": 0.1,
+      "games": 66,
+      "metrics": {
+        "brier": {
+          "legacy_now": 0.24787368049634367,
+          "now": 0.13144717494997013,
+          "difference": -0.11642650554637354,
+          "difference_95": [
+            -0.1455218642366691,
+            -0.08631498103955641
+          ]
+        },
+        "log_loss": {
+          "legacy_now": 21.028483895232778,
+          "now": 1.5853742027163162,
+          "difference": -19.44310969251646,
+          "difference_95": [
+            -22.2976571501475,
+            -16.543560407903154
+          ]
+        },
+        "favorite_accuracy": {
+          "legacy_now": 0.21212121212121213,
+          "now": 0.3181818181818182,
+          "difference": 0.10606060606060606,
+          "difference_95": [
+            0.015151515151515152,
+            0.19696969696969696
+          ]
+        }
+      },
+      "zero_probability_winners": {
+        "legacy_now": 50,
+        "now": 0
+      },
+      "reliability": {
+        "legacy_now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 307,
+            "predicted": 0.0007516257487424697,
+            "observed": 0.16286644951140064
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 3,
+            "predicted": 0.28720147814574337,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 11,
+            "predicted": 0.34953487726651167,
+            "observed": 0.18181818181818182
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 14,
+            "predicted": 0.4522111247276524,
+            "observed": 0.07142857142857142
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 11,
+            "predicted": 0.5509921899393203,
+            "observed": 0.2727272727272727
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 3,
+            "predicted": 0.6176128454062749,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.9,
+            "high": 1.0,
+            "seats": 47,
+            "predicted": 0.996128817851675,
+            "observed": 0.1702127659574468
+          }
+        ],
+        "now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 66,
+            "predicted": 0.000962628871312717,
+            "observed": 0.0
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 242,
+            "predicted": 0.18816264919135348,
+            "observed": 0.1859504132231405
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 88,
+            "predicted": 0.23183074307029342,
+            "observed": 0.23863636363636365
+          }
+        ]
+      }
+    },
+    {
+      "phase": 0.2,
+      "games": 66,
+      "metrics": {
+        "brier": {
+          "legacy_now": 0.18216971023258202,
+          "now": 0.12651879027470506,
+          "difference": -0.05565091995787697,
+          "difference_95": [
+            -0.07681552939725697,
+            -0.03375515459342296
+          ]
+        },
+        "log_loss": {
+          "legacy_now": 15.828878052112112,
+          "now": 1.512734988582443,
+          "difference": -14.316143063529669,
+          "difference_95": [
+            -17.183148604597875,
+            -11.075714633321974
+          ]
+        },
+        "favorite_accuracy": {
+          "legacy_now": 0.30303030303030304,
+          "now": 0.3484848484848485,
+          "difference": 0.045454545454545456,
+          "difference_95": [
+            -0.06060606060606061,
+            0.15151515151515152
+          ]
+        }
+      },
+      "zero_probability_winners": {
+        "legacy_now": 37,
+        "now": 0
+      },
+      "reliability": {
+        "legacy_now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 246,
+            "predicted": 0.0015770308882405335,
+            "observed": 0.15447154471544716
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 21,
+            "predicted": 0.15761241200588216,
+            "observed": 0.047619047619047616
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 25,
+            "predicted": 0.24636515035308498,
+            "observed": 0.08
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 29,
+            "predicted": 0.35502570882923173,
+            "observed": 0.27586206896551724
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 26,
+            "predicted": 0.44107572579267174,
+            "observed": 0.15384615384615385
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 21,
+            "predicted": 0.5535185755330869,
+            "observed": 0.23809523809523808
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 11,
+            "predicted": 0.6410623557562803,
+            "observed": 0.18181818181818182
+          },
+          {
+            "low": 0.7,
+            "high": 0.8,
+            "seats": 5,
+            "predicted": 0.7547461620918176,
+            "observed": 0.4
+          },
+          {
+            "low": 0.9,
+            "high": 1.0,
+            "seats": 12,
+            "predicted": 0.9941699794926663,
+            "observed": 0.3333333333333333
+          }
+        ],
+        "now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 71,
+            "predicted": 0.006525567551602133,
+            "observed": 0.0
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 217,
+            "predicted": 0.1713783166646387,
+            "observed": 0.15207373271889402
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 88,
+            "predicted": 0.24294586110660857,
+            "observed": 0.2727272727272727
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 19,
+            "predicted": 0.3402422413343813,
+            "observed": 0.42105263157894735
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 1,
+            "predicted": 0.5037516248748528,
+            "observed": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "phase": 0.3,
+      "games": 65,
+      "metrics": {
+        "brier": {
+          "legacy_now": 0.13279546859309696,
+          "now": 0.1176492345743686,
+          "difference": -0.015146234018728366,
+          "difference_95": [
+            -0.0334309464727728,
+            0.0027997023014143833
+          ]
+        },
+        "log_loss": {
+          "legacy_now": 6.1054000541267435,
+          "now": 1.3679303739123916,
+          "difference": -4.737469680214351,
+          "difference_95": [
+            -7.245213909919586,
+            -2.3687946375036297
+          ]
+        },
+        "favorite_accuracy": {
+          "legacy_now": 0.4153846153846154,
+          "now": 0.36923076923076925,
+          "difference": -0.046153846153846156,
+          "difference_95": [
+            -0.18461538461538463,
+            0.09230769230769231
+          ]
+        }
+      },
+      "zero_probability_winners": {
+        "legacy_now": 12,
+        "now": 0
+      },
+      "reliability": {
+        "legacy_now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 177,
+            "predicted": 0.014305578501801168,
+            "observed": 0.0903954802259887
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 84,
+            "predicted": 0.1496067772064383,
+            "observed": 0.13095238095238096
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 48,
+            "predicted": 0.242871333338422,
+            "observed": 0.14583333333333334
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 29,
+            "predicted": 0.3530529782573924,
+            "observed": 0.3793103448275862
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 24,
+            "predicted": 0.4337526255862547,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 14,
+            "predicted": 0.5408906676996125,
+            "observed": 0.42857142857142855
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 9,
+            "predicted": 0.644980277232039,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.7,
+            "high": 0.8,
+            "seats": 3,
+            "predicted": 0.7620032992691631,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.9,
+            "high": 1.0,
+            "seats": 2,
+            "predicted": 0.9656090976856053,
+            "observed": 1.0
+          }
+        ],
+        "now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 130,
+            "predicted": 0.03461422974071244,
+            "observed": 0.03076923076923077
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 130,
+            "predicted": 0.14831441860374917,
+            "observed": 0.08461538461538462
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 72,
+            "predicted": 0.24185550298282885,
+            "observed": 0.3888888888888889
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 39,
+            "predicted": 0.3481801994715505,
+            "observed": 0.358974358974359
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 9,
+            "predicted": 0.4484095628393291,
+            "observed": 0.2222222222222222
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 6,
+            "predicted": 0.5620507833616242,
+            "observed": 0.5
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 2,
+            "predicted": 0.6458879477542612,
+            "observed": 1.0
+          },
+          {
+            "low": 0.7,
+            "high": 0.8,
+            "seats": 2,
+            "predicted": 0.7634425299168079,
+            "observed": 0.5
+          }
+        ]
+      }
+    },
+    {
+      "phase": 0.35,
+      "games": 48,
+      "metrics": {
+        "brier": {
+          "legacy_now": 0.1042689188419474,
+          "now": 0.08630639101214842,
+          "difference": -0.01796252782979899,
+          "difference_95": [
+            -0.036761099814467575,
+            -0.001536516745949444
+          ]
+        },
+        "log_loss": {
+          "legacy_now": 3.213305818825005,
+          "now": 0.9749041292369136,
+          "difference": -2.2384016895880916,
+          "difference_95": [
+            -4.5084771287931495,
+            -0.5123104499304366
+          ]
+        },
+        "favorite_accuracy": {
+          "legacy_now": 0.5416666666666666,
+          "now": 0.6041666666666666,
+          "difference": 0.0625,
+          "difference_95": [
+            -0.0625,
+            0.1875
+          ]
+        }
+      },
+      "zero_probability_winners": {
+        "legacy_now": 4,
+        "now": 0
+      },
+      "reliability": {
+        "legacy_now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 166,
+            "predicted": 0.021466437094788036,
+            "observed": 0.03614457831325301
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 41,
+            "predicted": 0.14783007918181942,
+            "observed": 0.17073170731707318
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 26,
+            "predicted": 0.2574904959493421,
+            "observed": 0.2692307692307692
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 12,
+            "predicted": 0.33500176113609853,
+            "observed": 0.4166666666666667
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 10,
+            "predicted": 0.43856465152425533,
+            "observed": 0.4
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 9,
+            "predicted": 0.554619997145814,
+            "observed": 0.3333333333333333
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 7,
+            "predicted": 0.650353195670689,
+            "observed": 0.5714285714285714
+          },
+          {
+            "low": 0.7,
+            "high": 0.8,
+            "seats": 9,
+            "predicted": 0.7586100254678227,
+            "observed": 0.6666666666666666
+          },
+          {
+            "low": 0.8,
+            "high": 0.9,
+            "seats": 7,
+            "predicted": 0.8542861615204724,
+            "observed": 0.7142857142857143
+          },
+          {
+            "low": 0.9,
+            "high": 1.0,
+            "seats": 1,
+            "predicted": 0.9235719483910978,
+            "observed": 1.0
+          }
+        ],
+        "now": [
+          {
+            "low": 0.0,
+            "high": 0.1,
+            "seats": 165,
+            "predicted": 0.0329682872808103,
+            "observed": 0.024242424242424242
+          },
+          {
+            "low": 0.1,
+            "high": 0.2,
+            "seats": 44,
+            "predicted": 0.1491565965354919,
+            "observed": 0.06818181818181818
+          },
+          {
+            "low": 0.2,
+            "high": 0.3,
+            "seats": 20,
+            "predicted": 0.25565306042871827,
+            "observed": 0.25
+          },
+          {
+            "low": 0.3,
+            "high": 0.4,
+            "seats": 22,
+            "predicted": 0.3476202999648036,
+            "observed": 0.5454545454545454
+          },
+          {
+            "low": 0.4,
+            "high": 0.5,
+            "seats": 6,
+            "predicted": 0.439070583565325,
+            "observed": 0.5
+          },
+          {
+            "low": 0.5,
+            "high": 0.6,
+            "seats": 11,
+            "predicted": 0.5361347370524169,
+            "observed": 0.6363636363636364
+          },
+          {
+            "low": 0.6,
+            "high": 0.7,
+            "seats": 8,
+            "predicted": 0.6437061295040634,
+            "observed": 0.625
+          },
+          {
+            "low": 0.7,
+            "high": 0.8,
+            "seats": 6,
+            "predicted": 0.7508238033790169,
+            "observed": 0.5
+          },
+          {
+            "low": 0.8,
+            "high": 0.9,
+            "seats": 6,
+            "predicted": 0.8416895130049112,
+            "observed": 1.0
+          }
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "engine_base": "6509efbbd7",
+    "odds_source_sha256": "50f33796b372cd55622faf95be487028c8ca895349f52bde66252937e0874793",
+    "data_sha256": "50e3652f3c33cee6a64dba414aa1cab05e2ddc5fbada95cc0443ddae433f1b84",
+    "selected_original_attempts": 68,
+    "replayed": 66,
+    "unavailable_inputs": [
+      {
+        "path": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261108T011231Z",
+        "error": "\nthread 'main' (88503932) panicked at /Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-11-09/win-probability/odds_audited.rs:75:61:\nread summary: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+      },
+      {
+        "path": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261108T014920Z",
+        "error": "\nthread 'main' (88503936) panicked at /Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-11-09/win-probability/odds_audited.rs:75:61:\nread summary: Os { code: 2, kind: NotFound, message: \"No such file or directory\" }\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+      }
+    ],
+    "profile": "Deity / Online / 6 players / 500-turn host cap / stock free-for-all",
+    "measurement": "fixed-outcome replay; no policy win-rate inference"
+  }
+}

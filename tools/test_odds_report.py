@@ -1,12 +1,13 @@
 """Outcome scoring must not bless leakage, duplicate games or invalid odds."""
 import copy
+import gzip
 import json
 import math
 from pathlib import Path
 import tempfile
 import unittest
 
-from odds_report import at_phase, interval, load, report, score
+from odds_report import at_phase, interval, load, reliability, report, score
 
 
 def fixture():
@@ -84,6 +85,37 @@ class OddsReportTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["brier"]["start"], .25)
         self.assertGreater(metrics["log_loss"]["difference"], 0)
         self.assertEqual(interval([.25, .25], 100), [.25, .25])
+
+    def test_reliability_keeps_zero_and_one_in_valid_bins(self):
+        bins = reliability([(0., 1.), (1., 0.)])
+        self.assertEqual([row["low"] for row in bins], [0., .9])
+        self.assertEqual([row["observed"] for row in bins], [1., 0.])
+
+    def test_actual_winner_assigned_zero_is_visible(self):
+        game = fixture()
+        for sample in game["samples"]:
+            sample["seats"][0]["now"] = 1.
+            sample["seats"][1]["now"] = 0.
+        result = report(self.read(game), phases=(.5,))
+        self.assertEqual(result["phases"][0]["zero_probability_winners"], {"now": 1, "start": 0})
+
+    def test_archived_evidence_reads_the_same_as_plain_jsonl(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "run.jsonl.gz"
+            with gzip.open(path, "wt") as stream:
+                stream.write(json.dumps(fixture()) + "\n")
+            self.assertEqual(load([path]), [fixture()])
+
+    def test_empty_forecast_series_is_not_evidence(self):
+        game = fixture()
+        game["samples"] = []
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            self.read(game)
+
+    def test_parallel_completion_order_does_not_change_the_report(self):
+        first, second = fixture(), fixture()
+        second["seed"] = 2
+        self.assertEqual(self.read(first, second), self.read(second, first))
 
 
 if __name__ == "__main__":
