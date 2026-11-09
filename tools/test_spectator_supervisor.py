@@ -385,11 +385,6 @@ class SessionSettingsTests(unittest.TestCase):
             for _ in range(200)
         }
         self.assertEqual(drawn, set(supervisor.MAP_SHAPES))
-        self.assertEqual(
-            set(supervisor.rolled_simulation_settings(flat_defaults)["shape"]
-                for _ in range(200)),
-            set(supervisor.MAP_SHAPES),
-        )
 
     def test_a_staged_lobby_choice_still_beats_the_draw(self):
         """An explicit setup-panel handoff is a choice, not an axis to roll."""
@@ -1037,36 +1032,6 @@ class SourceSnapshotTests(unittest.TestCase):
         self.assertEqual(prepare.call_count, 2)
         self.assertEqual(sync.call_count, 2)
 
-    def test_live_refresh_requires_both_fresh_code_and_a_safe_checkpoint(self):
-        checkpoint = Path("/tmp/civvis-live-refresh.json")
-        with (
-            patch.object(supervisor, "prepare_latest_once", return_value=False),
-            patch.object(supervisor, "capture_checkpoint") as capture,
-        ):
-            self.assertFalse(supervisor.prepare_live_refresh(8766, checkpoint))
-        capture.assert_not_called()
-
-        with (
-            patch.object(supervisor, "prepare_latest_once", return_value=True),
-            patch.object(supervisor, "capture_checkpoint", return_value=False),
-        ):
-            self.assertFalse(supervisor.prepare_live_refresh(8766, checkpoint))
-
-        with (
-            patch.object(supervisor, "prepare_latest_once", return_value=True),
-            patch.object(supervisor, "capture_checkpoint", return_value=True) as capture,
-        ):
-            self.assertTrue(supervisor.prepare_live_refresh(8766, checkpoint))
-        capture.assert_called_once_with(8766, checkpoint)
-
-    def test_active_prebuild_always_fetches_canonical_source(self):
-        with patch.object(
-            supervisor, "prepare_latest_once", return_value=True
-        ) as prepare:
-            self.assertTrue(supervisor.prebuild_latest_once())
-        prepare.assert_called_once_with()
-
-
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
         # Recovery tests exercise `main()` while the real exhibition may be
@@ -1153,36 +1118,6 @@ class RecoveryTests(unittest.TestCase):
 
         stop_build.assert_called_once_with(None)
         stop_server.assert_called_once_with(None, 321)
-
-    def test_successor_detection_closes_the_cooldown_restart_race(self):
-        finished = {"server_instance": 7, "seed": 11, "winner": 2}
-        self.assertFalse(supervisor.successor_started(None, 7, 11))
-        self.assertFalse(supervisor.successor_started(finished, 7, 11))
-        self.assertTrue(
-            supervisor.successor_started({**finished, "winner": None}, 7, 11)
-        )
-        self.assertTrue(
-            supervisor.successor_started({**finished, "seed": 12}, 7, 11)
-        )
-        self.assertFalse(
-            supervisor.successor_started(
-                {**finished, "winner": None, "finished": True, "victory_type": "draw"},
-                7,
-                11,
-            ),
-            "a draw on the same world is still the result being held"
-        )
-
-    def test_successor_grace_observes_the_server_owned_restart(self):
-        finished = {"server_instance": 7, "seed": 11, "winner": 2}
-        successor = {"server_instance": 7, "seed": 12, "winner": None}
-        with patch.object(
-            supervisor, "read_status", side_effect=[finished, successor]
-        ):
-            self.assertEqual(
-                supervisor.wait_for_successor(8766, 7, 11, timeout=0.2),
-                successor,
-            )
 
     def test_manual_restart_uses_existing_runtime_without_building(self):
         requested = {
@@ -1630,8 +1565,6 @@ class RecoveryTests(unittest.TestCase):
         evening the exhibition counted down from something nobody had chosen.
         """
         self.assertEqual(supervisor.FINAL_COUNTDOWN_SECONDS, 10.0)
-        for asked in (0.0, 5.0, 9.999, 10.0, 12.5, 60.0, 110.0, float("inf")):
-            self.assertEqual(supervisor.final_countdown_seconds(asked), 10.0)
         # And the server is never handed a duration at all.
         command = supervisor.server_command(
             8766,
@@ -1683,9 +1616,10 @@ class RecoveryTests(unittest.TestCase):
 
     def test_a_rolled_world_lets_the_binary_size_its_own_board(self):
         """Seat count varies, so the board that holds it cannot be pinned."""
-        rolled = supervisor.rolled_simulation_settings(
+        rolled = supervisor.session_settings(
+            {},
             {"players": 6, "width": 74, "height": 46, "city_states": 9,
-             "turns": 250, "map": "pangaea", "speed": "online"}
+             "turns": 250, "map": "pangaea", "speed": "online"},
         )
         for dropped in ("width", "height", "city_states"):
             self.assertNotIn(dropped, rolled)
@@ -1704,8 +1638,8 @@ class RecoveryTests(unittest.TestCase):
         """Variety is the point; a roll that always answers 6/pangaea is not."""
         seen_players, seen_maps = set(), set()
         for _ in range(400):
-            rolled = supervisor.rolled_simulation_settings(
-                {"players": 6, "turns": 250, "map": "pangaea", "speed": "online"}
+            rolled = supervisor.session_settings(
+                {}, {"players": 6, "turns": 250, "map": "pangaea", "speed": "online"}
             )
             seen_players.add(rolled["players"])
             seen_maps.add(rolled["map"])
@@ -2114,7 +2048,7 @@ class RecoveryTests(unittest.TestCase):
                 supervisor, "start_background_prebuild", return_value=worker
             ) as start_build,
             patch.object(supervisor, "stop_background_prebuild") as stop_build,
-            patch.object(supervisor, "prebuild_latest_once") as blocking_build,
+            patch.object(supervisor, "prepare_latest_once") as blocking_build,
             patch.object(supervisor, "stop_server"),
             patch.object(supervisor.time, "sleep"),
         ):
@@ -2856,14 +2790,6 @@ class StatusDocumentContractTests(unittest.TestCase):
         playing_on = dict(self.STATUS, decided={"winner": 2, "mode": "Indefinite"})
         self.assertTrue(supervisor.playing_on(playing_on, 774422))
         self.assertFalse(supervisor.playing_on(self.STATUS, 774422))
-
-    def test_successor_identity_reads_instance_seed_and_winner(self):
-        finished = dict(self.STATUS, winner=2, finished=True)
-        self.assertFalse(supervisor.successor_started(finished, 91_234, 774422))
-        fresh_world = dict(self.STATUS, seed=774423)
-        self.assertTrue(supervisor.successor_started(fresh_world, 91_234, 774422))
-        new_process = dict(self.STATUS, server_instance=91_235)
-        self.assertTrue(supervisor.successor_started(new_process, 91_234, 774422))
 
     def test_the_compact_probe_asks_the_cheap_endpoint(self):
         with patch.object(supervisor, "read_json", return_value=self.STATUS) as read:

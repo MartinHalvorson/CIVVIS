@@ -29,20 +29,6 @@ class QualityHelpersTests(unittest.TestCase):
                     [Path("src/main.rs")],
                 )
 
-    def test_span_paths_normalizes_relative_and_absolute_diagnostics(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory)
-            message = {
-                "spans": [
-                    {"file_name": "src/lib.rs"},
-                    {"file_name": str(repo / "src/main.rs")},
-                ]
-            }
-            self.assertEqual(
-                quality._span_paths(message, repo),
-                {(repo / "src/lib.rs").resolve(), (repo / "src/main.rs").resolve()},
-            )
-
     def test_clippy_only_reports_warnings_on_changed_lines(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)

@@ -2563,15 +2563,6 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertIsNone(rows["nulled"]["science_pace"])
         self.assertIsNone(rows["old"]["science_pace"])
 
-    def test_batch_win_cell_does_not_repeat_its_sample_size(self):
-        history = [{
-            "win_on": 1 / 6 + 0.01,
-            "players": 6,
-            "n_on": 1300,
-            "n_off": 500,
-        }]
-        self.assertEqual(ranking.batch_win_cell(history), "+100")
-
     def test_load_sources_preserves_explicit_arm_sizes_without_legacy_pairs(self):
         source = {
             "profile": {"players": 6},

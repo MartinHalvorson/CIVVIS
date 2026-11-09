@@ -6349,6 +6349,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "function bumpSimulationVictory(table, victory) {",
         "bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));",
         "viewButton(\"civs\") + viewButton(\"strategies\") + viewButton(\"victories\")",
+        // Best record first: win rate, then the most wins at that rate.
+        ".sort(compareSimulationRecords)",
+        "return b.w * aGames - a.w * bGames\n    || b.w - a.w\n",
+        // A running simulation must not send the ledger back to its top.
+        "if (!fresh?.isEqualNode(live)) return false;",
+        "if (!repaintBesideArenaStats(victoryHud, overview)) {",
+        "if (statsBody) statsBody.scrollTop = statsScroll;",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(arena_stats_contract),
@@ -6760,34 +6767,25 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(
         EMBEDDED_INDEX.contains(
             "minmax(var(--hud-closest-min), 2.035fr)\n      \
-             repeat(12, minmax(var(--hud-stat-min), 1fr));"
+             minmax(var(--hud-ident-min), 1.3fr)\n      \
+             repeat(13, minmax(var(--hud-stat-min), 1fr));"
         ),
-        "the shipped default tracks end with the twelve value columns"
+        "the shipped default tracks end with Age and the thirteen value columns"
     );
     assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-tracks\", tracks);"));
     assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-table-min\", tableMin);"));
     assert!(EMBEDDED_INDEX.contains("min-width: var(--hud-table-min, 0px);"));
     assert!(EMBEDDED_INDEX.contains("function visiblePlayerHudColumns()"));
-    // NUK is the one column that does not exist for most of a game: no
-    // civilization can hold a device before the first Manhattan Project on
-    // the board is finished, so the shipped twelve value columns above stay
-    // twelve until one is. A column that does not exist is out of the table
-    // *and* off the Display Settings roster — it is not a column the viewer
-    // chose to hide, so a checkbox for it would promise something it cannot
-    // do — and it can never be the last column standing between the viewer
-    // and an empty table.
-    assert!(EMBEDDED_INDEX.contains("function nuclearStandingsInPlay()"));
+    // NUK stands from turn one, at nought, like every other standings figure.
+    // What can still be absent is a column this world does not have: the
+    // empire columns on a battlefield. A column that does not exist is out of
+    // the table *and* off the Display Settings roster — it is not a column
+    // the viewer chose to hide, so a checkbox for it would promise something
+    // it cannot do — and it can never be the last column standing between the
+    // viewer and an empty table.
     assert!(
-        EMBEDDED_INDEX.contains("return Boolean(state.nuclear_weapons_unlocked) ||"),
-        "the world finishing the research that unlocks devices reveals NUK"
-    );
-    assert!(
-        EMBEDDED_INDEX.contains("player.science_projects?.includes?.(\"manhattan_project\") ||"),
-        "a finished Manhattan Project is the same news from an older server"
-    );
-    assert!(
-        EMBEDDED_INDEX.contains("playerNuclearStockpile(player) > 0));"),
-        "and so is a stockpile that outlived the empire that built it"
+        !EMBEDDED_INDEX.contains("nuclearStandingsInPlay"),
+        "no research gates the NUK column"
     );
     assert!(
         EMBEDDED_INDEX.contains("return Boolean(column) && (!column.exists || column.exists());"),
@@ -6847,6 +6845,17 @@ fn browser_orders_controls_interface_setup_and_logs() {
         closest,
         "Closest victory belongs immediately after Plan"
     );
+    // Age stands right after Closest victory, and a layout that still has Age
+    // in its old place before Plan moves with it unless it was saved since.
+    let age = EMBEDDED_INDEX.find("{key:\"age\", label:\"Age\"").unwrap();
+    assert_eq!(
+        EMBEDDED_INDEX[closest + 1..].find("{key:\"").unwrap() + closest + 1,
+        age,
+        "Age belongs immediately after Closest victory"
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("if (!saved.age_after_closest && merged[ageAt + 1] === \"plan\" &&"));
+    assert!(EMBEDDED_INDEX.contains("age_after_closest: true,"));
     assert!(
         EMBEDDED_INDEX.contains("predatesClosestVictory = !known.includes(\"closest_victory\");")
     );

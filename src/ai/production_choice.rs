@@ -17,6 +17,41 @@
 use super::*;
 
 impl BasicAi {
+    /// Prefer a Native-quoted non-resort Campus site over a standing resort.
+    /// `sites` already carries district legality; unquoted and all-resort
+    /// choices retain the ordinary fallback, including repairable resorts.
+    pub(super) fn culture_resort_site_is_displaced(
+        g: &Game,
+        cid: u32,
+        district: Name,
+        pos: Pos,
+        sites: &[Pos],
+    ) -> bool {
+        if g.district_family(district) != "campus"
+            || !sites.contains(&pos)
+            || g.map.tiles.get(&pos).and_then(|tile| tile.improvement)
+                != Some(crate::name!("seaside_resort"))
+        {
+            return false;
+        }
+        let Some(quoted) = g
+            .host_district_plots
+            .get(&cid)
+            .and_then(|items| items.get(&district))
+        else {
+            return false;
+        };
+        quoted.contains(&pos)
+            && sites.iter().any(|alternative| {
+                quoted.contains(alternative)
+                    && g.map.tiles.get(alternative).is_some_and(|tile| {
+                        !tile.flooded
+                            && !tile.submerged
+                            && tile.improvement != Some(crate::name!("seaside_resort"))
+                    })
+            })
+    }
+
     /// The strongest land recon unit this city can build right now.
     ///
     /// Ranked by movement first and strength second, because what this buys is
@@ -428,6 +463,76 @@ impl BasicAi {
 
     #[allow(clippy::too_many_arguments)]
     pub fn pick_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        builders: usize,
+        traders: usize,
+        siege_support: usize,
+        military: usize,
+        melee: usize,
+        ranged: usize,
+    ) -> Option<Item> {
+        let item = self.pick_item_unprotected(
+            g,
+            pid,
+            cid,
+            n_cities,
+            settlers,
+            builders,
+            traders,
+            siege_support,
+            military,
+            melee,
+            ranged,
+        )?;
+        let Item::District { district, pos } = item else {
+            return Some(item);
+        };
+        if !self.preserve_culture_resort_sites {
+            return Some(item);
+        }
+        let sites = g.district_sites(cid, district);
+        if !Self::culture_resort_site_is_displaced(g, cid, district, pos, &sites) {
+            return Some(item);
+        }
+        // Apply after every production priority, including forced Campus picks.
+        let quoted = &g.host_district_plots[&cid][&district];
+        let alternative = sites
+            .iter()
+            .copied()
+            .filter(|pos| {
+                quoted.contains(pos)
+                    && g.map.tiles.get(pos).is_some_and(|tile| {
+                        !tile.flooded
+                            && !tile.submerged
+                            && tile.improvement != Some(crate::name!("seaside_resort"))
+                    })
+            })
+            .filter(|pos| {
+                g.can_produce(
+                    pid,
+                    cid,
+                    &Item::District {
+                        district,
+                        pos: *pos,
+                    },
+                )
+            })
+            .max_by(|a, b| {
+                g.district_site_yields(district, *a)
+                    .total()
+                    .total_cmp(&g.district_site_yields(district, *b).total())
+                    .then(a.cmp(b))
+            });
+        Some(alternative.map_or(item, |pos| Item::District { district, pos }))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pick_item_unprotected(
         &self,
         g: &Game,
         pid: usize,

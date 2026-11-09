@@ -299,3 +299,116 @@ fn native_campus_finish_yields_priority_to_another_damaged_city() {
     assert_eq!(g.cities[&cid].queue.first(), Some(&committed));
     assert_eq!(g.cities[&threatened].queue.first(), Some(&claim.1));
 }
+
+fn culture_resort_sites_fixture() -> (Game, u32, Pos, Pos) {
+    let mut game = Game::new_full(2, 24, 16, 71_079, 250, 0, false);
+    let cid = found_test_city(&mut game, 0);
+    let positions: Vec<_> = game.map.tiles.keys().copied().take(2).collect();
+    let resort = positions[0];
+    let farm = positions[1];
+    game.map.tiles.get_mut(&resort).unwrap().improvement = Some(crate::name!("seaside_resort"));
+    game.map.tiles.get_mut(&resort).unwrap().pillaged = true;
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+    for pos in [resort, farm] {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.flooded = false;
+        tile.submerged = false;
+    }
+    std::sync::Arc::make_mut(&mut game.host_district_plots)
+        .entry(cid)
+        .or_default()
+        .insert(crate::name!("campus"), [resort, farm].into_iter().collect());
+    // Supply the separate placement override as well as the current production menu.
+    game.host_district_sites = game.host_district_plots.clone();
+    game.players[0].techs.extend([
+        crate::name!("flight"),
+        crate::name!("radio"),
+        crate::name!("computers"),
+    ]);
+    (game, cid, resort, farm)
+}
+
+#[test]
+fn culture_keeps_repairable_resort_when_native_quotes_a_farm_for_campus() {
+    let (mut game, cid, resort, farm) = culture_resort_sites_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), resort));
+    assert!(!ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), farm));
+    // Ordinary menu quotes must suffice without a prior placement refusal.
+    std::sync::Arc::make_mut(&mut game.host_district_sites).clear();
+    assert!(BasicAi::culture_resort_site_is_displaced(
+        &game,
+        cid,
+        crate::name!("campus"),
+        resort,
+        &[resort, farm],
+    ));
+    // Restore the fixture's independent legality override for the assertion below.
+    game.host_district_sites = game.host_district_plots.clone();
+    // This is a preference; the original Native legal site is retained.
+    assert!(game
+        .district_sites(cid, crate::name!("campus"))
+        .contains(&resort));
+    assert!(!BasicAi::culture_resort_site_is_displaced(
+        &game,
+        cid,
+        crate::name!("theater_square"),
+        resort,
+        &[resort, farm],
+    ));
+}
+
+#[test]
+fn culture_resort_preference_requires_all_tourism_techs_and_culture_target() {
+    let (mut game, cid, resort, _) = culture_resort_sites_fixture();
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Domination,
+        VictoryTarget::Religion,
+    ] {
+        assert!(
+            !AdvancedAi::targeting(target).culture_preserves_resort_site(
+                &game,
+                0,
+                cid,
+                crate::name!("campus"),
+                resort,
+            )
+        );
+    }
+    let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    game.players[0].techs.remove(&crate::name!("computers"));
+    assert!(!ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), resort));
+    game.players[0].techs.insert(crate::name!("computers"));
+    game.victory_conditions.culture = false;
+    assert!(!ai.culture_preserves_resort_site(&game, 0, cid, crate::name!("campus"), resort));
+}
+
+#[test]
+fn culture_resort_preference_retains_fallback_without_quoted_safe_alternative() {
+    let (mut game, cid, resort, farm) = culture_resort_sites_fixture();
+    let displaced = |game: &Game| {
+        BasicAi::culture_resort_site_is_displaced(
+            game,
+            cid,
+            crate::name!("campus"),
+            resort,
+            &[resort, farm],
+        )
+    };
+    game.map.tiles.get_mut(&farm).unwrap().submerged = true;
+    assert!(!displaced(&game));
+    game.map.tiles.get_mut(&farm).unwrap().submerged = false;
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("seaside_resort"));
+    assert!(!displaced(&game));
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+    std::sync::Arc::make_mut(&mut game.host_district_plots)
+        .get_mut(&cid)
+        .unwrap()
+        .get_mut(&crate::name!("campus"))
+        .unwrap()
+        .remove(&farm);
+    assert!(!displaced(&game));
+    std::sync::Arc::make_mut(&mut game.host_district_plots).clear();
+    assert!(!displaced(&game));
+}

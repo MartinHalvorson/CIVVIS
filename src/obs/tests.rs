@@ -435,7 +435,7 @@ fn an_unmet_civilization_reaches_the_wire_as_identity_and_nothing_else() {
 
 /// The standings' NUK column counts finished devices of both classes, so
 /// the two stockpile counters have to reach the wire separately and unmixed
-/// with the Manhattan Project that unlocked them. Whether the column exists
+/// with the Manhattan Project that unlocked them. Whether the bomb exists
 /// at all is the world's own fact beside `world_era`: nobody can hold a
 /// device before somebody researches nuclear fission, and no seat learns
 /// from it who that somebody was.
@@ -468,7 +468,7 @@ fn the_world_reports_when_nuclear_weapons_have_been_unlocked() {
     }
 
     // History does not un-happen: losing the empire that invented the bomb
-    // does not take the column back off the table.
+    // does not un-invent it.
     game.players[2].alive = false;
     assert_eq!(
         observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
@@ -511,8 +511,8 @@ fn player_standings_report_each_civilizations_nuclear_stockpile() {
 
     const APP: &str = include_str!("../../web/assets/app.js");
     assert!(
-        APP.contains("[\"nukes\", \"Nuclear stockpile\", nuclearStandingsInPlay],"),
-        "the column exists only while the world has finished a Manhattan Project"
+        APP.contains("[\"nukes\", \"Nuclear stockpile\", worldStandingsInPlay],"),
+        "the column stands from turn one wherever there is an empire to arm"
     );
     assert!(APP.contains("nukes:[\"NUK\", \"Nuclear devices held\"],"));
 }
@@ -548,11 +548,13 @@ fn player_standings_report_each_civilizations_age() {
 
     const INDEX: &str = include_str!("../../web/assets/app.js");
     let age_column = INDEX.find("{key:\"age\", label:\"Age\"").unwrap();
-    let plan_column = INDEX.find("{key:\"plan\", label:\"Plan\"").unwrap();
-    let next_column = INDEX[age_column + 1..].find("{key:\"").unwrap() + age_column + 1;
+    let closest_column = INDEX
+        .find("{key:\"closest_victory\", label:\"Closest victory\"")
+        .unwrap();
+    let next_column = INDEX[closest_column + 1..].find("{key:\"").unwrap() + closest_column + 1;
     assert_eq!(
-        next_column, plan_column,
-        "the resizable AGE column belongs immediately before PLAN"
+        next_column, age_column,
+        "the resizable AGE column belongs immediately after CLOSEST"
     );
     assert!(INDEX.contains("age:[\"AGE\", \"Civilization age\"],"));
     assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
