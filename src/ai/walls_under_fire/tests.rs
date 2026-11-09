@@ -110,6 +110,6 @@ fn hull_damage_retains_its_existing_response_without_visible_attackers() {
 #[test]
 fn an_enemy_that_spent_its_moves_still_threatens_the_next_turn() {
     let (mut game, ai, cid, enemy) = fixture("crossbowman", 2);
-    game.units.get_mut(&enemy).unwrap().moves = 0.0;
+    game.units.get_mut(&enemy).unwrap().moves_left = 0.0;
     assert!(ai.besieged_city_item(&game, 0, cid).is_some());
 }
