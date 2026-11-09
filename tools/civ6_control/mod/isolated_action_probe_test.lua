@@ -1,3 +1,4 @@
+CivvisK = CivvisK or { guard = function(fn) pcall(fn) end, attempt = function(fn) return (pcall(fn)) end }
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local file = assert(io.open(here .. "/CivvisControlAgent.lua"))
 local source = file:read("*a"); file:close()
