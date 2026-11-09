@@ -194,9 +194,18 @@ def _commit(rev: str, files: dict[str, str], message: str) -> str:
     return git("commit-tree", tree, "-p", rev, "-m", message).strip()
 
 
-def _merge(one: str, other: str) -> str:
-    """'' when they merge, else git's report of what conflicted."""
-    done = subprocess.run(["git", "-C", str(REPO), "merge-tree", "--write-tree",
+# Git's empty tree: reading attributes from it switches `.gitattributes` off.
+NO_ATTRIBUTES = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def _merge(one: str, other: str, *, union: bool = True) -> str:
+    """'' when they merge, else git's report of what conflicted.
+
+    `union=False` merges as if `.gitattributes` were absent, which is the only
+    way to see what the per-letter markers do on their own.
+    """
+    source = [] if union else [f"--attr-source={NO_ATTRIBUTES}"]
+    done = subprocess.run(["git", *source, "-C", str(REPO), "merge-tree", "--write-tree",
                            "--name-only", one, other],
                           capture_output=True, text=True, check=False,
                           env={**os.environ, **PROBE})
@@ -422,12 +431,17 @@ class TwoGenePullRequestsMerge(unittest.TestCase):
                 other = _commit(self.base, _gene_pr(self.base, second), "gene-two")
                 self.assertEqual(_merge(one, other), "")
 
-    def test_two_genes_in_the_same_range_still_conflict(self):
+    def test_two_genes_in_the_same_range_conflict_without_the_union_merge(self):
         one = _commit(self.base, _gene_pr(self.base, "alpha-probe"), "gene-same-a")
         other = _commit(self.base, _gene_pr(self.base, "beacon-probe"), "gene-same-b")
         self.assertNotEqual(
-            _merge(one, other), "",
+            _merge(one, other, union=False), "",
             "two genes in one range merged, so this suite is not measuring the marker")
+
+    def test_two_genes_in_the_same_range_merge_by_union(self):
+        one = _commit(self.base, _gene_pr(self.base, "alpha-probe"), "gene-union-a")
+        other = _commit(self.base, _gene_pr(self.base, "beacon-probe"), "gene-union-b")
+        self.assertEqual(_merge(one, other), "", "see .gitattributes")
 
 
 if __name__ == "__main__":
