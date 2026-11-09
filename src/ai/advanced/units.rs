@@ -204,6 +204,8 @@ impl AdvancedAi {
                     + city.pop * 12
                     + city.is_capital as i32 * 18
                     + swing / 10
+                    // See `advanced/religion_seat_flips_the_cheapest.rs`.
+                    + self.religion_seat_flip_adjustment(g, pid, city, &religion)
                     + Self::religious_veto_target_bonus(pid, city, veto.as_ref(), held)
                     + Self::small_town_target_adjustment(
                         g,

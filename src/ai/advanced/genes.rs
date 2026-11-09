@@ -5450,6 +5450,8 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // ---- append: p-r ------------------------------------------------
+    // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
+    Gene { tag: "religion-seat-flips-the-cheapest", field: "religion_seat_flips_the_cheapest", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_flips_the_cheapest, disable: AdvancedAi::disable_religion_seat_flips_the_cheapest },
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
     Gene { tag: "paused-district-spares-the-launch", field: "paused_district_spares_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_spares_the_launch, disable: AdvancedAi::disable_paused_district_spares_the_launch },
     Gene { tag: "parallel-library-backlog", field: "parallel_library_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_parallel_library_backlog, disable: AdvancedAi::disable_parallel_library_backlog },

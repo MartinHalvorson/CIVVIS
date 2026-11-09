@@ -8362,6 +8362,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-flips-the-cheapest`: a Religion-target founder's
+    /// spreaders go where a charge buys the most of the victory. See
+    /// `advanced/religion_seat_flips_the_cheapest.rs`. Off by default.
+    religion_seat_flips_the_cheapest: bool,
     /// `religion-seat-fields-apostles`: a Religion-target founder on the
     /// offensive saves its Faith for an Apostle-led corps. See
     /// `advanced/religion_seat_fields_apostles.rs`. Off by default.
@@ -26210,6 +26214,9 @@ mod air_campaign;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
+/// `religion-seat-flips-the-cheapest`: see
+/// `advanced/religion_seat_flips_the_cheapest.rs`.
+mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 mod religious_interception;
