@@ -16154,6 +16154,7 @@ local function applyOrder(player, pid, row, turn)
 		-- back until turn 23 in civvis-20261109T070122Z.
 		local requestedFounding = resolved == "DISTRICT_HOLY_SITE"
 			or resolved == "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+			or resolved == "BUILDING_SHRINE"
 			or CivvisK.replacesHolySite(resolved);
 		local releaseOpening = immediateThreat or requestedDefense or requestedFounding
 			or walkingSettlers >= 2;
