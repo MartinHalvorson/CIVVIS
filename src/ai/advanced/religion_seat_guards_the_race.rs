@@ -22,13 +22,12 @@
 //!   this turn goes back to the head, whatever displaced it. The displacing
 //!   item starts a turn later.
 //! - each city with a pillaged Holy Site family district and no hostile soldier
-//!   within [`REPAIR_SAFE_TILES`] of it takes the repair ahead of anything but
+//!   within `REPAIR_SAFE_TILES` of it takes the repair ahead of anything but
 //!   Walls or a head finishing this turn. A threatened city or one attacked in
 //!   the last four turns keeps its queue.
 //!
 //! Off, or for another target, nothing changes.
 
-use super::pillaged_repairs_first::REPAIR_SAFE_TILES;
 use super::*;
 
 /// A city attacked this recently keeps its queue for the repair.
