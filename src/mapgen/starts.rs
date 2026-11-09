@@ -1792,8 +1792,8 @@ pub(super) fn place_starts_and_finish(
     // laid down before the seats were known. On a world with plenty of land
     // that is one or two tiles and the top-up finds nothing to do; on a Water
     // World, where every seat is a large share of the land, it is the
-    // difference between an iron age and a bronze one. Only the Tribal Villages
-    // draw from the stream after this, so a top-up can move nothing but them.
+    // difference between an iron age and a bronze one. Nothing after this
+    // draws from the stream, so a world that needed no top-up is unmoved.
     if !script.is_battlefield() {
         place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
         place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
@@ -1827,10 +1827,12 @@ pub(super) fn place_starts_and_finish(
         }
     }
     // Tribal Villages come last, as `AddGoodies` does in the shipped scripts:
-    // they keep off the resources and the starts that are final by now. The
-    // battlefield has none, nothing on an arena exists to be discovered.
+    // they keep off the resources and the starts that are final by now. They
+    // roll on a copy of the stream, so the game that follows draws what it
+    // always drew. The battlefield has none, nothing on an arena exists to be
+    // discovered.
     if !script.is_battlefield() {
-        add_goodies(rules, &mut wm, &spawns, rng);
+        add_goodies(rules, &mut wm, &spawns, &mut rng.clone());
     }
     (wm, spawns)
 }

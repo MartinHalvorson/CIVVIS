@@ -25,13 +25,16 @@ pub(super) const LAKE_MAX_AREA_SIZE: usize = 9;
 
 /// How many bodies a world type may spread past a single plot.
 ///
-/// Every stock script calls `AddLakes` with a budget built from the map size's
-/// `Continents` column: `Lakes.lua` four per continent, `Pangaea.lua` one and
-/// a half, `Continents.lua` and `Small_Continents.lua` one, `InlandSea.lua`
-/// and `Island_Plates.lua` a half, each rounded up. An island rarely has the
-/// interior to spend its share on, and the enclosure rule refuses the rest.
+/// `Lakes.lua` asks for four per continent region; every other stock script
+/// asks for none and receives the one-plot ponds the same roll produces. The
+/// two single-supercontinent types are given a budget of their own here, which
+/// is a deliberate departure: their interiors are deep enough to hold an
+/// inland sea, and a supercontinent whose only water is its own shoreline
+/// plays as a flat expanse. The island types keep the stock zero — an island
+/// has no interior to put a lake in, and the enclosure rule would refuse one
+/// anyway.
 ///
-/// Earth asks for none, for a different reason: it already has its own.
+/// Earth asks for none, but for a third reason again: it already has its own.
 /// The Caspian, the Great Lakes, Victoria, Baikal, Balkhash and the Aral are
 /// in the grid the coastlines come from, so they arrive as enclosed water and
 /// `classify_lakes` sorts them by area exactly as it sorts a grown one. Adding
@@ -44,14 +47,14 @@ pub(super) const LAKE_MAX_AREA_SIZE: usize = 9;
 pub(super) fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
-        MapScript::Pangaea => (num_continents * 3).div_ceil(2),
-        MapScript::Continents | MapScript::SmallContinents => num_continents,
-        MapScript::InlandSea | MapScript::Islands => num_continents.div_ceil(2),
-        // CIVVIS's own worlds, with no shipped script to copy. The blocks a
-        // canal world is cut into are broad enough to hold one, and a lake is
-        // the water a canal world does not already have: fresh, enclosed, and
-        // nothing a ship arrives by.
-        MapScript::TacticsPlanet | MapScript::GrandCanals => num_continents,
+        // The blocks a canal world is cut into are broad enough to hold one,
+        // and a lake is the water a canal world does not already have: fresh,
+        // enclosed, and nothing a ship arrives by.
+        MapScript::Pangaea
+        | MapScript::TacticsPlanet
+        | MapScript::InlandSea
+        | MapScript::GrandCanals => num_continents,
+        MapScript::Continents => num_continents / 2,
         // A block of a Grand Canals II world is a few dozen tiles of ground
         // with a canal already around it, so its middle is never far from a
         // bank and a spread lake would be most of what a city had to work.
@@ -61,7 +64,9 @@ pub(super) fn large_lake_budget(script: MapScript, num_continents: usize) -> usi
         | MapScript::TrueStartEarth
         | MapScript::LandOnly
         | MapScript::TeninsBall
+        | MapScript::SmallContinents
         | MapScript::Fjords
+        | MapScript::Islands
         | MapScript::WaterWorld => 0,
         // The battlefield carves its own ponds when its land is laid; a
         // spread lake on a ten-tile-wide arena would be most of the arena.

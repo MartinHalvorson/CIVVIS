@@ -2157,6 +2157,18 @@ pub fn generate_with_script_and_leader_starts(
     remove_water_boundary_rivers(&mut wm);
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
+    // Tribal Villages are placed last now (`add_goodies`), but this pass's
+    // draws stay: dropping them would redraw the terrain, wonders, and
+    // resources of every seeded world for a rule that touches none of those.
+    if !script.is_battlefield() {
+        for pos in &land_list {
+            let tile = &wm.tiles[pos];
+            if tile.terrain != "mountain" && !tile.has_river() {
+                rng.f64();
+            }
+        }
+    }
+
     // --- tectonic and polar features
     // Volcanoes replace a small, well-spaced subset of mountain tiles. Every
     // candidate needs exposed land at its foot so the volcano reads as part of
@@ -2910,14 +2922,6 @@ fn cluster_score(adjacent: usize) -> i32 {
     }
 }
 
-/// Whether a Marsh, Rainforest or Woods plot takes the feature it qualifies
-/// for. Gathering Storm's `FeatureGenerator.lua` rolls all three the same way,
-/// `GetRandomNumber(450, ...) <= iScore`, so a plot with no neighbours passes
-/// two times in three. The Base script's 300 passed it every time.
-fn feature_roll_takes(rng: &mut Rng, adjacent: usize) -> bool {
-    (rng.below(450) as i32) <= cluster_score(adjacent)
-}
-
 fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
     wm.neighbors(pos)
         .into_iter()
@@ -3034,7 +3038,8 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             if terrain == "grassland"
                 && !hills
                 && within_share(marshes, considered_land, MARSH_PERCENT)
-                && feature_roll_takes(rng, adjacent_feature_count(wm, pos, "marsh"))
+                && (rng.below(300) as i32)
+                    <= cluster_score(adjacent_feature_count(wm, pos, "marsh"))
             {
                 wm.tiles.get_mut(&pos).unwrap().feature = Some("marsh".into());
                 marshes += 1;
@@ -3051,7 +3056,8 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             if tropical && matches!(terrain.as_str(), "grassland" | "plains") {
                 jungle_candidates += 1;
                 if within_share(jungles, jungle_candidates, JUNGLE_PERCENT)
-                    && feature_roll_takes(rng, adjacent_feature_count(wm, pos, "jungle"))
+                    && (rng.below(450) as i32)
+                        <= cluster_score(adjacent_feature_count(wm, pos, "jungle"))
                 {
                     let tile = wm.tiles.get_mut(&pos).unwrap();
                     // Rainforest leaves the ground beneath it Plains.
@@ -3064,7 +3070,8 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 
             if matches!(terrain.as_str(), "grassland" | "plains" | "tundra")
                 && within_share(forests, considered_land, FOREST_PERCENT)
-                && feature_roll_takes(rng, adjacent_feature_count(wm, pos, "forest"))
+                && (rng.below(300) as i32)
+                    <= cluster_score(adjacent_feature_count(wm, pos, "forest"))
             {
                 wm.tiles.get_mut(&pos).unwrap().feature = Some("forest".into());
                 forests += 1;

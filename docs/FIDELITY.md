@@ -867,19 +867,22 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
-## Closed: three Gathering Storm map rolls
+## Closed: Tribal Villages and the wonder buffer
 
-Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09. `n` is
-the `Continents` column of `Maps` for the map size.
+Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09.
 
-| Rule | Shipped | CIVVIS had |
-|---|---|---|
-| Marsh, Rainforest and Woods roll | `FeatureGenerator.lua`: `GetRandomNumber(450, ...) <= iScore` for all three, so a plot with no neighbours passes two times in three. The Base script's roll is 300. | 300 for Marsh and Woods, 450 for Rainforest |
-| Lakes spread past one plot (`numLargeLakes`) | Lakes `4n`, Pangaea `ceil(1.5n)`, Continents and Small Continents `n`, Inland Sea and Island Plates `ceil(n/2)` | Continents `n/2`, Pangaea and Inland Sea `n`, Small Continents and Islands none |
-| Start standoff from a Natural Wonder | `__NaturalWonderBuffer` refuses a site with a wonder within `START_DISTANCE_MAJOR_NATURAL_WONDER` 2 or `START_DISTANCE_MINOR_NATURAL_WONDER` 3, that distance included | A wonder at exactly that distance was allowed |
+`__NaturalWonderBuffer` refuses a site with a wonder within
+`START_DISTANCE_MAJOR_NATURAL_WONDER` 2 or `START_DISTANCE_MINOR_NATURAL_WONDER`
+3, that distance included. CIVVIS allowed a wonder at exactly that distance. The
+shipped buffer is skipped under the Legendary Start setting. CIVVIS has no such
+setting, so the buffer always applies.
 
-The shipped buffer is skipped under the Legendary Start setting. CIVVIS has no
-such setting, so the buffer always applies.
+Two more differences are confirmed and still open, because each redraws every
+seeded world and so belongs with the other map rules in one refresh. Marsh and
+Woods roll against 300 here and 450 in Expansion2's `FeatureGenerator.lua`. Lakes
+spread past one plot should number `4n` on Lakes, `ceil(1.5n)` on Pangaea, `n` on
+Continents and Small Continents, and `ceil(n/2)` on Inland Sea and Island Plates,
+where `n` is the `Maps.Continents` column.
 
 **Tribal Villages** now follow `AddGoodies` and `CanPlaceGoodyAt` in
 `MapUtilities.lua`, run last as the scripts run them. CIVVIS had rolled 2.5% of
