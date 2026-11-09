@@ -127,12 +127,21 @@ impl AdvancedAi {
         self.faith_war_before_the_flip || self.faith_war_before_the_flip_2
     }
 
-    /// The journal's name for the version that is on.
+    /// Whether a faith war on record is run by this module: either version
+    /// of the gene, or `faith-strike-wipes-the-spreaders`, whose war is the
+    /// same defensive war with a different opening.
+    fn faith_war_is_run(&self) -> bool {
+        self.faith_war_active() || self.faith_strike_wipes_the_spreaders
+    }
+
+    /// The journal's name for the gene running the war.
     fn faith_war_tag(&self) -> &'static str {
         if self.faith_war_before_the_flip_2 {
             "faith-war-before-the-flip-2"
-        } else {
+        } else if self.faith_war_before_the_flip {
             "faith-war-before-the-flip"
+        } else {
+            "faith-strike-wipes-the-spreaders"
         }
     }
 
@@ -173,7 +182,7 @@ impl AdvancedAi {
     }
 
     /// The faith `rival` founded, when it is a living major with one.
-    fn faith_war_faith(g: &Game, rival: usize) -> Option<&str> {
+    pub(super) fn faith_war_faith(g: &Game, rival: usize) -> Option<&str> {
         let player = g.players.get(rival)?;
         if !player.alive || player.is_minor || player.is_barbarian {
             return None;
@@ -283,7 +292,7 @@ impl AdvancedAi {
     /// with a denouncement and five turns of preparation; the window before
     /// the flip was 3 to 51 turns, and in a quarter of the losses no more
     /// than 7.
-    fn faith_war_opening(&self, g: &Game, pid: usize, rival: usize) -> Option<Action> {
+    pub(super) fn faith_war_opening(&self, g: &Game, pid: usize, rival: usize) -> Option<Action> {
         if let Some(
             opening @ (Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }),
         ) = self.preferred_war_opening(g, pid, rival)
@@ -470,7 +479,7 @@ impl AdvancedAi {
     /// city of ours is still being converted to the founder's faith, and no
     /// city of ours is falling. `false` with the gene off.
     pub(crate) fn faith_war_keeps_the_war(&self, g: &Game, pid: usize, rival: usize) -> bool {
-        self.faith_war_active()
+        self.faith_war_is_run()
             && self
                 .faith_war_before_the_flip_war
                 .is_some_and(|war| war.rival == rival)
@@ -493,7 +502,7 @@ impl AdvancedAi {
         let Some(war) = self.faith_war_before_the_flip_war else {
             return false;
         };
-        self.faith_war_active()
+        self.faith_war_is_run()
             && war.rival == rival
             && g.is_at_war(pid, rival)
             && g.turn.saturating_sub(war.spreader_seen)

@@ -48,19 +48,6 @@ const isCoastalCliffEdge = (tile, neighbor) =>
 // to infer a reciprocal direction for every projected edge.
 const isLandCliffEdge = (tile, side) =>
   !isWater(tile) && !!tile?.cliff_edges?.[side];
-const FEATURE_ATLAS = new Image();
-let FEATURE_ATLAS_READY = false;
-FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw(); };
-FEATURE_ATLAS.src = "/assets/feature-atlas.png";
-const ENVIRONMENT_FEATURE_CELL = {
-  floodplains:[0,0], grassland_floodplains:[0,0], plains_floodplains:[0,0],
-  reef:[1,0], geothermal_fissure:[2,0], ice:[3,0],
-  volcano:[0,1], volcanic_soil:[1,1], fallout:[2,1], impact_zone:[3,1]
-};
-const ENVIRONMENT_FEATURE_ATLAS = new Image();
-let ENVIRONMENT_FEATURE_ATLAS_READY = false;
-ENVIRONMENT_FEATURE_ATLAS.onload = () => { ENVIRONMENT_FEATURE_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw(); };
-ENVIRONMENT_FEATURE_ATLAS.src = "/assets/environment-feature-atlas.png";
 // Every natural wonder names the compact strategic silhouette and colors used
 // to keep it recognizable on the command map.
 const NATURAL_WONDER_ART = {
@@ -148,7 +135,13 @@ let HIDDEN_MAP_MONSTER_ATLAS_READY = false;
 HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
   HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (typeof state !== "undefined" && state) draw();
 };
-HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
+// Fetched the first time a chart asks for it: 881 KB that nobody watching the AI
+// game ever sees, since a known world has no blank reaches to illustrate.
+function hiddenMapMonstersReady() {
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY && !HIDDEN_MAP_MONSTER_ATLAS.getAttribute("src"))
+    HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
+  return HIDDEN_MAP_MONSTER_ATLAS_READY;
+}
 const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
       HIDDEN_MAP_MONSTER_VARIANTS = 30;
 // These are quiet map notes rather than full marginal scenes. The enlarged

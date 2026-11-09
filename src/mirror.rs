@@ -2811,6 +2811,7 @@ const UNIT_KEYS: &[&str] = &[
     "offered_promotions",
     "build_charges",
     "spread_charges",
+    "heal_charges",
     "religion",
     "fortified",
     "fortify_turns",

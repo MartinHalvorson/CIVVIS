@@ -36,7 +36,10 @@ impl AdvancedAi {
     /// whose cities we have located. Empty with both versions off.
     pub(super) fn no_front_rivals(&self, g: &Game, pid: usize) -> Vec<usize> {
         let mut exempt: Vec<usize> = Vec::new();
-        if self.faith_war_is_no_front || self.faith_war_is_no_front_2 {
+        if self.faith_war_is_no_front
+            || self.faith_war_is_no_front_2
+            || self.faith_strike_wipes_the_spreaders
+        {
             if let Some(war) = self.faith_war_before_the_flip_war.as_ref() {
                 exempt.push(war.rival);
             }

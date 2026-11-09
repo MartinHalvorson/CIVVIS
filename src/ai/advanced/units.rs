@@ -399,7 +399,7 @@ impl AdvancedAi {
                     // `theology-fights-only-to-win`: a fight the mean roll loses
                     // is not taken (see `theology_fight_is_winnable`).
                     if self.theology_fights_only_to_win
-                        && !Self::theology_fight_is_winnable(g, uid, *target)
+                        && !self.theology_fight_is_winnable(g, uid, *target)
                     {
                         return None;
                     }
@@ -438,6 +438,12 @@ impl AdvancedAi {
 
         if g.rules.units[unit.kind].religious_spread > 0.0 && unit.charges > 0 {
             return self.advanced_missionary_step(g, pid, uid, offensive);
+        }
+
+        // `guru-walks-to-the-wounded`: a Guru cannot start a fight, so it goes
+        // to its patients instead of at the nearest rival.
+        if let Some(target) = self.guru_walk_target(g, pid, uid) {
+            return self.religious_step_toward_range(g, pid, uid, target, 1);
         }
 
         let target = g

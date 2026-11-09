@@ -10,6 +10,15 @@
 //! cities. G094619Z (Buddhism, lost t130): 6 fights, 166 taken for 109, all
 //! four Inquisitors lost. The step took any adjacent fight while it had 55 hp
 //! or the defender was down 45, with no reading of the two strengths.
+//!
+//! `theology-fights-count-the-host-edge`: the reading above still left out
+//! two terms of the live fight. On 2026-11-09 the host priced 75 of our
+//! religious strikes, and 40 of the 64 it could be matched to a fight were
+//! losing exchanges, which dealt 786 and took 1,338 with no kill. Rival
+//! Apostles carry +4 for difficulty and usually +3 or +6 Intel, so an Apostle
+//! duel the model reads as an exact tie, which passes `dealt >= received`,
+//! really runs 7 or more points against us. The gene reads the fight with
+//! those two terms; the rule itself does not change.
 
 use super::AdvancedAi;
 use crate::game::Game;
@@ -19,12 +28,16 @@ impl AdvancedAi {
     /// Whether a `TheologicalAttack` from `uid` on `target` is worth starting:
     /// the mean blow kills the defender, or it is at least the blow received
     /// and ours survives that blow. An unreadable exchange is not taken.
-    pub(super) fn theology_fight_is_winnable(g: &Game, uid: u32, target: Pos) -> bool {
+    pub(super) fn theology_fight_is_winnable(&self, g: &Game, uid: u32, target: Pos) -> bool {
         let Some(unit) = g.units.get(&uid) else {
             return false;
         };
-        let Some((dealt, received, defender_hp)) = g.theological_exchange_preview(uid, target)
-        else {
+        let reading = if self.theology_fights_count_the_host_edge {
+            g.theological_exchange_with_host_edge(uid, target)
+        } else {
+            g.theological_exchange_preview(uid, target)
+        };
+        let Some((dealt, received, defender_hp)) = reading else {
             return false;
         };
         dealt >= f64::from(defender_hp) || (dealt >= received && f64::from(unit.hp) > received)
