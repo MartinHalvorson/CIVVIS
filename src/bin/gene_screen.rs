@@ -1067,6 +1067,13 @@ struct TraceSample {
     religion: bool,
     #[serde(default)]
     holy_site: bool,
+    /// Cities anywhere following this major's founded faith, and the other
+    /// living majors whose cities it holds a majority of: the religious
+    /// lane's own progress. Absent in older batches.
+    #[serde(default)]
+    cities_following: usize,
+    #[serde(default)]
+    majors_following: usize,
     /// ⭐ Cities standing behind walls (any wall hit points). The live census
     /// of the Firaxis field's known cities reads 11% walled at turn 60, 38% at
     /// 100, 53% at 150 and 64% at 200 (11-04, Standard Immortal), which is
@@ -1131,6 +1138,18 @@ impl TraceSample {
             districts,
             religion: g.players[pid].religion.is_some(),
             holy_site,
+            cities_following: g.cities_following_religion(pid),
+            majors_following: g.players[pid].religion.as_deref().map_or(0, |faith| {
+                (0..g.players.len())
+                    .filter(|other| {
+                        *other != pid
+                            && g.players[*other].alive
+                            && !g.players[*other].is_minor
+                            && !g.players[*other].is_barbarian
+                            && g.civ_follows_religion(*other, faith)
+                    })
+                    .count()
+            }),
             walled,
             near_housing,
             near_housing_fed,
@@ -9369,6 +9388,8 @@ mod tests {
             districts: 12,
             religion: true,
             holy_site: true,
+            cities_following: 0,
+            majors_following: 0,
             walled: 0,
             near_housing: 0,
             near_housing_fed: 0,

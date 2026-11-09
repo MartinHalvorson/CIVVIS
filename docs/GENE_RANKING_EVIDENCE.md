@@ -361,8 +361,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
+| `religion-seat-builds-holy-sites` | off (unmeasured) | `religion-seat-builds-holy-sites`: a Religion-target founder claims a Holy Site in each idle city without one. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
+| `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
+| `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
+| `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
+| `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
 | `satellite-holds-the-pad` | off (unmeasured) | Opt-in gene `satellite-holds-the-pad`; see `Self::satellite_holds_the_pad`. | 1 \| 1 |
