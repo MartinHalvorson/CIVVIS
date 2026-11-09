@@ -471,6 +471,13 @@
        ground fills the gap to the next label: the stack paints as one band. */
     background: var(--deck-band); box-shadow: 0 0 0 var(--stop-gap) var(--deck-band);
   }
+  /* Below the last stuck label there is only the deck's own bottom inset, and
+     the open section's text was showing through it. Each label under the open
+     section paints the band down over that inset too; a later label covers
+     the band of the one before, so only the last one's shows. */
+  #side.deck-stops .sidebar-section[open] ~ .sidebar-section:not([open]) {
+    box-shadow: 0 0 0 var(--stop-gap) var(--deck-band), 0 calc(var(--stop-bottom) + 26px) 0 var(--stop-gap) var(--deck-band);
+  }
   /* The open section is the one box that must not stick: pinned, a section
      taller than the window would hold its own tail out of reach below the
      fold. Its label sticks inside it instead, so the section being read keeps
@@ -500,7 +507,12 @@
      A section squeezed under its floor does not clip — its list paints straight
      over the panel below it — so these floors are measured in the page rather
      than guessed. */
-  #strategysec[open] { flex: 3 0 0; min-height: 460px; }
+  /* The dossier's tracks come and go with the seat and the world, so no fixed
+     floor can be right: it stood at 460px while its tracks needed 958px, and
+     everything below the gene program was cut off. The section is at least as
+     tall as its content and the deck scrolls it; the decision list takes
+     whatever is left over. */
+  #strategysec[open] { flex: 3 0 auto; min-height: min-content; }
   #eventsec[open] { flex: 2 0 0; min-height: 302px; }
   #warsec[open] { flex: 2 0 0; min-height: 266px; }
   /* A battlefield is decided by the fighting. Watching one, the deck keeps
@@ -528,6 +540,10 @@
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
   }
   #strategysec[open] > .sec, #eventsec[open] > .sec, #warsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #strategysec[open]::details-content, #strategysec[open] > .sec { flex: 1 0 auto; }
+  /* The content box does not take the section's spare height as a flex item,
+     so on a tall window it is given it directly: everything but the label. */
+  #strategysec[open]::details-content { height: calc(100% - 43px); }
   .section-label {
     min-height: 43px; display: flex; align-items: center; gap: 9px; padding: 8px 9px;
     color: #bac8c2; background: linear-gradient(135deg, #162622, #101c19);
@@ -540,12 +556,16 @@
   .section-label:hover { color: var(--text); border-color: #4a685e; background: linear-gradient(135deg, #1b302a, #12211d); }
   .section-label:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .section-title { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  /* On the narrowest deck a long title gives way before the chevron does. */
+  .section-title { min-width: 0; }
+  .section-title > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .section-title > .section-icon { flex: 0 0 22px; }
   .section-icon {
     width: 22px; height: 22px; display: grid; place-items: center; border-radius: 7px;
     color: var(--gold-bright); background: #d7b66a10; border: 1px solid #d7b66a24;
     font-size: var(--type-control); line-height: 1; letter-spacing: 0;
   }
-  .section-meta { min-width: 0; flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .section-meta { min-width: 22px; flex: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .section-label .rule { height: 1px; min-width: 12px; flex: 1; background: linear-gradient(90deg, var(--line), transparent); }
   .section-chevron {
     width: 22px; height: 22px; flex: 0 0 22px; display: grid; place-items: center;
@@ -569,7 +589,7 @@
      when there is only one seat, and a seat with no published plan has no plan
      track — and `+` still matches a hidden sibling, so a top border would leave
      a hairline under the header with nothing above it. */
-  .strategy-track { min-height: 84px; padding: 10px 13px 11px; border-bottom: 1px solid var(--line-soft); }
+  .strategy-track { padding: 10px 13px 11px; border-bottom: 1px solid var(--line-soft); }
   .strategy-track:last-child { border-bottom: 0; }
   /* The seat picker is a bar, not a track: it holds one control and must not
      reserve a track's worth of height above the plan it selects. */
@@ -581,9 +601,11 @@
   /* The live plan is a compact dossier; the decision trail is the one part of
      it allowed to grow and scroll. Keeping it in this same card makes the
      strategy change and its recorded factors one continuous inspection flow. */
-  .strategy-track.strategy-reasoning-track { flex: 1 1 0; min-height: 196px; display: flex; flex-direction: column; border-bottom: 0; }
+  .strategy-track.strategy-reasoning-track { flex: 1 1 0; min-height: 276px; display: flex; flex-direction: column; border-bottom: 0; }
+  .strategy-track.strategy-reasoning-track[hidden] { display: none; }
   .strategy-reason-filters { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 2px 0 6px; }
   .strategy-reason-filters .log-filter { grid-template-columns: 39px minmax(0, 1fr); gap: 5px; }
+  .strategy-reason-filters .log-filter select { padding-right: 20px; font-size: var(--type-small); }
   .strategy-reasoning-meta { color: var(--faint); font-size: var(--type-label); font-weight: 750; letter-spacing: .04em; text-transform: none; }
   .strategy-reasoning-context { flex: 0 0 auto; margin: -1px 0 6px; color: #8fa198; font-size: var(--type-label); line-height: 1.35; }
   .reason-more { align-self: center; flex: 0 0 auto; margin-top: 7px; }
@@ -592,8 +614,22 @@
     display: flex; align-items: center; justify-content: space-between; min-height: 23px; margin-bottom: 4px;
     color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .11em; text-transform: uppercase;
   }
-  .strategy-heading span { display: flex; align-items: center; gap: 7px; }
-  .strategy-heading span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 9px #76cde477; }
+  .strategy-heading > span { display: flex; align-items: center; gap: 7px; }
+  .strategy-heading { gap: 8px; }
+  .strategy-heading > span:first-child { flex: 0 0 auto; white-space: nowrap; }
+  .strategy-heading > small { min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+  .strategy-sec { container: strategy / inline-size; }
+  .meta-narrow { display: none; }
+  @container strategy (max-width: 260px) {
+    .meta-wide { display: none; }
+    .meta-narrow { display: inline; }
+    /* F9 and the top bar still open the Pedia; here it only crowds the title. */
+    #researchtrack .strategy-heading button:first-child { display: none; }
+    .strategy-reason-filters { grid-template-columns: minmax(0, 1fr); }
+    .strategy-track.strategy-reasoning-track { min-height: 312px; }
+    #reasoningscope { display: none; }
+  }
+  .strategy-heading > span:first-child::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 9px #76cde477; }
   .strategy-track.culture .strategy-heading span::before { background: var(--violet); box-shadow: 0 0 9px #c49be877; }
   .progress-slot { height: 55px; min-height: 55px; display: flex; align-items: center; }
   .progress-slot > * { width: 100%; }
@@ -784,6 +820,8 @@
   #map-search-civ:disabled { color: #718078; opacity: .8; }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
+  #strategysec > .section-label { container-type: inline-size; }
+  @container (max-width: 279px) { #strategyscope { display: none; } }
   .event-scope { overflow: hidden; color: var(--gold); font-size: var(--type-label); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 
   button {
@@ -1338,6 +1376,9 @@
   .dossier-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 1px 0; font-size: var(--type-secondary); line-height: 1.35; }
   .dossier-row > span { flex: none; color: #8ba098; white-space: nowrap; }
   .dossier-row > b { flex: 1; min-width: 0; overflow: hidden; color: #e7efea; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dossier-row.dossier-chips { align-items: flex-start; }
+  .dossier-row.dossier-chips > b { overflow: visible; white-space: normal; }
+  .dossier-row.dossier-chips .force-chip { margin: 0 0 2px 3px; }
   .dossier-note { margin-top: 4px; color: #9db0a8; font-size: var(--type-small); line-height: 1.4; }
   .dossier-empty { color: #708379; font-size: var(--type-small); font-style: italic; }
   .dossier-track { margin-bottom: 3px; color: var(--track); }
@@ -1355,13 +1396,19 @@
      gold so the bet reads apart from the settled defaults, whose tint is the
      ledger's own verdict. The small figure is the measured effect in win
      percentage points per seat. */
-  .gene-chip { display: inline-block; margin: 2px 3px 0 0; padding: 1px 5px; border-radius: 5px; background: #ffffff10; color: #d5e0da; font-size: var(--type-small); font-weight: 750; }
-  .gene-chip small { margin-left: 3px; color: #93a79f; font-size: 92%; font-variant-numeric: tabular-nums; }
-  .gene-chip.helps { background: #2b53383d; color: #a9dcb9; }
-  .gene-chip.helps small { color: #7fae8e; }
-  .gene-chip.hurts { background: #7a30293d; color: #f2a09b; }
-  .gene-chip.armed { background: #7a5f2740; color: #e9c07c; box-shadow: inset 0 0 0 1px #d7b66a55; }
-  .gene-chip.armed small { color: #bd9a5a; }
+  .gene-story { color: #9db0a8; font-size: var(--type-small); line-height: 1.4; }
+  .gene-caption { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--faint); font-size: var(--type-label); font-weight: 750; letter-spacing: .04em; cursor: help; }
+  .gene-caption > span { white-space: nowrap; }
+  .gene-chips { margin-top: 2px; }
+  .gene-foot { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 5px; color: #708379; font-size: var(--type-label); }
+  .gene-foot:empty { display: none; }
+  .gene-chip { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #d5e0da; font-size: var(--type-small); font-weight: 650; line-height: 1.5; }
+  .gene-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gene-chip small { flex: none; color: #93a79f; font-size: 100%; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .gene-chip.helps small { color: #86d0a0; }
+  .gene-chip.hurts { color: #f2a09b; }
+  .gene-chip.armed { color: #e9c07c; }
+  .gene-chip.armed small { color: #d8b06a; }
   .strategy-track.gene-track .strategy-heading span::before { background: var(--green); box-shadow: 0 0 9px #76c89377; }
   /* AI Tactics: one block per battlefield side, in standings order, each a
      dossier of that side's doctrine, objective, force groups and condition.
@@ -2398,6 +2445,7 @@
   .reason-item.strategy-shift { border-left-color: var(--gold-bright); box-shadow: inset 0 0 0 1px #d7b66a55, 0 0 12px #d7b66a1a; }
   .reason-item.level-detail { background: #091210; opacity: .92; }
   .reason-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .reason-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .reason-civ { min-width: 0; color: var(--reason-tint, #9fb3aa); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; overflow: hidden; text-overflow: clip; white-space: nowrap; }
   .reason-turn { flex: 0 0 auto; color: var(--faint); font-size: var(--type-label); letter-spacing: .06em; text-transform: uppercase; }
   .reason-headline { margin-top: 2px; color: #d3ded8; font-size: var(--type-secondary); }
@@ -6204,22 +6252,22 @@
           </label>
         </div>
         <div class="strategy-track strategy-plan-track" id="strategyplantrack">
-          <div class="strategy-heading"><span id="strategyplanheading">Grand strategy</span></div>
+          <div class="strategy-heading"><span id="strategyplanheading">Grand strategy</span><small id="strategyplanmeta" class="strategy-reasoning-meta"></small></div>
           <div id="strategyplan"></div>
-        </div>
-        <div class="strategy-track gene-track" id="geneprogramtrack" hidden>
-          <div class="strategy-heading"><span>Gene program</span><small id="geneprogramsum" class="strategy-reasoning-meta"></small></div>
-          <div id="geneprogram"></div>
         </div>
         <div class="strategy-track" id="researchtrack">
           <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
           <div id="research" class="progress-slot"></div>
         </div>
         <div class="strategy-track culture" id="civicstrack">
-          <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
+          <div class="strategy-heading"><span>Civics</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
           <div id="civics" class="progress-slot"></div>
         </div>
-        <div class="strategy-track strategy-reasoning-track">
+        <div class="strategy-track gene-track" id="geneprogramtrack" hidden>
+          <div class="strategy-heading"><span>Gene program</span><small id="geneprogramsum" class="strategy-reasoning-meta"></small></div>
+          <div id="geneprogram"></div>
+        </div>
+        <div class="strategy-track strategy-reasoning-track" id="strategyreasontrack">
           <div class="strategy-heading"><span>Decision factors</span><small id="reasoningscope" class="strategy-reasoning-meta"></small></div>
           <div id="reasoningcontext" class="strategy-reasoning-context"></div>
           <div class="strategy-reason-filters">

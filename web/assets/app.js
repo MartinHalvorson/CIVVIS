@@ -28463,56 +28463,107 @@ function strategyPlanHtml(p) {
   const plan = p.ai_plan || null;
   const strategy = plan?.strategy || p.ai_strategy || "";
   if (!plan && !strategy) return "";
-  const row = (label, value, title) => value === null || value === undefined || value === ""
-    ? ""
-    : `<div class="dossier-row"${title ? ` title="${reasonEscape(title)}"` : ""}>` +
-      `<span>${label}</span><b>${value}</b></div>`;
-  const planAge = plan ? Math.max(0, (state.turn || 0) - (plan.assessed_turn || 0)) : null;
-  const forces = plan?.forces || [];
+  const row = strategyRow;
   const warPlan = plan?.war || null;
-  const chips = forces.slice(0, 4).map(force =>
-    `<span class="force-chip ${force.posture}" title="${reasonEscape(`${titleCase(force.posture)} · ` +
-      `${force.units} ${force.domain === "sea" ? "naval" : "land"} units · objective ` +
-      `${force.objective?.[0]},${force.objective?.[1]} · local strength ` +
-      `${Math.round((force.strength_ratio || 0) * 100)}% of the defenders · readiness ` +
-      `${Math.round((force.readiness || 0) * 100)}%`)}">` +
-    `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
+  const chips = forceChipsHtml(plan?.forces || []);
   const target = plan?.target_city
     ? `${reasonEscape(plan.target_city.name)}${plan.target_civ ? ` (${reasonEscape(plan.target_civ)})` : ""}`
     : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
   return `<div class="strategy-plan">` +
-    (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
+    (state.spectate ? row("Agent", "CIVVIS Advanced AI", SITE_AGENT_STORY) : "") +
+    (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Adaptive",
       plan.victory_target
-        ? "The victory this AI is playing for — the fixed goal every row below serves"
-        : "No committed victory — the plan follows whichever lane is going best") : "") +
+        ? "The victory this seat was assigned. Every row below serves it"
+        : "No victory assigned. Each reassessment follows this seat's best available victory, " +
+          "unless a threat at home, open land to settle, or a rival close to winning comes first") : "") +
     row("Doctrine", strategy
       ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
-      plan
-        ? "How the victory lane is being pursued right now — the medium-term plan every department of this AI is serving"
-        : "The medium-term plan every department of this AI is currently serving") +
-    (plan ? row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
+      DOCTRINE_STORY[strategy] || "The medium-term plan research, production, treasury and armies are all serving") +
+    (plan ? row("Campaign", target,
+        target ? "The rival this plan's armies are aimed at. This does not mean war has been declared" : "") +
       (warPlan?.active
         ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
-            warPlan.rapid
-              ? "One ready-force Conquest appointment shared by research, treasury, diplomacy and movement"
-              : warPlan.selective
-              ? "One organic Conquest appointment shared by research, production, treasury, diplomacy and movement"
-              : "The phase shared by research, production, treasury, diplomacy and movement") +
+            "A timed war: research, production, treasury, diplomacy and movement all run to this one schedule") +
           row("Strike package", `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} ${titleCase(warPlan.assault_unit || "bodies")} · ${warPlan.staged_bodies || 0} staged`,
             `${titleCase(warPlan.breakthrough_tech || "Breakthrough")} · ${exactStat(warPlan.upgrade_gold_reserved || 0)} Gold reserved`)
         : "") +
       row("Defending", plan.threatened_city ? reasonEscape(plan.threatened_city.name) : "",
-        plan.threatened_city ? "The city this plan expects to lose first" : "") +
-      (chips
-        ? `<div class="dossier-note">${chips}${forces.length > 4
-            ? ` <span class="dossier-empty">+${forces.length - 4} more</span>` : ""}</div>`
-        : "") +
-      row("Cities", `${p.cities} of ${plan.desired_cities}`,
-        "Cities held against the cities this plan wants") +
-      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`,
-        "When this plan was last reconsidered")
+        plan.threatened_city ? "The city under the most pressure right now" : "") +
+      (chips ? `<div class="dossier-row dossier-chips"><span>Forces</span><b>${chips}</b></div>` : "") +
+      row("Cities", `${p.cities} · wants ${plan.desired_cities}`,
+        "Cities held, and the number this plan wants")
       : "") +
     `</div>`;
+}
+
+// One label and value in the plan, dropped when there is nothing to say.
+function strategyRow(label, value, title) {
+  return value === null || value === undefined || value === ""
+    ? ""
+    : `<div class="dossier-row"${title ? ` title="${reasonEscape(title)}"` : ""}>` +
+      `<span>${label}</span><b>${value}</b></div>`;
+}
+
+// `AdvancedAi` is what `Session::ai_fleet` seats on every major of a watched
+// game, and `the_strategy_panel_names_the_agent_the_site_seats` holds this
+// sentence to it. docs/AI_GUIDE.md is the longer account.
+const SITE_AGENT_STORY = "CIVVIS's own rule-based agent, written in Rust and running on this page's game. " +
+  "It uses no language model and no neural network: every move comes from the rules in the gene program below";
+const LIVE_SEAT_STORY = "CIVVIS's rule-based agent gives every order for this seat inside a real game of Civilization VI";
+
+// What each doctrine asks of the empire, in the terms the assessment that
+// picks it uses (`src/ai/advanced/assessment.rs`).
+const DOCTRINE_STORY = {
+  expansion: "Claiming land first, while it holds fewer cities than this plan wants and there is room to settle",
+  science: "The whole empire is working toward a Science victory",
+  culture: "The whole empire is working toward a Culture victory",
+  religion: "The whole empire is working toward a Religious victory, or racing to found a religion",
+  diplomacy: "The whole empire is working toward a Diplomatic victory",
+  conquest: "The whole empire is working toward a war against the campaign target",
+  recovery: "Losing ground at home, so holding the line comes before everything else",
+};
+
+const FORCE_POSTURE_STORY = {
+  muster: "gathering before it moves",
+  advance: "moving on its objective",
+  engage: "fighting at its objective",
+  hold: "holding its position",
+  recover: "pulling back to heal",
+};
+
+// The armies at a glance: one chip per kind of force and what it is doing,
+// largest first. Group by group, a big empire's list ran past the room for it
+// and most of it read as the same word repeated.
+function forceChipsHtml(forces) {
+  const totals = new Map();
+  for (const force of forces) {
+    const key = `${force.domain}|${force.posture}`;
+    const total = totals.get(key) ||
+      {domain: force.domain, posture: force.posture, units: 0, groups: 0, readiness: 0};
+    total.units += force.units || 0;
+    total.groups += 1;
+    total.readiness = Math.max(total.readiness, force.readiness || 0);
+    totals.set(key, total);
+  }
+  return [...totals.values()].sort((a, b) => b.units - a.units).map(force =>
+    `<span class="force-chip ${force.posture}" title="${reasonEscape(
+      `${titleCase(force.posture)}: ${FORCE_POSTURE_STORY[force.posture] || "under orders"} · ` +
+      `${force.units} ${force.domain === "sea" ? "naval" : "land"} unit${force.units === 1 ? "" : "s"} in ` +
+      `${force.groups} group${force.groups === 1 ? "" : "s"} · best readiness ${Math.round(force.readiness * 100)}%`)}">` +
+    `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
+}
+
+// A live Civilization VI seat is played by a separate process: this page only
+// repaints the board it reports. Its plan and reasoning never reach the page,
+// and the panel says so rather than looking as if the agent had nothing on
+// its mind.
+function liveSeatPlanHtml() {
+  return `<div class="strategy-plan">` +
+    strategyRow("Agent", "CIVVIS Advanced AI", LIVE_SEAT_STORY) +
+    strategyRow("Rivals", "Firaxis AI", "Every other civilization is played by Civilization VI's own AI") +
+    `</div>` +
+    `<div class="dossier-note">This page mirrors the live game. The agent's plan and ` +
+    `reasoning stay with the game and are not shown here.</div>`;
 }
 
 // Where this seat's research and civics are to be read from. The observed
@@ -28537,11 +28588,11 @@ function strategyStudy(p) {
 // battlefield, "AI strategy · Grand strategy" over the full game. Written only
 // on change — this runs every frame under a text node the browser would
 // otherwise re-lay-out for nothing.
-function setStrategyPanelMode(tactics) {
+function setStrategyPanelMode(tactics, liveSeat) {
   const title = document.getElementById("strategytitle");
   const heading = document.getElementById("strategyplanheading");
   const wantTitle = tactics ? "AI Tactics" : "AI strategy";
-  const wantHeading = tactics ? "Battle plans" : "Grand strategy";
+  const wantHeading = tactics ? "Battle plans" : liveSeat ? "Live seat" : "Grand strategy";
   if (title && title.textContent !== wantTitle) title.textContent = wantTitle;
   if (heading && heading.textContent !== wantHeading) heading.textContent = wantHeading;
 }
@@ -28632,10 +28683,10 @@ function tacticsSideHtml(p, picked) {
     `</div>`;
 }
 
-// The gene program — how the AI is actually steered. Since 2026 the CIVVIS
-// agent is tuned as a pool of published heuristic "genes": each is screened
-// in thousands of self-play games, a ledger of verdicts decides which ship
-// on, and an operator can arm a ledger-held gene for the live seat while a
+// The gene program — how the AI is actually steered. The CIVVIS agent is a
+// pool of published rules ("genes"). Tournaments between randomly drawn
+// genomes price each one, the deployment genome is the selection those prices
+// chose, and an operator can arm a held gene for the live seat while a
 // question is still open. `/gene-program` reports that program once per
 // server; null against a server too old to answer, and the track stays
 // hidden.
@@ -28647,59 +28698,70 @@ function geneTitle(tag) {
 }
 
 const GENE_KIND_STORY = {
-  "repair-war": "a war repair in the live bundle",
-  "repair-economy": "an economy repair in the live bundle",
-  "host-only": "reads the live Civilization VI host, so it acts only on the live seat and no headless screen can price it",
-  "production": "stock behaviour the agent always carries",
-  "opt-in": "an opt-in, off everywhere until the ledger turns it on",
+  "repair-war": "a repair to how the agent fights",
+  "repair-economy": "a repair to how the agent runs its economy",
+  "host-only": "fixed behaviour built for the live Civilization VI bridge, outside the genome tournaments vary",
+  "production": "stock behaviour the agent carries unless the deployment genome withholds it",
+  "opt-in": "off unless the deployment genome or a live arm turns it on",
 };
 
-// One gene as a chip. The tint is the ledger's verdict — an armed chip wears
-// the plan track's gold instead, because it is the operator's live bet, not a
-// settled default — and the small figure is the pooled measured effect in
-// win-rate points per seat, the panel's working definition of dominance. The
-// ledger records that effect in wins per 10,000 seats; the chip speaks
-// percentage points, the ranking table's own display unit.
-function geneChipHtml(gene) {
-  const effect = typeof gene.posterior_pp === "number" ? gene.posterior_pp / 100 : null;
-  const spread = typeof gene.posterior_se_pp === "number" ? gene.posterior_se_pp / 100 : null;
-  const signed = value => `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
-  // P(>0) as the ranking prints it, from the pooled effect and its spread —
-  // Abramowitz–Stegun 7.1.26 is plenty for a two-digit percentage.
-  const helpsOdds = effect === null || !spread ? null : (() => {
-    const z = Math.abs(effect / spread) / Math.SQRT2;
-    const t = 1 / (1 + 0.3275911 * z);
-    const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
-      - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
-    const positive = 0.5 * (1 + (effect >= 0 ? erf : -erf));
-    return Math.round(positive * 1000) / 10;
-  })();
-  const facts = [];
-  if (gene.description) facts.push(gene.description);
-  facts.push(GENE_KIND_STORY[gene.kind] || gene.kind);
-  if (gene.verdict) {
-    facts.push(`ledger verdict ${gene.verdict}` + (effect === null ? ""
-      : ` · measured ${signed(effect)} win-rate points per seat${spread === null ? "" : ` ±${spread.toFixed(1)}`}`) +
-      (helpsOdds === null ? "" : ` · P(helps) ${helpsOdds}%`));
-  }
-  facts.push(gene.armed
-    ? "ARMED — held off by the ledger, forced on for live Civilization VI games by the operator's current arm; the simulator's own seats play the plain ledger program"
-    : gene.on ? "on in the deployment genome" : "held off by the gene ledger");
-  const cls = gene.armed ? " armed"
-    : gene.verdict === "helps" ? " helps"
-    : gene.verdict === "hurts" ? " hurts" : "";
-  const figure = effect === null ? "" : `<small>${signed(effect)}</small>`;
-  return `<span class="gene-chip${cls}" title="${reasonEscape(
-    `${geneTitle(gene.tag)} — ${facts.join(" · ")}`)}">` +
-    `${gene.armed ? "⚡ " : ""}${reasonEscape(geneTitle(gene.tag))}${figure}</span>`;
+// A gene's description is its own doc comment's first sentence. Some of those
+// only point at the code, which tells a viewer nothing.
+function geneBlurb(text) {
+  const plain = String(text || "").replace(/^`[^`]+`:\s*/, "").trim();
+  if (!plain || /^(Opt-in gene|Enable)\b|;\s*see\s+`/.test(plain)) return "";
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
 }
 
-// The program read whole: armed genes first — the operator's open experiment
-// deserves to be seen before the settled defaults — then the deployed genes
-// by the size of their measured effect. That ranking is the closest honest
+// `on` lists the deployment genome's treatments. A production gene is outside
+// that list and ships on unless the ledger withheld it.
+function geneInForce(gene) {
+  return Boolean(gene.on) || (gene.kind === "production" && gene.default_on !== false);
+}
+
+// One gene as a ranked line. An armed line wears the plan track's gold, because
+// it is the operator's live bet rather than a settled default. The small figure
+// is the ranking's on/off difference: how many percentage points more often
+// seats with the gene on won.
+function geneChipHtml(gene) {
+  const effect = typeof gene.diff_points === "number" ? gene.diff_points : null;
+  const signed = value => `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
+  const facts = [];
+  const blurb = geneBlurb(gene.description);
+  if (blurb) facts.push(blurb);
+  facts.push(GENE_KIND_STORY[gene.kind] || gene.kind);
+  if (effect !== null) {
+    facts.push(`seats with it on won ${signed(effect)} points more often` +
+      (typeof gene.p_helps === "number" ? ` · ${gene.p_helps}% likely to help` : "") +
+      (typeof gene.rank === "number" ? ` · ranked #${gene.rank}` : ""));
+  }
+  if (gene.verdict) facts.push(`ledger verdict: ${gene.verdict}`);
+  facts.push(gene.armed
+    ? "armed: held out of the default genome, forced on by the operator for live Civilization VI games"
+    : "on in the deployment genome");
+  const helps = typeof gene.p_helps === "number" ? gene.p_helps >= 90 : gene.verdict === "helps";
+  const cls = gene.armed ? " armed" : helps ? " helps" : gene.verdict === "hurts" ? " hurts" : "";
+  const figure = effect === null ? "" : `<small>${signed(effect)}</small>`;
+  return `<div class="gene-chip${cls}" title="${reasonEscape(
+    `${geneTitle(gene.tag)}: ${facts.join(" · ")}`)}">` +
+    `<span>${gene.armed ? "⚡ " : ""}${reasonEscape(geneTitle(gene.tag))}</span>${figure}</div>`;
+}
+
+// The ranking's newest batch ended on this `MM-DD`.
+function geneRankingDate(monthDay) {
+  const [month, day] = String(monthDay || "").split("-").map(Number);
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return names[month - 1] && day ? `${names[month - 1]} ${day}` : "";
+}
+
+// The program read whole: what is steering the seats on this page, and of
+// those the ones tournaments measured to help most. That is the closest honest
 // "dominant right now": the engine keeps no per-decision fire ledger, so the
-// panel reports which hands are on the wheel and how hard each one has been
+// panel reports which hands are on the wheel and how hard each has been
 // measured to steer, never which one turned it this turn.
+//
+// An armed gene steers only the live Civilization VI seat, whatever machine
+// serves this page, so anywhere else it is a footnote and not part of the count.
 function drawGeneProgram() {
   const track = document.getElementById("geneprogramtrack");
   const holder = document.getElementById("geneprogram");
@@ -28712,32 +28774,71 @@ function drawGeneProgram() {
     return;
   }
   track.hidden = false;
+  const live = livePause.available;
   const armed = genes.filter(gene => gene.armed);
-  const key = `${program.policy || ""}|${genes.length}|${armed.map(gene => gene.tag).join(",")}`;
+  const key = `${program.policy || ""}|${genes.length}|${live ? 1 : 0}|${armed.map(gene => gene.tag).join(",")}`;
   if (holder.dataset.programKey === key) return;
   holder.dataset.programKey = key;
-  const on = genes.filter(gene => gene.on && !gene.armed);
-  const held = genes.filter(gene => !gene.on && !gene.armed);
-  const measured = on.filter(gene => typeof gene.posterior_pp === "number")
-    .sort((a, b) => Math.abs(b.posterior_pp) - Math.abs(a.posterior_pp));
-  const unmeasured = on.filter(gene => typeof gene.posterior_pp !== "number");
-  const CHIP_CAP = 14, NAME_CAP = 40;
-  const lead = [...armed, ...measured, ...unmeasured].slice(0, CHIP_CAP);
-  const over = armed.length + on.length - lead.length;
+  const base = genes.filter(geneInForce);
+  const inForce = live ? [...base, ...armed.filter(gene => !geneInForce(gene))] : base;
+  const held = genes.filter(gene => !geneInForce(gene) && !gene.armed);
+  const CHIP_CAP = 5, NAME_CAP = 40;
+  const lead = inForce.filter(gene => typeof gene.diff_points === "number" && gene.diff_points > 0)
+    .sort((a, b) => b.diff_points - a.diff_points).slice(0, CHIP_CAP);
+  const shown = new Set(lead.map(gene => gene.tag));
+  const rest = inForce.filter(gene => !shown.has(gene.tag));
   const names = list => list.slice(0, NAME_CAP).map(gene => geneTitle(gene.tag)).join(", ") +
     (list.length > NAME_CAP ? ` … ${list.length - NAME_CAP} more` : "");
-  sum.textContent = `${armed.length + on.length} on` + (armed.length ? ` · ${armed.length} armed` : "");
-  sum.title = `${armed.length + on.length} genes steer every CIVVIS seat` +
-    (program.policy ? ` under the ${program.policy} deployment policy` : "") +
-    (armed.length ? `; ${armed.length} are armed — ledger-held genes the operator forced on for live Civilization VI games` : "") +
-    (held.length ? `. The ledger holds ${held.length} more off.` : ".");
+  const seats = program.ranking?.seats || 0;
+  const through = geneRankingDate(program.ranking?.newest_end);
+  sum.textContent = `${inForce.length} on`;
+  sum.title = `${inForce.length} genes are steering ` +
+    (live ? "this live seat" : "every major civilization in this game") +
+    (program.policy ? ` under the ${program.policy} deployment policy` : "") + ".";
+  const story = live && armed.length
+    ? `Each gene is one named rule. ${base.length} are the default set, most chosen by ` +
+      `tournament results. The operator armed ${armed.length} more for live play.`
+    : `Each gene is one named rule. ${base.length} are playing here, most chosen by tournament results.`;
+  const unit = `Win-rate points: how much more often seats with the gene on won` +
+    (seats ? `, over ${seats.toLocaleString("en-US")} tournament seats` : "") +
+    (through ? ` through ${through}` : "") + ".";
   holder.innerHTML =
-    `<div class="dossier-note">` + lead.map(geneChipHtml).join("") +
-    (over > 0 ? ` <span class="dossier-empty" title="${reasonEscape(
-        names([...measured, ...unmeasured].slice(Math.max(0, CHIP_CAP - armed.length))))}">+${over} more on</span>` : "") +
-    `</div>` +
-    (held.length ? `<div class="dossier-note dossier-empty" title="${reasonEscape(
-        `Live genes the ledger's measurements hold out of deployment: ${names(held)}`)}">Ledger holds ${held.length} off</div>` : "");
+    `<div class="gene-story">${story}</div>` +
+    (lead.length
+      ? `<div class="gene-caption" title="${reasonEscape(unit)}"><span>${strategyMetaHtml("Biggest measured gains", "Biggest gains")}</span>` +
+        `<span>${strategyMetaHtml("win-rate pts", "pts")}</span></div>` +
+        `<div class="gene-chips">${lead.map(geneChipHtml).join("")}</div>`
+      : "") +
+    `<div class="gene-foot">` +
+    (rest.length
+      ? `<span title="${reasonEscape(names(rest))}">+${rest.length} more on</span>` : "") +
+    (held.length
+      ? `<span title="${reasonEscape(`Held out of the default genome: ${names(held)}`)}">${held.length} held off</span>` : "") +
+    (!live && armed.length
+      ? `<span title="${reasonEscape(`Armed by the operator for live Civilization VI games only. None of them play in this game: ${names(armed)}`)}">${armed.length} armed for live Civ VI only</span>` : "") +
+    `</div>`;
+}
+
+// A heading's corner note, in the words the track has room for: the narrowest
+// deck gets the short form rather than a long one cut to its first letters.
+function strategyMetaHtml(wide, narrow) {
+  return `<span class="meta-wide">${wide}</span><span class="meta-narrow">${narrow}</span>`;
+}
+
+// When the plan was last reconsidered, in the corner of its heading.
+function drawStrategyPlanAge(p) {
+  const meta = document.getElementById("strategyplanmeta");
+  if (!meta) return;
+  const assessed = p?.ai_plan?.assessed_turn;
+  const current = assessed >= (state.turn || 0);
+  const html = typeof assessed !== "number" ? ""
+    : strategyMetaHtml(current ? "Reassessed this turn" : `Reassessed T${assessed}`,
+        current ? "Now" : `T${assessed}`);
+  if (meta.dataset.html !== html) {
+    meta.dataset.html = html;
+    meta.innerHTML = html;
+  }
+  meta.title = html ? "The last turn this plan was reconsidered" : "";
 }
 
 function drawStrategyPanel() {
@@ -28748,7 +28849,8 @@ function drawStrategyPanel() {
   const cdiv = document.getElementById("civics");
   if (!scope || !track || !planEl || !rdiv || !cdiv) return;
   const tactics = watchingBattlefield();
-  setStrategyPanelMode(tactics);
+  const liveSeat = livePause.available && !tactics;
+  setStrategyPanelMode(tactics, liveSeat);
   // The program is the whole fleet's, not one seat's, so it renders whatever
   // seat is picked; on a battlefield the stylesheet retires its track with
   // the other study tracks.
@@ -28757,6 +28859,7 @@ function drawStrategyPanel() {
   const seat = strategyViewSeat();
   syncStrategyOptions(seats, seat);
   if (tactics) {
+    drawStrategyPlanAge(null);
     // A battle is understood by comparing the sides' plans, not by flipping a
     // picker between them: every side still standing gets a block, in
     // standings order. The picker keeps its other job — scoping the decision
@@ -28799,7 +28902,8 @@ function drawStrategyPanel() {
   scope.title = seats.length > 1
     ? `${p.civ}'s current plan — pick another civilization to read theirs`
     : `${p.civ}'s current plan`;
-  const plan = strategyPlanHtml(p);
+  const plan = strategyPlanHtml(p) || (liveSeat ? liveSeatPlanHtml() : "");
+  drawStrategyPlanAge(p);
   // A seat with no published plan — a human's own, or a baseline agent that
   // reports none — keeps the two tracks and drops the empty heading rather
   // than printing a row that says nothing.
@@ -29062,18 +29166,24 @@ function drawReasoning() {
   const more = document.getElementById("reasonmore");
   if (!el) return;
   absorbReasoning(state);
+  // A live Civilization VI seat's reasoning never reaches this page, so an
+  // empty track would only promise something that cannot arrive.
+  const reasonTrack = document.getElementById("strategyreasontrack");
+  const sealed = livePause.available && !reasoningLog.thoughts.length;
+  if (reasonTrack) reasonTrack.hidden = sealed;
+  if (sealed) return;
   syncReasonOptions();
   const {thoughts, hasMore, player} = reasonFilteredThoughts();
   const civ = player === null ? null : (state?.players || [])[player];
   const newest = thoughts.length ? thoughts[0] : null;
   if (context) {
     context.textContent = civ
-      ? `Recorded factors behind ${civ.civ}'s plan and decisions. Gold entries mark grand-strategy assessments.`
+      ? `Logged by ${civ.civ}'s agent as it decides. Gold entries mark grand-strategy assessments.`
       : "Choose a civilization to inspect its plan and decision factors.";
   }
-  if (scope) scope.textContent = newest
-    ? `${thoughts.length}${hasMore ? "+" : ""} factors · Turn ${newest.turn}`
-    : (reasoningLog.thoughts.length ? "no matching factors" : "");
+  if (scope) scope.innerHTML = newest
+    ? strategyMetaHtml(`${thoughts.length}${hasMore ? "+" : ""} factors · Turn ${newest.turn}`, `T${newest.turn}`)
+    : (reasoningLog.thoughts.length ? strategyMetaHtml("no matching factors", "none") : "");
   if (scope && newest) {
     const onLatest = thoughts.filter(t => t.turn === newest.turn).length;
     scope.title = `${thoughts.length}${hasMore ? "+" : ""} factors shown for ${civ?.civ || "this civilization"}; ` +
