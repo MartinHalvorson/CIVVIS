@@ -121,14 +121,22 @@ impl Game {
     /// The religion a majority of `pid`'s cities follow — the shipped test for
     /// a civilization being converted (`GetReligionInMajorityOfCities`,
     /// WorldRankings.lua:2049): the host's answer where the mirror recorded
-    /// one, else counted off the board by the engine's own rule,
-    /// `following * 2 > cities`. `None` when no religion holds a majority.
+    /// one. A native empire with no observed verdict stays unknown; complete
+    /// simulator boards use `following * 2 > cities`. `None` when no majority
+    /// can be established.
     pub fn majority_religion_of(&self, pid: usize) -> Option<&str> {
         if let Some(observed) = self.observed_majority_religion.get(&pid) {
             return Some(observed.as_str());
         }
         let cities = self.player_city_ids(pid);
         if cities.is_empty() {
+            return None;
+        }
+        // A native city's last observed religion may be stale, and its city
+        // list may cover only part of the empire. Missing host majority data
+        // cannot establish conversion from that subset. The mirror supplies
+        // our own majority from its complete current owned-city export.
+        if self.observed_public_empire_stats.contains_key(&pid) {
             return None;
         }
         let mut tally: BTreeMap<&str, usize> = BTreeMap::new();

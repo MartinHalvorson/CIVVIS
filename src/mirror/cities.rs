@@ -831,6 +831,13 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
         if observed.pop > 0 {
             game.cities.get_mut(&cid).unwrap().pop = observed.pop;
         }
+        // The foreign-city exporter marks a successful, currently visible
+        // majority read, including a confirmed lack of majority. Missing or
+        // fogged observations must not manufacture a conversion or erase one.
+        if game.cities[&cid].owner != 0 && observed.religion_observed == Some(true) {
+            apply_city_religion(game.cities.get_mut(&cid).unwrap(), observed);
+            Arc::make_mut(&mut game.observed_city_religion_markers).insert(cid);
+        }
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {
             Arc::make_mut(&mut game.observed_city_loyalty_per_turn)
@@ -845,6 +852,24 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
         if observed.defense.is_finite() && observed.defense >= 0.0 {
             Arc::make_mut(&mut game.observed_city_strength).insert(cid, observed.defense);
         }
+    }
+    // The owned-city list is complete and current, unlike the revealed foreign
+    // subset. Record its strict majority explicitly so the host-only country
+    // verdict rule does not hide our own known conversion state.
+    let mut own_following: std::collections::BTreeMap<String, usize> = Default::default();
+    for city in &state.cities {
+        if let Some(faith) = city.religion.as_deref().and_then(civvis_religion_name) {
+            *own_following.entry(faith).or_default() += 1;
+        }
+    }
+    let own_majority = own_following
+        .into_iter()
+        .find(|(_, count)| count * 2 > state.cities.len())
+        .map(|(faith, _)| faith);
+    let observed = Arc::make_mut(&mut game.observed_majority_religion);
+    observed.remove(&0);
+    if let Some(faith) = own_majority {
+        observed.insert(0, faith);
     }
 }
 
