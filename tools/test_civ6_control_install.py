@@ -1657,6 +1657,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("experience:GetPromotions()", progress)
         self.assertIn("unit:GetBuildCharges()", progress)
         self.assertIn("unit:GetSpreadCharges()", progress)
+        self.assertIn("unit:GetReligiousHealCharges()", progress)
         self.assertIn("unit:GetReligionType()", progress)
         for operation in (
             "UNITOPERATION_SPREAD_RELIGION",

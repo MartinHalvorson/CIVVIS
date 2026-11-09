@@ -14485,6 +14485,65 @@ fn native_apostle_choices_replace_the_simulated_offer() {
     assert!(!mirror.game.promotion_pending(uid));
 }
 
+/// A Guru's spread charges read 0 on the host, and its heals are a separate
+/// pool. All 21 live Gurus of 2026-11-09 therefore mirrored as empty and none
+/// ever healed, 13 Guru-turns of them beside a wounded unit of their faith.
+#[test]
+fn a_guru_reads_its_heal_charges_and_can_heal() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 120,
+        width: 12,
+        height: 12,
+        chunk: 1,
+        plots: (0..12)
+            .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let religious = |id: i64, kind: &str, x: i32, hp: f64| StateUnit {
+        id,
+        kind: kind.into(),
+        x,
+        y: 5,
+        hp,
+        moves: 4.0,
+        max_moves: Some(4.0),
+        religion: Some("RELIGION_BUDDHISM".into()),
+        spread_charges: Some(0),
+        ..StateUnit::default()
+    };
+    let mut guru = religious(7, "UNIT_GURU", 5, 100.0);
+    guru.heal_charges = Some(3);
+    let mut state = StateSnapshot {
+        turn: 120,
+        cities: vec![StateCity {
+            id: 1,
+            name: "Athens".into(),
+            x: 2,
+            y: 2,
+            pop: 4,
+            ..StateCity::default()
+        }],
+        units: vec![guru, religious(8, "UNIT_APOSTLE", 6, 60.0)],
+        ..StateSnapshot::default()
+    };
+    let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let uid = mirror.uid_of[&7];
+    assert_eq!(mirror.game.units[&uid].charges, 3);
+    let can_heal = |mirror: &LiveMirror| {
+        mirror.game.legal_actions(0).iter().any(
+            |action| matches!(action, crate::game::Action::HealReligious { unit } if *unit == uid),
+        )
+    };
+    assert!(
+        can_heal(&mirror),
+        "a Guru with heals beside a wounded friend can heal"
+    );
+    state.units[0].heal_charges = Some(0);
+    mirror.sync(&snapshot, &state, 0);
+    assert_eq!(mirror.game.units[&uid].charges, 0);
+    assert!(!can_heal(&mirror), "a spent Guru has nothing to heal with");
+}
+
 #[test]
 fn native_band_choices_override_refusals_and_refresh_without_stale_offers() {
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
