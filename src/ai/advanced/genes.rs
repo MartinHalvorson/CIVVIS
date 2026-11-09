@@ -5516,6 +5516,9 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // Live 11-09: Apostles offered Debater that took it averaged 0.94 kills and
+    // 2.79 spreads; those offered it that took another 0.07 and 1.22.
+    Gene { tag: "religion-seat-takes-the-debater", field: "religion_seat_takes_the_debater", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_debater, disable: AdvancedAi::disable_religion_seat_takes_the_debater },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
