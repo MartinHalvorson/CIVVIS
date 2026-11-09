@@ -6492,9 +6492,9 @@ impl BasicAi {
     /// hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let bleeding = self.garrison_under_fire
-            && g.cities.get(&cid).is_some_and(|city| {
-                city.hp < 200 || Self::walls_need_local_defense(g, pid, cid)
-            });
+            && g.cities
+                .get(&cid)
+                .is_some_and(|city| city.hp < 200 || Self::walls_need_local_defense(g, pid, cid));
         if !bleeding {
             return None;
         }
