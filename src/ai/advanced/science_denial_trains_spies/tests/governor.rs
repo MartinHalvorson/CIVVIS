@@ -27,6 +27,9 @@ fn fixture() -> (Game, StrategicPlan, u32) {
     let mut menus = BTreeMap::new();
     for cid in cities {
         let city = g.cities.get_mut(&cid).unwrap();
+        // Rome starts with this building. The control needs a legal,
+        // unfinished alternative, including after its current head changes.
+        city.buildings.remove(&crate::name!("monument"));
         city.queue = vec![monument()];
         city.production = 0.0;
         city.production_progress.clear();
@@ -49,8 +52,12 @@ fn fixture() -> (Game, StrategicPlan, u32) {
         menus.insert(cid, menu);
     }
     g.replace_host_menus(menus, BTreeMap::new(), BTreeMap::new());
+    for cid in g.player_city_ids(0) {
+        assert!(g.can_produce(0, cid, &monument()));
+    }
     armed().claim_queues_for_denial_spies(&mut g, 0, &plan());
     assert_eq!(training(&g), BTreeSet::from([best]));
+    assert!(g.can_produce(0, best, &monument()));
     assert_eq!(g.item_invested_production(best, &spy()), 0.0);
     (g, plan(), best)
 }
