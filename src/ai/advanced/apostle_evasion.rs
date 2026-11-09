@@ -91,8 +91,8 @@ impl AdvancedAi {
         // `advanced/stalled_spreader.rs`.
         // `religion-seat-presses-the-campaign`: from the start, on the same
         // terms. See `advanced/religion_seat_fields_apostles.rs`.
-        let lethal_only = self.spreader_braves_the_march(g, uid)
-            || self.religion_seat_presses_on(g, pid);
+        let lethal_only =
+            self.spreader_braves_the_march(g, uid) || self.religion_seat_presses_on(g, pid);
         g.units
             .values()
             .filter(|rival| {

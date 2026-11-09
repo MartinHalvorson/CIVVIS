@@ -672,7 +672,14 @@ impl AdvancedAi {
         // Apostle the bank cannot pay for yet is saved for rather than spent
         // on a cheaper unit. A city of ours losing its faith still buys.
         let apostle_led = !inquisitor_corps_short
-            && self.religion_seat_leads_with_apostles(g, pid, offensive, apostles, missionaries, apostle_cap);
+            && self.religion_seat_leads_with_apostles(
+                g,
+                pid,
+                offensive,
+                apostles,
+                missionaries,
+                apostle_cap,
+            );
         let priorities: &[&str] = if apostle_led {
             &["apostle", "guru", "missionary"]
         } else {
