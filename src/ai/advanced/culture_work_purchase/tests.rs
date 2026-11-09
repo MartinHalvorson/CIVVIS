@@ -20,7 +20,7 @@ fn spare_slots_and_money_can_buy_from_each_met_major() {
     let (first, ceiling, _, _) = ai
         .culture_work_purchase_ask(&game, 0, game.players[0].gold, Some(30.0), false)
         .unwrap();
-    assert_eq!(ceiling, 500);
+    assert_eq!(ceiling, 1_000);
     game.turn += 6;
     let (second, _, _, _) = ai
         .culture_work_purchase_ask(&game, 0, game.players[0].gold, Some(30.0), false)
@@ -35,7 +35,7 @@ fn keeps_cash_and_income_reserves_and_does_not_buy_on_unknown_income() {
     let (_, total, cash, gpt) = ai
         .culture_work_purchase_ask(&game, 0, 200.0, Some(30.0), false)
         .unwrap();
-    assert_eq!((total, cash, gpt), (500, 170, 20));
+    assert_eq!((total, cash, gpt), (670, 170, 20));
     let (_, total, cash, gpt) = ai
         .culture_work_purchase_ask(&game, 0, 200.0, Some(10.0), false)
         .unwrap();
@@ -165,4 +165,32 @@ fn native_financed_quotes_fit_without_spending_the_cash_reserve() {
         assert!(game.players[0].gold - quoted_gold as f64 >= reserve);
         assert!(income - quoted_gpt as f64 >= 5.0);
     }
+}
+
+#[test]
+fn native_quotes_above_500_fit_only_the_funded_payment_limits() {
+    let (ai, mut game) = fixture();
+    // Actual Native quotes: 223717Z t117/t123 and 003638Z t183.
+    for (cash_limit, quoted_gold, quoted_gpt) in [(174, 138, 17), (331, 167, 19), (247, 174, 20)] {
+        game.players[0].gold = f64::from(cash_limit + 30);
+        let (_, ceiling, cash, gpt) = ai
+            .culture_work_purchase_ask(&game, 0, game.players[0].gold, Some(40.0), false)
+            .unwrap();
+        let price = quoted_gold + 25 * quoted_gpt;
+        assert!(price > 500 && price <= ceiling);
+        assert_eq!((cash, gpt), (cash_limit, 20));
+        assert!(quoted_gold <= cash && quoted_gpt <= gpt);
+        assert!(game.players[0].gold - f64::from(quoted_gold) >= 30.0);
+    }
+    // Higher income and treasury cannot raise either payment limit.
+    game.players[0].gold = 100_000.0;
+    let (_, ceiling, cash, gpt) = ai
+        .culture_work_purchase_ask(&game, 0, 100_000.0, Some(10_000.0), false)
+        .unwrap();
+    assert_eq!((ceiling, cash, gpt), (1_000, 500, 20));
+    // Cash committed elsewhere reduces the total by exactly that amount.
+    let (_, ceiling, cash, gpt) = ai
+        .culture_work_purchase_ask(&game, 0, 100.0, Some(40.0), false)
+        .unwrap();
+    assert_eq!((ceiling, cash, gpt), (570, 70, 20));
 }

@@ -65,7 +65,11 @@ impl AdvancedAi {
             .floor() as i32;
         // Preserve the existing 5 GPT floor and 20% income headroom.
         let max_gpt = ((income - 5.0) * 0.8).clamp(0.0, 20.0).floor() as i32;
-        let ceiling = (max_gold + 25 * max_gpt).min(500);
+        // Native 223717Z t117/t123 quoted 138 Gold + 17 GPT (563)
+        // and 167 Gold + 19 GPT (642). Both components fit their limits;
+        // a separate 500-equivalent cap rejected funded offers. The sum
+        // remains bounded at 1,000 by the unchanged 500 Gold / 20 GPT caps.
+        let ceiling = max_gold + 25 * max_gpt;
         if ceiling < 80 {
             return None;
         }
