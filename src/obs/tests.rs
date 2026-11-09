@@ -997,8 +997,8 @@ fn a_launch_film_plays_over_the_part_of_its_route_in_view() {
     );
     // Neither the ignition nor the arrival may be drawn at a point where the
     // frame merely cut the route.
-    assert!(painter.contains("progress < .3 && !film.entering"));
-    assert!(painter.contains("progress > .82 && !film.leaving"));
+    assert!(painter.contains("clock < .3 && !film.entering"));
+    assert!(painter.contains("clock > .82 && !film.leaving"));
 
     let film = app
         .split_once("function skyLaunchFilm(")
@@ -1049,7 +1049,7 @@ fn launches_name_their_civ_and_a_satellite_hands_over_to_its_orbit() {
     assert!(app.contains("deployed:skySatelliteDeployed(player.id, now)"));
     assert!(app.contains("deployed = skySatelliteDeployed(player.id, now);"));
     assert!(app.contains(
-        "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now) : 1"
+        "launch.mission === \"satellite\" ? 1 - skySatelliteDeployed(player.id, now)\n    : 1 - skySmooth((clock - .9) / .1);"
     ));
 }
 
@@ -1066,7 +1066,7 @@ fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
         app.contains("const cell = launch.originPos && PLANET?.cells.get(key(launch.originPos));")
     );
     assert!(app.contains("across > 1e-6 ? [-pad[1] / across, pad[0] / across, 0] : [1, 0, 0]"));
-    assert!(app.contains("const bend = -east * (.34 + order * .08);"));
+    assert!(app.contains("const arc = skyPitchArc(1.46, 1.02 - order * .13);"));
 
     // A turning world is planned for, and the route is in its frame.
     assert!(app.contains("camera.longitude - 2 * Math.PI * ms / WORLD_SPIN_PERIOD_MS"));
@@ -1082,11 +1082,73 @@ fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     );
     assert!(app.contains("if (limb && at.z < 0) {"));
 
-    // Nobody misses one: the hidden part of a flight is hurried through, a
+    // Nobody misses one: a film opens where the rocket comes into sight, a
     // launch nowhere in the picture crosses it, and a chart still shows them.
-    assert!(app.contains("else launch.emerges = step / 40;"));
-    assert!(app.contains("launch.crossing = true;"));
+    assert!(app.contains("const law = skyThrustLaw(from, from > 0 ? SKY_ROLLING_START : 0);"));
+    assert!(app.contains("launch.route = {kind:\"crossing\"};"));
     assert!(app.contains("if (camera.chart) drawChartLaunches(camera, radius, centerX, centerY);"));
+}
+
+/// What makes a launch look wrong is motion that does not add up: a rocket that
+/// hooks back across the planet, stalls in mid-air, jumps, or blinks out. Each
+/// of those came from a specific shape of code, and these pin the shape that
+/// replaced it. A launch has one curve and one clock, settled once.
+#[test]
+fn a_launch_flies_one_curve_on_one_clock() {
+    let app = include_str!("../../web/assets/app.js");
+
+    let painter = app
+        .split_once("function drawLaunchFlight(")
+        .unwrap()
+        .1
+        .split_once("// A body nobody could name is just a light.")
+        .unwrap()
+        .0;
+    // One clock, read through one smooth law. The piecewise schedules that made
+    // a far-side rocket sprint, stall and resume are gone.
+    assert!(painter.contains("const progress = film.law(clock);"));
+    assert!(!app.contains("function skyLaunchProgress("));
+    assert!(!app.contains("launch.haste"));
+    assert!(!app.contains("launch.emerges"));
+
+    // A rocket leaving the picture is still gathering speed when it goes.
+    assert!(app.contains(
+        "return from + (1 - from) * (rolling * t + (1 - rolling) * Math.pow(t, SKY_THRUST_POWER));"
+    ));
+
+    // One arc, which an orthographic camera can only turn into another arc.
+    assert!(app.contains("function skyPitchArc(pitchFrom, pitchTo) {"));
+    assert!(app.contains("const pitch = pitchFrom + turn * progress;"));
+    assert!(app.contains("pad[axis] * (1 + reach * up) + heading[axis] * reach * along),"));
+    assert!(
+        !app.contains("x:climb.x + (end.x - climb.x) * bent"),
+        "blending a world climb toward a point on the screen is what drew the hooks"
+    );
+
+    // Planned on the first frame and only read after that.
+    let flight = app
+        .split_once("function skyGlobeFlight(")
+        .unwrap()
+        .1
+        .split_once("function drawSkyLaunches(")
+        .unwrap()
+        .0;
+    assert!(flight.contains("if (!launch.route) {"));
+    assert_eq!(flight.matches("skyPlanMission(").count(), 1);
+
+    // Never stops in the frame: what is left at the end of its film goes out.
+    assert!(painter.contains(": 1 - skySmooth((clock - .9) / .1);"));
+
+    // A crossing goes through the picture, not along the edge of it.
+    assert!(app.contains("const through = Math.atan2(-inY, -inX);"));
+
+    // A satellite is a gravity turn that cannot overrun its orbit and brake.
+    assert!(app.contains("const steep = Math.log(orbit.ring) /"));
+    assert!(app.contains("for (let share = .5; share <= 2 / 3 + 1e-6; share += 1 / 24) {"));
+
+    // A nose pointed at the camera has no steady direction: it turns, it
+    // does not flip.
+    assert!(painter.contains("launch.nose += Math.max(-most, Math.min(most, turn));"));
 }
 
 #[test]
