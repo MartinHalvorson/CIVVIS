@@ -1373,6 +1373,7 @@ type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<u
 /// cities their governors sit in, and the turn their establishment counts
 /// from. Players and cities bump their counters at every mutable access.
 type SuzerainStamp = (u64, u64, u32);
+type SuzerainStable = std::cell::RefCell<Option<(SuzerainStamp, BTreeMap<usize, Option<usize>>)>>;
 /// Per-pid shared-vision viewer sets, beside the diplomacy epoch they were
 /// built from. Indexed by pid; a pid nobody has asked about this epoch keeps
 /// its slot `None` rather than being folded speculatively.
@@ -1748,7 +1749,7 @@ pub struct QueryCache {
     /// `suzerain_of` per city-state from the last moment nothing it reads
     /// changed. Most scopes follow an action that touched neither envoys nor
     /// cities, and the answer walks every major.
-    suzerain_stable: std::cell::RefCell<Option<(SuzerainStamp, BTreeMap<usize, Option<usize>>)>>,
+    suzerain_stable: SuzerainStable,
     /// `domestic_tourists` per player. Each seat's victory tracker reads every
     /// rival's count and each count walks every player, which made one frame
     /// cubic in the number of civilizations.
