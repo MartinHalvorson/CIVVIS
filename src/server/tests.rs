@@ -6817,13 +6817,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
     assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
-    // Every path keeps its top three plus the player's own civilization
-    // when that row is lower in this particular victory race — except on the
-    // dedicated display beside Civilization VI, which lists exactly two.
+    // Every path shows the leaders its room allows, and the watched
+    // civilization when that row is lower in this particular victory race and
+    // is budgeted for — except on the dedicated display beside Civilization
+    // VI, which lists exactly two. tools/test_web_assets.py runs the fit.
     assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
-    assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
+    assert!(EMBEDDED_INDEX.contains("const shown = rows => rows + (focusRank >= rows ? 1 : 0);"));
     assert!(EMBEDDED_INDEX.contains(
-        "entry.hidden = index >= capacity &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
+        "const hidden = index >= rows &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
     ));
     assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
     assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
@@ -7129,7 +7130,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // its own figures by up to a pixel, in opposite directions at the two
     // ends of the table.
     assert!(EMBEDDED_INDEX.contains(
-        "align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;\n    \
+        "align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 var(--hud-close-gutter) 0 3px;\n    \
              border: 1px solid transparent;"
     ), "the heading has the row's border box, or the columns skew across the table");
     // For the same reason the heading gives up its inline padding wherever
@@ -7137,12 +7138,14 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // the skew it was moved to close.
     assert!(
         EMBEDDED_INDEX.contains(
-            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }"
+            "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px var(--hud-close-gutter); }"
         ),
         "the heading is a row of the same table and gives up the same pixels"
     );
     assert_eq!(
-        EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(),
+        EMBEDDED_INDEX
+            .matches("padding: 1px var(--hud-close-gutter) 1px 3px;")
+            .count(),
         1,
         "the row's inline padding is written once, and the heading matches it"
     );
