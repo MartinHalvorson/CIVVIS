@@ -1050,7 +1050,7 @@ class ProtectedInstallTest(unittest.TestCase):
         # the ballot before that callback; the Lua suite exercises the order.
         self.assertIn("local function castBallot(trigger)", source)
         ballot = source.split("local function castBallot(trigger)", 1)[1].split("if not envoyTally.ballot_hooked then", 1)[0]
-        self.assertIn("voteWorldCongress(ballotPid)", ballot)
+        self.assertIn("voteWorldCongress(ballotPid, ballotTurn)", ballot)
         self.assertIn("envoyTally.ballot_turn", ballot)
         self.assertIn("favor_before = before", ballot)
         self.assertIn('LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);', source)
@@ -1301,8 +1301,8 @@ class ProtectedInstallTest(unittest.TestCase):
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
         # ended it. The votes go through the shipped popup's own operations.
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        self.assertIn("local function voteWorldCongress(pid)", source)
-        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        self.assertIn("local function voteWorldCongress(pid, ballotTurn)", source)
+        voter = source.split("local function voteWorldCongress(pid, ballotTurn)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
         self.assertIn("wc:GetResolutions(pid)", voter)
         self.assertIn("wc:GetVotesandFavorCost(pid)", voter)
         self.assertIn("GetDiplomaticVictoryPoints()", voter)
@@ -1331,7 +1331,7 @@ class ProtectedInstallTest(unittest.TestCase):
         # Wired into the soft-blocker forfeit path, once per turn, before the dismissal.
         forfeit = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local dropped = dismissBlocker(pid, blocker);", 1)[0]
         self.assertIn("seen.voted_turn ~= turn", forfeit)
-        self.assertIn("voteWorldCongress(pid)", forfeit)
+        self.assertIn("voteWorldCongress(pid, turn)", forfeit)
         self.assertIn('emit("wc_vote"', forfeit)
         # And the state now carries the points and the favor.
         self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
@@ -1344,7 +1344,7 @@ class ProtectedInstallTest(unittest.TestCase):
         must not override denial at or above the configured threshold.
         """
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        voter = source.split("local function voteWorldCongress(pid, ballotTurn)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
@@ -1381,7 +1381,7 @@ class ProtectedInstallTest(unittest.TestCase):
         free vote is cast against the leader; from the floor the bank is spent.
         """
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        voter = source.split("local function voteWorldCongress(pid, ballotTurn)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
         self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
