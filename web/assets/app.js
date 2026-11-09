@@ -1085,7 +1085,7 @@ applyOverlayVisibility();
 // deaths: fading casualties; strike: attacker lunge.
 // blasts: nuclear detonations, which get their own layer rather than a bigger
 // burst — a device is the only event on this board that deserves several
-// seconds and the whole frame.
+// seconds to itself.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
                claims: [], strike: null, blasts: [],
                skyLaunches: [], skyOrbitTrims: new Map() };
@@ -22160,7 +22160,7 @@ function drawPlanetMap() {
   }
   cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
-  // Last, and in screen space: a detonation's flash washes the frame itself,
+  // Last, and in screen space: a detonation's glow sits on its fireball,
   // exactly as it does over the flat board.
   drawNuclearFlash(now);
   retirePlanetEffects(now);
@@ -23131,15 +23131,14 @@ function drawScene() {
   // yields, no unit, city plate, route, lens, or combat effect can bury them.
   drawFlatTileYieldOverlay(tiles, workedSet, visSet);
   // The sky over the board: above everything standing on the ground, and under
-  // the weather and the flash, which are the frame itself rather than things in
-  // the world.
+  // the weather and a detonation's glow, which are drawn on the frame rather
+  // than in the world.
   drawFlatSatellites(now0);
   drawFlatLaunches(now0);
   drawMissileStrikes(now0);
   drawNuclearBlasts(now0);
-  // Last of all, and outside the world transform: a detonation is bright enough
-  // to wash out the frame itself, and nothing — not even the era grade — gets
-  // to tint that.
+  // Last of all, and outside the world transform, so that nothing — not even
+  // the era grade — gets to tint a detonation's glow.
   drawNuclearFlash(now0);
 }
 
@@ -23269,45 +23268,31 @@ function drawStrategicBlast(b, x, y, reach, e, ee) {
   cx.fillText("\u2622", x, y - lift);
   cx.globalAlpha = 1;
 }
-// Screen space, and last of all. A device is the only thing that can wash out
-// the frame itself: a hard white veil for the instant of the flash, then a bloom
-// sitting on the fireball rather than a wash over the whole picture — a
-// full-frame tint flattens the map instead of making the blast stand out of it.
-// Strategic gets a fraction of it; a command map should not be blinded.
+// Screen space, and last of all: a bloom sitting on the fireball and only a few
+// blast radii across. It stops there on purpose. A device used to bleach the
+// whole frame for its opening moments as well, which in a game watched for hours
+// is a flash grenade every time anyone fires one, and a full-frame tint flattens
+// the map instead of making the blast stand out of it.
 function drawNuclearFlash(now) {
   if (!anim.blasts.length) return;
   const scale = 0.25;
-  let veil = 0;
-  const blooms = [];
-  for (const b of anim.blasts) {
-    const e = (now - b.t0) / b.dur;
-    if (e < 0 || e >= 1) continue;
-    const punch = b.thermo ? 1 : 0.82;
-    if (e < 0.13) veil = Math.max(veil, (1 - e / 0.13) * punch);
-    if (e < 0.62 && b.screen) {
-      blooms.push([b.screen, (1 - e / 0.62) * punch,
-                   b.screenReach != null ? b.screenReach
-                     : (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
-    }
-  }
-  if (veil <= 0.002 && !blooms.length) return;
-  const W = cv.width, H = cv.height;
   cx.save();
   cx.setTransform(1, 0, 0, 1, 0, 0);
-  for (const [[sx, sy], strength, radius] of blooms) {
-    const r = Math.max(60, radius * (2.6 + (1 - strength) * 3.4));
+  for (const b of anim.blasts) {
+    const e = (now - b.t0) / b.dur;
+    if (e < 0 || e >= 0.62 || !b.screen) continue;
+    const [sx, sy] = b.screen;
+    const strength = (1 - e / 0.62) * (b.thermo ? 1 : 0.82);
+    const reach = b.screenReach != null ? b.screenReach
+      : (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5);
+    const r = Math.max(60, reach * (1.6 + (1 - strength) * 1.2));
     const glow = cx.createRadialGradient(sx, sy, 0, sx, sy, r);
     glow.addColorStop(0, `rgba(255,226,168,${(0.5 * strength * scale).toFixed(3)})`);
     glow.addColorStop(0.45, `rgba(255,152,58,${(0.24 * strength * scale).toFixed(3)})`);
     glow.addColorStop(1, "rgba(255,120,40,0)");
     cx.globalAlpha = 1;
     cx.fillStyle = glow;
-    cx.fillRect(0, 0, W, H);
-  }
-  if (veil > 0) {
-    cx.globalAlpha = Math.min(1, 0.95 * veil * veil * scale);
-    cx.fillStyle = "#fffdf6";
-    cx.fillRect(0, 0, W, H);
+    cx.fillRect(sx - r, sy - r, r * 2, r * 2);
   }
   cx.restore();
   cx.globalAlpha = 1;
