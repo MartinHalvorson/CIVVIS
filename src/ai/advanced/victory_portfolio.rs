@@ -2,6 +2,8 @@
 //!
 //! Forecasts describe a feasible continuation of today's observed capacity;
 //! they are estimates, not win probabilities or permission to issue an order.
+//! The planner decides on today's pace. The clocks published to the standings
+//! also expect that pace to keep rising (`YieldGrowth::EXPECTED`).
 //! Missing capacity stays visible as a bottleneck. In particular, progress
 //! percentages from different victory conditions are never compared as clocks.
 
@@ -15,6 +17,73 @@ use std::collections::{BTreeMap, VecDeque};
 const REVIEW_STANDARD_TURNS: u32 = 10;
 const HOLD_STANDARD_TURNS: u32 = 20;
 const TRACE_LIMIT: usize = 96;
+/// Below this share of the speed's stock clock an empire is too young for its
+/// growth so far to say anything about the road ahead, so the curve is anchored
+/// here instead of on turn one.
+const GROWTH_ORIGIN_SHARE: f64 = 0.1;
+
+/// How the clocks expect an empire's income to keep rising.
+///
+/// Income follows a power of the turn number: `income(turn) = today ×
+/// (turn / now)^k`. Zero is today's pace held to the end of the game, which is
+/// what the planner decides on. A power of the turn rather than a fixed
+/// percentage because the percentage itself falls as the game goes on, and
+/// because the turn cancels out of `turn / now`, so one exponent serves every
+/// game speed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct YieldGrowth {
+    /// Science and production, which grow alike in recorded host games.
+    economy: f64,
+    tourism: f64,
+    faith: f64,
+    /// Share of an expedition's distance-over-speed clock it will really take.
+    /// Laser stations raise its speed in flight.
+    flight: f64,
+}
+
+impl YieldGrowth {
+    const FLAT: Self = Self::uniform(0.0);
+
+    /// What a published clock assumes, deliberately short of what recorded
+    /// games did so that a clock errs late. Across 52 finished Deity host games
+    /// science and production rose with a power of about 1.7 of the turn, with
+    /// a quarter of seats under 1.1, and flights took about half of
+    /// distance over launch speed.
+    const EXPECTED: Self = Self {
+        economy: 1.25,
+        tourism: 1.25,
+        faith: 0.75,
+        flight: 0.7,
+    };
+
+    const fn uniform(k: f64) -> Self {
+        Self {
+            economy: k,
+            tourism: k,
+            faith: k,
+            flight: 1.0,
+        }
+    }
+}
+
+/// The turn the growth curve is measured from.
+fn growth_origin(g: &Game) -> f64 {
+    f64::from(g.turn).max(f64::from(g.game_speed.turn_limit()) * GROWTH_ORIGIN_SHARE)
+}
+
+/// Turns needed to earn `flat` turns of today's income, starting `delay` turns
+/// from now, when income rises by the power `k` from the turn `origin`.
+fn grown_turns(flat: f64, delay: f64, k: f64, origin: f64) -> f64 {
+    if flat <= 0.0 || k <= 0.0 || !flat.is_finite() {
+        return flat;
+    }
+    let power = k + 1.0;
+    let start = origin + delay;
+    libm::pow(
+        libm::pow(start, power) + power * flat * libm::pow(origin, k),
+        1.0 / power,
+    ) - start
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -242,13 +311,28 @@ impl AdvancedAi {
     /// Forecast from the supplied observed board. Used by macro search as well
     /// as the acting controller; callers must not supply hidden opponent facts.
     pub fn victory_forecasts(g: &Game, pid: usize) -> Vec<VictoryEstimate> {
-        Self::forecast_portfolio(g, pid, None)
+        Self::forecast_portfolio(g, pid, None, YieldGrowth::FLAT)
+    }
+
+    /// The clocks the standings publish: the same roads as
+    /// [`Self::victory_forecasts`], read with the economy still growing.
+    /// Display only, so the planner's choices do not move with it.
+    pub fn victory_clocks(g: &Game, pid: usize) -> Vec<VictoryEstimate> {
+        Self::forecast_portfolio(g, pid, None, YieldGrowth::EXPECTED)
+    }
+
+    /// Every lane's clock with income rising by the power `k`. For replay
+    /// audits of the growth a published clock should assume.
+    #[cfg(feature = "developer-tools")]
+    pub fn victory_forecasts_growing(g: &Game, pid: usize, k: f64) -> Vec<VictoryEstimate> {
+        Self::forecast_portfolio(g, pid, None, YieldGrowth::uniform(k))
     }
 
     fn forecast_portfolio(
         g: &Game,
         pid: usize,
         samples: Option<&VecDeque<Pace>>,
+        growth: YieldGrowth,
     ) -> Vec<VictoryEstimate> {
         let _memo = g.query_memo();
         let yields = empire_yields(g, pid);
@@ -259,9 +343,9 @@ impl AdvancedAi {
                 continue;
             }
             result.push(match target {
-                VictoryTarget::Science => Self::forecast_science(g, pid, yields, old),
-                VictoryTarget::Culture => Self::forecast_culture(g, pid, yields, old),
-                VictoryTarget::Religion => Self::forecast_religion(g, pid, yields),
+                VictoryTarget::Science => Self::forecast_science(g, pid, yields, old, growth),
+                VictoryTarget::Culture => Self::forecast_culture(g, pid, yields, old, growth),
+                VictoryTarget::Religion => Self::forecast_religion(g, pid, yields, growth),
                 VictoryTarget::Diplomacy => Self::forecast_diplomacy(g, pid, old),
                 VictoryTarget::Domination => Self::forecast_domination(g, pid),
                 VictoryTarget::Score => Self::forecast_score(g, pid),
@@ -327,6 +411,7 @@ impl AdvancedAi {
         pid: usize,
         yields: Yields,
         old: Option<&Pace>,
+        growth: YieldGrowth,
     ) -> VictoryEstimate {
         let player = &g.players[pid];
         let mut forecast = VictoryEstimate::new(
@@ -342,7 +427,7 @@ impl AdvancedAi {
             forecast.committed = true;
             forecast.bottleneck = "expedition_speed".into();
             if speed > 0.0 {
-                forecast.finish(g.turn, distance / speed, 0.95);
+                forecast.finish(g.turn, distance / speed * growth.flight, 0.95);
             }
             return forecast;
         }
@@ -356,6 +441,8 @@ impl AdvancedAi {
             return forecast;
         }
         let science = yields.science;
+        let origin = growth_origin(g);
+        let grown = |flat: f64, delay: f64| grown_turns(flat, delay, growth.economy, origin);
         // A measured increase can widen the optimistic bound, but never invent
         // a faster central estimate or erase a missing project prerequisite.
         let growth = old.map_or(1.0, |before| {
@@ -381,9 +468,16 @@ impl AdvancedAi {
             } else {
                 0.0
             };
-            production_ready = Self::tech_work(g, pid, crate::name!("rocketry")) / science
-                + (g.item_cost_for_city(pid, cid, &item) - bank).max(0.0)
-                    / (production * g.item_prod_mult(pid, cid, Some(&item))).max(0.1);
+            let research = grown(
+                Self::tech_work(g, pid, crate::name!("rocketry")) / science,
+                0.0,
+            );
+            production_ready = research
+                + grown(
+                    (g.item_cost_for_city(pid, cid, &item) - bank).max(0.0)
+                        / (production * g.item_prod_mult(pid, cid, Some(&item))).max(0.1),
+                    research,
+                );
             forecast.preparation_turns = production_ready;
         }
         let mut research_ready: f64 = 0.0;
@@ -407,7 +501,7 @@ impl AdvancedAi {
             if let Some(tech) = project.tech {
                 research_goals.push(tech);
             }
-            let ready = Self::tech_work_many(g, pid, &research_goals) / science;
+            let ready = grown(Self::tech_work_many(g, pid, &research_goals) / science, 0.0);
             research_ready = research_ready.max(ready);
             let bank = if city.queue.first() == Some(&item) {
                 forecast.committed = true;
@@ -417,7 +511,8 @@ impl AdvancedAi {
             };
             let build = (g.item_cost_for_city(pid, cid, &item) - bank).max(0.0)
                 / (production * g.item_prod_mult(pid, cid, Some(&item))).max(0.1);
-            production_ready = production_ready.max(ready) + build;
+            let start = production_ready.max(ready);
+            production_ready = start + grown(build, start);
         }
         forecast.bottleneck = if research_ready > production_ready * 0.55 {
             "research"
@@ -429,7 +524,7 @@ impl AdvancedAi {
         // budget can fund; the central clock assumes the base flight speed.
         forecast.finish(
             g.turn,
-            production_ready + g.science_victory_points_needed(pid),
+            production_ready + g.science_victory_points_needed(pid) * growth.flight,
             0.6,
         );
         forecast.optimistic_finish_turn = Some(
@@ -445,6 +540,7 @@ impl AdvancedAi {
         pid: usize,
         _yields: Yields,
         old: Option<&Pace>,
+        growth: YieldGrowth,
     ) -> VictoryEstimate {
         let rivals = opponents(g, pid);
         let visitors = g.foreign_tourists(pid) as f64;
@@ -506,11 +602,19 @@ impl AdvancedAi {
         }
         forecast.committed = visitors > 0.0;
         forecast.bottleneck = "tourism_multipliers".into();
+        // The visitors and the bar they must clear rise on one curve, so the
+        // gap closes on it too.
+        let eta = grown_turns(eta, 0.0, growth.tourism, growth_origin(g));
         forecast.finish(g.turn, eta, if old.is_some() { 0.7 } else { 0.45 });
         forecast
     }
 
-    fn forecast_religion(g: &Game, pid: usize, yields: Yields) -> VictoryEstimate {
+    fn forecast_religion(
+        g: &Game,
+        pid: usize,
+        yields: Yields,
+        growth: YieldGrowth,
+    ) -> VictoryEstimate {
         let mut forecast =
             VictoryEstimate::new(VictoryTarget::Religion, 0.0, "religion_foundation");
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -586,7 +690,12 @@ impl AdvancedAi {
             forecast.bottleneck = "faith_income".into();
             return forecast;
         }
-        forecast.preparation_turns = funding / yields.faith.max(1.0);
+        forecast.preparation_turns = grown_turns(
+            funding / yields.faith.max(1.0),
+            0.0,
+            growth.faith,
+            growth_origin(g),
+        );
         forecast.finish(
             g.turn,
             forecast.preparation_turns + f64::from(farthest) / 2.0 + missing_cities as f64 * 3.0,
@@ -789,11 +898,21 @@ impl AdvancedAi {
         if !due {
             return;
         }
-        let forecasts = Self::forecast_portfolio(g, pid, self.portfolio.samples.get(&pid));
+        let forecasts = Self::forecast_portfolio(
+            g,
+            pid,
+            self.portfolio.samples.get(&pid),
+            YieldGrowth::FLAT,
+        );
         let rival_finish = opponents(g, pid)
             .into_iter()
             .flat_map(|other| {
-                Self::forecast_portfolio(g, other, self.portfolio.samples.get(&other))
+                Self::forecast_portfolio(
+                    g,
+                    other,
+                    self.portfolio.samples.get(&other),
+                    YieldGrowth::FLAT,
+                )
             })
             .filter(|forecast| {
                 forecast.confidence >= 0.35 && forecast.target != VictoryTarget::Score
