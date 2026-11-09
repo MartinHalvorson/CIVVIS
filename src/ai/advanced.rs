@@ -21,6 +21,8 @@ use crate::Pos;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
+/// `acropolis-before-the-deterrent`: see `advanced/acropolis_before_the_deterrent.rs`.
+mod acropolis_before_the_deterrent;
 mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
@@ -5592,6 +5594,9 @@ pub struct AdvancedAi {
     /// so a fresh placement on one can be undone before the turn ends.
     /// Empty while the gene is off.
     bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
+    /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
+    /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
+    acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
     /// Prefer a safe legal site for a new native Science Campus. Opt-in.
     campus_above_the_sea: bool,
