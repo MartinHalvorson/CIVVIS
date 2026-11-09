@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-finishes-majorities",
+  "scope": "Same-input isolated proposal activation on captured native Deity Khmer run civvis-20261109T022744Z, t50/52/64/72 frame 0. Both arms are one-shot --resumed queries on the first captured native read, with identical actual input bytes and candidate executable; on adds only the named gene. This is not reproduction of the original persistent controller history, host execution, or a strength estimate. All four preselected cases are retained; t64 is unchanged. At t50 the on arm removes missionary 1245195 SPREAD_RELIGION at Kumasi and moves onward.",
+  "source_commit": "6a52677831c7f75e983f3f2aed0f6d57752cbdb2",
+  "archive": {
+    "path": "docs/eval/2026-11-09-religion-finishes-majorities.native-queries.tar.xz",
+    "sha256": "5a4bfbadcef35e45d74130638fc1c74bdaf609512f252343a31cbbd6cb9a1a88"
+  },
+  "members": [
+    "native-target-pairs-01/t50-f0/result.json",
+    "native-target-pairs-01/t52-f0/result.json",
+    "native-target-pairs-01/t64-f0/result.json",
+    "native-target-pairs-01/t72-f0/result.json"
+  ]
+}
