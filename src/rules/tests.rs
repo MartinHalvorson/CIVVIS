@@ -339,9 +339,10 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // visibility and Genghis-only cavalry strength in the combat code; the
     // native Kublai Bombard preview confirms +12 intel separately from +4
     // difficulty. Older ledgers retain the pre-correction rules fingerprint.
+    // Moved again by Preslav's description, now its shipped Loyalty bonus.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:14ea36e072881139"
+        "fnv1a64:4f356b21194cade0"
     );
 }
 
