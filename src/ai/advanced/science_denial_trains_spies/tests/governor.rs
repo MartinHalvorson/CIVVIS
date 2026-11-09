@@ -102,7 +102,7 @@ fn delegated_governor_already_preserves_the_busy_spy_queue() {
 fn no_racer_releases_the_queue_to_ordinary_review() {
     let (mut g, plan, city) = fixture();
     g.players[1].science_projects.clear();
-    g.players[1].techs.remove(crate::name!("rocketry"));
+    g.players[1].techs.remove(&crate::name!("rocketry"));
     governor(VictoryTarget::Culture, true).advanced_production(&mut g, 0, &plan, false);
     assert_eq!(g.cities[&city].queue.first(), Some(&monument()));
 }
