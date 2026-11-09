@@ -48,6 +48,84 @@ fn build_temple(g: &mut Game, city: u32, building: &str) {
         .push(crate::name::Name::new(building));
 }
 
+fn corps_budget(delegated: bool, enabled: bool) -> (Game, AdvancedAi) {
+    let (mut g, mut ai, home) = founder(1, VictoryTarget::Religion);
+    build_temple(&mut g, home, "shrine");
+    build_temple(&mut g, home, "temple");
+    g.players[0].civics.insert(crate::name!("theology"));
+    g.players[0].faith = 300.0;
+    ai.enable_engine_faith_price();
+    ai.enable_religion_lane_spreads_from_founding();
+    if enabled {
+        ai.enable_religion_seat_fields_apostles();
+    }
+    if delegated {
+        ai.skip_opening_book();
+        ai.enable_lane_delegates_production_2();
+    }
+    assert_eq!(
+        g.unit_purchase_cost(0, home, "missionary", "faith"),
+        Some(200.0)
+    );
+    assert_eq!(
+        g.unit_purchase_cost(0, home, "apostle", "faith"),
+        Some(400.0)
+    );
+    (g, ai)
+}
+
+/// Both routine city dispatches run after the Apostle buyer. On the recorded
+/// t179 native board the latter saved, then the former bought a Missionary.
+#[test]
+fn the_complete_turn_keeps_the_apostle_bank_in_both_city_dispatches() {
+    for delegated in [false, true] {
+        let (mut off, mut control) = corps_budget(delegated, false);
+        crate::ai::Ai::take_turn(&mut control, &mut off, 0);
+        assert!(off
+            .units
+            .values()
+            .any(|u| u.owner == 0 && u.kind == "missionary"));
+
+        let (mut g, mut ai) = corps_budget(delegated, true);
+        crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
+        assert_eq!(g.players[0].faith, 300.0, "delegated={delegated}");
+        assert!(!g
+            .units
+            .values()
+            .any(|u| u.owner == 0 && u.kind == "missionary"));
+    }
+}
+
+/// Delegating the purchase to the corps must retain its immediate home defence.
+#[test]
+fn the_managed_corps_still_buys_for_a_converted_home_city() {
+    let (mut g, mut ai) = corps_budget(true, true);
+    let city = g.found_city_for(0, (6, 14), None);
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert("Hinduism".into(), 500.0);
+    crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
+    assert!(g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "missionary"));
+    assert_eq!(g.players[0].faith, 100.0);
+}
+
+#[test]
+fn the_managed_corps_spends_its_bank_when_the_apostle_is_funded() {
+    let (mut g, mut ai) = corps_budget(true, true);
+    g.players[0].faith = 500.0;
+    crate::ai::Ai::take_turn(&mut ai, &mut g, 0);
+    assert!(g
+        .units
+        .values()
+        .any(|u| u.owner == 0 && u.kind == "apostle"));
+    assert_eq!(g.players[0].faith, 100.0);
+}
+
 #[test]
 fn every_gene_is_opt_in() {
     opt_in_off_in_both_controllers("religion-seat-builds-holy-sites", |ai| {

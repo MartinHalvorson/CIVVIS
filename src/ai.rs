@@ -1340,6 +1340,10 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
+    /// The advanced religious corps owns unit purchases this turn. Keep the
+    /// routine city governor from spending its Apostle budget on a Missionary.
+    /// False for standalone and frozen controllers.
+    pub(crate) religious_unit_purchases_managed: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
     /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
@@ -3768,6 +3772,7 @@ impl BasicAi {
             district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            religious_unit_purchases_managed: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -4187,6 +4192,7 @@ impl BasicAi {
             district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            religious_unit_purchases_managed: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -6084,6 +6090,7 @@ impl BasicAi {
             );
         }
         if self.pursue_religion
+            && !self.religious_unit_purchases_managed
             && g.players[pid].religion.is_some()
             && g.players[pid].faith >= 250.0
         {
