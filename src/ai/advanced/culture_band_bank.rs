@@ -15,8 +15,11 @@
 //! or is researching Ideology or Cold War, and Cold War is not yet known, the
 //! Great Person, worship-building and religious-unit passes keep this bank on
 //! top of their own reserves. It stands aside if a city was attacked in the
-//! last few turns, and it does not touch Naturalists or the army's Faith.
-//! Once Cold War is known the ordinary band purchase spends it.
+//! last few turns, and it does not touch the army's Faith. Naturalists wait
+//! too: live 20261109T041324Z banked 404 Faith by t135, then bought one for
+//! about 390 at t136, three turns before Cold War, and its first band came at
+//! t142. A band returned about 14,000 tourism there for 150-200 Faith.
+//! Once Cold War is known the ordinary band purchase spends the bank.
 
 use super::*;
 
@@ -28,6 +31,11 @@ const BAND_BANK_STANDARD: f64 = 3_000.0;
 const BAND_BANK_UNDER_FIRE_TURNS: u32 = 4;
 
 impl AdvancedAi {
+    /// Whether the bank is open, so a Naturalist waits for the bands.
+    pub(super) fn culture_band_bank_holds_naturalists(&self, g: &Game, pid: usize) -> bool {
+        self.culture_band_bank(g, pid) > 0.0
+    }
+
     /// The Faith the Great Person, worship-building and religious-unit passes
     /// must leave untouched. Zero with the gene off.
     pub(super) fn culture_band_bank(&self, g: &Game, pid: usize) -> f64 {
@@ -161,6 +169,16 @@ mod tests {
             }
             assert_eq!(bank, spent);
         }
+    }
+
+    #[test]
+    fn naturalists_wait_only_while_the_bank_is_open() {
+        let mut g = board();
+        assert!(!seat().culture_band_bank_holds_naturalists(&g, 0));
+        known(&mut g, "ideology");
+        assert!(seat().culture_band_bank_holds_naturalists(&g, 0));
+        known(&mut g, "cold_war");
+        assert!(!seat().culture_band_bank_holds_naturalists(&g, 0));
     }
 
     #[test]
