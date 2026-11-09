@@ -101,6 +101,33 @@ class MoveFallbackLuaTests(unittest.TestCase):
         self.assertLess(ranking.index("dc < db"), ranking.index("candidate.exposed < best.exposed"),
                         "closer to the destination first, then fewer hostile neighbours")
 
+    def test_the_step_stays_off_until_it_has_been_read_live(self) -> None:
+        self.assertIn("CivvisK.MOVE_FALLBACK_STEP = false;", self.source)
+        body = self.source[self.source.index("CivvisBoard.fallbackStep = function"):]
+        body = body[: body.index("\nend;")]
+        self.assertLess(
+            body.index("if not CivvisK.MOVE_FALLBACK_STEP then return nil; end"),
+            body.index("CivvisBoard.adjacentPlots(fromX, fromY)"),
+        )
+
+    def test_a_walk_in_flight_is_not_named_a_no_op(self) -> None:
+        body = self.source[self.source.index("CivvisBoard.moveNoop = function"):]
+        body = body[: body.index("\nend;")]
+        self.assertLess(
+            body.index('"no_reasons", 1, true'),
+            body.index("CivvisBoard.stats.move_noop = CivvisBoard.stats.move_noop + 1;"),
+            "the settle check comes before anything is counted or emitted",
+        )
+        self.assertIn('why == "cannot_start" and entry.stall_probe == nil and (entry.wait or 0) < 5', body)
+
+    def test_neighbours_are_read_as_the_points_the_helper_returns(self) -> None:
+        self.assertEqual(self.source.count("CivvisBoard.adjacentPlots = function"), 1)
+        for name in ("CivvisBoard.hostileAdjacent = function", "CivvisBoard.fallbackStep = function"):
+            body = self.source[self.source.index(name):]
+            body = body[: body.index("\nend;")]
+            self.assertIn("point.x", body)
+            self.assertNotIn("plot:GetX()", body)
+
     def test_both_answers_are_events_the_rust_side_reads(self) -> None:
         self.assertIn('emit("move_noop", {', self.source)
         self.assertIn('emit("move_fallback", {', self.source)
