@@ -358,6 +358,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
+| `religion-seat-reveals-the-capitals` | off (unmeasured) | A Religion-target founder sends an Embassy to a rival with no known city. | 1 \| 1 |
 | `religion-seat-slots-the-orders` | off (unmeasured) | Slot Religious Orders over a lower-ranked ordinary Economic card. | 1 \| 1 |
 | `religion-seat-spends-the-bank` | off (unmeasured) | `religion-seat-spends-the-bank`: a Religion-target founder's corps caps stop binding once the bank holds two Apostles. | 1 \| 1 |
 | `religion-seat-takes-the-debater` | off (unmeasured) | Opt-in gene `religion-seat-takes-the-debater`; see `advanced/religion_seat_takes_the_debater.rs`. | 1 \| 1 |
