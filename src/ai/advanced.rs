@@ -6745,6 +6745,10 @@ pub struct AdvancedAi {
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
+    /// The unexplored tile each charting spreader is walking to, kept until
+    /// it is seen or cannot be reached. See
+    /// `advanced/religion_seat_charts_the_rivals.rs`.
+    charting_goals: RefCell<BTreeMap<u32, Pos>>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8325,10 +8329,6 @@ pub struct AdvancedAi {
     /// The exploring gene's memory of each Missionary: its fog goal and the
     /// turns it has spent.
     missionary_explore: RefCell<BTreeMap<u32, missionary_field::MissionaryExplore>>,
-    /// The unexplored tile each charting spreader is walking to, kept until
-    /// it is seen or cannot be reached. See
-    /// `advanced/religion_seat_charts_the_rivals.rs`.
-    charting_goals: RefCell<BTreeMap<u32, Pos>>,
     /// A religious unit steps out of, and never steps into, the tiles a
     /// visible barbarian raider can reach next turn. Opt-in gene
     /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
