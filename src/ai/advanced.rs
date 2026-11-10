@@ -11422,6 +11422,11 @@ mod threatened_war_holds_the_claims;
 mod first_luxury;
 /// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
 mod korea_mines_beside_the_seowon;
+/// `kristina-builds-the-bibliotheque`: see
+/// `advanced/kristina_builds_the_bibliotheque.rs`.
+mod kristina_builds_the_bibliotheque;
+/// `kristina-fills-to-theme`: see `advanced/kristina_fills_to_theme.rs`.
+mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;

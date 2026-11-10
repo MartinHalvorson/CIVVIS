@@ -5499,6 +5499,13 @@ pub const GENES: &[Gene] = &[
     // discretion, for good land only. The target rises above ten by one city
     // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
     Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
+    // Kristina Deity 11-10: no Government Plaza by t150 and the Queen's
+    // Bibliotheque ruled out by a fixed tier list. See
+    // `advanced/kristina_builds_the_bibliotheque.rs`.
+    Gene { tag: "kristina-builds-the-bibliotheque", field: "kristina_builds_the_bibliotheque", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_builds_the_bibliotheque, disable: AdvancedAi::disable_kristina_builds_the_bibliotheque },
+    // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
+    // with no slot. See `advanced/kristina_fills_to_theme.rs`.
+    Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.

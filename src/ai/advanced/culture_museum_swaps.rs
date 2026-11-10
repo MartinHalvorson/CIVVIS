@@ -114,6 +114,10 @@ impl AdvancedAi {
         if g.players.get(pid).is_none()
             || self.lane_lost
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            // `kristina-fills-to-theme`: Kristina themes any full museum, so
+            // the stock theme swaps only reshuffle. See
+            // `advanced/kristina_fills_to_theme.rs`.
+            || self.kristina_fills_to_theme_on(g, pid)
         {
             return Vec::new();
         }
