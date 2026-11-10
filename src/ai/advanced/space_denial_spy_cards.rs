@@ -20,9 +20,11 @@
 //! Rocketry) and the seat aims at Culture or Domination, this puts
 //! Machiavellianism then Cryptography in the portfolio just ahead of the
 //! first ordinary Diplomatic card, behind every emergency, defence, loyalty
-//! and Nobel card, and lets them take a Diplomatic slot from an ordinary
-//! wanted card ranked after them. The Science and Religion seats keep their
-//! decks unchanged. Exact no-op while the gene is off.
+//! and Nobel card and every card that pays Culture or Tourism (Collective
+//! Activism), and lets them take a Diplomatic slot from an ordinary wanted
+//! card ranked after them (Gunboat Diplomacy, Merchant Confederation). The
+//! Science and Religion seats keep their decks unchanged. Exact no-op while
+//! the gene is off.
 
 use super::*;
 
@@ -56,8 +58,19 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Whether `card` pays Culture or Tourism: a lane card the spy cards
+    /// never pass (Collective Activism, +5% Culture per Suzerain).
+    pub(super) fn denial_spy_card_spares(g: &Game, card: &str) -> bool {
+        g.rules.policies.get(card).is_some_and(|spec| {
+            spec.effects
+                .keys()
+                .any(|key| key.contains("culture") || key.contains("tourism"))
+        })
+    }
+
     /// Puts `cards` into `desired` just ahead of the first Diplomatic card
-    /// not in `protected`, or at the end when there is none.
+    /// neither in `protected` nor paying Culture or Tourism, or at the end
+    /// when there is none.
     pub(super) fn place_denial_spy_cards<'a>(
         g: &Game,
         desired: &mut Vec<&'a str>,
@@ -72,6 +85,7 @@ impl AdvancedAi {
             .iter()
             .position(|card| {
                 !protected(card)
+                    && !Self::denial_spy_card_spares(g, card)
                     && g.rules
                         .policies
                         .get(*card)
@@ -83,7 +97,8 @@ impl AdvancedAi {
 
     /// Whether a denial spy card `card`, at `rank` in `desired`, may take
     /// `current`'s slot: a Diplomatic card the portfolio ranks after it (or
-    /// does not want), never a protected one or another spy card.
+    /// does not want), never a protected one, one paying Culture or Tourism,
+    /// or another spy card.
     pub(super) fn denial_spy_card_may_displace(
         g: &Game,
         desired: &[&str],
@@ -95,6 +110,7 @@ impl AdvancedAi {
         DENIAL_SPY_CARDS.contains(&card)
             && !DENIAL_SPY_CARDS.contains(&current)
             && !protected(current)
+            && !Self::denial_spy_card_spares(g, current)
             && g.rules
                 .policies
                 .get(current)

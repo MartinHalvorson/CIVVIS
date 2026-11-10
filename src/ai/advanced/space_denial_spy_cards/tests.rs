@@ -175,6 +175,40 @@ fn the_cards_go_just_ahead_of_the_first_ordinary_diplomatic_card() {
 }
 
 #[test]
+fn collective_activism_keeps_its_place_ahead_of_the_spy_cards() {
+    let (game, _) = board(VictoryTarget::Culture, 2);
+    let mut desired = vec![
+        "heritage_tourism",
+        "collective_activism",
+        "gunboat_diplomacy",
+    ];
+    AdvancedAi::place_denial_spy_cards(
+        &game,
+        &mut desired,
+        &["machiavellianism", "cryptography"],
+        &|_: &str| false,
+    );
+    assert_eq!(
+        desired,
+        vec![
+            "heritage_tourism",
+            "collective_activism",
+            "machiavellianism",
+            "cryptography",
+            "gunboat_diplomacy",
+        ]
+    );
+    assert!(!AdvancedAi::denial_spy_card_may_displace(
+        &game,
+        &desired,
+        2,
+        "machiavellianism",
+        "collective_activism",
+        &|_: &str| false,
+    ));
+}
+
+#[test]
 fn a_spy_card_displaces_only_a_later_ordinary_diplomatic_card() {
     let (game, _) = board(VictoryTarget::Culture, 2);
     let desired = vec![
