@@ -6757,6 +6757,99 @@ fn favor_is_bought_before_a_contested_session() {
     );
 }
 
+/// ★ The 091939Z shape: 117 favor at t100 on 19 Gold and -1 a turn, every
+/// rival past the vote hold, units being disbanded for Gold. A drained
+/// treasury sells past the hold, off the cadence, down to twenty; a solvent
+/// one, or one facing a rival at twelve points, holds as before.
+#[test]
+fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
+    let rival = |player: usize, gold: f64, dvp: i64| StateRival {
+        player,
+        gold,
+        dvp: Some(dvp),
+        ..StateRival::default()
+    };
+    let held = StateSnapshot {
+        turn: 100,
+        favor: Some(117.0),
+        gold: 19,
+        gold_per_turn: Some(-1.0),
+        rivals: vec![rival(2, 900.0, 5), rival(3, 400.0, 6)],
+        ..StateSnapshot::default()
+    };
+    assert_ne!(held.turn % FAVOR_SALE_CADENCE, FAVOR_SALE_PHASE);
+    assert!(favor_banked_for_votes(&held));
+    let science = Some(("science", None));
+
+    // Solvent, the hold stands.
+    let mut solvent = held.clone();
+    solvent.gold_per_turn = Some(4.0);
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(science, &solvent, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    // A deficit the treasury covers for ten turns is not a drain.
+    let mut covered = held.clone();
+    covered.gold = 10;
+    assert_eq!(
+        append_favor_sale_order(science, &covered, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert!(orders.is_empty());
+
+    // Drained: 97 of the 117 go, to the richer rival, off the cadence.
+    assert_eq!(
+        append_favor_sale_order(science, &held, &mut orders, 2.0),
+        None
+    );
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].kind, "sell");
+    assert_eq!(orders[0].subject, Some(2));
+    assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=97"));
+    // And the planner's own favor quote is no longer struck.
+    let mut quoted = vec![Order {
+        kind: "sell",
+        subject: Some(2),
+        verb: Some("FAVOR=10".to_string()),
+        pos: Some((10, 0)),
+    }];
+    assert_eq!(hold_planner_favor_sales(science, &held, &mut quoted), 0);
+    assert_eq!(quoted.len(), 1);
+
+    // The reserve is twenty: 30 favor has too little above it to sell.
+    let mut thin = held.clone();
+    thin.favor = Some(30.0);
+    let mut none = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(science, &thin, &mut none, 2.0),
+        Some("favor_hold:reserve")
+    );
+
+    // A rival at twelve points holds even a drained bank.
+    let mut match_point = held.clone();
+    match_point.rivals[1].dvp = Some(FAVOR_DRAIN_HOLD_DVP);
+    assert_eq!(
+        append_favor_sale_order(science, &match_point, &mut none, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert_eq!(
+        hold_planner_favor_sales(science, &match_point, &mut quoted),
+        1
+    );
+
+    // A diplomatic racer keeps its bank whatever the treasury reads.
+    assert_eq!(
+        append_favor_sale_order(
+            Some(("diplomacy", Some("diplomatic"))),
+            &held,
+            &mut none,
+            2.0
+        ),
+        Some("favor_hold:diplomatic_lane")
+    );
+}
+
 #[test]
 fn idle_favor_sells_on_every_plan_that_reports_one() {
     // The bank the live seat actually holds: 300 favor at t141 with three
