@@ -12,20 +12,26 @@
 //! 0.98 of the bar with three times the concert volume drawn evenly, and 1.36
 //! with the same volume drawn from the top.
 //!
-//! `band-plays-its-stage` already weighted tours by `1 + host domestic / bar`,
-//! which gives a rival at half the bar 75% of the bar holder's value where the
-//! true marginal value is 50%, and it multiplied the band's whole future
-//! career, which will be played wherever the band goes next.
+//! `band-plays-its-stage` already weighted tours by `1 + host domestic / bar`.
+//! That reads a rival far below the bar at up to 2, as if a visitor from it
+//! lowered the bar, and ignores both our own visitors and the rivals stacked
+//! between it and the bar. Live 120557Z, at t186: Ethiopia held the bar at
+//! 433 and Cree stood at 426, yet the band played its first four concerts in
+//! Canada (287), which `1 + D / bar` priced at 1.66 against 2.0.
 //!
 //! **What the gene does.** The tour (`BasicAi::rock_band_bar_destination`)
-//! ranks venues by `Game::rock_concert_bar_value`: the concert's expected
-//! Tourism times `Game::rock_concert_bar_factor` (2 for a rival within
-//! `max(10, 5% of the bar)` of the bar, 1 for a rival at or below our own
-//! visitors, the share of the way from our visitors to the bar between them),
-//! plus the band's survival-weighted future career, unweighted. Travel is
-//! priced as `band-plays-its-stage` prices it. Promotions are unchanged.
-//! Only Rock Bands move differently, so the gene touches nothing but a
-//! Culture seat's bands.
+//! ranks venues as `band-plays-its-stage` does (the concert plus the band's
+//! survival-weighted future career, travel priced gently), weighted by
+//! `Game::rock_concert_bar_factor`: 2 for a rival that binds the bar (the
+//! visitors that must come off the rivals above it before it does, its water
+//! fill `depth`, within `max(10, 5% of the bar)`), 1 for a rival at or below
+//! our own visitors, and `1 + (1 - depth / (bar - V))` between them. At
+//! 120557Z t186 that reads Ethiopia and Cree 2.0, England 1.6 and Canada 1.2.
+//! The whole career is weighted, not just the concert in front of the band,
+//! because a band tours where it stands: 190910Z played all ten of its
+//! concerts in the bar holder's land. Promotions are unchanged. Only Rock
+//! Bands move differently, so the gene touches nothing but a Culture seat's
+//! bands.
 
 #[cfg(test)]
 mod tests {
@@ -34,11 +40,11 @@ mod tests {
     use crate::name;
 
     /// Five majors on open grassland: us, the bar holder (400 domestic), a
-    /// rival just under it (390), one in between (250), and one we already
+    /// rival just under it (390), one in between (340), and one we already
     /// draw 150 visitors from (100 generated, 0 left at home).
     fn race() -> Game {
         let mut game = Game::new_full(5, 40, 16, 472_501, 250, 0, false);
-        for (pid, culture) in [(1, 40_000.0), (2, 39_000.0), (3, 25_000.0), (4, 10_000.0)] {
+        for (pid, culture) in [(1, 40_000.0), (2, 39_000.0), (3, 34_000.0), (4, 10_000.0)] {
             game.players[pid].culture_lifetime = culture;
         }
         game.players[0]
@@ -55,8 +61,9 @@ mod tests {
         // The bar holder and a rival within max(10, 5% of 400) of it.
         assert_eq!(game.rock_concert_bar_factor(0, 1), 2.0);
         assert_eq!(game.rock_concert_bar_factor(0, 2), 2.0);
-        // Part of the way from our 150 visitors up to the bar of 400.
-        assert!((game.rock_concert_bar_factor(0, 3) - 1.4).abs() < 1e-9);
+        // 340 binds once 60 + 50 visitors come off the two above it, out of
+        // the 250 we still need.
+        assert!((game.rock_concert_bar_factor(0, 3) - 1.56).abs() < 1e-9);
         // Below our own visitors: the concert only raises our count.
         assert_eq!(game.rock_concert_bar_factor(0, 4), 1.0);
         // Our own land is never a host.
@@ -113,7 +120,17 @@ mod tests {
     }
 
     #[test]
-    fn only_the_concert_is_weighted_never_the_career() {
+    fn a_far_rival_is_worth_about_one_visitor() {
+        let mut game = race();
+        game.players[3].culture_lifetime = 20_000.0;
+        // 200 binds only after 200 + 190 visitors come off the two above it,
+        // more than the 250 we still need: worth one visitor. The stage
+        // pricing read it at 1.5.
+        assert_eq!(game.rock_concert_bar_factor(0, 3), 1.0);
+    }
+
+    #[test]
+    fn the_whole_career_is_weighted_by_the_host() {
         let (mut game, band) = two_stages();
         // No bar yet: both pricings read the venue at face value.
         let plain = game.rock_concert_bar_value(0, band, (9, 6)).unwrap();
@@ -123,10 +140,7 @@ mod tests {
         );
         game.players[1].culture_lifetime = 50_000.0;
         let bar = game.rock_concert_bar_value(0, band, (9, 6)).unwrap();
-        let stage = game.rock_concert_stage_value(0, band, (9, 6)).unwrap();
-        // Both double something; only the stage pricing doubles the career.
-        assert!(bar > plain, "{bar} vs {plain}");
-        assert!(bar - plain < stage - plain, "{bar} vs {stage}");
+        assert!((bar - 2.0 * plain).abs() < 1e-6, "{bar} vs {plain}");
     }
 
     #[test]

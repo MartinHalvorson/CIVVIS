@@ -2086,11 +2086,9 @@ pub struct BasicAi {
     /// pairings numbered 3. Off by default; opt-in gene.
     pub(crate) band_plays_its_stage: bool,
     /// `bands-draw-from-the-bar`: a Rock Band tours toward the rivals that
-    /// hold the Culture bar. A visitor drawn from the rival with the most
+    /// bind the Culture bar. A visitor drawn from the rival with the most
     /// domestic tourists also lowers the bar, so it closes the race twice;
-    /// one drawn from a rival already below our visitors closes it once. The
-    /// concert's expected Tourism is weighted by that, and the band's later
-    /// career is not, because those concerts will be played elsewhere. Off by
+    /// one drawn from a rival far below the bar closes it once. Off by
     /// default; opt-in gene. See `advanced/bands_draw_from_the_bar.rs`.
     pub(crate) bands_draw_from_the_bar: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
@@ -7589,9 +7587,9 @@ impl BasicAi {
         })
     }
 
-    /// `bands-draw-from-the-bar`: the same career-priced tour, with only the
-    /// concert in front of the band weighted by how much of the Culture race
-    /// it closes. See [`Game::rock_concert_bar_value`].
+    /// `bands-draw-from-the-bar`: the same career-priced tour, weighted by how
+    /// much of the Culture race a visitor from the host closes. See
+    /// [`Game::rock_concert_bar_value`].
     pub(crate) fn rock_band_bar_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
         Self::rock_band_career_destination(g, uid, |position| {
             g.rock_concert_bar_value(pid, uid, position)

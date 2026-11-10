@@ -2331,10 +2331,13 @@ impl Game {
         )
     }
 
-    /// `bands-draw-from-the-bar`: the concert's expected Tourism weighted by
-    /// [`rock_concert_bar_factor`](Self::rock_concert_bar_factor), plus the
-    /// rest of the band's career unweighted, since the band's later concerts
-    /// are played wherever it goes next.
+    /// `bands-draw-from-the-bar`: the concert and the rest of the band's
+    /// career, as `rock_concert_stage_value` prices them, weighted by
+    /// [`rock_concert_bar_factor`](Self::rock_concert_bar_factor) instead of
+    /// the host's share of the bar. The career is weighted too because a band
+    /// tours where it stands: live 20261109T190910Z played all ten of its
+    /// concerts in the bar holder's land, 20261110T120557Z its first four in
+    /// Canada's.
     pub(crate) fn rock_concert_bar_value(
         &self,
         pid: usize,
@@ -2347,43 +2350,52 @@ impl Game {
         }
         let read = self.rock_concert_read(pid, unit, position)?;
         Some(
-            read.base
-                * read.expected_multiplier
-                * read.nearby_factor
-                * self.rock_concert_bar_factor(pid, read.host)
-                + read.survival * self.rock_band_stage_future(unit),
+            (read.base * read.expected_multiplier * read.nearby_factor
+                + read.survival * self.rock_band_stage_future(unit))
+                * self.rock_concert_bar_factor(pid, read.host),
         )
     }
 
-    /// How much of the Culture race a visitor from `host` closes, from 1 to 2.
-    /// The bar is the largest domestic count among our living rivals, and a
-    /// visitor comes out of its host's domestic count. Drawn from a rival
-    /// within `max(10, 5% of the bar)` of the bar it lowers the bar as well as
-    /// raising our count: 2. Drawn from a rival at or below our own visitors it
-    /// only raises our count: 1. Between those, the share of the way from our
-    /// visitors up to the bar. With no bar left to close, every host is 1.
+    /// What a visitor from `host` is worth to our Culture race, from 1 to 2.
+    /// The bar is the largest domestic count among our living rival majors,
+    /// and a visitor comes out of its host's domestic count. Drawn from a
+    /// rival that binds the bar it lowers the bar as well as raising our
+    /// count: 2. Drawn from any other rival it only raises our count until the
+    /// rivals above it have been drawn down to its level, which takes
+    /// `depth` = the sum of (D - D_host) over the rivals above it. So a host
+    /// within `max(10, 5% of the bar)` of binding is 2, a host at or below
+    /// our own visitors is 1, and between them `1 + (1 - depth / (bar - V))`
+    /// clamped to 1..2, V being our visitors. With no bar left to close,
+    /// every host is 1. For a lone rival above, this is `1 + (D - V) / (bar -
+    /// V)`; with several above, a far rival reads close to 1 where
+    /// `band-plays-its-stage`'s `1 + D / bar` read it at up to 2.
     pub(crate) fn rock_concert_bar_factor(&self, pid: usize, host: usize) -> f64 {
         if host == pid || self.players[host].is_minor || self.players[host].is_barbarian {
             return 1.0;
         }
-        let bar = self
+        let domestic: Vec<f64> = self
             .players
             .iter()
             .filter(|rival| {
                 rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
             })
-            .map(|rival| self.domestic_tourists(rival.id))
-            .max()
-            .unwrap_or(0) as f64;
+            .map(|rival| self.domestic_tourists(rival.id).max(0) as f64)
+            .collect();
+        let bar = domestic.iter().copied().fold(0.0, f64::max);
         let ours = self.foreign_tourists(pid).max(0) as f64;
-        if bar <= ours {
+        let here = self.domestic_tourists(host).max(0) as f64;
+        if bar <= ours || here <= ours {
             return 1.0;
         }
-        let domestic = self.domestic_tourists(host).max(0) as f64;
-        if domestic >= bar - (0.05 * bar).max(10.0) {
+        let depth: f64 = domestic
+            .iter()
+            .filter(|other| **other > here)
+            .map(|other| other - here)
+            .sum();
+        if depth <= (0.05 * bar).max(10.0) {
             return 2.0;
         }
-        1.0 + ((domestic - ours) / (bar - ours)).clamp(0.0, 1.0)
+        1.0 + (1.0 - depth / (bar - ours)).clamp(0.0, 1.0)
     }
 
     /// A visitor always adds one to our count. Taken from the civilization
