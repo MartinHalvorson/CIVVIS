@@ -729,7 +729,12 @@ pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 /// is off in a stock Gathering Storm game and in every tournament lobby.
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
 
-pub const EXOPLANET_DESTINATION: f64 = 50.0;
+/// The Exoplanet Expedition's trip on Standard speed, in light-years:
+/// `SCIENCE_VICTORY_POINTS_REQUIRED` in Expansion2_GlobalParameters.xml.
+/// It is private because it is no game's total on its own: the game speed
+/// scales it, and real Online games read 25. Read
+/// [`Game::science_victory_points_needed`] instead.
+const EXOPLANET_DESTINATION: f64 = 50.0;
 
 /// A world the expedition can be sent to.
 ///
@@ -849,9 +854,9 @@ pub struct VictoryRaces {
     /// Civilization VI board this is the host's Science Victory Points, which
     /// are the real distance shown by World Rankings rather than a simulation.
     pub exoplanet_distance: f64,
-    /// Science Victory Points required on this game's speed. Native games use
-    /// the model's fifty-light-year destination; a mirrored host can require a
-    /// different total.
+    /// Science Victory Points required on this game's speed: the host's own
+    /// total on a mirrored board, otherwise fifty light-years scaled by the
+    /// speed ([`Game::exoplanet_destination`]).
     pub exoplanet_distance_target: f64,
     /// The host-reported Science Victory Points gained per turn when available,
     /// including the current effects of Lagrange and Terrestrial Laser Stations.
@@ -1309,6 +1314,13 @@ impl Game {
         self.map.distance(a, b)
     }
 
+    /// [`Self::wdist`] that stops measuring at `cap`: the true distance up to
+    /// it and `cap + 1` beyond. For a rule that only compares against `cap`.
+    #[inline]
+    pub fn wdist_capped(&self, a: Pos, b: Pos, cap: i32) -> i32 {
+        self.map.distance_capped(a, b, cap)
+    }
+
     /// In-map neighbors, across the wrap seam or around the globe.
     #[inline]
     pub fn nbrs(&self, p: Pos) -> hex::Neighbors {
@@ -1369,6 +1381,11 @@ struct VisionFrame {
 /// The folded suzerain-of-every-minor map, beside the diplomacy epoch (see
 /// `Game::diplomacy_epoch`) it was built from.
 type SuzerainMapCache = std::cell::RefCell<Option<(u64, BTreeMap<usize, Option<usize>>)>>;
+/// Everything `suzerain_of` reads: the players' envoys and governors, the
+/// cities their governors sit in, and the turn their establishment counts
+/// from. Players and cities bump their counters at every mutable access.
+type SuzerainStamp = (u64, u64, u32);
+type SuzerainStable = std::cell::RefCell<Option<(SuzerainStamp, BTreeMap<usize, Option<usize>>)>>;
 /// Per-pid shared-vision viewer sets, beside the diplomacy epoch they were
 /// built from. Indexed by pid; a pid nobody has asked about this epoch keeps
 /// its slot `None` rather than being folded speculatively.
@@ -1737,6 +1754,18 @@ pub struct QueryCache {
     /// every origin and destination pair, and each pair asks for the whole
     /// empire's Tourism.
     tourism: std::cell::RefCell<Option<BTreeMap<usize, (f64, f64)>>>,
+    /// The air-patrol list from the last unit-roster epoch it was built on.
+    /// Every route search is its own memo scope, and on a 250-seat world each
+    /// one walked every unit in the game to learn that nobody is patrolling.
+    air_patrols_stable: std::cell::RefCell<Option<(u64, AirPatrols)>>,
+    /// `suzerain_of` per city-state from the last moment nothing it reads
+    /// changed. Most scopes follow an action that touched neither envoys nor
+    /// cities, and the answer walks every major.
+    suzerain_stable: SuzerainStable,
+    /// `domestic_tourists` per player. Each seat's victory tracker reads every
+    /// rival's count and each count walks every player, which made one frame
+    /// cubic in the number of civilizations.
+    domestic_tourists: std::cell::RefCell<Option<BTreeMap<usize, i64>>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -1961,6 +1990,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.regional_slots.borrow_mut() = None;
             *self.game.query_memo.wonder_effects.borrow_mut() = None;
             *self.game.query_memo.tourism.borrow_mut() = None;
+            *self.game.query_memo.domestic_tourists.borrow_mut() = None;
         }
     }
 }
@@ -12968,7 +12998,7 @@ impl Game {
     ///
     /// The best world found, and the nearest of those if two are graded alike.
     /// It aims for the *best* rather than the nearest because a light-year
-    /// currently costs nothing — see [`EXOPLANET_DESTINATION`], which is the
+    /// currently costs nothing — see [`Game::exoplanet_destination`], which is the
     /// whole trip whichever world it is — so there is nothing to trade a worse
     /// world for. A civilization that surveyed nothing takes the one anybody
     /// would already have heard of.
@@ -13031,10 +13061,11 @@ impl Game {
         {
             return;
         }
+        let destination = self.science_victory_points_needed(pid);
         self.players[pid].exoplanet_distance = (self.players[pid].exoplanet_distance
             + self.modeled_exoplanet_speed(pid))
-        .min(EXOPLANET_DESTINATION);
-        if self.players[pid].exoplanet_distance >= EXOPLANET_DESTINATION {
+        .min(destination);
+        if self.players[pid].exoplanet_distance >= destination {
             self.set_winner(pid, "science");
         }
     }

@@ -876,6 +876,17 @@ impl WorldMap {
         }
     }
 
+    /// [`Self::distance`] that stops measuring at `cap`: the true distance up
+    /// to it, `cap + 1` beyond. Cheaper on a globe, and the same answer to any
+    /// question that only compares the distance with `cap`.
+    #[inline]
+    pub fn distance_capped(&self, a: Pos, b: Pos, cap: i32) -> i32 {
+        match self.sphere() {
+            Some(sphere) => sphere.distance_capped(a, b, cap),
+            None => self.distance(a, b).min(cap.saturating_add(1)),
+        }
+    }
+
     /// Every tile within `radius` steps of `center`, sorted.
     pub fn disk(&self, center: Pos, radius: i32) -> Vec<Pos> {
         if let Some(sphere) = self.sphere() {

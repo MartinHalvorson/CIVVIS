@@ -90,15 +90,21 @@ impl Game {
             .unwrap_or(self.players[pid].exoplanet_distance)
     }
 
-    /// The Science Victory Points required in this game. Civilization VI's
-    /// game-speed setting owns this number on a mirrored board, while the
-    /// native simulator retains its fixed destination.
+    /// The expedition's whole trip at this game's speed, when no host has
+    /// said otherwise. Rounded because the host's total is a whole number
+    /// and Quick's 33.5 cannot be one.
+    pub fn exoplanet_destination(&self) -> f64 {
+        self.game_speed.scale(EXOPLANET_DESTINATION).round()
+    }
+
+    /// The Science Victory Points required in this game: the total a
+    /// mirrored host reports, otherwise this game's speed-scaled trip.
     pub fn science_victory_points_needed(&self, pid: usize) -> f64 {
         self.observed_public_empire_stats
             .get(&pid)
             .and_then(|stats| stats.science_victory_points_needed)
             .filter(|points| points.is_finite() && *points > 0.0)
-            .unwrap_or(EXOPLANET_DESTINATION)
+            .unwrap_or_else(|| self.exoplanet_destination())
     }
 
     /// Science-victory movement per turn. A live host's World Rankings value
@@ -290,14 +296,18 @@ impl Game {
         };
 
         let capital_target = all_majors.len();
+        // Each major's first capital, by one walk of the cities rather than a
+        // walk per major: `find` over id-ordered cities keeps the lowest id,
+        // and so does the first entry for an owner here.
+        let mut first_capitals: BTreeMap<usize, &City> = BTreeMap::new();
+        for city in self.cities.values().filter(|city| city.is_capital) {
+            first_capitals.entry(city.original_owner).or_insert(city);
+        }
         let controlled_capitals = if player.team.is_some() {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    let capital = self
-                        .cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner);
+                    let capital = first_capitals.get(*original_owner).copied();
                     if **original_owner == pid || self.same_team(pid, **original_owner) {
                         capital.is_some_and(|capital| capital.owner == **original_owner)
                     } else {
@@ -309,13 +319,10 @@ impl Game {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    self.cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner)
-                        .map_or(
-                            **original_owner == pid || !self.players[**original_owner].alive,
-                            |capital| capital.owner == pid,
-                        )
+                    first_capitals.get(*original_owner).copied().map_or(
+                        **original_owner == pid || !self.players[**original_owner].alive,
+                        |capital| capital.owner == pid,
+                    )
                 })
                 .count()
         };

@@ -121,17 +121,15 @@ agents that play the game are local Rust controllers. The browser's AI plan and
 reasoning views display deterministic `PlanReport` and `Journal` records emitted
 by those controllers; they are not generated explanations.
 
-There are seven concrete `Ai` implementations, with different purposes:
+There are four concrete `Ai` implementations, with different purposes (`NeuralAi`,
+`PolicyAi` and `ProductionSearchAi` have since been removed):
 
 | implementation | purpose | live by default? |
 |---|---|---|
 | `RandomAi` | legal-action baseline | no |
 | `BasicAi` | cheap deterministic heuristic | city-states and barbarians |
 | `AdvancedAi` | stateful hierarchical scripted play | yes, directly or through league variants |
-| `NeuralAi` | value-net-guided war-rollout experiment | no; resolves to `BasicAi` without a net |
 | `StrategicAi` | victory-lane rollout search over `AdvancedAi` | offline league anchor only |
-| `PolicyAi` | one-ply value-net tactical experiment | no; resolves to `AdvancedAi` without a net |
-| `ProductionSearchAi` | per-city build rollout experiment | evaluator-only negative result |
 
 The generic `Oracle<A>` wrapper is not an entrant. It deliberately cheats by
 granting a subsystem for free so an ablation can measure the maximum headroom in

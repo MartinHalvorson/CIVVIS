@@ -1094,6 +1094,51 @@ fn science_requires_the_space_race_and_exoplanet_arrival() {
     assert_eq!(g.victory_type.as_deref(), Some("science"));
 }
 
+/// `SCIENCE_VICTORY_POINTS_REQUIRED` is 50 on Standard and the game speed
+/// scales it: every real Online game reads 25 from World Rankings
+/// (`GetScienceVictoryPointsTotalNeeded`). The native simulator read the
+/// Standard figure at every speed, so an Online world printed "/50ly".
+#[test]
+fn the_trip_is_as_long_as_the_game_speed_makes_it() {
+    let mut g = game_with_capitals(2, 420, 300);
+    for (speed, light_years) in [
+        (crate::setup::GameSpeed::Online, 25.0),
+        (crate::setup::GameSpeed::Standard, 50.0),
+        (crate::setup::GameSpeed::Epic, 75.0),
+        (crate::setup::GameSpeed::Marathon, 150.0),
+    ] {
+        g.game_speed = speed;
+        assert_eq!(g.science_victory_points_needed(0), light_years, "{speed:?}");
+        assert_eq!(
+            g.victory_races(0, 0).exoplanet_distance_target,
+            light_years,
+            "the tracker prints the total the race is run to: {speed:?}"
+        );
+    }
+    // The host's total is a whole number, which Quick's 33.5 cannot be. Which
+    // way the host rounds it has no recorded reading, so only that is pinned.
+    g.game_speed = crate::setup::GameSpeed::Quick;
+    assert_eq!(g.science_victory_points_needed(0).fract(), 0.0);
+}
+
+#[test]
+fn an_online_expedition_lands_after_twenty_five_light_years() {
+    let mut g = game_with_capitals(2, 420, 300);
+    g.game_speed = crate::setup::GameSpeed::Online;
+    g.players[0]
+        .science_projects
+        .insert("exoplanet_expedition".into());
+    for _ in 0..24 {
+        g.advance_exoplanet(0);
+    }
+    assert_eq!(g.players[0].exoplanet_distance, 24.0);
+    assert_eq!(g.winner, None, "one light-year short has not arrived");
+    g.advance_exoplanet(0);
+    assert_eq!(g.players[0].exoplanet_distance, 25.0);
+    assert_eq!(g.winner, Some(0));
+    assert_eq!(g.victory_type.as_deref(), Some("science"));
+}
+
 /// The expedition goes to a real place, and which one is what a space
 /// programme buys.
 ///

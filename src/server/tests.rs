@@ -2819,7 +2819,15 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("const overview = playerHudOverview();"));
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
-    assert!(player_hud.contains("playerHudStats(p,"));
+    assert!(player_hud.contains("playerHudStandings();"));
+    let standings = EMBEDDED_INDEX
+        .split_once("function playerHudStandings() {")
+        .expect("HUD standings")
+        .1
+        .split_once("\nfunction drawPlayerHud() {")
+        .expect("end of HUD standings")
+        .0;
+    assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
@@ -5671,25 +5679,22 @@ fn browser_orders_controls_interface_setup_and_logs() {
     }
     assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
     // The modes in the order they are offered: the AI-only simulation this
-    // engine exists for, then the human seat, then the one that is still
-    // "later". Single player is no longer "later" and is the only mode
-    // that offers a leader and a difficulty.
+    // engine exists for, then the human seat, marked as work in progress and
+    // the only mode that offers a leader and a difficulty. Multiplayer is not
+    // listed at all for now.
     assert!(
         EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player - WIP</option>"));
     assert!(!EMBEDDED_INDEX.contains("Single player · later"));
-    assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+    assert!(!EMBEDDED_INDEX.contains("Multiplayer · later"));
     let ai_sim_mode = EMBEDDED_INDEX
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find("<option value=\"single\">Single player</option>")
+        .find("<option value=\"single\">Single player - WIP</option>")
         .expect("single player mode");
-    let multiplayer_mode = EMBEDDED_INDEX
-        .find("Multiplayer · later")
-        .expect("multiplayer mode");
-    assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
+    assert!(ai_sim_mode < single_mode);
     // A world already on screen sets the mode select, so the panel beside a
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
@@ -7330,7 +7335,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("restore it in Display Settings"));
     assert_eq!(
         EMBEDDED_INDEX.matches("class=\"sidebar-section\"").count(),
-        6,
+        7,
         "every scrolling left-panel section should be collapsible; the \
              lens dock below them carries its own panel style"
     );
@@ -7342,12 +7347,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // understood and settles the layout before a scripted open scrolls.
     assert_eq!(
         EMBEDDED_INDEX.matches(" name=\"deck-section\">").count(),
-        6,
+        7,
         "every scrolling left-panel section belongs to the deck's one accordion group"
     );
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v2\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10046,6 +10052,102 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
+fn world_politics_sits_under_game_setup_and_starts_collapsed() {
+    let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
+    let politics = EMBEDDED_INDEX
+        .find("id=\"politicssec\"")
+        .expect("World politics");
+    let strategy = EMBEDDED_INDEX
+        .find("id=\"strategysec\"")
+        .expect("AI strategy");
+    assert!(setup < politics && politics < strategy);
+    assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
+    // No section of the deck opens by itself.
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches(" open name=\"deck-section\">")
+            .count(),
+        0
+    );
+    // Browsers saved the old key as open while the section opened by default,
+    // and a saved value beats the markup, so the old key must not come back.
+    assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics\""));
+    // A battlefield has no politics, and the section hands over its room.
+    assert!(EMBEDDED_INDEX.contains("body.watching-tactics #politicssec,"));
+    assert!(EMBEDDED_INDEX.contains("document.getElementById(\"politicssec\")?.open ||"));
+
+    let panel = EMBEDDED_INDEX
+        .split("function drawWorldPolitics() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("World politics panel");
+    // The heading's count is visible with the section shut; rows wait.
+    let label = panel.find("scope.textContent =").expect("label");
+    let guard = panel
+        .find("if (inClosedSidebarSection(list)) return;")
+        .expect("closed-section guard");
+    let built = panel.find("list.innerHTML =").expect("rows");
+    assert!(label < guard && guard < built);
+    assert!(
+        EMBEDDED_INDEX.contains("else if (section.id === \"politicssec\") drawWorldPolitics();")
+    );
+}
+
+#[test]
+fn world_politics_reads_in_masthead_order_and_can_watch_one_civ() {
+    // One reading of the standings serves the table and the panel, and
+    // re-sorting the table re-sorts the panel.
+    assert!(EMBEDDED_INDEX.contains(
+        "const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();"
+    ));
+    let toggle = EMBEDDED_INDEX
+        .split("function togglePlayerHudSort(key) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function playerHudSortHead").next())
+        .expect("sort toggle");
+    assert!(toggle.contains("drawWorldPolitics();"));
+
+    let panel = EMBEDDED_INDEX
+        .split("function drawWorldPolitics() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("World politics panel");
+    assert!(panel.contains("playerHudStandings().majors.map((p, index) => [p.id, index])"));
+    assert!(panel.contains("worldPoliticsOrdered(bonds, position)"));
+    assert!(panel.contains("worldPoliticsOrdered(wars, position)"));
+
+    // The higher civilization is named first, and rows run down it, then the
+    // lower one.
+    let ordered = EMBEDDED_INDEX
+        .split("function worldPoliticsOrdered(pairs, position) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function syncPoliticsSeat").next())
+        .expect("pair order");
+    assert!(ordered.contains("at(pair.second) < at(pair.first)"));
+    assert!(ordered.contains("at(a.first) - at(b.first) || at(a.second) - at(b.second)"));
+
+    // The filter sits above the list, inside the section.
+    let section = EMBEDDED_INDEX
+        .split("id=\"politicssec\"")
+        .nth(1)
+        .and_then(|tail| tail.split("</details>").next())
+        .expect("World politics section");
+    let filter = section
+        .find("<select id=\"politicsplayer\"")
+        .expect("filter");
+    let list = section.find("id=\"worldpolitics\"").expect("list");
+    assert!(filter < list);
+
+    // Each group folds, and the fold outlives the turn's rebuild.
+    assert!(EMBEDDED_INDEX.contains("data-politics-group=\"${group}\""));
+    assert!(EMBEDDED_INDEX.contains("addEventListener(\"toggle\", rememberPoliticsFold, true)"));
+
+    // Friends and alliances wear Civ VI's own green and blue.
+    assert!(EMBEDDED_INDEX.contains("--politics-friend: #79e077;"));
+    assert!(EMBEDDED_INDEX.contains("--politics-alliance: #74a3f3;"));
+}
+
+#[test]
 fn closed_sidebar_sections_build_their_rows_only_when_opened() {
     let reasoning = EMBEDDED_INDEX
         .split("function drawReasoning() {")
@@ -10256,6 +10358,29 @@ fn browser_keeps_the_sky_off_the_azimuthal_main_map() {
 /// the sheet instead, and does so in the one place every painter, hit
 /// test and overlay gets its cell geometry from.
 #[test]
+fn a_hundred_civ_world_keeps_the_map_and_paints_only_the_tiles_that_carry_ink() {
+    // Operator, 2026-11-09: the player HUD should cap "such that it isn't
+    // taking over the whole screen", and a 100-civ map should stay performant.
+    assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_MAP_SHARE = .42;"));
+    assert!(EMBEDDED_INDEX.contains("function playerHudSeatHeight(seats, mapHeight) {"));
+    assert!(EMBEDDED_INDEX.contains(
+        "`${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`"
+    ));
+    // A table past every stock world builds only the seats near what shows.
+    assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_WINDOW_MIN_SEATS = 30;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (hudWindow && !hudWindow.built(seatIndex)) return hudWindow.gap(seatIndex);"
+    ));
+    assert!(EMBEDDED_INDEX.contains("liveRibbon.replaceChildren("));
+    // Past 25,000 tiles the omniscient view stops at the tiles Canvas inks,
+    // and hit testing, on demand, still sees every cell.
+    assert!(EMBEDDED_INDEX.contains("const PLANET_INK_ONLY_MIN_TILES = 25000;"));
+    assert!(EMBEDDED_INDEX.contains("function planetHitCells() {"));
+    assert!(EMBEDDED_INDEX.contains("const cells = frame.inkOnly"));
+    assert!(EMBEDDED_INDEX.contains("if (center.z <= behind) return null;"));
+}
+
+#[test]
 fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
     // The margin is a bound in cell-widths, measured off the globe once.
     assert!(EMBEDDED_INDEX.contains("const PLANET_CHART_ANTIPODE_CELLS = 5;"));
@@ -10269,7 +10394,7 @@ fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
     // Applied at the source of every projected cell, on the chart only:
     // the globe has a limb to fold at and no antipode in view.
     let geometry = EMBEDDED_INDEX
-        .split("function planetCellGeometry(tile, camera, scale, centerX, centerY) {")
+        .split("function planetCellGeometry(tile, camera, scale, centerX, centerY, behind = -Infinity) {")
         .nth(1)
         .and_then(|tail| tail.split("function planetChartHorizon").next())
         .expect("planet cell geometry");
@@ -10277,12 +10402,12 @@ fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
         "const center = planetProject(cell.center, camera, scale, centerX, centerY);\n  if (camera.chart && center.z < planetChartAntipodeFloor()) return null;"
     ));
     assert!(geometry.contains("return {cell, points, center};"));
-    // Both consumers of cell geometry go through it, so no painter can
+    // Every consumer of cell geometry goes through it, so no painter can
     // project an antipode cell on its own.
     assert_eq!(
         EMBEDDED_INDEX.matches("planetCellGeometry(").count(),
-        3,
-        "cell geometry has one definition and two callers"
+        4,
+        "cell geometry has one definition and three callers"
     );
 }
 
@@ -13356,9 +13481,19 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
     assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
     assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
-    // Single player opens on the map; an explicit preference can keep the
-    // command deck open. Applying the default does not persist a choice.
-    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen !== \"open\", false);"));
+    // Single player opens with the command deck showing, because auto-play
+    // lives there; a phone keeps the map, and a player's own choice survives.
+    // Applying the default does not persist a choice.
+    assert!(EMBEDDED_INDEX.contains(
+        "togglePanel(chosen ? chosen === \"closed\" : window.matchMedia(\"(max-width: 720px)\").matches, false);"
+    ));
+    // The published site says what single player is at each new game, Ack is
+    // the way out of it, and the game's keys wait until it has been answered.
+    assert!(EMBEDDED_INDEX
+        .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;"));
+    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen() || soloNoticeOpen();"));
 
     // Rankings remain available on demand. Initialization must not save the
     // default as though the player had explicitly chosen it.
@@ -14458,12 +14593,16 @@ fn the_sky_carries_its_own_way_about() {
     assert!(EMBEDDED_INDEX.contains("skyNavButton(stop.body ? \"world\" : \"scale\", stop)"));
     assert!(EMBEDDED_INDEX.contains("document.querySelectorAll(\"#skynav [data-sky-stop]\")"));
     assert!(EMBEDDED_INDEX.contains("button.setAttribute(\"aria-label\", stop.label);"));
-    // A switch takes three times as long as it first shipped at, both ways.
-    // The distances are the content, and at the old pace the crossing was
-    // over before it had said anything about what lay between the two ends.
-    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_PACE = 3;"));
-    assert!(EMBEDDED_INDEX.contains("  return Math.max(420 * SKY_TRAVEL_PACE,"));
-    assert!(!EMBEDDED_INDEX.contains("return Math.max(420, Math.min(1700, S * 240));"));
+    // A button press flies three times faster between the worlds near home
+    // and six times faster to the exoplanet and back. Either end being out
+    // there decides it, so the way home is as quick as the way out.
+    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_HOP_SPEED = 3;"));
+    assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_EXO_SPEED = 6;"));
+    assert!(EMBEDDED_INDEX.contains("return Math.max(1260, Math.min(5100, S * 720)) / speed;"));
+    assert!(EMBEDDED_INDEX
+        .contains("duration:skyTravelDuration(path.S, skyTravelSpeed(SKY_PAN, to))}};"));
+    assert!(EMBEDDED_INDEX.contains("return outThere(from) || outThere(to) ? SKY_TRAVEL_EXO_SPEED"));
+    assert!(!EMBEDDED_INDEX.contains("SKY_TRAVEL_PACE"));
     for gone in [
         "GALAXY_DISC_LY",
         "GALAXY_SUN_RADIUS_LY",
