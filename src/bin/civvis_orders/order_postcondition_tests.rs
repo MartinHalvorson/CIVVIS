@@ -1555,6 +1555,76 @@ fn every_issued_unit_verb_is_checked_or_declared_unverifiable() {
 }
 
 #[test]
+fn a_launch_is_proved_by_the_spent_device_of_its_own_weapon() {
+    let mut before = frame(200);
+    before.public_stats.nuclear_devices = Some(2);
+    let mut after = frame(201);
+    after.public_stats.nuclear_devices = Some(2);
+    let flown = order("unit", Some(7), Some("WMD_NUCLEAR_DEVICE"), Some((11, 10)));
+    let silo = order(
+        "wmd_strike",
+        Some(9),
+        Some("3:4:WMD_NUCLEAR_DEVICE"),
+        Some((11, 10)),
+    );
+    let other = order(
+        "wmd_strike",
+        Some(9),
+        Some("3:4:WMD_THERMONUCLEAR_DEVICE"),
+        Some((11, 10)),
+    );
+    assert_eq!(
+        check(&flown, &before, &after, &[]),
+        failed("device_not_spent")
+    );
+    assert_eq!(
+        check(&silo, &before, &after, &[]),
+        failed("device_not_spent")
+    );
+
+    after.public_stats.nuclear_devices = Some(1);
+    assert_eq!(check(&flown, &before, &after, &[]), Verdict::Verified);
+    assert_eq!(check(&silo, &before, &after, &[]), Verdict::Verified);
+    assert_eq!(
+        check(&other, &before, &after, &[]),
+        failed("device_not_spent"),
+        "the other stockpile did not move"
+    );
+}
+
+#[test]
+fn a_launch_is_proved_by_the_hurt_target_when_the_stockpile_hides_it() {
+    let mut before = frame(200);
+    before.hostiles = vec![unit(40, "UNIT_MUSKETMAN", 11, 10)];
+    let after = frame(201);
+    let flown = order("unit", Some(7), Some("WMD_NUCLEAR_DEVICE"), Some((11, 10)));
+    assert_eq!(check(&flown, &before, &after, &[]), Verdict::Verified);
+}
+
+#[test]
+fn a_coastal_raid_is_proved_by_the_shore_tile_it_named() {
+    let board = |pillaged: bool| {
+        let chunk: TilesChunk = serde_json::from_str(&format!(
+            r#"{{"turn":30,"width":10,"height":10,"plots":[{{"x":5,"y":4,"p":{pillaged}}}]}}"#
+        ))
+        .expect("a tiles chunk parses");
+        Snapshot::from_chunks(&[chunk])
+    };
+    let mut before = frame(30);
+    before.units = vec![unit(7, "UNIT_PRIVATEER", 6, 4)];
+    let after = before.clone();
+    let raid = order("unit", Some(7), Some("COASTAL_RAID"), Some((5, 4)));
+    assert_eq!(
+        verify_order(&raid, 30, &before, &after, &board(true), &[]),
+        Verdict::Verified
+    );
+    assert_eq!(
+        verify_order(&raid, 30, &before, &after, &board(false), &[]),
+        failed("not_pillaged")
+    );
+}
+
+#[test]
 fn military_formation_receipts_use_tier_instead_of_escort_count() {
     for (verb, tier) in [("FORM_CORPS", 1), ("FORM_ARMY", 2)] {
         let mut before = frame(153);

@@ -2819,6 +2819,7 @@ fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
     game.players[0].explored.insert(fortress);
     game.players[0].explored.insert(spaceport_site);
     game.world_era = 4;
+    game.install_test_silo(launch_city);
     (game, launch_city, fortress_city, spaceport_city, spaceport)
 }
 
@@ -3841,6 +3842,7 @@ fn a_besieged_empire_spends_its_device_to_break_the_siege() {
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);
     game.players[0].explored.insert(target);
+    game.install_test_silo(game.player_city_ids(0)[0]);
     game.cities.get_mut(&target_city).unwrap().wall_hp = 300;
     // The empire is losing this war: Recovery posture, not Conquest. The
     // doctrine used to stand down here, which meant the 72% of late-game

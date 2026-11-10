@@ -925,6 +925,7 @@ def project_units(database: Database) -> dict[str, dict]:
                 number(row.get("ReligiousHealCharges")),
             ),
             "zone_of_control": truthy(row.get("ZoneOfControl")),
+            "wmd_capable": truthy(row.get("WMDCapable")),
             # Theological combat: the strength an Apostle brings to it, and the
             # share of rival pressure the unit strips when it acts. CIVVIS
             # spends the Inquisitor's through Remove Heresy rather than Spread,
@@ -2343,9 +2344,62 @@ UNIT_DEFAULTS = {
     "range": 0,
     "charges": 0,
     "zone_of_control": False,
+    "wmd_capable": False,
     "upgrade_to": None,
     "obsolete_tech": None,
 }
+
+# Every column of the shipped `Units` table, and what this audit does with it.
+# `project_units` read a chosen handful and ignored the rest, so a rule that
+# lived in an unread column was invisible: `WMDCapable` is why no Bomber could
+# carry a device for the whole life of the engine. A column the game adds now
+# fails `--check` until it is projected above or given a reason here.
+UNIT_COLUMNS_PROJECTED = {
+    "UnitType", "Cost", "Maintenance", "BaseMoves", "BaseSightRange", "Combat",
+    "RangedCombat", "Bombard", "Range", "BuildCharges", "SpreadCharges",
+    "ReligiousHealCharges", "ZoneOfControl", "WMDCapable", "ReligiousStrength",
+    "MandatoryObsoleteTech", "MustPurchase",
+}
+UNIT_COLUMNS_NOT_AUDITED = {
+    # Presentation or AI tuning: no rule of play.
+    "Name": "text key", "Description": "text key", "Flavor": "text key",
+    "AdvisorType": "advisor text", "PseudoYieldType": "Firaxis AI weight",
+    "FormationClass": "layer; CIVVIS derives it from domain",
+    "ImmediatelyName": "naming prompt",
+    # Carried in data/units.json under the name shown; not compared here.
+    "Domain": "units.json domain", "PromotionClass": "units.json promotion_class",
+    "PrereqTech": "units.json tech", "PrereqCivic": "units.json civic",
+    "PrereqDistrict": "units.json requires_district",
+    "StrategicResource": "units.json requires_resource",
+    "TraitType": "units.json unique_to", "AntiAirCombat": "units.json anti_air_strength",
+    "ObsoleteTech": "soft obsolescence; the Mandatory column closes the menu",
+    "ObsoleteCivic": "soft obsolescence; the Mandatory column closes the menu",
+    "MandatoryObsoleteCivic": "no shipped unit sets it",
+    # Gameplay columns this audit does not compare yet. Each is a known hole.
+    "PopulationCost": "not audited", "PrereqPopulation": "not audited",
+    "FoundCity": "not audited", "FoundReligion": "not audited",
+    "MakeTradeRoute": "not audited", "EvangelizeBelief": "not audited",
+    "LaunchInquisition": "not audited", "RequiresInquisition": "not audited",
+    "ReligionEvictPercent": "not audited", "ExtractsArtifacts": "not audited",
+    "CanCapture": "not audited", "CanRetreatWhenCaptured": "not audited",
+    "AllowBarbarians": "not audited", "CostProgressionModel": "not audited",
+    "CostProgressionParam1": "not audited", "InitialLevel": "not audited",
+    "NumRandomChoices": "not audited", "LeaderType": "not audited",
+    "CanTrain": "not audited", "PurchaseYield": "not audited",
+    "Stackable": "not audited", "AirSlots": "not audited",
+    "CanTargetAir": "not audited", "Spy": "not audited",
+    "ParkCharges": "not audited", "IgnoreMoves": "not audited",
+    "TeamVisibility": "not audited", "EnabledByReligion": "not audited",
+    "TrackReligion": "not audited", "DisasterCharges": "not audited",
+    "UseMaxMeleeTrainedStrength": "not audited",
+    "CanEarnExperience": "units.json earns_xp",
+}
+
+
+def unaccounted_unit_columns(rows: list[dict]) -> list[str]:
+    """Columns any `Units` row sets that this audit has no answer for."""
+    known = UNIT_COLUMNS_PROJECTED | set(UNIT_COLUMNS_NOT_AUDITED)
+    return sorted({column for row in rows for column in row} - known)
 
 
 # --- The difficulty ladder ---------------------------------------------------
@@ -3157,6 +3211,11 @@ def main() -> int:
         ("Promotions", ours_promotions(), project_promotions(database)),
         ("Projects", ours_projects(), project_projects(database)),
     ]
+    unaccounted = unaccounted_unit_columns(database.rows("Units"))
+    if unaccounted:
+        print(f"Units columns with no recorded answer: {unaccounted}", file=sys.stderr)
+        return 1
+
     if args.table:
         wanted = {name.lower() for name in args.table}
         audits = [audit for audit in audits if audit[0].lower() in wanted]

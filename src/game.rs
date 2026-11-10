@@ -4673,6 +4673,18 @@ pub struct WarTheaterSite {
     pub pos: Pos,
 }
 
+/// One way a device can reach its target this turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WmdPlatform {
+    /// `missile_silo`, or the kind of the unit carrying the device.
+    pub kind: Name,
+    /// Where the device leaves from.
+    pub from: Pos,
+    /// The carrier, which spends its attack on the launch. A silo has none.
+    pub unit: Option<u32>,
+    pub distance: i32,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -5809,9 +5821,9 @@ pub enum Action {
         city: u32,
         target: Pos,
     },
-    /// Launch a stockpiled nuclear or thermonuclear device from a city (or
-    /// an owned Missile Silo) at a revealed tile within the shipped
-    /// ICBMStrikeRange.
+    /// Launch a stockpiled nuclear or thermonuclear device at a revealed tile,
+    /// from a working Missile Silo of the named city or from any `wmd_capable`
+    /// unit in reach. See [`Game::wmd_platforms`] for what reaches how far.
     WmdStrike {
         city: u32,
         target: Pos,

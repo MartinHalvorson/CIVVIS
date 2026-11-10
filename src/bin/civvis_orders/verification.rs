@@ -393,6 +393,15 @@ fn verify_order_with_context(
         }
         "city_focus" => citizen_growth::verify(order, after),
         "city" => verify_city_disposition(order, before, after),
+        // A silo's verb is `x:y:weapon`, its source tile and then the device.
+        "wmd_strike" => {
+            let weapon = verb.rsplit(':').next().unwrap_or("");
+            if launch_landed(weapon, before, after, order.pos) {
+                Verdict::Verified
+            } else {
+                failed("device_not_spent".to_string())
+            }
+        }
         "city_strike" | "encampment_strike" | "district_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
             if harmed

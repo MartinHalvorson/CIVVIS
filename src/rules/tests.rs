@@ -340,9 +340,11 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // native Kublai Bombard preview confirms +12 intel separately from +4
     // difficulty. Older ledgers retain the pre-correction rules fingerprint.
     // Moved again by Preslav's description, now its shipped Loyalty bonus.
+    // Moved again by `Units.WMDCapable` on the Bomber, Jet Bomber and Nuclear
+    // Submarine, which is what lets those three carry a device.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:4f356b21194cade0"
+        "fnv1a64:1f5dad846d7a815b"
     );
 }
 
