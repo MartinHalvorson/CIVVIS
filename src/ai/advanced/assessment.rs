@@ -576,7 +576,12 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
-        let (strategy, because) = if at_war
+        // A world played on to its last civilization is at war with everyone
+        // for good, so an enemy is always near some city. Every seat read that
+        // as Recovery and held: three civilizations stood still for 400 turns.
+        let may_recover = !g.plays_to_the_last_civ();
+        let (strategy, because) = if may_recover
+            && at_war
             && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
@@ -584,7 +589,7 @@ impl AdvancedAi {
                     && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
-        } else if impossible_denial {
+        } else if may_recover && impossible_denial {
             (
                 GrandStrategy::Recovery,
                 "holding the line before an impossible counter-campaign",
