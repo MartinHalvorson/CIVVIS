@@ -276,6 +276,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `domination-clock-every-rung` | off (unmeasured) | `domination-clock-every-rung`: an assigned Domination lane leaves its development half at 30% of the clock at every difficulty. | 1 \| 1 |
 | `domination-joins-the-race` | off (unmeasured) | Opt-in gene `domination-joins-the-race`; see `Self::domination_joins_the_race`. | 1 \| 1 |
 | `domination-spends-the-stock` | off (unmeasured) | `domination-spends-the-stock`: a Domination seat's delegated governor takes a resource-priced melee unit whenever a city can start one. | 1 \| 1 |
+| `domination-target-gets-its-breaker` | off (unmeasured) | `domination-target-gets-its-breaker`: see `advanced/domination_target_gets_its_breaker.rs`. | 1 \| 1 |
 | `domination-targets-land-first` | off (unmeasured) | Opt-in gene `domination-targets-land-first`; see `Self::domination_targets_land_first`. | 1 \| 1 |
 | `early-cities-keep-their-distance` | off (unmeasured) | Opt-in gene `early-cities-keep-their-distance`; see `Self::early_cities_keep_their_distance`. | 1 \| 1 |
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
@@ -288,6 +289,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
+| `first-capital-before-the-walls` | off (unmeasured) | `first-capital-before-the-walls`: see `advanced/first_capital_before_the_walls.rs`. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
 | `flower-power-in-the-dark` | off (unmeasured) | `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`. | 1 \| 1 |
