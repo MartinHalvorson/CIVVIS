@@ -6742,6 +6742,10 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `cold-war-before-conservation`: a Culture target on a six-slot
+    /// government takes only the road to Cold War until it is known. See
+    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
+    cold_war_before_conservation: bool,
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
@@ -6749,10 +6753,6 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
-    /// `cold-war-before-conservation`: a Culture target on a six-slot
-    /// government takes only the road to Cold War until it is known. See
-    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
-    cold_war_before_conservation: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
