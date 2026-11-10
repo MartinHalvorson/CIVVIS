@@ -240,6 +240,9 @@ impl AdvancedAi {
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
         sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
+        /// Opt-in gene `siege-at-the-walls-dies-first`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        siege_at_the_walls_dies_first => enable_siege_at_the_walls_dies_first, disable_siege_at_the_walls_dies_first;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

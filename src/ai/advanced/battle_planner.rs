@@ -914,6 +914,10 @@ struct Target {
     kill_value: f64,
     siege: bool,
     captures: bool,
+    /// `siege-at-the-walls-dies-first`: a gun in reach of our walls, or a
+    /// taker beside an open city of ours. Its kill value already carries the
+    /// premium; a wound earns the damage premium. False with the gene off.
+    wall_threat: bool,
 }
 
 /// One legal blow: a shooter, from a stand, at a target, with the exact
@@ -1060,7 +1064,12 @@ impl BeamState {
                 target.strength,
                 target.siege,
                 target.captures,
-            )
+            ) + if target.wall_threat {
+                super::siege_at_the_walls_dies_first::WALL_THREAT_DAMAGE_PREMIUM
+                    * damage.min(remaining)
+            } else {
+                0.0
+            }
         };
         let mut cost = 0.0;
         let mut returned = 0.0;
@@ -1754,6 +1763,9 @@ impl AdvancedAi {
                 let unit = &g.units[&uid];
                 let spec = &g.rules.units[unit.kind];
                 let strength = g.unit_strength(unit, true);
+                // `siege-at-the-walls-dies-first`: see
+                // `advanced/siege_at_the_walls_dies_first.rs`.
+                let wall_threat = self.wall_threat(g, pid, uid);
                 Target {
                     uid,
                     pos,
@@ -1764,15 +1776,28 @@ impl AdvancedAi {
                         strength,
                         spec.siege,
                         spec.is_melee_capable(),
-                    ),
+                    ) + if wall_threat {
+                        super::siege_at_the_walls_dies_first::WALL_THREAT_KILL_PREMIUM
+                    } else {
+                        0.0
+                    },
                     siege: spec.siege,
                     captures: spec.is_melee_capable(),
+                    wall_threat,
                 }
             })
             .collect();
         let mut armed: BTreeSet<u32> = BTreeSet::new();
         if targets.is_empty() {
             return (Vec::new(), Vec::new(), Vec::new(), armed);
+        }
+        let wall_threats = targets.iter().filter(|target| target.wall_threat).count();
+        if wall_threats > 0 {
+            think!(self.journal(), Military, Detail,
+                "Wall threats: {} gun(s) or taker(s) at our walls are the kill plan's first targets", wall_threats;
+                "siege-at-the-walls-dies-first: a kill adds {:.0}, a point of damage {:.0}",
+                super::siege_at_the_walls_dies_first::WALL_THREAT_KILL_PREMIUM,
+                super::siege_at_the_walls_dies_first::WALL_THREAT_DAMAGE_PREMIUM);
         }
         let enemy_city_near = |pos: Pos, range: i32| {
             g.cities.values().any(|city| {
@@ -2003,9 +2028,12 @@ impl AdvancedAi {
             })
             .collect();
         target_order.sort_by(|a, b| {
-            targets[*a]
-                .hp
-                .cmp(&targets[*b].hp)
+            // `siege-at-the-walls-dies-first`: wall threats are never the
+            // targets trimmed away. Constant false with the gene off.
+            targets[*b]
+                .wall_threat
+                .cmp(&targets[*a].wall_threat)
+                .then_with(|| targets[*a].hp.cmp(&targets[*b].hp))
                 .then_with(|| targets[*b].kill_value.total_cmp(&targets[*a].kill_value))
                 .then_with(|| targets[*a].uid.cmp(&targets[*b].uid))
         });

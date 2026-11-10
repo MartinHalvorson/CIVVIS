@@ -9864,6 +9864,11 @@ pub struct AdvancedAi {
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
     /// default.
     sweden_builds_open_air_museums: bool,
+    /// `siege-at-the-walls-dies-first`: a hostile siege gun in reach of our
+    /// walls, or a taker beside an open city of ours, is the first target of
+    /// the kill plan, the ladder and the city strike. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    siege_at_the_walls_dies_first: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11012,6 +11017,10 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 mod close_as_a_body;
 
 mod siege_production;
+
+/// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
+/// See `advanced/siege_at_the_walls_dies_first.rs`.
+mod siege_at_the_walls_dies_first;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -24591,11 +24600,21 @@ impl AdvancedAi {
                             + strength * 2.0
                             + if siege { 70.0 } else { 0.0 }
                             + if captures { 30.0 } else { 0.0 }
+                            // `siege-at-the-walls-dies-first`: zero with the
+                            // gene off. See its module.
+                            + self.wall_threat_premium(g, pid, unit, 0.0, true)
                     }
                     Some(defender) => {
                         (hp - defender.hp).max(0) as f64 * (1.0 + strength / 100.0)
                             + if siege { 25.0 } else { 0.0 }
                             + if captures { 8.0 } else { 0.0 }
+                            + self.wall_threat_premium(
+                                g,
+                                pid,
+                                unit,
+                                f64::from((hp - defender.hp).max(0)),
+                                false,
+                            )
                     }
                 },
             )
