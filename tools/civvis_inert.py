@@ -215,7 +215,9 @@ def data_strings(root: Path | None = None) -> set[str]:
 
 
 INLINE_TEST_MODULE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s+\w+\s*\{")
-TEST_MODULE_FILE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([a-z]+\))?\s+)?mod\s+(\w+)\s*;")
+TEST_MODULE_FILE = re.compile(
+    r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([a-z]+\))?\s+)?mod\s+(\w+)\s*;"
+)
 
 
 def production_sources(root: Path | None = None) -> dict[str, str]:

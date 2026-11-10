@@ -25,6 +25,14 @@
 //! t39, while the fourth religion appeared at t57. Count that same terminal
 //! signal used by `prophet_class_exhausted`, with the existing exception for
 //! a Prophet already pending for our seat. Missing telemetry stays unknown.
+//!
+//! The reading must still hold on a later turn. The host can report the class
+//! exhausted for one frame as our own Prophet arrives, before it marks that
+//! Prophet pending. `civvis-20261110T081626Z` handed over at t19 with 0 of 4
+//! religions founded, had its Prophet pending at t20 and founded that turn. The
+//! seat then played Science: it founded on Tithe, never ordered a Shrine, held
+//! 722 Faith at t68 and lost its religion. All four Russia games founded on
+//! Tithe that day went the same way.
 
 use super::*;
 
@@ -61,10 +69,16 @@ impl AdvancedAi {
     /// A no-op with the gene off, on any other target, or while the race is
     /// open.
     pub(super) fn hand_over_a_lost_religion_lane(&mut self, g: &Game, pid: usize) {
-        if !self.religion_lane_hands_over
-            || self.victory_target != Some(VictoryTarget::Religion)
-            || !Self::religion_race_lost(g, pid)
-        {
+        if !self.religion_lane_hands_over || self.victory_target != Some(VictoryTarget::Religion) {
+            return;
+        }
+        if !Self::religion_race_lost(g, pid) {
+            self.religion_race_lost_since = None;
+            return;
+        }
+        // The retarget is permanent, so one frame's reading cannot make it.
+        let first_read = *self.religion_race_lost_since.get_or_insert(g.turn);
+        if g.turn <= first_read {
             return;
         }
         let Some(lane) = Self::religion_handover_lane(g) else {

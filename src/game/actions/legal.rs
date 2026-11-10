@@ -658,6 +658,7 @@ impl Game {
                         && spec.has_ranged_attack()
                         && u.attacks_left > 0
                         && (!spec.siege || !u.moved || self.siege_may_attack_after_moving(&u))
+                        && !self.shooter_stacked_in_city(uid)
                     {
                         let range = self.unit_attack_range(uid);
                         for pos in self.wdisk(u.pos, range) {
