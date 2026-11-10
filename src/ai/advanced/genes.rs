@@ -5679,6 +5679,10 @@ pub const GENES: &[Gene] = &[
     // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
     // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
     Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
+    // Kristina Deity 11-10: the host offered Rocket Scientist (Disrupt as if 2
+    // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
+    // none. See `advanced/space_denial_rocket_scientist.rs`.
+    Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
