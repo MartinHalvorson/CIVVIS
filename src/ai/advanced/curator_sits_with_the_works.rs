@@ -220,6 +220,7 @@ impl AdvancedAi {
 
     /// The city a Pingala holding Curator moves to now, with its works and
     /// his own city's: [`Self::curator_post`]'s move, if any.
+    #[cfg(test)]
     pub(super) fn curator_destination(
         &self,
         g: &Game,
