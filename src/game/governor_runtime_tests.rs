@@ -449,7 +449,10 @@ fn magnus_executes_harvest_logistics_resources_power_and_integration() {
     let production = game.cities[&city].production;
     game.do_improve(0, builder, "chop_woods").unwrap();
     // 20 shipped base x 1.5 Black Marketeer at the Ancient era.
-    assert_eq!(game.cities[&city].production - production, 30.0);
+    assert_eq!(
+        game.cities[&city].production - production,
+        (20.0 * (game.builder_harvest_scale(0) * 1.5)).floor()
+    );
 
     game.players[0].techs.insert(crate::name!("iron_working"));
     game.players[0]
