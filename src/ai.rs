@@ -2812,6 +2812,11 @@ pub struct BasicAi {
     /// while fewer stand. Lent by the Advanced gene to a Culture seat's
     /// delegated call; zero (off) by default.
     pub(crate) dig_museums_wanted: usize,
+    /// `curator-sits-with-the-works`: while a Culture seat's Pingala holds
+    /// Curator, `reassign_governor_for_loyalty` sends another Governor to a
+    /// loyalty emergency whenever one can go, instead of pulling Pingala off
+    /// the works. Set by `AdvancedAi` each turn; false (off) by default.
+    pub(crate) curator_keeps_his_seat: bool,
     /// `religion-seat-takes-the-faith-beliefs`: the founding tries the
     /// Faith-scaling founder beliefs first. Set each turn by the Advanced
     /// gene for a Religion-target seat; off by default.
@@ -3972,6 +3977,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -4417,6 +4423,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
