@@ -6875,9 +6875,6 @@ pub struct AdvancedAi {
     /// near, the Holy City buys one ahead of the Apostle save. See
     /// `advanced/holy_city_guard.rs`.
     founder_holds_the_holy_city: bool,
-    /// Keep the Religion seat's nearest Holy City guard between casts.
-    /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
-    religion_seat_keeps_the_guard: bool,
     /// `founder-converts-its-own-cities`: while we founded the spreader's
     /// faith and two or more of our cities are off it, a spreader's targets
     /// drop foreign cities whenever one of ours is on the list. See
@@ -8458,6 +8455,9 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// Keep the Religion seat's nearest Holy City guard between casts.
+    /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
+    religion_seat_keeps_the_guard: bool,
     /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.

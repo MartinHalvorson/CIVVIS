@@ -146,6 +146,8 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// See `advanced/religion_seat_keeps_the_guard.rs`.
+        religion_seat_keeps_the_guard => enable_religion_seat_keeps_the_guard, disable_religion_seat_keeps_the_guard;
         /// Opt-in gene `russia-settles-the-tundra`; see
         /// `advanced/russia_tundra.rs`.
         russia_settles_the_tundra => enable_russia_settles_the_tundra, disable_russia_settles_the_tundra;
@@ -1811,8 +1813,6 @@ impl AdvancedAi {
         /// Opt-in gene `founder-holds-the-holy-city`; see
         /// `advanced/holy_city_guard.rs`.
         founder_holds_the_holy_city => enable_founder_holds_the_holy_city, disable_founder_holds_the_holy_city;
-        /// See `advanced/religion_seat_keeps_the_guard.rs`.
-        religion_seat_keeps_the_guard => enable_religion_seat_keeps_the_guard, disable_religion_seat_keeps_the_guard;
         /// Opt-in gene `founder-converts-its-own-cities`; see
         /// [`Self::founder_converts_its_own_cities`].
         founder_converts_its_own_cities => enable_founder_converts_its_own_cities, disable_founder_converts_its_own_cities;
