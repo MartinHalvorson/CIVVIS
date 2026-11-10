@@ -26401,6 +26401,7 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+mod religion_denial_needs_the_edge;
 mod religion_prophet_queue;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
@@ -26418,7 +26419,6 @@ mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
-mod religion_denial_needs_the_edge;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 mod religious_interception;
