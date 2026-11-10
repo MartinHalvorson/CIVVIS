@@ -55,10 +55,16 @@ short="$(git -C "$source_tree" rev-parse --short HEAD)"
 commit_time="$(git -C "$source_tree" show -s --format=%cI "$commit")"
 built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# The module is stamped with its revision and not with the hour. A deployment
+# rebuilds the promoted lane from the same commit every time; with the hour
+# inside it, two builds of one commit differed in five bytes of sixteen million
+# and the module took a new content address on every deployment, so a
+# returning visitor downloaded and compiled an engine they already had. The
+# hour goes in build.json below, and shim.js hands it to the page from there.
 echo "==> building the engine for wasm32 from $short"
 (
   cd "$source_tree"
-  CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="$built_at" \
+  CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="" \
     cargo rustc --lib \
     --target wasm32-unknown-unknown --release --crate-type cdylib
 )

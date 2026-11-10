@@ -40,6 +40,18 @@ def gathering_storm_database() -> civ6_fidelity.Database:
     return database_with(rows)
 
 
+class EveryUnitColumnHasAnAnswer(unittest.TestCase):
+    """`WMDCapable` sat in an unread column, so no Bomber could carry a device."""
+
+    def test_a_column_nobody_answered_for_is_reported(self):
+        rows = [{"UnitType": "UNIT_X", "BrandNewRule": "1"}, {"Cost": "1"}]
+        self.assertEqual(civ6_fidelity.unaccounted_unit_columns(rows), ["BrandNewRule"])
+
+    def test_the_delivery_column_is_compared(self):
+        self.assertIn("WMDCapable", civ6_fidelity.UNIT_COLUMNS_PROJECTED)
+        self.assertIn("wmd_capable", civ6_fidelity.UNIT_DEFAULTS)
+
+
 class TheReferenceIsChecked(unittest.TestCase):
     def test_a_gathering_storm_reference_is_accepted(self):
         self.assertEqual(

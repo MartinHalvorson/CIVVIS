@@ -1407,6 +1407,11 @@ impl Game {
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
             || self.city_at(pos).is_some()
+            // The host will not clear or harvest under an improvement. Across
+            // 70 live logs (2026-11-10), all 81 orders to chop or clear an
+            // improved tile failed (43 of them forests under Lumber Mills),
+            // as did 32 of 33 harvests. Each one spent a planned Builder turn.
+            || tile.improvement.is_some()
         {
             return vec![];
         }
@@ -4589,10 +4594,21 @@ impl Game {
     /// narrow leader-preference score for backwards-compatible AI callers;
     /// this is the wider state a diplomacy screen needs.
     pub fn relationship_opinion(&self, observer: usize, subject: usize) -> f64 {
+        self.relationship_opinion_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    fn relationship_opinion_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> f64 {
         if observer == subject || observer >= self.players.len() || subject >= self.players.len() {
             return 0.0;
         }
-        let mut opinion = self.agenda_opinion(observer, subject);
+        let mut opinion = self.agenda_opinion_reading(observer, subject, read);
         opinion -= self.players[observer]
             .grievances
             .get(&subject)
@@ -4627,6 +4643,42 @@ impl Game {
     /// relationship ledger; the named treaty and conflict states take
     /// precedence exactly as they do in the Civ VI ribbon.
     pub fn relationship_state(&self, observer: usize, subject: usize) -> &'static str {
+        self.relationship_state_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    /// `relationship_state` from each of `civs` toward each of them, in order.
+    /// Agendas compare a civilization with the whole world, so scoring every
+    /// pair directly would be cubic in civilizations; each comparison's raw
+    /// measure is worked out once here instead.
+    pub fn relationship_states_among(&self, civs: &[usize]) -> Vec<Vec<&'static str>> {
+        let mut measured: Vec<(String, Vec<Option<f64>>)> = Vec::new();
+        let mut read = |pid: usize, measure: &str| {
+            let index = measured
+                .iter()
+                .position(|(name, _)| name == measure)
+                .unwrap_or_else(|| {
+                    measured.push((measure.to_string(), vec![None; self.players.len()]));
+                    measured.len() - 1
+                });
+            *measured[index].1[pid].get_or_insert_with(|| self.agenda_measure(pid, measure))
+        };
+        civs.iter()
+            .map(|&observer| {
+                civs.iter()
+                    .map(|&subject| self.relationship_state_reading(observer, subject, &mut read))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn relationship_state_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> &'static str {
         if self.is_at_war(observer, subject) {
             "war"
         } else if self.are_allied(observer, subject) {
@@ -4640,12 +4692,15 @@ impl Game {
                 .is_some_and(|until| *until > self.turn)
         }) {
             "denounced"
-        } else if self.relationship_opinion(observer, subject) >= 15.0 {
-            "friendly"
-        } else if self.relationship_opinion(observer, subject) <= -15.0 {
-            "unfriendly"
         } else {
-            "neutral"
+            let opinion = self.relationship_opinion_reading(observer, subject, read);
+            if opinion >= 15.0 {
+                "friendly"
+            } else if opinion <= -15.0 {
+                "unfriendly"
+            } else {
+                "neutral"
+            }
         }
     }
 

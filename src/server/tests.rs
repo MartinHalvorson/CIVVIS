@@ -10134,26 +10134,37 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         .expect("World politics panel");
     // Rows and columns share one order, by name, so nobody's place moves.
     assert!(panel.contains("a.civ.localeCompare(b.civ) || a.id - b.id"));
-    assert!(panel.contains("worldPoliticsMatrix(civs, bonds, wars)"));
+    assert!(panel.contains("worldPoliticsMatrix(civs, bonds, wars, attitudes)"));
     // A turn arriving mid-scroll must not throw the reader back to the start.
     assert!(panel.contains("patchHudMarkup(list,"));
 
     // A pair's tie is written in both of its cells.
     let matrix = EMBEDDED_INDEX
-        .split("function worldPoliticsMatrix(civs, bonds, wars) {")
+        .split("function worldPoliticsMatrix(civs, bonds, wars, attitudes) {")
         .nth(1)
         .and_then(|tail| tail.split("function markPoliticsColumn").next())
         .expect("matrix");
     assert!(matrix.contains("ties.set(`${pair.first}:${pair.second}`, tie);"));
     assert!(matrix.contains("ties.set(`${pair.second}:${pair.first}`, tie);"));
     assert!(matrix.contains("if (column.id === row.id) return `<td class=\"self\"></td>`;"));
+    // Anything less than a pact is one leader's view, read from the row.
+    assert!(matrix.contains("WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]]"));
+    assert!(matrix.contains("${row.civ} toward ${column.civ}"));
+    for state in ["friendly", "neutral", "unfriendly", "denounced"] {
+        assert!(EMBEDDED_INDEX.contains(&format!(".politics-mark.{state} {{")));
+        assert!(EMBEDDED_INDEX.contains(&format!("[\"{state}\", \"")));
+    }
+    // The key is outside the name column, which holds names and nothing else.
+    assert!(EMBEDDED_INDEX.contains("<div id=\"politicskey\" class=\"politics-key\" hidden></div>"));
+    assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
+    assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
     // Both sets of names stay put while the table scrolls under them, and the
     // scroller is held to the deck's window so that it, not the deck, scrolls.
     assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: calc(var(--deck-window) - 43px); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(var(--deck-window) - 106px), min(calc(var(--deck-window) - 43px), 130px)); }"
     ));
     assert!(EMBEDDED_INDEX
         .contains("side.style.setProperty(\"--deck-window\", `${Math.round(room)}px`);"));
