@@ -1,6 +1,7 @@
 use super::*;
 use crate::ai::{AdvancedAi, BasicAi, GrandStrategy};
 use crate::name::Name;
+use crate::setup::GameSpeed;
 
 fn game_with_capitals(players: usize, seed: u64) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(players, 28, 18, seed, 300, 0, false);
@@ -1480,6 +1481,127 @@ fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
         game.unit_unembarked_strength(&unit)
     };
     assert_close(cavalry_off, cavalry_flat);
+}
+
+#[test]
+fn cardiff_pays_power_for_each_harbor_building() {
+    let (mut game, cities) = game_with_capitals(2, 89_051);
+    let city = cities[0];
+    install_district(&mut game, city, "harbor");
+    let cardiff = add_city_state(&mut game, "Cardiff");
+    let unbonused = game.city_renewable_power(&game.cities[&city]);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("lighthouse"));
+    assert_close(game.city_renewable_power(&game.cities[&city]), unbonused);
+    make_suzerain(&mut game, 0, cardiff);
+    assert_close(
+        game.city_renewable_power(&game.cities[&city]),
+        unbonused + 2.0,
+    );
+    for (building, expected) in [
+        (crate::name!("shipyard"), 4.0),
+        (crate::name!("seaport"), 6.0),
+    ] {
+        game.cities.get_mut(&city).unwrap().buildings.push(building);
+        assert_close(
+            game.city_renewable_power(&game.cities[&city]),
+            unbonused + expected,
+        );
+    }
+}
+
+#[test]
+fn holy_cities_press_four_times_and_jerusalem_makes_every_holy_site_one() {
+    let (mut game, cities) = game_with_capitals(2, 89_052);
+    let (source, target) = (cities[0], cities[1]);
+    let beside = game.nbrs(game.cities[&source].pos)[0];
+    game.cities.get_mut(&target).unwrap().pos = beside;
+    let faith = "test_faith".to_string();
+    game.players[0].religion = Some(faith.clone());
+    game.cities
+        .get_mut(&source)
+        .unwrap()
+        .pressure
+        .insert(faith.clone(), 100.0);
+    let gained = |game: &mut Game| {
+        let read = |game: &Game| {
+            game.cities[&target]
+                .pressure
+                .get(&faith)
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let before = read(game);
+        game.process_pressure(1);
+        read(game) - before
+    };
+    assert_close(gained(&mut game), 1.0);
+    game.players[0].holy_city = Some(source);
+    assert_close(gained(&mut game), 4.0);
+    game.players[0].holy_city = None;
+    install_district(&mut game, source, "holy_site");
+    assert_close(gained(&mut game), 2.0);
+    let jerusalem = add_city_state(&mut game, "Jerusalem");
+    make_suzerain(&mut game, 0, jerusalem);
+    assert_close(gained(&mut game), 8.0);
+}
+
+#[test]
+fn a_levy_follows_the_game_speed_and_sumerias_discount() {
+    let (mut game, _) = game_with_capitals(2, 89_053);
+    let minor = add_city_state(&mut game, "Geneva");
+    make_suzerain(&mut game, 0, minor);
+    let site = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.city_at(*position).is_none())
+        .unwrap();
+    game.spawn_unit("warrior", minor, site);
+    let standard = game.levy_cost(0, minor).unwrap();
+    game.game_speed = GameSpeed::Online;
+    let online = game.levy_cost(0, minor).unwrap();
+    assert_close(online, game.game_speed.scale(standard));
+    assert!(online < standard);
+    game.players[0].civ = "Sumeria".to_string();
+    assert_close(game.levy_cost(0, minor).unwrap(), online * 0.5);
+}
+
+#[test]
+fn tamars_envoys_count_double_at_a_city_state_of_her_faith() {
+    let (mut game, _) = game_with_capitals(2, 89_054);
+    let minor = add_city_state(&mut game, "Geneva");
+    let site = game
+        .map
+        .tiles
+        .iter()
+        .find(|(position, tile)| {
+            !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && game.city_at(**position).is_none()
+                && game.unit_ids_at(**position).is_empty()
+        })
+        .map(|(position, _)| *position)
+        .unwrap();
+    let city = game.found_city_for(minor, site, None);
+    let faith = "test_faith".to_string();
+    game.players[0].civ = "Georgia".to_string();
+    game.players[0].religion = Some(faith.clone());
+    game.players[0].envoys_free = 2;
+
+    game.do_send_envoy(0, minor).unwrap();
+    assert_eq!(game.raw_envoys_at(0, minor), 1);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert(faith, 100.0);
+    game.do_send_envoy(0, minor).unwrap();
+    assert_eq!(game.raw_envoys_at(0, minor), 3);
 }
 
 #[test]

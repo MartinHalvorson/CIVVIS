@@ -10710,20 +10710,22 @@ impl Game {
             .values()
             .filter_map(|c| {
                 self.city_religion(c).map(|r| {
-                    // A Holy Site doubles its city's passive pressure. Jerusalem
-                    // then makes the player's Holy City four times stronger.
+                    // `RELIGION_SPREAD_HOLY_SITE_PRESSURE_MULTIPLIER` 2 and
+                    // `RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER` 4. Jerusalem's
+                    // Suzerain has every city with a Holy Site count as a Holy
+                    // City (`TREAT_HOLY_SITES_AS_HOLY_CITIES`).
                     let mut boost = 1.0;
                     let holy_site =
                         self.city_has_active_district_family(c, crate::name!("holy_site"));
                     if holy_site {
                         boost *= 2.0;
                     }
-                    if holy_site
-                        && self.grants_city_state_unique_bonus(c.owner, "Jerusalem")
-                        && self
-                            .religion_founder(r)
-                            .and_then(|founder| self.players[founder].holy_city)
-                            == Some(c.id)
+                    let holy_city = self
+                        .religion_founder(r)
+                        .and_then(|founder| self.players[founder].holy_city)
+                        == Some(c.id);
+                    if holy_city
+                        || (holy_site && self.grants_city_state_unique_bonus(c.owner, "Jerusalem"))
                     {
                         boost *= 4.0;
                     }

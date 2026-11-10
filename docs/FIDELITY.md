@@ -1056,6 +1056,19 @@ Verified unchanged in the same pass: the ±20 clamp is exactly
 `STATUELIBERTY_CITIES_ALWAYS_LOYAL` really does pin all cities within 6 tiles;
 and the `LoyaltyLevels` yield/growth bands.
 
+## Closed: city-state kits and Holy City pressure
+
+Read against the shipped rows on 2026-11-09.
+
+| Rule | Shipped | CIVVIS had |
+|---|---|---|
+| Holy City pressure | `RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER` 4 for every religion's Holy City | no Holy City multiplier unless the owner was Suzerain of Jerusalem |
+| Jerusalem | `MODIFIER_PLAYER_TREAT_HOLY_SITES_AS_HOLY_CITIES`: "Your cities with Holy Sites exert pressure as if they were Holy Cities" | only the founder's Holy City |
+| Cardiff | `ADJUST_FREE_POWER` 2 per Lighthouse, Shipyard and Seaport | +2 per Harbor district |
+| Levy price | `LEVY_MILITARY_PERCENT_OF_UNIT_PURCHASE_COST` 25 of a purchase price that follows the game's speed | Standard-speed cost at every speed |
+| Sumeria | `TRAIT_LEVY_DISCOUNT` Percent 50 | no discount |
+| Tamar | `ADJUST_DUPLICATE_INFLUENCE_TOKEN_WHEN_SAME_RELIGION` 1: an Envoy counts double at a city-state following her religion | one Envoy |
+
 ## Resolved: resource placement follows the shipped weights
 
 `Resources.Frequency` and `SeaFrequency` weight Civilization VI's placement
