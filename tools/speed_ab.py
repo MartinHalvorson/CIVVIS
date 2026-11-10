@@ -16,8 +16,10 @@ rc = run(["cargo", "build", "--profile", "ci", "--features", "developer-tools",
           "--bin", "gene_screen", "--locked"])
 if rc:
     sys.exit(rc)
-rc = run(["target/ci/gene_screen", "--games", "4", "--jobs", "4", "--difficulty", "deity",
-          "--speed", "online", "--turns", "160", "--target-mix", "culture", "--seat-civ", "Sweden",
+rc = run(["target/ci/gene_screen", "--games", "6", "--jobs", "4", "--difficulty", "deity",
+          "--speed", "online", "--turns", "160", "--target-mix", "culture",
+          "--rivals", "firaxis-faithful", "--handicap", "rivals", "--rival-chairs", "5",
+          "--rival-rung", "-2", "--rival-pace", "--seat-civ", "Sweden", "--p-on", "0.5",
           "--genes", TAG, "--start-seed", "33700000", "--quiet", "--out", f"/tmp/{TAG}.jsonl"])
 print("probe exit", rc, flush=True)
 rc2 = run(["target/ci/gene_screen", "--analyze", f"/tmp/{TAG}.jsonl", "--json", f"/tmp/{TAG}.json"])
