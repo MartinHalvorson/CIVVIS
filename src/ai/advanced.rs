@@ -26493,6 +26493,8 @@ mod religion_seat_charts_the_rivals;
 /// `religion-seat-counts-the-pressure`: see
 /// `advanced/religion_seat_counts_the_pressure.rs`.
 mod religion_seat_counts_the_pressure;
+/// A drained founder uses upkeep relief before losing its standing army.
+mod religion_seat_cuts_the_upkeep;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
@@ -26511,8 +26513,6 @@ mod religion_seat_guards_the_race;
 mod religion_seat_reformed_church;
 /// An Embassy locates an otherwise unlocated rival for the religious corps.
 mod religion_seat_reveals_the_capitals;
-/// A drained founder uses upkeep relief before losing its standing army.
-mod religion_seat_cuts_the_upkeep;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 /// `religion-seat-spends-the-bank`: see
