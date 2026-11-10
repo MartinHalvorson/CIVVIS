@@ -17987,7 +17987,7 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = fal
   cx.globalAlpha = alpha;
   cx.font = `800 ${9 * pixel}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
   cx.textAlign = "center"; cx.textBaseline = "bottom";
-  cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel;
+  cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel; cx.lineJoin = "round";
   const half = cx.measureText(label).width / 2 + 4 * pixel;
   let placed = stage.right - stage.left > half * 2
     ? Math.max(stage.left + half, Math.min(stage.right - half, x)) : x;
