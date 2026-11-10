@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
+| `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 2 |
 | `barbarian-research-prices-the-field` | off (unmeasured) | Research parity compares wounded land units against field targets. | 1 \| 1 |
 | `battle-solver` | off (unmeasured) | `battle-solver`: see `advanced/battle_solver.rs`. | 1 \| 1 |
@@ -220,6 +221,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `chop-feeds-the-space-race` | off (unmeasured) | `chop-feeds-the-space-race`: the space-race leg of `chop-feeds-the-long-build` alone. | 1 \| 1 |
 | `chop-spares-the-worked-tile` | off (unmeasured) | `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen is working now. | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
+| `cold-war-before-conservation` | off (unmeasured) | `cold-war-before-conservation`: see `advanced/cold_war_before_conservation.rs`. | 1 \| 1 |
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
@@ -235,6 +237,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
+| `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
@@ -301,6 +304,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `korea-mines-beside-the-seowon` | off (unmeasured) | Opt-in gene `korea-mines-beside-the-seowon`; see `advanced/korea_mines_beside_the_seowon.rs`. | 1 \| 1 |
+| `kristina-builds-the-bibliotheque` | off (unmeasured) | Opt-in gene `kristina-builds-the-bibliotheque`; see `advanced/kristina_builds_the_bibliotheque.rs`. | 1 \| 1 |
+| `kristina-fills-to-theme` | off (unmeasured) | Opt-in gene `kristina-fills-to-theme`; see `advanced/kristina_fills_to_theme.rs`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `last-charge-joins-the-army` | off (unmeasured) | Opt-in gene `last-charge-joins-the-army`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |

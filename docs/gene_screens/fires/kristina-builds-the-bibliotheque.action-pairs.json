@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "kristina-builds-the-bibliotheque",
+  "scope": "One frozen ci-profile civvis_orders built from this branch, run on clones of live Deity Kristina civvis-20261110T140731Z events.jsonl at t40, 44, 48, 50, 60 and 70 (the Plaza buildable, the capital's Theater standing, no Plaza ever built), with the run's own 455 forced tags, --victory culture and --resumed; the on arm adds only this tag. Orders changed at t48 (Goteborg starts DISTRICT_GOVERNMENT at (47,31)), t50 and t60 (DISTRICT_GOVERNMENT at (45,35)); at t40/t44 the capital's head was the Theater chain, which the claim never displaces. Proposed actions only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-kristina-builds-the-bibliotheque.native-queries.tar.xz",
+    "sha256": "b448a854a8b9df0e578182471405f3cac9bd84a59fa5e678c6f635b195649006"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json"
+  ]
+}

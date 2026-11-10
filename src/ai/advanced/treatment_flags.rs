@@ -88,10 +88,18 @@ impl AdvancedAi {
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
+        /// `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`.
+        base.bands_draw_from_the_bar => enable_bands_draw_from_the_bar, disable_bands_draw_from_the_bar;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.
         acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
+        /// Opt-in gene `kristina-builds-the-bibliotheque`; see
+        /// `advanced/kristina_builds_the_bibliotheque.rs`.
+        base.kristina_builds_the_bibliotheque => enable_kristina_builds_the_bibliotheque, disable_kristina_builds_the_bibliotheque;
+        /// Opt-in gene `kristina-fills-to-theme`; see
+        /// `advanced/kristina_fills_to_theme.rs`.
+        base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -127,8 +135,14 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `cold-war-before-conservation`: see
+        /// `advanced/cold_war_before_conservation.rs`.
+        cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
         /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
         culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
+        /// `culture-seat-builds-past-the-deterrent`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;

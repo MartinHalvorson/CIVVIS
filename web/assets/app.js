@@ -17894,6 +17894,15 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
           (+player.exoplanet_distance || 0) / target)),
       });
     }
+    // The expedition left many turns ago, so there is no flight to watch come
+    // in. Its landing is queued for the frame its distance runs out.
+    if (skyExpeditionArrived(player) && !skyExpeditionArrived(old) &&
+        !anim.skyLaunches.some(launch =>
+          launch.playerId === player.id && launch.mission === "arrival"))
+      anim.skyLaunches.push({
+        playerId:player.id, player:{id:player.id}, mission:"arrival", t0:now,
+        duration:0, endsAt:now, labelPause:SKY_TOUCHDOWN_MS, touchdown:{},
+      });
   }
 }
 function activeSkyLaunches(now = performance.now()) {
@@ -17978,7 +17987,7 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = fal
   cx.globalAlpha = alpha;
   cx.font = `800 ${9 * pixel}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
   cx.textAlign = "center"; cx.textBaseline = "bottom";
-  cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel;
+  cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel; cx.lineJoin = "round";
   const half = cx.measureText(label).width / 2 + 4 * pixel;
   let placed = stage.right - stage.left > half * 2
     ? Math.max(stage.left + half, Math.min(stage.right - half, x)) : x;
@@ -19775,8 +19784,14 @@ function skyCrews() {
   }
   return crews;
 }
+function skyExpeditionArrived(player) {
+  return (+player.exoplanet_distance || 0) >= (+player.victories?.science?.distance_target || 50);
+}
+// Who is standing on a world. The exoplanet's list is whoever actually got
+// there, which is not the same list as whoever set out.
 function skyCrewFor(crews, body) {
-  return body.id === "moon" ? crews.moon : body.id === "mars" ? crews.mars : [];
+  return body.id === "moon" ? crews.moon : body.id === "mars" ? crews.mars
+    : body.id === "exo" ? crews.expedition.filter(skyExpeditionArrived) : [];
 }
 function skyPlacement(body, radius, centerX, centerY) {
   const [px, py] = skyBodyPos(body);
@@ -20449,20 +20464,22 @@ function skyLandingSeats(place, crew) {
 
 // A landing is drawn where it would be seen from here: on the lit face, at a
 // spot that belongs to one civilization and stays put between frames.
-function drawSkyLandings(place, crew, alpha) {
+function drawSkyLandings(place, crew, alpha, now) {
   // On a body a few pixels wide a landing is a dot on a dot. The caption's
   // colours carry the same fact without pretending to a position.
   const shown = alpha * Math.max(0, Math.min(1, (place.r - 2.2) / 2.6));
   if (!crew.length || shown <= .02) return;
   const seats = skyLandingSeats(place, crew);
   const gap = seats.length ? seats[0].gap : place.r;
-  // A marker that stops growing at three pixels is a speck on a world that
-  // fills the stage, so the ceiling opens with the body it stands on.
-  const cap = 2.6 + Math.min(6.4, place.r * .022);
-  const size = Math.max(1.1, Math.min(place.r * .17, gap * .42, cap));
+  const size = skyLandingMarkSize(place, gap);
   cx.save();
   cx.globalAlpha = shown;
   seats.forEach(({player, angle, x, y}) => {
+    if (skyLanderFits(place, gap)) {
+      drawSkyLander(player, place, x, y, size * SKY_LANDER_SCALE,
+                    skyLandingUnderway(player.id, place.id, now), now, shown);
+      return;
+    }
     cx.fillStyle = pcol(player.id);
     cx.strokeStyle = "#0b1116"; cx.lineWidth = .9;
     if (place.id === "mars") {
@@ -20475,18 +20492,136 @@ function drawSkyLandings(place, crew, alpha) {
       cx.restore();
       return;
     }
-    // A mast is what reads as a landing rather than as a speck, but it needs a
-    // body big enough to plant it on and a neighbour far enough not to touch.
-    if (place.r > 9 && gap > 6) {
-      cx.strokeStyle = "rgba(11,17,22,.8)"; cx.lineWidth = 1;
-      cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x, y - size * 2.6); cx.stroke();
-      cx.fillStyle = pcol(player.id);
-      cx.fillRect(x, y - size * 2.9, size * 1.8, size * 1.3);
-      cx.strokeStyle = "#0b1116";
-    }
     cx.beginPath(); cx.arc(x, y, size, 0, 7); cx.fill(); cx.stroke();
   });
   cx.restore();
+}
+
+// What a landing leaves behind, and how it gets there. The ship turns over and
+// comes down tail first on its engines, raises dust as it touches, and then a
+// flag goes up beside it: the pole, then the cloth shaking out. The marker left
+// standing afterwards is this same drawing at its last frame, so nothing is ever
+// swapped for anything else.
+const SKY_TOUCHDOWN_MS = 2800, SKY_TOUCHDOWN_CONTACT = .44;
+const SKY_LANDER_SCALE = .8;
+// The record of a landing still being played: the flight that came in or, for
+// the expedition, the arrival queued when its distance ran out.
+const SKY_LANDING_MISSION = {moon:"moon", mars:"mars", exo:"arrival"};
+function skyLandingUnderway(playerId, bodyId, now) {
+  const mission = SKY_LANDING_MISSION[bodyId];
+  const launch = activeSkyLaunches(now).find(candidate => candidate.touchdown &&
+    candidate.playerId === playerId && candidate.mission === mission);
+  const begun = launch ? now - launch.t0 - launch.duration : -1;
+  return begun < 0 ? null : {launch, progress:Math.min(1, begun / SKY_TOUCHDOWN_MS)};
+}
+// A ship needs a world big enough to stand it on and a neighbour far enough off
+// not to touch.
+function skyLanderFits(place, gap) { return place.r > 9 && gap > 6; }
+function skyLandingMarkSize(place, gap) {
+  // A marker that stops growing at three pixels is a speck on a world that
+  // fills the stage, so the ceiling opens with the body it stands on.
+  const cap = 2.6 + Math.min(6.4, place.r * .022);
+  return Math.max(1.1, Math.min(place.r * .17, gap * .42, cap));
+}
+// Which way a ship stands at its seat. Straight out from the centre of the world
+// is the truth, and it spins like a compass needle where the ground faces the
+// camera. Leaning by how far across the disc the seat is looks the same at the
+// limb and has nowhere to spin.
+function skyLanderLean(place, x) {
+  return 1.2 * Math.max(-1, Math.min(1, (x - place.x) / place.r));
+}
+// How high over its seat a ship stops to turn over, as far as the frame has room.
+function skyLanderHover(seat, lean, shape, stage) {
+  const room = skyRayLeavesBox(seat, {x:Math.sin(lean), y:-Math.cos(lean)}, stage) ?? 0;
+  return Math.max(0, Math.min(shape.length * 1.5 + 18, room - shape.length / 2 - 6));
+}
+// Where a flight coming down aims, or null when it is not going to be seen to
+// land: a site gone round the back, or a world too small to stand a ship on.
+function skyLandingApproach(launch, place, goal, stage) {
+  if (launch.mission === "expedition" || goal.gap === undefined ||
+      !skyLanderFits(place, goal.gap)) return null;
+  const shape = skyRocketGeometry(SKY_LAUNCH_FLIGHTS[launch.mission].rocket,
+                                  skyLandingMarkSize(place, goal.gap) * SKY_LANDER_SCALE);
+  const lean = skyLanderLean(place, goal.x);
+  const hover = skyLanderHover(goal, lean, shape, stage);
+  const lift = hover + shape.length / 2;
+  return {x:goal.x + Math.sin(lean) * lift, y:goal.y - Math.cos(lean) * lift, hover};
+}
+// `landing` is null once it is over, which draws the last frame for good.
+function drawSkyLander(player, place, x, y, shipSize, landing, now, alpha) {
+  const rocket = Object.values(SKY_LAUNCH_FLIGHTS).find(flight => flight.body === place.id).rocket;
+  const progress = landing ? landing.progress : 1;
+  const from = landing?.launch.touchdown || {};
+  const lean = skyLanderLean(place, x);
+  const coming = skySmooth(progress / SKY_TOUCHDOWN_CONTACT);
+  const size = from.size ? from.size + (shipSize - from.size) * coming : shipSize;
+  const shape = skyRocketGeometry(rocket, size);
+  const hover = from.hover ?? skyLanderHover({x, y}, lean, shape,
+                                             {left:0, top:0, right:MAPW, bottom:MAPH});
+  // A ship with no flight behind it comes out of the sky already upright.
+  const nose = landing?.launch.nose;
+  const appears = nose === undefined && landing ? skySmooth(progress / .08) : 1;
+  const upright = lean - Math.PI / 2;
+  const offBy = nose === undefined ? 0 : Math.atan2(Math.sin(nose - upright), Math.cos(nose - upright));
+  const thrust = progress < SKY_TOUCHDOWN_CONTACT ? .75 - .3 * coming : 0;
+  cx.save();
+  // From here on the origin is the seat and -y is away from the ground.
+  cx.translate(x, y); cx.rotate(lean);
+  cx.globalAlpha = alpha * .34 * coming; cx.fillStyle = "#05090d";
+  cx.beginPath(); cx.ellipse(0, 0, shape.halfWidth * 2.2, shape.halfWidth * .8, 0, 0, 7); cx.fill();
+  cx.save();
+  cx.translate(0, -hover * (1 - coming) - shape.length / 2);
+  cx.rotate(-Math.PI / 2 + offBy * (1 - skySmooth(progress / (SKY_TOUCHDOWN_CONTACT * .6))));
+  drawMissionRocket(rocket, player, size, now, 1, alpha * appears, thrust);
+  cx.restore();
+  const dust = (progress - SKY_TOUCHDOWN_CONTACT + .03) / .34;
+  if (dust > 0 && dust < 1) {
+    cx.save(); cx.scale(1, .42);
+    drawLaunchSmoke(0, 0, size * .9, dust);
+    cx.restore();
+  }
+  drawSkyLanderFlag(player, shape, size, progress, landing, alpha);
+  cx.restore();
+}
+// The pole comes up a touch too far and settles, then the cloth shakes out and
+// calms to the creases it keeps. There is no air up there to keep it moving.
+function drawSkyLanderFlag(player, shape, size, progress, landing, alpha) {
+  const raising = Math.max(0, Math.min(1, (progress - .56) / .16));
+  if (!raising) return;
+  const colour = pcol(player.id);
+  const stands = Math.min(size * 3.2, shape.length * .72);
+  const foot = shape.halfWidth * 1.75 + size * .9;
+  const pole = stands * (1 + 2.4 * Math.pow(raising - 1, 3) + 1.4 * Math.pow(raising - 1, 2));
+  cx.globalAlpha = alpha; cx.lineCap = "round";
+  for (const [stroke, width] of [["#0b1116", Math.max(1.5, size * .28)],
+                                 ["#dfe5e7", Math.max(.8, size * .13)]]) {
+    cx.strokeStyle = stroke; cx.lineWidth = width;
+    cx.beginPath(); cx.moveTo(foot, 0); cx.lineTo(foot, -pole); cx.stroke();
+  }
+  const unfurled = skySmooth((progress - .68) / .24);
+  if (unfurled > 0) {
+    const wide = size * 2.2 * unfurled, tall = size * 1.4;
+    const calm = skySmooth((progress - .78) / .22);
+    const swing = tall * (.1 + .5 * (1 - calm)), phase = 1.1 + (1 - calm) * 10;
+    const cloth = (near, far) => {
+      const edge = (along, top) => cx.lineTo(foot + wide * along,
+        top + Math.sin(along * 4.6 - phase) * swing * along);
+      cx.beginPath();
+      for (let step = 0; step <= 8; step++) edge(near + (far - near) * step / 8, -stands);
+      for (let step = 8; step >= 0; step--) edge(near + (far - near) * step / 8, tall - stands);
+      cx.closePath();
+    };
+    cx.fillStyle = colour; cx.strokeStyle = "#0b1116"; cx.lineWidth = .8;
+    cloth(0, 1); cx.fill(); cx.stroke();
+    cx.fillStyle = pcol2(player.id);
+    cloth(0, .34); cx.fill();
+  }
+  const ping = (progress - .74) / .26;
+  if (landing && ping > 0 && ping < 1) {
+    const reach = size * (1 + ping * 3.4);
+    cx.globalAlpha = alpha * (1 - ping) * .7; cx.strokeStyle = colour; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.ellipse(foot, 0, reach, reach * .42, 0, 0, 7); cx.stroke();
+  }
 }
 
 // One orbit per civilization, in the world's own frame. A craft is up there
@@ -20643,6 +20778,8 @@ function drawSkyExpeditions(crew, exo, radius, centerX, centerY, alpha, now) {
     // the stage is a line leaving the frame with nothing on it. Wait until the
     // ship itself is in the picture; that is the thing worth drawing.
     if (!skyOnStage(shipX, shipY, 24)) return;
+    // Once it has landed, what is left of it is standing on the ground.
+    if (travelled >= 1 && exo.r > 9) return;
     const colour = pcol(player.id);
     const shown = alpha * deployed;
     // The road ahead, then the part already flown over the top of it.
@@ -20697,7 +20834,7 @@ function skyLaunchEnd(launch, player, place, crews,
     .find(entry => entry.player.id === player.id);
   if (seat) {
     launch.seatSeen = {x:(seat.x - place.x) / place.r, y:(seat.y - place.y) / place.r};
-    return {x:seat.x, y:seat.y};
+    return {x:seat.x, y:seat.y, gap:seat.gap};
   }
   if (launch.seatSeen)
     return {x:place.x + launch.seatSeen.x * place.r, y:place.y + launch.seatSeen.y * place.r};
@@ -20814,25 +20951,27 @@ function skyRocketGeometry(rocket, size) {
 // screen pixel in the caller's coordinate system: one on the globe, inverse
 // zoom on the flat board. The return value lets labels and culling respect the
 // very different silhouettes without duplicating their dimensions.
-function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
+function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1, thrust = 1) {
   const shape = skyRocketGeometry(rocket, size);
   const nose = shape.length / 2, tail = -shape.length / 2;
   const colour = pcol(player.id), dark = pcol2(player.id);
   const flame = size * (shape.plume || 1);
-  const flicker = flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
+  const flicker = thrust * flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
   const flameHalf = Math.max(flame * .42, shape.halfWidth * .32);
 
   cx.save();
   // A warm, transparent plume ties the diagrammatic craft to the rest of the
   // game's effects without turning any of the silhouettes into clip art.
-  const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
-  plume.addColorStop(0, "rgba(255,173,69,0)");
-  plume.addColorStop(.62, "rgba(255,176,70,.68)");
-  plume.addColorStop(1, "rgba(255,244,191,.94)");
-  cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
-  cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
-  cx.lineTo(tail - flicker, -flameHalf);
-  cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
+  if (thrust > 0) {
+    const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
+    plume.addColorStop(0, "rgba(255,173,69,0)");
+    plume.addColorStop(.62, "rgba(255,176,70,.68)");
+    plume.addColorStop(1, "rgba(255,244,191,.94)");
+    cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
+    cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
+    cx.lineTo(tail - flicker, -flameHalf);
+    cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
+  }
 
   cx.globalAlpha = alpha;
   cx.strokeStyle = "#071018"; cx.lineWidth = Math.max(.8 * pixel, size * .11);
@@ -21080,6 +21219,15 @@ function skyHomeInPicture(radius, centerX, centerY, stage) {
   const nearX = Math.max(stage.left, Math.min(stage.right, centerX));
   const nearY = Math.max(stage.top, Math.min(stage.bottom, centerY));
   return Math.hypot(centerX - nearX, centerY - nearY) <= radius;
+}
+// A rocket only goes by what is short of where it is going. The middle of the
+// picture has to be nearer home than the near side of the destination, so a
+// satellite, which goes nowhere, goes by nothing, and a Moon rocket stays out of
+// a picture of Mars.
+function skyLaunchPassesHere(place, centerX, centerY, stage) {
+  return !!place && Math.hypot((stage.left + stage.right) / 2 - centerX,
+                               (stage.top + stage.bottom) / 2 - centerY)
+    < Math.hypot(place.x - centerX, place.y - centerY) - place.r;
 }
 function skyLaunchFlyby(launch, stage, margin) {
   launch.duration = SKY_FLYBY_MS; launch.endsAt = launch.t0 + SKY_FLYBY_MS;
@@ -21383,7 +21531,7 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY);
   // From far enough out the world is a dot and low orbit has no size at all;
   // all there is to see is something leaving it.
-  if (!place && radius <= 10) return {
+  if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) return {
     start:{x:centerX, y:centerY}, end:{x:centerX + 14, y:centerY - 30},
     entering:false, leaving:true, law:skyThrustLaw(),
     pointAt:progress => ({x:centerX + 14 * progress * progress, y:centerY - 30 * progress}),
@@ -21398,9 +21546,11 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   if (route.kind === "transfer")
     return skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY);
   if (route.kind === "arrive") {
+    const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
+    const approach = skyLandingApproach(launch, place, goal, stage);
     const film = skyArrivalRoute(planetProject(pad, view, radius, centerX, centerY),
-      skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY), margin);
-    if (film) return film;
+                                 approach || goal, margin);
+    if (film) return approach && !film.leaving ? {...film, lands:true, hover:approach.hover} : film;
     route.kind = "crossing";
   }
   if (route.kind === "ascent") {
@@ -21410,8 +21560,10 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     return {start:pointAt(0), end:pointAt(1), entering:shape.from > 0, leaving:true,
             law:shape.law, pointAt};
   }
-  if (!route.crossing && !skyHomeInPicture(radius, centerX, centerY, stage))
+  if (!route.crossing && !skyHomeInPicture(radius, centerX, centerY, stage)) {
+    if (!skyLaunchPassesHere(place, centerX, centerY, stage)) return null;
     route.crossing = skyLaunchFlyby(launch, stage, margin);
+  }
   if (!route.crossing) {
     const east = skyPadEast(pad);
     route.crossing = skyLaunchCrossing(planetProject(pad, view, radius, centerX, centerY), place
@@ -21495,7 +21647,8 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const trailFade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
     : 1 - skySmooth((clock - .9) / .1);
   // A rocket going by flies all the way out of the frame; only its trail thins.
-  const fade = film.flyby ? 1 : trailFade;
+  // One coming down to land stays solid too, and its landing takes over.
+  const fade = film.flyby || film.lands ? 1 : trailFade;
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
@@ -21506,6 +21659,11 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   if (film.leaving && (end.x < stage.left || end.x > stage.right ||
                        end.y < stage.top || end.y > stage.bottom))
     launch.labelPause = SKY_LABEL_PAUSE;
+  // Its name stays up over the landing, and `drawSkyLander` flies the rest.
+  if (film.lands) {
+    launch.labelPause = SKY_TOUCHDOWN_MS;
+    launch.touchdown = {size, hover:film.hover};
+  }
   if (launch.labelPause && clock >= 1) {
     const left = launch.t0 + launch.duration + launch.labelPause - now;
     if (!unseen(at))
@@ -21538,7 +21696,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // frame shows neither at the cut.
   if (clock < .3 && !film.entering) {
     if (!unseen(pad)) drawLaunchSmoke(pad.x, pad.y, size, clock / .3);
-  } else if (launch.mission !== "expedition" && clock > .82 && !film.leaving && !unseen(end)) {
+  } else if (launch.mission !== "expedition" && clock > .82 && !film.leaving && !film.lands && !unseen(end)) {
     cx.globalAlpha = (clock - .82) / .18 * .52 * fade;
     cx.strokeStyle = colour; cx.lineWidth = 1.2 * pixel;
     cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - clock), 0, 7); cx.stroke();
@@ -21716,7 +21874,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
     const ground = skyGroundFade(place);
     if (ground > 0) drawSkyGlobe(place, alpha * ground);
     if (ringed) drawSkyRingHalf(place, alpha, 1);
-    drawSkyLandings(place, crew, alpha);
+    drawSkyLandings(place, crew, alpha, now);
     if (alpha > .5) wantLabel.push({body, place, alpha, crew});
   }
   // Home first, before any of the rest can take its room. Far enough out it is
@@ -21767,13 +21925,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
     const above = body.id === "moon" && body.orbitRadius * radius < 92;
     if (!skyLabelClaim(place.x, place.y + (above ? -1 : 1) * (place.r + 10),
                        6 + body.name.length * 3.4, 12)) continue;
-    // The exoplanet's caption belongs to whoever actually got there, which is
-    // not the same list as whoever set out.
-    const arrived = body.id === "exo"
-      ? crews.expedition.filter(p => (+p.exoplanet_distance || 0) >=
-          (+p.victories?.science?.distance_target || 50))
-      : crew;
-    drawSkyCaption(place, arrived, alpha,
+    drawSkyCaption(place, crew, alpha,
       body.id === "exo" ? skyTargetNote(crews) : "", above);
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
@@ -23082,6 +23234,11 @@ function drawPlanetLensGroupLabels(cells) {
 const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
 const PLANET_CITY_PLATE_SCALE = 1.1;
 const PLANET_CITY_STATE_PLATE_SCALE = 1.6;
+// Nearer in than this a city-state's city shows its own name, so its territory
+// keeps the name until here, not only as far as a civilization's does.
+const PLANET_CITY_STATE_NAME_SCALE = .95;
+// City-states are named the way civilizations are, in smaller type.
+const PLANET_CITY_STATE_LABEL_TYPE = .6;
 const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
 // A name is a thing on the ground, so it is worked out on the ground. Averaging
 // whichever tiles happened to face the viewer, on the screen, on every frame,
@@ -23125,8 +23282,7 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
   const owned = new Map();
   for (const tile of state.map.tiles) {
     const player = state.players[tile.owner];
-    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
-        !player.civ) continue;
+    if (!player || player.is_barbarian || player.met === false || !player.civ) continue;
     const at = key(tile.pos);
     if (!spectator && !visible.has(at)) continue;
     const cell = PLANET.cells.get(at);
@@ -23150,9 +23306,10 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
     }
     if (members.length < 2) continue;
     const name = state.players[owner].civ.toUpperCase();
+    const minor = Boolean(state.players[owner].is_minor);
     const whole = planetGroundMiddle(members, spacing);
     if (whole.reach >= PLANET_EMPIRE_LABEL_SPLIT_REACH) {
-      spots.push({owner, name, spot:whole.spot, size:members.length});
+      spots.push({owner, name, minor, spot:whole.spot, size:members.length});
       continue;
     }
     const quadrants = [[], [], [], []];
@@ -23162,7 +23319,7 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
     }
     for (const part of quadrants) {
       if (part.length < Math.max(2, members.length * .12)) continue;
-      spots.push({owner, name, spot:planetGroundMiddle(part, spacing).spot, size:part.length});
+      spots.push({owner, name, minor, spot:planetGroundMiddle(part, spacing).spot, size:part.length});
     }
   }
   return spots.sort((a, b) => b.size - a.size);
@@ -23179,7 +23336,7 @@ function settlePlanetEmpireLabels(visible, spectator) {
   const firstLook = !store.list.length;
   const spacing = Math.sqrt(4 * Math.PI / Math.max(1, PLANET.cells.size));
   const unclaimed = new Set(store.list);
-  for (const {owner, name, spot, size} of planetEmpireLabelSpots(visible, spectator, spacing)) {
+  for (const {owner, name, minor, spot, size} of planetEmpireLabelSpots(visible, spectator, spacing)) {
     let held = null, best = PLANET_EMPIRE_LABEL_CLAIM;
     for (const label of unclaimed) {
       if (label.owner !== owner) continue;
@@ -23187,7 +23344,7 @@ function settlePlanetEmpireLabels(visible, spectator) {
       if (near > best) { best = near; held = label; }
     }
     if (!held) {
-      store.list.push({owner, name, size, at:spot, target:spot,
+      store.list.push({owner, name, minor, size, at:spot, target:spot,
                        alpha:firstLook ? 1 : 0, shown:firstLook, gone:false});
       continue;
     }
@@ -23196,7 +23353,8 @@ function settlePlanetEmpireLabels(visible, spectator) {
     held.name = name; held.size = size; held.gone = false;
   }
   for (const label of unclaimed) label.gone = true;
-  store.list.sort((a, b) => b.size - a.size || a.owner - b.owner);
+  // Every civilization before any city-state, so a small name always gives way.
+  store.list.sort((a, b) => a.minor - b.minor || b.size - a.size || a.owner - b.owner);
 }
 // The browser snaps fillText's baseline to whole device pixels, so a name drawn
 // as text on a slowly turning world climbs in visible steps: at 1x its true
@@ -23217,7 +23375,8 @@ function planetEmpireLabelSprite(name, color, type) {
   const font = `900 ${type}px Georgia, serif`;
   context.font = font;
   const textWidth = context.measureText(name).width;
-  const outline = Math.max(2, type * .22);
+  // The floor is for a civilization's type, and would swallow a city-state's.
+  const outline = Math.max(Math.min(2, type * .24), type * .22);
   canvas.width = Math.ceil((textWidth + outline + 4) * DPR);
   canvas.height = Math.ceil((type * 1.4 + outline + 4) * DPR);
   const width = canvas.width / DPR, height = canvas.height / DPR;
@@ -23241,7 +23400,7 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
                                 visible, spectator) {
   const store = PLANET_EMPIRE_LABELS;
   store.settling = false;
-  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
+  if (scale > PLANET_CITY_STATE_NAME_SCALE) return;
   const zoomFade = Math.max(0, Math.min(1,
     (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
     (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
@@ -23259,11 +23418,18 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
   // radius keeps a survey label smaller than the world it names, and the floor
   // hands over to the radius fade above before the type becomes unreadable.
   const fontSize = Math.max(9, Math.min(17, radius * .075));
-  const type = Math.ceil(fontSize), shrink = fontSize / type;
+  const lettering = factor => {
+    const size = fontSize * factor, type = Math.ceil(size);
+    return {size, type, shrink:size / type};
+  };
+  const civType = lettering(1), cityStateType = lettering(PLANET_CITY_STATE_LABEL_TYPE);
   const placed = [];
   context.save();
   context.imageSmoothingEnabled = true;
   for (const label of store.list) {
+    // Nearer in than this a civilization's cities carry its name.
+    if (!label.minor && scale > PLANET_MAJOR_CITY_LABEL_SCALE) continue;
+    const {size, type, shrink} = label.minor ? cityStateType : civType;
     if (label.at !== label.target) {
       const x = label.at[0] + (label.target[0] - label.at[0]) * glide;
       const y = label.at[1] + (label.target[1] - label.at[1]) * glide;
@@ -23283,7 +23449,7 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
       // it gives way and a hidden one needs clear room to return, so two names
       // converging on the limb settle once instead of trading places.
       const spare = label.shown ? -2 : 5;
-      const halfWidth = sprite.textWidth * shrink / 2 + 5, halfHeight = fontSize / 2 + 4;
+      const halfWidth = sprite.textWidth * shrink / 2 + 5, halfHeight = size / 2 + 4;
       const box = {left:point.x - halfWidth, right:point.x + halfWidth,
                    top:point.y - halfHeight, bottom:point.y + halfHeight};
       if (placed.some(other => box.left - spare < other.right && box.right + spare > other.left &&
@@ -24689,7 +24855,7 @@ function drawPlanetMap() {
     // fits, and at survey distance the empire labels take over.
     if (scale >= (cityState ? PLANET_CITY_STATE_PLATE_SCALE : PLANET_CITY_PLATE_SCALE)) {
       drawCityNameplate(city, cell.center.x, cell.center.y, planetCellInradius(cell));
-    } else if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
+    } else if (scale > (cityState ? PLANET_CITY_STATE_NAME_SCALE : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;

@@ -14546,7 +14546,79 @@ fn a_launch_passing_another_world_crosses_the_top_of_the_frame() {
     assert!(flyby.contains("return {start:{x:left, y}, end:{x:right, y},"));
     assert!(js.contains("const SKY_FLYBY_MS = 2200;"));
     assert!(js.contains("const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18,"));
-    assert!(js.contains("const fade = film.flyby ? 1 : trailFade;"));
+    assert!(js.contains("const fade = film.flyby || film.lands ? 1 : trailFade;"));
+}
+
+/// A rocket goes by only what is short of where it is going. Watching the
+/// Moon you do not see an Earth satellite go past, and watching Mars you do
+/// not see a Moon rocket.
+#[test]
+fn a_launch_goes_by_only_what_is_short_of_its_destination() {
+    let js = EMBEDDED_APP_JS;
+    let flight = js
+        .split_once("function skyGlobeFlight(")
+        .expect("the flight")
+        .1
+        .split_once("function drawSkyLaunches(")
+        .expect("the end of the flight")
+        .0;
+    let refused = flight
+        .find("if (!skyLaunchPassesHere(place, centerX, centerY, stage)) return null;")
+        .expect("the rule");
+    let flyby = flight
+        .find("route.crossing = skyLaunchFlyby(launch, stage, margin);")
+        .expect("the flyby");
+    assert!(refused < flyby);
+    // The name of a far-off satellite must not wait at the edge of a picture
+    // that has no Earth in it either.
+    assert!(flight.contains("if (!place && radius <= 10 && skyHomeInPicture("));
+
+    let rule = js
+        .split_once("function skyLaunchPassesHere(")
+        .expect("the rule's body")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the rule")
+        .0;
+    // A satellite names no body, and a destination is not short of itself.
+    assert!(rule.contains("return !!place &&"));
+    assert!(rule.contains("Math.hypot(place.x - centerX, place.y - centerY) - place.r;"));
+}
+
+/// A landing comes down, raises dust and plants a flag, and the marker left
+/// on the world afterwards is the last frame of that same drawing.
+#[test]
+fn a_landing_plants_a_ship_and_a_flag_that_stay() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    let landings = body_of("function drawSkyLandings(");
+    assert!(landings.contains("if (skyLanderFits(place, gap)) {"));
+    assert!(landings.contains("skyLandingUnderway(player.id, place.id, now)"));
+    let lander = body_of("function drawSkyLander(");
+    assert!(lander.contains("const progress = landing ? landing.progress : 1;"));
+    assert!(lander.contains("drawLaunchSmoke("));
+    assert!(lander.contains("drawSkyLanderFlag("));
+
+    // All three worlds: the exoplanet counts whoever actually got there, and
+    // that landing is queued when its distance runs out.
+    assert!(js.contains("moon:\"moon\", mars:\"mars\", exo:\"arrival\""));
+    assert!(
+        js.contains("body.id === \"exo\" ? crews.expedition.filter(skyExpeditionArrived) : [];")
+    );
+    assert!(body_of("function queueSkyLaunches(").contains("mission:\"arrival\""));
+
+    // The flight hands over to the landing rather than fading out above it.
+    let flight = body_of("function skyGlobeFlight(");
+    assert!(flight.contains("{...film, lands:true, hover:approach.hover}"));
+    let painter = body_of("function drawLaunchFlight(");
+    assert!(painter.contains("launch.touchdown = {size, hover:film.hover};"));
 }
 
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did

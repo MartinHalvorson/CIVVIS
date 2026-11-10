@@ -6742,6 +6742,10 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `cold-war-before-conservation`: a Culture target on a six-slot
+    /// government takes only the road to Cold War until it is known. See
+    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
+    cold_war_before_conservation: bool,
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
@@ -6754,6 +6758,11 @@ pub struct AdvancedAi {
     /// Person but a Writer, Artist or Musician from then on. See
     /// `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_opens_at_nationalism: bool,
+    /// `culture-seat-builds-past-the-deterrent`: at peace, a Culture seat's
+    /// Theater, Amphitheater, Art Museum and Monument claims pass a deterrent
+    /// unit and the deterrent leaves them alone. See
+    /// `advanced/culture_past_the_deterrent.rs`. Off by default.
+    culture_seat_builds_past_the_deterrent: bool,
     /// `culture-faith-site-per-theater`: the Culture Faith claim develops one
     /// Holy Site per city with a standing Theater Square (up to six) and keeps
     /// opening sources until Faith reaches twenty a city, and the seat
@@ -10789,6 +10798,9 @@ mod culture_dig_museum;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 mod culture_open_borders;
+/// `culture-seat-builds-past-the-deterrent`: see
+/// `advanced/culture_past_the_deterrent.rs`.
+mod culture_past_the_deterrent;
 mod culture_work_purchase;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -10822,6 +10834,9 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
+/// `cold-war-before-conservation`: a Culture target takes only the road to
+/// Cold War. See `advanced/cold_war_before_conservation.rs`.
+mod cold_war_before_conservation;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -11174,6 +11189,9 @@ mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
 mod band_plays_its_stage;
+/// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
+/// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
+mod bands_draw_from_the_bar;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -11441,6 +11459,11 @@ mod threatened_war_holds_the_claims;
 mod first_luxury;
 /// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
 mod korea_mines_beside_the_seowon;
+/// `kristina-builds-the-bibliotheque`: see
+/// `advanced/kristina_builds_the_bibliotheque.rs`.
+mod kristina_builds_the_bibliotheque;
+/// `kristina-fills-to-theme`: see `advanced/kristina_fills_to_theme.rs`.
+mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -26144,6 +26167,10 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `kristina-builds-the-bibliotheque`: Sweden's Plaza tier, else the
+            // Plaza itself, under the same displacement rule. Exact no-op while
+            // the gene is off. See `advanced/kristina_builds_the_bibliotheque.rs`.
+            self.claim_queue_for_kristinas_plaza(g, pid, &plan);
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);

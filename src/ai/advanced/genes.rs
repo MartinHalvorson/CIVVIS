@@ -5441,6 +5441,10 @@ pub const GENES: &[Gene] = &[
     // An Apostle that has spent a charge stops asking to Evangelize, which
     // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
     Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
+    // A Rock Band's concert is weighted by how much of the Culture race it
+    // closes: a visitor from the bar holder lowers the bar too. Opt-in; see
+    // `advanced/bands_draw_from_the_bar.rs`.
+    Gene { tag: "bands-draw-from-the-bar", field: "bands_draw_from_the_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_draw_from_the_bar, disable: AdvancedAi::disable_bands_draw_from_the_bar },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5471,12 +5475,23 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // `cold-war-before-conservation`: a Culture target on a six-slot
+    // government researches only the road to Cold War until it is known, so
+    // Conservation, Class Struggle, Professional Sports and Cultural Heritage
+    // wait for the bands. Opt-in; see
+    // `advanced/cold_war_before_conservation.rs`.
+    Gene { tag: "cold-war-before-conservation", field: "cold_war_before_conservation", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_before_conservation, disable: AdvancedAi::disable_cold_war_before_conservation },
     // `culture-bank-opens-at-nationalism`: the Rock Band Faith bank opens at
     // Nationalism, and Faith buys only Writers, Artists and Musicians from
     // then on. Live Kristina 20261110T140731Z spent 1,370 Faith on three
     // Great People at t124-144 while the bank waited for Ideology. Opt-in;
     // see `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
+    // Live Deity Kristina 11-10: the near-rival deterrent held the capital
+    // t39-t69 and took the first Amphitheater back eleven times before t92.
+    // A Culture seat's culture claims pass it at peace. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
     // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
     // claims up to twenty a city, and Astrology once a Theater stands. Live
     // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
@@ -5511,6 +5526,13 @@ pub const GENES: &[Gene] = &[
     // discretion, for good land only. The target rises above ten by one city
     // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
     Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
+    // Kristina Deity 11-10: no Government Plaza by t150 and the Queen's
+    // Bibliotheque ruled out by a fixed tier list. See
+    // `advanced/kristina_builds_the_bibliotheque.rs`.
+    Gene { tag: "kristina-builds-the-bibliotheque", field: "kristina_builds_the_bibliotheque", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_builds_the_bibliotheque, disable: AdvancedAi::disable_kristina_builds_the_bibliotheque },
+    // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
+    // with no slot. See `advanced/kristina_fills_to_theme.rs`.
+    Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.

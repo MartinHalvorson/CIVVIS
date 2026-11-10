@@ -137,15 +137,18 @@ you are guessing about.
 Nobody cuts test builds. `to-test-auto-30` fires **every half hour** (and on the
 Actions button), and a gate decides in seconds whether a deploy is worth
 twenty minutes of building: if `/test` already serves the current head it
-skips, and scheduled runs pace themselves against **440 of Cloudflare's 500
-deployments a month** — pro rata by day — so the other 60 always remain for
-promotions and manual runs, which are never gated. When it does run, it
-rebuilds both lanes — `/test` from the head of `main`, `/` from the
-`site-stable` tag — checks that each plays, and deploys them as one site.
+skips, and scheduled runs pace themselves against **320 of Cloudflare's 500
+deployments a month**, earned continuously rather than refilled at midnight.
+A run past that pace still deploys when a change under `web/` or `beta/` has
+landed since `/test` was built, up to a second line of **470 a month plus 20**,
+also earned continuously. Promotions and manual runs are never gated. When it
+does run, it rebuilds both lanes — `/test` from the head of `main`, `/` from
+the `site-stable` tag — checks that each plays, and deploys them as one site.
 
-The effect: on a quiet day `/test` is fresh within about half an hour of a
-commit; in a week of round-the-clock merging the governor stretches spacing
-toward ~100 minutes instead of exhausting the month. The arithmetic that
+The effect: a change to the site is on `/test` within about half an hour of
+merging plus the build; a commit that touches only the engine waits for the
+pace, and in a week of round-the-clock merging that spacing stretches toward
+~2¼ hours instead of exhausting the month. The arithmetic that
 forces a governor at all: this repository has merged several hundred commits a
 day, and an ungoverned half-hour cadence is ~1,440 deployments a month against
 a cap of 500.
