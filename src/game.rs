@@ -7528,6 +7528,18 @@ pub struct Game {
     /// recorded here, because their passage is suzerainty, not a deal.
     #[serde(default)]
     pub sealed_border_owners: BTreeMap<usize, u32>,
+    /// `(band owner, host)` pairs: the host keeps that seat's Rock Bands out
+    /// of its land. A live mirror's reading of a rival's Music Censorship,
+    /// which the export never shows: the host's own concert highlights name
+    /// no stage in a rival's land although a finished World Wonder (a stage
+    /// every band may play) stands there. Live 20261110T164254Z: Ethiopia
+    /// slotted it the turn after our first concerts in its land, every band
+    /// was then refused at its border for the rest of the game, and five
+    /// bands played twice. Written fresh every turn by
+    /// `mirror::band_closed_hosts`, empty on any other board; read through
+    /// [`Game::bars_foreign_rock_bands`].
+    #[serde(default)]
+    pub rock_band_barred_hosts: BTreeSet<(usize, usize)>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -8146,6 +8158,7 @@ impl From<GameSer> for Game {
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
+            rock_band_barred_hosts: BTreeSet::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),
@@ -8926,6 +8939,7 @@ impl Game {
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
+            rock_band_barred_hosts: BTreeSet::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
             blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),

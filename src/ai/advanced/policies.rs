@@ -650,7 +650,7 @@ impl AdvancedAi {
         // Amenities at all.
         // Luxury allocation is empire-wide: one memo scope per sweep, or each
         // city's surplus allocates the whole empire again.
-        if self.amenity_project_preemption_on() && {
+        let liberalism_repair = self.amenity_project_preemption_on() && {
             let _memo = g.query_memo();
             city_ids
                 .iter()
@@ -661,7 +661,8 @@ impl AdvancedAi {
                 })
                 .count()
                 >= 2
-        } {
+        };
+        if liberalism_repair {
             desired.retain(|card| !matches!(*card, "aesthetics" | "liberalism"));
             desired.insert(0, "liberalism");
         }
@@ -784,6 +785,17 @@ impl AdvancedAi {
         temporary.extend(desired);
         desired = temporary;
         desired.retain(|card| g.rules.policies[*card].offered(&g.players[pid].age, g.world_era));
+
+        // `flower-power-in-the-dark`: Flower Power at the front of the
+        // portfolio while the Culture seat wants it; the contest and
+        // emergency cards spliced in below still rank first. See
+        // `advanced/flower_power_in_the_dark.rs`. `None` with the gene off.
+        let flower_power = self.flower_power_verdict(g, pid);
+        let flower_power_card = matches!(flower_power, Some(Ok(_))).then_some("flower_power");
+        if let Some(card) = flower_power_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
 
         // `prophet-race-earns-its-points`: Revelation's +2 Prophet points a
         // turn while the race has a Prophet for this seat. The deck prices a
@@ -962,9 +974,29 @@ impl AdvancedAi {
             })
             .cloned()
             .collect();
+        // `flower-power-in-the-dark`: one line when the seat lets the card go,
+        // whether this pass unslots it or the base deck already has.
+        let flower_power_dropped = match &flower_power {
+            Some(Err(why)) => {
+                let card = crate::name!("flower_power");
+                let dropped = g.players[pid].policies.contains(&card)
+                    || self.turn_start_policies.contains(&card);
+                if dropped {
+                    think!(self.journal(), Policies, Decision, "Dropping flower power";
+                           "flower-power-in-the-dark: {why}");
+                } else {
+                    think!(self.journal(), Policies, Detail, "Flower power waits";
+                           "flower-power-in-the-dark: {why}");
+                }
+                dropped
+            }
+            _ => false,
+        };
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
-                   "its downside no longer suits the {} plan", objective.as_str());
+            if !(flower_power_dropped && card == "flower_power") {
+                think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
+                       "its downside no longer suits the {} plan", objective.as_str());
+            }
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
 
@@ -994,7 +1026,18 @@ impl AdvancedAi {
         // `solvent-or-hold`: each card kept this pass, and the first card it
         // kept out; journalled once after the pass.
         let mut solvency_kept: BTreeMap<Name, &str> = BTreeMap::new();
-        for (rank, card) in desired.iter().copied().enumerate() {
+        // `flower-power-in-the-dark`: the card keeps its rank but takes its
+        // seat last, from the card the plan ranks lowest once the others are
+        // seated. Taken first, it took the seat of an unwanted card that a
+        // higher-ranked card (Satellite Broadcasts) then could not reach.
+        let mut passes: Vec<(usize, &str)> = desired.iter().copied().enumerate().collect();
+        if let Some(at) =
+            flower_power_card.and_then(|card| passes.iter().position(|(_, wanted)| *wanted == card))
+        {
+            let last = passes.remove(at);
+            passes.push(last);
+        }
+        for (rank, card) in passes {
             if g.players[pid].policies.contains(&Name::new(card))
                 || !available.contains(&Name::new(card))
             {
@@ -1012,6 +1055,10 @@ impl AdvancedAi {
                     think!(self.journal(), Policies, Decision, "Slotted medina quarter";
                            "{qualifying} housing-limited cities with 3 or more specialty \
                             districts gain +2 Housing; into a free slot");
+                    continue;
+                }
+                if flower_power_card == Some(card) {
+                    self.journal_flower_power_slotted(flower_power.as_ref(), None);
                     continue;
                 }
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
@@ -1060,6 +1107,21 @@ impl AdvancedAi {
                             && builder_window_card != Some(current)
                             && upgrade_card != Some(current)
                             && race_card != Some(current);
+                    }
+                    // `flower-power-in-the-dark`: the card takes the seat of a
+                    // card the portfolio ranks after it (the cards spliced in
+                    // ahead of it rank first), never a loyalty card, the
+                    // maintenance emergency's relief or the Amenity repair.
+                    if flower_power_card == Some(card) {
+                        let current = current.as_str();
+                        return desired
+                            .iter()
+                            .position(|wanted| *wanted == current)
+                            .is_none_or(|theirs| theirs > rank)
+                            && !matches!(current, "limitanei" | "praetorium")
+                            && !(maintenance_emergency
+                                && matches!(current, "conscription" | "levee_en_masse"))
+                            && !(liberalism_repair && current == "liberalism");
                     }
                     // `urban-planning-fills-the-slot`: the tail entry takes only
                     // an orphaned timed economy card's slot.
@@ -1221,7 +1283,9 @@ impl AdvancedAi {
                 };
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
-            if medina_quarter.is_some() && card == "medina_quarter" {
+            if (medina_quarter.is_some() && card == "medina_quarter")
+                || flower_power_card == Some(card)
+            {
                 Self::medina_quarter_weakest_first(g, &desired, &mut replaceable);
             }
             for current in replaceable {
@@ -1243,6 +1307,8 @@ impl AdvancedAi {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
                                "a Builder is almost finished; Serfdom adds two build charges");
+                    } else if flower_power_card == Some(card) {
+                        self.journal_flower_power_slotted(flower_power.as_ref(), Some(&current));
                     } else if let (true, Some(qualifying)) =
                         (card == "medina_quarter", medina_quarter)
                     {
@@ -1526,6 +1592,7 @@ impl AdvancedAi {
         {
             return Some("curator".to_string());
         }
+        let strategy = self.pingala_title_strategy(g, strategy, governor);
         Self::governor_promotion_priority(strategy, governor)
             .iter()
             .find(|promotion| available.iter().any(|candidate| candidate == **promotion))
@@ -1533,13 +1600,14 @@ impl AdvancedAi {
     }
 
     pub(super) fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let strategy = self.governor_title_strategy(g, plan.strategy);
         while g.governor_titles_available(pid) > 0 {
             // `curator-sits-with-the-works`: Curator first once the works
             // stand. Exact no-op with the gene off.
             if self.promote_the_curator(g, pid) {
                 continue;
             }
-            let priority = self.governor_priority_for(g, pid, plan.strategy);
+            let priority = self.governor_priority_for(g, pid, strategy);
             let priority = priority.as_slice();
             // Strategy can change every assessment window, but Governor
             // Titles arrive much more slowly. Finish the earliest incumbent's
@@ -1576,7 +1644,7 @@ impl AdvancedAi {
                 .unwrap_or(0);
             if primary_promotions < 2 {
                 if let Some(promotion) =
-                    self.preferred_governor_promotion(g, pid, plan.strategy, primary)
+                    self.preferred_governor_promotion(g, pid, strategy, primary)
                 {
                     if g.apply(
                         pid,
@@ -1617,9 +1685,7 @@ impl AdvancedAi {
                 }
             }
 
-            if let Some(promotion) =
-                self.preferred_governor_promotion(g, pid, plan.strategy, primary)
-            {
+            if let Some(promotion) = self.preferred_governor_promotion(g, pid, strategy, primary) {
                 if g.apply(
                     pid,
                     &Action::PromoteGovernor {
@@ -1660,7 +1726,7 @@ impl AdvancedAi {
             }
 
             let next_promotion = priority.iter().find_map(|governor| {
-                self.preferred_governor_promotion(g, pid, plan.strategy, governor)
+                self.preferred_governor_promotion(g, pid, strategy, governor)
                     .map(|promotion| ((*governor).to_string(), promotion))
             });
             if let Some((governor, promotion)) = next_promotion {
