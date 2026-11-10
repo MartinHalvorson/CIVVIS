@@ -34,7 +34,7 @@ installed); run it after any data change, and see
 > - session VIC: the victory ribbon in the top bar — shipped 2026-07-23: domination counts every original capital including a civilization's own, science reports the technology tree beside four launch dots, culture splits home culture from exported tourism, and the score heading carries the turn against the turn limit. Claim released
 > - session WARLOG2: the War log — one entry per war, updated as it is fought. COMPLETE 2026-07-23: outcomes (peace vs conquest), capital/raze/nuclear moments, blast casualties in the ledger, derived city-state fronts folded into the war that dragged them in, and the shipped war/peace minimum turns that stopped the AIs recording one quarrel as a dozen wars. Touched `sync_war_log`/`war_sides`/`start_war`/`do_make_peace` in `src/game.rs`, `wars_json` in `src/obs.rs`, the War log panel in `web/index.html`. Claim released
 > - session ADJ: district adjacency in the map tooltip — COMPLETE 2026-07-23: hovering a district lists every source that pays it (tiles counted, what each paid, the banked half of a fractional source) plus policy-card and unique modifiers as lines of their own, and a site with a district in the production queue shows what it would be worth today. `Game::district_adjacency_sources` in `src/game.rs` (the ledger `district_yields` already computed but threw away), `tile_json` in `src/obs.rs` (`district_yields`/`adjacency`/`planned_district`, current-visibility only), the tooltip in `web/index.html`. Claim released
-> - session FID: fidelity expansion COMPLETE 2026-07-22 at 25 tables / zero divergence; WMD delivery shipped (`WmdStrike` from cities/Missile Silos on the shipped ranges, radii and fallout; enumerated against enemy city centers in range), and AdvancedAi's Conquest doctrine now spends stockpiled devices on hard cities when the blast is clean of friendlies. Claim released
+> - session FID: fidelity expansion COMPLETE 2026-07-22 at 25 tables / zero divergence; WMD delivery shipped (`WmdStrike` on the shipped ranges, radii and fallout, enumerated against enemy city centers in range; since 2026-11-09 it launches from Missile Silos, Bombers, Jet Bombers and Nuclear Submarines, and no longer from city centers), and AdvancedAi's Conquest doctrine now spends stockpiled devices on hard cities when the blast is clean of friendlies. Claim released
 > - session ADJCALC: the district adjacency **calculator** — COMPLETE 2026-08-01: where session ADJ explained a district that stands, this forecasts every district that could. `Game::district_adjacency_calculator(cid)` ranks every legal plot for every district the city's civilization can ever build, ledger per site, with queued foundations counted as the districts they will become; `Game::settlement_adjacency_potential(pid, center, radius)` answers the same for a city not yet founded, the assumed center paying the `city_center`/`district` keys; both ride the live `district_adjacency` via `PlanAssumption` in `src/game/adjacency.rs`, so they cannot drift from what the engine pays. Consumed by `AdvancedAi::settle_value` (district potential now prices city sites — a clustered ridge outbids scattered peaks) and served at `GET /adjacency[?city=<id>]` for planning tools and the Civ 6 bridge. Claim released
 
 | System | Status | Notes | Source | Check |
@@ -190,13 +190,15 @@ A device is built, not trained: the `build_nuclear_device` and
 placing a unit, and each stockpiled device charges its shipped Gold maintenance
 every turn it sits there.
 
-Delivery is a platform question. A launch order names a city, and the shot is
-carried by whichever platform stands closest to the target: the city center
-itself, any of that city's unpillaged **Missile Silos**, or any **Nuclear
-Submarine** the launching civilization has at sea. The device's own
-`icbm_strike_range` from the shipped WMDs table — 12 for a nuclear device, 15
-for a thermonuclear one — is measured from the platform that fires, which is
-what makes an SSBN worth its cost: it carries the range with it. The target
+Delivery is a platform question. A launch order names a city, and the shot
+leaves from one of that city's unpillaged **Missile Silos**, or else is carried
+by a `Units.WMDCapable` unit: a **Nuclear Submarine**, **Bomber** or **Jet
+Bomber** with an attack left, which spends it. A city center is not a launch
+site. From a silo or a submarine the device's own `icbm_strike_range` applies,
+12 for a nuclear device and 15 for a thermonuclear one, which is what makes an
+SSBN worth its cost: it carries the range with it. An aircraft drops the device
+and so reaches only its own range, 10 for a Bomber and 15 for a Jet Bomber. Interception of
+a device is not modeled. The target
 tile must be revealed, and a blast that would touch a major or city-state the
 launcher is at peace with is not a legal order.
 

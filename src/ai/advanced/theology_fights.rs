@@ -44,6 +44,10 @@ impl AdvancedAi {
         let Some((dealt, received, defender_hp)) = reading else {
             return false;
         };
+        // `corps-comes-home-alive`: see `advanced/apostle_army.rs`.
+        if self.corps_declines_the_fight(g, uid, (dealt, received, defender_hp)) {
+            return false;
+        }
         dealt >= f64::from(defender_hp) || (dealt >= received && f64::from(unit.hp) > received)
     }
 }

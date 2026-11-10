@@ -117,17 +117,6 @@ impl Game {
         }
         s += self.civ_effect(u.owner, "combat_strength");
         s += self.mongolian_cavalry_strength(u);
-        // Preslav arms cavalry for the high ground, attacking and defending
-        // alike -- the shipped modifier is a plain strength bonus keyed on the
-        // tile the unit is fighting on, not on who started the fight.
-        if matches!(
-            self.rules.units[u.kind].promotion_class.as_str(),
-            "light_cavalry" | "heavy_cavalry"
-        ) && self.map.get(u.pos).is_some_and(|tile| tile.hills)
-            && self.grants_city_state_unique_bonus(u.owner, "Preslav")
-        {
-            s += 5.0;
-        }
         if u.kind == "nihang" {
             let encampment_buildings = ["barracks", "armory", "military_academy"]
                 .iter()
@@ -145,10 +134,18 @@ impl Game {
                 s += self.promotion_effect(u, "lahore_suzerain_combat");
             }
         }
-        // Foreign Ministry applies only after a unit is actually levied.
-        // While levied, `owner` is the Suzerain and `levied_from` is the
-        // city-state that must regain the unit when the contract ends.
-        let city_state_patron = u.levied_from.map(|_| u.owner);
+        // Foreign Ministry: "City State units gain +4 Combat Strength if you
+        // are the City State's Suzerain (including Leveraged Units)". Two rows,
+        // `BUILDING_GOV_CITYSTATES_UNIT_STRENGTH` for the units a city-state
+        // still holds and `_LEVERAGED_UNIT_STRENGTH` for a levied one, whose
+        // `owner` is the Suzerain while `levied_from` names the city-state.
+        let city_state_patron = if u.levied_from.is_some() {
+            Some(u.owner)
+        } else if self.players[u.owner].is_minor {
+            self.suzerain_of(u.owner)
+        } else {
+            None
+        };
         if let Some(patron) = city_state_patron {
             s += self.empire_building_sum(patron, |building| {
                 building

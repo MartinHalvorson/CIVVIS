@@ -2,11 +2,11 @@
 //! Manhattan Project, Operation Ivy nor a device is valued, and research is
 //! not bent toward Nuclear Fission or Fusion for one.
 //!
-//! The live Civilization VI bridge builds warheads but cannot fire them:
-//! `civvis_orders` carries `build_nuclear_device` as
-//! `PROJECT_BUILD_NUCLEAR_DEVICE`, but there is no order for
-//! `Action::WmdStrike`, and the agent mod reads its devices (`GetWMDs`) with
-//! no strike handler. `advanced_wmd_strikes` fires only on a native board.
+//! Written while the live Civilization VI bridge could build warheads but
+//! not fire them. The bridge now carries `Action::WmdStrike` and the nuclear
+//! goal itself asks whether a platform reaches a target, so there is no longer
+//! a seat this gene is the right answer for. Kept off rather than removed,
+//! because `GENES` is positional.
 //!
 //! **Why (retained live games to 2026-10-26, 123 runs).**
 //! - 26 built nuclear projects: about 20,200 Production over 361 city-turns.
@@ -17,8 +17,7 @@
 //!   Quito on the Manhattan Project and then a device while London, the last
 //!   capital, stood behind 400 walls against an army 2.9 times ours.
 //!
-//! Arm it where nothing can launch a device; a native board keeps its
-//! nuclear doctrine. Off, nothing changes.
+//! Off, nothing changes.
 
 use super::*;
 

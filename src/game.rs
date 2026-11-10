@@ -1135,6 +1135,25 @@ pub struct GreatWorkPiece {
     pub creator: String,
 }
 
+/// The Great Person a kill by this unit feeds under Wolin, by the class lists
+/// of `ABILITY_WOLIN_LAND_UNITS` and `ABILITY_WOLIN_NAVAL_UNITS`.
+///
+/// The killer decides; the victim's domain does not enter into it, so a
+/// Crossbowman that sinks a Galley earns General points. Air units, carriers
+/// and the Giant Death Robot (`CLASS_GIANT_DEATH_ROBOT` alone) are on neither
+/// list, and CIVVIS files the Robot under `melee`, so it is named here.
+fn wolin_great_person_class(kind: &str, spec: &crate::rules::UnitSpec) -> Option<&'static str> {
+    if kind == "giant_death_robot" {
+        return None;
+    }
+    match spec.promotion_class.as_str() {
+        "melee" | "ranged" | "anti_cavalry" | "heavy_cavalry" | "light_cavalry" | "recon"
+        | "siege" | "warrior_monk" | "nihang" => Some("general"),
+        "naval_melee" | "naval_raider" | "naval_ranged" => Some("admiral"),
+        _ => None,
+    }
+}
+
 fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
@@ -4673,6 +4692,18 @@ pub struct WarTheaterSite {
     pub pos: Pos,
 }
 
+/// One way a device can reach its target this turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WmdPlatform {
+    /// `missile_silo`, or the kind of the unit carrying the device.
+    pub kind: Name,
+    /// Where the device leaves from.
+    pub from: Pos,
+    /// The carrier, which spends its attack on the launch. A silo has none.
+    pub unit: Option<u32>,
+    pub distance: i32,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -5809,9 +5840,9 @@ pub enum Action {
         city: u32,
         target: Pos,
     },
-    /// Launch a stockpiled nuclear or thermonuclear device from a city (or
-    /// an owned Missile Silo) at a revealed tile within the shipped
-    /// ICBMStrikeRange.
+    /// Launch a stockpiled nuclear or thermonuclear device at a revealed tile,
+    /// from a working Missile Silo of the named city or from any `wmd_capable`
+    /// unit in reach. See [`Game::wmd_platforms`] for what reaches how far.
     WmdStrike {
         city: u32,
         target: Pos,
@@ -9765,6 +9796,19 @@ impl Game {
     /// Pericles cares about your envoys against his, and nothing about
     /// anyone else's.
     pub fn agenda_opinion(&self, observer: usize, subject: usize) -> f64 {
+        self.agenda_opinion_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    /// `agenda_opinion` with the comparative measures supplied by `read`, so
+    /// that a caller scoring every pair need work each one out only once.
+    fn agenda_opinion_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> f64 {
         if observer == subject {
             return 0.0;
         }
@@ -9791,7 +9835,7 @@ impl Game {
             "trustworthiness" => self.trustworthiness(observer, subject),
             // Comparative measures are scored against the rest of the world.
             other => {
-                let value = self.agenda_measure(subject, other);
+                let value = read(subject, other);
                 let peers: Vec<f64> = self
                     .players
                     .iter()
@@ -9801,7 +9845,7 @@ impl Game {
                             && !player.is_barbarian
                             && player.id != subject
                     })
-                    .map(|player| self.agenda_measure(player.id, other))
+                    .map(|player| read(player.id, other))
                     .collect();
                 if peers.is_empty() {
                     return 0.0;
@@ -10739,20 +10783,22 @@ impl Game {
             .values()
             .filter_map(|c| {
                 self.city_religion(c).map(|r| {
-                    // A Holy Site doubles its city's passive pressure. Jerusalem
-                    // then makes the player's Holy City four times stronger.
+                    // `RELIGION_SPREAD_HOLY_SITE_PRESSURE_MULTIPLIER` 2 and
+                    // `RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER` 4. Jerusalem's
+                    // Suzerain has every city with a Holy Site count as a Holy
+                    // City (`TREAT_HOLY_SITES_AS_HOLY_CITIES`).
                     let mut boost = 1.0;
                     let holy_site =
                         self.city_has_active_district_family(c, crate::name!("holy_site"));
                     if holy_site {
                         boost *= 2.0;
                     }
-                    if holy_site
-                        && self.grants_city_state_unique_bonus(c.owner, "Jerusalem")
-                        && self
-                            .religion_founder(r)
-                            .and_then(|founder| self.players[founder].holy_city)
-                            == Some(c.id)
+                    let holy_city = self
+                        .religion_founder(r)
+                        .and_then(|founder| self.players[founder].holy_city)
+                        == Some(c.id);
+                    if holy_city
+                        || (holy_site && self.grants_city_state_unique_bonus(c.owner, "Jerusalem"))
                     {
                         boost *= 4.0;
                     }
@@ -11028,6 +11074,25 @@ impl Game {
                 if matches!(unit.as_str(), "builder" | "settler" | "trader") {
                     bonus += economic.civilian_unit_production_pct / 100.0;
                 }
+                // `MINOR_CIV_DEFAULT_TRAIT`: a city-state trains Builders 200%
+                // faster, and military units too while it holds fewer than 10
+                // of them (`PLAYER_HAS_SMALL_MILITARY`).
+                if self.players[pid].is_minor
+                    && !self.players[pid].is_barbarian
+                    && (unit == "builder"
+                        || (spec.class == "military"
+                            && self
+                                .units
+                                .values()
+                                .filter(|held| {
+                                    held.owner == pid
+                                        && self.rules.units[held.kind].class == "military"
+                                })
+                                .count()
+                                < 10))
+                {
+                    bonus += 2.0;
+                }
                 if spec.class == "military"
                     && self
                         .alliance_partner(pid, "military", 2)
@@ -11139,6 +11204,16 @@ impl Game {
             Some(Item::Building { building }) => {
                 let spec = &self.rules.buildings[building];
                 bonus += economic.building_production_pct / 100.0;
+                // `MINOR_CIV_PRODUCTION_WALLS`: 200% on all three tiers.
+                if self.players[pid].is_minor
+                    && !self.players[pid].is_barbarian
+                    && matches!(
+                        building.as_str(),
+                        "walls" | "medieval_walls" | "renaissance_walls"
+                    )
+                {
+                    bonus += 2.0;
+                }
                 let district = spec
                     .district
                     .map(|district| self.district_family(district))
@@ -13388,24 +13463,21 @@ impl Game {
         }
         if !self.players[victim.owner].is_barbarian
             && self.grants_city_state_unique_bonus(pid, "Wolin")
-            && weapon.is_some_and(|kind| {
+        {
+            let point_kind = weapon.and_then(|kind| {
                 self.rules
                     .units
                     .get(kind)
-                    .is_some_and(|spec| spec.class == "military")
-            })
-        {
-            let point_kind = if self.rules.units[victim.kind].domain.as_deref() == Some("sea") {
-                "admiral"
-            } else {
-                "general"
-            };
-            *self.players[pid]
-                .gpp
-                .entry(point_kind.to_string())
-                .or_insert(0.0) += self
-                .game_speed
-                .scale(self.rules.units[victim.kind].strength * 0.25);
+                    .and_then(|spec| wolin_great_person_class(kind, spec))
+            });
+            if let Some(point_kind) = point_kind {
+                *self.players[pid]
+                    .gpp
+                    .entry(point_kind.to_string())
+                    .or_insert(0.0) += self
+                    .game_speed
+                    .scale(self.rules.units[victim.kind].strength * 0.25);
+            }
         }
         if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
             if let Some(religion) = self.players[pid].religion.clone() {
