@@ -433,7 +433,8 @@
     "range": 2,
     "domain": "sea",
     "tech": "telecommunications",
-    "promotion_class": "naval_raider"
+    "promotion_class": "naval_raider",
+    "wmd_capable": true
   },
   "trader": {
     "class": "civilian",
@@ -1080,7 +1081,7 @@
   "bomber": {
     "class": "military", "cost": 560, "maintenance": 7, "moves": 10, "strength": 85,
     "bombard_strength": 110, "range": 10, "sight": 4, "tech": "advanced_flight", "requires_resource": "aluminum", "resource_cost": 1, "resource_maintenance": 1,
-    "requires_district": "aerodrome", "domain": "air", "promotion_class": "air_bomber", "siege": true,
+    "requires_district": "aerodrome", "domain": "air", "promotion_class": "air_bomber", "siege": true, "wmd_capable": true,
     "upgrade_to": "jet_bomber"
   },
   "anti_air_gun": {
@@ -1140,7 +1141,7 @@
   "jet_bomber": {
     "class": "military", "cost": 700, "maintenance": 8, "moves": 15, "strength": 90,
     "bombard_strength": 120, "range": 15, "sight": 5, "tech": "stealth_technology", "requires_resource": "aluminum", "resource_cost": 1, "resource_maintenance": 1,
-    "requires_district": "aerodrome", "domain": "air", "promotion_class": "air_bomber", "siege": true
+    "requires_district": "aerodrome", "domain": "air", "promotion_class": "air_bomber", "siege": true, "wmd_capable": true
   },
   "giant_death_robot": {
     "class": "military", "cost": 1500, "maintenance": 15, "moves": 5, "strength": 130,

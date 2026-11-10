@@ -117,6 +117,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
         faith_strike_wipes_the_spreaders => enable_faith_strike_wipes_the_spreaders, disable_faith_strike_wipes_the_spreaders;
+        /// Opt-in `faith-strike-at-a-quiet-parity`; see
+        /// `AdvancedAi::faith_strike_at_a_quiet_parity`.
+        faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -144,6 +147,8 @@ impl AdvancedAi {
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
         /// See `advanced/religion_seat_reformed_church.rs`.
         religion_seat_reaches_reformed_church => enable_religion_seat_reaches_reformed_church, disable_religion_seat_reaches_reformed_church;
+        /// See `advanced/religion_denial_needs_the_edge.rs`.
+        religion_denial_needs_the_edge => enable_religion_denial_needs_the_edge, disable_religion_denial_needs_the_edge;
         /// Slot Religious Orders over a lower-ranked ordinary Economic card.
         religion_seat_slots_the_orders => enable_religion_seat_slots_the_orders, disable_religion_seat_slots_the_orders;
         /// See `advanced/religion_seat_flips_the_cheapest.rs`.
@@ -164,6 +169,10 @@ impl AdvancedAi {
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
         /// See `advanced/religion_seat_counts_the_pressure.rs`.
         religion_seat_counts_the_pressure => enable_religion_seat_counts_the_pressure, disable_religion_seat_counts_the_pressure;
+        /// See `advanced/religion_seat_charts_the_rivals.rs`.
+        religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
+        /// See `advanced/religion_seat_spends_the_bank.rs`.
+        religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see

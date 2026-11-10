@@ -236,6 +236,22 @@ fn timed_war_rejects_an_unavailable_strategic_resource() {
 /// `nuclear-goal-needs-a-launcher`: on a seat that cannot launch a device the
 /// goal is gone, and with it the value of every nuclear project.
 #[test]
+fn a_nuclear_goal_needs_a_platform_that_reaches_the_target() {
+    let (mut game, launch_city, _, _, _) = nuclear_war_fixture();
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(ai
+        .nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+        .is_some());
+    let silo = game.cities[&launch_city].pos;
+    game.map.tiles.get_mut(&silo).unwrap().improvement = None;
+    assert!(
+        ai.nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+            .is_none(),
+        "a device nothing can deliver is not worth planning"
+    );
+}
+
+#[test]
 fn the_nuclear_goal_needs_a_launcher_under_the_gene() {
     let (game, _, _, spaceport_city, _) = nuclear_war_fixture();
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);

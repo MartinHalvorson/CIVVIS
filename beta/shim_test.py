@@ -139,7 +139,8 @@ def main() -> int:
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
     build = stage / "build.json"
     build.write_text(
-        '{"commit":"test","wasm_bytes":7340032}\n', encoding="utf-8"
+        '{"commit":"test","wasm_bytes":7340032,"built_at":"2026-11-10T04:00:00Z"}\n',
+        encoding="utf-8"
     )
 
     # ⚠ The failure message runs in the same change that adds it. A diagnostic
@@ -276,6 +277,8 @@ def main() -> int:
         assert first["server_wasm_bytes"] == 7 * 1024 * 1024, first
         assert first["server_artifact_bytes"] == 7 * 1024 * 1024, first
         assert first["server_artifact_kind"] == "WASM", first
+        # The module no longer says when it was built; the manifest does.
+        assert first["server_built_at"] == "2026-11-10T04:00:00Z", first
 
         # Metadata fetches happen throughout a result screen. Advancing fake
         # wall time across one proves they cannot restart the finale clock.
@@ -284,6 +287,7 @@ def main() -> int:
         assert runtime["commit"] == "test", runtime
         assert runtime["artifact_bytes"] == 7 * 1024 * 1024, runtime
         assert runtime["artifact_kind"] == "WASM", runtime
+        assert runtime["built_at"] == "2026-11-10T04:00:00Z", runtime
         dev.evaluate("window.fakeNow = 3100")
         successor = dev.evaluate("fetch('/state?have=227').then(r => r.json())")
         calls = dev.evaluate("window.workerCalls")

@@ -6736,6 +6736,10 @@ pub struct AdvancedAi {
     /// `faith-strike-wipes-the-spreaders`: the turn each rival was last
     /// struck.
     faith_strike_last: BTreeMap<usize, u32>,
+    /// `faith-strike-at-a-quiet-parity`: the strike may go at parity when the
+    /// rival's army is away from our cities. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_at_a_quiet_parity: bool,
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
     embassy_finds_the_capital_2: bool,
@@ -8447,6 +8451,9 @@ pub struct AdvancedAi {
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
     religion_seat_reaches_reformed_church: bool,
+    /// Require the launcher counter's military edge for a Religion seat's
+    /// separate science-denial declaration. Opt-in; see `religion_denial_needs_the_edge`.
+    religion_denial_needs_the_edge: bool,
     /// Let an active founder corps slot Religious Orders over a lower-ranked
     /// ordinary Economic card. See `religion_seat_slots_the_orders`. Opt-in.
     religion_seat_slots_the_orders: bool,
@@ -8979,6 +8986,15 @@ pub struct AdvancedAi {
     /// across frames, so a claim can stand off from a city that took its item
     /// back. See `AdvancedAi::queue_claim_open`.
     queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
+    /// `religion-seat-charts-the-rivals`: a Religion-target founder keeps
+    /// charting until it knows a majority of every rival's cities, and takes
+    /// Cartography sooner. See `advanced/religion_seat_charts_the_rivals.rs`.
+    /// Off by default.
+    religion_seat_charts_the_rivals: bool,
+    /// `religion-seat-spends-the-bank`: a Religion-target founder's corps
+    /// caps stop binding once the bank holds two Apostles. See
+    /// `advanced/religion_seat_spends_the_bank.rs`. Off by default.
+    religion_seat_spends_the_bank: bool,
     /// `religion-seat-counts-the-pressure`: a Religion-target founder's
     /// spreaders go where the host's own pressure rows say a majority is
     /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
@@ -25388,6 +25404,9 @@ impl AdvancedAi {
         // `religion-seat-takes-the-faith-beliefs`: read by the founding in
         // `BasicAi`'s ancillary pass, after any hand-over above.
         self.base.founder_takes_the_faith_beliefs = self.founder_takes_the_faith_beliefs(g);
+        // `religion-seat-charts-the-rivals`: read by the contact gap in
+        // `BasicAi`'s exploration and the hull claims, after any hand-over.
+        self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -26403,16 +26422,20 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
+mod religion_denial_needs_the_edge;
 mod religion_prophet_queue;
+/// `religion-seat-charts-the-rivals`: see
+/// `advanced/religion_seat_charts_the_rivals.rs`.
+mod religion_seat_charts_the_rivals;
 /// `religion-seat-counts-the-pressure`: see
 /// `advanced/religion_seat_counts_the_pressure.rs`.
 mod religion_seat_counts_the_pressure;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
-/// `religion-seat-flips-the-cheapest`: see
 /// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
 mod religion_seat_first_shrine;
+/// `religion-seat-flips-the-cheapest`: see
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
@@ -26425,6 +26448,9 @@ mod religion_seat_guards_the_race;
 mod religion_seat_reformed_church;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
+/// `religion-seat-spends-the-bank`: see
+/// `advanced/religion_seat_spends_the_bank.rs`.
+mod religion_seat_spends_the_bank;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout

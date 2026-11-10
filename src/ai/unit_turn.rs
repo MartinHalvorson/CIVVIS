@@ -1635,7 +1635,7 @@ impl BasicAi {
                     ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
                     || (self.contact_fleet
                         && Self::naval_recon_can_cross_ocean(g, pid)
-                        && Self::contact_fleet_gap(g, pid))))
+                        && self.contact_gap_open(g, pid))))
             .then_some(landmass)
         } else {
             None

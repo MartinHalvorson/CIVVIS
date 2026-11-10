@@ -2829,7 +2829,10 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
         .0;
     assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
-    assert!(player_hud.contains("hud.innerHTML = html;"));
+    // The standings are patched in place like the tracker: new markup every
+    // turn rebuilt and re-fitted the whole table to change a few figures.
+    assert!(player_hud.contains("patchHudMarkup(hud, html);"));
+    assert!(!player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
     // person is never one of the entrants on the leaderboard.
@@ -10131,26 +10134,37 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         .expect("World politics panel");
     // Rows and columns share one order, by name, so nobody's place moves.
     assert!(panel.contains("a.civ.localeCompare(b.civ) || a.id - b.id"));
-    assert!(panel.contains("worldPoliticsMatrix(civs, bonds, wars)"));
+    assert!(panel.contains("worldPoliticsMatrix(civs, bonds, wars, attitudes)"));
     // A turn arriving mid-scroll must not throw the reader back to the start.
     assert!(panel.contains("patchHudMarkup(list,"));
 
     // A pair's tie is written in both of its cells.
     let matrix = EMBEDDED_INDEX
-        .split("function worldPoliticsMatrix(civs, bonds, wars) {")
+        .split("function worldPoliticsMatrix(civs, bonds, wars, attitudes) {")
         .nth(1)
         .and_then(|tail| tail.split("function markPoliticsColumn").next())
         .expect("matrix");
     assert!(matrix.contains("ties.set(`${pair.first}:${pair.second}`, tie);"));
     assert!(matrix.contains("ties.set(`${pair.second}:${pair.first}`, tie);"));
     assert!(matrix.contains("if (column.id === row.id) return `<td class=\"self\"></td>`;"));
+    // Anything less than a pact is one leader's view, read from the row.
+    assert!(matrix.contains("WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]]"));
+    assert!(matrix.contains("${row.civ} toward ${column.civ}"));
+    for state in ["friendly", "neutral", "unfriendly", "denounced"] {
+        assert!(EMBEDDED_INDEX.contains(&format!(".politics-mark.{state} {{")));
+        assert!(EMBEDDED_INDEX.contains(&format!("[\"{state}\", \"")));
+    }
+    // The key is outside the name column, which holds names and nothing else.
+    assert!(EMBEDDED_INDEX.contains("<div id=\"politicskey\" class=\"politics-key\" hidden></div>"));
+    assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
+    assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
     // Both sets of names stay put while the table scrolls under them, and the
     // scroller is held to the deck's window so that it, not the deck, scrolls.
     assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: calc(var(--deck-window) - 43px); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(var(--deck-window) - 106px), min(calc(var(--deck-window) - 43px), 130px)); }"
     ));
     assert!(EMBEDDED_INDEX
         .contains("side.style.setProperty(\"--deck-window\", `${Math.round(room)}px`);"));
@@ -12645,7 +12659,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until the last Civ standing)</span></button>"
     ));
     // A result that already left one civilization has nothing to play on to.
     assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
@@ -14354,9 +14368,9 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
     assert!(js.contains("const WORLD_POLE = [0, 0, 1];"));
     assert!(js.contains(
         "applyPlanetBasis(planetSpin(basis, WORLD_POLE, \
-             -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));"
+             -2 * Math.PI * dt / worldSpinPeriodMs));"
     ));
-    assert!(js.contains("cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;"));
+    assert!(js.contains("cam.x -= WW() * dt / worldSpinPeriodMs;"));
     // Nothing else may be holding the camera while it turns.
     for guard in [
         "!dragState && !touchGesture && !cameraFlight && !cameraZoom",
@@ -14406,10 +14420,10 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         .expect("a plain number of milliseconds");
     assert_eq!(period_ms, 36_000, "one full turn every thirty-six seconds");
     let meridian = EMBEDDED_INDEX
-        .split_once("animation: spinMeridian ")
+        .split_once("animation: spinMeridian var(--world-spin-period, ")
         .expect("the button's own turn")
         .1
-        .split_once("s ")
+        .split_once("s)")
         .expect("the end of the meridian's period")
         .0;
     assert_eq!(
@@ -14418,7 +14432,35 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         "the globe on the button keeps the world's period, or it is a label \
              that lies about what the map is doing"
     );
+    assert!(js.contains(
+        "spinButton.style.setProperty(\"--world-spin-period\", `${worldSpinPeriodMs}ms`);"
+    ));
     assert!(EMBEDDED_INDEX.contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
+}
+
+/// Hovering the spin button opens a volume bar for the turn: the rabbit's one
+/// full turn a second at the top, the turtle low down, and the very bottom a
+/// halt. Off is the one state behind both the button and the bottom of the bar.
+#[test]
+fn the_spin_button_opens_a_speed_bar_from_halt_to_one_turn_a_second() {
+    let js = EMBEDDED_APP_JS;
+    let page = EMBEDDED_INDEX.as_str();
+    let bar = page
+        .split_once(r#"<div id="spin-speed" role="group""#)
+        .expect("the speed bar sits with the spin button")
+        .1
+        .split_once("</div>")
+        .expect("the end of the speed bar")
+        .0;
+    assert!(bar.contains(r#"type="range" min="0" max="20" step="1""#));
+    let at = |mark: &str| bar.find(mark).unwrap_or_else(|| panic!("{mark}"));
+    assert!(at("&#x1F407;") < at("&#x1F422;"), "rabbit above the turtle");
+    assert!(at("&#x1F422;") < at("&#x25A0;"), "halt below the turtle");
+    assert!(page.contains("#spin-wrap:hover #spin-speed,"));
+    assert!(js.contains("const WORLD_SPIN_FASTEST_PERIOD_MS = 1000;"));
+    assert!(js.contains("const WORLD_SPIN_DEFAULT_SPEED = 8, WORLD_SPIN_TOP_SPEED = 20;"));
+    assert!(js.contains("setWorldSpin(speed > 0);"));
+    assert!(js.contains("spinSpeedBar.value = String(WORLD_SPIN ? worldSpinSpeed : 0);"));
 }
 
 /// The spin button means every world, not only the one units stand on: a
@@ -14438,7 +14480,7 @@ fn the_spin_turns_every_world_showing_its_ground() {
     assert!(body_of("function advanceWorldSpin(dt)").contains("advanceSkyWorldSpin(dt);"));
     let sky = body_of("function advanceSkyWorldSpin(dt)");
     assert!(sky.contains("if (skyOnCanvas(place) && skyGroundFade(place) > 0)"));
-    assert!(sky.contains("skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;"));
+    assert!(sky.contains("skyView(body.id).longitude -= 2 * Math.PI * dt / worldSpinPeriodMs;"));
     // A world can now turn under an arrival, so the flight settles once
     // whether it aims at the landing site or at the limb.
     let end = body_of("function skyLaunchEnd(");

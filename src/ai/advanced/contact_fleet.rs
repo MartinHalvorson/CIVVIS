@@ -151,7 +151,7 @@ impl BasicAi {
     /// finishes it within [`CONTACT_FLEET_FAST_HULL_MAX_STANDARD`] standard
     /// turns. `None` leaves `best_naval_recon` to its cheapest hull.
     pub(crate) fn contact_fleet_fast_hull(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
-        if !self.contact_fleet || !Self::contact_fleet_gap(g, pid) {
+        if !self.contact_fleet || !self.contact_gap_open(g, pid) {
             return None;
         }
         let hulls: Vec<(f64, f64, String)> = g
@@ -251,7 +251,7 @@ impl AdvancedAi {
         if !(self.sea_scout_claims_the_queue || self.sea_scout_claims_the_queue_2)
             || !self.base.contact_fleet
             || !BasicAi::naval_recon_can_cross_ocean(g, pid)
-            || !BasicAi::contact_fleet_gap(g, pid)
+            || !self.base.contact_gap_open(g, pid)
             || !self.base.naval_recon_is_the_missing_arm(g, pid)
             || self.base.naval_recon_yields_to_land_recon(g, pid)
             || self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
@@ -324,7 +324,7 @@ impl AdvancedAi {
         if !self.base.contact_fleet
             || !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             || !self.contact_fleet_hull_may_hold(g, pid, cid, plan, item)
-            || !BasicAi::contact_fleet_gap(g, pid)
+            || !self.base.contact_gap_open(g, pid)
         {
             return false;
         }
