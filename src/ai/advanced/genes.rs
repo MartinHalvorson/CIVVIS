@@ -5512,6 +5512,10 @@ pub const GENES: &[Gene] = &[
     // that inspires a near road civic first. Opt-in; see
     // `advanced/culture_road_inspirations.rs`.
     Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    // builds the last Market a near road civic's Inspiration counts. Opt-in;
+    // see `advanced/culture_road_triggers.rs`.
+    Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

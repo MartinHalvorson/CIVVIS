@@ -155,6 +155,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-road-builds-its-triggers`: see
+        /// `advanced/culture_road_triggers.rs`.
+        culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
