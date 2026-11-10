@@ -1415,37 +1415,29 @@ impl Game {
         {
             return vec![];
         }
-        // The host refuses REMOVE_FEATURE and HARVEST_RESOURCE on a tile that
-        // carries an improvement. Live Deity census, 2026-11-09: 75 of 75
-        // accepted clearings stood on unimproved ground, and 55 of 64 refusals
-        // on a Lumber Mill, Plantation, Camp, Mine, Quarry or Farm.
-        let improved = tile.improvement.is_some();
         let mut operations = Vec::new();
         match tile.feature.as_deref() {
             Some("forest")
-                if !improved
-                    && self.tree_effect(pid, "chop_woods") > 0.0
+                if self.tree_effect(pid, "chop_woods") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "forest") =>
             {
                 operations.push("chop_woods".to_string())
             }
             Some("jungle")
-                if !improved
-                    && self.tree_effect(pid, "chop_rainforest") > 0.0
+                if self.tree_effect(pid, "chop_rainforest") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "jungle") =>
             {
                 operations.push("chop_rainforest".to_string())
             }
             Some("marsh")
-                if !improved
-                    && self.tree_effect(pid, "clear_marsh") > 0.0
+                if self.tree_effect(pid, "clear_marsh") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "marsh") =>
             {
                 operations.push("clear_marsh".to_string())
             }
             _ => {}
         }
-        if let Some(resource) = tile.resource.as_deref().filter(|_| !improved) {
+        if let Some(resource) = tile.resource.as_deref() {
             // Only the resources with a shipped Resource_Harvests row can be
             // harvested, each from its own technology on.
             if let Some(harvest) = self

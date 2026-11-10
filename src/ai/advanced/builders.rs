@@ -378,8 +378,7 @@ impl AdvancedAi {
             })
     }
 
-    /// Return only improvements that genuinely upgrade the tile. The game
-    /// permits builders to replace an existing improvement, so comparing
+    /// Return only improvements that genuinely upgrade the tile. Comparing
     /// candidates in isolation made late-game builders oscillate between a
     /// high-value resort and a lower-value farm on successive turns.
     pub(super) fn worthwhile_improvements(

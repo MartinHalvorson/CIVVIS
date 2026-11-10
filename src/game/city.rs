@@ -2720,6 +2720,25 @@ impl Game {
             .as_deref()
             .filter(|resource| self.resource_visible_to(pid, resource));
         let water = self.rules.is_water(t);
+        // Whether a strategic deposit here would be connected by `candidate`
+        // and is not by whatever stands on it now: the one replacement the
+        // agent can carry out (`improvement_replacement_started`).
+        let connects_strategic = |candidate: &str| {
+            visible_resource.is_some_and(|resource| {
+                let deposit = &self.rules.resources[resource];
+                let connects = |improvement: &str| {
+                    deposit.improvement == improvement
+                        || self
+                            .rules
+                            .improvements
+                            .get(improvement)
+                            .is_some_and(|spec| spec.resources.iter().any(|r| r == resource))
+                };
+                deposit.class == "strategic"
+                    && connects(candidate)
+                    && !t.improvement.as_deref().is_some_and(|now| connects(now))
+            })
+        };
         // Whether another Artifact has a slot anywhere in the empire — an
         // empire-wide Great Work assignment, so it is asked once for this
         // tile rather than once per excavation improvement on it.
@@ -2747,6 +2766,13 @@ impl Game {
                 if self.can_establish_industry(pid, pos) {
                     out.push(*name);
                 }
+                continue;
+            }
+            // A Builder works on bare ground. The host refuses to build over
+            // another improvement: across 101 live logs (2026-11-10), 98 such
+            // orders failed and 7 worked. Removing one first is a separate
+            // operation, which the agent performs only for a strategic deposit.
+            if t.improvement.is_some() && !connects_strategic(name.as_str()) {
                 continue;
             }
             if matches!(name.as_str(), "fishery" | "city_park")
