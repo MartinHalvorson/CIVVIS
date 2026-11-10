@@ -103,6 +103,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-what-it-can-reach`; see
         /// `advanced/band_plays_what_it_can_reach.rs`.
         base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
+        /// Opt-in gene `bands-wait-at-the-door`; see
+        /// `advanced/bands_wait_at_the_door.rs`.
+        base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -158,6 +161,12 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-faith-site-per-theater-2`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_2 => enable_culture_faith_site_per_theater_2, disable_culture_faith_site_per_theater_2;
+        /// `culture-road-builds-its-triggers`: see
+        /// `advanced/culture_road_triggers.rs`.
+        culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
         /// `culture-bank-holds-the-counterweight`: see
         /// `advanced/culture_band_bank.rs`.
         culture_bank_holds_the_counterweight => enable_culture_bank_holds_the_counterweight, disable_culture_bank_holds_the_counterweight;
@@ -260,9 +269,15 @@ impl AdvancedAi {
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
         sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
+        /// Opt-in gene `siege-at-the-walls-dies-first`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        siege_at_the_walls_dies_first => enable_siege_at_the_walls_dies_first, disable_siege_at_the_walls_dies_first;
         /// Opt-in gene `space-denial-slots-the-spy-cards`; see
         /// `advanced/space_denial_spy_cards.rs`.
         space_denial_slots_the_spy_cards => enable_space_denial_slots_the_spy_cards, disable_space_denial_slots_the_spy_cards;
+        /// Opt-in gene `space-denial-promotes-the-rocket-scientist`; see
+        /// `advanced/space_denial_rocket_scientist.rs`.
+        space_denial_promotes_the_rocket_scientist => enable_space_denial_promotes_the_rocket_scientist, disable_space_denial_promotes_the_rocket_scientist;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

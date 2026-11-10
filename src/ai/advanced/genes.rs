@@ -5449,6 +5449,10 @@ pub const GENES: &[Gene] = &[
     // trip the host walked nowhere turns it to another host. Opt-in; see
     // `advanced/band_plays_what_it_can_reach.rs`.
     Gene { tag: "band-plays-what-it-can-reach", field: "band_plays_what_it_can_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_what_it_can_reach, disable: AdvancedAi::disable_band_plays_what_it_can_reach },
+    // A Rock Band with nothing it can play waits at the border of the closed
+    // land it most wants, so it plays the turn that land reopens. Opt-in; see
+    // `advanced/bands_wait_at_the_door.rs`.
+    Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5534,6 +5538,12 @@ pub const GENES: &[Gene] = &[
     // that inspires a near road civic first. Opt-in; see
     // `advanced/culture_road_inspirations.rs`.
     Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // `culture-faith-site-per-theater-2`: version one, and the Faith sources
+    // are claimed in parallel, one per Theater city. Live Deity Kristina
+    // 20261110T183027Z under version one built one source at a time (Holy
+    // Site t60, Shrine t69, Temple t92, next Holy Site t121) and made 12
+    // Faith a turn at t100. Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-2", field: "culture_faith_site_per_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_2, disable: AdvancedAi::disable_culture_faith_site_per_theater_2 },
     // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
     // target's power took 13 of our cities and delayed no launch. Off
     // Domination the war needs the launcher counter's edge and spares a
@@ -5546,6 +5556,10 @@ pub const GENES: &[Gene] = &[
     // her to a two-citizen border city within 25 turns of her appointment.
     // Opt-in; see `advanced/culture_pingala_first.rs`.
     Gene { tag: "culture-keeps-pingala-home", field: "culture_keeps_pingala_home", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_pingala_home, disable: AdvancedAi::disable_culture_keeps_pingala_home },
+    // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    // builds the last Market a near road civic's Inspiration counts. Opt-in;
+    // see `advanced/culture_road_triggers.rs`.
+    Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5663,10 +5677,19 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 8 of 18
+    // cities lost at war before t130 a Catapult/Trebuchet/Domrey broke the
+    // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
     // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
     // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
     // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
     Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
+    // Kristina Deity 11-10: the host offered Rocket Scientist (Disrupt as if 2
+    // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
+    // none. See `advanced/space_denial_rocket_scientist.rs`.
+    Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

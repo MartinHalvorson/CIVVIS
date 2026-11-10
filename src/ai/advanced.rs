@@ -6808,6 +6808,15 @@ pub struct AdvancedAi {
     /// the threat faith stands at match point; the Faith stays for the Rock
     /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_holds_the_counterweight: bool,
+    /// `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    /// builds the last Market a near road civic's Inspiration counts. See
+    /// `advanced/culture_road_triggers.rs`. Off by default.
+    culture_road_builds_its_triggers: bool,
+    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
+    /// sources are claimed in parallel, one item per Theater city, rather
+    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
+    /// Opt-in.
+    culture_faith_site_per_theater_2: bool,
     /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
@@ -9887,6 +9896,10 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `space-denial-promotes-the-rocket-scientist`: a Culture or Domination
+    /// seat whose spies answer a space race promotes them to Rocket Scientist
+    /// first. See `advanced/space_denial_rocket_scientist.rs`. Off by default.
+    space_denial_promotes_the_rocket_scientist: bool,
     /// `sweden-builds-open-air-museums`: Sweden's Builders price the
     /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
@@ -9896,6 +9909,11 @@ pub struct AdvancedAi {
     /// spies answer a space race slots Machiavellianism and Cryptography. See
     /// `advanced/space_denial_spy_cards.rs`. Off by default.
     space_denial_slots_the_spy_cards: bool,
+    /// `siege-at-the-walls-dies-first`: a hostile siege gun in reach of our
+    /// walls, or a taker beside an open city of ours, is the first target of
+    /// the kill plan, the ladder and the city strike. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    siege_at_the_walls_dies_first: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10880,6 +10898,8 @@ mod culture_recovery_bank;
 /// `culture-road-earns-its-inspirations`: see
 /// `advanced/culture_road_inspirations.rs`.
 mod culture_road_inspirations;
+/// `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`.
+mod culture_road_triggers;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
@@ -11049,6 +11069,10 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 mod close_as_a_body;
 
 mod siege_production;
+
+/// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
+/// See `advanced/siege_at_the_walls_dies_first.rs`.
+mod siege_at_the_walls_dies_first;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -11267,6 +11291,10 @@ mod band_plays_what_it_can_reach;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
+/// `bands-wait-at-the-door`: a Rock Band with nothing it can play waits at
+/// the border of the closed land it most wants. See
+/// `advanced/bands_wait_at_the_door.rs`.
+mod bands_wait_at_the_door;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -11383,6 +11411,9 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-promotes-the-rocket-scientist`: see
+/// `advanced/space_denial_rocket_scientist.rs`.
+mod space_denial_rocket_scientist;
 /// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
 mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
@@ -24638,11 +24669,21 @@ impl AdvancedAi {
                             + strength * 2.0
                             + if siege { 70.0 } else { 0.0 }
                             + if captures { 30.0 } else { 0.0 }
+                            // `siege-at-the-walls-dies-first`: zero with the
+                            // gene off. See its module.
+                            + self.wall_threat_premium(g, pid, unit, 0.0, true)
                     }
                     Some(defender) => {
                         (hp - defender.hp).max(0) as f64 * (1.0 + strength / 100.0)
                             + if siege { 25.0 } else { 0.0 }
                             + if captures { 8.0 } else { 0.0 }
+                            + self.wall_threat_premium(
+                                g,
+                                pid,
+                                unit,
+                                f64::from((hp - defender.hp).max(0)),
+                                false,
+                            )
                     }
                 },
             )
