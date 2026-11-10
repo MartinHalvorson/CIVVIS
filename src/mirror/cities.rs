@@ -809,6 +809,37 @@ pub(super) fn apply_observed_city_economy(
     }
 }
 
+/// Keep the banner's religion rows the host showed for this city. They sit
+/// beside `City::pressure`, which for a mirrored city still holds majority
+/// and warning markers (`apply_city_religion`), so no existing reader moves.
+/// An export without rows leaves the remembered ones alone.
+fn apply_city_faiths(game: &mut crate::game::Game, cid: u32, state: &StateCity) {
+    let Some(rows) = state.faiths.as_ref() else {
+        return;
+    };
+    let rows: Vec<crate::game::ObservedCityFaith> = rows
+        .iter()
+        .filter(|row| row.pressure.is_finite() && row.followers.is_finite())
+        .map(|row| crate::game::ObservedCityFaith {
+            religion: row
+                .religion
+                .as_deref()
+                .filter(|name| *name != "RELIGION_PANTHEON")
+                .and_then(civvis_religion_name),
+            followers: row.followers.round().max(0.0) as i32,
+            pressure: row.pressure.max(0.0),
+            per_turn: if row.per_turn.is_finite() {
+                row.per_turn.max(0.0)
+            } else {
+                0.0
+            },
+        })
+        .collect();
+    if game.observed_city_faiths.get(&cid) != Some(&rows) {
+        Arc::make_mut(&mut game.observed_city_faiths).insert(cid, rows);
+    }
+}
+
 /// Apply city facts that affect `city_yields_model` before deriving the
 /// host-to-model correction. A fresh reconstruction initially marks the first
 /// planted city as the capital; the host can have moved its Palace elsewhere.
@@ -839,6 +870,7 @@ pub(super) fn apply_observed_city_facts(game: &mut crate::game::Game, state: &St
             apply_city_religion(game.cities.get_mut(&cid).unwrap(), observed);
             Arc::make_mut(&mut game.observed_city_religion_markers).insert(cid);
         }
+        apply_city_faiths(game, cid, observed);
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {
             Arc::make_mut(&mut game.observed_city_loyalty_per_turn)

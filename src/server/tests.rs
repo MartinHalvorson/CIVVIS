@@ -12627,8 +12627,10 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('indefinite', false)\"\n            title=\"Keep this world playing. Nothing ends it until you press Restart sim.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn</button>"
     ));
+    // A result that already left one civilization has nothing to play on to.
+    assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
     assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
     assert!(EMBEDDED_INDEX.contains(">New Game</button>"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
