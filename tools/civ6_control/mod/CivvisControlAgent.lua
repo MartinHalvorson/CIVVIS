@@ -842,7 +842,7 @@ local function resolveActions()
 		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
 		-- light cavalry's pillage-before-combat could not happen on the live
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
-		"UNITOPERATION_PILLAGE",
+		"UNITOPERATION_PILLAGE", "UNITOPERATION_COASTAL_RAID", "UNITOPERATION_WMD_STRIKE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		-- A chop (`chop_woods`, `chop_rainforest`, `clear_marsh`) and a forest
 		-- planting cross as these, parameterless like HARVEST_RESOURCE:
@@ -13402,9 +13402,14 @@ end
 -- historical behaviour — never a blanket refusal.
 -- ⚠ `#results` and `rawget`, not `ipairs`: the answer is a host table and
 -- the test harness stands in stubs whose `__index` invents members.
-CivvisLedger.warStarters = function(actor, x, y)
+CivvisLedger.warStarters = function(actor, x, y, weapon)
 	if actor == nil or x == nil or y == nil then return nil; end
 	local results = try(function()
+		-- A device has a blast: `WorldInput.lua:2143` names the weapon so the
+		-- host can answer for everyone the blast would touch.
+		if weapon ~= nil then
+			return CombatManager.IsAttackChangeWarState(actor:GetComponentID(), x, y, weapon);
+		end
 		return CombatManager.IsAttackChangeWarState(actor:GetComponentID(), x, y);
 	end, nil);
 	if type(results) ~= "table" then return nil; end
@@ -13421,8 +13426,8 @@ end;
 -- and a `war_refused` event carrying the actor, the verb, the plot and its
 -- owner, so the decider's half of the mistake (a strike aimed at a unit the
 -- mirror took for a barbarian) can be read off the next run.
-CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn)
-	local players = CivvisLedger.warStarters(actor, x, y);
+CivvisLedger.refuseWarStarter = function(actor, subject, verb, x, y, turn, weapon)
+	local players = CivvisLedger.warStarters(actor, x, y, weapon);
 	if players == nil then return nil; end
 	local names = {};
 	for i = 1, #players do names[i] = tostring(players[i]); end
@@ -13908,6 +13913,96 @@ CivvisVerify.record = function(kind, subject, verb, x, turn)
 	end
 	emit(kind, payload);
 	return true, "verdict";
+end;
+
+-- Coastal raids and nuclear launches, each the shipped game's own call:
+--   Base/Assets/UI/WorldInput.lua:2331-2353  CoastalRaid
+--   Base/Assets/UI/WorldInput.lua:2162-2168  WMDStrike, a carrier
+--   Base/Assets/UI/WorldInput.lua:2264-2272  ICBMStrike, a silo's city
+-- A global table, not file-scope locals: the main chunk has no registers to spare.
+CivvisWmd = {};
+
+CivvisWmd.coastalRaid = function(unit, subject, x, y, turn)
+	local hash = OP["UNITOPERATION_COASTAL_RAID"];
+	if hash == nil then return false, "unknown_op_COASTAL_RAID"; end
+	if x == nil or y == nil then return false, "no_dest"; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = x;
+	params[UnitOperationTypes.PARAM_Y] = y;
+	local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, "COASTAL_RAID", x, y, turn);
+	if warRefusal ~= nil then return false, warRefusal; end
+	if not canOperate(unit, hash, params) then return false, "cannot_coastal_raid"; end
+	return operate(unit, hash, params), "COASTAL_RAID";
+end;
+
+-- 35 of 37 live PILLAGE orders over 60 games came back `cannot_PILLAGE`, at full
+-- movement and across every unit class, and nothing recorded what stood on the
+-- plot. This records it, so the next refusal can be explained.
+CivvisWmd.notePillageRefused = function(unit, subject, turn, why)
+	local plot = try(function() return Map.GetPlot(unit:GetX(), unit:GetY()); end, nil);
+	emit("pillage_refused", {
+		turn = turn, unit = subject, unit_kind = unitTypeName(unit), why = why,
+		x = try(function() return unit:GetX(); end, -1),
+		y = try(function() return unit:GetY(); end, -1),
+		moves = try(function() return unit:GetMovesRemaining(); end, -1),
+		improvement = plot and try(function() return plot:GetImprovementType(); end, -1) or -1,
+		improvement_pillaged = plot and try(function() return plot:IsImprovementPillaged(); end, false) or false,
+		district = plot and try(function() return plot:GetDistrictType(); end, -1) or -1,
+		owner = plot and try(function() return plot:GetOwner(); end, -1) or -1,
+	});
+end;
+
+CivvisWmd.fromUnit = function(unit, subject, weapon, x, y, turn)
+	local hash = OP["UNITOPERATION_WMD_STRIKE"];
+	if hash == nil then return false, "unknown_op_WMD_STRIKE"; end
+	if x == nil or y == nil then return false, "wmd_no_target"; end
+	local device = GameInfo.WMDs[weapon];
+	if device == nil then return false, "unknown_wmd_" .. weapon; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = x;
+	params[UnitOperationTypes.PARAM_Y] = y;
+	params[UnitOperationTypes.PARAM_WMD_TYPE] = device.Index;
+	local warRefusal = CivvisLedger.refuseWarStarter(unit, subject, weapon, x, y, turn, device.Index);
+	if warRefusal ~= nil then return false, warRefusal; end
+	if not canOperate(unit, hash, params) then
+		emit("wmd_strike_refused", {
+			turn = turn, unit = subject, unit_kind = unitTypeName(unit), verb = weapon,
+			x = x, y = y,
+			moves = try(function() return unit:GetMovesRemaining(); end, -1),
+			attacks = try(function() return unit:GetAttacksRemaining(); end, -1),
+		});
+		return false, "cannot_wmd_strike";
+	end
+	return operate(unit, hash, params), "WMD_STRIKE";
+end;
+
+CivvisWmd.fromSilo = function(pid, subject, verb, x, y, turn)
+	local sx, sy, weapon = verb:match("^(%d+):(%d+):([%w_]+)$");
+	sx, sy = tonumber(sx), tonumber(sy);
+	if sx == nil or sy == nil then return false, "wmd_bad_source"; end
+	if x == nil or y == nil then return false, "wmd_no_target"; end
+	local device = GameInfo.WMDs[weapon];
+	if device == nil then return false, "unknown_wmd_" .. tostring(weapon); end
+	local city = try(function() return CityManager.GetCity(pid, subject); end);
+	if city == nil then return false, "wmd_city_missing"; end
+	local params = {};
+	params[CityCommandTypes.PARAM_X0] = sx;
+	params[CityCommandTypes.PARAM_Y0] = sy;
+	params[CityCommandTypes.PARAM_X1] = x;
+	params[CityCommandTypes.PARAM_Y1] = y;
+	params[CityCommandTypes.PARAM_WMD_TYPE] = device.Index;
+	local warRefusal = CivvisLedger.refuseWarStarter(city, subject, weapon, x, y, turn, device.Index);
+	if warRefusal ~= nil then return false, warRefusal; end
+	if not try(function()
+		return CityManager.CanStartCommand(city, CityCommandTypes.WMD_STRIKE, params);
+	end, false) then
+		emit("wmd_strike_refused", { turn = turn, city = subject, verb = weapon, x = x, y = y, silo_x = sx, silo_y = sy });
+		return false, "wmd_strike_refused";
+	end
+	local ok = CivvisK.attempt(function()
+		CityManager.RequestCommand(city, CityCommandTypes.WMD_STRIKE, params);
+	end);
+	return ok, ok and "WMD_STRIKE" or "wmd_strike_throw";
 end;
 
 local function applyOrder(player, pid, row, turn)
@@ -14410,6 +14505,7 @@ local function applyOrder(player, pid, row, turn)
 	-- holds a trap worth naming: the CITY command takes the UNIT operation's
 	-- parameter keys (`UnitOperationTypes.PARAM_X/Y`), and must be asked with
 	-- `CanStartCommand` first — an unasked request fails silently.
+	if kind == "wmd_strike" then return CivvisWmd.fromSilo(pid, subject, verb, x, y, turn); end
 	if kind == "city_strike" then
 		local city = try(function() return CityManager.GetCity(pid, subject); end);
 		if city == nil then return false, "city_strike_city_missing"; end
@@ -17240,6 +17336,10 @@ local function applyOrder(player, pid, row, turn)
 		-- the combat frame count follow, as they do for RANGE_ATTACK.
 		-- `REBASE` and `PATROL` move an aircraft between friendly plots and
 		-- start no war. Never reach-capped: an air operation is one hop.
+		if verb == "WMD_NUCLEAR_DEVICE" or verb == "WMD_THERMONUCLEAR_DEVICE" then
+			return CivvisWmd.fromUnit(unit, subject, verb, x, y, turn);
+		end
+		if verb == "COASTAL_RAID" then return CivvisWmd.coastalRaid(unit, subject, x, y, turn); end
 		if verb == "AIR_ATTACK" or verb == "REBASE" or verb == "PATROL" then
 			if x == nil or y == nil then return false, "no_dest"; end
 			local opName = "UNITOPERATION_AIR_ATTACK";
@@ -17930,7 +18030,12 @@ local function applyOrder(player, pid, row, turn)
 		-- `operate` asks `canOperate` again on the line below; that is a cheap
 		-- repeat and deliberately not inlined, so the parameterless request still
 		-- passes through the same signature-aware helper as every other operation.
-		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
+		if not canOperate(unit, hash, {}) then
+			if verb == "PILLAGE" then
+				CivvisWmd.notePillageRefused(unit, subject, turn, refusalReason(unit, hash, {}));
+			end
+			return false, "cannot_" .. verb;
+		end
 		return operate(unit, hash, {}), verb;
 	end
 
