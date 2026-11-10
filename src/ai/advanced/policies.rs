@@ -1510,7 +1510,7 @@ impl AdvancedAi {
         })
     }
 
-    pub(super) fn preferred_governor_promotion(
+    fn preferred_governor_promotion(
         &self,
         g: &Game,
         pid: usize,

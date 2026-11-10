@@ -96,12 +96,16 @@ fn pingala_takes_connoisseur_first_even_under_a_recovery_plan() {
 
 #[test]
 fn the_title_after_the_appointment_is_connoisseur() {
+    // Early Empire and State Workforce: two titles, an appointment and the
+    // first promotion.
     let mut game = board(9_105);
+    game.players[0].civics.insert(crate::name!("early_empire"));
     let opening = plan(&game, GrandStrategy::Expansion);
-    let ai = seat(VictoryTarget::Culture, true);
-    ai.strategic_governors(&mut game, 0, &opening);
-    let promotion = ai
-        .preferred_governor_promotion(&game, 0, GrandStrategy::Expansion, "pingala")
-        .unwrap();
-    assert_eq!(promotion, "connoisseur");
+    seat(VictoryTarget::Culture, true).strategic_governors(&mut game, 0, &opening);
+    let pingala = &game.players[0].governor_roster["pingala"];
+    assert!(
+        pingala.promotions.contains("connoisseur") && !pingala.promotions.contains("researcher"),
+        "{:?}",
+        pingala.promotions
+    );
 }
