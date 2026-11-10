@@ -392,6 +392,9 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         ("GET", "/policy-effects") => {
             with_session(|session| crate::routes::policy_effects(session))
         }
+        ("GET", "/map-search-buildings") => {
+            with_session(|session| crate::routes::map_search_buildings(session))
+        }
 
         // A save is handed straight to the page, which owns the storage this
         // build has: there is no disk here, so `/saves` and the named half of

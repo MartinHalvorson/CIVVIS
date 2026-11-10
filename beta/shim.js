@@ -37,7 +37,7 @@
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/forecast", "/view",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
     "/supervisor-new", "/pace", "/next-game",
-    "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects",
+    "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects", "/map-search-buildings",
     "/live-pause", "/live-new-game",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");

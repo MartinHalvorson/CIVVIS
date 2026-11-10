@@ -4710,6 +4710,35 @@ fn the_planet_gpu_binding_precedes_the_saved_hud_layout_replay() {
 /// tile while listing units only in exact sight, understands the named
 /// things the game indexes on a plot, and paints the same result on both
 /// supported map projections.
+/// A rival's buildings are searchable as in Civ VI, on the search's own
+/// request. Served by one router only, the feature would work in development
+/// and be dead on civvis.ai; carried on `/state`, every frame would pay for it.
+#[test]
+fn rival_buildings_reach_the_search_on_its_own_request() {
+    let js = EMBEDDED_APP_JS;
+    assert!(js.contains(r#"fetchJSON("/map-search-buildings")"#));
+    assert!(
+        js.contains("if (query || exclude) requestMapSearchSites();"),
+        "the read belongs to a search that wants terms and to nothing else"
+    );
+    let search = js
+        .split_once("\nfunction computeMapSearchMatches(")
+        .expect("search body")
+        .1
+        .split_once("\n}\n")
+        .expect("end of search body")
+        .0;
+    assert!(
+        search.contains("for (const site of mapSearchSitesFor(st))")
+            && search.contains("add(site.pos, site.owner, \"Building\""),
+        "a site goes through `add`, so it stays clipped to the revealed map"
+    );
+    for router in [include_str!("../server.rs"), include_str!("../wasm.rs")] {
+        assert!(router.contains(r#"("GET", "/map-search-buildings")"#));
+    }
+    assert!(include_str!("../../beta/shim.js").contains("\"/map-search-buildings\""));
+}
+
 #[test]
 fn browser_search_lights_every_matching_visible_tile() {
     let sidebar = EMBEDDED_INDEX
