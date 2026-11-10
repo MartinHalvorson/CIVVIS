@@ -8447,6 +8447,9 @@ pub struct AdvancedAi {
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
     religion_seat_reaches_reformed_church: bool,
+    /// Let an active founder corps slot Religious Orders over a lower-ranked
+    /// ordinary Economic card. See `religion_seat_slots_the_orders`. Opt-in.
+    religion_seat_slots_the_orders: bool,
     /// `religion-seat-flips-the-cheapest`: a Religion-target founder's
     /// spreaders go where a charge buys the most of the victory. See
     /// `advanced/religion_seat_flips_the_cheapest.rs`. Off by default.
@@ -26405,6 +26408,8 @@ mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
+/// An active founder corps can use its first available policy window.
+mod religion_seat_slots_the_orders;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
