@@ -640,12 +640,26 @@
   async function withPublishedArtifact(answer) {
     if (!answer || typeof answer !== "object") return answer;
     const build = await loadPublishedBuild();
-    const bytes = build?.wasm_bytes;
     const runningCommit = answer.server_commit ?? answer.commit;
-    if (!Number.isSafeInteger(bytes) || bytes <= 0 ||
-        typeof build?.commit !== "string" || build.commit !== runningCommit) {
-      return answer;
+    if (typeof build?.commit !== "string" || build.commit !== runningCommit) return answer;
+    // When the module was built is the manifest's to say, for the same reason
+    // as its size. Published builds no longer stamp the hour into the module:
+    // those few bytes gave an unchanged engine a new address on every
+    // deployment, and each visitor downloaded and compiled all of it again.
+    // A module that does carry its own stamp keeps it.
+    const builtAt = build.built_at;
+    if (typeof builtAt === "string" && builtAt) {
+      if (Object.prototype.hasOwnProperty.call(answer, "server_commit") &&
+          (answer.server_built_at === null || answer.server_built_at === undefined)) {
+        answer.server_built_at = builtAt;
+      }
+      if (Object.prototype.hasOwnProperty.call(answer, "commit") &&
+          (answer.built_at === null || answer.built_at === undefined)) {
+        answer.built_at = builtAt;
+      }
     }
+    const bytes = build.wasm_bytes;
+    if (!Number.isSafeInteger(bytes) || bytes <= 0) return answer;
     if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
       answer.server_artifact_bytes = bytes;
       answer.server_artifact_kind = "WASM";
