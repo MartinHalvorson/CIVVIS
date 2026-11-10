@@ -20883,10 +20883,52 @@ function skyStageEdge(stage, dx, dy, margin) {
   return {x:(stage.left + stage.right) / 2 + ux * reach,
           y:(stage.top + stage.bottom) / 2 + uy * reach};
 }
-// A launch the camera cannot see from where it is: zoomed in on the other side
-// of the world, or parked at another planet. Everyone watching still gets to
-// see it go, so it comes in over the edge of the frame on the bearing of its
-// Spaceport and leaves on the bearing of where it is going.
+// Parked out at another world, with home nowhere in the picture, a rocket on its
+// way somewhere else has no pad to leave here and nothing to land on. It goes by:
+// one straight line along the top of the frame, left to right, at one speed and
+// in about two seconds whatever the mission's own film would have been.
+const SKY_FLYBY_MS = 2200;
+// How far down the frame the line runs: the name above the rocket has to clear
+// the masthead's shadow. Rockets in the air together take a lane each, or two
+// launched on one turn would fly exactly on top of each other.
+const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18, SKY_FLYBY_LANE = 36;
+function skyHomeInPicture(radius, centerX, centerY, stage) {
+  const nearX = Math.max(stage.left, Math.min(stage.right, centerX));
+  const nearY = Math.max(stage.top, Math.min(stage.bottom, centerY));
+  return Math.hypot(centerX - nearX, centerY - nearY) <= radius;
+}
+function skyLaunchFlyby(launch, stage, margin) {
+  launch.duration = SKY_FLYBY_MS; launch.endsAt = launch.t0 + SKY_FLYBY_MS;
+  const busy = new Set(anim.skyLaunches.flatMap(other =>
+    other !== launch && other.flybyLane !== undefined && other.t0 + other.duration > launch.t0
+      ? [other.flybyLane] : []));
+  const lanes = Math.max(1, Math.floor((stage.bottom - stage.top) / 3 / SKY_FLYBY_LANE));
+  launch.flybyLane = 0;
+  while (busy.has(launch.flybyLane) && launch.flybyLane < lanes - 1) launch.flybyLane++;
+  const left = stage.left - margin, right = stage.right + margin;
+  // The highest line most of the frame can see, counting the name riding above
+  // it: a panel across the top of the map pushes it down below the panel, and a
+  // small one is simply passed behind.
+  const boxes = skyWidgetBoxes(), head = 28;
+  const hidden = y => boxes.reduce((sum, box) => y > box.top && y - head < box.bottom
+    ? sum + Math.max(0, Math.min(box.right, stage.right) - Math.max(box.left, stage.left)) : sum, 0);
+  const top = stage.top + SKY_FLYBY_TOP;
+  const heights = [top, ...boxes.map(box => box.bottom + head)]
+    .filter(y => y >= top && y <= (stage.top + stage.bottom) / 2).sort((a, b) => a - b);
+  let base = top;
+  for (const y of heights) {
+    if (hidden(y) < hidden(base)) base = y;
+    if (hidden(y) <= (stage.right - stage.left) * .3) break;
+  }
+  const y = base + launch.flybyLane * SKY_FLYBY_LANE;
+  return {start:{x:left, y}, end:{x:right, y}, entering:true, leaving:true, law:skyCoastLaw,
+          flyby:true, pointAt:progress => ({x:left + (right - left) * progress, y})};
+}
+
+// A launch the camera cannot see from where it is, zoomed in on the other side
+// of the world. Everyone watching still gets to see it go, so it comes in over
+// the edge of the frame on the bearing of its Spaceport and leaves on the
+// bearing of where it is going.
 function skyLaunchCrossing(from, goal, stage, margin) {
   const midX = (stage.left + stage.right) / 2, midY = (stage.top + stage.bottom) / 2;
   const inX = from.x - midX, inY = from.y - midY;
@@ -21021,6 +21063,7 @@ function skyPlanMission(launch, player, place, crews, camera, radius, centerX, c
     if (home && radius <= SKY_WORLD_IS_A_DOT) return {kind:"transfer"};
     if (!home && skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
   }
+  if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:"crossing"};
   const shape = skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, margin);
   return shape ? {kind:"ascent", shape} : {kind:"crossing"};
 }
@@ -21183,6 +21226,8 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     return {start:pointAt(0), end:pointAt(1), entering:shape.from > 0, leaving:true,
             law:shape.law, pointAt};
   }
+  if (!route.crossing && !skyHomeInPicture(radius, centerX, centerY, stage))
+    route.crossing = skyLaunchFlyby(launch, stage, margin);
   if (!route.crossing) {
     const east = skyPadEast(pad);
     route.crossing = skyLaunchCrossing(planetProject(pad, view, radius, centerX, centerY), place
@@ -21263,8 +21308,10 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const colour = pcol(player.id);
   // A satellite becomes its craft; anything else that is somehow still in the
   // picture at the end of its film goes out rather than switching off.
-  const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
+  const trailFade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
     : 1 - skySmooth((clock - .9) / .1);
+  // A rocket going by flies all the way out of the frame; only its trail thins.
+  const fade = film.flyby ? 1 : trailFade;
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
@@ -21293,7 +21340,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
     const when = Math.min(clock, step / 64);
     const point = pointAt(film.law(when));
     if (!unseen(point) && !unseen(last)) {
-      const thin = Math.max(.16, 1 - (clock - when) / .6) * fade;
+      const thin = Math.max(.16, 1 - (clock - when) / .6) * trailFade;
       cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(point.x, point.y);
       cx.globalAlpha = thin * .3; cx.strokeStyle = "#e8e6dc";
       cx.lineWidth = 3.4 * pixel; cx.stroke();
