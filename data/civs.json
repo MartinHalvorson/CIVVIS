@@ -71,7 +71,10 @@
     "leader": "Gilgamesh",
     "ability": "epic_quest",
     "unique_unit": "war_cart",
-    "note": "Epic Quest: clearing a barbarian camp also grants a tribal village reward",
+    "effects": {
+      "levy_discount_pct": 50
+    },
+    "note": "Epic Quest: clearing a barbarian camp also grants a tribal village reward, and levying city-state units costs half",
     "agenda": "ally_of_enkidu",
     "traits": [
       "science_major_civ",
@@ -891,7 +894,8 @@
     "effects": {
       "city_faith": 1,
       "combat_strength": 2,
-      "golden_dedication_era_score": 1
+      "golden_dedication_era_score": 1,
+      "same_religion_envoy_bonus": 1
     },
     "note": "Strength is in Unity: +1 faith, +2 combat strength, and Golden or Heroic Age Dedications also grant their Normal Age Era Score bonuses",
     "traits": [

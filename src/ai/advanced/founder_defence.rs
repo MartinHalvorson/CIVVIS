@@ -160,6 +160,9 @@ impl AdvancedAi {
                 unit.owner == pid
                     && unit.kind == kind
                     && (!own_only || unit.religion.as_deref() == Some(religion))
+                    // `last-charge-joins-the-army`: the army and the scouts
+                    // are not spreaders the caps should count.
+                    && !self.keeps_its_last_charge(g, pid, unit.id)
             })
             .count()
     }
