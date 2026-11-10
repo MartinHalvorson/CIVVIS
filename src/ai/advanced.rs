@@ -6745,6 +6745,10 @@ pub struct AdvancedAi {
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
+    /// The unexplored tile each charting spreader is walking to, kept until
+    /// it is seen or cannot be reached. See
+    /// `advanced/religion_seat_charts_the_rivals.rs`.
+    charting_goals: RefCell<BTreeMap<u32, Pos>>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11800,6 +11804,7 @@ impl AdvancedAi {
         self.builder_targets.clear();
         self.builder_avoid.clear();
         self.forget_missionary_explore();
+        self.charting_goals.get_mut().clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
         self.amphibious_train = None;
@@ -11870,6 +11875,11 @@ impl AdvancedAi {
             .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
             .collect();
         self.remap_missionary_explore(map);
+        let charting = self.charting_goals.get_mut();
+        *charting = charting
+            .iter()
+            .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
+            .collect();
         self.settler_stalls = self
             .settler_stalls
             .iter()

@@ -506,3 +506,32 @@ fn a_corps_far_past_its_known_work_sends_the_surplus_to_chart() {
     assert!(on.religion_seat_scout_charts(&mut busy, 0, corps[0], "Buddhism", true));
     assert!(!on.religion_seat_scout_charts(&mut busy, 0, corps[1], "Buddhism", true));
 }
+
+/// ★ The 110341Z shape: a goal picked afresh each turn sent the corps in
+/// circles. A charting unit keeps its tile from turn to turn, and takes a new
+/// one only once the old one has been seen.
+#[test]
+fn a_charting_spreader_keeps_its_goal_until_it_is_seen() {
+    let (game, missionary, _) = charted_out();
+    let on = seat(VictoryTarget::Religion, true);
+    let first = on
+        .religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true)
+        .expect("unexplored ground beside the rival's city is a goal");
+
+    // A turn's walk later the goal is the same tile.
+    let mut walked = game.clone();
+    assert!(on.advanced_missionary_step(&mut walked, 0, missionary, true));
+    assert_ne!(walked.units[&missionary].pos, game.units[&missionary].pos);
+    assert_eq!(
+        on.religion_seat_charting_goal(&walked, 0, missionary, "Buddhism", true),
+        Some(first)
+    );
+
+    // Seen, it is dropped for another tile still in the dark.
+    walked.players[0].explored.insert(first);
+    let second = on.religion_seat_charting_goal(&walked, 0, missionary, "Buddhism", true);
+    assert_ne!(second, Some(first));
+    if let Some(second) = second {
+        assert!(!walked.players[0].explored.contains(&second));
+    }
+}
