@@ -6738,6 +6738,10 @@ pub struct AdvancedAi {
     /// into a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
     /// Opt-in.
     chop_feeds_the_long_build: bool,
+    /// `chop-feeds-the-space-race`: the space-race leg of
+    /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
+    /// project or the Spaceport and into nothing else. Opt-in.
+    chop_feeds_the_space_race: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

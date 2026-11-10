@@ -120,6 +120,10 @@ impl AdvancedAi {
         /// a wonder or a space-race project. See
         /// `advanced/chop_feeds_the_long_build.rs`.
         chop_feeds_the_long_build => enable_chop_feeds_the_long_build, disable_chop_feeds_the_long_build;
+        /// `chop-feeds-the-space-race`: the space-race leg of
+        /// `chop-feeds-the-long-build` alone. See
+        /// `advanced/chop_feeds_the_long_build.rs`.
+        chop_feeds_the_space_race => enable_chop_feeds_the_space_race, disable_chop_feeds_the_space_race;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
