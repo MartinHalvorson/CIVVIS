@@ -6769,6 +6769,10 @@ pub struct AdvancedAi {
     /// researches Astrology once its first Theater Square stands. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater: bool,
+    /// `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    /// open, the treasury buys one Shrine or Temple a turn in a standing Holy
+    /// Site city. See `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_gold_buys_the_shrines: bool,
     /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     /// beeline by when each Inspiration lands and researches the technology
     /// that inspires a near civic of the road to Cold War first. See
@@ -6799,6 +6803,11 @@ pub struct AdvancedAi {
     /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
     /// Opt-in.
     culture_seat_appoints_pingala_first: bool,
+    /// `culture-bank-holds-the-counterweight`: from Nationalism, a Culture
+    /// seat's home religious defence buys no counterweight Missionary unless
+    /// the threat faith stands at match point; the Faith stays for the Rock
+    /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_holds_the_counterweight: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9879,6 +9888,10 @@ pub struct AdvancedAi {
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
     /// default.
     sweden_builds_open_air_museums: bool,
+    /// `space-denial-slots-the-spy-cards`: a Culture or Domination seat whose
+    /// spies answer a space race slots Machiavellianism and Cryptography. See
+    /// `advanced/space_denial_spy_cards.rs`. Off by default.
+    space_denial_slots_the_spy_cards: bool,
     /// `siege-at-the-walls-dies-first`: a hostile siege gun in reach of our
     /// walls, or a taker beside an open city of ours, is the first target of
     /// the kill plan, the ladder and the city strike. See
@@ -11375,6 +11388,8 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
+mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
@@ -25992,6 +26007,10 @@ impl AdvancedAi {
         // city-saving or surprise-defense purchase already owns the turn.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.modernize_before_the_purchase_pass(g, pid);
+            // `culture-gold-buys-the-shrines`: a standing Holy Site's Shrine
+            // or Temple, before the general purchase pass. Exact no-op while
+            // the gene is off. See `advanced/culture_faith_sources.rs`.
+            self.buy_culture_shrine(g, pid, &plan);
         }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);

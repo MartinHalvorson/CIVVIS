@@ -5511,6 +5511,18 @@ pub const GENES: &[Gene] = &[
     // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-bank-holds-the-counterweight`: from Nationalism a Culture seat
+    // buys no counterweight Missionary unless the threat faith is at match
+    // point. Live Deity Kristina 11-10: 21 bought from Nationalism on in 5
+    // of 8 games. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-holds-the-counterweight", field: "culture_bank_holds_the_counterweight", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_holds_the_counterweight, disable: AdvancedAi::disable_culture_bank_holds_the_counterweight },
+    // `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    // open, Gold buys one Shrine or Temple a turn in a standing Holy Site
+    // city. Live Deity Kristina 11-10 waited 5-53 turns from Holy Site to
+    // Temple with 120-290 Gold banked. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
     // `culture-seat-appoints-pingala-first`: a Culture target's first titles
     // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
     // Magnus took the first three titles under the opening's Expansion plan,
@@ -5649,6 +5661,10 @@ pub const GENES: &[Gene] = &[
     // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
+    // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
+    // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
+    // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
+    Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
