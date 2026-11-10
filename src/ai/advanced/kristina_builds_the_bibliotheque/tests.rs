@@ -181,7 +181,15 @@ fn head_is_plaza(g: &Game, cid: u32) -> bool {
 
 #[test]
 fn the_plaza_claims_a_routine_queue_once_the_theater_stands() {
-    let (mut g, cid) = sweden(61_304);
+    // A board whose capital still has a Plaza site once its Theater stands.
+    let (mut g, cid) = (61_304..61_364)
+        .map(sweden)
+        .find(|(board, cid)| {
+            let mut board = board.clone();
+            place(&mut board, *cid, crate::name!("theater_square"));
+            BasicAi::plaza_site_item(&board, 0, *cid).is_some()
+        })
+        .expect("a capital with room for a Theater and a Plaza");
     g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
         unit: crate::name!("builder"),
     }];
@@ -200,16 +208,6 @@ fn the_plaza_claims_a_routine_queue_once_the_theater_stands() {
     assert!(!head_is_plaza(&untreated, cid), "off, nothing changes");
 
     let mut claimed = g.clone();
-    eprintln!(
-        "DEBUG site {:?} cannot {} absent {} head {:?} theater {} sites {:?} pop {}",
-        BasicAi::plaza_site_item(&g, 0, cid),
-        BasicAi::capital_cannot_hold_the_plaza(&g, 0),
-        BasicAi::plaza_absent(&g, 0),
-        g.cities[&cid].queue.first(),
-        g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square")),
-        g.district_sites(cid, crate::name!("government_plaza")),
-        g.cities[&cid].pop,
-    );
     on.claim_queue_for_kristinas_plaza(&mut claimed, 0, &plan());
     assert!(
         head_is_plaza(&claimed, cid),
