@@ -341,11 +341,10 @@ impl Game {
         supply += self.regional_wonder_effects(city).1;
         for wonder in city.wonders.keys() {
             let spec = &self.rules.wonders[wonder];
-            if spec.regional_range <= 0 && !spec.effects.contains_key("empire_amenity") {
+            if spec.regional_range <= 0 {
                 supply += spec.amenity;
             }
         }
-        supply += self.empire_wonder_effect(city.owner, "empire_amenity");
         if self.city_governor_active(city.owner, city.id) {
             supply += self.city_building_effect(city, "governor_city_amenity");
         }

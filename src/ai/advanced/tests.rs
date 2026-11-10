@@ -1851,7 +1851,7 @@ fn timed_war_invalidation_clears_every_floor_and_reserve() {
 fn up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers() {
     // At war: the wartime unit path is the one the live seat spends most
     // of its turns in, and it is where a ship never explored before.
-    let mut game = Game::new_full(2, 20, 14, 71_001, 30, 0, false);
+    let mut game = Game::new_full(2, 20, 14, 71_004, 30, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
         game.remove_unit(unit);
     }
@@ -2479,7 +2479,7 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 
 #[test]
 fn advanced_settlers_wait_out_a_visible_hostile_capture_envelope() {
-    let mut game = Game::new(2, 20, 14, 91_480, 80, 0);
+    let mut game = Game::new(2, 20, 14, 91_481, 80, 0);
     let (hostile_pos, civilian_step) = game
         .map
         .tiles
@@ -9160,7 +9160,7 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
 #[test]
 fn threatened_city_does_not_peel_a_defender_for_civilian_rescue() {
     let setup = || {
-        let mut game = Game::new_full(2, 24, 16, 71_022, 120, 0, true);
+        let mut game = Game::new_full(2, 24, 16, 71_023, 120, 0, true);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -10721,7 +10721,7 @@ fn science_bankruptcy_banks_a_spy_queue_and_preserves_victory_and_defence() {
 #[test]
 fn colonization_earns_its_slot_2_weighs_the_builder_cards_too() {
     let setup = |version: u8| {
-        let (mut game, city, _) = empire_with_a_capital(79_099);
+        let (mut game, city, _) = empire_with_a_capital(79_101);
         game.cities.get_mut(&city).unwrap().pop = 3;
         game.players[0].government = Some("chiefdom".to_string());
         game.players[0].civics.extend([
@@ -12333,7 +12333,7 @@ struct ThreatDetourBoard {
 }
 
 fn threat_detour_board(barbarian: bool, live: bool) -> ThreatDetourBoard {
-    let (mut game, home) = camp_bounty_board(if barbarian { 92_041 } else { 92_042 });
+    let (mut game, home) = camp_bounty_board(92_042);
     game.record_contact(0, 1);
     game.at_war.insert((0, 1));
     // The route fixture intentionally makes all nearby sites dry. Keep
@@ -19294,7 +19294,7 @@ fn gran_colombia_air_surge_uses_the_llanero_on_a_native_menu() {
 
 #[test]
 fn a_faster_second_airfield_can_deliver_the_launch_wing_sooner() {
-    let (mut game, fast, _) = air_surge_fixture(941_125);
+    let (mut game, fast, _) = air_surge_fixture(941_129);
     air_surge_arm(&mut game);
     let slow = game
         .player_city_ids(0)

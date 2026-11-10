@@ -1342,6 +1342,52 @@ fn religion_denial_fixture(target: VictoryTarget) -> (Game, AdvancedAi, Pos) {
 }
 
 #[test]
+fn spares_the_launcher_is_opt_in_in_both_controllers() {
+    opt_in_off_in_both_controllers("religion-seat-spares-the-launcher", |ai| {
+        ai.religion_seat_spares_the_launcher
+    });
+}
+
+#[test]
+fn a_religion_seat_with_a_religion_opens_no_denial_war() {
+    let (mut g, mut off, _) = religion_denial_fixture(VictoryTarget::Religion);
+    g.players[0].religion = Some("Home Faith".to_string());
+    let mut control = g.clone();
+    assert!(off.science_denial_war_diplomacy(&mut control, 0));
+    assert!(control.is_at_war(0, 1), "control opens the war");
+    let (_, mut on, _) = religion_denial_fixture(VictoryTarget::Religion);
+    on.enable_religion_seat_spares_the_launcher();
+    assert!(!on.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(on.denial_war, None);
+}
+
+#[test]
+fn the_launcher_is_spared_only_by_a_religion_seat_that_owns_a_religion() {
+    // No religion yet: the war opens as before.
+    let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+    g.players[0].religion = None;
+    ai.enable_religion_seat_spares_the_launcher();
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+    // Every other target keeps its declaration.
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Domination,
+    ] {
+        let (mut g, mut ai, _) = religion_denial_fixture(target);
+        g.players[0].religion = Some("Home Faith".to_string());
+        ai.enable_religion_seat_spares_the_launcher();
+        assert!(
+            ai.science_denial_war_diplomacy(&mut g, 0),
+            "target {target:?}"
+        );
+        assert!(g.is_at_war(0, 1));
+    }
+}
+
+#[test]
 fn religion_denial_edge_is_opt_in_in_both_controllers() {
     opt_in_off_in_both_controllers("religion-denial-needs-the-edge", |ai| {
         ai.religion_denial_needs_the_edge

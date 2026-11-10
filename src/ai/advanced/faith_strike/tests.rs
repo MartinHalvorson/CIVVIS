@@ -3,7 +3,7 @@ use super::*;
 /// Our spearmen near our city at (2, 8), and rival 1 with a founded faith at
 /// peace with us. The tiles are open grassland.
 fn fixture() -> (Game, AdvancedAi) {
-    let mut g = Game::new_full(4, 40, 24, 372100, 250, 0, false);
+    let mut g = Game::new_full(4, 40, 24, 372101, 250, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

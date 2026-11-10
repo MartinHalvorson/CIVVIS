@@ -404,3 +404,86 @@ fn a_last_charge_missionary_scouts_instead_of_spreading() {
         "control: off, the charge is spent"
     );
 }
+
+/// The tiles `soldier` can stand on before our next move, its own included.
+fn soldier_reach(g: &Game, soldier: u32) -> Vec<Pos> {
+    let mut reach = g.threat_reach(soldier);
+    reach.push(g.units[&soldier].pos);
+    reach
+}
+
+#[test]
+fn a_religious_unit_leaves_the_reach_of_a_soldier_at_war() {
+    let (mut g, _, _, _) = field();
+    g.at_war.insert((0, 1));
+    let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
+    let soldier = g.spawn_unit("warrior", 1, (21, 8));
+    let ai = home_alive();
+    assert!(soldier_reach(&g, soldier).contains(&g.units[&apostle].pos));
+    for _ in 0..6 {
+        if ai.religious_unit_evades_raiders(&mut g, 0, apostle) != Some(true) {
+            break;
+        }
+    }
+    assert!(
+        !soldier_reach(&g, soldier).contains(&g.units[&apostle].pos),
+        "the Apostle ends where the soldier cannot walk onto it"
+    );
+    // Off, the soldier is not read at all.
+    let (mut g, _, _, _) = field();
+    g.at_war.insert((0, 1));
+    let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
+    g.spawn_unit("warrior", 1, (21, 8));
+    let off = AdvancedAi::targeting(VictoryTarget::Religion);
+    assert_eq!(off.religious_unit_evades_raiders(&mut g, 0, apostle), None);
+}
+
+#[test]
+fn a_soldier_at_peace_is_no_threat() {
+    let (mut g, _, _, _) = field();
+    let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
+    g.spawn_unit("warrior", 1, (21, 8));
+    let ai = home_alive();
+    assert!(ai.condemners_near(&g, 0, apostle).is_empty());
+    assert_eq!(ai.religious_unit_evades_raiders(&mut g, 0, apostle), None);
+}
+
+#[test]
+fn the_march_never_enters_a_soldiers_reach() {
+    let (mut g, _, _, abroad) = field();
+    g.at_war.insert((0, 1));
+    let apostle = spawn(&mut g, "apostle", 0, (16, 8), 100, 3);
+    let soldier = g.spawn_unit("warrior", 1, (21, 8));
+    let target = g.cities[&abroad].pos;
+    let ai = home_alive();
+    let start = g.units[&apostle].pos;
+    for _ in 0..8 {
+        if !ai.religious_step_toward_range(&mut g, 0, apostle, target, 1) {
+            break;
+        }
+        assert!(
+            !soldier_reach(&g, soldier).contains(&g.units[&apostle].pos),
+            "no step of the march ends in the soldier's reach"
+        );
+    }
+    assert_ne!(
+        g.units[&apostle].pos, start,
+        "it still marches while the road is clear"
+    );
+}
+
+#[test]
+fn a_tile_under_our_own_soldier_is_a_refuge() {
+    let (mut g, _, _, _) = field();
+    g.at_war.insert((0, 1));
+    let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
+    g.spawn_unit("warrior", 0, (20, 8));
+    g.spawn_unit("warrior", 1, (21, 8));
+    let ai = home_alive();
+    assert!(!ai.condemners_near(&g, 0, apostle).is_empty());
+    assert_eq!(
+        ai.religious_unit_evades_raiders(&mut g, 0, apostle),
+        None,
+        "the rival must beat the guard before it can condemn"
+    );
+}

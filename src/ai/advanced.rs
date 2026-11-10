@@ -6742,6 +6742,13 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
+    /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
+    chop_spares_the_worked_tile: bool,
+    /// The unexplored tile each charting spreader is walking to, kept until
+    /// it is seen or cannot be reached. See
+    /// `advanced/religion_seat_charts_the_rivals.rs`.
+    charting_goals: RefCell<BTreeMap<u32, Pos>>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8462,6 +8469,9 @@ pub struct AdvancedAi {
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
     religion_seat_cuts_the_upkeep: bool,
+    /// Keep the Religion seat's nearest Holy City guard between casts.
+    /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
+    religion_seat_keeps_the_guard: bool,
     /// `religion-lane-hands-over`: the turn the Prophet race first read as
     /// lost, cleared when it reads open again.
     religion_race_lost_since: Option<u32>,
@@ -8469,6 +8479,10 @@ pub struct AdvancedAi {
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
     religion_seat_takes_the_debater: bool,
+    /// `religion-seat-spares-the-launcher`: a Religion seat that owns a
+    /// religion opens no war to deny a space race. See
+    /// `advanced/religion_seat_spares_the_launcher.rs`. Off by default.
+    religion_seat_spares_the_launcher: bool,
     /// `russia-settles-the-tundra`: a Russian seat's site score reads what
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
@@ -11793,6 +11807,7 @@ impl AdvancedAi {
         self.builder_targets.clear();
         self.builder_avoid.clear();
         self.forget_missionary_explore();
+        self.charting_goals.get_mut().clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
         self.amphibious_train = None;
@@ -11863,6 +11878,11 @@ impl AdvancedAi {
             .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
             .collect();
         self.remap_missionary_explore(map);
+        let charting = self.charting_goals.get_mut();
+        *charting = charting
+            .iter()
+            .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
+            .collect();
         self.settler_stalls = self
             .settler_stalls
             .iter()
@@ -26508,6 +26528,8 @@ mod religion_seat_founds_first;
 /// `religion-seat-guards-the-race`: see
 /// `advanced/religion_seat_guards_the_race.rs`.
 mod religion_seat_guards_the_race;
+/// The warned Holy City's guard keeps its post during the spread cooldown.
+mod religion_seat_keeps_the_guard;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
@@ -26515,6 +26537,7 @@ mod religion_seat_reformed_church;
 mod religion_seat_reveals_the_capitals;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
+mod religion_seat_spares_the_launcher;
 /// `religion-seat-spends-the-bank`: see
 /// `advanced/religion_seat_spends_the_bank.rs`.
 mod religion_seat_spends_the_bank;

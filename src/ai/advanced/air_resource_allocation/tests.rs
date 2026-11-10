@@ -3,7 +3,7 @@ use crate::ai::Ai;
 use crate::setup::GameSpeed;
 
 fn fixture(stock: f64) -> (Game, AdvancedAi, Vec<u32>, [u32; 2]) {
-    let mut g = Game::new_full(2, 40, 24, 380_200, 250, 0, false);
+    let mut g = Game::new_full(2, 40, 24, 380_201, 250, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

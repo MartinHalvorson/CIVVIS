@@ -677,12 +677,6 @@ impl Game {
                         .get("tourism_after_conservation")
                         .copied()
                         .unwrap_or(0.0);
-                    building_tourism += spec
-                        .effects
-                        .get("faith_tourism_after_conservation")
-                        .copied()
-                        .unwrap_or(0.0)
-                        * spec.yields.faith;
                 }
                 if self.players[pid].techs.contains(&crate::name!("flight")) {
                     let per_feature = spec

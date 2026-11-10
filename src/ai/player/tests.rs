@@ -231,7 +231,7 @@ fn fog_honest_seats_lose_almost_no_production_to_refused_orders() {
     use crate::game::GameOptions;
     let mut game = Game::new_with(GameOptions {
         speed: "online".to_string(),
-        ..GameOptions::new(4, 44, 28, 3_750_000, 110, 3)
+        ..GameOptions::new(4, 44, 28, 3_750_002, 110, 3)
     });
     let majors = 4;
     let mut ais: Vec<AdvancedAi> = (0..game.players.len())

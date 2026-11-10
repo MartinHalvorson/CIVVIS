@@ -1,0 +1,23 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-spares-the-launcher",
+  "scope": "Paired decider queries on 12 captured live Deity Russia Religious-target boards (2026-11-10), each cut at the first state frame of the turn on which the live game's journal read \"Declaring war on <rival> to deny the space race\". Both arms run one frozen `civvis_orders --explain --resumed` built from the branch with the run's own requested genome; the on arm adds `--with religion-seat-spares-the-launcher`. All 12 pairs completed. The off arm proposes a war declaration on 10 boards and the on arm on none; the proposed orders differ on 11. This records proposal activation on captured live input only; it does not execute in Civ VI and makes no strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religious-corps-religion-seat-spares-the-launcher.native-queries.tar.xz",
+    "sha256": "11220d956bea66689b4d1cf873ebdfb2db7d04a7dcf208f8d0046004db58b7b8"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}

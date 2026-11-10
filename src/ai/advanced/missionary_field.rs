@@ -107,6 +107,21 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// What the flee and the march keep `uid` out of: the raiders, and under
+    /// `corps-comes-home-alive` the soldiers at war with us near it
+    /// (`condemners_near`). With that gene on the two rules run without
+    /// `missionary-evades-raiders` too.
+    pub(super) fn religious_field_threats(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Vec<BarbarianCaptureThreat> {
+        let mut threats = self.religious_raider_threats(g, pid);
+        threats.extend(self.condemners_near(g, pid, uid));
+        threats
+    }
+
     /// Whether a religious unit standing on `pos` could be condemned before
     /// its next turn. An own city and a tile under a friendly military unit
     /// are refuges; see the module header.
@@ -179,7 +194,7 @@ impl AdvancedAi {
         pid: usize,
         uid: u32,
     ) -> Option<bool> {
-        if !self.missionary_evades_raiders {
+        if !self.missionary_evades_raiders && !self.corps_comes_home_alive {
             return None;
         }
         let unit = g.units.get(&uid)?;
@@ -187,7 +202,7 @@ impl AdvancedAi {
             return None;
         }
         let current = unit.pos;
-        let threats = self.religious_raider_threats(g, pid);
+        let threats = self.religious_field_threats(g, pid, uid);
         if !Self::religious_tile_in_reach(g, pid, current, &threats) {
             return None;
         }
@@ -251,10 +266,10 @@ impl AdvancedAi {
         if let Some(acted) = self.apostle_aware_step(g, pid, uid, target, stop_range) {
             return acted;
         }
-        if !self.missionary_evades_raiders {
+        if !self.missionary_evades_raiders && !self.corps_comes_home_alive {
             return self.base.step_toward_range(g, pid, uid, target, stop_range);
         }
-        let threats = self.religious_raider_threats(g, pid);
+        let threats = self.religious_field_threats(g, pid, uid);
         if threats.is_empty() {
             return self.base.step_toward_range(g, pid, uid, target, stop_range);
         }

@@ -56,6 +56,26 @@
 //!   to one in every [`SCOUT_SHARE`] of the corps, charts before it spreads
 //!   ([`AdvancedAi::religion_seat_scout_charts`]): the spreaders with the
 //!   fewest charges left, whose next spread is worth least.
+//! - **A kept goal.** A goal chosen afresh each turn is a different tile
+//!   each turn. In civvis-20261110T110341Z the journal has the corps
+//!   charting on 1,638 lines between t75 and t150, and its units circled
+//!   home: one walked 58 tiles between t78 and t112 for a net 16, another 52
+//!   for 13; the seat knew 7 of 17 rival cities at t100, sent 8 spread
+//!   orders from t50 to t125 with 28 religious units, and held its first
+//!   major at t160. So a charting unit keeps its tile until it is seen or
+//!   cannot be reached (`AdvancedAi::charting_goals`), and a new one is the
+//!   unexplored ground nearest the under-charted rival city nearest the
+//!   unit, the corps spread over the first [`CHARTING_ROUTE_TRIES`] of them.
+//! - **Surplus.** A corps far larger than its known work is the same
+//!   problem at scale. civvis-20261110T100022Z bought twenty Apostles
+//!   between t75 and t125 and held 26 to 36 religious units while it knew 3
+//!   of the 15 cities of the rivals it had met; its one priced target asked
+//!   five charges and stood behind rival Apostles, and two or three scouts
+//!   charted. It held no major until t144, four of five at t203, and lost to
+//!   a rival's Science that turn eight Apostle charges short. So where the
+//!   host's rows price the known work
+//!   (`AdvancedAi::campaign_charges_known`), every spreader beyond
+//!   [`SURPLUS_COVER`] charges for each charge that work asks charts too.
 //!
 //! Off, for a seat aiming elsewhere, or before the founding, nothing changes.
 
@@ -70,12 +90,21 @@ pub(crate) const CHARTED_SPARE_CITIES: usize = 1;
 /// pressure reaches ten (`RELIGION_SPREAD_ADJACENT_CITY_DISTANCE`).
 pub(super) const CHARTING_RADIUS: i32 = 9;
 
-/// The nearest unexplored tiles tried for a route, of which the one that
-/// reveals the most is taken.
-const CHARTING_ROUTE_TRIES: usize = 6;
+/// The unexplored tiles tried for a route, nearest the rival's city first.
+/// A unit takes one of them by its id, so a corps fans out instead of
+/// queueing for one tile.
+const CHARTING_ROUTE_TRIES: usize = 8;
 
 /// One spreader in this many may be a scout. A corps of three sends none.
 pub(super) const SCOUT_SHARE: usize = 4;
+
+/// The charges the corps keeps for each charge the cities it can see still
+/// ask of it, before the rest chart. Two: a spread can be lost to a death on
+/// the way or undone by a rival's visit.
+pub(super) const SURPLUS_COVER: u32 = 2;
+
+/// Charges a fresh spreader carries, for turning surplus charges into units.
+const CHARGES_PER_SPREADER: u32 = 3;
 
 /// Added to a technology on the way to Cartography. The shipped water goal
 /// pays 150-230 for the same step when it applies (`research_value`).
@@ -167,13 +196,13 @@ impl AdvancedAi {
 
 impl AdvancedAi {
     /// A spreader of ours with nothing left to convert walks into an
-    /// under-charted rival's ground: of the nearest unexplored dry tiles
-    /// within [`CHARTING_RADIUS`] of a city of its we know, the one that
-    /// reveals the most, outside every visible raider's reach. With no known
-    /// city of an under-charted rival to start from it takes the long
-    /// expedition instead. False when the gene does not act for this seat,
-    /// off the offensive, for another faith's spreader, when every met rival
-    /// is charted, or when no such ground can be reached.
+    /// under-charted rival's ground: unexplored dry ground within
+    /// [`CHARTING_RADIUS`] of the rival city nearest it, outside every
+    /// visible raider's reach, kept from turn to turn until it is seen. With
+    /// no known city of an under-charted rival to start from it takes the
+    /// long expedition instead. False when the gene does not act for this
+    /// seat, off the offensive, for another faith's spreader, when every met
+    /// rival is charted, or when no such ground can be reached.
     pub(super) fn religion_seat_spreader_charts(
         &self,
         g: &mut Game,
@@ -227,7 +256,11 @@ impl AdvancedAi {
             .map(|unit| (unit.charges, unit.id))
             .collect();
         corps.sort();
-        let scouts = under_charted.min(corps.len() / SCOUT_SHARE);
+        let supply: u32 = corps.iter().map(|(charges, _)| *charges as u32).sum();
+        let surplus = Self::campaign_charges_known(g, pid, religion).map_or(0, |demand| {
+            (supply.saturating_sub(SURPLUS_COVER * demand) / CHARGES_PER_SPREADER) as usize
+        });
+        let scouts = under_charted.min(corps.len() / SCOUT_SHARE).max(surplus);
         if !corps.iter().take(scouts).any(|(_, id)| *id == uid) {
             return false;
         }
@@ -252,8 +285,19 @@ impl AdvancedAi {
         }
         let origin = g.units[&uid].pos;
         let threats = self.religious_raider_threats(g, pid);
+        let open = |position: Pos| {
+            position != origin
+                && !g.players[pid].explored.contains(&position)
+                && !Self::religious_tile_in_reach(g, pid, position, &threats)
+        };
+        // A goal already taken is kept while it is still worth the walk.
+        let kept = self.charting_goals.borrow().get(&uid).copied();
+        if let Some(goal) = kept.filter(|goal| open(*goal) && g.route_step(uid, *goal, 0).is_some())
+        {
+            return Some(goal);
+        }
         let mut unlocated = false;
-        let mut candidates: Vec<(i32, Pos)> = Vec::new();
+        let mut candidates: Vec<(i32, i32, Pos)> = Vec::new();
         {
             let seat = &g.players[pid];
             for rival in g.players.iter().filter(|rival| {
@@ -282,47 +326,50 @@ impl AdvancedAi {
                     .collect();
                 unlocated |= anchors.is_empty();
                 for anchor in anchors {
+                    let reach = g.wdist(origin, anchor);
                     candidates.extend(
                         g.wdisk(anchor, CHARTING_RADIUS)
                             .into_iter()
-                            .filter(|position| {
-                                *position != origin && !seat.explored.contains(position)
-                            })
+                            .filter(|position| open(*position))
                             .filter(|position| {
                                 g.map.get(*position).is_some_and(|tile| {
                                     g.rules.is_passable(tile) && !g.rules.is_water(tile)
                                 })
                             })
-                            .filter(|position| {
-                                !Self::religious_tile_in_reach(g, pid, *position, &threats)
-                            })
-                            .map(|position| (g.wdist(origin, position), position)),
+                            .map(|position| (reach, g.wdist(anchor, position), position)),
                     );
                 }
             }
         }
+        // The rival city nearest this unit first, then the unexplored ground
+        // nearest that city: into the rival's land, not round the edge of ours.
         candidates.sort();
-        candidates.dedup();
+        let mut seen = BTreeSet::new();
         let near: Vec<Pos> = candidates
             .iter()
-            .map(|(_, position)| *position)
+            .map(|(_, _, position)| *position)
+            .filter(|position| seen.insert(*position))
             .filter(|position| g.route_step(uid, *position, 0).is_some())
             .take(CHARTING_ROUTE_TRIES)
             .collect();
-        near.iter()
-            .copied()
-            .max_by_key(|position| {
-                (
-                    BasicAi::frontier_reveal_value(g, pid, uid, *position),
-                    std::cmp::Reverse(g.wdist(origin, *position)),
-                    std::cmp::Reverse(*position),
-                )
-            })
-            .or_else(|| {
-                unlocated
-                    .then(|| Self::missionary_expedition_goal(g, pid, uid, &threats))
-                    .flatten()
-            })
+        let goal = if near.is_empty() {
+            unlocated
+                .then(|| Self::missionary_expedition_goal(g, pid, uid, &threats))
+                .flatten()
+        } else {
+            Some(near[uid as usize % near.len()])
+        };
+        let mut goals = self.charting_goals.borrow_mut();
+        goals.retain(|other, _| g.units.contains_key(other));
+        match goal {
+            Some(goal) => {
+                goals.insert(uid, goal);
+            }
+            None => {
+                goals.remove(&uid);
+            }
+        }
+        goal
     }
 }
 

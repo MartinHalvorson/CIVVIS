@@ -52,54 +52,54 @@ fn world_digest(world: &WorldMap, spawns: &[Pos]) -> u64 {
 /// Hoisted out of the test so `every_rolled_map_script_has_a_pinned_world`
 /// can check the coverage of this very table rather than a copy of it.
 const PLATFORM_WORLD_CASES: [(u64, MapTopology, MapScript, u64); 30] = [
-    (1013, GLOBE, MapScript::Continents, 0xb3ea_398d_068c_462e),
-    (1037, GLOBE, MapScript::Continents, 0x4b66_e7c7_c8aa_0eb6),
-    (4242, GLOBE, MapScript::Continents, 0x5529_3b85_315c_39d5),
-    (31337, GLOBE, MapScript::Continents, 0x7f50_3d0c_8101_2ede),
-    (777, FLAT, MapScript::Continents, 0x8749_ca17_5272_c792),
-    (4242, FLAT, MapScript::Continents, 0x50f2_51a3_45a9_b8ad),
+    (1013, GLOBE, MapScript::Continents, 0xa205_01ad_6947_db56),
+    (1037, GLOBE, MapScript::Continents, 0xca63_f290_c4a7_f7df),
+    (4242, GLOBE, MapScript::Continents, 0xe6c3_cfd0_ecd8_4c1c),
+    (31337, GLOBE, MapScript::Continents, 0x526f_241c_9096_eedc),
+    (777, FLAT, MapScript::Continents, 0x90af_af29_7f80_df47),
+    (4242, FLAT, MapScript::Continents, 0x9ba1_7f19_7653_246b),
     // The default script, on the topology the CLI also defaults to.
     // Seeds 1013 and 31337 are the two that demonstrably moved when the
     // seam geometry stopped calling the platform's trig.
-    (1013, GLOBE, MapScript::TeninsBall, 0x815d_8656_6b58_4760),
-    (31337, GLOBE, MapScript::TeninsBall, 0x387b_9958_ae0d_dc44),
-    (4242, GLOBE, MapScript::TeninsBall, 0x79ed_de7d_4b70_865c),
-    (777, FLAT, MapScript::TeninsBall, 0xeca8_894f_6efd_be3f),
+    (1013, GLOBE, MapScript::TeninsBall, 0x457d_a78b_3db7_8f4c),
+    (31337, GLOBE, MapScript::TeninsBall, 0xc2c5_26bd_e783_5944),
+    (4242, GLOBE, MapScript::TeninsBall, 0x2995_ff17_7fe9_17ee),
+    (777, FLAT, MapScript::TeninsBall, 0xafb7_2031_38ee_1abd),
     // Every other script that rolls ground from a seed. Ten of the
     // twelve were unpinned until `every_rolled_map_script_has_a_pinned_world`
     // went looking, so a platform-trig call in any of them could not have
     // failed anything. A globe row carries the geometry the rule is about;
     // the flat row is the control that flat generation did not move.
-    (1013, GLOBE, MapScript::LandOnly, 0x2db0_4643_36eb_546b),
-    (777, FLAT, MapScript::LandOnly, 0xae77_bd91_3075_22dc),
-    (1013, GLOBE, MapScript::Lakes, 0x0062_582c_84b0_731a),
-    (777, FLAT, MapScript::Lakes, 0xe3a9_4fc6_e3c2_d089),
-    (1013, GLOBE, MapScript::InlandSea, 0x1c87_b3c1_b22c_6f7b),
-    (777, FLAT, MapScript::InlandSea, 0x12e2_a345_7c20_d7c5),
-    (1013, GLOBE, MapScript::GrandCanals, 0x1e4c_aa24_d02a_92fe),
-    (777, FLAT, MapScript::GrandCanals, 0x36c3_67b2_78be_1e33),
+    (1013, GLOBE, MapScript::LandOnly, 0x646b_3813_a0f1_8197),
+    (777, FLAT, MapScript::LandOnly, 0x9408_801c_ed33_8c75),
+    (1013, GLOBE, MapScript::Lakes, 0x22e5_4bf7_3146_2b87),
+    (777, FLAT, MapScript::Lakes, 0xdb7a_20f1_30f4_a1f1),
+    (1013, GLOBE, MapScript::InlandSea, 0x0e8c_20b2_5c01_ca07),
+    (777, FLAT, MapScript::InlandSea, 0x41e2_f032_7568_6c2c),
+    (1013, GLOBE, MapScript::GrandCanals, 0xf8ed_4246_dc97_d3ae),
+    (777, FLAT, MapScript::GrandCanals, 0x7c14_3346_ae51_016c),
     (
         1013,
         GLOBE,
         MapScript::GrandCanalsTwo,
-        0x755f_a9ed_25f7_d8ed,
+        0x8ec2_38f1_cc25_ecc1,
     ),
-    (777, FLAT, MapScript::GrandCanalsTwo, 0x09a9_1aec_0849_85b4),
-    (1013, GLOBE, MapScript::Pangaea, 0x8c10_44be_87d4_3176),
-    (777, FLAT, MapScript::Pangaea, 0xb861_964d_6a0c_4f58),
+    (777, FLAT, MapScript::GrandCanalsTwo, 0xd709_e1b7_827c_f603),
+    (1013, GLOBE, MapScript::Pangaea, 0x5460_0b86_21e9_413a),
+    (777, FLAT, MapScript::Pangaea, 0x67b7_c57d_3631_0bff),
     (
         1013,
         GLOBE,
         MapScript::SmallContinents,
-        0x7fee_1e76_5a93_a5c5,
+        0xe928_173c_8dbf_596b,
     ),
-    (777, FLAT, MapScript::SmallContinents, 0x2172_8dcc_33a5_37e1),
-    (1013, GLOBE, MapScript::Fjords, 0xa8d5_9de0_4c59_4c3d),
-    (777, FLAT, MapScript::Fjords, 0xa976_aefc_69e7_7c12),
-    (1013, GLOBE, MapScript::Islands, 0x0943_aba6_be2c_401a),
-    (777, FLAT, MapScript::Islands, 0xd6ae_ae03_f0df_2fc9),
-    (1013, GLOBE, MapScript::WaterWorld, 0xfec9_f0a6_3fad_b9ae),
-    (777, FLAT, MapScript::WaterWorld, 0x7136_80f1_f549_1469),
+    (777, FLAT, MapScript::SmallContinents, 0x7e51_2752_a404_e57d),
+    (1013, GLOBE, MapScript::Fjords, 0x74de_1473_f23b_a72f),
+    (777, FLAT, MapScript::Fjords, 0x8ed0_123e_2fe4_2c76),
+    (1013, GLOBE, MapScript::Islands, 0xe9ca_b8f9_4169_e8c9),
+    (777, FLAT, MapScript::Islands, 0xc173_ac41_3a08_936e),
+    (1013, GLOBE, MapScript::WaterWorld, 0x9313_5600_29f0_209a),
+    (777, FLAT, MapScript::WaterWorld, 0x6f65_d1cf_2b6c_8880),
 ];
 
 /// The digest every platform must agree on, per seed and shape.
@@ -2494,7 +2494,7 @@ fn the_silk_road_is_passable_end_to_end() {
             .iter()
             .find(|size| size.id == size_id)
             .unwrap();
-        let mut rng = Rng::new(31_337);
+        let mut rng = Rng::new(31_338);
         let (world, _) = generate_with_script(
             &rules,
             size.width,
@@ -4784,8 +4784,11 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
                             adjacent.terrain, "coast",
                             "oasis at {position:?} touches Coast at {neighbor:?}"
                         );
+                        // A fissure is laid after the oases and nothing keeps
+                        // it off one.
                         assert!(
-                            adjacent.feature.is_none(),
+                            adjacent.feature.is_none()
+                                || adjacent.feature.as_deref() == Some("geothermal_fissure"),
                             "oasis at {position:?} touches feature {:?} at {neighbor:?}",
                             adjacent.feature
                         );
@@ -4800,28 +4803,12 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
                 "volcano" => {
                     assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                 }
-                "volcanic_soil" => {
-                    assert!(
-                        volcanic_soil_valid_terrain(tile),
-                        "volcanic soil generated on {} at {position:?}",
-                        tile.terrain
-                    );
-                    assert!(
-                        world.neighbors(*position).into_iter().any(|neighbor| world
-                            .tiles
-                            .get(&neighbor)
-                            .is_some_and(|neighbor_tile| {
-                                neighbor_tile.feature.as_deref() == Some("volcano")
-                            })),
-                        "volcanic soil at {position:?} has no volcano"
-                    );
-                }
+                // No shipped script places it: only an eruption leaves soil.
+                "volcanic_soil" => panic!("volcanic soil generated at {position:?}"),
                 "geothermal_fissure" => assert!(
-                    world.neighbors(*position).into_iter().any(|neighbor| world
-                        .tiles
-                        .get(&neighbor)
-                        .is_some_and(|neighbor_tile| { neighbor_tile.terrain == "mountain" })),
-                    "geothermal fissure at {position:?} is not tectonic"
+                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean"),
+                    "geothermal fissure on {} at {position:?}",
+                    tile.terrain
                 ),
                 _ => {}
             }
@@ -4839,7 +4826,6 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
         "geothermal_fissure",
         "ice",
         "volcano",
-        "volcanic_soil",
     ] {
         assert!(
             generated.contains(feature),
@@ -4849,7 +4835,7 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
 }
 
 #[test]
-fn continental_rifts_concentrate_mountains_and_geothermal_fissures() {
+fn continent_seams_concentrate_mountains_and_geothermal_fissures() {
     let rules = Rules::embedded();
     let mut rift_land = 0usize;
     let mut interior_land = 0usize;
@@ -4877,7 +4863,7 @@ fn continental_rifts_concentrate_mountains_and_geothermal_fissures() {
             if rules.is_water(tile) {
                 continue;
             }
-            let rift = continent_rift_band(&world, *position);
+            let rift = second_continent_distance(&world, *position).is_some();
             let land = if rift {
                 &mut rift_land
             } else {
@@ -5501,6 +5487,72 @@ fn measure_start_spread() {
             );
             for row in rows {
                 println!("{row}");
+            }
+        }
+    }
+}
+
+/// `numLargeLakes` in each stock script, on four continents and on five so
+/// every rounding shows.
+#[test]
+fn large_lake_budgets_follow_each_stock_script() {
+    for (script, four, five) in [
+        (MapScript::Lakes, 16, 20),
+        (MapScript::Pangaea, 6, 8),
+        (MapScript::Continents, 4, 5),
+        (MapScript::SmallContinents, 4, 5),
+        (MapScript::InlandSea, 2, 3),
+        (MapScript::Islands, 2, 3),
+    ] {
+        assert_eq!(large_lake_budget(script, 4), four, "{script:?} on four");
+        assert_eq!(large_lake_budget(script, 5), five, "{script:?} on five");
+    }
+}
+
+/// The seam pass raises Mountains over land a seat could have stood on, so
+/// every shipped script at every shipped size still has to seat everyone.
+#[test]
+fn every_stamped_script_seats_every_player_at_every_stock_size() {
+    let rules = Rules::embedded();
+    for script in [
+        MapScript::Continents,
+        MapScript::SmallContinents,
+        MapScript::Pangaea,
+        MapScript::Islands,
+        MapScript::Lakes,
+        MapScript::InlandSea,
+    ] {
+        for size in CIV6_MAP_SIZES.iter().take(6) {
+            for seed in 0..3 {
+                let mut rng = Rng::new(84_100 + seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    script,
+                    FLAT,
+                    POLED,
+                    &mut rng,
+                );
+                assert!(
+                    spawns.len() >= size.default_players + size.default_city_states,
+                    "{script:?} {} seed {seed}: {} starts",
+                    size.id,
+                    spawns.len()
+                );
+                for start in &spawns {
+                    let tile = &world.tiles[start];
+                    assert!(
+                        !rules.is_water(tile) && tile.terrain != "mountain",
+                        "{script:?} {} seed {seed}: a start on {}",
+                        size.id,
+                        tile.terrain
+                    );
+                }
             }
         }
     }

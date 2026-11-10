@@ -212,6 +212,11 @@ impl AdvancedAi {
             self.journal_launcher_gate(g, pid, lead);
             return None;
         };
+        // `religion-seat-spares-the-launcher`: the war is not opened. One
+        // already running keeps its name.
+        if !g.is_at_war(pid, counter) && self.launcher_is_spared(g, pid, counter) {
+            return None;
+        }
         // A Science seat races in lane while it keeps pace: the war is only
         // its counter once the racer is ahead of our own launches.
         if self.active_victory_target(g) == Some(VictoryTarget::Science)

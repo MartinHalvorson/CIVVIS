@@ -120,10 +120,20 @@ impl AdvancedAi {
             let city = &g.cities[&cid];
             (city.pos, city.name.clone())
         };
-        if !self.holy_city_spread_due(g, pos) {
+        let waiting = !self.holy_city_spread_due(g, pos);
+        if waiting && !self.religion_seat_keeps_the_guard_active(g, pid) {
             return None;
         }
-        let current = g.units.get(&uid)?.pos;
+        let unit = g.units.get(&uid)?;
+        if waiting
+            && (unit.owner != pid
+                || unit.charges == 0
+                || unit.religion.as_deref() != Some(religion)
+                || g.rules.units[unit.kind].religious_spread <= 0.0)
+        {
+            return None;
+        }
+        let current = unit.pos;
         let distance = g.wdist(current, pos);
         if distance > HOLY_CITY_GUARD_REACH {
             return None;
@@ -143,6 +153,13 @@ impl AdvancedAi {
         });
         if nearer {
             return None;
+        }
+        if waiting {
+            let moved = distance > 1 && self.religious_step_toward_range(g, pid, uid, pos, 1);
+            think!(self.journal(), Faith, Detail,
+                "{} spreader keeps watch at the Holy City {}", religion, name;
+                "religion-seat-keeps-the-guard: the source is still warned; its nearest charged guard waits or returns during the spread cooldown instead of leaving for another city");
+            return Some(moved);
         }
         if distance <= 1 {
             if g.apply(pid, &Action::Spread { unit: uid }).is_ok() {

@@ -190,6 +190,61 @@ impl FlipRows {
 }
 
 impl AdvancedAi {
+    /// The charges the cities this seat can see still ask of its corps: for
+    /// every rival major, the unpromoted-Apostle charges of the cheapest
+    /// cities it still owes our majority (plus [`CAMPAIGN_SPARE`]), and for
+    /// every city of ours not on our faith, a Missionary's. Each city counts
+    /// up to [`CHARGE_CAP`]. `None` when the host has shown no rows, which is
+    /// every simulated game.
+    pub(super) fn campaign_charges_known(g: &Game, pid: usize, religion: &str) -> Option<u32> {
+        if g.observed_city_faiths.is_empty() {
+            return None;
+        }
+        let mut demand = 0;
+        for rival in g.players.iter().filter(|rival| {
+            rival.alive && !rival.is_minor && !rival.is_barbarian && !rival.is_free_city
+        }) {
+            let cities: Vec<&crate::game::City> = g
+                .cities
+                .values()
+                .filter(|city| city.owner == rival.id)
+                .collect();
+            let mut open: Vec<u32> = cities
+                .iter()
+                .filter(|city| g.city_religion(city) != Some(religion))
+                .filter_map(|city| FlipRows::observed(g, city, religion))
+                .map(|rows| {
+                    if rival.id == pid {
+                        rows.charges(200.0, 0.10)
+                    } else {
+                        rows.charges(REFERENCE_SPREAD, REFERENCE_EVICTION)
+                    }
+                    .min(CHARGE_CAP)
+                })
+                .collect();
+            if rival.id == pid {
+                demand += open.iter().sum::<u32>();
+                continue;
+            }
+            if g.same_team(pid, rival.id) {
+                continue;
+            }
+            let held = cities
+                .iter()
+                .filter(|city| g.city_religion(city) == Some(religion))
+                .count();
+            let count = g
+                .observed_public_empire_stats
+                .get(&rival.id)
+                .and_then(|stats| stats.city_count)
+                .map_or(cities.len(), |count| count.max(cities.len()));
+            let owed = (count / 2 + 1).saturating_sub(held);
+            open.sort_unstable();
+            demand += open.iter().take(owed + CAMPAIGN_SPARE).sum::<u32>();
+        }
+        Some(demand)
+    }
+
     /// What one spread by `uid` adds to its faith in a foreign city and the
     /// share of every other faith's pressure it removes (`Game::do_spread`).
     fn spreader_strength(g: &Game, uid: u32) -> (f64, f64) {

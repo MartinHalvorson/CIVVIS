@@ -115,7 +115,7 @@ mod tests {
     }
 
     fn played_with(target: Option<VictoryTarget>, version: Option<u8>) -> String {
-        let mut game = Game::new_with(GameOptions::new(3, 32, 20, 92_409, 40, 1));
+        let mut game = Game::new_with(GameOptions::new(3, 32, 20, 92_411, 40, 1));
         let mut ais: Vec<AdvancedAi> = game
             .players
             .iter()

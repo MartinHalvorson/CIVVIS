@@ -306,7 +306,7 @@ fn rotation_is_off_by_default_and_projects_every_lane() {
 #[test]
 fn a_shorter_review_period_reaches_the_search_more_often() {
     let census = |review_every: u32| {
-        let mut g = Game::new(4, 28, 18, 41000, 160, 2);
+        let mut g = Game::new(4, 28, 18, 41001, 160, 2);
         let mut strategic = StrategicAi::new();
         strategic.review_every = review_every;
         strategic.horizon = 4;

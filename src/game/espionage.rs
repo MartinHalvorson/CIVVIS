@@ -20,15 +20,7 @@ impl Game {
     pub fn spy_modifiers(&self, pid: usize) -> (f64, f64, i64, i64, i64, bool) {
         (
             1.0 + self.policy_effect(pid, "spy_production_pct") / 100.0,
-            1.0 + (self.policy_effect(pid, "spy_time_pct")
-                + self.empire_building_sum(pid, |building| {
-                    building
-                        .effects
-                        .get("spy_mission_time_pct")
-                        .copied()
-                        .unwrap_or(0.0)
-                }))
-                / 100.0,
+            1.0 + self.policy_effect(pid, "spy_time_pct") / 100.0,
             (self.policy_effect(pid, "offensive_spy_level")
                 + self.empire_building_sum(pid, |building| {
                     building
