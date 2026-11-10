@@ -13,6 +13,7 @@ Usage::
     python3 tools/civ6_events.py noops              # "the unit did not move", checked
     python3 tools/civ6_events.py strikes            # could each melee attack have landed?
     python3 tools/civ6_events.py plots VERB ...     # what stood on the plot when a unit order failed
+    python3 tools/civ6_events.py stalls             # moves that left their unit standing, and why
 
 Pass ``--runs N`` for more logs, or ``--root DIR`` for another directory. One
 game continued from a save writes one log per sitting (``<run>-cont1`` and so
@@ -26,6 +27,7 @@ import argparse
 import collections
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -233,9 +235,70 @@ def order_plots(logs: list[Path], verbs: Iterable[str] = ()) -> dict[tuple, coll
     return table
 
 
+def _first_moves(path: Path) -> dict[tuple, tuple]:
+    """(turn, unit) -> the destination of that unit's first `MOVE_TO`, from `orders.sqlite`."""
+    database = path.parent / "orders.sqlite"
+    if not database.exists():
+        return {}
+    connection = sqlite3.connect(f"file:{database}?immutable=1", uri=True)
+    try:
+        rows = connection.execute(
+            "select turn, subject, x, y from orders where kind = 'unit' and verb = 'MOVE_TO' order by seq desc"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}  # a run that stopped before its first order
+    finally:
+        connection.close()
+    return {(turn, unit): (x, y) for turn, unit, x, y in rows}
+
+
+def stalled_moves(logs: list[Path]) -> collections.Counter:
+    """Moves that left their unit standing all turn with movement to spare, by what was in the way.
+
+    The host drops a `MOVE_TO` onto a plot another of our units still holds,
+    with no refusal, so a line of units advances only at its head. Each such
+    order is filed by what stood on its destination in the turn's first frame.
+    `behind_a_unit_that_left` is the case to watch.
+    """
+    table: collections.Counter = collections.Counter()
+    for path in logs:
+        moves = _first_moves(path)
+        first: dict[int, dict] = {}
+        last: dict[int, dict] = {}
+        failed: set[tuple] = set()
+        worked: set[tuple] = set()
+        for event in events(path, ('"kind": "state"', '"order_failed"', '"order_verified"')):
+            kind, turn = event.get("kind"), event.get("turn")
+            if kind == "state":
+                units = {unit.get("id"): unit for unit in event.get("units") or []}
+                first.setdefault(turn, units)
+                last[turn] = units
+            elif _verb_head(event.get("verb")) == "MOVE_TO":
+                if kind == "order_verified":
+                    worked.add((turn, event.get("subject")))
+                elif event.get("reason") == "did_not_move":
+                    failed.add((turn, event.get("subject")))
+        for turn, subject in failed - worked:
+            start, end = first.get(turn, {}).get(subject), last.get(turn, {}).get(subject)
+            if not start or not end or (start["x"], start["y"]) != (end["x"], end["y"]) or (end.get("moves") or 0) <= 0:
+                continue
+            target = moves.get((turn, subject))
+            if target is None:
+                table["no_order_recorded"] += 1
+                continue
+            occupants = [unit for uid, unit in first[turn].items() if uid != subject and (unit.get("x"), unit.get("y")) == target]
+            if not occupants:
+                table["open_plot"] += 1
+                continue
+            occupant = last[turn].get(occupants[0].get("id"))
+            stayed = occupant is not None and (occupant.get("x"), occupant.get("y")) == target
+            table["behind_a_unit_that_stayed" if stayed else "behind_a_unit_that_left"] += 1
+    return table
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("report", choices=("kinds", "failures", "noops", "strikes", "plots"))
+    parser.add_argument("report", choices=("kinds", "failures", "noops", "strikes", "plots", "stalls"))
     parser.add_argument("verbs", nargs="*", help="plots only: the unit verbs to read, or every one")
     parser.add_argument("--runs", type=int, default=8, help="newest games to read")
     parser.add_argument("--root", type=Path, default=RUN_ROOT)
@@ -253,6 +316,9 @@ def main() -> int:
                 print(f"{row['failed']:5} of {row['total']:6} ({row['rate']:4.0%}) "
                       f"recovered {row['recovered']:4}  "
                       f"{str(row['kind']):14} {row['verb']:24} {reasons}")
+    elif args.report == "stalls":
+        for why, count in stalled_moves(logs).most_common():
+            print(f"{count:6}  {why}")
     elif args.report == "plots":
         for (verb, improvement, feature, resource), outcomes in sorted(
                 order_plots(logs, args.verbs).items(), key=lambda item: (-item[1]["failed"], item[0])):

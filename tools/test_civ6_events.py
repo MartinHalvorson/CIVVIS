@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -209,6 +210,37 @@ class Reports(unittest.TestCase):
         with mock.patch("sys.argv", argv), contextlib.redirect_stdout(out):
             self.assertEqual(ev.main(), 0)
         self.assertIn("FORTIFY", out.getvalue())
+
+    def stall(self, units_last, frames=None):
+        """One unit told to step onto (3, 4) on turn 5, which stayed put."""
+        first = [{"id": 1, "x": 3, "y": 3, "moves": 2}, {"id": 2, "x": 3, "y": 4, "moves": 2}]
+        rows = [
+            {"kind": "state", "turn": 5, "units": first},
+            {"kind": "state", "turn": 5, "units": units_last},
+            order("order_failed", 1, verb="MOVE_TO", reason="did_not_move"),
+        ]
+        path = game(self.root, "a", rows)
+        planted = sqlite3.connect(path.parent / "orders.sqlite")
+        planted.execute("create table orders (turn, seq, kind, subject, verb, x, y, frame)")
+        planted.execute("insert into orders values (5, 1, 'unit', 1, 'MOVE_TO', 3, 4, 0)")
+        planted.commit()
+        planted.close()
+        return ev.stalled_moves([path])
+
+    def test_a_stall_behind_a_unit_that_left(self):
+        table = self.stall([{"id": 1, "x": 3, "y": 3, "moves": 2}, {"id": 2, "x": 9, "y": 9, "moves": 0}])
+        self.assertEqual(dict(table), {"behind_a_unit_that_left": 1})
+
+    def test_a_stall_behind_a_unit_that_stayed(self):
+        table = self.stall([{"id": 1, "x": 3, "y": 3, "moves": 2}, {"id": 2, "x": 3, "y": 4, "moves": 2}])
+        self.assertEqual(dict(table), {"behind_a_unit_that_stayed": 1})
+
+    def test_a_unit_that_spent_its_movement_is_not_a_stall(self):
+        self.assertEqual(dict(self.stall([{"id": 1, "x": 3, "y": 3, "moves": 0}])), {})
+
+    def test_a_run_with_no_order_database_is_not_guessed(self):
+        rows = [standing(5, 1, 3, 4), order("order_failed", 1, verb="MOVE_TO", reason="did_not_move")]
+        self.assertEqual(dict(ev.stalled_moves([game(self.root, "a", rows)])), {})
 
     def test_a_noop_is_judged_by_the_next_state(self):
         rows = [
