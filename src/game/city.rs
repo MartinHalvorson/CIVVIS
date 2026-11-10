@@ -2736,7 +2736,7 @@ impl Game {
                 };
                 deposit.class == "strategic"
                     && connects(candidate)
-                    && !t.improvement.as_deref().is_some_and(|now| connects(now))
+                    && !t.improvement.as_deref().is_some_and(connects)
             })
         };
         // Whether another Artifact has a slot anywhere in the empire — an
