@@ -455,7 +455,10 @@ impl HostMoveRefusals {
 ///
 /// Counts *consecutive identical* failures. An order is identified by
 /// everything the host is told — kind, verb, subject and target plot — so a
-/// re-planned destination is a different order and starts clean. After
+/// re-planned destination is a different order and starts clean. A failure
+/// after [`ORDER_REFUSAL_COOLDOWN_TURNS`] quiet turns starts the count again:
+/// the same order failing on turns 86, 101 and 147 is three separate events,
+/// not one standing refusal. After
 /// [`ORDER_REFUSAL_STRIKES`] failures with the same reason, that exact order is
 /// withheld for [`ORDER_REFUSAL_COOLDOWN_TURNS`] host turns and the reply says
 /// so by name. Any `Verified` for that identity clears the record immediately.
@@ -583,22 +586,25 @@ impl HostOrderRefusals {
                     // refused strike re-sent in the same turn is futile
                     // (`air_pillage_tests`), and a move's same-turn replays are
                     // already suppressed upstream.
-                    let struck_this_turn =
-                        check.order.kind != "unit" && self.failed_on.get(&identity) == Some(&turn);
-                    self.failed_on.insert(identity.clone(), turn);
+                    let previous = self.failed_on.insert(identity.clone(), turn);
+                    let struck_this_turn = check.order.kind != "unit" && previous == Some(turn);
+                    let after_a_quiet_spell = previous.is_none_or(|last| {
+                        turn.saturating_sub(last) >= ORDER_REFUSAL_COOLDOWN_TURNS
+                    });
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
                         reason: reason.clone(),
                         until: None,
                     });
-                    if record.reason == *reason {
+                    if record.reason == *reason && !after_a_quiet_spell {
                         if !struck_this_turn {
                             record.strikes += 1;
                         }
                     } else {
-                        // A different answer is a different problem. The host
-                        // is not standing on one refusal, so the count starts
-                        // again rather than accumulating across causes.
+                        // A different answer is a different problem, and an
+                        // old one is history. The host is not standing on one
+                        // refusal, so the count starts again rather than
+                        // accumulating across causes or across the whole game.
                         record.reason = reason.clone();
                         record.strikes = 1;
                     }

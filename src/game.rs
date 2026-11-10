@@ -574,6 +574,7 @@ mod power;
 /// Religion: pantheons, founding, beliefs, followers, theological combat.
 /// See `game/religion.rs`.
 mod religion;
+pub use religion::ObservedCityFaith;
 /// Strategic resources: connections, per-turn income, stockpiles. See
 /// `game/strategic_resources.rs`.
 mod strategic_resources;
@@ -6379,6 +6380,10 @@ pub enum PlayOnMode {
     UntilNextVictory,
     /// Keep the world live no matter which later victory requirements are met.
     Indefinite,
+    /// Every civilization left plays on until only one remains. Nothing else
+    /// can end the world: every other result is refused and no two
+    /// civilizations can be at peace, so the survivor is the only verdict.
+    LastCivStanding,
 }
 
 impl PlayOnMode {
@@ -6386,6 +6391,7 @@ impl PlayOnMode {
         match value {
             "until_next_victory" => Some(Self::UntilNextVictory),
             "indefinite" => Some(Self::Indefinite),
+            "last_civ_standing" => Some(Self::LastCivStanding),
             _ => None,
         }
     }
@@ -6394,6 +6400,7 @@ impl PlayOnMode {
         match self {
             Self::UntilNextVictory => "until_next_victory",
             Self::Indefinite => "indefinite",
+            Self::LastCivStanding => "last_civ_standing",
         }
     }
 }
@@ -6413,7 +6420,8 @@ pub struct Decided {
     pub mercy_lanes: Vec<String>,
     /// The turn the victory was declared on, not the turn play resumed.
     pub turn: u32,
-    /// Whether this continuation stops at the next distinct result or never.
+    /// What ends this continuation: the next distinct result, nothing, or
+    /// the last civilization left standing.
     #[serde(default)]
     pub mode: PlayOnMode,
 }
@@ -6443,6 +6451,10 @@ pub const DRAW_RESULT: &str = "draw";
 /// checkboxes, so it is not one of [`VictoryConditions::NAMES`]: the flag is
 /// an arena objective, and only a battle set up around one can end this way.
 pub const FLAG_VICTORY: &str = "flag";
+/// The result of a world played on until one civilization was left. It is not
+/// one of [`VictoryConditions::NAMES`] either: no lobby checkbox asks for it,
+/// and only "one more turn" can lead here.
+pub const LAST_CIV_VICTORY: &str = "last_civ_standing";
 
 /// The notation a Mercy Rule verdict is written and displayed under.
 ///
@@ -6851,6 +6863,11 @@ pub struct Game {
     /// religious combat cannot forecast a conversion from these markers.
     #[serde(default)]
     pub observed_city_religion_markers: Arc<BTreeSet<u32>>,
+    /// The religion rows a live host's city banner showed for each mirrored
+    /// city: followers, pressure per turn and lifetime pressure. Empty in
+    /// simulated games, whose `City::pressure` is already the real figure.
+    #[serde(default)]
+    pub observed_city_faiths: Arc<BTreeMap<u32, Vec<ObservedCityFaith>>>,
     /// Host gross strategic income minus the reconstructed board's income.
     /// Corrections preserve policy and improvement counterfactuals on clones.
     /// Empty in simulated games; refreshed on each host snapshot.
@@ -7806,6 +7823,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_religion_markers: BTreeSet<u32>,
     #[serde(default)]
+    observed_city_faiths: BTreeMap<u32, Vec<ObservedCityFaith>>,
+    #[serde(default)]
     observed_strategic_income_adjustments: BTreeMap<usize, BTreeMap<Name, f64>>,
     #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
@@ -8045,6 +8064,7 @@ impl From<GameSer> for Game {
             observed_rival_wars: Arc::new(s.observed_rival_wars),
             observed_city_palaces: Arc::new(s.observed_city_palaces),
             observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
+            observed_city_faiths: Arc::new(s.observed_city_faiths),
             observed_strategic_income_adjustments: Arc::new(
                 s.observed_strategic_income_adjustments,
             ),
@@ -8319,6 +8339,7 @@ impl From<Game> for GameSer {
             observed_rival_wars: Arc::unwrap_or_clone(g.observed_rival_wars),
             observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
             observed_city_religion_markers: Arc::unwrap_or_clone(g.observed_city_religion_markers),
+            observed_city_faiths: Arc::unwrap_or_clone(g.observed_city_faiths),
             observed_strategic_income_adjustments: Arc::unwrap_or_clone(
                 g.observed_strategic_income_adjustments,
             ),
@@ -8453,6 +8474,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_ranged_strength).clear();
         Arc::make_mut(&mut self.observed_city_palaces).clear();
         Arc::make_mut(&mut self.observed_city_religion_markers).clear();
+        Arc::make_mut(&mut self.observed_city_faiths).clear();
         Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
         Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).clear();
@@ -8535,6 +8557,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_ranged_strength).remove(&cid);
         Arc::make_mut(&mut self.observed_city_palaces).remove(&cid);
         Arc::make_mut(&mut self.observed_city_religion_markers).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_faiths).remove(&cid);
         Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
         Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).remove(&cid);
@@ -8829,6 +8852,7 @@ impl Game {
             observed_rival_wars: Arc::new(BTreeSet::new()),
             observed_city_palaces: Arc::new(BTreeMap::new()),
             observed_city_religion_markers: Arc::new(BTreeSet::new()),
+            observed_city_faiths: Arc::new(BTreeMap::new()),
             observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
             observed_trade_capacity: Arc::new(BTreeMap::new()),
             observed_leader_types: Arc::new(BTreeMap::new()),
@@ -10229,6 +10253,11 @@ impl Game {
         // can sign it away, which is why this is the war state itself rather
         // than a declaration written into `at_war` at setup.
         if self.is_arena() {
+            return true;
+        }
+        // The same is true of a world played on to its last civilization:
+        // the war is the rule of the extension, so it cannot be signed away.
+        if self.plays_to_the_last_civ() && self.major_diplomatic_counterpart(a, b) {
             return true;
         }
         if self

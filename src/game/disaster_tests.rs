@@ -84,6 +84,106 @@ fn arm_certain_eruption(game: &mut Game, volcano: Pos, ring: &[Pos]) {
     }
 }
 
+/// Run the meteor phase on every turn of the game.
+fn rain_meteors(game: &mut Game) {
+    for turn in 1..=game.max_turns {
+        game.turn = turn;
+        game.process_meteors();
+    }
+}
+
+/// Fill the map so that one land tile, dressed as asked, is the only place
+/// left for a strike.
+fn only_open_tile(game: &mut Game, terrain: Name, feature: Option<Name>) -> Pos {
+    let target = land_tile(game);
+    for tile in game.map.tiles.values_mut() {
+        tile.improvement = Some(crate::name!("goody_hut"));
+    }
+    let tile = game.map.tiles.get_mut(&target).unwrap();
+    tile.improvement = None;
+    tile.owner_city = None;
+    tile.district = None;
+    tile.wonder = None;
+    tile.terrain = terrain;
+    tile.feature = feature;
+    target
+}
+
+#[test]
+fn meteors_fall_with_every_game_mode_off_at_the_shipped_counts() {
+    for (intensity, expected) in [(0u8, 0u32), (1, 4), (2, 6), (3, 10), (4, 15)] {
+        let mut game = quiet_game();
+        assert!(!game.game_mode("apocalypse"));
+        game.disaster_intensity = intensity;
+        rain_meteors(&mut game);
+        assert_eq!(game.meteor_strikes, expected, "intensity {intensity}");
+        let sites = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| tile.improvement.as_deref() == Some("meteor_goody"))
+            .count();
+        assert_eq!(sites, expected as usize, "intensity {intensity}");
+    }
+}
+
+#[test]
+fn the_apocalypse_mode_raises_the_showers_to_its_megadisasters_row() {
+    let mut game = quiet_game();
+    game.game_modes.insert("apocalypse".to_string());
+    rain_meteors(&mut game);
+    assert_eq!(game.meteor_strikes, 20);
+}
+
+#[test]
+fn a_battlefield_has_no_meteor_showers() {
+    assert!(!Game::script_disaster_allowed(
+        crate::setup::MapScript::Battlefield,
+        "meteor_shower"
+    ));
+}
+
+#[test]
+fn a_meteor_lands_on_every_feature_a_live_site_was_seen_on() {
+    for feature in [
+        None,
+        Some(crate::name!("forest")),
+        Some(crate::name!("jungle")),
+        Some(crate::name!("marsh")),
+        Some(crate::name!("floodplains")),
+        Some(crate::name!("grassland_floodplains")),
+        Some(crate::name!("plains_floodplains")),
+        Some(crate::name!("oasis")),
+    ] {
+        let mut game = quiet_game();
+        let target = only_open_tile(&mut game, crate::name!("plains"), feature);
+        game.turn = game.max_turns;
+        game.process_meteors();
+        assert_eq!(
+            game.map.get(target).unwrap().improvement.as_deref(),
+            Some("meteor_goody"),
+            "feature {feature:?}"
+        );
+    }
+}
+
+#[test]
+fn a_meteor_stays_off_tundra_and_off_a_volcano() {
+    // `RandomEvent_Terrains` has no Tundra row, though the site's own
+    // `Improvement_ValidTerrains` does.
+    for (terrain, feature) in [
+        (crate::name!("tundra"), None),
+        (crate::name!("plains"), Some(crate::name!("volcano"))),
+    ] {
+        let mut game = quiet_game();
+        let target = only_open_tile(&mut game, terrain, feature);
+        game.turn = game.max_turns;
+        game.process_meteors();
+        assert_eq!(game.meteor_strikes, 0, "{terrain:?} {feature:?}");
+        assert!(game.map.get(target).unwrap().improvement.is_none());
+    }
+}
+
 #[test]
 fn the_default_intensity_is_the_middle_of_the_five_settings() {
     let game = quiet_game();

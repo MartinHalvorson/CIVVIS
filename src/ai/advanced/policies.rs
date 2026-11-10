@@ -1088,6 +1088,7 @@ impl AdvancedAi {
                         return true;
                     }
                     !desired_set.contains(current.as_str())
+                        || self.religion_orders_may_displace(g, pid, &desired, card, current.as_str())
                         || self.domination_multiplier_reclaims_fallback(
                             g, card, current.as_str(), &unproductive_economic_cards,
                         )
@@ -1214,6 +1215,17 @@ impl AdvancedAi {
                                "{qualifying} housing-limited cities with 3 or more specialty \
                                 districts gain +2 Housing; {} was the Economic card the {} \
                                 plan wants least", plain(&current), objective.as_str());
+                    } else if self.religion_orders_may_displace(
+                        g,
+                        pid,
+                        &desired,
+                        card,
+                        current.as_str(),
+                    ) {
+                        think!(self.journal(), Policies, Decision,
+                               "Religious Orders takes the lower-ranked Economic card {}", plain(&current);
+                               "religion-seat-slots-the-orders: the founder has an Apostle in the field; \
+                                use this policy window for +5 theological strength");
                     } else if loyalty_policy_needed && card == "praetorium" {
                         think!(self.journal(), Policies, Decision,
                                "Slotted praetorium over {}", plain(&current);
