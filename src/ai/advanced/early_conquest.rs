@@ -1826,15 +1826,21 @@ impl AdvancedAi {
             .cities
             .get(&city)
             .map_or(0, |target| g.city_max_wall_hp(target));
-        let (ram, held) = if self.first_capital_active() && walls > FIRST_CAPITAL_WALL_CEILING {
-            (crate::name!("siege_tower"), Self::first_capital_towers_held(g, pid))
+        let (breaker, held) = if self.first_capital_active() && walls > FIRST_CAPITAL_WALL_CEILING {
+            (
+                crate::name!("siege_tower"),
+                Self::first_capital_towers_held(g, pid),
+            )
         } else {
-            (crate::name!("battering_ram"), Self::conquest_breakers_held(g, pid))
+            (
+                crate::name!("battering_ram"),
+                Self::conquest_breakers_held(g, pid),
+            )
         };
-        let ram = Item::Unit { unit: ram };
-        if walls > 0 && g.can_produce(pid, capital, &ram) {
+        let breaker = Item::Unit { unit: breaker };
+        if walls > 0 && g.can_produce(pid, capital, &breaker) {
             let breakers = CONQUEST_WALL_BREAKERS.saturating_sub(held);
-            build += turns_for(&ram) * breakers as f64;
+            build += turns_for(&breaker) * breakers as f64;
         }
         let settler_turns = turns_for(&Item::Unit {
             unit: crate::name!("settler"),
@@ -1845,7 +1851,8 @@ impl AdvancedAi {
             .any(|unit| unit.owner == pid && unit.kind.as_str() == "settler");
         // The first Settler is never deferred: the reservation waits for the
         // second city, and preparation starts there.
-        let first = if g.player_city_ids(pid).len() < self.conquest_first_settler_cities() && !settler_out
+        let first = if g.player_city_ids(pid).len() < self.conquest_first_settler_cities()
+            && !settler_out
         {
             settler_turns
         } else {
