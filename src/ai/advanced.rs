@@ -6769,6 +6769,10 @@ pub struct AdvancedAi {
     /// researches Astrology once its first Theater Square stands. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater: bool,
+    /// `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    /// open, the treasury buys one Shrine or Temple a turn in a standing Holy
+    /// Site city. See `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_gold_buys_the_shrines: bool,
     /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     /// beeline by when each Inspiration lands and researches the technology
     /// that inspires a near civic of the road to Cold War first. See
@@ -6789,6 +6793,16 @@ pub struct AdvancedAi {
     /// toward, by tile, with the turn each is open again. Empty with the gene
     /// off.
     dig_dead_sites: BTreeMap<Pos, u32>,
+    /// `denial-war-needs-the-lane-edge`: off Domination, the science-denial
+    /// war needs the launcher counter's edge over the rival's steady power
+    /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.
+    /// Off by default.
+    denial_war_needs_the_lane_edge: bool,
+    /// `culture-seat-appoints-pingala-first`: a Culture target spends its
+    /// first Governor titles on Pingala and Connoisseur instead of the
+    /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
+    /// Opt-in.
+    culture_seat_appoints_pingala_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7520,6 +7534,11 @@ pub struct AdvancedAi {
     /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
+    /// `flower-power-in-the-dark`: a Culture seat in a peaceful Dark Age
+    /// slots Flower Power while it holds or can buy a Rock Band, and drops it
+    /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
+    /// Off by default.
+    flower_power_in_the_dark: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9868,6 +9887,10 @@ pub struct AdvancedAi {
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
     /// default.
     sweden_builds_open_air_museums: bool,
+    /// `space-denial-slots-the-spy-cards`: a Culture or Domination seat whose
+    /// spies answer a space race slots Machiavellianism and Cryptography. See
+    /// `advanced/space_denial_spy_cards.rs`. Off by default.
+    space_denial_slots_the_spy_cards: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10627,6 +10650,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+mod flower_power_in_the_dark;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;
@@ -10770,6 +10795,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`.
+mod denial_war_needs_the_lane_edge;
 /// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
 mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
@@ -10834,6 +10861,7 @@ mod culture_open_borders;
 /// `culture-seat-builds-past-the-deterrent`: see
 /// `advanced/culture_past_the_deterrent.rs`.
 mod culture_past_the_deterrent;
+mod culture_pingala_first;
 mod culture_work_purchase;
 /// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
 mod curator_sits_with_the_works;
@@ -11227,6 +11255,10 @@ mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
 mod band_plays_its_stage;
+/// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
+/// stage it can really reach; a refused trip turns it to another host. See
+/// `advanced/band_plays_what_it_can_reach.rs`.
+mod band_plays_what_it_can_reach;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
@@ -11349,6 +11381,8 @@ mod siege_under_the_wing;
 /// `space-denial-promotes-the-rocket-scientist`: see
 /// `advanced/space_denial_rocket_scientist.rs`.
 mod space_denial_rocket_scientist;
+/// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
+mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
@@ -25956,6 +25990,10 @@ impl AdvancedAi {
         // city-saving or surprise-defense purchase already owns the turn.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.modernize_before_the_purchase_pass(g, pid);
+            // `culture-gold-buys-the-shrines`: a standing Holy Site's Shrine
+            // or Temple, before the general purchase pass. Exact no-op while
+            // the gene is off. See `advanced/culture_faith_sources.rs`.
+            self.buy_culture_shrine(g, pid, &plan);
         }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);
