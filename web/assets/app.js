@@ -8632,7 +8632,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
             onclick="playOnPastVictory('last_civ_standing', false)"
-            title="Keep this world playing until only one civilization remains.">One more turn</button>`
+            title="Keep this world playing until only one civilization remains.">One more turn<span class="winner-again-note">(play until the last Civ standing)</span></button>`
         : ``;
       const winnerActions = SPEC
         ? `${oneMoreTurn}
