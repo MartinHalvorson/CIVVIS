@@ -1898,28 +1898,6 @@ fn print_usage() {
 
 #[cfg(test)]
 mod tests {
-    /// TEMPORARY: the map refresh's soak, run where there are cores to spare.
-    #[test]
-    fn temp_map_refresh_soak() {
-        let run = |map: &'static str, games: &'static str, start: &'static str| {
-            super::soak_command(
-                [
-                    "--games", games, "--players", "4", "--turns", "200", "--start-seed", start,
-                    "--jobs", games, "--map", map,
-                ]
-                .iter()
-                .map(|text| text.to_string())
-                .collect(),
-            );
-        };
-        std::thread::scope(|scope| {
-            scope.spawn(|| run("continents", "2", "100"));
-            scope.spawn(|| run("pangaea", "1", "200"));
-            scope.spawn(|| run("tennis_ball", "1", "300"));
-        });
-        panic!("SOAK DONE");
-    }
-
 
     use super::{
         game_options, jobs_arg, map_topology, simultaneous_soak_job_split,

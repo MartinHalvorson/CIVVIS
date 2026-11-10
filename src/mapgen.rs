@@ -2827,12 +2827,7 @@ fn balance_mountain_share(
     }
 }
 
-fn apply_tectonics(
-    wm: &mut WorldMap,
-    land: &BTreeSet<Pos>,
-    script: MapScript,
-    rng: &mut Rng,
-) {
+fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, script: MapScript, rng: &mut Rng) {
     let profile = tectonic_profile(script);
     let (width, height) = (wm.width, wm.height);
     let mountain_grain = if script == MapScript::Fjords { 4 } else { 3 };
