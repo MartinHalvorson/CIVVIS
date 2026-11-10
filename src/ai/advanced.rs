@@ -25672,9 +25672,9 @@ impl AdvancedAi {
         // `religion-seat-charts-the-rivals`: read by the contact gap in
         // `BasicAi`'s exploration and the hull claims, after any hand-over.
         self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
-        // `domination-charts-every-capital`: the same read for a Domination
-        // seat with a rival capital still uncharted.
-        self.base.charts_rival_capitals = self.domination_charts_every_capital_active(g, pid);
+        // `domination-charts-every-capital`: the same read for a lane charting
+        // gene's own gap.
+        self.base.lane_charting_gap = self.lane_charts_the_water(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);

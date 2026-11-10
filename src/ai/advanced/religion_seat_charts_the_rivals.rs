@@ -193,13 +193,13 @@ impl BasicAi {
 
     /// The contact gap as this seat reads it: `contact-fleet`'s own, or, for
     /// a seat `religion-seat-charts-the-rivals` acts for, a met major still
-    /// under-charted, or, for a seat `domination-charts-every-capital` acts
-    /// for, a rival capital never seen. See the module and
-    /// `advanced/domination_charts_every_capital.rs`.
+    /// under-charted, or a lane charting gene's own gap
+    /// (`domination-charts-every-capital`: a rival capital never seen). See
+    /// the module and `advanced/domination_charts_every_capital.rs`.
     pub(crate) fn contact_gap_open(&self, g: &Game, pid: usize) -> bool {
         Self::contact_fleet_gap(g, pid)
             || (self.charts_rival_majorities && Self::under_charted_majors(g, pid) > 0)
-            || self.charts_rival_capitals
+            || self.lane_charting_gap
     }
 }
 
@@ -263,9 +263,9 @@ impl AdvancedAi {
         {
             return 0.0;
         }
-        // `domination-charts-every-capital`: its seat acts only while a
-        // rival capital is uncharted, which is its own gap.
-        if self.domination_charts_every_capital_active(g, pid) {
+        // `domination-charts-every-capital`: a lane charting gene acts only
+        // while its own gap is open.
+        if self.lane_charts_the_water(g, pid) {
             return CARTOGRAPHY_VALUE;
         }
         let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);

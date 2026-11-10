@@ -83,11 +83,17 @@ impl AdvancedAi {
             && Self::uncharted_rival_capitals(g, pid) > 0
     }
 
+    /// Whether a lane's charting gene acts for this seat this turn and keeps
+    /// the contact gap open (`BasicAi::lane_charting_gap`): this gene's seat.
+    pub(super) fn lane_charts_the_water(&self, g: &Game, pid: usize) -> bool {
+        self.domination_charts_every_capital_active(g, pid)
+    }
+
     /// Whether the charting parts `religion-seat-charts-the-rivals` gives a
-    /// Religion founder act for this seat: that gene's seat, or this gene's.
+    /// Religion founder act for this seat: that gene's seat, or a lane
+    /// charting gene's ([`Self::lane_charts_the_water`]).
     pub(super) fn seat_charts_the_water(&self, g: &Game, pid: usize) -> bool {
-        self.religion_seat_charts_the_rivals_active(g, pid)
-            || self.domination_charts_every_capital_active(g, pid)
+        self.religion_seat_charts_the_rivals_active(g, pid) || self.lane_charts_the_water(g, pid)
     }
 }
 

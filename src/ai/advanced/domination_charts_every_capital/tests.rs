@@ -95,8 +95,8 @@ fn an_unseen_capital_keeps_the_contact_gap_open() {
     assert_eq!(AdvancedAi::uncharted_rival_capitals(&game, 0), 1);
     for gene in [false, true] {
         let mut ai = seat(VictoryTarget::Domination, gene);
-        ai.base.charts_rival_capitals = ai.domination_charts_every_capital_active(&game, 0);
-        assert_eq!(ai.base.charts_rival_capitals, gene, "gene {gene}");
+        ai.base.lane_charting_gap = ai.lane_charts_the_water(&game, 0);
+        assert_eq!(ai.base.lane_charting_gap, gene, "gene {gene}");
         assert_eq!(ai.base.contact_gap_open(&game, 0), gene, "gene {gene}");
     }
     // Seen: the gap closes.
