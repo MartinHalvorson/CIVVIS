@@ -127,6 +127,9 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `cold-war-before-conservation`: see
+        /// `advanced/cold_war_before_conservation.rs`.
+        cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

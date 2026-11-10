@@ -6749,6 +6749,10 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `cold-war-before-conservation`: a Culture target on a six-slot
+    /// government takes only the road to Cold War until it is known. See
+    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
+    cold_war_before_conservation: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10806,6 +10810,9 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
+/// `cold-war-before-conservation`: a Culture target takes only the road to
+/// Cold War. See `advanced/cold_war_before_conservation.rs`.
+mod cold_war_before_conservation;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
