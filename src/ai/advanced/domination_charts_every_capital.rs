@@ -24,7 +24,9 @@
 //!   the ocean-crossing landfall routing go on after every major is met and
 //!   located and every city-state is met.
 //! - **The Religion seat's charting parts**, for this seat as well
-//!   ([`AdvancedAi::seat_charts_the_water`]): each technology on the way to
+//!   ([`AdvancedAi::seat_charts_the_water`]): from
+//!   [`CHARTING_RESEARCH_FROM_STANDARD`] standard turns (turn 60 Online, after
+//!   the opening army's technologies) each technology on the way to
 //!   Cartography is worth `CARTOGRAPHY_VALUE` more while the empire touches
 //!   water; the hull may be laid down at Buttress, a technology early; the
 //!   committed hull keeps its queue head against the other claims; and the
@@ -40,6 +42,13 @@ use super::*;
 /// Standard turns before the gene acts: turn 40 Online, after the opening's
 /// first army and Settlers and before the turn-80 Cartography it aims at.
 pub(super) const CHARTING_FROM_STANDARD: u32 = 60;
+
+/// Standard turns before Cartography's road is worth more: turn 60 Online.
+/// The credit outranks every other technology (a replay of live Kristina
+/// civvis-20261110T205256Z at turn 62 took Buttress over Iron Working), so it
+/// waits until the opening army's technologies (Bronze Working, Iron Working,
+/// Horseback Riding) are normally in, and Cartography lands about turn 80.
+pub(super) const CHARTING_RESEARCH_FROM_STANDARD: u32 = 90;
 
 impl AdvancedAi {
     /// Whether `pid` has seen `rival`'s original capital: on the board on a
@@ -87,6 +96,20 @@ impl AdvancedAi {
     /// the contact gap open (`BasicAi::lane_charting_gap`): this gene's seat.
     pub(super) fn lane_charts_the_water(&self, g: &Game, pid: usize) -> bool {
         self.domination_charts_every_capital_active(g, pid)
+    }
+
+    /// What a lane charting gene adds to a technology on the way to
+    /// Cartography (the caller checks the road, the coast and Cartography
+    /// itself): `CARTOGRAPHY_VALUE` while this gene acts and turn
+    /// [`CHARTING_RESEARCH_FROM_STANDARD`] has come, else zero.
+    pub(super) fn lane_cartography_value(&self, g: &Game, pid: usize) -> f64 {
+        if self.domination_charts_every_capital_active(g, pid)
+            && g.turn >= g.standard_duration(CHARTING_RESEARCH_FROM_STANDARD)
+        {
+            super::religion_seat_charts_the_rivals::CARTOGRAPHY_VALUE
+        } else {
+            0.0
+        }
     }
 
     /// Whether the charting parts `religion-seat-charts-the-rivals` gives a

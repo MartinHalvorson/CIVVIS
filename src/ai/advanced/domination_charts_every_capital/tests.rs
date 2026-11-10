@@ -125,6 +125,14 @@ fn the_way_to_cartography_and_the_early_hull() {
     let (mut game, _, _) = coast();
     let on = seat(VictoryTarget::Domination, true);
     let off = seat(VictoryTarget::Domination, false);
+    // Turn 60 standard: the gap is open but the opening army's research
+    // comes first.
+    assert!(on.domination_charts_every_capital_active(&game, 0));
+    assert_eq!(
+        on.religion_seat_cartography_value(&game, 0, "shipbuilding"),
+        0.0
+    );
+    game.turn = 100;
     for tech in ["shipbuilding", "buttress", "cartography"] {
         assert_eq!(
             on.religion_seat_cartography_value(&game, 0, tech),

@@ -263,10 +263,10 @@ impl AdvancedAi {
         {
             return 0.0;
         }
-        // `domination-charts-every-capital`: a lane charting gene acts only
-        // while its own gap is open.
-        if self.lane_charts_the_water(g, pid) {
-            return CARTOGRAPHY_VALUE;
+        // `domination-charts-every-capital`: a lane charting gene's seat
+        // reads its own schedule.
+        if !self.religion_seat_charts_the_rivals_active(g, pid) {
+            return self.lane_cartography_value(g, pid);
         }
         let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);
         if unmet + unlocated + BasicAi::under_charted_majors(g, pid) == 0 {
