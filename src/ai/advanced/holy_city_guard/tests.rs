@@ -145,3 +145,154 @@ fn the_warning_outlives_a_flicker_and_lapses() {
     city.pressure.insert("Catholicism".into(), 100.0);
     assert_eq!(ai.holy_city_at_risk(&g, 0), None, "already Catholic");
 }
+
+fn cooling_religion_guard(target: VictoryTarget) -> (Game, AdvancedAi, u32, u32) {
+    let (mut g, _, cid) = holy_city_named_by_a_rival();
+    let at = g.cities[&cid].pos;
+    let city = g.cities.get_mut(&cid).unwrap();
+    city.pop = 9;
+    city.pressure.insert("Taoism".into(), 1399.5);
+    city.pressure.insert("Catholicism".into(), 22.3359);
+    let uid = g.spawn_test_unit("missionary", 0, (at.0, at.1 + 1));
+    let unit = g.units.get_mut(&uid).unwrap();
+    unit.religion = Some("Taoism".into());
+    unit.charges = 2;
+    let mut ai = AdvancedAi::targeting(target);
+    ai.enable_founder_holds_the_holy_city();
+    ai.enable_religion_seat_defends_its_faith();
+    ai.holy_city_guard.borrow_mut().spread = Some((at, g.turn - 1));
+    (g, ai, cid, uid)
+}
+
+#[test]
+fn religion_guard_is_registered_and_default_off() {
+    assert!(!AdvancedAi::new().religion_seat_keeps_the_guard);
+    let gene = super::super::genes::GENES
+        .iter()
+        .find(|gene| gene.tag == "religion-seat-keeps-the-guard")
+        .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+    (gene.enable)(&mut ai);
+    assert!(ai.religion_seat_keeps_the_guard);
+    (gene.disable)(&mut ai);
+    assert!(!ai.religion_seat_keeps_the_guard);
+}
+
+#[test]
+fn religion_guard_keeps_the_native_shaped_source_between_casts() {
+    let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+    let at = g.units[&uid].pos;
+    assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+    ai.enable_religion_seat_keeps_the_guard();
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(false)
+    );
+    assert_eq!(g.units[&uid].pos, at);
+    assert_eq!(g.units[&uid].charges, 2);
+    assert_eq!(g.cities[&cid].pressure["Taoism"], 1399.5);
+}
+
+#[test]
+fn religion_guard_returns_during_the_cooldown_without_spreading() {
+    let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+    ai.enable_religion_seat_keeps_the_guard();
+    let at = g.cities[&cid].pos;
+    g.units.get_mut(&uid).unwrap().pos = (at.0 + 5, at.1);
+    let before = g.wdist(g.units[&uid].pos, at);
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(true)
+    );
+    assert!(g.wdist(g.units[&uid].pos, at) < before);
+    assert_eq!(g.units[&uid].charges, 2);
+    assert_eq!(g.cities[&cid].pressure["Taoism"], 1399.5);
+}
+
+#[test]
+fn religion_guard_keeps_only_the_nearest_spreader() {
+    let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+    ai.enable_religion_seat_keeps_the_guard();
+    let at = g.cities[&cid].pos;
+    let other = g.spawn_test_unit("missionary", 0, (at.0 + 1, at.1));
+    g.units.get_mut(&other).unwrap().religion = Some("Taoism".into());
+    assert!(uid < other);
+    assert_eq!(ai.holy_city_guard_step(&mut g, 0, other, "Taoism"), None);
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(false)
+    );
+}
+
+#[test]
+fn religion_guard_preserves_the_original_cast_interval() {
+    let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+    ai.enable_religion_seat_keeps_the_guard();
+    let last = ai.holy_city_guard.borrow().spread.unwrap().1;
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(false)
+    );
+    g.turn = last + g.standard_duration(HOLY_CITY_SPREAD_GAP_STANDARD);
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(true)
+    );
+    assert_eq!(g.units[&uid].charges, 1);
+    assert!(g.cities[&cid].pressure["Taoism"] > 1399.5);
+    assert_eq!(
+        ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"),
+        Some(false)
+    );
+    assert_eq!(g.units[&uid].charges, 1);
+}
+
+#[test]
+fn religion_guard_releases_an_unwarned_or_lost_source() {
+    for lost in [false, true] {
+        let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+        ai.enable_religion_seat_keeps_the_guard();
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.religion_next_seen = None;
+        city.pressure.clear();
+        city.pressure
+            .insert(if lost { "Catholicism" } else { "Taoism" }.into(), 1000.0);
+        ai.holy_city_guard.borrow_mut().warned = None;
+        assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+    }
+}
+
+#[test]
+fn religion_guard_retains_its_lane_and_existing_guard_dependencies() {
+    for target in [
+        VictoryTarget::Domination,
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+    ] {
+        let (mut g, mut ai, _, uid) = cooling_religion_guard(target);
+        ai.enable_religion_seat_keeps_the_guard();
+        assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+    }
+    let (mut g, mut ai, _, uid) = cooling_religion_guard(VictoryTarget::Religion);
+    ai.enable_religion_seat_keeps_the_guard();
+    ai.disable_founder_holds_the_holy_city();
+    assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+    ai.enable_founder_holds_the_holy_city();
+    ai.disable_religion_seat_defends_its_faith();
+    assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+}
+
+#[test]
+fn religion_guard_does_not_recall_a_distant_or_spent_spreader() {
+    for spent in [false, true] {
+        let (mut g, mut ai, cid, uid) = cooling_religion_guard(VictoryTarget::Religion);
+        ai.enable_religion_seat_keeps_the_guard();
+        if spent {
+            g.units.get_mut(&uid).unwrap().charges = 0;
+        } else {
+            let at = g.cities[&cid].pos;
+            g.units.get_mut(&uid).unwrap().pos = (at.0 + HOLY_CITY_GUARD_REACH + 1, at.1);
+        }
+        assert_eq!(ai.holy_city_guard_step(&mut g, 0, uid, "Taoism"), None);
+    }
+}
