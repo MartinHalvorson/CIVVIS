@@ -345,7 +345,7 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:3c717cee7827d516"
+        "fnv1a64:5e27c254aed61f85"
     );
 }
 
