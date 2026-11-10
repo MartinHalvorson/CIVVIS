@@ -528,10 +528,11 @@ fn democracy_trade_bonus_requires_an_ally_or_suzerained_city_state() {
         (game.city_yields(origin).production - baseline.city_yields(origin).production - 4.0).abs()
             < 1e-9
     );
+    // A city-state's -50% Production halves its share of the same +4.
     assert!(
         (game.city_yields(destination).production
             - baseline.city_yields(destination).production
-            - 4.0)
+            - 2.0)
             .abs()
             < 1e-9
     );
