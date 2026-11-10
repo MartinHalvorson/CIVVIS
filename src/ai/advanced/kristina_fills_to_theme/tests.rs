@@ -110,3 +110,38 @@ fn the_stock_theme_swaps_stand_down_for_kristina() {
         "not Sweden"
     );
 }
+
+#[test]
+fn a_starved_musician_builds_the_way_to_the_bibliotheque() {
+    let (g, cid) = sweden_with_a_hall(71_402);
+    let mut on = BasicAi::new();
+    on.kristina_fills_to_theme = true;
+    // A Plaza with no tier-one building takes the Ancestral Hall first.
+    let mut bare = g.clone();
+    bare.cities.get_mut(&cid).unwrap().buildings.clear();
+    assert_eq!(
+        on.kristina_slot_item(&bare, 0, cid, "music"),
+        Some(Some(Item::Building {
+            building: crate::name!("ancestral_hall")
+        }))
+    );
+    // A Chapel rules the Bibliotheque out: the stock chain answers.
+    let mut chapel = bare.clone();
+    chapel
+        .cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("grand_masters_chapel"));
+    assert_eq!(on.kristina_slot_item(&chapel, 0, cid, "music"), None);
+    // No Plaza at all: this city founds one.
+    let mut none = bare.clone();
+    let plaza = crate::name!("government_plaza");
+    let site = none.cities[&cid].districts[&plaza];
+    none.map.tiles.get_mut(&site).unwrap().district = None;
+    none.cities.get_mut(&cid).unwrap().districts.remove(&plaza);
+    assert!(matches!(
+        on.kristina_slot_item(&none, 0, cid, "art"),
+        Some(Some(Item::District { district, .. })) if none.district_family(district) == "government_plaza"
+    ));
+}

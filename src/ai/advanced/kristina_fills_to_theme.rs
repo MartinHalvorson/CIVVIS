@@ -16,7 +16,8 @@
 //! **The gene**, on Sweden's seat only:
 //! 1. A Writer, Artist or Musician the host reports without a slot asks for
 //!    the Queen's Bibliotheque before the stock chain (Amphitheater, Art
-//!    Museum, Broadcast Center): it is the empire's earliest Music slot and a
+//!    Museum, Broadcast Center), and for what makes it buildable (a Plaza, then
+//!    the Ancestral Hall): it is the empire's earliest Music slot and a
 //!    six-slot building that themes when full.
 //! 2. A cultural person walking to an activation plot prefers the plot whose
 //!    3+-slot building is closest to full, and one standing able to activate
@@ -155,9 +156,13 @@ impl BasicAi {
                 .is_some_and(|player| player.civ == "Sweden")
     }
 
-    /// The Bibliotheque for a Writer, Artist or Musician with no slot.
-    /// `None` leaves the stock chain to answer; `Some(None)` means another
-    /// city builds it (or already has it queued).
+    /// The Bibliotheque, or the step that makes it buildable, for a Writer,
+    /// Artist or Musician with no slot: the Bibliotheque itself; else, in a
+    /// city whose Plaza has no tier-one building, the Ancestral Hall; else,
+    /// with no Plaza anywhere, a Plaza in this city. `None` leaves the stock
+    /// chain to answer (and is the answer once a Plaza building that excludes
+    /// the Bibliotheque stands); `Some(None)` means another city is the one to
+    /// build it, or already has it queued.
     pub(crate) fn kristina_slot_item(
         &self,
         g: &Game,
@@ -168,10 +173,14 @@ impl BasicAi {
         if !self.kristina_fills_here(g, pid) || !matches!(work, "writing" | "art" | "music") {
             return None;
         }
-        let bibliotheque = crate::name!("queens_bibliotheque");
-        let queued = g.player_city_ids(pid).into_iter().any(|city| {
-            matches!(g.cities[&city].queue.first(),
-                Some(Item::Building { building }) if *building == bibliotheque)
+        let city_ids = g.player_city_ids(pid);
+        let steps = [
+            crate::name!("queens_bibliotheque"),
+            crate::name!("ancestral_hall"),
+        ];
+        let queued = city_ids.iter().any(|city| {
+            matches!(g.cities[city].queue.first(),
+                Some(Item::Building { building }) if steps.contains(building))
         });
         if queued {
             return Some(None);
@@ -179,10 +188,44 @@ impl BasicAi {
         if let Some(item) = Self::civ_building(g, pid, cid, "queens_bibliotheque") {
             return Some(Some(item));
         }
-        g.player_city_ids(pid)
-            .into_iter()
-            .any(|city| Self::civ_building(g, pid, city, "queens_bibliotheque").is_some())
-            .then_some(None)
+        if city_ids
+            .iter()
+            .any(|city| Self::civ_building(g, pid, *city, "queens_bibliotheque").is_some())
+        {
+            return Some(None);
+        }
+        let plaza = crate::name!("government_plaza");
+        let Some(plaza_city) = city_ids
+            .iter()
+            .copied()
+            .find(|city| g.city_has_district_family(&g.cities[city], plaza))
+        else {
+            // No Plaza: this city founds one if it can, while none is queued.
+            if !Self::plaza_absent(g, pid) {
+                return Some(None);
+            }
+            return Self::plaza_site_item(g, pid, cid).map(Some);
+        };
+        let held = &g.cities[&plaza_city].buildings;
+        let excluded = [
+            "grand_masters_chapel",
+            "intelligence_agency",
+            "foreign_ministry",
+        ]
+        .iter()
+        .any(|building| held.contains(&crate::name::Name::new(building)));
+        let tier_one = ["ancestral_hall", "audience_chamber", "warlords_throne"]
+            .iter()
+            .any(|building| held.contains(&crate::name::Name::new(building)));
+        if excluded || tier_one {
+            // The Bibliotheque is ruled out, or waits on the host (a Tier2
+            // government): the stock chain answers.
+            return None;
+        }
+        if plaza_city != cid {
+            return Some(None);
+        }
+        Self::civ_building(g, pid, cid, "ancestral_hall").map(Some)
     }
 }
 
