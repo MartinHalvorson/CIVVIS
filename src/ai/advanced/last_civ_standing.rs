@@ -2,8 +2,16 @@
 //! conquest, fought as a total war. Nothing but the survivor can end the
 //! world, so no seat falls back to a defensive plan or chases a victory race
 //! that is already decided: each aims at the nearest rival city, and every
-//! idle city trains a soldier — one wall-breaker to four of them — while
-//! the treasury carries the army.
+//! idle city trains a soldier while the treasury carries the army.
+//!
+//! **Open.** What still stalls a final war is walls: 56 of 80 siege readings
+//! taken in stalled worlds read "nothing to open the walls", one of them a
+//! 69-unit train of 5,800 strength held outside a city billed at 552. A rule
+//! that trained a siege gun or bomber for every four soldiers took more
+//! cities by the same turn in two of four worlds and fewer in the other two,
+//! at 1.4 to 1.9 times the time per turn, so it is not here. Sieges that
+//! commit without the bill or a breaker measured no better than leaving the
+//! doctrine alone.
 
 use super::*;
 
@@ -18,10 +26,6 @@ pub(super) const FINAL_WAR_DEFICIT_RUNWAY: f64 = 20.0;
 /// Tiles a nearer city must beat the standing objective by before the
 /// campaign leaves it.
 pub(super) const FINAL_WAR_OBJECTIVE_SLACK: i32 = 3;
-
-/// Land soldiers a final war's army fields per wall-breaker, a siege gun or
-/// a bomber.
-pub(super) const FINAL_WAR_SOLDIERS_PER_BREAKER: usize = 4;
 
 /// Whether `pid` is a civilization fighting a world's final war: the world
 /// plays to its last civilization and this seat is one of them.
@@ -63,67 +67,10 @@ impl AdvancedAi {
         shipped.max(FINAL_WAR_BODIES_PER_CITY * city_count)
     }
 
-    /// The strongest wall-breaker `cid` can train, a land siege gun or a
-    /// bomber, while the army holds fewer than one to every
-    /// [`FINAL_WAR_SOLDIERS_PER_BREAKER`] land soldiers. `None` once it has
-    /// them, or when the city can train none.
-    ///
-    /// The scorer asks for one siege weapon and then buys field strength, and
-    /// a late city's 400-point walls stop any army without something that
-    /// opens them. Measured on the stock site world before this rule, 147
-    /// turns into extra time (seed 22): a 69-unit train of 5,800 strength
-    /// stood off a city billed at 552 with "nothing to open the walls", and
-    /// 56 of the 80 siege readings taken in stalled worlds said the same.
-    fn final_war_breaker(g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if crate::lcs_knobs::get("nobreakers") > 0.0 {
-            return None;
-        }
-        let breaks_walls = |spec: &crate::rules::UnitSpec| {
-            spec.class == "military" && spec.siege && spec.domain.as_deref() != Some("sea")
-        };
-        let (mut soldiers, mut breakers) = (0usize, 0usize);
-        let mut tally = |spec: &crate::rules::UnitSpec| {
-            if breaks_walls(spec) {
-                breakers += 1;
-            } else if spec.class == "military"
-                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-            {
-                soldiers += 1;
-            }
-        };
-        for uid in g.player_unit_ids(pid) {
-            tally(&g.rules.units[g.units[&uid].kind]);
-        }
-        for city in g.player_city_ids(pid) {
-            if let Some(Item::Unit { unit }) = g.cities[&city].queue.first() {
-                tally(&g.rules.units[unit]);
-            }
-        }
-        if breakers * FINAL_WAR_SOLDIERS_PER_BREAKER >= soldiers {
-            return None;
-        }
-        let mut best: Option<(f64, f64, Item)> = None;
-        for item in g.producible_items(pid, cid) {
-            let Item::Unit { unit } = &item else { continue };
-            let spec = &g.rules.units[unit];
-            if !breaks_walls(spec) {
-                continue;
-            }
-            let (power, cost) = (spec.ranged_attack_strength(), spec.cost);
-            if best.as_ref().is_none_or(|(old_power, old_cost, _)| {
-                power > *old_power || (power == *old_power && cost < *old_cost)
-            }) {
-                best = Some((power, cost, item));
-            }
-        }
-        best.map(|(_, _, item)| item)
-    }
-
     /// In a final war every idle queue trains the land soldier the scorer
-    /// rates best — or a wall-breaker while the army is short of them (see
-    /// [`AdvancedAi::final_war_breaker`]) — ahead of the governors, for as
-    /// long as income (less the upkeep of the soldiers already at the head
-    /// of a queue) carries one more. A queue at work is left alone.
+    /// rates best, ahead of the governors, for as long as income (less the
+    /// upkeep of the soldiers already at the head of a queue) carries one
+    /// more. A queue at work is left alone.
     ///
     /// The governors arm to about two soldiers a city and then build for a
     /// future this world does not have. Measured on the stock site world
@@ -166,10 +113,7 @@ impl AdvancedAi {
                     best = Some((value, item));
                 }
             }
-            let scored = best.map(|(_, item)| item);
-            let Some(item) = Self::final_war_breaker(g, pid, cid).or(scored) else {
-                continue;
-            };
+            let Some((_, item)) = best else { continue };
             let upkeep = match &item {
                 Item::Unit { unit } => g.rules.units[unit].maintenance,
                 _ => 0.0,

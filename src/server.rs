@@ -3562,11 +3562,6 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 /// these values in the markup, and the lobby's own `selected` attributes are
 /// held to it by test. Tweak this function to change what a first visit
 /// loads into.
-/// PROBE ONLY, never committed.
-pub fn probe_stock_params(seed: u64) -> Params {
-    stock_opening_params(seed)
-}
-
 fn stock_opening_params(seed: u64) -> Params {
     let size = MapSize::for_players(4);
     let map_topology = MapTopology::Planet;

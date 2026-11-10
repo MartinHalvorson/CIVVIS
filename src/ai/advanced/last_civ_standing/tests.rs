@@ -260,39 +260,3 @@ fn the_final_war_aims_at_the_nearest_rival_city_and_stays_on_it() {
     game.cities.get_mut(&near_city).unwrap().owner = 0;
     assert_eq!(ai.final_war_objective(&game, 0), Some((2, far_city)));
 }
-
-#[test]
-fn the_final_war_trains_a_wall_breaker_for_every_four_soldiers() {
-    let mut game = two_capitals_at_war();
-    let home = game.player_city_ids(0)[0];
-    let home_pos = game.cities[&home].pos;
-    game.players[0].techs.insert(crate::name!("engineering"));
-    play_to_the_last_civ(&mut game);
-    assert_eq!(
-        AdvancedAi::final_war_breaker(&game, 0, home),
-        None,
-        "no army, no breaker owed"
-    );
-
-    for _ in 0..FINAL_WAR_SOLDIERS_PER_BREAKER {
-        game.spawn_test_unit("warrior", 0, home_pos);
-    }
-    let breaker = AdvancedAi::final_war_breaker(&game, 0, home);
-    assert!(
-        matches!(&breaker, Some(Item::Unit { unit }) if game.rules.units[unit].siege),
-        "four soldiers and nothing to open a wall: got {breaker:?}"
-    );
-
-    // The claim trains it ahead of another soldier.
-    let ai = AdvancedAi::new();
-    let plan = ai.assess(&game, 0);
-    game.cities.get_mut(&home).unwrap().queue.clear();
-    game.players[0].gold_per_turn = 50.0;
-    ai.arm_for_the_final_war(&mut game, 0, &plan);
-    assert_eq!(game.cities[&home].queue.first(), breaker.as_ref());
-
-    // One in the queue answers for the four; a fifth soldier owes another.
-    assert_eq!(AdvancedAi::final_war_breaker(&game, 0, home), None);
-    game.spawn_test_unit("warrior", 0, home_pos);
-    assert!(AdvancedAi::final_war_breaker(&game, 0, home).is_some());
-}
