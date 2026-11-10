@@ -10150,22 +10150,35 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     // Anything less than a pact is one leader's view, read from the row.
     assert!(matrix.contains("WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]]"));
     assert!(matrix.contains("${row.civ} toward ${column.civ}"));
-    for state in ["friendly", "neutral", "unfriendly", "denounced"] {
+    assert!(matrix.contains("have not met"));
+    for state in ["friendly", "neutral", "unfriendly", "denounced", "unmet"] {
         assert!(EMBEDDED_INDEX.contains(&format!(".politics-mark.{state} {{")));
         assert!(EMBEDDED_INDEX.contains(&format!("[\"{state}\", \"")));
     }
-    // The key is outside the name column, which holds names and nothing else.
-    assert!(EMBEDDED_INDEX.contains("<div id=\"politicskey\" class=\"politics-key\" hidden></div>"));
+    // The key is outside the name column, which holds names and nothing else,
+    // and is read before the table it explains.
+    let key = EMBEDDED_INDEX
+        .find("<div id=\"politicskey\" class=\"politics-key\" hidden></div>")
+        .expect("key");
+    assert!(
+        key < EMBEDDED_INDEX
+            .find("<div id=\"worldpolitics\"")
+            .expect("table")
+    );
     assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
-    // Both sets of names stay put while the table scrolls under them, and the
-    // scroller is held to the deck's window so that it, not the deck, scrolls.
+    // Both sets of names stay put while the table scrolls under them. Six rows
+    // always fit, and the labels below stop covering the table while it is open.
     assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(var(--deck-window) - 106px), min(calc(var(--deck-window) - 43px), 130px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(var(--politics-name) + 35px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
+    assert!(EMBEDDED_INDEX.contains(
+        "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
+    ));
+    assert!(EMBEDDED_INDEX.contains("section.scrollIntoView({ block: \"nearest\" });"));
     assert!(EMBEDDED_INDEX
         .contains("side.style.setProperty(\"--deck-window\", `${Math.round(room)}px`);"));
 
@@ -12659,7 +12672,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until the last Civ standing)</span></button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until only one Civ remains)</span></button>"
     ));
     // A result that already left one civilization has nothing to play on to.
     assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));

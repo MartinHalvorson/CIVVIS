@@ -5441,6 +5441,10 @@ pub const GENES: &[Gene] = &[
     // An Apostle that has spent a charge stops asking to Evangelize, which
     // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
     Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
+    // A Rock Band's concert is weighted by how much of the Culture race it
+    // closes: a visitor from the bar holder lowers the bar too. Opt-in; see
+    // `advanced/bands_draw_from_the_bar.rs`.
+    Gene { tag: "bands-draw-from-the-bar", field: "bands_draw_from_the_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_draw_from_the_bar, disable: AdvancedAi::disable_bands_draw_from_the_bar },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5471,6 +5475,12 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // `culture-bank-opens-at-nationalism`: the Rock Band Faith bank opens at
+    // Nationalism, and Faith buys only Writers, Artists and Musicians from
+    // then on. Live Kristina 20261110T140731Z spent 1,370 Faith on three
+    // Great People at t124-144 while the bank waited for Ideology. Opt-in;
+    // see `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5574,6 +5584,10 @@ pub const GENES: &[Gene] = &[
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
+    // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
+    // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
+    // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
+    Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

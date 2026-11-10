@@ -2096,6 +2096,12 @@ pub struct BasicAi {
     /// levels 1-2, 80 of 168 bands played once, and the only two-level stage
     /// pairings numbered 3. Off by default; opt-in gene.
     pub(crate) band_plays_its_stage: bool,
+    /// `bands-draw-from-the-bar`: a Rock Band tours toward the rivals that
+    /// bind the Culture bar. A visitor drawn from the rival with the most
+    /// domestic tourists also lowers the bar, so it closes the race twice;
+    /// one drawn from a rival far below the bar closes it once. Off by
+    /// default; opt-in gene. See `advanced/bands_draw_from_the_bar.rs`.
+    pub(crate) bands_draw_from_the_bar: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -3851,6 +3857,7 @@ impl BasicAi {
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             band_plays_its_stage: false,
+            bands_draw_from_the_bar: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4275,6 +4282,7 @@ impl BasicAi {
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
             band_plays_its_stage: false,
+            bands_draw_from_the_bar: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -7537,7 +7545,9 @@ impl BasicAi {
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex
         // away. Rank the current venue at zero travel alongside the others.
-        let tour = if self.band_plays_its_stage {
+        let tour = if self.bands_draw_from_the_bar {
+            Self::rock_band_bar_destination(g, pid, uid)
+        } else if self.band_plays_its_stage {
             Self::rock_band_stage_destination(g, pid, uid)
         } else {
             Self::rock_band_tour_destination(g, pid, uid)
@@ -7587,6 +7597,25 @@ impl BasicAi {
     /// future, not this one concert, is what the trip buys; a trip beyond
     /// fifteen turns is off the table.
     pub(crate) fn rock_band_stage_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        Self::rock_band_career_destination(g, uid, |position| {
+            g.rock_concert_stage_value(pid, uid, position)
+        })
+    }
+
+    /// `bands-draw-from-the-bar`: the same career-priced tour, weighted by how
+    /// much of the Culture race a visitor from the host closes. See
+    /// [`Game::rock_concert_bar_value`].
+    pub(crate) fn rock_band_bar_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        Self::rock_band_career_destination(g, uid, |position| {
+            g.rock_concert_bar_value(pid, uid, position)
+        })
+    }
+
+    fn rock_band_career_destination(
+        g: &Game,
+        uid: u32,
+        value_at: impl Fn(Pos) -> Option<f64>,
+    ) -> Option<Pos> {
         let moves = g.unit_max_moves(uid).max(1.0);
         let mut venues: Vec<(f64, usize, Pos)> = g
             .map
@@ -7594,7 +7623,7 @@ impl BasicAi {
             .keys()
             .copied()
             .filter_map(|position| {
-                let value = g.rock_concert_stage_value(pid, uid, position)?;
+                let value = value_at(position)?;
                 let distance = g.route_distance(uid, position, 0)?;
                 let travel_turns = distance as f64 / moves;
                 (travel_turns <= 15.0).then_some((

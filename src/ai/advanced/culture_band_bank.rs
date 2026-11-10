@@ -20,6 +20,23 @@
 //! about 390 at t136, three turns before Cold War, and its first band came at
 //! t142. A band returned about 14,000 tourism there for 150-200 Faith.
 //! Once Cold War is known the ordinary band purchase spends the bank.
+//!
+//! ## `culture-bank-opens-at-nationalism`
+//!
+//! **Why (live Deity Kristina, 2026-11-10).** civvis-20261110T140731Z knew
+//! Nationalism at t115 but never reached Ideology, so the bank above never
+//! opened, and 1,370 Faith went on three Great People: an Artist (370 Faith,
+//! t124) that then idled 27 turns, a Writer (450, t132) and a Scientist (550,
+//! t144, "worth 8 to the recovery plan"). That is about the first four Online
+//! Rock Bands, and a band returned 5-11 visitors in the Pericles games.
+//! Nationalism is on the road to Cold War, so it is reached in every game that
+//! reaches the bands, typically 30-40 turns before them.
+//!
+//! **What the gene does.** The same bank opens once Nationalism is known, and
+//! from then on Faith buys no Great Person but a Writer, an Artist or a
+//! Musician (the slot check in `advanced_great_people` still applies), and
+//! none at all while the plan is Recovery. The under-fire release and the
+//! army's own Faith are unchanged. Gold buyouts are unchanged.
 
 use super::*;
 
@@ -39,7 +56,7 @@ impl AdvancedAi {
     /// The Faith the Great Person, worship-building and religious-unit passes
     /// must leave untouched. Zero with the gene off.
     pub(super) fn culture_band_bank(&self, g: &Game, pid: usize) -> f64 {
-        if !self.culture_banks_for_the_bands
+        if !(self.culture_banks_for_the_bands || self.culture_bank_opens_at_nationalism)
             || self.lane_lost
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
         {
@@ -49,8 +66,11 @@ impl AdvancedAi {
         if player.civics.contains(&crate::name!("cold_war")) {
             return 0.0;
         }
-        let nearing = player.civics.contains(&crate::name!("ideology"))
-            || matches!(player.civic.as_deref(), Some("ideology" | "cold_war"));
+        let nearing = (self.culture_banks_for_the_bands
+            && (player.civics.contains(&crate::name!("ideology"))
+                || matches!(player.civic.as_deref(), Some("ideology" | "cold_war"))))
+            || (self.culture_bank_opens_at_nationalism
+                && player.civics.contains(&crate::name!("nationalism")));
         let under_fire = g.player_city_ids(pid).iter().any(|cid| {
             let city = &g.cities[cid];
             city.last_attacked > 0
@@ -60,6 +80,25 @@ impl AdvancedAi {
             return 0.0;
         }
         g.game_speed.scale(BAND_BANK_STANDARD)
+    }
+
+    /// `culture-bank-opens-at-nationalism`: whether Faith may not buy out the
+    /// `kind` race. From Nationalism a live Culture target spends Faith on
+    /// Writers, Artists and Musicians only, and on none while `strategy` is
+    /// Recovery. `false` with the gene off.
+    pub(super) fn culture_bank_bars_faith_great_person(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        kind: &str,
+    ) -> bool {
+        self.culture_bank_opens_at_nationalism
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && g.players[pid].civics.contains(&crate::name!("nationalism"))
+            && (strategy == GrandStrategy::Recovery
+                || !matches!(kind, "writer" | "artist" | "musician"))
     }
 }
 
@@ -207,6 +246,81 @@ mod tests {
         let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
         ai.enable_culture_banks_for_the_bands();
         assert_eq!(ai.culture_band_bank(&g, 0), 0.0);
+    }
+
+    fn nationalism_seat() -> AdvancedAi {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.enable_culture_bank_opens_at_nationalism();
+        ai
+    }
+
+    #[test]
+    fn nationalism_opens_the_bank_only_with_the_gene() {
+        let mut g = board();
+        known(&mut g, "nationalism");
+        assert_eq!(seat().culture_band_bank(&g, 0), 0.0);
+        assert_eq!(
+            nationalism_seat().culture_band_bank(&g, 0),
+            g.game_speed.scale(BAND_BANK_STANDARD)
+        );
+        assert!(nationalism_seat().culture_band_bank_holds_naturalists(&g, 0));
+        known(&mut g, "cold_war");
+        assert_eq!(nationalism_seat().culture_band_bank(&g, 0), 0.0);
+    }
+
+    #[test]
+    fn the_nationalism_bank_waits_for_nationalism_and_stands_aside_under_fire() {
+        let mut g = board();
+        assert_eq!(nationalism_seat().culture_band_bank(&g, 0), 0.0);
+        known(&mut g, "nationalism");
+        let city = g.player_city_ids(0)[0];
+        g.cities.get_mut(&city).unwrap().last_attacked = g.turn - 1;
+        assert_eq!(nationalism_seat().culture_band_bank(&g, 0), 0.0);
+        let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+        science.enable_culture_bank_opens_at_nationalism();
+        g.cities.get_mut(&city).unwrap().last_attacked = 0;
+        assert_eq!(science.culture_band_bank(&g, 0), 0.0);
+    }
+
+    #[test]
+    fn from_nationalism_faith_buys_only_the_lane_creators() {
+        let mut g = board();
+        let ai = nationalism_seat();
+        for kind in ["scientist", "engineer", "merchant", "artist"] {
+            assert!(!ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
+        }
+        known(&mut g, "nationalism");
+        for kind in ["scientist", "engineer", "merchant", "general", "prophet"] {
+            assert!(ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
+        }
+        for kind in ["writer", "artist", "musician"] {
+            assert!(!ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
+            assert!(ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Recovery, kind));
+        }
+        // Off, a released lane, or another target bars nothing.
+        let off = AdvancedAi::targeting(VictoryTarget::Culture);
+        assert!(!off.culture_bank_bars_faith_great_person(
+            &g,
+            0,
+            GrandStrategy::Recovery,
+            "scientist"
+        ));
+        let mut released = nationalism_seat();
+        released.lane_lost = true;
+        assert!(!released.culture_bank_bars_faith_great_person(
+            &g,
+            0,
+            GrandStrategy::Recovery,
+            "scientist"
+        ));
+        let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+        science.enable_culture_bank_opens_at_nationalism();
+        assert!(!science.culture_bank_bars_faith_great_person(
+            &g,
+            0,
+            GrandStrategy::Science,
+            "scientist"
+        ));
     }
 
     #[test]

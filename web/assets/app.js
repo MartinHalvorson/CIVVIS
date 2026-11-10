@@ -52,6 +52,8 @@ function drawOpenedSidebarSection(section) {
   if (section.id === "strategysec") drawReasoning();
   else if (section.id === "eventsec") drawEvents();
   else if (section.id === "politicssec") drawWorldPolitics();
+  // On a deck too short to pin its labels the table would open below the fold.
+  if (section.id === "politicssec") section.scrollIntoView({ block: "nearest" });
 }
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
@@ -8818,7 +8820,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
             onclick="playOnPastVictory('last_civ_standing', false)"
-            title="Keep this world playing until only one civilization remains.">One more turn<span class="winner-again-note">(play until the last Civ standing)</span></button>`
+            title="Keep this world playing until only one civilization remains.">One more turn<span class="winner-again-note">(play until only one Civ remains)</span></button>`
         : ``;
       const winnerActions = SPEC
         ? `${oneMoreTurn}
@@ -23080,6 +23082,11 @@ function drawPlanetLensGroupLabels(cells) {
 const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
 const PLANET_CITY_PLATE_SCALE = 1.1;
 const PLANET_CITY_STATE_PLATE_SCALE = 1.6;
+// Nearer in than this a city-state's city shows its own name, so its territory
+// keeps the name until here, not only as far as a civilization's does.
+const PLANET_CITY_STATE_NAME_SCALE = .95;
+// City-states are named the way civilizations are, in smaller type.
+const PLANET_CITY_STATE_LABEL_TYPE = .6;
 const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
 // A name is a thing on the ground, so it is worked out on the ground. Averaging
 // whichever tiles happened to face the viewer, on the screen, on every frame,
@@ -23123,8 +23130,7 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
   const owned = new Map();
   for (const tile of state.map.tiles) {
     const player = state.players[tile.owner];
-    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
-        !player.civ) continue;
+    if (!player || player.is_barbarian || player.met === false || !player.civ) continue;
     const at = key(tile.pos);
     if (!spectator && !visible.has(at)) continue;
     const cell = PLANET.cells.get(at);
@@ -23148,9 +23154,10 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
     }
     if (members.length < 2) continue;
     const name = state.players[owner].civ.toUpperCase();
+    const minor = Boolean(state.players[owner].is_minor);
     const whole = planetGroundMiddle(members, spacing);
     if (whole.reach >= PLANET_EMPIRE_LABEL_SPLIT_REACH) {
-      spots.push({owner, name, spot:whole.spot, size:members.length});
+      spots.push({owner, name, minor, spot:whole.spot, size:members.length});
       continue;
     }
     const quadrants = [[], [], [], []];
@@ -23160,7 +23167,7 @@ function planetEmpireLabelSpots(visible, spectator, spacing) {
     }
     for (const part of quadrants) {
       if (part.length < Math.max(2, members.length * .12)) continue;
-      spots.push({owner, name, spot:planetGroundMiddle(part, spacing).spot, size:part.length});
+      spots.push({owner, name, minor, spot:planetGroundMiddle(part, spacing).spot, size:part.length});
     }
   }
   return spots.sort((a, b) => b.size - a.size);
@@ -23177,7 +23184,7 @@ function settlePlanetEmpireLabels(visible, spectator) {
   const firstLook = !store.list.length;
   const spacing = Math.sqrt(4 * Math.PI / Math.max(1, PLANET.cells.size));
   const unclaimed = new Set(store.list);
-  for (const {owner, name, spot, size} of planetEmpireLabelSpots(visible, spectator, spacing)) {
+  for (const {owner, name, minor, spot, size} of planetEmpireLabelSpots(visible, spectator, spacing)) {
     let held = null, best = PLANET_EMPIRE_LABEL_CLAIM;
     for (const label of unclaimed) {
       if (label.owner !== owner) continue;
@@ -23185,7 +23192,7 @@ function settlePlanetEmpireLabels(visible, spectator) {
       if (near > best) { best = near; held = label; }
     }
     if (!held) {
-      store.list.push({owner, name, size, at:spot, target:spot,
+      store.list.push({owner, name, minor, size, at:spot, target:spot,
                        alpha:firstLook ? 1 : 0, shown:firstLook, gone:false});
       continue;
     }
@@ -23194,7 +23201,8 @@ function settlePlanetEmpireLabels(visible, spectator) {
     held.name = name; held.size = size; held.gone = false;
   }
   for (const label of unclaimed) label.gone = true;
-  store.list.sort((a, b) => b.size - a.size || a.owner - b.owner);
+  // Every civilization before any city-state, so a small name always gives way.
+  store.list.sort((a, b) => a.minor - b.minor || b.size - a.size || a.owner - b.owner);
 }
 // The browser snaps fillText's baseline to whole device pixels, so a name drawn
 // as text on a slowly turning world climbs in visible steps: at 1x its true
@@ -23215,7 +23223,8 @@ function planetEmpireLabelSprite(name, color, type) {
   const font = `900 ${type}px Georgia, serif`;
   context.font = font;
   const textWidth = context.measureText(name).width;
-  const outline = Math.max(2, type * .22);
+  // The floor is for a civilization's type, and would swallow a city-state's.
+  const outline = Math.max(Math.min(2, type * .24), type * .22);
   canvas.width = Math.ceil((textWidth + outline + 4) * DPR);
   canvas.height = Math.ceil((type * 1.4 + outline + 4) * DPR);
   const width = canvas.width / DPR, height = canvas.height / DPR;
@@ -23239,7 +23248,7 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
                                 visible, spectator) {
   const store = PLANET_EMPIRE_LABELS;
   store.settling = false;
-  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
+  if (scale > PLANET_CITY_STATE_NAME_SCALE) return;
   const zoomFade = Math.max(0, Math.min(1,
     (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
     (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
@@ -23257,11 +23266,18 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
   // radius keeps a survey label smaller than the world it names, and the floor
   // hands over to the radius fade above before the type becomes unreadable.
   const fontSize = Math.max(9, Math.min(17, radius * .075));
-  const type = Math.ceil(fontSize), shrink = fontSize / type;
+  const lettering = factor => {
+    const size = fontSize * factor, type = Math.ceil(size);
+    return {size, type, shrink:size / type};
+  };
+  const civType = lettering(1), cityStateType = lettering(PLANET_CITY_STATE_LABEL_TYPE);
   const placed = [];
   context.save();
   context.imageSmoothingEnabled = true;
   for (const label of store.list) {
+    // Nearer in than this a civilization's cities carry its name.
+    if (!label.minor && scale > PLANET_MAJOR_CITY_LABEL_SCALE) continue;
+    const {size, type, shrink} = label.minor ? cityStateType : civType;
     if (label.at !== label.target) {
       const x = label.at[0] + (label.target[0] - label.at[0]) * glide;
       const y = label.at[1] + (label.target[1] - label.at[1]) * glide;
@@ -23281,7 +23297,7 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
       // it gives way and a hidden one needs clear room to return, so two names
       // converging on the limb settle once instead of trading places.
       const spare = label.shown ? -2 : 5;
-      const halfWidth = sprite.textWidth * shrink / 2 + 5, halfHeight = fontSize / 2 + 4;
+      const halfWidth = sprite.textWidth * shrink / 2 + 5, halfHeight = size / 2 + 4;
       const box = {left:point.x - halfWidth, right:point.x + halfWidth,
                    top:point.y - halfHeight, bottom:point.y + halfHeight};
       if (placed.some(other => box.left - spare < other.right && box.right + spare > other.left &&
@@ -24687,7 +24703,7 @@ function drawPlanetMap() {
     // fits, and at survey distance the empire labels take over.
     if (scale >= (cityState ? PLANET_CITY_STATE_PLATE_SCALE : PLANET_CITY_PLATE_SCALE)) {
       drawCityNameplate(city, cell.center.x, cell.center.y, planetCellInradius(cell));
-    } else if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
+    } else if (scale > (cityState ? PLANET_CITY_STATE_NAME_SCALE : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -32703,10 +32719,10 @@ function releaseWatchedWar() {
 const WORLD_POLITICS_MARKS = [
   ["alliance", "Alliance"], ["team", "Team"], ["friendship", "Friends"],
   ["friendly", "Friendly"], ["neutral", "Neutral"], ["unfriendly", "Unfriendly"],
-  ["denounced", "Denounced"], ["war", "War"],
+  ["denounced", "Denounced"], ["war", "War"], ["unmet", "Not met"],
 ];
 const WORLD_POLITICS_LABELS = new Map(WORLD_POLITICS_MARKS);
-const WORLD_POLITICS_ATTITUDES = { F: "friendly", N: "neutral", U: "unfriendly", D: "denounced" };
+const WORLD_POLITICS_ATTITUDES = { F: "friendly", N: "neutral", U: "unfriendly", D: "denounced", "?": "unmet" };
 function worldPoliticsMark(kind, level = "") {
   return `<i class="politics-mark ${kind}" role="img" aria-label="${WORLD_POLITICS_LABELS.get(kind)}">${level}</i>`;
 }
@@ -32734,7 +32750,7 @@ function worldPoliticsKey(bonds) {
   const marks = WORLD_POLITICS_MARKS
     .filter(([kind]) => kind !== "team" || bonds.some(bond => bond.kind === "team"))
     .map(([kind, name]) => `<span>${worldPoliticsMark(kind)}${name}</span>`).join("");
-  return `${marks}<span class="politics-key-note">A face is how the row's leader sees the column's.</span>`;
+  return `${marks}<span class="politics-key-note">A face is the row's view of the column.</span>`;
 }
 function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   const ties = new Map();
@@ -32756,7 +32772,8 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
       if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
       const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
       if (!kind) return `<td></td>`;
-      const text = `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
+      const text = kind === "unmet" ? `${row.civ} and ${column.civ} have not met`
+        : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
       return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
     return `<tr><th scope="row"><span>${label(row.id)}</span></th>${cells}</tr>`;
