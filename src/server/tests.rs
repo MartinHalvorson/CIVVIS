@@ -2819,7 +2819,15 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("const overview = playerHudOverview();"));
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
-    assert!(player_hud.contains("playerHudStats(p,"));
+    assert!(player_hud.contains("playerHudStandings();"));
+    let standings = EMBEDDED_INDEX
+        .split_once("function playerHudStandings() {")
+        .expect("HUD standings")
+        .1
+        .split_once("\nfunction drawPlayerHud() {")
+        .expect("end of HUD standings")
+        .0;
+    assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
@@ -4710,6 +4718,35 @@ fn the_planet_gpu_binding_precedes_the_saved_hud_layout_replay() {
 /// tile while listing units only in exact sight, understands the named
 /// things the game indexes on a plot, and paints the same result on both
 /// supported map projections.
+/// A rival's buildings are searchable as in Civ VI, on the search's own
+/// request. Served by one router only, the feature would work in development
+/// and be dead on civvis.ai; carried on `/state`, every frame would pay for it.
+#[test]
+fn rival_buildings_reach_the_search_on_its_own_request() {
+    let js = EMBEDDED_APP_JS;
+    assert!(js.contains(r#"fetchJSON("/map-search-buildings")"#));
+    assert!(
+        js.contains("if (query || exclude) requestMapSearchSites();"),
+        "the read belongs to a search that wants terms and to nothing else"
+    );
+    let search = js
+        .split_once("\nfunction computeMapSearchMatches(")
+        .expect("search body")
+        .1
+        .split_once("\n}\n")
+        .expect("end of search body")
+        .0;
+    assert!(
+        search.contains("for (const site of mapSearchSitesFor(st))")
+            && search.contains("add(site.pos, site.owner, \"Building\""),
+        "a site goes through `add`, so it stays clipped to the revealed map"
+    );
+    for router in [include_str!("../server.rs"), include_str!("../wasm.rs")] {
+        assert!(router.contains(r#"("GET", "/map-search-buildings")"#));
+    }
+    assert!(include_str!("../../beta/shim.js").contains("\"/map-search-buildings\""));
+}
+
 #[test]
 fn browser_search_lights_every_matching_visible_tile() {
     let sidebar = EMBEDDED_INDEX
@@ -5671,25 +5708,22 @@ fn browser_orders_controls_interface_setup_and_logs() {
     }
     assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
     // The modes in the order they are offered: the AI-only simulation this
-    // engine exists for, then the human seat, then the one that is still
-    // "later". Single player is no longer "later" and is the only mode
-    // that offers a leader and a difficulty.
+    // engine exists for, then the human seat, marked as work in progress and
+    // the only mode that offers a leader and a difficulty. Multiplayer is not
+    // listed at all for now.
     assert!(
         EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player - WIP</option>"));
     assert!(!EMBEDDED_INDEX.contains("Single player · later"));
-    assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+    assert!(!EMBEDDED_INDEX.contains("Multiplayer · later"));
     let ai_sim_mode = EMBEDDED_INDEX
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find("<option value=\"single\">Single player</option>")
+        .find("<option value=\"single\">Single player - WIP</option>")
         .expect("single player mode");
-    let multiplayer_mode = EMBEDDED_INDEX
-        .find("Multiplayer · later")
-        .expect("multiplayer mode");
-    assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
+    assert!(ai_sim_mode < single_mode);
     // A world already on screen sets the mode select, so the panel beside a
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
@@ -7348,7 +7382,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
-        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics\" open name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v2\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10047,7 +10081,7 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
-fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
+fn world_politics_sits_under_game_setup_and_starts_collapsed() {
     let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
     let politics = EMBEDDED_INDEX
         .find("id=\"politicssec\"")
@@ -10057,24 +10091,16 @@ fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
         .expect("AI strategy");
     assert!(setup < politics && politics < strategy);
     assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
-    // It is the only section open in the markup: the deck is one accordion.
+    // No section of the deck opens by itself.
     assert_eq!(
         EMBEDDED_INDEX
             .matches(" open name=\"deck-section\">")
             .count(),
-        1
+        0
     );
-    // A reader meets it open once, whichever section they had left open, and
-    // from then on what they chose is what is saved.
-    let init = EMBEDDED_INDEX
-        .split("function initSidebarSections() {")
-        .nth(1)
-        .and_then(|tail| tail.split("initSidebarSections();").next())
-        .expect("section setup");
-    assert!(init.contains(
-        "section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section)"
-    ));
-    assert!(init.contains("if (firstMeeting && section !== firstMeeting) open = false;"));
+    // Browsers saved the old key as open while the section opened by default,
+    // and a saved value beats the markup, so the old key must not come back.
+    assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics\""));
     // A battlefield has no politics, and the section hands over its room.
     assert!(EMBEDDED_INDEX.contains("body.watching-tactics #politicssec,"));
     assert!(EMBEDDED_INDEX.contains("document.getElementById(\"politicssec\")?.open ||"));
@@ -10089,11 +10115,54 @@ fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
     let guard = panel
         .find("if (inClosedSidebarSection(list)) return;")
         .expect("closed-section guard");
-    let built = panel.find("list.innerHTML =").expect("rows");
+    let built = panel.find("patchHudMarkup(list,").expect("table");
     assert!(label < guard && guard < built);
     assert!(
         EMBEDDED_INDEX.contains("else if (section.id === \"politicssec\") drawWorldPolitics();")
     );
+}
+
+#[test]
+fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
+    let panel = EMBEDDED_INDEX
+        .split("function drawWorldPolitics() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("World politics panel");
+    // Rows and columns share one order, by name, so nobody's place moves.
+    assert!(panel.contains("a.civ.localeCompare(b.civ) || a.id - b.id"));
+    assert!(panel.contains("worldPoliticsMatrix(civs, bonds, wars)"));
+    // A turn arriving mid-scroll must not throw the reader back to the start.
+    assert!(panel.contains("patchHudMarkup(list,"));
+
+    // A pair's tie is written in both of its cells.
+    let matrix = EMBEDDED_INDEX
+        .split("function worldPoliticsMatrix(civs, bonds, wars) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function markPoliticsColumn").next())
+        .expect("matrix");
+    assert!(matrix.contains("ties.set(`${pair.first}:${pair.second}`, tie);"));
+    assert!(matrix.contains("ties.set(`${pair.second}:${pair.first}`, tie);"));
+    assert!(matrix.contains("if (column.id === row.id) return `<td class=\"self\"></td>`;"));
+
+    // Both sets of names stay put while the table scrolls under them, and the
+    // scroller is held to the deck's window so that it, not the deck, scrolls.
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix tbody th { left: 0; z-index: 1;"));
+    assert!(EMBEDDED_INDEX.contains(".politics-matrix thead th { top: 0; z-index: 2;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "#side.deck-stops .politics-list { max-height: calc(var(--deck-window) - 43px); }"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains("side.style.setProperty(\"--deck-window\", `${Math.round(room)}px`);"));
+
+    // The list it replaced, with its filter and folding groups, is gone.
+    assert!(!EMBEDDED_INDEX.contains("id=\"politicsplayer\""));
+    assert!(!EMBEDDED_INDEX.contains("worldPoliticsOrdered"));
+    assert!(!EMBEDDED_INDEX.contains("politics-group"));
+
+    // Friends and alliances wear Civ VI's own green and blue.
+    assert!(EMBEDDED_INDEX.contains("--politics-friend: #79e077;"));
+    assert!(EMBEDDED_INDEX.contains("--politics-alliance: #74a3f3;"));
 }
 
 #[test]
@@ -12576,8 +12645,10 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('indefinite', false)\"\n            title=\"Keep this world playing. Nothing ends it until you press Restart sim.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn</button>"
     ));
+    // A result that already left one civilization has nothing to play on to.
+    assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
     assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
     assert!(EMBEDDED_INDEX.contains(">New Game</button>"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
@@ -13428,9 +13499,19 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
     assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
     assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
-    // Single player opens on the map; an explicit preference can keep the
-    // command deck open. Applying the default does not persist a choice.
-    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen !== \"open\", false);"));
+    // Single player opens with the command deck showing, because auto-play
+    // lives there; a phone keeps the map, and a player's own choice survives.
+    // Applying the default does not persist a choice.
+    assert!(EMBEDDED_INDEX.contains(
+        "togglePanel(chosen ? chosen === \"closed\" : window.matchMedia(\"(max-width: 720px)\").matches, false);"
+    ));
+    // The published site says what single player is at each new game, Ack is
+    // the way out of it, and the game's keys wait until it has been answered.
+    assert!(EMBEDDED_INDEX
+        .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;"));
+    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen() || soloNoticeOpen();"));
 
     // Rankings remain available on demand. Initialization must not save the
     // default as though the player had explicitly chosen it.
@@ -14374,6 +14455,43 @@ fn a_rocket_on_a_route_with_no_depth_keeps_its_own_length() {
     let js = EMBEDDED_APP_JS;
     assert!(js.contains("const depth = limb && Number.isFinite(climb) ? climb * limb.r : 0;"));
     assert!(!js.contains("const depth = limb ? (ahead.z - behind.z) * limb.r : 0;"));
+}
+
+/// Parked at another world with home out of the picture, a launch going
+/// somewhere else goes by along the top of the frame, left to right, in
+/// about two seconds. One landing on the world in view still comes in and
+/// brakes, so that question has to be asked first.
+#[test]
+fn a_launch_passing_another_world_crosses_the_top_of_the_frame() {
+    let js = EMBEDDED_APP_JS;
+    let plan = js
+        .split_once("function skyPlanMission(")
+        .expect("the mission planner")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the mission planner")
+        .0;
+    let arrive = plan
+        .find("return {kind:\"arrive\"}")
+        .expect("a landing in view");
+    let passing = plan
+        .find("if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:\"crossing\"};")
+        .expect("a launch going by");
+    let ascent = plan.find("skyBestAscent(").expect("a climb from the pad");
+    assert!(arrive < passing && passing < ascent);
+
+    let flyby = js
+        .split_once("function skyLaunchFlyby(")
+        .expect("the flyby route")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the flyby route")
+        .0;
+    assert!(flyby.contains("launch.duration = SKY_FLYBY_MS;"));
+    assert!(flyby.contains("return {start:{x:left, y}, end:{x:right, y},"));
+    assert!(js.contains("const SKY_FLYBY_MS = 2200;"));
+    assert!(js.contains("const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18,"));
+    assert!(js.contains("const fade = film.flyby ? 1 : trailFade;"));
 }
 
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did

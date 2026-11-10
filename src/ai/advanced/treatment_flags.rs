@@ -147,6 +147,8 @@ impl AdvancedAi {
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
         /// See `advanced/religion_seat_reformed_church.rs`.
         religion_seat_reaches_reformed_church => enable_religion_seat_reaches_reformed_church, disable_religion_seat_reaches_reformed_church;
+        /// Slot Religious Orders over a lower-ranked ordinary Economic card.
+        religion_seat_slots_the_orders => enable_religion_seat_slots_the_orders, disable_religion_seat_slots_the_orders;
         /// See `advanced/religion_seat_flips_the_cheapest.rs`.
         religion_seat_flips_the_cheapest => enable_religion_seat_flips_the_cheapest, disable_religion_seat_flips_the_cheapest;
         /// See `advanced/religion_seat_fields_apostles.rs`.

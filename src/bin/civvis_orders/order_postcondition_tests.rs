@@ -65,6 +65,66 @@ fn failed(why: &str) -> Verdict {
 }
 
 #[test]
+fn a_repaired_wall_proves_the_one_turn_project_ran() {
+    let repair = order(
+        "produce",
+        Some(65_536),
+        Some("PROJECT_REPAIR_OUTER_DEFENSES"),
+        None,
+    );
+    let mut before = frame(86);
+    before.cities = vec![city(65_536, 20, 20, Some("BUILDING_LIBRARY"))];
+    before.cities[0].wall_damage = 32.0;
+
+    let mut repaired = frame(87);
+    repaired.cities = vec![city(65_536, 20, 20, None)];
+    assert_eq!(check(&repair, &before, &repaired, &[]), Verdict::Verified);
+
+    let mut still_broken = frame(87);
+    still_broken.cities = vec![city(65_536, 20, 20, None)];
+    still_broken.cities[0].wall_damage = 32.0;
+    assert_eq!(
+        check(&repair, &before, &still_broken, &[]),
+        failed("producing=nothing")
+    );
+
+    let mut building_on = frame(87);
+    building_on.cities = vec![city(65_536, 20, 20, Some("BUILDING_LIBRARY"))];
+    assert_eq!(
+        check(&repair, &before, &building_on, &[]),
+        failed("producing=BUILDING_LIBRARY"),
+        "the old item still in the queue means the host refused"
+    );
+}
+
+#[test]
+fn a_project_leaving_the_queue_proves_only_what_the_frame_shows() {
+    let verb = "PROJECT_ENHANCE_DISTRICT_HOLY_SITE";
+    let project = order("produce", Some(65_536), Some(verb), None);
+
+    let mut running = frame(18);
+    running.cities = vec![city(65_536, 20, 20, Some(verb))];
+    let mut first_order = frame(18);
+    first_order.cities = vec![city(65_536, 20, 20, None)];
+    let mut idle = frame(19);
+    idle.cities = vec![city(65_536, 20, 20, None)];
+
+    assert_eq!(check(&project, &running, &idle, &[]), Verdict::Verified);
+    assert_eq!(
+        check(&project, &first_order, &idle, &[]),
+        Verdict::Unverifiable,
+        "finished and refused look the same from here"
+    );
+
+    let mut replaced = frame(19);
+    replaced.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
+    assert_eq!(
+        check(&project, &running, &replaced, &[]),
+        failed("producing=UNIT_WARRIOR")
+    );
+}
+
+#[test]
 fn excavation_accepts_native_pending_artifact_without_builder_charges() {
     let mut before = frame(166);
     before.seat.local_player = 0;
@@ -1779,6 +1839,44 @@ fn host_war_permission_reopening_clears_only_the_resolved_declaration_refusal() 
     assert!(
         allowed.is_empty(),
         "unknown permission is not proof of reopening"
+    );
+}
+
+#[test]
+fn strikes_far_apart_are_not_one_standing_refusal() {
+    let repair = order(
+        "produce",
+        Some(65_536),
+        Some("PROJECT_REPAIR_OUTER_DEFENSES"),
+        None,
+    );
+    let quiet = ORDER_REFUSAL_COOLDOWN_TURNS;
+    let mut refusals = HostOrderRefusals::default();
+    for strike in 0..ORDER_REFUSAL_STRIKES {
+        refusals.observe(
+            &[refused(&repair, "producing=nothing")],
+            20 + strike * quiet,
+        );
+    }
+    let last = 20 + (ORDER_REFUSAL_STRIKES - 1) * quiet;
+    assert_eq!(
+        refusals.withheld(&wire(&repair), last + 1),
+        None,
+        "failures a whole cooldown apart never add up"
+    );
+
+    let mut refusals = HostOrderRefusals::default();
+    for strike in 0..ORDER_REFUSAL_STRIKES {
+        refusals.observe(
+            &[refused(&repair, "producing=nothing")],
+            20 + strike * (quiet - 1),
+        );
+    }
+    let last = 20 + (ORDER_REFUSAL_STRIKES - 1) * (quiet - 1);
+    assert_eq!(
+        refusals.withheld(&wire(&repair), last + 1),
+        Some("producing=nothing"),
+        "inside the window a repeated refusal still strikes out"
     );
 }
 

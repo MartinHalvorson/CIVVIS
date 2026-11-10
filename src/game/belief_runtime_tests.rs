@@ -358,9 +358,10 @@ fn difficulty_scales_one_reported_barbarian_raid_party() {
 
 #[test]
 fn barbarian_camps_field_half_the_leaders_technology() {
+    use super::barbarians::{BarbarianRole, BarbarianTribe};
     let mut game = Game::new_full(2, 24, 16, 91_805, 200, 0, true);
     // Ancient leaders: the camps make do with tech-free units.
-    let ancient = game.barbarian_unit_pool();
+    let ancient = game.barbarian_tribe_pool(BarbarianTribe::Melee, BarbarianRole::Melee);
     assert!(ancient.contains(&crate::name!("warrior")));
     assert!(!ancient.contains(&crate::name!("musketman")));
 
@@ -375,7 +376,7 @@ fn barbarian_camps_field_half_the_leaders_technology() {
     for tech in ranked.iter().take(70) {
         game.players[0].techs.insert(*tech);
     }
-    let industrial = game.barbarian_unit_pool();
+    let industrial = game.barbarian_tribe_pool(BarbarianTribe::Melee, BarbarianRole::Melee);
     assert!(
         industrial.contains(&crate::name!("musketman")),
         "half of seventy techs must include gunpowder: {industrial:?}"
@@ -385,6 +386,161 @@ fn barbarian_camps_field_half_the_leaders_technology() {
         assert!(spec.unique_to.is_none());
         assert!(!matches!(spec.domain.as_deref(), Some("sea") | Some("air")));
     }
+}
+
+#[test]
+fn horses_within_three_tiles_make_a_camp_a_cavalry_tribe() {
+    use super::barbarians::BarbarianTribe;
+    let mut game = Game::new_full(2, 40, 26, 4_173, 200, 0, true);
+    let camp = *game.barb_camps.keys().next().unwrap();
+    game.barb_naval_camps.remove(&camp);
+    let horses: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| tile.resource.as_deref() == Some("horses"))
+        .map(|(position, _)| *position)
+        .collect();
+    for position in horses {
+        game.map.tiles.get_mut(&position).unwrap().resource = None;
+    }
+    assert_eq!(game.barbarian_camp_tribe(camp), BarbarianTribe::Melee);
+
+    let at_range = |game: &Game, range: i32| {
+        game.wdisk(camp, range)
+            .into_iter()
+            .find(|position| game.wdist(camp, *position) == range)
+            .unwrap()
+    };
+    let far = at_range(&game, 4);
+    game.map.tiles.get_mut(&far).unwrap().resource = Some(crate::name!("horses"));
+    assert_eq!(game.barbarian_camp_tribe(camp), BarbarianTribe::Melee);
+    game.map.tiles.get_mut(&far).unwrap().resource = None;
+
+    let near = at_range(&game, 3);
+    game.map.tiles.get_mut(&near).unwrap().resource = Some(crate::name!("horses"));
+    assert_eq!(game.barbarian_camp_tribe(camp), BarbarianTribe::Cavalry);
+
+    game.barb_naval_camps.insert(camp);
+    assert_eq!(game.barbarian_camp_tribe(camp), BarbarianTribe::Naval);
+}
+
+#[test]
+fn each_barbarian_tribe_raises_only_its_shipped_classes() {
+    use super::barbarians::{BarbarianRole as R, BarbarianTribe as T};
+    let game = Game::new_full(2, 24, 16, 91_805, 200, 0, true);
+    let has = |pool: &[Name], unit: Name| pool.contains(&unit);
+
+    let foot = game.barbarian_tribe_pool(T::Melee, R::Melee);
+    assert!(has(&foot, crate::name!("warrior")));
+    for unit in &foot {
+        assert_eq!(game.rules.units[unit].promotion_class, "melee", "{unit}");
+    }
+    let foot_ranged = game.barbarian_tribe_pool(T::Melee, R::Ranged);
+    assert!(has(&foot_ranged, crate::name!("slinger")));
+    assert!(!has(&foot_ranged, crate::name!("barbarian_horse_archer")));
+
+    let riders = game.barbarian_tribe_pool(T::Cavalry, R::Melee);
+    assert!(has(&riders, crate::name!("barbarian_horseman")));
+    assert!(!has(&riders, crate::name!("warrior")));
+    let archers = game.barbarian_tribe_pool(T::Cavalry, R::Ranged);
+    assert!(has(&archers, crate::name!("barbarian_horse_archer")));
+
+    assert!(has(
+        &game.barbarian_tribe_pool(T::Naval, R::Melee),
+        crate::name!("galley")
+    ));
+    let recon = game.barbarian_tribe_pool(T::Melee, R::Recon);
+    assert!(has(&recon, crate::name!("scout")));
+    assert!(!has(&recon, crate::name!("skirmisher")), "needs Machinery");
+}
+
+#[test]
+fn a_reported_horse_camp_raises_riders_at_the_shipped_mix() {
+    let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
+    game.set_barbarian_difficulty("deity").unwrap();
+    let camp = *game.barb_camps.keys().next().unwrap();
+    game.barb_naval_camps.remove(&camp);
+    // Raiders stand beside their camp, so give this one room for all five.
+    for neighbor in game.nbrs(camp) {
+        let tile = game.map.tiles.get_mut(&neighbor).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let neighbor = game.nbrs(camp)[0];
+    game.map.tiles.get_mut(&neighbor).unwrap().resource = Some(crate::name!("horses"));
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let target = game.units[&settler].pos;
+    game.found_city_for(0, target, None);
+    game.barb_camp_targets.insert(camp, target);
+    game.barb_alerted_until
+        .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+    game.barb_camps.insert(camp, game.turn);
+    for _ in 0..20 {
+        game.barbarian_phase();
+        game.turn += 1;
+    }
+    let party: Vec<&str> = game
+        .barb_raider_homes
+        .iter()
+        .filter(|(_, home)| **home == camp)
+        .map(|(unit, _)| game.units[unit].kind.as_str())
+        .collect();
+    assert_eq!(party.len(), 5, "{party:?}");
+    assert_eq!(
+        party
+            .iter()
+            .filter(|kind| **kind == "barbarian_horseman")
+            .count(),
+        3,
+        "{party:?}"
+    );
+    assert_eq!(
+        party
+            .iter()
+            .filter(|kind| **kind == "barbarian_horse_archer")
+            .count(),
+        2,
+        "{party:?}"
+    );
+}
+
+#[test]
+fn a_camp_keeps_off_resources_and_features_it_cannot_stand_on() {
+    let mut game = Game::new_full(2, 24, 16, 91_806, 200, 0, true);
+    let watched = TileBits::with_capacity(game.map.tiles.len());
+    game.barb_camps.clear();
+    let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    for position in &tiles {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        if tile.improvement.as_deref() == Some("barbarian_camp") {
+            tile.improvement = None;
+        }
+        tile.resource = Some(crate::name!("wheat"));
+        tile.feature = None;
+    }
+    let camp_count = |game: &Game| game.barb_camps.len();
+    game.spawn_camp_unwatched(&watched);
+    assert_eq!(camp_count(&game), 0, "every land tile holds a resource");
+
+    for position in &tiles {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.resource = None;
+        tile.feature = Some(crate::name!("oasis"));
+    }
+    game.spawn_camp_unwatched(&watched);
+    assert_eq!(camp_count(&game), 0, "an Oasis cannot hold a camp");
+
+    for position in &tiles {
+        game.map.tiles.get_mut(position).unwrap().feature = Some(crate::name!("marsh"));
+    }
+    game.spawn_camp_unwatched(&watched);
+    assert_eq!(camp_count(&game), 1, "a Marsh can");
 }
 
 #[test]
