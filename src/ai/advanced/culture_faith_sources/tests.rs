@@ -516,25 +516,35 @@ fn version_two_carries_version_one() {
 }
 
 #[test]
-fn version_two_goes_ahead_of_a_spy() {
+fn version_two_goes_ahead_of_a_wonder_but_not_a_spy() {
     let (mut g, mut ai, plan, cities) = fixture(3);
     ai.enable_culture_faith_site_per_theater();
-    let spy = Item::Unit {
-        unit: crate::name!("spy"),
-    };
     for &cid in &cities {
-        g.cities.get_mut(&cid).unwrap().queue = vec![spy.clone()];
+        let pos = g.cities[&cid].pos;
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Wonder {
+            wonder: crate::name!("pyramids"),
+            pos,
+        }];
     }
     assert!(
         ai.culture_faith_source_target(&g, 0, &plan).is_none(),
-        "version one keeps a Spy"
+        "version one keeps a wonder"
     );
     ai.enable_culture_faith_site_per_theater_2();
     let (city, item, _) = ai
         .culture_faith_source_target(&g, 0, &plan)
-        .expect("version two claims a source over the Spy");
+        .expect("version two claims a source over the wonder");
     assert!(cities.contains(&city));
     assert!(AdvancedAi::culture_faith_item(&g, &item));
+    for &cid in &cities {
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("spy"),
+        }];
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "the Spy pipeline takes a passed queue back, so a Spy is kept"
+    );
 }
 
 #[test]

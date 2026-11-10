@@ -19,7 +19,7 @@
 //! Holy Site at t60, the Shrine at t69, the Temple at t92 and the next Holy
 //! Site only at t121, while that city also ran a festival, a Spy and Mont St
 //! Michel; Faith stood at 12 a turn at t100 against the 60 the bands need.
-//! Version two also goes ahead of a wonder, a Spy or an Aqueduct at the head
+//! Version two also goes ahead of a wonder or an Aqueduct at the head
 //! of a Theater city's queue (`culture_faith_passes_the_head`): a paired
 //! decider read of 22 live boards found serialization never bound, while
 //! those heads, a backlog Builder, an early-floor Settler, an Amphitheater
@@ -136,8 +136,9 @@ impl AdvancedAi {
     }
 
     /// `culture-faith-site-per-theater-2`: a queue head the Culture Faith
-    /// claim goes ahead of: a wonder, a Spy or an Aqueduct with more than two
-    /// turns of work left. A Holy Site with its Shrine and Temple costs about
+    /// claim goes ahead of: a wonder or an Aqueduct with more than two turns of
+    /// work left. A Spy is not passed: `science-denial-trains-spies` takes the
+    /// queue back in the same frame. A Holy Site with its Shrine and Temple costs about
     /// 120 Online production and pays 13-29 Faith a turn, two or three more
     /// Rock Bands over t80-t180 (about 22-33 visitors); a 355-460 production
     /// wonder is worth about one visitor. Every other head keeps its holds.
@@ -154,7 +155,6 @@ impl AdvancedAi {
                 .buildings
                 .get(building)
                 .is_some_and(|spec| spec.wonder),
-            Item::Unit { unit } => *unit == "spy",
             Item::District { district, .. } => g.district_family(*district) == "aqueduct",
             _ => false,
         }
