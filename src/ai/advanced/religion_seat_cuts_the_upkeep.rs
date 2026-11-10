@@ -8,6 +8,7 @@
 //! This opt-in borrows an ordinary card's fitting seat, including wildcard
 //! capacity, and keeps relief while removing it would restore a deficit.
 //! Scripture with Work Ethic and theological strength retain their seats.
+//! Later Gold-card choices in the same portfolio respect those protections too.
 //!
 //! Price each unit's discount with its own zero floor. The host's formation
 //! bill precedes GetMaintDiscountPerUnit in ReportScreen.lua:306,314-341;
@@ -76,13 +77,8 @@ impl AdvancedAi {
         None
     }
 
-    pub(super) fn religion_upkeep_may_displace(
-        g: &Game,
-        pid: usize,
-        current: &str,
-        saving: f64,
-    ) -> bool {
-        if matches!(
+    pub(super) fn religion_upkeep_keeps_card(g: &Game, pid: usize, current: &str) -> bool {
+        matches!(
             current,
             "religious_orders" | "revelation" | "limitanei" | "praetorium"
         ) || (current == "scripture"
@@ -90,10 +86,16 @@ impl AdvancedAi {
                 .religion_beliefs
                 .iter()
                 .any(|b| b == "work_ethic"))
-        {
-            return false;
-        }
-        saving - Self::card_gold_estimate(g, pid, current) >= DRAIN_CARD_MIN_GOLD
+    }
+
+    pub(super) fn religion_upkeep_may_displace(
+        g: &Game,
+        pid: usize,
+        current: &str,
+        saving: f64,
+    ) -> bool {
+        !Self::religion_upkeep_keeps_card(g, pid, current)
+            && saving - Self::card_gold_estimate(g, pid, current) >= DRAIN_CARD_MIN_GOLD
     }
 }
 

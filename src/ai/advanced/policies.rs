@@ -1033,6 +1033,14 @@ impl AdvancedAi {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
                     }
+                    // An upkeep insertion must not make a later drain card
+                    // evict the Faith card it spared. Native t71 inserted
+                    // Conscription, then traded Scripture for Caravansaries.
+                    if religion_upkeep.is_some()
+                        && Self::religion_upkeep_keeps_card(g, pid, current.as_str())
+                    {
+                        return false;
+                    }
                     if let Some((_, saving)) = religion_upkeep.filter(|(relief, _)| *relief == card) {
                         return !culture_defense_cards.contains(&current.as_str())
                             && !nobel_peace_direct_favor_cards.contains(&current.as_str())

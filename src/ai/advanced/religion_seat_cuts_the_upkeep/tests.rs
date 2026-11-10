@@ -95,6 +95,44 @@ fn religion_upkeep_uses_the_free_window_in_a_full_classical_deck() {
 }
 
 #[test]
+fn religion_upkeep_preserves_work_ethic_through_a_later_gold_card() {
+    let (mut g, mut ai) = board();
+    ai.urban_planning_fills_the_slot = true;
+    g.players[0].civics.insert(crate::name!("civil_service"));
+    // The base governor already put Civil Prestige over Ilkum, as in the
+    // actual native turn. One route makes Caravansaries worth two Gold.
+    g.players[0].policies.remove(&crate::name!("ilkum"));
+    g.players[0].policies.insert(crate::name!("civil_prestige"));
+    let origin = g.player_city_ids(0)[0];
+    let dest = g.found_city_for(1, (20, 8), None);
+    g.routes.push(crate::game::TradeRoute {
+        origin,
+        dest,
+        owner: 0,
+        ends: g.turn + 20,
+    });
+    let mut off = g.clone();
+    ai.disable_religion_seat_cuts_the_upkeep();
+    ai.strategic_policies(&mut off, 0, GrandStrategy::Religion);
+    assert!(has(&off, "caravansaries") && has(&off, "scripture"));
+    assert!(!has(&off, "conscription"));
+
+    ai.enable_religion_seat_cuts_the_upkeep();
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
+    assert!(has(&g, "conscription"));
+    assert!(
+        has(&g, "scripture"),
+        "the later Gold pass must keep Work Ethic"
+    );
+    assert!(has(&g, "civil_prestige"));
+    assert!(
+        !has(&g, "caravansaries"),
+        "skip two Gold when no ordinary donor remains"
+    );
+    assert_eq!(g.players[0].policies.len(), 4);
+}
+
+#[test]
 fn religion_upkeep_prices_native_bills_with_a_floor_per_unit() {
     let (mut g, ai) = board();
     for uid in g.player_unit_ids(0) {
