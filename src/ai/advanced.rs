@@ -6821,6 +6821,10 @@ pub struct AdvancedAi {
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
     culture_keeps_pingala_home: bool,
+    /// `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    /// six-tile soldier rule skips Barbarian units. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_braves_the_barbarians: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

@@ -669,3 +669,37 @@ fn gold_fund_keeps_the_wanted_shrine_price_from_the_general_pass() {
         "nothing left to save for"
     );
 }
+
+#[test]
+fn braves_the_barbarians_claims_beside_a_barbarian() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_faith_site_per_theater();
+    let barbarian = g
+        .players
+        .iter()
+        .position(|player| player.is_barbarian)
+        .expect("the fixture has a Barbarian seat");
+    for &cid in &cities {
+        let near = g
+            .wdisk(g.cities[&cid].pos, 2)
+            .into_iter()
+            .find(|pos| {
+                *pos != g.cities[&cid].pos
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    && !g.units.values().any(|unit| unit.pos == *pos)
+            })
+            .expect("room beside the city");
+        g.spawn_test_unit("warrior", barbarian, near);
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "off: a Barbarian within six tiles holds every Theater city"
+    );
+    ai.enable_culture_faith_braves_the_barbarians();
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_some(),
+        "on: the Barbarians no longer hold the claim"
+    );
+}
