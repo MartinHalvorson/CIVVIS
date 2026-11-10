@@ -111,7 +111,7 @@ impl AdvancedAi {
                     || self.bound_granary_holds(g, pid, cid, plan, item)
                     || self.capital_monument_holds(g, pid, cid, plan, item)
                     || self.culture_theater_holds(g, pid, cid, plan, item)
-                    || self.deterrence_unit_holds(g, pid, item)
+                    || self.deterrent_holds_against_culture(g, pid, item)
                     || self.idle_route_trader_holds(g, pid, cid, plan, item)
                     || self.backlog_builder_holds(g, pid, cid, plan, item)
                     || self.capped_aqueduct_holds(g, pid, cid, plan, item)

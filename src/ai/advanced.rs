@@ -6749,6 +6749,11 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `culture-seat-builds-past-the-deterrent`: at peace, a Culture seat's
+    /// Theater, Amphitheater, Art Museum and Monument claims pass a deterrent
+    /// unit and the deterrent leaves them alone. See
+    /// `advanced/culture_past_the_deterrent.rs`. Off by default.
+    culture_seat_builds_past_the_deterrent: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10773,6 +10778,9 @@ mod culture_dig_museum;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 mod culture_open_borders;
+/// `culture-seat-builds-past-the-deterrent`: see
+/// `advanced/culture_past_the_deterrent.rs`.
+mod culture_past_the_deterrent;
 mod culture_work_purchase;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.

@@ -5471,6 +5471,11 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // Live Deity Kristina 11-10: the near-rival deterrent held the capital
+    // t39-t69 and took the first Amphitheater back eleven times before t92.
+    // A Culture seat's culture claims pass it at peace. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
