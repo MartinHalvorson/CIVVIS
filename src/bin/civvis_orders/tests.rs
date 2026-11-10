@@ -1880,6 +1880,45 @@ fn a_move_onto_a_plot_its_occupant_left_is_sent_again_once() {
 }
 
 #[test]
+fn a_cleared_chained_move_goes_again_when_the_replan_leaves_its_unit_out() {
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 4, 4)];
+    let mut replan = vec![unit_order(8, "FORTIFY", None)];
+    assert_eq!(
+        refusals.resend_cleared_chained_moves(&mut replan, &state),
+        1
+    );
+    assert!(replan.iter().any(|order| {
+        order.subject == Some(7)
+            && order.verb.as_deref() == Some("MOVE_TO")
+            && order.pos == Some((3, 3))
+    }));
+    let mut later = Vec::new();
+    assert_eq!(
+        refusals.resend_cleared_chained_moves(&mut later, &state),
+        0,
+        "one resend only"
+    );
+}
+
+#[test]
+fn a_chained_move_is_not_resent_over_a_new_order_or_on_the_first_frame() {
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 4, 4)];
+    let mut replan = vec![unit_order(7, "FORTIFY", None)];
+    assert_eq!(
+        refusals.resend_cleared_chained_moves(&mut replan, &state),
+        0,
+        "the replan has given the unit something else to do"
+    );
+    assert_eq!(replan.len(), 1);
+
+    state.frame = 0;
+    let mut first = Vec::new();
+    assert_eq!(refusals.resend_cleared_chained_moves(&mut first, &state), 0);
+}
+
+#[test]
 fn a_chained_move_stays_a_replay_while_the_plot_is_taken_or_the_unit_went() {
     let mut ours = std::collections::BTreeMap::new();
 

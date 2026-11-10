@@ -5858,6 +5858,10 @@ fn decide(
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
     }
+    let chained_moves_resent = host_move_refusals.resend_cleared_chained_moves(&mut orders, state);
+    if chained_moves_resent > 0 {
+        note_bits.push(format!("chained_moves_resent={chained_moves_resent}"));
+    }
 
     // Retained assignments must pass the same refusal filter and outbound
     // ledger as a newly planned order. The Governor operation budget follows.
