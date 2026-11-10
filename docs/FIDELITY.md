@@ -867,6 +867,29 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
+## Closed: continent seams, volcanoes, fissures, lakes and the Woods roll
+
+Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-10, and checked
+against 64 recorded Continents games. Live figures cover revealed plots only.
+
+| Rule | Shipped | CIVVIS before |
+|---|---|---|
+| Volcano budget | land `/ ((8 - world_age) * 50)`: 250 per volcano at the normal age of 3, 300 on Island Plates | a flat 180 |
+| Volcano sites | two thirds rolled along continent seams, spaced over 3, then lone mountains by continent, spaced over 4 | any mountain with open land at its foot, spaced 4 |
+| Seam relief | Mountains 42/24/6% and Hills 50/40/30% at one, two and three plots from a second continent; a Hill roll also lowers a standing Mountain | one seam-wide lower cutoff, on Continents only |
+| Volcanic Soil | never placed by a script: 0 of 17 live volcanoes seen by turn 30 had any | one or more beside every volcano |
+| Fissure budget | open land `/ 200`, unspaced, near seams first, after the Natural Wonders | land `/ 140`, spaced 3, beside a mountain |
+| Marsh and Woods | roll against 450 | against 300 |
+| Spread lakes | `4n` Lakes, `ceil(1.5n)` Pangaea, `n` Continents and Small Continents, `ceil(n/2)` Inland Sea and Island Plates | `4n`, `n`, `n/2`, none on Small Continents and Island Plates, `n` on Inland Sea |
+
+On 84x54 Continents worlds the new generator gives 204 land plots per volcano,
+9.8% Mountains and 24.3% Hills. The live games show 198, 8.2% and 26.3%.
+
+🟡 `Map.FindSecondContinent` is compiled. CIVVIS reads it as two continents within
+range of the plot. Earth maps place these features by hand, so they keep their
+own density and no seam pass. `CAPABILITY_MEGADISASTERS` doubles the volcano
+budget under Apocalypse, and map generation does not yet see game modes here.
+
 ## Closed: Tribal Villages and the wonder buffer
 
 Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09.
@@ -876,13 +899,6 @@ Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09.
 3, that distance included. CIVVIS allowed a wonder at exactly that distance. The
 shipped buffer is skipped under the Legendary Start setting. CIVVIS has no such
 setting, so the buffer always applies.
-
-Two more differences are confirmed and still open, because each redraws every
-seeded world and so belongs with the other map rules in one refresh. Marsh and
-Woods roll against 300 here and 450 in Expansion2's `FeatureGenerator.lua`. Lakes
-spread past one plot should number `4n` on Lakes, `ceil(1.5n)` on Pangaea, `n` on
-Continents and Small Continents, and `ceil(n/2)` on Inland Sea and Island Plates,
-where `n` is the `Maps.Continents` column.
 
 **Tribal Villages** now follow `AddGoodies` and `CanPlaceGoodyAt` in
 `MapUtilities.lua`, run last as the scripts run them. CIVVIS had rolled 2.5% of

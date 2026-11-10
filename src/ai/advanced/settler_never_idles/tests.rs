@@ -101,7 +101,7 @@ fn frontier_guard_covers_exhaustion_and_relaxed_arrival() {
 /// forecast retries on the doomed one and returning nothing.
 #[test]
 fn the_sieve_keeps_the_forecast_for_plots_outside_the_rivals_sphere() {
-    let mut g = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+    let mut g = Game::new_full(2, 40, 24, 91_777, 250, 0, false);
     g.current = 0;
     for pid in 0..2 {
         let settler = g

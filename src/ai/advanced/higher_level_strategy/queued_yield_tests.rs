@@ -19,7 +19,7 @@ fn add_district(g: &mut Game, cid: u32, kind: &str) {
 }
 
 fn board(debt: Debt, gap: f64) -> (Game, AdvancedAi, StrategicPlan, [u32; 3], Item) {
-    let mut g = Game::new(2, 32, 22, 914_357_000, 250, 0);
+    let mut g = Game::new(2, 32, 22, 914_357_002, 250, 0);
     g.game_speed = GameSpeed::Online;
     g.units.clear();
     g.cities.clear();

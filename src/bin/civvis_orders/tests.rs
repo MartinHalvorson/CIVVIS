@@ -2978,7 +2978,7 @@ fn finishing_survival_policy_keeps_a_safe_reserve() {
 fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
     let (snapshot, mut state) = local_barbarian_defense_board();
     state.units[0].hp = 30.0;
-    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 2, 250, 0);
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 13, 250, 0);
     let mut old = mirror.game.clone();
     let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
     assert!(old_volley.actions.len() > 1);

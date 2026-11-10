@@ -14,7 +14,7 @@ const TAGS: [&str; 10] = [
 ];
 
 fn board(target: VictoryTarget) -> (Game, AdvancedAi, u32, u32) {
-    let mut g = Game::new_full(2, 24, 16, 91_119, 250, 0, false);
+    let mut g = Game::new_full(2, 24, 16, 91_120, 250, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

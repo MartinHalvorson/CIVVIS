@@ -1,7 +1,7 @@
 use super::*;
 
 fn fixture() -> (Game, AdvancedAi) {
-    let mut g = Game::new_full(2, 40, 24, 936301, 650, 0, false);
+    let mut g = Game::new_full(2, 40, 24, 936302, 650, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

@@ -150,7 +150,7 @@ fn a_slow_city_keeps_the_stock_pick() {
 /// hub's Market is no new district and keeps its slot.
 #[test]
 fn a_second_commercial_hub_gives_its_slot_to_the_university() {
-    let (mut game, ranked) = empire_with_education("CAMPUSHUB", 92_107);
+    let (mut game, ranked) = empire_with_education("CAMPUSHUB", 92_108);
     let first = pick(&governor(true, true), &game, ranked[0], false);
     assert!(
         is_hub(&game, &first),
