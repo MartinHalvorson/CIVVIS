@@ -9814,6 +9814,11 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `sweden-builds-open-air-museums`: Sweden's Builders price the
+    /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
+    /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
+    /// default.
+    sweden_builds_open_air_museums: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11291,6 +11296,9 @@ mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
+/// `sweden-builds-open-air-museums`: see
+/// `advanced/sweden_builds_open_air_museums.rs`.
+mod sweden_builds_open_air_museums;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
