@@ -5511,6 +5511,12 @@ pub const GENES: &[Gene] = &[
     // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    // open, Gold buys one Shrine or Temple a turn in a standing Holy Site
+    // city. Live Deity Kristina 11-10 waited 5-53 turns from Holy Site to
+    // Temple with 120-290 Gold banked. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
     // `culture-seat-appoints-pingala-first`: a Culture target's first titles
     // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
     // Magnus took the first three titles under the opening's Expansion plan,
