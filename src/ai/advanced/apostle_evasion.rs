@@ -246,7 +246,11 @@ impl AdvancedAi {
         }
         let kind = g.units[&uid].kind.as_str().to_string();
         // `last-charge-joins-the-army`: a kept charge flees instead.
-        if Self::last_charge_spends_here(g, pid, uid) && !self.keeps_its_last_charge(g, pid, uid) {
+        // A kept last charge stays kept while the unit can still fight or
+        // scout; wounded and in a rival's reach, it is spent like any other.
+        let kept = self.keeps_its_last_charge(g, pid, uid)
+            && g.units[&uid].hp > super::apostle_army::RETREAT_FLOOR;
+        if Self::last_charge_spends_here(g, pid, uid) && !kept {
             crate::think!(self.journal(), Faith, Detail,
                 "{kind} {uid} spends its last charge before a rival Apostle reaches it";
                 "spreader-steps-out-of-the-apostle: the charge removes the unit, so the \
