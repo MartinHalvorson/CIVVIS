@@ -680,7 +680,7 @@ impl BasicAi {
             && self
                 .loyalty_emergency(g, target)
                 .is_some_and(|turns| turns < VICTOR_SHORT_RUNWAY_TURNS);
-        let action = g
+        let mut eligible: Vec<_> = g
             .legal_actions_within(pid, ActionFamilies::EMPIRE)
             .into_iter()
             .filter_map(|action| {
@@ -725,6 +725,26 @@ impl BasicAi {
                         action,
                     ))
             })
+            .collect();
+        // `curator-sits-with-the-works`: a Pingala holding Curator goes only
+        // when no other Governor can. Off, every eligible Governor stays.
+        if self.curator_keeps_his_seat {
+            let curator = |governor: &Name| {
+                *governor == "pingala"
+                    && g.players[pid]
+                        .governor_roster
+                        .get("pingala")
+                        .is_some_and(|state| state.promotions.contains("curator"))
+            };
+            if eligible
+                .iter()
+                .any(|(_, _, _, governor, _)| !curator(&governor.0))
+            {
+                eligible.retain(|(_, _, _, governor, _)| !curator(&governor.0));
+            }
+        }
+        let action = eligible
+            .into_iter()
             .max_by(|left, right| {
                 left.0
                     .cmp(&right.0)

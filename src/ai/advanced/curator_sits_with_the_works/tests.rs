@@ -28,7 +28,9 @@ fn board(promotions: &[&str], works: [usize; 2]) -> (Game, AdvancedAi, Strategic
     g.remove_unit(settler);
     let new = g.found_city_for(0, (10, 10), None);
     for cid in [old, new] {
-        g.cities.get_mut(&cid).unwrap().queue.clear();
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.queue.clear();
+        city.loyalty = 100.0;
     }
     g.players[0].governor_roster.insert(
         "pingala".to_string(),
@@ -108,14 +110,19 @@ fn the_curator_stays_without_a_clear_margin_or_inside_the_stay() {
         None,
         "inside the stay"
     );
-    // A Pingala sitting with no works leaves as soon as he may.
+    // The stay counts from his last assignment by anyone, even where he
+    // holds no works: a seat just given is held, not traded back.
     let (mut g, ai, plan, _, new) = board(&TREE, [0, 3]);
     g.players[0]
         .governor_roster
         .get_mut("pingala")
         .unwrap()
         .assigned_turn = g.turn - 1;
-    assert_eq!(ai.curator_destination(&g, 0, &plan), Some((new, 3, 0)));
+    assert_eq!(ai.curator_destination(&g, 0, &plan), None);
+    assert!(matches!(
+        ai.curator_post(&g, 0, &plan),
+        Some(CuratorPost::Hold { city, works: 3, .. }) if city == new
+    ));
 }
 
 #[test]
@@ -197,5 +204,109 @@ fn curator_comes_next_only_once_four_works_stand() {
         off.preferred_governor_promotion(&g, 0, plan.strategy, "pingala")
             .as_deref(),
         Some("space_initiative")
+    );
+}
+
+/// Live civvis-20261110T193814Z, rebuilt: Stockholm (6 works, Loyalty 100)
+/// holds a Curator Pingala, newly settled Malmö (Loyalty 60) has no
+/// Governor, and with `reyna` Reyna sits in a loyal Göteborg. Returns the
+/// game, the gene's seat, the plan and the three cities.
+fn loyalty_board(reyna: bool) -> (Game, AdvancedAi, StrategicPlan, [u32; 3]) {
+    let (mut g, ai, plan, stockholm, malmo) = board(&TREE, [6, 0]);
+    let goteborg_site = g
+        .map
+        .tiles
+        .values()
+        .filter(|tile| {
+            g.rules.is_passable(tile)
+                && !g.rules.is_water(tile)
+                && tile.owner_city.is_none()
+                && g.cities
+                    .values()
+                    .all(|city| g.wdist(city.pos, tile.pos) >= 5)
+        })
+        .map(|tile| tile.pos)
+        .min()
+        .expect("room for a third city");
+    let goteborg = g.found_city_for(0, goteborg_site, None);
+    for cid in [stockholm, goteborg] {
+        g.cities.get_mut(&cid).unwrap().loyalty = 100.0;
+    }
+    g.cities.get_mut(&malmo).unwrap().loyalty = 60.0;
+    if reyna {
+        g.players[0].governor_roster.insert(
+            "reyna".to_string(),
+            GovernorState {
+                city: Some(goteborg),
+                assigned_turn: 0,
+                disabled_until: 0,
+                promotions: Default::default(),
+            },
+        );
+        g.players[0].governors = vec![stockholm, goteborg];
+    }
+    (g, ai, plan, [stockholm, malmo, goteborg])
+}
+
+/// Both governor passes, in the advanced turn's order, over `frames` turns;
+/// returns how many times Pingala's post changed.
+fn play_frames(g: &mut Game, ai: &mut AdvancedAi, plan: &StrategicPlan, frames: u32) -> usize {
+    let mut moves = 0;
+    let mut post = g.players[0].governor_roster["pingala"].city;
+    for _ in 0..frames {
+        ai.relocate_governors_for_dividends(g, 0, plan);
+        ai.base.curator_keeps_his_seat = ai.curator_seat_active(g);
+        ai.base.reassign_governor_for_loyalty(g, 0);
+        let now = g.players[0].governor_roster["pingala"].city;
+        if now != post {
+            moves += 1;
+            post = now;
+        }
+        g.turn += 1;
+    }
+    moves
+}
+
+#[test]
+fn the_loyalty_backstop_sends_another_governor_before_the_curator() {
+    let (mut g, mut ai, plan, [stockholm, malmo, _]) = loyalty_board(true);
+    assert_eq!(
+        play_frames(&mut g, &mut ai, &plan, 8),
+        0,
+        "Pingala never moves"
+    );
+    assert_eq!(
+        g.players[0].governor_roster["pingala"].city,
+        Some(stockholm)
+    );
+    assert_eq!(g.players[0].governor_roster["reyna"].city, Some(malmo));
+
+    // Off, the backstop takes Pingala (the alphabet breaks his tie with Reyna).
+    let (mut g, _, plan, [_, malmo, _]) = loyalty_board(true);
+    let mut off = AdvancedAi::targeting(VictoryTarget::Culture);
+    play_frames(&mut g, &mut off, &plan, 1);
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(malmo));
+}
+
+#[test]
+fn a_lone_curator_answers_the_loyalty_call_once_and_holds_the_seat() {
+    let (mut g, mut ai, plan, [stockholm, malmo, _]) = loyalty_board(false);
+    assert_eq!(
+        play_frames(&mut g, &mut ai, &plan, 8),
+        1,
+        "one reassignment, never traded back"
+    );
+    assert_eq!(g.players[0].governor_roster["pingala"].city, Some(malmo));
+    assert!(matches!(
+        ai.curator_post(&g, 0, &plan),
+        Some(CuratorPost::Hold { city, works: 6, .. }) if city == stockholm
+    ));
+
+    // Once Malmö is loyal and the stay has run, he goes back to the works.
+    g.cities.get_mut(&malmo).unwrap().loyalty = 100.0;
+    g.turn += g.standard_duration(CURATOR_MIN_STAY_STANDARD);
+    assert_eq!(
+        ai.curator_destination(&g, 0, &plan),
+        Some((stockholm, 6, 0))
     );
 }
