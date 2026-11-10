@@ -869,6 +869,8 @@ fn people(check: &mut Check) {
         "garrison_loyalty",
         "formation_garrison_loyalty",
         "golden_dedication_era_score",
+        "levy_discount_pct",
+        "same_religion_envoy_bonus",
         // Rome's All Roads Lead to Rome; read by `Game::trading_post_route_gold`.
         "free_trading_posts",
         "own_trading_post_route_gold",

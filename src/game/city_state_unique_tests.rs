@@ -1588,6 +1588,7 @@ fn tamars_envoys_count_double_at_a_city_state_of_her_faith() {
         .map(|(position, _)| *position)
         .unwrap();
     let city = game.found_city_for(minor, site, None);
+    game.record_contact(0, minor);
     let faith = "test_faith".to_string();
     game.players[0].civ = "Georgia".to_string();
     game.players[0].religion = Some(faith.clone());
