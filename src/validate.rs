@@ -835,7 +835,7 @@ fn people(check: &mut Check) {
     // engine that reads it, or the civilization silently has no ability at
     // all — a misspelt key is indistinguishable from a fair one until someone
     // measures a whole game against the note in the ruleset.
-    const CIV_EFFECTS: [&str; 35] = [
+    const CIV_EFFECTS: [&str; 37] = [
         "city_food",
         "city_production",
         "city_gold",
