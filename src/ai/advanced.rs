@@ -8441,6 +8441,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
+    /// offered Debater takes it. See
+    /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
+    religion_seat_takes_the_debater: bool,
     /// `russia-settles-the-tundra`: a Russian seat's site score reads what
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
@@ -24121,6 +24125,18 @@ impl AdvancedAi {
                 continue;
             }
             let promotions = g.available_promotions(uid);
+            // `religion-seat-takes-the-debater`: see
+            // `advanced/religion_seat_takes_the_debater.rs`.
+            if self.religion_seat_takes_debater(g, &promotions) {
+                let _ = g.apply(
+                    pid,
+                    &Action::Promote {
+                        unit: uid,
+                        promotion: crate::name!("debater"),
+                    },
+                );
+                continue;
+            }
             let apostle = self.base.apostle_promotion_by_role
                 && g.units.get(&uid).is_some_and(|unit| {
                     g.rules
@@ -26430,6 +26446,7 @@ mod religion_seat_guards_the_race;
 mod religion_seat_reformed_church;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
+mod religion_seat_takes_the_debater;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout

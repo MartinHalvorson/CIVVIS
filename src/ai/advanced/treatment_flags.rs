@@ -168,6 +168,9 @@ impl AdvancedAi {
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
+        /// Opt-in gene `religion-seat-takes-the-debater`; see
+        /// `advanced/religion_seat_takes_the_debater.rs`.
+        religion_seat_takes_the_debater => enable_religion_seat_takes_the_debater, disable_religion_seat_takes_the_debater;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
