@@ -1781,13 +1781,6 @@ pub(super) fn place_starts_and_finish(
         let missing = total_spawns - spawns.len();
         fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
     }
-    // The wonder buffer chooses among sites; it is no reason to lose a seat
-    // on a board too small to honour it everywhere.
-    if spawns.len() < total_spawns {
-        let missing = total_spawns - spawns.len();
-        let everywhere: BTreeSet<Pos> = all_candidates.iter().copied().collect();
-        fill_remaining_starts(rules, &wm, &everywhere, &passable, &mut spawns, missing);
-    }
     let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
     for s in &occupied {
         let t = wm.tiles.get_mut(s).unwrap();
