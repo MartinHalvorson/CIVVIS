@@ -127,6 +127,8 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
+        culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
