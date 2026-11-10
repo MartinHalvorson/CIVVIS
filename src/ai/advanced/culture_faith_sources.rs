@@ -15,7 +15,7 @@
 //! `culture-gold-buys-the-shrines` pays for the buildings behind a finished
 //! Holy Site: while the sources are open, the purchase pass buys one Shrine
 //! (else Temple) a turn with Gold in a safe Holy Site city, cheapest first,
-//! keeping the upkeep floor plus `CULTURE_SHRINE_GOLD_RESERVE_PER_CITY` a city.
+//! keeping the upkeep floor plus `CULTURE_SHRINE_GOLD_RESERVE`.
 //! The production the city would have spent (35 and 60 on Online) goes to its
 //! next claim instead.
 
@@ -48,12 +48,14 @@ const CULTURE_FAITH_SITES_PER_THEATER_CAP: usize = 6;
 /// of eight a city stopped a four-city empire at 32.
 const CULTURE_FAITH_PER_THEATER_INCOME: (f64, f64) = (20.0, 160.0);
 
-/// `culture-gold-buys-the-shrines`: Gold a city the Shrine or Temple buy
-/// leaves in the treasury, on top of the army's upkeep floor. Live Deity
-/// Online Kristina 2026-11-10 (six games with a Holy Site) held 120-290 Gold
-/// and earned +8 to +81 a turn when each Holy Site finished, yet waited 2-38
-/// turns for the Shrine and 5-53 for the Temple (Online prices 140 and 240).
-const CULTURE_SHRINE_GOLD_RESERVE_PER_CITY: f64 = 25.0;
+/// `culture-gold-buys-the-shrines`: Gold the Shrine or Temple buy leaves in
+/// the treasury on top of the army's upkeep floor
+/// (`purchases-keep-the-upkeep-reserve`). Live Deity Online Kristina
+/// 2026-11-10 (six games with a Holy Site) held 120-290 Gold and earned +8 to
+/// +81 a turn when each Holy Site finished, yet waited 2-38 turns for the
+/// Shrine and 5-53 for the Temple (Online prices 140 and 240); a reserve that
+/// grew with the empire (25 a city) would have kept most Temples unaffordable.
+const CULTURE_SHRINE_GOLD_RESERVE: f64 = 50.0;
 
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
@@ -327,8 +329,8 @@ impl AdvancedAi {
     /// city with a standing Holy Site and no Shrine (or a Shrine and no
     /// Temple) is a candidate; the cheapest wins, lowest city id on a tie.
     /// The buy must leave the upkeep floor plus
-    /// [`CULTURE_SHRINE_GOLD_RESERVE_PER_CITY`] a city, and income must not be
-    /// negative. `None` with the gene off or for another target.
+    /// [`CULTURE_SHRINE_GOLD_RESERVE`], and income must not be negative.
+    /// `None` with the gene off or for another target.
     pub(super) fn culture_shrine_purchase(
         &self,
         g: &Game,
@@ -340,8 +342,7 @@ impl AdvancedAi {
         }
         self.culture_faith_source_budget(g, pid)?;
         let cities = g.player_city_ids(pid);
-        let floor = self.purchase_upkeep_floor(g, pid, 0.0)
-            + CULTURE_SHRINE_GOLD_RESERVE_PER_CITY * cities.len() as f64;
+        let floor = self.purchase_upkeep_floor(g, pid, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
         let gold = g.players[pid].gold;
         let mut best: Option<(u32, Name, f64)> = None;
         for cid in cities {

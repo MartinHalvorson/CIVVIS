@@ -521,7 +521,7 @@ fn gold_buys_a_queued_shrine_and_the_claim_moves_on() {
 fn gold_keeps_its_reserve_and_leaves_other_seats_alone() {
     let (g, ai, plan, cid) = shrine_board();
     let price = g.building_gold_purchase_cost(0, cid, "shrine").unwrap();
-    let reserve = CULTURE_SHRINE_GOLD_RESERVE_PER_CITY * 3.0;
+    let reserve = ai.purchase_upkeep_floor(&g, 0, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
 
     let mut short = g.clone();
     short.players[0].gold = price + reserve - 1.0;
