@@ -5626,6 +5626,11 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-charts-every-capital`: a Domination seat keeps charting
+    /// until every rival's original capital is on its map, and takes
+    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
+    /// Opt-in.
+    domination_charts_every_capital: bool,
     /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
     /// Site of ours and heals, fights only what it survives, and reads every
     /// rival blow that can land on a tile together. See
@@ -11473,6 +11478,9 @@ pub use science_victory_drive::ScienceDrive;
 mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
+/// `domination-charts-every-capital`: see
+/// `advanced/domination_charts_every_capital.rs`.
+mod domination_charts_every_capital;
 mod domination_research;
 /// `domination-target-gets-its-breaker`: the Domination lane's breaker for
 /// its target. See `advanced/domination_target_gets_its_breaker.rs`.
@@ -25704,6 +25712,9 @@ impl AdvancedAi {
         // `religion-seat-charts-the-rivals`: read by the contact gap in
         // `BasicAi`'s exploration and the hull claims, after any hand-over.
         self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
+        // `domination-charts-every-capital`: the same read for a lane charting
+        // gene's own gap.
+        self.base.lane_charting_gap = self.lane_charts_the_water(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
