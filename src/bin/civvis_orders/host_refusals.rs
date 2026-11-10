@@ -58,6 +58,13 @@ pub(super) struct HostMoveRefusals {
     /// consumed rather than a new route decision.
     pub(super) same_turn_orders:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<HostUnitOrderKey>>,
+    /// `MOVE_TO`s sent this turn onto a plot another of our units stood on,
+    /// with the plot each was sent from. The host silently drops such a
+    /// request while the occupant is still there, even when the occupant was
+    /// ordered off first: across 16 live logs (2026-11-10), 841 units stayed
+    /// put with their movement unspent while the unit ahead of them left.
+    /// Removing an entry spends the one retry `release_chained_move` allows.
+    pub(super) same_turn_chained_moves: std::collections::BTreeMap<(i64, (i32, i32)), (i32, i32)>,
     /// The diplomacy arm also has one working deal per rival and keeps an ask
     /// pending or cooling down across same-turn frames. An identical
     /// `sell`/`buy` in a later frame therefore cannot be a new deal request.
@@ -128,6 +135,7 @@ impl HostMoveRefusals {
         if self.same_turn != Some(state.turn) {
             self.same_turn = Some(state.turn);
             self.same_turn_orders.clear();
+            self.same_turn_chained_moves.clear();
             self.same_turn_deal_orders.clear();
             self.same_turn_production_orders.clear();
         }
@@ -218,7 +226,13 @@ impl HostMoveRefusals {
                 };
                 let seen = self.same_turn_orders.entry(unit).or_default();
                 let duplicate = !seen.insert(key);
-                if frame > 0 && duplicate {
+                if verb == "MOVE_TO" && !duplicate {
+                    self.note_chained_move(unit, order.pos, state);
+                }
+                let retry = verb == "MOVE_TO"
+                    && duplicate
+                    && self.release_chained_move(unit, order.pos, state);
+                if frame > 0 && duplicate && !retry {
                     dropped += 1;
                     return false;
                 }
@@ -235,6 +249,49 @@ impl HostMoveRefusals {
             true
         });
         dropped
+    }
+
+    /// Remember a `MOVE_TO` sent onto a plot another of our units stands on.
+    fn note_chained_move(
+        &mut self,
+        unit: i64,
+        to: Option<(i32, i32)>,
+        state: &civvis::mirror::StateSnapshot,
+    ) {
+        let (Some(to), Some(stands)) = (to, state.units.iter().find(|u| u.id == unit)) else {
+            return;
+        };
+        if state.units.iter().any(|u| u.id != unit && (u.x, u.y) == to) {
+            self.same_turn_chained_moves
+                .insert((unit, to), (stands.x, stands.y));
+        }
+    }
+
+    /// Whether this repeat of a chained `MOVE_TO` should go out after all: the
+    /// unit has not moved and its destination has cleared. That frame shows
+    /// the occupant gone, so it is not the stale frame the replay filter is
+    /// for. Allowed once, so a move the host still refuses cannot repeat.
+    fn release_chained_move(
+        &mut self,
+        unit: i64,
+        to: Option<(i32, i32)>,
+        state: &civvis::mirror::StateSnapshot,
+    ) -> bool {
+        let Some(to) = to else {
+            return false;
+        };
+        let Some(&from) = self.same_turn_chained_moves.get(&(unit, to)) else {
+            return false;
+        };
+        let unmoved = state
+            .units
+            .iter()
+            .any(|u| u.id == unit && (u.x, u.y) == from);
+        let clear = !state.units.iter().any(|u| u.id != unit && (u.x, u.y) == to);
+        if unmoved && clear {
+            self.same_turn_chained_moves.remove(&(unit, to));
+        }
+        unmoved && clear
     }
 
     /// Whether the postcondition verifier established that a failed exact
