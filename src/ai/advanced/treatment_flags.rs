@@ -140,6 +140,9 @@ impl AdvancedAi {
         cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
         /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
         culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
+        /// `culture-road-earns-its-inspirations`: see
+        /// `advanced/culture_road_inspirations.rs`.
+        culture_road_earns_its_inspirations => enable_culture_road_earns_its_inspirations, disable_culture_road_earns_its_inspirations;
         /// `culture-seat-builds-past-the-deterrent`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
