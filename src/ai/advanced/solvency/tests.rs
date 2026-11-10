@@ -129,6 +129,30 @@ fn the_guard_keeps_amenity_and_upkeep_cards_while_income_is_not_positive() {
     );
 }
 
+/// A wounded unit rates cheapest of all, and it is the one unit the host will
+/// not disband, so the drain has to pass over it to leave the deficit.
+#[test]
+fn the_drain_passes_over_the_wounded() {
+    let (mut g, _, _) = fixture();
+    let wounded = g.spawn_test_unit("knight", 0, (6, 6));
+    g.spawn_test_unit("spearman", 0, (6, 8));
+    g.units.get_mut(&wounded).unwrap().hp = 30;
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -1.0;
+    assert!(g.apply(0, &Action::DisbandUnit { unit: wounded }).is_err());
+
+    let before = g.player_unit_ids(0).len();
+    let mut ai = AdvancedAi::new();
+    ai.enable_bankruptcy_exits_the_drain();
+    ai.exit_the_drain(&mut g, 0);
+    assert!(g.units.contains_key(&wounded), "the host would refuse this");
+    assert_eq!(
+        g.player_unit_ids(0).len(),
+        before - 1,
+        "a healthy unit goes instead"
+    );
+}
+
 /// Drained: the unit with the least strength per Gold of upkeep goes first
 /// until income stops running negative, at most three a turn; the garrison
 /// and the siege gun stay; off, or with the deficit covered, nothing moves.
