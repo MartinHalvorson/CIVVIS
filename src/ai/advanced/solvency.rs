@@ -370,6 +370,7 @@ impl AdvancedAi {
                     && spec.domain.as_deref() != Some("air")
                     && upkeep > 0.0
                     && !garrison
+                    && g.unit_can_be_disbanded(uid)
                     && !self.siege_needs_the_unit(g, pid, uid)
                     && !self.drain_spares_the_front(g, pid, uid))
                 .then(|| {

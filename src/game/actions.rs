@@ -4047,9 +4047,19 @@ impl Game {
     }
 
     /// Remove one of `pid`'s own units, as the host's Delete button does.
+    /// The host refuses to disband a wounded unit. Across 70 live logs
+    /// (2026-11-10), 82 of 83 orders to delete a wounded unit were refused and
+    /// all 28 for a unit at full health went through.
+    pub(crate) fn unit_can_be_disbanded(&self, unit: u32) -> bool {
+        self.units.get(&unit).is_some_and(|unit| unit.hp >= 100)
+    }
+
     pub(super) fn do_disband_unit(&mut self, pid: usize, unit: u32) -> Result<(), String> {
         if self.units.get(&unit).is_none_or(|u| u.owner != pid) {
             return Err("not your unit".into());
+        }
+        if !self.unit_can_be_disbanded(unit) {
+            return Err("a wounded unit cannot be disbanded".into());
         }
         self.remove_unit(unit);
         Ok(())
