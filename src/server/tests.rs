@@ -2819,7 +2819,15 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("const overview = playerHudOverview();"));
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
-    assert!(player_hud.contains("playerHudStats(p,"));
+    assert!(player_hud.contains("playerHudStandings();"));
+    let standings = EMBEDDED_INDEX
+        .split_once("function playerHudStandings() {")
+        .expect("HUD standings")
+        .1
+        .split_once("\nfunction drawPlayerHud() {")
+        .expect("end of HUD standings")
+        .0;
+    assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
