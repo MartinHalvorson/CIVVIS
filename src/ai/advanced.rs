@@ -6821,6 +6821,14 @@ pub struct AdvancedAi {
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
     culture_keeps_pingala_home: bool,
+    /// `domination-target-gets-its-breaker`: the Domination lane owns a wall
+    /// breaker matched to its target's walls before it declares, and keeps
+    /// one with every siege. See
+    /// `advanced/domination_target_gets_its_breaker.rs`. Opt-in.
+    domination_target_gets_its_breaker: bool,
+    /// `domination-target-gets-its-breaker`: the turn a breaker was last
+    /// bought for each target, by the target's tile, for the cooldown.
+    domination_breaker_bought: BTreeMap<Pos, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11454,6 +11462,9 @@ mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
 mod domination_research;
+/// `domination-target-gets-its-breaker`: the Domination lane's breaker for
+/// its target. See `advanced/domination_target_gets_its_breaker.rs`.
+mod domination_target_gets_its_breaker;
 mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
@@ -25906,7 +25917,12 @@ impl AdvancedAi {
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
-            self.siege_breaker_purchase(g, pid);
+            // `domination-target-gets-its-breaker`: the Domination target's
+            // breaker, when the war or the declaration waits on it. Exact
+            // no-op while the gene is off.
+            if !self.buy_domination_breaker(g, pid, &plan) {
+                self.siege_breaker_purchase(g, pid);
+            }
         }
         let mut held_acropolis_site = None;
         // A watched prewar capital can arm one healthy Slinger before the
@@ -26292,6 +26308,12 @@ impl AdvancedAi {
                 if let Some(claim) = self.reserve_delegated_domination_siege(g, pid, &plan) {
                     wall_breaker_claims.push(claim);
                 }
+            }
+            // `domination-target-gets-its-breaker`: the target's Ram, Tower or
+            // gun, before the war as well as during it. Exact no-op while the
+            // gene is off. See `advanced/domination_target_gets_its_breaker.rs`.
+            if let Some(claim) = self.claim_domination_breaker(g, pid, &plan) {
+                wall_breaker_claims.push(claim);
             }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.
