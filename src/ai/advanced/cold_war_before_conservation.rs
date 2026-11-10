@@ -39,9 +39,7 @@ impl AdvancedAi {
             || self.lane_lost
             || !g.victory_conditions.culture
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
-            || g.players[pid]
-                .civics
-                .contains(&crate::name!("cold_war"))
+            || g.players[pid].civics.contains(&crate::name!("cold_war"))
         {
             return None;
         }
