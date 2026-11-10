@@ -180,6 +180,17 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_culture_monuments(g, pid, plan);
         }
+        // `culture-digs-every-site`: the Museum city's Archaeologist, after
+        // the Culture claims, and while the war holds the economy's claims
+        // too (a threatened city and a military head at war keep their
+        // queue). Exact no-op while the gene is off. See
+        // `advanced/culture_digs_every_site.rs`.
+        self.claim_dig_archaeologist(g, pid, plan);
+        // `great-works-never-wait`: a waiting Artist's or Musician's slot
+        // building, likewise while the war holds the economy's claims.
+        // Exact no-op while the gene is off. See
+        // `advanced/great_works_never_wait.rs`.
+        self.claim_great_work_slot_building(g, pid, plan);
         // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
         // Diplomacy seat. Exact no-op while the gene is off. See
         // `advanced/diplo_statue_harbor.rs`.

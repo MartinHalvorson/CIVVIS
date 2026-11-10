@@ -5445,6 +5445,10 @@ pub const GENES: &[Gene] = &[
     // closes: a visitor from the bar holder lowers the bar too. Opt-in; see
     // `advanced/bands_draw_from_the_bar.rs`.
     Gene { tag: "bands-draw-from-the-bar", field: "bands_draw_from_the_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_draw_from_the_bar, disable: AdvancedAi::disable_bands_draw_from_the_bar },
+    // A Rock Band plays, or steps toward a stage it can really reach, and a
+    // trip the host walked nowhere turns it to another host. Opt-in; see
+    // `advanced/band_plays_what_it_can_reach.rs`.
+    Gene { tag: "band-plays-what-it-can-reach", field: "band_plays_what_it_can_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_what_it_can_reach, disable: AdvancedAi::disable_band_plays_what_it_can_reach },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5492,6 +5496,15 @@ pub const GENES: &[Gene] = &[
     // A Culture seat's culture claims pass it at peace. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
+    // Live Deity Kristina 11-10: no Artifact dug before t182 in six games with a
+    // median four own Antiquity Sites; one Museum, an Archaeologist behind the
+    // claims, a digger that idled beside a site. Carries
+    // `culture-digs-one-museum`. Opt-in; see `advanced/culture_digs_every_site.rs`.
+    Gene { tag: "culture-digs-every-site", field: "culture_digs_every_site", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_every_site, disable: AdvancedAi::disable_culture_digs_every_site },
+    // Live Deity Kristina 11-10: Pingala held Curator in a city with no Great
+    // Works for 30-55 turns while 3-5 stood elsewhere. Opt-in; see
+    // `advanced/curator_sits_with_the_works.rs`.
+    Gene { tag: "curator-sits-with-the-works", field: "curator_sits_with_the_works", kind: Kind::OptIn, enable: AdvancedAi::enable_curator_sits_with_the_works, disable: AdvancedAi::disable_curator_sits_with_the_works },
     // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
     // claims up to twenty a city, and Astrology once a Theater stands. Live
     // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
@@ -5504,6 +5517,28 @@ pub const GENES: &[Gene] = &[
     // of 8 games. Opt-in; see
     // `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-holds-the-counterweight", field: "culture_bank_holds_the_counterweight", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_holds_the_counterweight, disable: AdvancedAi::disable_culture_bank_holds_the_counterweight },
+    // `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    // open, Gold buys one Shrine or Temple a turn in a standing Holy Site
+    // city. Live Deity Kristina 11-10 waited 5-53 turns from Holy Site to
+    // Temple with 120-290 Gold banked. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
+    // `culture-seat-appoints-pingala-first`: a Culture target's first titles
+    // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
+    // Magnus took the first three titles under the opening's Expansion plan,
+    // so Connoisseur (+1 Culture per citizen) came at t75-t117. Opt-in; see
+    // `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-seat-appoints-pingala-first", field: "culture_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_appoints_pingala_first, disable: AdvancedAi::disable_culture_seat_appoints_pingala_first },
+    // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    // beeline by when each Inspiration lands, and researches the technology
+    // that inspires a near road civic first. Opt-in; see
+    // `advanced/culture_road_inspirations.rs`.
+    Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
+    // target's power took 13 of our cities and delayed no launch. Off
+    // Domination the war needs the launcher counter's edge and spares a
+    // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
+    Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5520,6 +5555,11 @@ pub const GENES: &[Gene] = &[
     // the rival's army is away from our cities. Needs the strike gene. Unpriced,
     // off. See `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
+    // Live Deity Kristina 11-10: 6 of 12 games sat in a Dark Age in the
+    // Atomic era or later with Flower Power on offer, and no deck named it.
+    // A Culture seat slots it at peace while it holds or can buy a Rock Band.
+    // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
+    Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5539,6 +5579,11 @@ pub const GENES: &[Gene] = &[
     // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
     // with no slot. See `advanced/kristina_fills_to_theme.rs`.
     Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
+    // Live Deity Kristina 11-10: three placed works sold to rivals, a Writing in
+    // the Palace while Amphitheaters stood empty and a Musician idled 55 turns,
+    // Artists idle for want of a Museum. Opt-in; see
+    // `advanced/great_works_never_wait.rs`.
+    Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
@@ -5611,6 +5656,10 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
+    // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
+    // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
+    Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

@@ -39,6 +39,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 mod air_fog_targets;
+mod band_closed_hosts;
 mod board;
 pub(crate) use board::*;
 mod capital_identity;
@@ -7599,6 +7600,9 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     research_tree::apply(ctx.game, ctx.state, ctx.unmapped);
     record_host_observed(ctx.game, ctx.snapshot);
     air_fog_targets::apply(ctx.game, ctx.snapshot);
+    // After every band and its concert highlights are on the board. See
+    // `band_closed_hosts`.
+    band_closed_hosts::apply(ctx.game, ctx.snapshot);
 }
 
 /// The derived net income, and the treasury reading the next call differences

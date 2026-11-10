@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
+| `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
 | `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 2 |
 | `barbarian-research-prices-the-field` | off (unmeasured) | Research parity compares wounded land units against field targets. | 1 \| 1 |
@@ -229,27 +230,33 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-bank-holds-the-counterweight` | off (unmeasured) | `culture-bank-holds-the-counterweight`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-bank-opens-at-nationalism` | off (unmeasured) | `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
+| `culture-digs-every-site` | off (unmeasured) | Opt-in gene `culture-digs-every-site`; see `advanced/culture_digs_every_site.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
+| `culture-gold-buys-the-shrines` | off (unmeasured) | `culture-gold-buys-the-shrines`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
+| `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
+| `culture-seat-appoints-pingala-first` | off (unmeasured) | `culture-seat-appoints-pingala-first`: see `advanced/culture_pingala_first.rs`. | 1 \| 1 |
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
+| `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
+| `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |
 | `diplo-match-point-beelines-the-points` | off (unmeasured) | `diplo-match-point-beelines-the-points`. | 1 \| 1 |
@@ -277,6 +284,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
+| `flower-power-in-the-dark` | off (unmeasured) | `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`. | 1 \| 1 |
 | `fog-yields-to-a-stranded-settler` | off (unmeasured) | Opt-in gene `fog-yields-to-a-stranded-settler`; see `Self::fog_yields_to_a_stranded_settler`. | 1 \| 1 |
 | `food-focus-grows-the-small-city` | off (unmeasured) | Opt-in gene `food-focus-grows-the-small-city`; see `Self::food_focus_grows_the_small_city`. | 1 \| 1 |
 | `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
@@ -293,6 +301,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
 | `good-land-lifts-the-city-target` | off (unmeasured) | Opt-in gene `good-land-lifts-the-city-target`; see `advanced/good_land_lifts_the_city_target.rs`. | 1 \| 1 |
 | `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
+| `great-works-never-wait` | off (unmeasured) | Opt-in gene `great-works-never-wait`; see `advanced/great_works_never_wait.rs`. | 1 \| 1 |
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |
@@ -405,6 +414,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `slots-survive-the-roll` | off (unmeasured) | Opt-in gene `slots-survive-the-roll`; see `Self::slots_survive_the_roll`. | 1 \| 1 |
+| `space-denial-slots-the-spy-cards` | off (unmeasured) | Opt-in gene `space-denial-slots-the-spy-cards`; see `advanced/space_denial_spy_cards.rs`. | 1 \| 1 |
 | `space-people-call-the-projects` | off (unmeasured) | `space-people-call-the-projects`: while a Great Person who speeds the space race is on offer, a Science seat's district projects earn that class's points. | 1 \| 1 |
 | `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
 | `spears-answer-the-horse` | off (unmeasured) | Prefer a timely anti-cavalry defender against a visible mounted threat. | 1 \| 1 |

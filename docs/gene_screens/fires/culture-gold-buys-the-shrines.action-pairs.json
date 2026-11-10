@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "culture-gold-buys-the-shrines",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Online Kristina (Sweden) Culture runs civvis-20261110T152217Z t78, t80 (Orebro, Holy Site standing, no Shrine, 266-307 Gold) and t102 (Orebro, no Temple, 361 Gold), civvis-20261110T171451Z t132 (Stockholm, no Shrine, 289 Gold) and t141 (Stockholm, no Temple, 362 Gold), civvis-20261110T161648Z-cont2 t137 (Norrkoping, no Temple, 417 Gold); each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from a tree carrying this branch's change (the sibling opt-in gene culture-bank-holds-the-counterweight off in both arms). Both arms carry the run's requested genome; the on arm adds the gene. The on arm proposes a Gold purchase of the Shrine (t78, t80) or Temple (t141, t137) in four cases; the off arm proposes none. At 171451Z t132 the army's upgrade took the Gold first, and at 152217Z t102 no purchase was proposed.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-culture-gold-buys-the-shrines.native-queries.tar.xz",
+    "sha256": "1bd0dec52bdd3a281740cb2460ea1ad66136b4b7a91d4d4f43a939789a55e303"
+  },
+  "members": [
+    "nq-shrines-152217Z/0000/result.json",
+    "nq-shrines-152217Z/0001/result.json",
+    "nq-shrines-152217Z/0002/result.json",
+    "nq-shrines-171451Z/0000/result.json",
+    "nq-shrines-171451Z/0001/result.json",
+    "nq-shrines-161648Z/0000/result.json"
+  ]
+}
