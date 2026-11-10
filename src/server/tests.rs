@@ -10100,9 +10100,9 @@ fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
 fn world_politics_reads_in_masthead_order_and_can_watch_one_civ() {
     // One reading of the standings serves the table and the panel, and
     // re-sorting the table re-sorts the panel.
-    assert!(
-        EMBEDDED_INDEX.contains("const {majors, rankById, statsByPlayer} = playerHudStandings();")
-    );
+    assert!(EMBEDDED_INDEX.contains(
+        "const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();"
+    ));
     let toggle = EMBEDDED_INDEX
         .split("function togglePlayerHudSort(key) {")
         .nth(1)

@@ -27438,7 +27438,7 @@ function playerHudStandings() {
   const statsByPlayer = new Map(scoreRankedMajors.map(p =>
     [p.id, playerHudStats(p, rankById.get(p.id))]));
   const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
-  return {majors, rankById, statsByPlayer};
+  return {scoreRankedMajors, majors, rankById, statsByPlayer};
 }
 
 function drawPlayerHud() {
@@ -27479,7 +27479,7 @@ function drawPlayerHud() {
   // so it stands out of the standings at a glance (operator 2026-10-30).
   const focusSeatId = SPEC ? state.view_player : state.player;
   const focusSeat = Number.isInteger(focusSeatId) ? focusSeatId : null;
-  const {majors, rankById, statsByPlayer} = playerHudStandings();
+  const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();
   // The one open city list belongs to a seat in this table, or to nobody.
   if (hudOpenCityList !== null && !majors.some(p => p.id === hudOpenCityList))
     hudOpenCityList = null;
@@ -32261,10 +32261,9 @@ function drawWorldPolitics() {
   const wars = allWars.filter(concerned);
   const warWord = `war${allWars.length === 1 ? "" : "s"}`;
   // The label has room for little beside the section's own name.
-  scope.textContent = allWars.length
-    ? `⚔ ${seat === null ? allWars.length : `${wars.length} of ${allWars.length}`}` : "";
-  scope.title = !allWars.length ? ""
-    : seat === null ? `${allWars.length} ${warWord} in progress`
+  scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
+  scope.title = !wars.length ? ""
+    : seat === null ? `${wars.length} ${warWord} in progress`
     : `${logSeatName(seat)} is in ${wars.length} of ${allWars.length} ${warWord} in progress`;
   if (inClosedSidebarSection(list)) return;
   const position = new Map(playerHudStandings().majors.map((p, index) => [p.id, index]));
