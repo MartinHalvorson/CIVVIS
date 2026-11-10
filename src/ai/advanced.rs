@@ -6789,6 +6789,11 @@ pub struct AdvancedAi {
     /// toward, by tile, with the turn each is open again. Empty with the gene
     /// off.
     dig_dead_sites: BTreeMap<Pos, u32>,
+    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
+    /// sources are claimed in parallel, one item per Theater city, rather
+    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
+    /// Opt-in.
+    culture_faith_site_per_theater_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

@@ -11,6 +11,16 @@
 //! Astrology once the first Theater Square stands
 //! (`AdvancedAi::culture_faith_astrology_due`), so the sites are unlocked
 //! when the sources open.
+//!
+//! `culture-faith-site-per-theater-2` carries version one and claims the
+//! sources in parallel, one Faith item per Theater city at a time. Without a
+//! host production quote the claim used to keep one item in the whole empire:
+//! live Deity Kristina 20261110T183027Z, armed with version one, built its
+//! Holy Site at t60, the Shrine at t69, the Temple at t92 and the next Holy
+//! Site only at t121, while that city also ran a festival, a Spy and Mont St
+//! Michel; Faith stood at 12 a turn at t100 against the 60 the bands need.
+//! Every hold that protects a Theater, Amphitheater, Settler, Granary or
+//! deterrent head still applies city by city.
 
 use super::*;
 
@@ -59,7 +69,7 @@ impl AdvancedAi {
             .count();
         let opened_by_theaters = self.culture_faith_opens_at_the_theaters
             && theater_cities >= CULTURE_FAITH_OPENING_THEATERS;
-        let per_theater = self.culture_faith_site_per_theater;
+        let per_theater = self.culture_faith_per_theater_on();
         if cities < if per_theater { 2 } else { 3 }
             || !(opened_by_theaters
                 || city_ids.iter().any(|cid| {
@@ -106,7 +116,7 @@ impl AdvancedAi {
     /// sources had opened, and its first Holy Site followed at t86-t130.
     /// False with the gene off, for another target, and once it is known.
     pub(super) fn culture_faith_astrology_due(&self, g: &Game, pid: usize) -> bool {
-        self.culture_faith_site_per_theater
+        self.culture_faith_per_theater_on()
             && (self.culture_seat_theater_first || self.culture_seat_theater_first_2)
             && !self.lane_lost
             && self.active_victory_target(g) == Some(VictoryTarget::Culture)
@@ -114,6 +124,11 @@ impl AdvancedAi {
             && g.player_city_ids(pid).into_iter().any(|cid| {
                 g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square"))
             })
+    }
+
+    /// `culture-faith-site-per-theater`, carried by its version two.
+    fn culture_faith_per_theater_on(&self) -> bool {
+        self.culture_faith_site_per_theater || self.culture_faith_site_per_theater_2
     }
 
     fn culture_faith_item(g: &Game, item: &Item) -> bool {
@@ -230,6 +245,11 @@ impl AdvancedAi {
                 continue;
             }
             if let Some(head) = city.queue.first() {
+                // `culture-faith-site-per-theater-2`: a city already building
+                // a source keeps it; the next claim goes to another city.
+                if self.culture_faith_site_per_theater_2 && Self::culture_faith_item(g, head) {
+                    continue;
+                }
                 if self.culture_theater_holds(g, pid, cid, plan, head)
                     || self.early_settler_floor_holds(g, pid, cid, plan)
                     || self.bound_granary_holds(g, pid, cid, plan, head)
@@ -255,7 +275,7 @@ impl AdvancedAi {
                 continue;
             };
             let quote = g.host_production_turns(cid, &item);
-            if held.is_some() && quote.is_none() {
+            if held.is_some() && quote.is_none() && !self.culture_faith_site_per_theater_2 {
                 continue;
             }
             let turns = quote.unwrap_or_else(|| {
@@ -300,9 +320,14 @@ impl AdvancedAi {
         )
         .is_ok()
         {
+            let pace = if self.culture_faith_site_per_theater_2 {
+                "one source per Theater city at a time"
+            } else {
+                "one safe source at a time"
+            };
             think!(self.journal(), Cities, Decision,
                 "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
-                "one safe source at a time, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
+                "{pace}, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
         }
     }
 }

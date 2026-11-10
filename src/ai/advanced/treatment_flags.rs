@@ -155,6 +155,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-faith-site-per-theater-2`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_2 => enable_culture_faith_site_per_theater_2, disable_culture_faith_site_per_theater_2;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
