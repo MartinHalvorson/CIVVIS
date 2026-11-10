@@ -48,22 +48,13 @@ impl Game {
 
     /// Whether a siege unit may still attack after moving this turn.
     /// Civilization VI's data gives every siege unit "Cannot move and attack
-    /// in the same turn" (`ABILITY_NO_MOVE_AND_SHOOT`, lifted by Expert
-    /// Crew), and a native board keeps that rule. The live host does not hold
-    /// our seat to it: across the live runs of 2026-09-30 to 10-03, 94 of the
-    /// 104 Range Attacks a siege unit of ours was ordered to make after a Move
-    /// To earlier in the same turn resolved, the same nine in ten an unmoved
-    /// gun's shot resolves, and none of those guns had Expert Crew. Live King
-    /// civvis-20261003T135713Z, turn 101: a fresh Trebuchet stepped from
-    /// (16,16) to (15,15) and struck Kwadukuza's walls for 23. The mirror
-    /// clears `moved` at every frame, so before this the shot happened only
-    /// when a re-plan frame came after the step; the planned turn left the gun
-    /// standing in the city's reach unfired. So a siege unit of the mirrored
-    /// seat fires after moving, as the host lets it, and a hostile one keeps
-    /// the rule.
+    /// in the same turn" (`ABILITY_NO_MOVE_AND_SHOOT`), lifted by Expert Crew.
+    /// Our own seat was exempt from October 2026 on a measurement that 94 of
+    /// 104 such shots resolved. In the 33 live logs of 2026-11-09 and 10 with
+    /// siege shots, the host refused 75 of 76, and the exemption left guns
+    /// marched into a city's reach to fire shots that never came.
     pub(crate) fn siege_may_attack_after_moving(&self, unit: &Unit) -> bool {
         self.promotion_effect(unit, "attack_after_move") > 0.0
-            || (unit.owner == MIRRORED_SEAT && !self.host_observed.is_empty())
     }
 
     pub(super) fn unit_max_attacks(&self, uid: u32) -> i32 {

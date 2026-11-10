@@ -8904,6 +8904,17 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     game.unit_max_moves(uid)
 }
 
+/// Whether the host has already spent this siege unit's movement this turn,
+/// so it cannot fire. `allowance` is what [`mirror_unit_moves_for`] returned,
+/// which is the full allowance unless the seat trusts the exported `moves`. A
+/// frame rebuilds the board, so `Unit::moved` is otherwise lost between frames.
+fn siege_unit_has_moved(game: &crate::game::Game, uid: u32, allowance: f64) -> bool {
+    game.units
+        .get(&uid)
+        .is_some_and(|unit| game.rules.units[unit.kind].siege)
+        && allowance + 1e-9 < mirror_unit_moves(game, uid)
+}
+
 /// The movement a mirrored unit starts its turn with.
 ///
 /// The full allowance ([`mirror_unit_moves`]) unless the run's `seat` event
@@ -8984,8 +8995,10 @@ impl LiveMirror {
                 .get(&civ6)
                 .and_then(|unit| unit.attacks_remaining)
                 .filter(|_| state.seat.moves_at_turn_start);
+            let moved = siege_unit_has_moved(&game, uid, allowance);
             if let Some(live) = game.units.get_mut(&uid) {
                 live.moves_left = allowance;
+                live.moved = moved;
                 if let Some(attacks) = attacks {
                     live.attacks_left = attacks.max(0);
                 }
@@ -9509,6 +9522,7 @@ impl LiveMirror {
                             Some(unit),
                             state.seat.moves_at_turn_start,
                         );
+                        let siege_moved = siege_unit_has_moved(&self.game, uid, allowance);
                         if let Some(live) = self.game.units.get_mut(&uid) {
                             live.moves_left = allowance;
                             live.acted = false;
@@ -9521,8 +9535,9 @@ impl LiveMirror {
                             };
                             // Cleared by `Game::begin_turn` every turn; on a persistent
                             // game they survive and a unit that "already moved" is
-                            // skipped.
-                            live.moved = false;
+                            // skipped. A siege gun alone keeps it: the host will not
+                            // let one fire once it has walked this turn.
+                            live.moved = siege_moved;
                             live.zoc_stopped = false;
                         }
                     }

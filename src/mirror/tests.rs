@@ -2089,6 +2089,68 @@ fn exported_routes_reach_the_board() {
     assert_eq!(at(5, 3), 0, "no route, no road");
 }
 
+/// A frame rebuilds the board, so a gun the host already walked has to come
+/// back marked as moved, or the next frame plans a shot the host refuses.
+#[test]
+fn a_siege_gun_the_host_already_walked_stays_moved() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 8,
+        width: 8,
+        height: 8,
+        chunk: 1,
+        plots: (0..8)
+            .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect(),
+    }]);
+    let unit = |id: i64, kind: &str, x: i32, moves: f64| StateUnit {
+        id,
+        kind: kind.to_string(),
+        x,
+        y: 3,
+        moves,
+        ..StateUnit::default()
+    };
+    let units = || {
+        vec![
+            unit(11, "UNIT_CATAPULT", 3, 1.0),
+            unit(12, "UNIT_CATAPULT", 4, 2.0),
+            unit(13, "UNIT_WARRIOR", 5, 1.0),
+        ]
+    };
+    let trusted = StateSnapshot {
+        turn: 8,
+        units: units(),
+        seat: Seat {
+            moves_at_turn_start: true,
+            ..Seat::default()
+        },
+        ..StateSnapshot::default()
+    };
+    let moved = |mirror: &LiveMirror, civ6: i64| mirror.game.units[&mirror.uid_of[&civ6]].moved;
+
+    let mut mirror = LiveMirror::new(&snapshot, &trusted, 4, 1, 250, 0);
+    assert!(moved(&mirror, 11), "one of two moves is gone");
+    assert!(!moved(&mirror, 12), "full movement may still fire");
+    assert!(!moved(&mirror, 13), "only a siege gun keeps the flag");
+
+    mirror
+        .game
+        .units
+        .get_mut(&mirror.uid_of[&11])
+        .unwrap()
+        .moved = false;
+    mirror.sync(&snapshot, &trusted, 0);
+    assert!(moved(&mirror, 11), "the persistent path reads it too");
+
+    let untrusted = StateSnapshot {
+        turn: 8,
+        units: units(),
+        ..StateSnapshot::default()
+    };
+    let mirror = LiveMirror::new(&snapshot, &untrusted, 4, 1, 250, 0);
+    assert!(!moved(&mirror, 11), "an untrusted export proves nothing");
+}
+
 /// The export's `moves` is trusted only when the seat says the mod reads
 /// it at the start of the turn and keeps the host from spending it first;
 /// otherwise every unit keeps its full allowance exactly as before.
