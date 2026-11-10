@@ -5449,6 +5449,10 @@ pub const GENES: &[Gene] = &[
     // trip the host walked nowhere turns it to another host. Opt-in; see
     // `advanced/band_plays_what_it_can_reach.rs`.
     Gene { tag: "band-plays-what-it-can-reach", field: "band_plays_what_it_can_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_what_it_can_reach, disable: AdvancedAi::disable_band_plays_what_it_can_reach },
+    // A Rock Band with nothing it can play waits at the border of the closed
+    // land it most wants, so it plays the turn that land reopens. Opt-in; see
+    // `advanced/bands_wait_at_the_door.rs`.
+    Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.

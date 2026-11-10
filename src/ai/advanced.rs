@@ -11283,6 +11283,10 @@ mod band_plays_what_it_can_reach;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
+/// `bands-wait-at-the-door`: a Rock Band with nothing it can play waits at
+/// the border of the closed land it most wants. See
+/// `advanced/bands_wait_at_the_door.rs`.
+mod bands_wait_at_the_door;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
