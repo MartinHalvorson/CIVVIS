@@ -6769,6 +6769,11 @@ pub struct AdvancedAi {
     /// researches Astrology once its first Theater Square stands. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater: bool,
+    /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    /// beeline by when each Inspiration lands and researches the technology
+    /// that inspires a near civic of the road to Cold War first. See
+    /// `advanced/culture_road_inspirations.rs`. Off by default.
+    culture_road_earns_its_inspirations: bool,
     /// `culture-seat-appoints-pingala-first`: a Culture target spends its
     /// first Governor titles on Pingala and Connoisseur instead of the
     /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
@@ -10815,6 +10820,9 @@ mod diplo_statue_harbor;
 mod culture_museum_swaps;
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
+/// `culture-road-earns-its-inspirations`: see
+/// `advanced/culture_road_inspirations.rs`.
+mod culture_road_inspirations;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.

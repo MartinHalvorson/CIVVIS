@@ -5504,6 +5504,11 @@ pub const GENES: &[Gene] = &[
     // so Connoisseur (+1 Culture per citizen) came at t75-t117. Opt-in; see
     // `advanced/culture_pingala_first.rs`.
     Gene { tag: "culture-seat-appoints-pingala-first", field: "culture_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_appoints_pingala_first, disable: AdvancedAi::disable_culture_seat_appoints_pingala_first },
+    // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    // beeline by when each Inspiration lands, and researches the technology
+    // that inspires a near road civic first. Opt-in; see
+    // `advanced/culture_road_inspirations.rs`.
+    Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
