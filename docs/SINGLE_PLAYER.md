@@ -573,8 +573,10 @@ the result screen has two choices:
 - **One more turn** resumes the same map, seed, and empires with no turn limit
   until only one civilization remains. Every other victory is ignored, every
   civilization left is at war with every other, peace is refused, and every AI
-  plays for conquest. City-states and Free Cities do not count, and a team left
-  together counts as one. **Restart sim** still ends it early. The button is
+  plays for conquest as a total war: none falls back to a defensive plan, each
+  aims at the nearest rival city, and every idle city trains soldiers while its
+  income carries them. City-states and Free Cities do not count, and a team
+  left together counts as one. **Restart sim** still ends it early. The button is
   not offered when one civilization is already left.
 - **New Game** starts the next world immediately. Leaving the screen alone
   keeps the existing countdown behavior and starts that next world when it
