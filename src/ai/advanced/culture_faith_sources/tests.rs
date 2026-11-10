@@ -351,11 +351,24 @@ fn complete_source(g: &mut Game, cid: u32) {
 fn per_theater_budget_opens_a_site_in_every_theater_city() {
     let (mut g, mut ai, plan, cities) = fixture(4);
     complete_source(&mut g, cities[0]);
+    assert_eq!(ai.culture_faith_source_budget(&g, 0), Some(1));
     assert!(
         ai.culture_faith_source_target(&g, 0, &plan).is_none(),
         "off: one site per three cities"
     );
     ai.enable_culture_faith_site_per_theater();
+    assert_eq!(
+        ai.culture_faith_source_budget(&g, 0),
+        Some(4),
+        "on: one site per city with a standing Theater Square"
+    );
+    // Only cities with a legal Holy Site plot can take one; the fixture's
+    // small territories leave some without.
+    let open = cities[1..]
+        .iter()
+        .filter(|cid| BasicAi::first_district_item(&g, 0, **cid, "holy_site").is_some())
+        .count();
+    assert!(open >= 1, "the fixture leaves a second site to claim");
     let mut sites = 1;
     while let Some((city, item, _)) = ai.culture_faith_source_target(&g, 0, &plan) {
         assert_ne!(city, cities[0]);
@@ -364,19 +377,8 @@ fn per_theater_budget_opens_a_site_in_every_theater_city() {
         );
         complete_source(&mut g, city);
         sites += 1;
-        assert!(
-            sites <= cities.len(),
-            "never more sites than Theater cities"
-        );
     }
-    let sited: Vec<bool> = cities
-        .iter()
-        .map(|cid| BasicAi::first_district_item(&g, 0, *cid, "holy_site").is_some())
-        .collect();
-    assert!(
-        sites >= 3,
-        "on: a site in every Theater city that has room ({sites} sites; site still open per city {sited:?})"
-    );
+    assert_eq!(sites, 1 + open, "every open Theater city gets its site");
 }
 
 #[test]
@@ -435,4 +437,38 @@ fn per_theater_opens_two_theater_cities() {
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
     ai.enable_culture_faith_site_per_theater();
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
+}
+
+#[test]
+fn per_theater_researches_astrology_once_a_theater_stands() {
+    let (mut g, mut ai, _, cities) = fixture(3);
+    g.players[0].techs.remove(&crate::name!("astrology"));
+    assert!(
+        !ai.culture_faith_astrology_due(&g, 0),
+        "off: no research change"
+    );
+    ai.enable_culture_faith_site_per_theater();
+    assert!(ai.culture_faith_astrology_due(&g, 0));
+    for &cid in &cities {
+        let removed = g
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .remove(crate::name!("theater_square"))
+            .unwrap();
+        for pos in removed {
+            g.map.tiles.get_mut(&pos).unwrap().district = None;
+        }
+    }
+    assert!(
+        !ai.culture_faith_astrology_due(&g, 0),
+        "no Theater Square stands yet"
+    );
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_culture_seat_theater_first();
+    science.enable_culture_faith_site_per_theater();
+    let (mut g, _, _, _) = fixture(3);
+    g.players[0].techs.remove(&crate::name!("astrology"));
+    assert!(!science.culture_faith_astrology_due(&g, 0));
 }

@@ -7,7 +7,10 @@
 //!
 //! `culture-faith-site-per-theater` lifts both limits: one Holy Site for every
 //! city with a standing Theater Square, and Faith claims until income reaches
-//! twenty a city. See `CULTURE_FAITH_SITES_PER_THEATER_CAP`.
+//! twenty a city. See `CULTURE_FAITH_SITES_PER_THEATER_CAP`. It also researches
+//! Astrology once the first Theater Square stands
+//! (`AdvancedAi::culture_faith_astrology_due`), so the sites are unlocked
+//! when the sources open.
 
 use super::*;
 
@@ -93,6 +96,24 @@ impl AdvancedAi {
         } else {
             (cities / 3).min(3)
         })
+    }
+
+    /// `culture-faith-site-per-theater`: whether the research slot takes
+    /// Astrology, the Holy Site's unlock, for a Culture seat that has a
+    /// standing Theater Square. Astrology is a dead-end branch no Culture
+    /// goal walks through: live Deity Kristina 2026-11-10 learned it at t74-79
+    /// in four of six games (t43 and t51 in the others), after the Faith
+    /// sources had opened, and its first Holy Site followed at t86-t130.
+    /// False with the gene off, for another target, and once it is known.
+    pub(super) fn culture_faith_astrology_due(&self, g: &Game, pid: usize) -> bool {
+        self.culture_faith_site_per_theater
+            && (self.culture_seat_theater_first || self.culture_seat_theater_first_2)
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && !g.players[pid].techs.contains(&crate::name!("astrology"))
+            && g.player_city_ids(pid).into_iter().any(|cid| {
+                g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square"))
+            })
     }
 
     fn culture_faith_item(g: &Game, item: &Item) -> bool {

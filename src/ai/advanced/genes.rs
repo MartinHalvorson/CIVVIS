@@ -5477,9 +5477,10 @@ pub const GENES: &[Gene] = &[
     // Great People at t124-144 while the bank waited for Ideology. Opt-in;
     // see `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
-    // `culture-faith-site-per-theater`: one Holy Site per Theater city and
-    // Faith claims up to twenty a city. Live Deity Kristina 11-10 held 0-2
-    // Holy Sites and 0-15 Faith a turn at t100. Opt-in; see
+    // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
+    // claims up to twenty a city, and Astrology once a Theater stands. Live
+    // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
+    // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
     // ---- append: e-f ------------------------------------------------

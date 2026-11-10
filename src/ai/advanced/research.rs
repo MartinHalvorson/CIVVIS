@@ -638,8 +638,13 @@ impl AdvancedAi {
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
                 }
+                // `culture-faith-site-per-theater`: a Culture seat with a
+                // standing Theater Square takes it too, so its Holy Sites can
+                // start when the Faith sources open. See
+                // `advanced/culture_faith_sources.rs`.
                 _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
-                    || self.astrology_before_the_second_city_due(g, pid))
+                    || self.astrology_before_the_second_city_due(g, pid)
+                    || self.culture_faith_astrology_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
