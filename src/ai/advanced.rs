@@ -6763,6 +6763,12 @@ pub struct AdvancedAi {
     /// unit and the deterrent leaves them alone. See
     /// `advanced/culture_past_the_deterrent.rs`. Off by default.
     culture_seat_builds_past_the_deterrent: bool,
+    /// `culture-faith-site-per-theater`: the Culture Faith claim develops one
+    /// Holy Site per city with a standing Theater Square (up to six) and keeps
+    /// opening sources until Faith reaches twenty a city, and the seat
+    /// researches Astrology once its first Theater Square stands. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater: bool,
     /// `denial-war-needs-the-lane-edge`: off Domination, the science-denial
     /// war needs the launcher counter's edge over the rival's steady power
     /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.

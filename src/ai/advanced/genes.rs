@@ -5492,6 +5492,12 @@ pub const GENES: &[Gene] = &[
     // A Culture seat's culture claims pass it at peace. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
+    // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
+    // claims up to twenty a city, and Astrology once a Theater stands. Live
+    // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
+    // with Astrology at t74-79 in four of six games. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
     // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
     // target's power took 13 of our cities and delayed no launch. Off
     // Domination the war needs the launcher counter's edge and spares a

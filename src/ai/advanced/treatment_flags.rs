@@ -143,6 +143,9 @@ impl AdvancedAi {
         /// `culture-seat-builds-past-the-deterrent`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
+        /// `culture-faith-site-per-theater`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
         /// `denial-war-needs-the-lane-edge`: see
         /// `advanced/denial_war_needs_the_lane_edge.rs`.
         denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
