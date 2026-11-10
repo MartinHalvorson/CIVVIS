@@ -461,6 +461,13 @@ fn a_reported_horse_camp_raises_riders_at_the_shipped_mix() {
     game.set_barbarian_difficulty("deity").unwrap();
     let camp = *game.barb_camps.keys().next().unwrap();
     game.barb_naval_camps.remove(&camp);
+    // Raiders stand beside their camp, so give this one room for all five.
+    for neighbor in game.nbrs(camp) {
+        let tile = game.map.tiles.get_mut(&neighbor).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
     let neighbor = game.nbrs(camp)[0];
     game.map.tiles.get_mut(&neighbor).unwrap().resource = Some(crate::name!("horses"));
     let settler = game
