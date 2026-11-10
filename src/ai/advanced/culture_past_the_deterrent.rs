@@ -98,9 +98,9 @@ mod tests {
         assert!(!science.culture_builds_past_the_deterrent(&g, 0));
     }
 
-    /// Our capital and a second city, a met neighbour within the deterrence
-    /// radius with twice our power, inside the window; the capital's queue
-    /// holds a warrior. Returns the game and our capital.
+    /// Our capital, a met neighbour within the deterrence radius with twice
+    /// our power, inside the window; the capital's queue holds a warrior.
+    /// Returns the game and our capital.
     fn out_gunned_culture_board() -> Option<(Game, u32)> {
         use super::super::near_rival_deterrence::DETERRENCE_START_STANDARD;
         let mut game = Game::new_full(2, 32, 20, 936_221, 200, 0, false);
@@ -126,13 +126,7 @@ mod tests {
             .map(|(pos, _)| *pos)
             .collect();
         sites.sort();
-        let theirs = *sites.first()?;
-        let second = *sites
-            .iter()
-            .rev()
-            .find(|pos| game.wdist(**pos, theirs) >= 4)?;
-        game.place_city(1, theirs, None);
-        game.place_city(0, second, None);
+        game.place_city(1, *sites.first()?, None);
         game.players[0].met.insert(1);
         game.players[1].met.insert(0);
         game.players[0].techs.insert(crate::name!("bronze_working"));
@@ -140,20 +134,12 @@ mod tests {
         observed.insert(0, 100.0);
         observed.insert(1, 200.0);
         game.turn = game.standard_duration(DETERRENCE_START_STANDARD) + 5;
-        // A Monument one turn of work from done, so the claim's build-time
-        // bound holds whatever the bare capital makes.
-        let monument = Item::Building {
-            building: crate::name!("monument"),
-        };
-        let nearly = game.item_cost_for_city(0, ours, &monument) - 0.5;
         let city = game.cities.get_mut(&ours).unwrap();
         city.pop = 4;
         city.queue.clear();
         city.queue.push(Item::Unit {
             unit: crate::name!("warrior"),
         });
-        city.production_progress
-            .insert(Game::item_progress_key(&monument), nearly);
         Some((game, ours))
     }
 
@@ -167,64 +153,34 @@ mod tests {
         ai
     }
 
-    /// The live case: the Monument claim yields to the deterrent's warrior
-    /// with the gene off, and takes the queue with it on; the deterrent then
-    /// leaves the claimed Monument alone.
+    /// The live case: the deterrent's warrior holds the culture claims with
+    /// the gene off and not with it on; at war the hold returns. The claims'
+    /// own end-to-end change on captured live boards is the fires artifact
+    /// (`docs/gene_screens/fires/culture-seat-builds-past-the-deterrent.action-pairs.json`).
     #[test]
-    fn the_monument_claim_passes_the_deterrent_and_keeps_its_queue() {
+    fn the_deterrents_unit_holds_the_culture_claims_only_with_the_gene_off() {
         let Some((game, ours)) = out_gunned_culture_board() else {
-            panic!("fixture: two cities of ours beside a neighbour");
+            panic!("fixture: our capital beside a neighbour");
         };
-        let monument = Item::Building {
-            building: crate::name!("monument"),
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
         };
-
         let off = culture_seat(false);
         assert!(
-            off.deterrence_threat(&game, 0).is_some(),
-            "fixture: the neighbour out-guns us"
+            off.deterrence_unit_holds(&game, 0, &warrior),
+            "fixture: the neighbour out-guns us and the warrior is the deterrent's"
         );
-        let mut held = game.clone();
-        let plan = off.assess(&held, 0);
-        off.claim_culture_monuments(&mut held, 0, &plan);
-        assert_ne!(
-            held.cities[&ours].queue.first(),
-            Some(&monument),
-            "off: the warrior keeps the capital"
-        );
+        assert!(off.deterrent_holds_against_culture(&game, 0, &warrior));
+        let plan = off.assess(&game, 0);
+        assert!(!off.deterrent_spares_the_culture_build(&game, 0, ours, &plan));
 
         let on = culture_seat(true);
-        let mut passed = game.clone();
-        let plan = on.assess(&passed, 0);
-        assert!(
-            on.culture_monument_item(&passed, 0, ours, &plan).is_some(),
-            "fixture: the capital's Monument is claimable"
-        );
-        assert!(
-            on.deterrence_unit_holds(
-                &passed,
-                0,
-                &Item::Unit {
-                    unit: crate::name!("warrior"),
-                }
-            ),
-            "fixture: the warrior is the deterrent's"
-        );
-        assert!(on.culture_builds_past_the_deterrent(&passed, 0));
-        on.claim_culture_monuments(&mut passed, 0, &plan);
-        assert_eq!(
-            passed.cities[&ours].queue.first(),
-            Some(&monument),
-            "on: the Monument goes ahead of the warrior"
-        );
-        assert!(on.deterrent_spares_the_culture_build(&passed, 0, ours, &plan));
-        let before = passed.cities[&ours].queue.first().cloned();
-        on.claim_deterrence_unit(&mut passed, 0, &plan);
-        assert_eq!(
-            passed.cities[&ours].queue.first().cloned(),
-            before,
-            "on: the deterrent leaves the claimed Monument alone"
-        );
+        assert!(on.deterrence_unit_holds(&game, 0, &warrior));
+        assert!(!on.deterrent_holds_against_culture(&game, 0, &warrior));
+
+        let mut war = game.clone();
+        war.at_war.insert((0, 1));
+        assert!(!on.culture_builds_past_the_deterrent(&war, 0));
     }
 
     #[test]
