@@ -171,8 +171,17 @@ fn verify_order_with_context(
                 return failed("city_gone".to_string());
             };
             let repair_unknown = building_repair_status_unknown(before, city, verb);
+            // A bought unit can walk off in a later frame of the same turn, and
+            // income can outrun the price. Then neither the plot nor the treasury
+            // shows the purchase: across 60 live logs (2026-11-10) nearly all 150
+            // `not_bought` unit purchases had in fact produced the unit.
+            let new_unit_of_this_kind = after
+                .units
+                .iter()
+                .any(|unit| unit.kind == verb && own_unit(before, unit.id).is_none());
             let present = (city_holds(city, verb) && !repair_unknown)
-                || unit_appeared_at_city(before, after, city, verb);
+                || unit_appeared_at_city(before, after, city, verb)
+                || new_unit_of_this_kind;
             let treasury_fell = if order.kind == "purchase_faith" {
                 after.faith < before.faith
             } else {
