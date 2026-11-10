@@ -98,3 +98,68 @@ fn site_refusals_cover_clearing_and_releasing_them_restores_it() {
     .unwrap();
     assert!(game.map.tiles[&site].resource.is_none());
 }
+
+/// The host refuses both clearings under an improvement: 75 of 75 accepted
+/// REMOVE_FEATURE orders in the 2026-11-09 Deity census stood on unimproved
+/// ground, and 55 of 64 refusals on a Lumber Mill, Plantation, Camp, Mine,
+/// Quarry or Farm.
+#[test]
+fn an_improved_tile_offers_no_clearing_and_no_harvest() {
+    let (mut game, builder, site, _) = fixture();
+    let open = game.builder_operations(0, site);
+    assert!(open.iter().any(|op| op == "chop_woods"));
+    assert!(open.iter().any(|op| op == "harvest_resource"));
+
+    game.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("camp"));
+    let improved = game.builder_operations(0, site);
+    assert!(!improved.iter().any(|op| op == "chop_woods"));
+    assert!(!improved.iter().any(|op| op == "harvest_resource"));
+    assert!(game
+        .do_improve(0, builder, "chop_woods")
+        .unwrap_err()
+        .contains("cannot perform"));
+    assert_eq!(
+        game.map.tiles[&site].feature,
+        Some(crate::name!("forest")),
+        "the refused clearing leaves the Forest standing"
+    );
+}
+
+/// Measured on the host: a clearing pays its shipped base, times the game
+/// speed, times `1 + 9 × the share of all technologies and civics done`,
+/// rounded down. The world era is not part of it.
+#[test]
+fn a_clearing_pays_by_progress_and_game_speed_not_by_world_era() {
+    let (mut game, _, site, _) = fixture();
+    game.map.tiles.get_mut(&site).unwrap().resource = None;
+    let forest = |game: &Game| -> f64 {
+        game.builder_operation_payout(0, site, "chop_woods")
+            .into_iter()
+            .map(|(_, amount)| amount)
+            .sum()
+    };
+    let speed = game.game_speed.scale(1.0);
+    let all = (game.rules.techs.len() + game.rules.civics.len()) as f64;
+
+    game.players[0].techs.clear();
+    game.players[0].civics.clear();
+    assert_eq!(forest(&game), (20.0 * speed).floor(), "nothing learned");
+
+    let learned: Vec<_> = game.rules.techs.keys().copied().take(7).collect();
+    game.players[0].techs.extend(learned);
+    assert_eq!(
+        forest(&game),
+        (20.0 * (speed * (1.0 + 9.0 * 7.0 / all))).floor(),
+        "seven of them learned"
+    );
+
+    let before = forest(&game);
+    game.world_era += 3;
+    assert_eq!(forest(&game), before, "a later world era changes nothing");
+
+    let civics: Vec<_> = game.rules.civics.keys().copied().collect();
+    let techs: Vec<_> = game.rules.techs.keys().copied().collect();
+    game.players[0].civics.extend(civics);
+    game.players[0].techs.extend(techs);
+    assert_eq!(forest(&game), (200.0 * speed).floor(), "everything learned");
+}
