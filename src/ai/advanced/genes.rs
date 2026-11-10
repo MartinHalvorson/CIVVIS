@@ -5492,6 +5492,11 @@ pub const GENES: &[Gene] = &[
     // A Culture seat's culture claims pass it at peace. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
+    // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
+    // target's power took 13 of our cities and delayed no launch. Off
+    // Domination the war needs the launcher counter's edge and spares a
+    // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
+    Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

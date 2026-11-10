@@ -57,7 +57,7 @@ impl AdvancedAi {
     /// The edge this seat's launcher counter needs over the racer's steady
     /// power: [`DIPLOMATIC_LAUNCHER_EDGE`] on a Diplomatic seat, else
     /// [`LANE_LAUNCHER_EDGE`].
-    fn lane_launcher_edge(&self, g: &Game) -> f64 {
+    pub(super) fn lane_launcher_edge(&self, g: &Game) -> f64 {
         if self.active_victory_target(g) == Some(VictoryTarget::Diplomacy) {
             DIPLOMATIC_LAUNCHER_EDGE
         } else {

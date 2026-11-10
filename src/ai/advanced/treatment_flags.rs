@@ -143,6 +143,9 @@ impl AdvancedAi {
         /// `culture-seat-builds-past-the-deterrent`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
+        /// `denial-war-needs-the-lane-edge`: see
+        /// `advanced/denial_war_needs_the_lane_edge.rs`.
+        denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
