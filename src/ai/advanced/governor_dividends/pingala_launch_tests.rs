@@ -4,6 +4,18 @@ use crate::{game::GovernorState, setup::GameSpeed};
 fn board() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let mut g = Game::new(3, 32, 22, 71, 250, 0);
     g.game_speed = GameSpeed::Online;
+    // The rule under test is the governor's. Where this seed's Barbarians
+    // happen to land must not decide whether either city counts as safe.
+    let barbarians: Vec<u32> = g
+        .units
+        .iter()
+        .filter(|(_, unit)| g.players[unit.owner].is_barbarian)
+        .map(|(id, _)| *id)
+        .collect();
+    for id in barbarians {
+        g.remove_unit(id);
+    }
+    g.barb_pid = None;
     let settler = g
         .player_unit_ids(0)
         .into_iter()
