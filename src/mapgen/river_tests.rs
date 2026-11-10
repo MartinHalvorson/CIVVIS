@@ -5557,3 +5557,84 @@ fn every_stamped_script_seats_every_player_at_every_stock_size() {
         }
     }
 }
+
+/// TEMPORARY census of what the generator places.
+#[test]
+fn temp_resource_census() {
+    let rules = Rules::embedded();
+    let mut out = String::from("\nCENSUS\n");
+    for script in [
+        MapScript::Continents,
+        MapScript::Pangaea,
+        MapScript::Islands,
+        MapScript::Lakes,
+    ] {
+        let mut land = 0usize;
+        let mut water = 0usize;
+        let mut coast = 0usize;
+        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+        let mut per_continent = std::collections::BTreeMap::<usize, usize>::new();
+        let mut world_luxuries = 0usize;
+        const SEEDS: u64 = 12;
+        for seed in 0..SEEDS {
+            let mut rng = Rng::new(91_000 + seed);
+            let (world, _) = generate_with_script(
+                &rules, 84, 54, 8, 12, 5, 4, script, FLAT, POLED, &mut rng,
+            );
+            let mut lux =
+                std::collections::BTreeMap::<usize, std::collections::BTreeSet<String>>::new();
+            let mut land_lux = std::collections::BTreeSet::<String>::new();
+            for tile in world.tiles.values() {
+                let is_water = rules.is_water(tile);
+                if is_water {
+                    water += 1;
+                    coast += usize::from(tile.terrain.as_str() == "coast");
+                } else {
+                    land += 1;
+                }
+                let Some(resource) = tile.resource.as_ref() else {
+                    continue;
+                };
+                let class = rules.resources[resource].class.as_str();
+                let side = if is_water { "water" } else { "land" };
+                *counts.entry(format!("{side} {class}")).or_default() += 1;
+                *counts.entry(format!("kind {resource}")).or_default() += 1;
+                if !is_water && class == "luxury" {
+                    land_lux.insert(resource.to_string());
+                    lux.entry(tile.continent.unwrap_or(999))
+                        .or_default()
+                        .insert(resource.to_string());
+                }
+            }
+            world_luxuries += land_lux.len();
+            for kinds in lux.values() {
+                *per_continent.entry(kinds.len()).or_default() += 1;
+            }
+        }
+        out += &format!(
+            "{script:?} land/world {} water/world {} coast/world {} landluxkinds/world {:.1} luxkinds-per-continent {per_continent:?}\n",
+            land / SEEDS as usize,
+            water / SEEDS as usize,
+            coast / SEEDS as usize,
+            world_luxuries as f64 / SEEDS as f64,
+        );
+        for side in ["land", "water"] {
+            let base = if side == "land" { land } else { water };
+            for class in ["bonus", "luxury", "strategic", "artifact"] {
+                let n = counts.get(&format!("{side} {class}")).copied().unwrap_or(0);
+                out += &format!(
+                    "  {side} {class}: {:.1} per world, {:.2}%\n",
+                    n as f64 / SEEDS as f64,
+                    100.0 * n as f64 / base.max(1) as f64
+                );
+            }
+        }
+        let kinds: Vec<String> = counts
+            .iter()
+            .filter(|(key, _)| key.starts_with("kind "))
+            .map(|(key, n)| format!("{}={:.1}", &key[5..], *n as f64 / SEEDS as f64))
+            .collect();
+        out += &format!("  {}\n", kinds.join(" "));
+    }
+    panic!("{out}");
+}
