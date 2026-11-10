@@ -5566,6 +5566,11 @@ pub const GENES: &[Gene] = &[
     // Barbarians nearby; Faith stood at 1 a turn. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-braves-the-barbarians", field: "culture_faith_braves_the_barbarians", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_braves_the_barbarians, disable: AdvancedAi::disable_culture_faith_braves_the_barbarians },
+    // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
+    // Tower or gun matched to its target's walls before it declares, and
+    // keeps one with every siege. Opt-in; see
+    // `advanced/domination_target_gets_its_breaker.rs`.
+    Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5587,6 +5592,15 @@ pub const GENES: &[Gene] = &[
     // A Culture seat slots it at peace while it holds or can buy a Rock Band.
     // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
     Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
+    // Deity domination: 0 early-conquest openings in 72 surviving Deity runs
+    // (183 refusals for the 10-tile reach, 118 for the stand-down; naming
+    // closes at t40 Online) while 38 of 40 rival capitals stood at walls of
+    // 100 or less at t50. A Domination seat opens on the nearest walkable
+    // rival capital within 20 tiles while its walls are Ancient or none,
+    // melee-led, guards left home, standing down when the walls outgrow its
+    // Ram or Siege Tower. Opt-in;
+    // see `advanced/first_capital_before_the_walls.rs`.
+    Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

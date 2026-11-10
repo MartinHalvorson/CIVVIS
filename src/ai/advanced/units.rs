@@ -1184,6 +1184,12 @@ impl AdvancedAi {
         if let Some(acted) = self.amphibious_member_step(g, pid, uid) {
             return acted;
         }
+        // `domination-target-gets-its-breaker`: before the war a Ram or Tower
+        // for the lane's target walks to the army before its walls. `None`
+        // with the gene off. See `advanced/domination_target_gets_its_breaker.rs`.
+        if let Some(acted) = self.domination_breaker_step(g, pid, uid, plan) {
+            return acted;
+        }
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];

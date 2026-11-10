@@ -1,0 +1,24 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "first-capital-before-the-walls",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards of 13 live Deity Online 6p Small Continents games (11 Russia, 2 Sweden; 11-09/10) in which a rival capital on our landmass within 20 tiles was charted by t55, each the run's events.jsonl cut before the second state frame of t45, t50 or t55 (past the shipped turn-40 naming deadline). Both arms run one frozen ci-profile civvis_orders built from the branch (b56ea16951) with the run's own requested genome (which carries early-conquest-opening, conquest-opening-stays-near and early-conquest-stands-down), --victory domination --resumed; the on arm adds --with first-capital-before-the-walls. Off arms open nothing (they journal the stand-down or the 10-tile reach, or nothing past the deadline). On arms name the capital in 8/13 (Kabasa, Canberra, Bogota, Meroe twice, Thang Long, Ulundi, Addis Ababa; 11-14 tiles, walls 0-100; the shipped force estimate reads 9-14 turns against a 24-turn budget) and change orders in 6/13 (force bodies re-aimed at the rally; one capital Archer becomes a Warrior for the melee-led quota). The five that do not open journal the reason: not met or not a legal target (London, Aduatuca, Seoul) and no charted land walk yet (Niani, Majapahit).",
+  "archive": {
+    "path": "docs/eval/2026-11-10-first-capital-before-the-walls.native-queries.tar.xz",
+    "sha256": "a3e74d8912b0b2e7f7705c550ac054a6f9440b12b78d6f92fc5b22ab35a49542"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json"
+  ]
+}
