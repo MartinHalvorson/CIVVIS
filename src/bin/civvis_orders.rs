@@ -73,8 +73,6 @@ mod formation_refusals;
 mod generals_lead_the_army;
 #[path = "civvis_orders/governor_exchange.rs"]
 mod governor_exchange;
-#[path = "civvis_orders/kristina_fills_to_theme.rs"]
-mod kristina_fills_to_theme;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
 #[path = "civvis_orders/host_move_audit.rs"]
@@ -85,6 +83,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/kristina_fills_to_theme.rs"]
+mod kristina_fills_to_theme;
 #[path = "civvis_orders/spaceport_above_sea.rs"]
 mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]

@@ -88,8 +88,7 @@ impl AdvancedAi {
                     .map(|item| (cid, item))
             })
             .or_else(|| {
-                if !BasicAi::plaza_absent(g, pid) || self.base.plaza_waits_for_the_prophet(g, pid)
-                {
+                if !BasicAi::plaza_absent(g, pid) || self.base.plaza_waits_for_the_prophet(g, pid) {
                     return None;
                 }
                 let capital = city_ids.iter().copied().find(|cid| {
@@ -98,8 +97,8 @@ impl AdvancedAi {
                 })?;
                 // `kristina-builds-the-bibliotheque`: a capital with no site
                 // for the Plaza hands it to the idle city that produces most.
-                let capital_cannot =
-                    self.base.kristina_builds_here(g, pid) && BasicAi::capital_cannot_hold_the_plaza(g, pid);
+                let capital_cannot = self.base.kristina_builds_here(g, pid)
+                    && BasicAi::capital_cannot_hold_the_plaza(g, pid);
                 if free(g, capital) && !capital_cannot {
                     return BasicAi::plaza_site_item(g, pid, capital).map(|item| (capital, item));
                 }
