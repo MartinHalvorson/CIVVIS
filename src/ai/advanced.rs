@@ -8466,6 +8466,9 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// A drained Religion founder uses upkeep relief before losing its army.
+    /// Opt-in; see `religion_seat_cuts_the_upkeep`.
+    religion_seat_cuts_the_upkeep: bool,
     /// Keep the Religion seat's nearest Holy City guard between casts.
     /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
     religion_seat_keeps_the_guard: bool,
@@ -26510,6 +26513,8 @@ mod religion_seat_charts_the_rivals;
 /// `religion-seat-counts-the-pressure`: see
 /// `advanced/religion_seat_counts_the_pressure.rs`.
 mod religion_seat_counts_the_pressure;
+/// A drained founder uses upkeep relief before losing its standing army.
+mod religion_seat_cuts_the_upkeep;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
