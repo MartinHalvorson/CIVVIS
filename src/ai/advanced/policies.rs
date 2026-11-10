@@ -948,6 +948,29 @@ impl AdvancedAi {
                  {:.0} Gold at {:+.1} a turn", plain(card),
                 g.players[pid].gold, g.players[pid].gold_per_turn);
         }
+        // `space-denial-slots-the-spy-cards`: Machiavellianism and
+        // Cryptography ahead of the first ordinary Diplomatic card while a
+        // Culture or Domination seat's spies answer a space race. Empty (an
+        // exact no-op) with the gene off. See `advanced/space_denial_spy_cards.rs`.
+        let denial_spy_cards = self.denial_spy_cards(g, pid);
+        let spy_card_protected = |card: &str| {
+            culture_defense_cards.contains(&card)
+                || nobel_peace_direct_favor_cards.contains(&card)
+                || drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
+                || religion_upkeep.is_some_and(|(relief, _)| relief == card)
+                || upgrade_card == Some(card)
+                || builder_window_card == Some(card)
+                || race_card == Some(card)
+                || matches!(card, "praetorium" | "limitanei")
+        };
+        if !denial_spy_cards.is_empty() {
+            Self::place_denial_spy_cards(g, &mut desired, &denial_spy_cards, &spy_card_protected);
+            think!(self.journal(), Policies, Detail,
+                   "Spy cards for the space denial";
+                   "space-denial-slots-the-spy-cards: {} ahead of the ordinary Diplomatic cards \
+                    while our Spies answer the space race",
+                   denial_spy_cards.iter().map(|card| plain(card)).collect::<Vec<_>>().join(" and "));
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -1168,6 +1191,18 @@ impl AdvancedAi {
                                 .iter()
                                 .position(|wanted| *wanted == current.as_str())
                                 .is_none_or(|theirs| theirs > rank))
+                        // `space-denial-slots-the-spy-cards`: a spy card takes
+                        // a Diplomatic seat from an ordinary card ranked after
+                        // it, never from a protected one.
+                        || (!denial_spy_cards.is_empty()
+                            && Self::denial_spy_card_may_displace(
+                                g,
+                                &desired,
+                                rank,
+                                card,
+                                current.as_str(),
+                                &spy_card_protected,
+                            ))
                         // The race's Revelation takes the wildcard seat from
                         // an ordinary desired card, never from a defensive or
                         // emergency one.
