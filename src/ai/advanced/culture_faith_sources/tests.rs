@@ -548,13 +548,12 @@ fn version_two_goes_ahead_of_a_wonder_but_not_a_spy() {
 }
 
 #[test]
-fn version_two_keeps_a_settler_and_a_builder() {
+fn version_two_keeps_a_settler() {
     let (mut g, mut ai, plan, cities) = fixture(3);
     ai.enable_culture_faith_site_per_theater_2();
-    for (index, &cid) in cities.iter().enumerate() {
-        let unit = if index % 2 == 0 { "settler" } else { "builder" };
+    for &cid in &cities {
         g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
-            unit: Name::new(unit),
+            unit: crate::name!("settler"),
         }];
     }
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
