@@ -5534,6 +5534,12 @@ pub const GENES: &[Gene] = &[
     // that inspires a near road civic first. Opt-in; see
     // `advanced/culture_road_inspirations.rs`.
     Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // `culture-faith-site-per-theater-2`: version one, and the Faith sources
+    // are claimed in parallel, one per Theater city. Live Deity Kristina
+    // 20261110T183027Z under version one built one source at a time (Holy
+    // Site t60, Shrine t69, Temple t92, next Holy Site t121) and made 12
+    // Faith a turn at t100. Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-2", field: "culture_faith_site_per_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_2, disable: AdvancedAi::disable_culture_faith_site_per_theater_2 },
     // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
     // target's power took 13 of our cities and delayed no launch. Off
     // Domination the war needs the launcher counter's edge and spares a

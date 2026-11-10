@@ -6812,6 +6812,11 @@ pub struct AdvancedAi {
     /// builds the last Market a near road civic's Inspiration counts. See
     /// `advanced/culture_road_triggers.rs`. Off by default.
     culture_road_builds_its_triggers: bool,
+    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
+    /// sources are claimed in parallel, one item per Theater city, rather
+    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
+    /// Opt-in.
+    culture_faith_site_per_theater_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
