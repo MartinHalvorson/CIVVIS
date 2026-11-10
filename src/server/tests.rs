@@ -2829,7 +2829,10 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
         .0;
     assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
-    assert!(player_hud.contains("hud.innerHTML = html;"));
+    // The standings are patched in place like the tracker: new markup every
+    // turn rebuilt and re-fitted the whole table to change a few figures.
+    assert!(player_hud.contains("patchHudMarkup(hud, html);"));
+    assert!(!player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
     // person is never one of the entrants on the leaderboard.
