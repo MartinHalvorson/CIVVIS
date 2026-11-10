@@ -149,6 +149,9 @@ impl AdvancedAi {
         /// Opt-in gene `curator-sits-with-the-works`; see
         /// `advanced/curator_sits_with_the_works.rs`.
         curator_sits_with_the_works => enable_curator_sits_with_the_works, disable_curator_sits_with_the_works;
+        /// `culture-faith-site-per-theater`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

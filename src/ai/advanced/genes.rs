@@ -5501,6 +5501,12 @@ pub const GENES: &[Gene] = &[
     // Works for 30-55 turns while 3-5 stood elsewhere. Opt-in; see
     // `advanced/curator_sits_with_the_works.rs`.
     Gene { tag: "curator-sits-with-the-works", field: "curator_sits_with_the_works", kind: Kind::OptIn, enable: AdvancedAi::enable_curator_sits_with_the_works, disable: AdvancedAi::disable_curator_sits_with_the_works },
+    // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
+    // claims up to twenty a city, and Astrology once a Theater stands. Live
+    // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
+    // with Astrology at t74-79 in four of six games. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
