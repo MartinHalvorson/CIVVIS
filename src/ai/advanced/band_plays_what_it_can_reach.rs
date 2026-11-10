@@ -171,20 +171,28 @@ mod tests {
         let (mut game, band, near, far) = wall();
         let mut ai = BasicAi::new();
         ai.band_plays_what_it_can_reach = true;
-        // The band stands on rival 2's wonder, beside a better one of rival
-        // 2's that the host would not let it reach.
+        // The band stands on rival 2's Theater Square, one hex from rival 2's
+        // wonder, a better stage the host would not let it reach.
+        let beyond = game.map.tiles[&far].owner_city.unwrap();
+        let city = game.cities.get_mut(&beyond).unwrap();
+        city.districts.insert(name!("theater_square"), far);
+        city.buildings.push(name!("amphitheater"));
+        let tile = game.map.tiles.get_mut(&far).unwrap();
+        tile.wonder = None;
+        tile.district = Some(name!("theater_square"));
         game.map.tiles.get_mut(&(25, 6)).unwrap().wonder = Some(name!("pyramids"));
         game.map.tiles.get_mut(&near).unwrap().wonder = None;
         game.relocate(band, far);
         new_turn(&mut game, band);
+        assert!(game.rock_concert_tourism(0, band).is_some());
         let better = BasicAi::rock_band_tour_destination(&game, 0, band);
         assert_eq!(better, Some((25, 6)), "the fixture needs a better stage");
         ai.band_refused_hosts
             .borrow_mut()
             .insert(game.players[2].civ.clone(), game.turn + 8);
         // Both stages are rival 2's, so the bar skips the better one and the
-        // band plays where it stands rather than standing idle.
-        // It acted without moving: it played.
+        // band plays where it stands rather than standing idle: it acts
+        // without moving.
         assert!(ai.rock_band_step(&mut game, 0, band));
         assert!(game.units.get(&band).is_none_or(|unit| unit.pos == far));
     }

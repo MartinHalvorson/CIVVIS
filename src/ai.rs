@@ -7746,7 +7746,10 @@ impl BasicAi {
                 .then(left.1.cmp(&right.1))
                 .then(left.2.cmp(&right.2))
         });
-        venues.into_iter().map(|(_, _, position)| position).collect()
+        venues
+            .into_iter()
+            .map(|(_, _, position)| position)
+            .collect()
     }
 
     /// `band-plays-its-stage`: the same tour, ranked by the concert plus what
@@ -7804,7 +7807,10 @@ impl BasicAi {
                 .then(left.1.cmp(&right.1))
                 .then(left.2.cmp(&right.2))
         });
-        venues.into_iter().map(|(_, _, position)| position).collect()
+        venues
+            .into_iter()
+            .map(|(_, _, position)| position)
+            .collect()
     }
 
     /// The district a civilization builds in place of `family`: its unique
