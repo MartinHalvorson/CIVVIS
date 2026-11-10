@@ -5555,6 +5555,9 @@ pub const GENES: &[Gene] = &[
     // Live 11-09: Apostles offered Debater that took it averaged 0.94 kills and
     // 2.79 spreads; those offered it that took another 0.07 and 1.22.
     Gene { tag: "religion-seat-takes-the-debater", field: "religion_seat_takes_the_debater", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_debater, disable: AdvancedAi::disable_religion_seat_takes_the_debater },
+    // A Religion seat that owns a religion opens no war to deny a space
+    // race. See `advanced/religion_seat_spares_the_launcher.rs`.
+    Gene { tag: "religion-seat-spares-the-launcher", field: "religion_seat_spares_the_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spares_the_launcher, disable: AdvancedAi::disable_religion_seat_spares_the_launcher },
     // A Religion-target founder keeps charting until it knows a majority of
     // every rival's cities, and takes Cartography sooner. See
     // `advanced/religion_seat_charts_the_rivals.rs`.

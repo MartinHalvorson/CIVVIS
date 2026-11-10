@@ -362,6 +362,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
 | `religion-seat-reveals-the-capitals` | off (unmeasured) | A Religion-target founder sends an Embassy to a rival with no known city. | 1 \| 1 |
 | `religion-seat-slots-the-orders` | off (unmeasured) | Slot Religious Orders over a lower-ranked ordinary Economic card. | 1 \| 1 |
+| `religion-seat-spares-the-launcher` | off (unmeasured) | Opt-in gene `religion-seat-spares-the-launcher`; see `advanced/religion_seat_spares_the_launcher.rs`. | 1 \| 1 |
 | `religion-seat-spends-the-bank` | off (unmeasured) | `religion-seat-spends-the-bank`: a Religion-target founder's corps caps stop binding once the bank holds two Apostles. | 1 \| 1 |
 | `religion-seat-takes-the-debater` | off (unmeasured) | Opt-in gene `religion-seat-takes-the-debater`; see `advanced/religion_seat_takes_the_debater.rs`. | 1 \| 1 |
 | `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |

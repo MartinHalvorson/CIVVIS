@@ -8472,6 +8472,10 @@ pub struct AdvancedAi {
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
     religion_seat_takes_the_debater: bool,
+    /// `religion-seat-spares-the-launcher`: a Religion seat that owns a
+    /// religion opens no war to deny a space race. See
+    /// `advanced/religion_seat_spares_the_launcher.rs`. Off by default.
+    religion_seat_spares_the_launcher: bool,
     /// `russia-settles-the-tundra`: a Russian seat's site score reads what
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
@@ -26518,6 +26522,7 @@ mod religion_seat_reformed_church;
 mod religion_seat_reveals_the_capitals;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
+mod religion_seat_spares_the_launcher;
 /// `religion-seat-spends-the-bank`: see
 /// `advanced/religion_seat_spends_the_bank.rs`.
 mod religion_seat_spends_the_bank;

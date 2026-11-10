@@ -761,6 +761,7 @@ impl AdvancedAi {
     fn science_denial_war_admissible(&self, g: &Game, pid: usize, threat: &ScienceThreat) -> bool {
         if g.is_at_war(pid, threat.rival)
             || !self.religion_denial_has_the_edge(g, pid, threat.rival)
+            || self.launcher_is_spared(g, pid, threat.rival)
         {
             return false;
         }
