@@ -337,6 +337,12 @@ pub fn intel(session: &Session, parsed: &Value) -> Value {
     }
 }
 
+/// `GET /map-search-buildings` — what this seat's map search may find inside
+/// other empires' cities. See [`crate::obs::map_search_buildings`].
+pub fn map_search_buildings(session: &Session) -> Value {
+    crate::obs::map_search_buildings(&session.game, session.viewing_seat())
+}
+
 /// `GET /save` — the in-memory game save envelope.
 pub fn save(session: &Session) -> Value {
     crate::protocol::save_value(&session.game).unwrap_or(Value::Null)

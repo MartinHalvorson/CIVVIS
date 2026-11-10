@@ -412,7 +412,8 @@ impl AdvancedAi {
         // only for a live, measured decline with a short runway; a healthy
         // governed city must not trade away a lane card for a merely
         // hypothetical loyalty benefit.
-        if self.loyalty_policy_needed(g, pid) {
+        let loyalty_policy_needed = self.loyalty_policy_needed(g, pid);
+        if loyalty_policy_needed {
             desired.insert(0, "praetorium");
         }
         // `bleeding-capital-loyalty`: Limitanei's +2 with the garrison while a
@@ -1087,9 +1088,25 @@ impl AdvancedAi {
                         return true;
                     }
                     !desired_set.contains(current.as_str())
+                        || self.religion_orders_may_displace(g, pid, &desired, card, current.as_str())
                         || self.domination_multiplier_reclaims_fallback(
                             g, card, current.as_str(), &unproductive_economic_cards,
                         )
+                        // A full deck otherwise protects every wanted card,
+                        // even when Praetorium leads the emergency portfolio.
+                        // Native Russia 20261109T210123Z t132 kept Merchant
+                        // Confederation and missed its last free window.
+                        // Only this additional permission is same-type: the
+                        // ordinary unwanted-card fallback above still works.
+                        || (loyalty_policy_needed
+                            && card == "praetorium"
+                            && g.rules.policies[current].slot == "diplomatic"
+                            && current.as_str() != "communications_office"
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && !drain_cards
+                                .iter()
+                                .any(|(gold_card, _)| *gold_card == current.as_str()))
                         // Defensive cards must be able to take an occupied
                         // slot, but never evict each other or a different
                         // typed lane card merely to borrow wildcard capacity.
@@ -1198,6 +1215,23 @@ impl AdvancedAi {
                                "{qualifying} housing-limited cities with 3 or more specialty \
                                 districts gain +2 Housing; {} was the Economic card the {} \
                                 plan wants least", plain(&current), objective.as_str());
+                    } else if self.religion_orders_may_displace(
+                        g,
+                        pid,
+                        &desired,
+                        card,
+                        current.as_str(),
+                    ) {
+                        think!(self.journal(), Policies, Decision,
+                               "Religious Orders takes the lower-ranked Economic card {}", plain(&current);
+                               "religion-seat-slots-the-orders: the founder has an Apostle in the field; \
+                                use this policy window for +5 theological strength");
+                    } else if loyalty_policy_needed && card == "praetorium" {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted praetorium over {}", plain(&current);
+                               "a governed city has at most {LOYALTY_POLICY_TRIGGER_TURNS:.0} turns \
+                                of measured Loyalty runway; use the occupied diplomatic slot \
+                                for +2 Loyalty per turn");
                     } else {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
@@ -1674,3 +1708,7 @@ impl AdvancedAi {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "loyalty_policy_tests.rs"]
+mod loyalty_policy_tests;

@@ -24,7 +24,13 @@ impl Game {
             .count()
     }
 
-    pub(super) fn visiting_tourists_from(&self, source: usize, target: usize) -> i64 {
+    /// Tourism that makes one visitor. Counts the seats, so a caller walking
+    /// every pair reads it once rather than once per pair.
+    fn tourism_per_visitor(&self) -> f64 {
+        self.starting_major_count() as f64 * TOURISM_PER_VISITOR
+    }
+
+    fn visiting_tourists_from(&self, source: usize, target: usize, divisor: f64) -> i64 {
         if source == target
             || self.same_team(source, target)
             || !self.players[source].alive
@@ -42,7 +48,6 @@ impl Game {
         if let Some(observed) = self.observed_visiting_tourists.get(&(source, target)) {
             return (*observed).max(0);
         }
-        let divisor = self.starting_major_count() as f64 * TOURISM_PER_VISITOR;
         if divisor <= 0.0 {
             return 0;
         }
@@ -50,6 +55,19 @@ impl Game {
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {
+        if let Some(memo) = self.query_memo.domestic_tourists.borrow().as_ref() {
+            if let Some(tourists) = memo.get(&pid) {
+                return *tourists;
+            }
+        }
+        let tourists = self.domestic_tourists_uncached(pid);
+        if let Some(memo) = self.query_memo.domestic_tourists.borrow_mut().as_mut() {
+            memo.insert(pid, tourists);
+        }
+        tourists
+    }
+
+    fn domestic_tourists_uncached(&self, pid: usize) -> i64 {
         // See `foreign_tourists`: the host's own counter wins when observed.
         if let Some(observed) = self
             .observed_public_empire_stats
@@ -59,11 +77,12 @@ impl Game {
             return observed as i64;
         }
         let generated = (self.players[pid].culture_lifetime / 100.0).floor() as i64;
+        let divisor = self.tourism_per_visitor();
         let visiting_elsewhere = self
             .players
             .iter()
             .filter(|source| source.id != pid)
-            .map(|source| self.visiting_tourists_from(source.id, pid))
+            .map(|source| self.visiting_tourists_from(source.id, pid, divisor))
             .sum::<i64>();
         // A civilization's tourists abroad come out of its own pool, which
         // cannot go below empty: the host's counter never reads negative (0
@@ -176,10 +195,11 @@ impl Game {
         // Each rival owns a separate integer tourist pool. Fractions do not
         // combine across civilizations, and eliminating a civilization
         // removes both its contributed visitors and future Tourism market.
+        let divisor = self.tourism_per_visitor();
         self.players
             .iter()
             .filter(|rival| rival.id != pid && !self.same_team(pid, rival.id))
-            .map(|rival| self.visiting_tourists_from(pid, rival.id))
+            .map(|rival| self.visiting_tourists_from(pid, rival.id, divisor))
             .sum()
     }
 

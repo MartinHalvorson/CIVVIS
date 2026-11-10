@@ -148,13 +148,14 @@ fn a_published_flight_counts_the_lasers_still_to_come() {
     let mut g = world();
     g.turn = 180;
     expedition(&mut g, 0, 20.0);
+    // Online's trip is 25 light-years, so 20 travelled leaves 5.
     assert_eq!(
         forecast(&g, VictoryTarget::Science).finish_turn,
-        Some(210.0)
+        Some(185.0)
     );
     assert_eq!(
         published(&g, VictoryTarget::Science).finish_turn,
-        Some(180.0 + 30.0 * YieldGrowth::EXPECTED.flight)
+        Some(180.0 + 5.0 * YieldGrowth::EXPECTED.flight)
     );
 }
 
@@ -171,7 +172,7 @@ fn expedition_uses_the_observed_finish_line_and_speed() {
     g.turn = 180;
     expedition(&mut g, 0, 20.0);
     let baseline = forecast(&g, VictoryTarget::Science);
-    assert_eq!(baseline.finish_turn, Some(210.0));
+    assert_eq!(baseline.finish_turn, Some(185.0));
     let observed = Arc::make_mut(&mut g.observed_public_empire_stats)
         .entry(0)
         .or_default();

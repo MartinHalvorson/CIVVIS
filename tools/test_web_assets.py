@@ -532,6 +532,85 @@ class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
         self.assertIn("victory fit checks passed", done.stdout)
 
 
+HUD_WINDOW_SCENARIOS = r"""
+const SPEC = false;
+__CONSTS__
+const stubHud = {style:{getPropertyValue:() => ""}};
+const document = {getElementById:id => id === "maparea" ? {clientHeight:900} : ribbonHost};
+const getComputedStyle = () => ({getPropertyValue:() => ""});
+const playerHudRowPitch = () => 32;
+let ribbonHost = null;
+__BLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const seats = n => Array.from({length:n}, (_, id) => ({id}));
+const keys = majors => new Map(majors.map(p => [p.id, "s" + p.id]));
+const plan = (n, scrollTop, clientHeight, locked = [], open = -1, cityRows = 0) => {
+  const majors = seats(n);
+  ribbonHost = {querySelector:() => clientHeight === null ? null : {scrollTop, clientHeight}};
+  return {majors, w:planPlayerHudWindow(majors, keys(majors),
+    new Set(locked.map(id => "s" + id)), open >= 0 ? majors[open] : null, cityRows)};
+};
+const built = ({majors, w}) => majors.map((p, i) => w.built(i) ? i : -1).filter(i => i >= 0);
+// A stock-sized table is never windowed: every row stays real.
+eq(plan(30, 0, 300).w, null, "thirty seats keep every row");
+// A hundred seats at the top: what shows, plus eight rows of overscan.
+const top = plan(100, 0, 320);
+eq(built(top), Array.from({length:19}, (_, i) => i), "first rows");
+// One spacer per unbuilt run, spanning exactly the rows it replaces.
+eq(top.majors.map((p, i) => top.w.built(i) ? "" : top.w.gap(i)).join("").match(/span (\d+)/g),
+   ["span 81"], "spacer spans the rest of the table");
+const middle = plan(100, 1600, 320);
+const seatsOf = built(middle);
+eq(seatsOf[0], 42, "eight above row 50");
+eq(seatsOf[seatsOf.length - 1], 68, "eight below");
+const gaps = middle.majors.map((p, i) => middle.w.built(i) ? "" : middle.w.gap(i)).join("").match(/span (\d+)/g);
+eq(gaps, ["span 42", "span 31"], "a spacer either side");
+// A locked row exists wherever the table is scrolled, so it can hold at an edge.
+eq(built(plan(100, 0, 320, [54])).includes(54), true, "locked row is built");
+// An open city list hangs under its seat: the rows below read back through it.
+const listed = plan(100, 0, 320, [], 2, 40);
+eq(built(listed).includes(2), true, "open seat is built");
+eq(built(listed).slice(-1)[0], 10, "the list fills the view, so overscan stops short of the rows under it");
+const deep = plan(100, 1600, 320, [], 2, 20);
+eq(built(deep).filter(i => i > 2)[0], 22, "the list's rows shift every later seat");
+// Scrolling near the edge of what exists asks for more; inside it does not.
+const live = plan(100, 0, 320);
+eq(live.w.stale({scrollTop:0, clientHeight:320}), false, "top of a fresh window");
+eq(live.w.stale({scrollTop:15 * 32, clientHeight:320}), true, "two rows from the unbuilt part");
+// The masthead takes its share of a 900px map in whole rows and never more.
+eq(playerHudSeatHeight(100, 900), 370, "ten rows and the chrome");
+eq(playerHudSeatHeight(8, 900), 306, "a table that fits stays whole");
+console.log("hud window checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
+    """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking
+    over the whole screen". A hundred rows also rebuilt 790 KB of markup a turn,
+    so only the rows near what is showing are built."""
+
+    def test_the_window(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        consts = source[source.index("const PLAYER_HUD_ROW_GAP = 2;"):
+                        source.index("function playerHudRowPitch()")]
+        heights = source[source.index("function playerHudSeatHeight"):
+                         source.index("const HUD_WIDGETS = {")]
+        window = source[source.index("function planPlayerHudWindow"):
+                        source.index("function refillPlayerHudWindow")]
+        chrome = source[source.index("const PLAYER_HUD_CHROME_HEIGHT ="):
+                        source.index("const PLAYER_HUD_ROW_GAP = 2;")]
+        script = HUD_WINDOW_SCENARIOS.replace("__CONSTS__", chrome + consts).replace(
+            "__BLOCK__", heights + window)
+        done = subprocess.run(
+            [NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("hud window checks passed", done.stdout)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class PublishedViewingDefaults(unittest.TestCase):
     def test_fresh_visitors_spin_with_two_turn_trails_and_saved_choices_win(self):
@@ -642,6 +721,136 @@ class PlanetEmpireNames(unittest.TestCase):
         self.assertIn("planetProject(label.at, camera, scale, centerX, centerY)", painter)
         start = source.index("function animTick(now)")
         self.assertIn("planetEmpireLabelsSettling()", source[start:])
+
+    def test_names_are_the_top_of_the_map_under_only_what_flies(self):
+        source = self.source()
+        start = source.index("function drawPlanetMap()")
+        frame = source[start:source.index("\n}\n", start)]
+        for names in (frame.index("drawPlanetEmpireLabels(cx,"),
+                      frame.index("paintPlanetEmpireLabelLayer(")):
+            for below in ("drawCityIcon(cx", "drawCityNameplate(", "drawStrategicUnitCounter(",
+                          "drawPlanetBlasts("):
+                self.assertLess(frame.index(below), names, below)
+            self.assertLess(names, frame.index("drawPlanetSky("))
+        # The GPU path's own layer has to clear the map canvas, take no input
+        # away from it, and go when the names move back onto the canvas.
+        start = source.index("function paintPlanetEmpireLabelLayer(")
+        layer = source[start:source.index("\n}\n", start)]
+        self.assertIn("cv.after(canvas)", layer)
+        self.assertIn('canvas.style.zIndex = "1"', layer)
+        self.assertIn("gpu.canvas.style.cssText", layer)
+        self.assertIn('"pointer-events:none"', source)
+        self.assertIn('PLANET_GPU.labels.canvas.style.display = "none"', frame)
+        # That layer is above the rockets' canvas, so it is only safe while
+        # nothing is flying.
+        start = source.index("function planetGpuEligible(")
+        eligible = source[start:source.index("\n}\n", start)]
+        self.assertIn("activeSkyLaunches().length", eligible)
+
+    @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+    def test_a_launch_leaving_the_frame_leaves_its_name_waiting_at_the_edge(self):
+        source = self.source()
+        def between(first, last):
+            start = source.index(first)
+            return source[start:source.index(last, start)]
+        code = (between("function activeSkyLaunches(", "// What a launch is called on screen")
+                + between("// What a launch is called on screen", "// When a body stops being a marble")
+                + between("const SKY_NOSE_RATE", "// A body nobody could name is just a light."))
+        scenarios = r"""
+let T = 0, painted = [], panels = [];
+const performance = {now:() => T};
+const anim = {skyLaunches:[]};
+const nothing = () => {};
+const cx = {globalAlpha:1, save:nothing, restore:nothing, strokeText:nothing, beginPath:nothing,
+  moveTo:nothing, lineTo:nothing, stroke:nothing, arc:nothing, rect:nothing, clip:nothing,
+  fill:nothing, translate:nothing, rotate:nothing, scale:nothing,
+  measureText:text => ({width:text.length * 6}),
+  fillText(text, x, y) { painted.push({text, x, y, alpha:this.globalAlpha}); }};
+function civName() { return "Gran Colombia"; }
+function skyWidgetBoxes() { return panels; }
+function pcol() { return "#fff"; }
+function skySmooth(value) { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
+function skyRocketGeometry() { return {length:12, halfWidth:2}; }
+function drawMissionRocket() {}
+function drawLaunchSmoke() {}
+function expect(condition, message) { if (!condition) throw Error(message); }
+const near = (a, b) => Math.abs(a - b) < .01;
+const STAGE = {left:0, top:0, right:800, bottom:500};
+function film(end, leaving = true) {
+  const start = {x:400, y:300};
+  return {start, end, entering:false, leaving, law:clock => clock,
+          pointAt:p => ({x:start.x + (end.x - start.x) * p, y:start.y + (end.y - start.y) * p})};
+}
+function flight(mission = "moon") {
+  const launch = {playerId:1, mission, t0:0, duration:1000, endsAt:1000};
+  anim.skyLaunches.push(launch);
+  return launch;
+}
+function paint(launch, route, now, stage = STAGE, pixel = 1) {
+  T = now; painted = [];
+  if (activeSkyLaunches(now).includes(launch))
+    drawLaunchFlight(launch, {id:1}, {rocket:"saturn_v"}, route, 4, now, pixel, stage);
+  return painted[painted.length - 1];
+}
+
+expect(skyLaunchLabel({playerId:1, mission:"moon"}) === "GRAN COLOMBIA – MOON", "no dash in the label");
+expect(skyLaunchLabel({playerId:1, mission:"expedition"}) === "GRAN COLOMBIA – EXOPLANET", "expedition label");
+
+// Out through the bottom: the name stops at the edge, inside the frame, readable.
+const down = flight(), exit = film({x:300, y:560});
+const flying = paint(down, exit, 950);
+expect(near(flying.alpha, .88), "the name faded with the rocket on the way out: " + flying.alpha);
+const first = paint(down, exit, 1050);
+expect(first && first.y <= 497 && near(first.alpha, .88), "name is not readable at the edge");
+expect(!skyLaunchInFlight(1, "moon", 1050), "a waiting name holds up the craft it carried");
+expect(activeSkyLaunches(1050).includes(down), "launch ended with its name");
+// A second or so, and it does not move, whatever the camera does to the route.
+const later = paint(down, film({x:600, y:560}), 2000);
+expect(later.x === first.x && later.y === first.y, "a waiting name slid along the edge");
+expect(near(later.alpha, .88), "name faded before its second was up: " + later.alpha);
+const going = paint(down, exit, 2150);
+expect(going.alpha < .88 && going.alpha > 0, "name did not fade at the end of its wait");
+expect(!paint(down, exit, 2300) && !anim.skyLaunches.length, "launch outstayed its pause");
+
+// Out through the top stops below the masthead's shadow.
+const up = flight();
+paint(up, film({x:300, y:-60}), 950);
+const top = paint(up, film({x:300, y:-60}), 1100);
+expect(top.y >= SKY_LABEL_TOP, "name sits in the masthead's shadow");
+anim.skyLaunches.length = 0;
+
+// Flights that stay in the picture are over when their film is.
+const landing = flight(), landed = film({x:100, y:100}, false);
+paint(landing, landed, 900);
+expect(!paint(landing, landed, 1000) && !anim.skyLaunches.length, "a landing got a pause");
+const hop = flight(), hopped = film({x:400, y:256});
+paint(hop, hopped, 900);
+expect(!paint(hop, hopped, 1000) && !anim.skyLaunches.length, "a hop inside the frame got a pause");
+
+// A panel over the spot, and a second name arriving there, both move it clear.
+panels = [{left:240, right:360, top:440, bottom:540}];
+const under = flight(), route = film({x:300, y:560});
+paint(under, route, 950);
+const clear = paint(under, route, 1100), half = cx.measureText(clear.text).width / 2 + 4;
+expect(clear.x + half <= 240.5 || clear.x - half >= 359.5 || clear.y <= 440.5, "name is under a panel");
+const twin = flight();
+paint(twin, route, 950);
+const other = paint(twin, route, 1100);
+expect(Math.abs(other.y - clear.y) >= 14 || Math.abs(other.x - clear.x) >= half * 2, "two names overprint");
+panels = []; anim.skyLaunches.length = 0;
+
+// A flat board's frame is centred and scaled, and the name stays on it.
+const scale = 2, board = {left:-800, right:800, top:-500, bottom:500};
+const flat = flight(), rise = {...film({x:0, y:-620}), start:{x:0, y:0}, pointAt:p => ({x:0, y:-620 * p})};
+paint(flat, rise, 950, board, scale);
+const onBoard = paint(flat, rise, 1100, board, scale);
+expect(near(onBoard.y, board.top + SKY_LABEL_TOP * scale), "board name is off its edge: " + onBoard.y);
+const zoomed = {left:-400, right:400, top:-250, bottom:250};
+const held = paint(flat, rise, 1300, zoomed, 1);
+expect(near(held.y, zoomed.top + SKY_LABEL_TOP), "board name did not keep its place on screen");
+"""
+        done = subprocess.run([NODE, "-e", code + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
     @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
     def test_a_name_is_fixed_to_the_ground_while_the_world_turns(self):

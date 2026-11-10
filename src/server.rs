@@ -4894,6 +4894,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let answer = crate::routes::rules(&session, true);
             respond_json(stream, &answer);
         }
+        ("GET", "/map-search-buildings") => {
+            let session = lock_or_recover(&sh.session);
+            let answer = crate::routes::map_search_buildings(&session);
+            drop(session);
+            respond_json(stream, &answer);
+        }
         ("GET", "/policy-effects") => {
             // A counterfactual sweep per slotted card is too slow to hold the
             // simulation lock for, so it runs on a branch cloned under the

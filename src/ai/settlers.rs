@@ -326,10 +326,10 @@ impl BasicAi {
         !g.rules.is_water(tile)
             && g.rules.is_passable(tile)
             && !g.tile_is_natural_wonder(tile)
-            && !g
-                .cities
-                .values()
-                .any(|city| (g.wdist(city.pos, pos) as f64) < self.w.min_city_dist)
+            && !g.cities.values().any(|city| {
+                let cap = self.w.min_city_dist.ceil() as i32;
+                (g.wdist_capped(city.pos, pos, cap) as f64) < self.w.min_city_dist
+            })
             && tile
                 .owner_city
                 .is_none_or(|cid| g.cities.get(&cid).is_some_and(|city| city.owner == pid))
@@ -348,9 +348,10 @@ impl BasicAi {
         let mut sites = Vec::new();
         for pos in landmass {
             if self.valid_settle_site(g, pid, *pos)
-                && sites
-                    .iter()
-                    .all(|taken| g.wdist(*taken, *pos) as f64 >= self.w.min_city_dist)
+                && sites.iter().all(|taken| {
+                    let cap = self.w.min_city_dist.ceil() as i32;
+                    g.wdist_capped(*taken, *pos, cap) as f64 >= self.w.min_city_dist
+                })
             {
                 sites.push(*pos);
                 if sites.len() >= wanted {

@@ -382,7 +382,7 @@ impl AdvancedAi {
             .cities
             .values()
             .filter(|c| c.owner != pid && !g.players[c.owner].is_barbarian)
-            .map(|c| g.wdist(pos, c.pos))
+            .map(|c| g.wdist_capped(pos, c.pos, 6))
             .min()
             .unwrap_or(20);
         if enemy_distance < 6 {
@@ -837,7 +837,7 @@ impl AdvancedAi {
                     .filter(|city| g.players[city.owner].is_barbarian)
                     .map(|city| &city.pos),
             )
-            .map(|camp| g.wdist(pos, *camp))
+            .map(|camp| g.wdist_capped(pos, *camp, 6))
             .min()
             .unwrap_or(20);
         let exposure = match camp_distance < 6 {
@@ -847,7 +847,7 @@ impl AdvancedAi {
         let support_distance = g
             .player_city_ids(pid)
             .into_iter()
-            .map(|cid| g.wdist(pos, g.cities[&cid].pos))
+            .map(|cid| g.wdist_capped(pos, g.cities[&cid].pos, 12))
             .min()
             .unwrap_or(0);
         let isolation = match support_distance > 6 {
