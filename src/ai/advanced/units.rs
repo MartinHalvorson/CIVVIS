@@ -2256,6 +2256,10 @@ impl AdvancedAi {
                     .forward_airfield_engineer_step(g, pid, uid, plan)
                     .unwrap_or_else(|| self.base.military_engineer_step(g, pid, uid)),
                 "naturalist" => self.base.naturalist_step(g, pid, uid),
+                // `culture-digs-every-site`: see `advanced/culture_digs_every_site.rs`.
+                "archaeologist" if self.dig_every_site_active(g) => {
+                    self.dig_every_site_step(g, pid, uid)
+                }
                 "archaeologist" => self.base.archaeologist_step(g, pid, uid),
                 "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
                 "missionary" if self.victory_planning => {
