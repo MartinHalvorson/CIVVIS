@@ -250,7 +250,7 @@ fn the_plan_is_empty_without_the_gene_the_target_the_faith_or_the_rows() {
 fn a_promoted_apostle_is_paid_for_the_charges_it_saves() {
     let (mut game, _, rival) = founder();
     let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    let mut apostle = |game: &mut Game, promotion: Option<&str>| {
+    let apostle = |game: &mut Game, promotion: Option<&str>| {
         let uid = game.spawn_test_unit("apostle", 0, home);
         let unit = game.units.get_mut(&uid).unwrap();
         unit.religion = Some("Buddhism".to_string());
