@@ -137,9 +137,9 @@ fn a_starved_musician_builds_the_way_to_the_bibliotheque() {
     // No Plaza at all: this city founds one.
     let mut none = bare.clone();
     let plaza = crate::name!("government_plaza");
-    let site = none.cities[&cid].districts[&plaza];
+    let site = *none.cities[&cid].districts.get(plaza).unwrap();
     none.map.tiles.get_mut(&site).unwrap().district = None;
-    none.cities.get_mut(&cid).unwrap().districts.remove(&plaza);
+    none.cities.get_mut(&cid).unwrap().districts.remove(plaza);
     assert!(matches!(
         on.kristina_slot_item(&none, 0, cid, "art"),
         Some(Some(Item::District { district, .. })) if none.district_family(district) == "government_plaza"
