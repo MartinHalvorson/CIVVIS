@@ -18,7 +18,11 @@
 //! its queue, ahead of a Settler or any other routine item. A city following
 //! our faith goes first, then the one that produces most. The displaced item
 //! keeps its progress. A head finishing this turn, Walls, a city under
-//! threat and a city attacked in the last four turns all keep their queue.
+//! threat and a city attacked in the last four turns all keep their queue. So
+//! does a soldier at the head while hostile military stands in the city's
+//! reach (`hint_city_in_reach_of_war`): `civvis-20261110T040744Z` put the Shrine
+//! ahead of a Slinger the opening had chosen against barbarians on t24, and
+//! was eliminated at t32.
 //!
 //! Off, for another target, or before the seat has founded, nothing changes.
 
@@ -51,10 +55,17 @@ impl AdvancedAi {
     }
 
     /// Whether `cid`'s queue head may give way to the Shrine.
-    fn first_shrine_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
+    fn first_shrine_may_displace(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(head) = g.cities[&cid].queue.first() else {
             return true;
         };
+        if let Item::Unit { unit } = head {
+            if g.rules.units[unit].class == "military"
+                && self.hint_city_in_reach_of_war(g, pid, cid)
+            {
+                return false;
+            }
+        }
         if let Item::Building { building } = head {
             let walls = g.rules.buildings.get(building).is_some_and(|spec| {
                 spec.outer_defense > 0 || spec.replaces.as_deref() == Some("walls")
@@ -96,7 +107,7 @@ impl AdvancedAi {
                     || plan.threatened_city == Some(cid)
                     || (city.last_attacked > 0
                         && g.turn.saturating_sub(city.last_attacked) <= FIRST_SHRINE_ATTACK_MEMORY)
-                    || !Self::first_shrine_may_displace(g, pid, cid)
+                    || !self.first_shrine_may_displace(g, pid, cid)
                 {
                     return None;
                 }
