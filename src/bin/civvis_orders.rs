@@ -83,6 +83,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/kristina_fills_to_theme.rs"]
+mod kristina_fills_to_theme;
 #[path = "civvis_orders/spaceport_above_sea.rs"]
 mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]
@@ -5537,8 +5539,16 @@ fn decide(
         note_bits.push(format!("sales={sales}"));
     }
 
-    let (person_orders, great_person_stall) =
+    let (mut person_orders, great_person_stall) =
         great_person_orders_led(state, ai.generals_lead_the_army_enabled());
+    // `kristina-fills-to-theme`: Sweden's cultural people fill the buildings
+    // Kristina themes. See `civvis_orders/kristina_fills_to_theme.rs`.
+    if ai.kristina_fills_to_theme_on(&mirror_state.game, 0) {
+        let retargeted = kristina_fills_to_theme::retarget(state, &mut person_orders);
+        if retargeted > 0 {
+            note_bits.push(format!("kristina_theme_retargets={retargeted}"));
+        }
+    }
     if great_person_stall.generals_leading > 0 {
         note_bits.push(format!(
             "generals_leading={}",

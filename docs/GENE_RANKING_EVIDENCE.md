@@ -302,6 +302,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `korea-mines-beside-the-seowon` | off (unmeasured) | Opt-in gene `korea-mines-beside-the-seowon`; see `advanced/korea_mines_beside_the_seowon.rs`. | 1 \| 1 |
+| `kristina-builds-the-bibliotheque` | off (unmeasured) | Opt-in gene `kristina-builds-the-bibliotheque`; see `advanced/kristina_builds_the_bibliotheque.rs`. | 1 \| 1 |
+| `kristina-fills-to-theme` | off (unmeasured) | Opt-in gene `kristina-fills-to-theme`; see `advanced/kristina_fills_to_theme.rs`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `last-charge-joins-the-army` | off (unmeasured) | Opt-in gene `last-charge-joins-the-army`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |

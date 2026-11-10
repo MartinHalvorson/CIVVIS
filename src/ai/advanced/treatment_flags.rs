@@ -94,6 +94,12 @@ impl AdvancedAi {
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.
         acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
+        /// Opt-in gene `kristina-builds-the-bibliotheque`; see
+        /// `advanced/kristina_builds_the_bibliotheque.rs`.
+        base.kristina_builds_the_bibliotheque => enable_kristina_builds_the_bibliotheque, disable_kristina_builds_the_bibliotheque;
+        /// Opt-in gene `kristina-fills-to-theme`; see
+        /// `advanced/kristina_fills_to_theme.rs`.
+        base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

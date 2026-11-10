@@ -11445,6 +11445,11 @@ mod threatened_war_holds_the_claims;
 mod first_luxury;
 /// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
 mod korea_mines_beside_the_seowon;
+/// `kristina-builds-the-bibliotheque`: see
+/// `advanced/kristina_builds_the_bibliotheque.rs`.
+mod kristina_builds_the_bibliotheque;
+/// `kristina-fills-to-theme`: see `advanced/kristina_fills_to_theme.rs`.
+mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -26148,6 +26153,10 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `kristina-builds-the-bibliotheque`: Sweden's Plaza tier, else the
+            // Plaza itself, under the same displacement rule. Exact no-op while
+            // the gene is off. See `advanced/kristina_builds_the_bibliotheque.rs`.
+            self.claim_queue_for_kristinas_plaza(g, pid, &plan);
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);

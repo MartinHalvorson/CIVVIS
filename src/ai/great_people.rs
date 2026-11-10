@@ -121,6 +121,11 @@ impl BasicAi {
             // for one bounded digger instead of constructing more Museums.
             return self.live_artifact_activation_digger(g, pid, cid);
         }
+        // `kristina-fills-to-theme`: Sweden's Queen's Bibliotheque first. See
+        // `advanced/kristina_fills_to_theme.rs`.
+        if let Some(item) = self.kristina_slot_item(g, pid, cid, work) {
+            return item;
+        }
         // The host's empty activation-plot list is authoritative. CIVVIS may
         // believe a generic Palace `any` slot is open while Firaxis refuses
         // this exact individual, and trusting the approximation here is what

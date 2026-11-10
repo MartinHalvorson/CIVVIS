@@ -1322,14 +1322,15 @@ impl BasicAi {
         // turn 38, no Plaza by 81), and which would take any tier-one Plaza
         // building. A Prophet race still open goes first. See
         // `plaza_building_item` and `plaza_item`.
+        // `kristina-builds-the-bibliotheque`: Sweden's tiers, no Prophet-race
+        // hold, and a city other than a site-less capital; the stock lists
+        // otherwise. See `advanced/kristina_builds_the_bibliotheque.rs`.
         if self.plaza_in_the_district_list && !self.minor && !self.barb {
-            if let Some(item) =
-                Self::plaza_building_item_for(g, pid, cid, self.plaza_serves_science)
-            {
+            if let Some(item) = self.plaza_tier_item(g, pid, cid) {
                 return Some(item);
             }
-            if !self.plaza_prophet_race_open(g, pid) {
-                if let Some(item) = Self::plaza_item(g, pid, cid) {
+            if !self.plaza_waits_for_the_prophet(g, pid) {
+                if let Some(item) = self.plaza_item_for_seat(g, pid, cid) {
                     return Some(item);
                 }
             }
