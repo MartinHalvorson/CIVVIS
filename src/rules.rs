@@ -611,6 +611,11 @@ pub struct UnitSpec {
     /// `adjacent_movement`; unknown entries remain forward-compatible.
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+    /// `Units.WMDCapable`: this unit can carry a nuclear or thermonuclear
+    /// device to its target. The shipped rows are the Bomber, the Jet Bomber
+    /// and the Nuclear Submarine (`Base/Assets/Gameplay/Data/Units.xml`).
+    #[serde(default)]
+    pub wmd_capable: bool,
 }
 
 impl UnitSpec {
@@ -1739,9 +1744,9 @@ pub struct Rules {
     /// Per-era constants from the shipped Eras table, keyed by ERA_NAMES.
     pub eras: SpecMap<EraSpec>,
     /// The shipped WMDs table. Blast radius, fallout duration and ICBM range
-    /// all drive `Action::WmdStrike` — launched from a city center, an
-    /// unpillaged Missile Silo, or a Nuclear Submarine — and the per-turn
-    /// Gold maintenance is charged every turn a device is stockpiled.
+    /// all drive `Action::WmdStrike` — launched from an unpillaged Missile
+    /// Silo or carried by a `wmd_capable` unit — and the per-turn Gold
+    /// maintenance is charged every turn a device is stockpiled.
     pub wmds: SpecMap<WmdSpec>,
     /// Gathering Storm's random-disaster classes and their tuning.
     pub disasters: SpecMap<DisasterSpec>,

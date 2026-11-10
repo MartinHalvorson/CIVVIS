@@ -2320,3 +2320,21 @@ The engine before this change measures v47's **19,002 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v49 (2026-11-09) — City-state kits and Holy City pressure
+
+#4914 corrects nine rules against the shipped rows. Every religion's Holy City
+exerts four times the pressure (`RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER`),
+and Jerusalem makes each Holy Site count as one. Cardiff pays Power per harbor
+building, levy prices follow game speed, Sumeria levies at half price, and
+Tamar's Envoys count double at a city-state of her faith. Wolin pays Great
+General or Admiral points by the killer's class, Auckland reads the suzerain's
+own era, and Bandar Brunei pays per owned Trading Post on the route. Every
+controller, `AdvancedAi::legacy()` included, now plays under these rules.
+
+The engine before this change measures v48's **18,765 decisions /
+`0xaa6b_4e3a_f767_b9e9`**. The corrected engine measures **18,828 decisions /
+`0xd90f_0e2b_1eab_6f7a`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.

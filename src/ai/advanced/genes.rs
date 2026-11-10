@@ -5442,6 +5442,9 @@ pub const GENES: &[Gene] = &[
     // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
     Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
     // ---- append: c-d ------------------------------------------------
+    // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
+    // 60 hit points or less. See `advanced/apostle_army.rs`.
+    Gene { tag: "corps-comes-home-alive", field: "corps_comes_home_alive", kind: Kind::OptIn, enable: AdvancedAi::enable_corps_comes_home_alive, disable: AdvancedAi::disable_corps_comes_home_alive },
     Gene { tag: "culture-seat-drama-first", field: "culture_seat_drama_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_first, disable: AdvancedAi::disable_culture_seat_drama_first },
     Gene { tag: "culture-seat-drama-before-government", field: "culture_seat_drama_before_government", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_drama_before_government, disable: AdvancedAi::disable_culture_seat_drama_before_government },
     Gene { tag: "culture-keeps-its-aesthetics", field: "culture_keeps_its_aesthetics", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_its_aesthetics, disable: AdvancedAi::disable_culture_keeps_its_aesthetics },
@@ -5466,6 +5469,10 @@ pub const GENES: &[Gene] = &[
     // condemned on the turn it is declared. Unpriced, off. See
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-wipes-the-spreaders", field: "faith_strike_wipes_the_spreaders", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_wipes_the_spreaders, disable: AdvancedAi::disable_faith_strike_wipes_the_spreaders },
+    // A heretic strike over the faith war's edge may still go at parity when
+    // the rival's army is away from our cities. Needs the strike gene. Unpriced,
+    // off. See `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5475,6 +5482,9 @@ pub const GENES: &[Gene] = &[
     // and 13 beside one, and walked at rivals that killed 8 of 16 they hit.
     Gene { tag: "guru-walks-to-the-wounded", field: "guru_walks_to_the_wounded", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_walks_to_the_wounded, disable: AdvancedAi::disable_guru_walks_to_the_wounded },
     // ---- append: l-o ------------------------------------------------
+    // An Apostle fights at full strength on one charge: it keeps the charge
+    // and hunts, and a Missionary keeps its own and scouts.
+    Gene { tag: "last-charge-joins-the-army", field: "last_charge_joins_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_last_charge_joins_the_army, disable: AdvancedAi::disable_last_charge_joins_the_army },
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // First-slot ranged support. Leaves later recon settings unchanged;
     // the opening Scout is displaced. No Native strength claim.
@@ -5482,6 +5492,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: p-r ------------------------------------------------
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },
+    Gene { tag: "religion-denial-needs-the-edge", field: "religion_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_denial_needs_the_edge, disable: AdvancedAi::disable_religion_denial_needs_the_edge },
     Gene { tag: "religion-seat-slots-the-orders", field: "religion_seat_slots_the_orders", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_slots_the_orders, disable: AdvancedAi::disable_religion_seat_slots_the_orders },
     // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
     Gene { tag: "religion-seat-flips-the-cheapest", field: "religion_seat_flips_the_cheapest", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_flips_the_cheapest, disable: AdvancedAi::disable_religion_seat_flips_the_cheapest },
@@ -5517,6 +5528,16 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // Live 11-09: Apostles offered Debater that took it averaged 0.94 kills and
+    // 2.79 spreads; those offered it that took another 0.07 and 1.22.
+    Gene { tag: "religion-seat-takes-the-debater", field: "religion_seat_takes_the_debater", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_debater, disable: AdvancedAi::disable_religion_seat_takes_the_debater },
+    // A Religion-target founder keeps charting until it knows a majority of
+    // every rival's cities, and takes Cartography sooner. See
+    // `advanced/religion_seat_charts_the_rivals.rs`.
+    Gene { tag: "religion-seat-charts-the-rivals", field: "religion_seat_charts_the_rivals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_charts_the_rivals, disable: AdvancedAi::disable_religion_seat_charts_the_rivals },
+    // A Religion-target founder's corps caps stop binding once the bank
+    // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
+    Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4

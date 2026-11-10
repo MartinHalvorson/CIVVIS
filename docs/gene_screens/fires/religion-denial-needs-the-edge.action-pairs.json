@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-denial-needs-the-edge",
+  "scope": "Same exact-source verified candidate binary and sealed actual native Russia reads; only this treatment differs. All actual reads checked byte-for-byte. Resumed one-shot proposal activation, not native execution, full-history reproduction, survival or victory-rate proof. Original live steady power1236 versus resumed1226 reflects missing persistent power history; both are far above our454. The earlier frame and the already-at-war frame must emit identical orders. The direct declaration at146/frame0 is withheld only by the new bit.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religion-denial-needs-the-edge.native-queries.tar.xz",
+    "sha256": "19e5577d36b32ff6a9aa3050d0f93452d66543be3d75d93636ccf3f37453cfe9"
+  },
+  "members": [
+    "native-queries/t145-frame0/result.json",
+    "native-queries/t146-frame0/result.json",
+    "native-queries/t146-frame1/result.json"
+  ]
+}

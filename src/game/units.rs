@@ -152,6 +152,20 @@ impl Game {
         id
     }
 
+    /// A working Missile Silo for a nuclear test. It stands on the city's own
+    /// tile so that the distances a fixture already measured still hold.
+    #[cfg(test)]
+    pub(crate) fn install_test_silo(&mut self, city: u32) {
+        let position = self.cities[&city].pos;
+        let tile = self.map.tiles.get_mut(&position).expect("the city's tile");
+        tile.improvement = Some(crate::name!("missile_silo"));
+        tile.pillaged = false;
+        let owned = &mut self.cities.get_mut(&city).expect("the city").owned_tiles;
+        if !owned.contains(&position) {
+            owned.push(position);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn spawn_test_unit(&mut self, kind: &str, owner: usize, pos: Pos) -> u32 {
         self.spawn_unit(kind, owner, pos)
