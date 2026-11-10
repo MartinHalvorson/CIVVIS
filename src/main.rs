@@ -2477,4 +2477,29 @@ mod tests {
         );
         assert!(game.concluded_wars[0].ended.is_some());
     }
+
+    /// TEMPORARY: a soak on the new maps.
+    #[test]
+    fn temp_ci_soak() {
+        for map in ["continents", "pangaea"] {
+            super::soak_command(
+                [
+                    "--games",
+                    "2",
+                    "--players",
+                    "4",
+                    "--turns",
+                    "200",
+                    "--start-seed",
+                    "77",
+                    "--jobs",
+                    "2",
+                    "--map",
+                    map,
+                ]
+                .map(String::from)
+                .to_vec(),
+            );
+        }
+    }
 }

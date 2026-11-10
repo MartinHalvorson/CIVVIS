@@ -941,6 +941,34 @@ mod tests {
     /// The documented one-map smoke is a real branch exposure, not merely a
     /// parser example. Both legs play the same deterministic world; only the
     /// enabled defender may select denial because it is assigned a lane.
+    /// TEMPORARY: finds a seed where the smoke still reaches the denial branch.
+    #[test]
+    fn temp_denial_seed_scan() {
+        use civvis::setup::GameSpeed;
+        let run = DenialRun {
+            players: 2,
+            width: 24,
+            height: 16,
+            speed: GameSpeed::Online,
+            turns: 200,
+            pair: DenialPair {
+                defender: VictoryTarget::Science,
+                rival: VictoryTarget::Religion,
+            },
+        };
+        for seed in 940_001..940_140u64 {
+            let treatment = run_denial_trial(run, seed, true);
+            let control = run_denial_trial(run, seed, false);
+            if treatment.selections > 0
+                && control.selections == 0
+                && treatment.victory == control.victory
+            {
+                panic!("SEEDFOUND DENIAL {seed} {treatment:?}");
+            }
+        }
+        panic!("SEEDFOUND DENIAL NONE");
+    }
+
     #[test]
     fn documented_denial_pair_smoke_exposes_only_the_enabled_defender() {
         use civvis::setup::GameSpeed;
