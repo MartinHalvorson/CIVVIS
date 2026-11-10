@@ -3448,46 +3448,6 @@ fn true_start_earth_draws_the_same_coastlines_every_game() {
     );
 }
 
-/// Rolling strategic resources against the whole 52-entry catalog, one
-/// 13% chance per tile, put a single Iron and a single Horses deposit on a
-/// six-player Pangaea. With no Iron nobody can train or upgrade into a
-/// Swordsman, Legion, Man-at-Arms or Knight, so every civilization fought
-/// the whole game on the branches that cost no material - Warriors,
-/// Archers, Crossbowmen - and the Gold upgrade pass had nothing to buy.
-#[test]
-fn every_strategic_resource_reaches_a_playable_supply() {
-    let rules = Rules::embedded();
-    let strategics: Vec<&str> = rules
-        .resources
-        .iter()
-        .filter(|(_, spec)| spec.class == "strategic")
-        .map(|(name, _)| name.as_str())
-        .collect();
-    assert!(strategics.contains(&"iron") && strategics.contains(&"horses"));
-    for (index, script) in ROLLED_TYPES
-        .into_iter()
-        .chain(FIXED_GEOGRAPHY_TYPES)
-        .enumerate()
-    {
-        let mut rng = Rng::new(81_000 + index as u64);
-        let (world, _) =
-            generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, FLAT, POLED, &mut rng);
-        for resource in &strategics {
-            let count = world
-                .tiles
-                .values()
-                .filter(|tile| tile.resource.as_deref() == Some(*resource))
-                .count();
-            // Six majors and six city-states: every civilization needs to
-            // be able to reach a source without conquering for it.
-            assert!(
-                count >= 7,
-                "{script:?} placed only {count} {resource} for six civilizations"
-            );
-        }
-    }
-}
-
 /// Antiquity Sites and Shipwrecks are allocated per civilization, not
 /// rolled per tile. `ARCHAEOLOGY_SITES_PER_CIV_LAND` is 6 and
 /// `ARCHAEOLOGY_SITES_PER_CIV_SEA` is 2, so the eight-player tournament map
@@ -3607,42 +3567,6 @@ fn resource_placement_frequencies_match_the_shipped_rules() {
         ("wine", 2, 0),
     ];
     assert_eq!(actual, expected);
-}
-
-#[test]
-fn resource_placement_draws_by_weight_and_skips_zero_weight_entries() {
-    let rules = Rules::embedded();
-    let mut rng = Rng::new(47);
-    let sea = [Name::new("fish"), Name::new("whales")];
-    let mut fish = 0;
-    let mut whales = 0;
-    for _ in 0..24_000 {
-        match weighted_resource_pick(&rules, &sea, true, &mut rng) {
-            Some(name) if name == "fish" => fish += 1,
-            Some(name) if name == "whales" => whales += 1,
-            other => panic!("unexpected sea choice {other:?}"),
-        }
-    }
-    assert!(fish > whales * 18, "Fish {fish}, Whales {whales}");
-
-    let land = [Name::new("stone"), Name::new("copper")];
-    let mut stone = 0;
-    let mut copper = 0;
-    for _ in 0..14_000 {
-        match weighted_resource_pick(&rules, &land, false, &mut rng) {
-            Some(name) if name == "stone" => stone += 1,
-            Some(name) if name == "copper" => copper += 1,
-            other => panic!("unexpected land choice {other:?}"),
-        }
-    }
-    assert!(stone > copper * 2, "Stone {stone}, Copper {copper}");
-
-    let artifacts = [Name::new("antiquity_site"), Name::new("shipwreck")];
-    assert_eq!(
-        weighted_resource_pick(&rules, &artifacts, false, &mut rng),
-        None,
-        "the ordinary lottery must leave artifacts to their quota pass"
-    );
 }
 
 #[test]

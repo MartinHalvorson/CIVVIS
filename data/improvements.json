@@ -394,7 +394,8 @@
   "water": true,
   "terrain": [
    "coast",
-   "ocean"
+   "ocean",
+   "lake"
   ],
   "effects": {
    "adjacent_appeal": -1

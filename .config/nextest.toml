@@ -1,0 +1,3 @@
+# Temporary, removed before this PR goes ready: list every failure in one CI round.
+[profile.default]
+fail-fast = false

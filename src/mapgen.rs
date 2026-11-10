@@ -7,7 +7,7 @@ use crate::leader_roster::{self, TrueStartPoint};
 use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::{volcanic_soil_valid_terrain, Rules};
-use crate::setup::{MapPoles, MapScript, MapTopology};
+use crate::setup::{MapPoles, MapScript, MapSize, MapTopology};
 use crate::sphere::trig;
 use crate::world::WorldMap;
 use crate::{hex, Pos};
@@ -16,12 +16,14 @@ mod canals;
 mod earth;
 mod lakes;
 mod natural_wonders;
+mod resources;
 mod rivers;
 mod starts;
 use canals::*;
 use earth::*;
 use lakes::*;
 use natural_wonders::*;
+use resources::*;
 use rivers::*;
 pub use starts::*;
 
@@ -2246,76 +2248,16 @@ pub fn generate_with_script_and_leader_starts(
         add_geothermal_fissures(&mut wm, &land, &seams, desired_fissures, rng);
     }
 
-    // --- resources. The battlefield places none — no lottery, no strategic
-    // floors, no artifacts: its ground is terrain to fight over, not to work.
-    let all_pos: Vec<Pos> = if script.is_battlefield() {
-        Vec::new()
-    } else {
-        wm.tiles.keys().cloned().collect()
-    };
-    for pos in all_pos {
-        let (terrain, feature) = {
-            let t = &wm.tiles[&pos];
-            (t.terrain, t.feature)
-        };
-        let natural_wonder = feature
-            .as_ref()
-            .and_then(|f| rules.features.get(f))
-            .map(|f| f.natural_wonder)
-            .unwrap_or(false);
-        if !rules.is_passable(&wm.tiles[&pos])
-            || natural_wonder
-            || feature.as_deref() == Some("oasis")
-            || feature.as_deref() == Some("marsh")
-            || feature.as_deref() == Some("volcanic_soil")
-        {
-            continue;
-        }
-        if rng.chance(0.13) {
-            let hills = wm.tiles[&pos].hills;
-            let valid: Vec<Name> = rules
-                .resources
-                .iter()
-                .filter(|(_, s)| {
-                    // The shipped placement is a union: a listed feature on
-                    // the tile, or a listed terrain on a featureless tile —
-                    // and hills-only spawns (Sheep) respect the tile's form.
-                    let by_feature = feature
-                        .as_ref()
-                        .map(|feature| s.feature.contains(feature))
-                        .unwrap_or(false);
-                    let by_terrain = feature.is_none() && s.terrain.contains(&terrain);
-                    (by_feature || by_terrain) && s.hills.is_none_or(|want| want == hills)
-                })
-                .map(|(name, _)| *name)
-                .collect();
-            let water = rules.is_water(&wm.tiles[&pos]);
-            if let Some(pick) = weighted_resource_pick(rules, &valid, water, rng) {
-                wm.tiles.get_mut(&pos).unwrap().resource = Some(pick);
-            }
-        }
-    }
-
-    if !script.is_battlefield() {
-        place_strategic_quotas(
-            rules,
-            &mut wm,
-            &land,
-            num_major_spawns,
-            &BTreeSet::new(),
-            rng,
-        );
-    }
-
-    if stamps_continents {
-        // `assign_continents` historically used one phase draw here. Its early
-        // tectonic plan uses a cloned stream, so retain the main-stream draw
-        // at the original point and preserve every later random roll.
-        if !land.is_empty() && num_continents > 0 {
-            let _ = rng.below(land.len());
-        }
-    } else {
+    // --- resources. They are dealt continent by continent, so the continents
+    // come first. The battlefield places none: its ground is terrain to fight
+    // over, not to work.
+    if !stamps_continents {
         assign_continents(&mut wm, &land, num_continents, rng);
+    }
+    if !script.is_battlefield() {
+        let size = MapSize::from_dimensions(width, height)
+            .unwrap_or_else(|| MapSize::for_players(num_major_spawns));
+        place_resources(rules, &mut wm, script, size, rng);
     }
 
     // Gathering Storm marks only a subset of flat coastal land as vulnerable
@@ -2380,49 +2322,7 @@ pub fn generate_with_script_and_leader_starts(
         leader_starts,
         minor_starts,
     };
-    place_starts_and_finish(wm, land, rules, script, seats, rng)
-}
-
-/// Draw one eligible resource using the game's separate land and sea weights.
-///
-/// A zero weight is not an equally likely entry: it means the ordinary map
-/// lottery does not place that resource. This keeps artifacts out of the early
-/// pass so their per-civilization quota owns them, and preserves the extreme
-/// Fish (23) / Whale (1) difference in the shipped sea table.
-fn weighted_resource_pick(
-    rules: &Rules,
-    candidates: &[Name],
-    water: bool,
-    rng: &mut Rng,
-) -> Option<Name> {
-    let total = candidates
-        .iter()
-        .map(|name| {
-            let spec = &rules.resources[name];
-            if water {
-                spec.sea_frequency as usize
-            } else {
-                spec.frequency as usize
-            }
-        })
-        .sum::<usize>();
-    if total == 0 {
-        return None;
-    }
-    let mut draw = rng.below(total);
-    for name in candidates {
-        let spec = &rules.resources[name];
-        let weight = if water {
-            spec.sea_frequency as usize
-        } else {
-            spec.frequency as usize
-        };
-        if draw < weight {
-            return Some(*name);
-        }
-        draw -= weight;
-    }
-    unreachable!("a positive resource-weight total must select a candidate")
+    place_starts_and_finish(wm, rules, script, seats, rng)
 }
 
 /// World Age, which the stock scripts pass to every elevation percentile.
@@ -3398,97 +3298,12 @@ const RIVER_TRIBUTARY_CLEARANCE: i32 = 3;
 /// Those sources are passed over instead.
 const RIVER_MIN_COURSE: usize = 4;
 
-/// Top every strategic resource up to a supply the map can actually sustain.
-///
-/// Civ VI does not leave strategic supply to the same per-tile lottery it uses
-/// for luxuries: its resource script places each strategic resource against a
-/// quota derived from the land area and the number of civilizations, because
-/// an empire that never finds Iron cannot train or upgrade into a single unit
-/// on the Swordsman line. Rolling them against the whole 52-entry catalog put
-/// **one** Iron and **one** Horses deposit on a 957-tile six-player map, which
-/// left the Swordsman, Knight, Man-at-Arms and Musketman branches unbuildable
-/// for everyone and armies of Warriors and Archers still in the field in the
-/// Industrial era.
-///
-/// The eligibility test is the shipped one used by the lottery above, so this
-/// changes how many deposits appear, never where they are allowed to appear.
-fn place_strategic_quotas(
-    rules: &Rules,
-    wm: &mut WorldMap,
-    land: &BTreeSet<Pos>,
-    num_major_spawns: usize,
-    reserved: &BTreeSet<Pos>,
-    rng: &mut Rng,
-) {
-    // Enough for every civilization to hold a source with some left to fight
-    // over, and enough on a large map that the deposits are not all in one
-    // empire's borders.
-    let quota = (num_major_spawns + 1).max(land.len() / 90);
-    let strategics: Vec<Name> = rules
-        .resources
-        .iter()
-        .filter(|(_, spec)| spec.class == "strategic")
-        .map(|(name, _)| *name)
-        .collect();
-    let land_list: Vec<Pos> = land.iter().cloned().collect();
-    for resource in strategics {
-        let spec = &rules.resources[&resource];
-        let placed = wm
-            .tiles
-            .values()
-            .filter(|tile| tile.resource.as_deref() == Some(resource.as_str()))
-            .count();
-        let mut wanted = quota.saturating_sub(placed);
-        if wanted == 0 {
-            continue;
-        }
-        let mut candidates: Vec<Pos> = land_list
-            .iter()
-            .copied()
-            .filter(|pos| !reserved.contains(pos))
-            .filter(|pos| {
-                let tile = &wm.tiles[pos];
-                if tile.resource.is_some() || !rules.is_passable(tile) {
-                    return false;
-                }
-                let natural_wonder = tile
-                    .feature
-                    .as_deref()
-                    .and_then(|feature| rules.features.get(feature))
-                    .is_some_and(|feature| feature.natural_wonder);
-                if natural_wonder {
-                    return false;
-                }
-                let by_feature = tile
-                    .feature
-                    .as_ref()
-                    .is_some_and(|feature| spec.feature.contains(feature));
-                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
-                (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
-            })
-            .collect();
-        while wanted > 0 && !candidates.is_empty() {
-            let pick = rng.below(candidates.len());
-            let pos = candidates.swap_remove(pick);
-            wm.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(&resource));
-            wanted -= 1;
-        }
-    }
-}
-
 /// Antiquity Sites and Shipwrecks are allocated per civilization rather than
 /// rolled per tile: the shipped `ARCHAEOLOGY_SITES_PER_CIV_LAND` is **6** and
 /// `ARCHAEOLOGY_SITES_PER_CIV_SEA` is **2**, so a standard eight-player map
-/// carries 48 dig sites and 16 wrecks. The per-tile lottery still rolls them
-/// as before and this tops the map up to the quota afterwards, on the same
-/// eligibility test every other resource uses — so this changes how many
-/// appear and never where they are allowed to appear.
+/// carries 48 dig sites and 16 wrecks.
 ///
-/// It runs **after the seats are chosen**, and deliberately so. Every earlier
-/// pass feeds the start-placement search: freeing tiles that the lottery would
-/// have filled lets `place_strategic_quotas` seat more deposits, which draws
-/// more from the shared stream, which moves the spawns. A Tiny map lost the
-/// shipped 10-14 separation band that way. Nothing after this point reads the
+/// It runs **after the seats are chosen**. Nothing after this point reads the
 /// stream, so the quota is invisible to the layout.
 fn place_artifact_quotas(
     rules: &Rules,
@@ -3520,10 +3335,8 @@ fn place_artifact_quotas(
             .copied()
             .filter(|pos| wm.tiles[pos].resource.as_deref() == Some(resource.as_str()))
             .collect();
-        // The lottery rolls Artifacts like any other resource, which undershoots
-        // on an ocean-heavy map and overshoots badly on a land-heavy one — a
-        // Land Only world rolled 66 dig sites against a quota of 48. Trim as
-        // readily as top up, so the map ends on the shipped number either way.
+        // A rebuilt or edited world can arrive holding more than the quota, so
+        // trim as readily as top up.
         while standing.len() > quota {
             let pick = rng.below(standing.len());
             let pos = standing.swap_remove(pick);
@@ -3537,26 +3350,7 @@ fn place_artifact_quotas(
             .iter()
             .copied()
             .filter(|pos| !reserved.contains(pos))
-            .filter(|pos| {
-                let tile = &wm.tiles[pos];
-                if tile.resource.is_some() {
-                    return false;
-                }
-                let natural_wonder = tile
-                    .feature
-                    .as_deref()
-                    .and_then(|feature| rules.features.get(feature))
-                    .is_some_and(|feature| feature.natural_wonder);
-                if natural_wonder {
-                    return false;
-                }
-                let by_feature = tile
-                    .feature
-                    .as_ref()
-                    .is_some_and(|feature| spec.feature.contains(feature));
-                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
-                (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
-            })
+            .filter(|pos| can_have_resource(rules, wm, *pos, resource))
             .collect();
         while wanted > 0 && !candidates.is_empty() {
             let pick = rng.below(candidates.len());
@@ -3724,6 +3518,8 @@ fn largest_component(wm: &WorldMap, cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
         .unwrap_or_default()
 }
 
+#[cfg(test)]
+mod resource_tests;
 #[cfg(test)]
 mod river_tests;
 

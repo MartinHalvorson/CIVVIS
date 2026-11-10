@@ -1324,11 +1324,10 @@ pub(super) struct SeatRequest<'a> {
 }
 
 /// The end of map generation, once the terrain is final: choose every start,
-/// top up the strategic resources and artifacts around them, and retire any
-/// feature a later pass left invalid.
+/// place the artifacts around them, and retire any feature a later pass left
+/// invalid.
 pub(super) fn place_starts_and_finish(
     mut wm: WorldMap,
-    land: BTreeSet<Pos>,
     rules: &Rules,
     script: MapScript,
     seats: SeatRequest<'_>,
@@ -1413,15 +1412,21 @@ pub(super) fn place_starts_and_finish(
     // from its first turn, so the shipped standoffs are applied to the pool a
     // region picks from. That was the wrong place for it while a search over
     // the pool decided the *spacing* too; now the regions fix the spacing and
-    // the pool only decides where inside a region a start stands.
-    let pool_clear_of_wonders = |floor: i32, needed: usize| -> BTreeSet<Pos> {
+    // the pool only decides where inside a region a start stands. The shipped
+    // `__SetStart` also refuses a plot holding anything but a bonus resource,
+    // which is the only kind a founded capital clears away.
+    let seat_pool = |floor: i32, needed: usize| -> BTreeSet<Pos> {
         let clear: BTreeSet<Pos> = all_candidates
             .iter()
             .copied()
             .filter(|position| {
-                wonders
-                    .iter()
-                    .all(|wonder| wm.distance(*position, *wonder) > floor)
+                let bonus_or_bare = wm.tiles[position]
+                    .resource
+                    .is_none_or(|resource| rules.resources[&resource].class == "bonus");
+                bonus_or_bare
+                    && wonders
+                        .iter()
+                        .all(|wonder| wm.distance(*position, *wonder) > floor)
             })
             .collect();
         if clear.len() >= needed {
@@ -1431,7 +1436,7 @@ pub(super) fn place_starts_and_finish(
         }
     };
 
-    let major_pool = pool_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
+    let major_pool = seat_pool(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
     let major_regions = if script == MapScript::Islands {
         // An archipelago's fair share is a slice of the whole island field,
         // not simply one of its largest rocks. `regions_for_seats` apportions
@@ -1623,7 +1628,7 @@ pub(super) fn place_starts_and_finish(
     // around whichever civilization had the best ground: measured over 72
     // worlds, every stock profile left at least one civilization with none
     // within ten hexes while another had eighteen.
-    let minor_pool = pool_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
+    let minor_pool = seat_pool(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
     let minor_regions = if script == MapScript::Islands && !spawns.is_empty() {
         archipelago_minor_regions(&wm, &passable, &fertility, &spawns, num_minor_spawns)
     } else if major_regions.is_empty() || spawns.is_empty() {
@@ -1787,15 +1792,7 @@ pub(super) fn place_starts_and_finish(
         t.feature = None;
         t.resource = None;
     }
-    // Clearing the capitals takes deposits off the map, and the quota is a
-    // claim about what a civilization can reach rather than about what was
-    // laid down before the seats were known. On a world with plenty of land
-    // that is one or two tiles and the top-up finds nothing to do; on a Water
-    // World, where every seat is a large share of the land, it is the
-    // difference between an iron age and a bronze one. Nothing after this
-    // draws from the stream, so a world that needed no top-up is unmoved.
     if !script.is_battlefield() {
-        place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
         place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
     }
 

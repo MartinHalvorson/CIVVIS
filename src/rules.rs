@@ -303,6 +303,20 @@ pub struct ResourceSpec {
     /// (Wheat, Rice, Maize, Bananas), None when either form works.
     #[serde(default)]
     pub hills: Option<bool>,
+    /// Terrains in `terrain` this resource takes only when flat. The shipped
+    /// `Resource_ValidTerrains` lists each form separately, so Aluminum lies
+    /// on Plains but not Plains Hills.
+    #[serde(default)]
+    pub flat_only: Vec<Name>,
+    /// Terrains in `terrain` this resource takes only on hills.
+    #[serde(default)]
+    pub hills_only: Vec<Name>,
+    /// The shipped `LakeEligible="false"`: Whales stay out of lakes.
+    #[serde(default)]
+    pub no_lakes: bool,
+    /// The shipped `AdjacentToLand`: Amber lies only beside a shore.
+    #[serde(default)]
+    pub adjacent_to_land: bool,
     /// The shipped Resource_Harvests row: only these bonus resources can be
     /// harvested by a Builder, for this yield, from this technology on.
     #[serde(default)]
@@ -332,6 +346,22 @@ pub struct ResourceSpec {
     /// in, and a resource without it is simply not on the Moon.
     #[serde(default)]
     pub lunar: Option<LunarDeposit>,
+}
+
+impl ResourceSpec {
+    /// Whether a plot with no feature suits this resource by terrain alone.
+    /// A lake is shallow water to everything that takes Coast.
+    pub fn takes_terrain(&self, terrain: Name, hills: bool) -> bool {
+        let listed = if terrain == "lake" {
+            !self.no_lakes && self.terrain.iter().any(|listed| *listed == "coast")
+        } else {
+            self.terrain.contains(&terrain)
+        };
+        listed
+            && self.hills.is_none_or(|want| want == hills)
+            && !(hills && self.flat_only.contains(&terrain))
+            && !(!hills && self.hills_only.contains(&terrain))
+    }
 }
 
 /// How much of one resource the Moon spawns with, as the range a game rolls
