@@ -185,6 +185,9 @@ impl AdvancedAi {
         /// Opt-in gene `city-strike-takes-the-gun`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `domination-charts-every-capital`: see
+        /// `advanced/domination_charts_every_capital.rs`.
+        domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
         /// `domination-target-gets-its-breaker`: see
         /// `advanced/domination_target_gets_its_breaker.rs`.
         domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;

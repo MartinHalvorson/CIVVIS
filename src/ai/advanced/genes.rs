@@ -5570,6 +5570,10 @@ pub const GENES: &[Gene] = &[
     // unhit gun-turns with siege-at-the-walls-dies-first armed. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
+    // `domination-charts-every-capital`: a Domination seat keeps charting
+    // until every rival's original capital is seen, and takes Cartography
+    // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
+    Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
     // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
     // Tower or gun matched to its target's walls before it declares, and
     // keeps one with every siege. Opt-in; see
