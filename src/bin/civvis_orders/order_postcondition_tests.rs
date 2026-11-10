@@ -125,6 +125,31 @@ fn a_project_leaving_the_queue_proves_only_what_the_frame_shows() {
 }
 
 #[test]
+fn a_bought_unit_that_already_walked_away_is_still_bought() {
+    let buy = order(
+        "purchase_faith",
+        Some(65_536),
+        Some("UNIT_MISSIONARY"),
+        None,
+    );
+    let mut before = frame(67);
+    before.cities = vec![city(65_536, 20, 20, Some("BUILDING_LIBRARY"))];
+    before.faith = 170;
+
+    // Income beat the price, and the unit has already left the city.
+    let mut walked = frame(68);
+    walked.cities = vec![city(65_536, 20, 20, Some("BUILDING_LIBRARY"))];
+    walked.faith = 179;
+    walked.units = vec![unit(8, "UNIT_MISSIONARY", 26, 20)];
+    assert_eq!(check(&buy, &before, &walked, &[]), Verdict::Verified);
+
+    let mut nothing = frame(68);
+    nothing.cities = vec![city(65_536, 20, 20, Some("BUILDING_LIBRARY"))];
+    nothing.faith = 179;
+    assert_eq!(check(&buy, &before, &nothing, &[]), failed("not_bought"));
+}
+
+#[test]
 fn excavation_accepts_native_pending_artifact_without_builder_charges() {
     let mut before = frame(166);
     before.seat.local_player = 0;
