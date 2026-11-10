@@ -5553,6 +5553,11 @@ pub const GENES: &[Gene] = &[
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
     Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
+    // Tower or gun matched to its target's walls before it declares, and
+    // keeps one with every siege. Opt-in; see
+    // `advanced/domination_target_gets_its_breaker.rs`.
+    Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
