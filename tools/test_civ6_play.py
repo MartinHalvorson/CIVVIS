@@ -5233,6 +5233,14 @@ class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
 
 
 class NativeVictoryMovieHold(unittest.TestCase):
+    def test_the_event_log_stays_open_through_the_hold(self):
+        # civvis-20261110T065910Z, the first Deity Religious win, crashed here:
+        # the hold records through a log the run had already closed.
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        hold = source.index("hold_native_victory(tail, state[")
+        self.assertEqual(source.count("    events.close()"), 1)
+        self.assertGreater(source.index("    events.close()"), hold)
+
     def run_hold(self, start_at=None, finish_at=None, requested=10):
         clock = [0.0]
         sent = set()
