@@ -13,6 +13,10 @@ use super::{IssuedOrder, Verdict};
 /// `src/ai/advanced/food_focus_grows_the_small_city.rs`.
 pub(super) const WIDE_MAX_POP: i32 = 5;
 pub(super) const WIDE_MAX_SURPLUS: f64 = 2.0;
+/// `food-focus-grows-the-small-city` v3: the last turn on which the capital
+/// is the settler pump whatever it is training. Live Online-speed games aim
+/// at a floor of six cities before turn 60.
+pub(super) const CAPITAL_PUMP_UNTIL: u32 = 60;
 
 pub(super) struct Choice {
     pub city: i64,
@@ -52,8 +56,9 @@ fn richer_unworked_food(snapshot: &mirror::Snapshot, city: &mirror::StateCity) -
 /// The focus requests for this frame. `widened` (the gene
 /// `food-focus-grows-the-small-city`) also favours Food in a city of up to
 /// [`WIDE_MAX_POP`] growing at no more than [`WIDE_MAX_SURPLUS`] a turn, not
-/// only in one stalled at zero, unless it is training a Settler; and it
-/// releases a growing city's focus when a Settler starts.
+/// only in one stalled at zero, unless it is training a Settler or is the
+/// capital through turn [`CAPITAL_PUMP_UNTIL`]; and it releases a growing
+/// city's focus when a Settler starts or while it is that capital.
 pub(super) fn choices(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
@@ -81,7 +86,13 @@ pub(super) fn choices(
         // Production. Live #4190 v1: the capital held the focus 19-50 of its
         // first 60 turns in 5 of 8 seated games, 6-32 of them on a Settler,
         // and the empire stood at 4 cities at t60 against 5.
-        let settler_pump = city.producing.as_deref() == Some("UNIT_SETTLER");
+        // v3: the capital is that pump for the whole opening. Russia Deity
+        // 115325Z took the focus at t1, was refused its release 22 times
+        // (the host's own allocation ran -2 Food at the housing cap, so the
+        // agent restored the focus), made 5 Production a turn where the
+        // released frames show 11, and ordered its first Settler at t44.
+        let settler_pump = city.producing.as_deref() == Some("UNIT_SETTLER")
+            || (city.capital && state.turn <= CAPITAL_PUMP_UNTIL);
         let verb = if managed
             && (headroom < 2.0
                 || city.pop >= 6

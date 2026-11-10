@@ -349,6 +349,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-builds-holy-sites` | off (unmeasured) | `religion-seat-builds-holy-sites`: a Religion-target founder claims a Holy Site in each idle city without one. | 1 \| 1 |
 | `religion-seat-charts-the-rivals` | off (unmeasured) | `religion-seat-charts-the-rivals`: a Religion-target founder keeps charting until it knows a majority of every rival's cities, and takes Cartography sooner. | 1 \| 1 |
 | `religion-seat-counts-the-pressure` | off (unmeasured) | `religion-seat-counts-the-pressure`: a Religion-target founder's spreaders go where the host's own pressure rows say a majority is cheapest. | 1 \| 1 |
+| `religion-seat-cuts-the-upkeep` | off (unmeasured) | Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
 | `religion-seat-earns-its-prophet` | off (unmeasured) | Opt-in gene `religion-seat-earns-its-prophet`; see `Self::religion_seat_earns_its_prophet`. | 1 \| 1 |
 | `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
