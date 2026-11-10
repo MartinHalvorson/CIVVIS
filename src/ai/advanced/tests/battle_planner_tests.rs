@@ -7812,7 +7812,9 @@ fn lane_progress_table_matches_victory_focus() {
 fn the_ai_never_gives_without_receiving() {
     let mut game = Game::new_full(2, 30, 20, 84_211, 150, 0, false);
     game.record_contact(0, 1);
-    let mut ais = vec![AdvancedAi::new(), AdvancedAi::new()];
+    // One controller per seat: the dormant Free Cities seat takes turns from
+    // the first Loyalty revolt onward.
+    let mut ais: Vec<AdvancedAi> = (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
     ais[0].enable_deals_at_the_ceiling();
     ais[0].enable_deals_for_our_gain();
     run_game(&mut game, &mut ais);

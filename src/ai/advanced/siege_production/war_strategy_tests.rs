@@ -17,6 +17,9 @@ fn siege_gap_case() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
+    // These cases weigh the first siege weapon against buildings. A standing
+    // Aqueduct-line district keeps that free of whichever site the seed offers.
+    crate::game::install_test_district(&mut g, home, "bath");
     let pos = g.cities[&home].pos;
     for kind in ["warrior", "warrior", "archer", "archer"] {
         g.spawn_unit(kind, 0, pos);
