@@ -11176,6 +11176,9 @@ mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
 mod band_plays_its_stage;
+/// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
+/// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
+mod bands_draw_from_the_bar;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
