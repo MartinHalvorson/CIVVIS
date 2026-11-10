@@ -6808,6 +6808,10 @@ pub struct AdvancedAi {
     /// the threat faith stands at match point; the Faith stays for the Rock
     /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_holds_the_counterweight: bool,
+    /// `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    /// builds the last Market a near road civic's Inspiration counts. See
+    /// `advanced/culture_road_triggers.rs`. Off by default.
+    culture_road_builds_its_triggers: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10876,6 +10880,8 @@ mod culture_recovery_bank;
 /// `culture-road-earns-its-inspirations`: see
 /// `advanced/culture_road_inspirations.rs`.
 mod culture_road_inspirations;
+/// `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`.
+mod culture_road_triggers;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.

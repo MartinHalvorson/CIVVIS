@@ -133,6 +133,10 @@ impl AdvancedAi {
             // gene off. See `advanced/boost_planner.rs`.
             + self.boost_planner_builder_premium(g, pos, improvement, value)
             + self.quest_boost_builder_premium(g, pos, improvement, strategy)
+            // `culture-road-builds-its-triggers`: the improvement a near road
+            // civic's Inspiration counts. Zero with the gene off. See
+            // `advanced/culture_road_triggers.rs`.
+            + self.culture_road_builder_premium(g, pos, improvement)
     }
 
     /// How far this own city remains from the output that lets it construct
