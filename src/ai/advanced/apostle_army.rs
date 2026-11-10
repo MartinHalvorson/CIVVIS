@@ -27,6 +27,10 @@
 //!   charges, so it hunts rival religious units it can beat, and with none in
 //!   sight it escorts our spreaders abroad;
 //! - an Apostle with Debater hunts before it spreads;
+//! - any Apostle of ours hunts a rival religious unit within [`HOME_GROUND`]
+//!   tiles of a city of ours before it spreads. Live, 2026-11-10: rival
+//!   Apostles killed 7 Missionaries within 4 tiles of our Lavras in one game
+//!   while our 8 Apostles started 4 fights;
 //! - a Missionary keeps its last charge and walks the fog, which is how the
 //!   seat finds the rival cities it has never seen;
 //! - neither counts against the corps caps, so the next spreader is still
@@ -54,6 +58,12 @@ const HUNT_RADIUS: i32 = 10;
 
 /// This turn's reach for an Apostle on open ground.
 const HUNT_REACH: i32 = 4;
+
+/// How near a city of ours a rival religious unit is on home ground, where
+/// every Apostle hunts it: the range a kill's pressure carries in Civ VI's
+/// own data (`RELIGION_SPREAD_RANGE_COMBAT_VICTORY`), so each kill there
+/// pays 250 pressure into that city.
+const HOME_GROUND: i32 = 6;
 
 /// How many last-charge Apostles stand in the army at once.
 const ARMY_CEILING: usize = 8;
@@ -293,10 +303,18 @@ impl AdvancedAi {
             .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner))
     }
 
+    /// Whether `pos` is within [`HOME_GROUND`] tiles of a city of ours.
+    fn home_ground(g: &Game, pid: usize, pos: Pos) -> bool {
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|city| g.wdist(g.cities[&city].pos, pos) <= HOME_GROUND)
+    }
+
     /// The rival religious unit this hunter goes for: visible, of another
     /// faith, within [`HUNT_RADIUS`], outside hostile land and one it beats.
-    /// The weakest of those in this turn's reach, else the nearest.
-    fn army_prey(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+    /// The weakest of those in this turn's reach, else the nearest. A home
+    /// guard takes only prey on home ground.
+    fn army_prey(&self, g: &Game, pid: usize, uid: u32, home_only: bool) -> Option<Pos> {
         let hunter = g.units.get(&uid)?;
         let faith = hunter.religion.as_deref()?;
         g.units
@@ -308,6 +326,7 @@ impl AdvancedAi {
                     && other.religion.as_deref().is_some_and(|r| r != faith)
                     && g.wdist(hunter.pos, other.pos) <= HUNT_RADIUS
                     && !Self::hostile_land(g, pid, other.pos)
+                    && (!home_only || Self::home_ground(g, pid, other.pos))
                     && self.battlefront_unit_visible(g, pid, other.id)
                     && self.theology_fight_is_winnable(g, uid, other.pos)
             })
@@ -350,22 +369,25 @@ impl AdvancedAi {
     }
 
     /// `last-charge-joins-the-army`, the Apostle: hunt, else escort. `None`
-    /// for any unit the doctrine does not hold, and for a Debater with
-    /// charges to spend and no prey, which spreads as usual. An Apostle on
-    /// its kept charge always gets `Some`, so it never reaches the spread.
+    /// for any unit the doctrine does not hold, and for an Apostle with
+    /// charges to spend and no prey, which spreads as usual: a Debater hunts
+    /// anywhere, any other Apostle of our faith only on home ground. An
+    /// Apostle on its kept charge always gets `Some`, so it never reaches
+    /// the spread.
     pub(super) fn army_apostle_step(&self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         let unit = g.units.get(&uid)?;
         if unit.kind != "apostle" || !self.army_doctrine_live(g, pid) {
             return None;
         }
         let keeps = self.keeps_its_last_charge(g, pid, uid);
-        let debater = unit.religion == g.players[pid].religion
-            && unit.promotions.contains(&crate::name!("debater"));
-        if !keeps && !debater {
+        let ours = unit.religion == g.players[pid].religion;
+        let debater = ours && unit.promotions.contains(&crate::name!("debater"));
+        if !keeps && !ours {
             return None;
         }
+        let home_only = !keeps && !debater;
         let here = unit.pos;
-        if let Some(prey) = self.army_prey(g, pid, uid) {
+        if let Some(prey) = self.army_prey(g, pid, uid, home_only) {
             if g.wdist(here, prey) <= 1 {
                 let fought = g
                     .apply(
