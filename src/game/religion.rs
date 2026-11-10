@@ -873,12 +873,21 @@ impl Game {
     /// Civ VI has no religious strike of its own. A fight is a melee attack,
     /// so the attacker has to be able to path onto the plot this turn. Across
     /// live logs (2026-11-10), 77 attacks aimed at a rival City Center got a
-    /// path once, and none of 41 adjacent attacks by a unit short of the
-    /// movement to enter the plot landed. Each one spent the unit's turn.
+    /// path once, none of 41 adjacent attacks by a unit short of the movement
+    /// to enter the plot landed, and 5 of 71 by an embarked unit at a target
+    /// on the water did. Each failure spent the unit's turn. An embarked unit
+    /// can still fight onto land.
     pub(crate) fn theological_target_open(&self, uid: u32, target: Pos) -> bool {
-        let owner = self.units[&uid].owner;
-        self.city_at(target)
-            .is_none_or(|city| self.cities[&city].owner == owner)
+        let unit = &self.units[&uid];
+        let water_fight = self.is_embarked(unit)
+            && self
+                .map
+                .get(target)
+                .is_some_and(|tile| self.rules.is_water(tile));
+        !water_fight
+            && self
+                .city_at(target)
+                .is_none_or(|city| self.cities[&city].owner == unit.owner)
             && self.can_pay_melee_entry(uid, target)
     }
 
