@@ -13428,9 +13428,19 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
     assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
     assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
-    // Single player opens on the map; an explicit preference can keep the
-    // command deck open. Applying the default does not persist a choice.
-    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen !== \"open\", false);"));
+    // Single player opens with the command deck showing, because auto-play
+    // lives there; a phone keeps the map, and a player's own choice survives.
+    // Applying the default does not persist a choice.
+    assert!(EMBEDDED_INDEX.contains(
+        "togglePanel(chosen ? chosen === \"closed\" : window.matchMedia(\"(max-width: 720px)\").matches, false);"
+    ));
+    // The published site says what single player is at each new game, Ack is
+    // the way out of it, and the game's keys wait until it has been answered.
+    assert!(EMBEDDED_INDEX
+        .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;"));
+    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen() || soloNoticeOpen();"));
 
     // Rankings remain available on demand. Initialization must not save the
     // default as though the player had explicitly chosen it.
