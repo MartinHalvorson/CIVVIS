@@ -5626,6 +5626,11 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-charts-every-capital`: a Domination seat keeps charting
+    /// until every rival's original capital is on its map, and takes
+    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
+    /// Opt-in.
+    domination_charts_every_capital: bool,
     /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
     /// Site of ours and heals, fights only what it survives, and reads every
     /// rival blow that can land on a tile together. See
@@ -6821,11 +6826,6 @@ pub struct AdvancedAi {
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
     culture_keeps_pingala_home: bool,
-    /// `domination-charts-every-capital`: a Domination seat keeps charting
-    /// until every rival's original capital is on its map, and takes
-    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
-    /// Opt-in.
-    domination_charts_every_capital: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
