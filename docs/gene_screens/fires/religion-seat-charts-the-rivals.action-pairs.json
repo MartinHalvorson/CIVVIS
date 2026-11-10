@@ -1,0 +1,20 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "religion-seat-charts-the-rivals",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 9 boards of three live Deity Russia Religious-target games (civvis-20261110T012017Z, civvis-20261110T005727Z, civvis-20261109T231523Z), each the run's events.jsonl cut at frame 0 of a turn after the founding where a living major was unmet or under-charted: seven research turns before Cartography and two turns with a Caravel and Galleys afloat. Both arms run one frozen civvis_orders --resumed built from the branch (f4ed77cac0) with the run's own requested genome; the on arm adds --with religion-seat-charts-the-rivals. Orders differ on 2 of 9 boards, both the research choice: Bronze Working becomes Currency at t54 of 012017Z, and Celestial Navigation becomes Mathematics at t72 of 231523Z, each a step toward Buttress and Cartography. No ship order changed on the two boards with ships afloat.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-religion-seat-charts-the-rivals.native-queries.tar.xz",
+  "sha256": "f3bd7d0a837653d4497f5ab553919a1310717fe4478a2255fd75ca4d1ea14da4"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json"
+ ]
+}

@@ -1266,7 +1266,7 @@ fn launches_climb_from_their_spaceports_and_come_round_the_planet() {
     assert!(app.contains("const arc = skyPitchArc(1.46, 1.02 - order * .13);"));
 
     // A turning world is planned for, and the route is in its frame.
-    assert!(app.contains("camera.longitude - 2 * Math.PI * ms / WORLD_SPIN_PERIOD_MS"));
+    assert!(app.contains("camera.longitude - 2 * Math.PI * ms / worldSpinPeriodMs"));
 
     // A satellite's orbit is swung round to pass over the pad it went up from.
     assert!(app.contains(
