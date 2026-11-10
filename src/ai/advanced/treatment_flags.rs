@@ -117,6 +117,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
         faith_strike_wipes_the_spreaders => enable_faith_strike_wipes_the_spreaders, disable_faith_strike_wipes_the_spreaders;
+        /// Opt-in `faith-strike-at-a-quiet-parity`; see
+        /// `AdvancedAi::faith_strike_at_a_quiet_parity`.
+        faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -162,6 +165,10 @@ impl AdvancedAi {
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
+        /// See `advanced/religion_seat_charts_the_rivals.rs`.
+        religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
+        /// See `advanced/religion_seat_spends_the_bank.rs`.
+        religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
         // ---- append: s-s --------------------------------------------
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see

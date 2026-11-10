@@ -202,7 +202,12 @@ impl AdvancedAi {
     /// The cheapest Apostle price this seat can see: the engine's quote where
     /// it has one, else a Missionary's quote at the data's ratio. `None` when
     /// no city of ours can field one.
-    fn religion_seat_apostle_price(&self, g: &Game, pid: usize, religion: &str) -> Option<f64> {
+    pub(super) fn religion_seat_apostle_price(
+        &self,
+        g: &Game,
+        pid: usize,
+        religion: &str,
+    ) -> Option<f64> {
         let cities: Vec<u32> = g
             .player_city_ids(pid)
             .into_iter()

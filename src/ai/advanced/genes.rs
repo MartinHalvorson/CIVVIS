@@ -5466,6 +5466,10 @@ pub const GENES: &[Gene] = &[
     // condemned on the turn it is declared. Unpriced, off. See
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-wipes-the-spreaders", field: "faith_strike_wipes_the_spreaders", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_wipes_the_spreaders, disable: AdvancedAi::disable_faith_strike_wipes_the_spreaders },
+    // A heretic strike over the faith war's edge may still go at parity when
+    // the rival's army is away from our cities. Needs the strike gene. Unpriced,
+    // off. See `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5517,6 +5521,13 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // A Religion-target founder keeps charting until it knows a majority of
+    // every rival's cities, and takes Cartography sooner. See
+    // `advanced/religion_seat_charts_the_rivals.rs`.
+    Gene { tag: "religion-seat-charts-the-rivals", field: "religion_seat_charts_the_rivals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_charts_the_rivals, disable: AdvancedAi::disable_religion_seat_charts_the_rivals },
+    // A Religion-target founder's corps caps stop binding once the bank
+    // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
+    Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
