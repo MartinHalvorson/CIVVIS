@@ -1554,25 +1554,30 @@
     width: 132px; height: 30px; margin: 0; padding: 0;
     -webkit-appearance: none; appearance: none; background: transparent;
   }
-  #skyladder::-webkit-slider-runnable-track {
+  #skyladder::-webkit-slider-runnable-track,
+  #spin-speed-bar::-webkit-slider-runnable-track {
     height: 6px; border-radius: 3px; border: 1px solid #3c554c;
     background: linear-gradient(90deg, #0f1d19, #47775f);
   }
-  #skyladder::-moz-range-track {
+  #skyladder::-moz-range-track,
+  #spin-speed-bar::-moz-range-track {
     height: 6px; border-radius: 3px; border: 1px solid #3c554c;
     background: linear-gradient(90deg, #0f1d19, #47775f);
   }
-  #skyladder::-webkit-slider-thumb {
+  #skyladder::-webkit-slider-thumb,
+  #spin-speed-bar::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 12px; height: 18px; margin-top: -7px; border-radius: 4px;
     border: 1px solid #7a6533; background: linear-gradient(#f6e8b8, #d7b66a);
     box-shadow: 0 1px 4px #0008;
   }
-  #skyladder::-moz-range-thumb {
+  #skyladder::-moz-range-thumb,
+  #spin-speed-bar::-moz-range-thumb {
     width: 12px; height: 18px; border-radius: 4px;
     border: 1px solid #7a6533; background: linear-gradient(#f6e8b8, #d7b66a);
   }
-  #skyladder:focus-visible { outline: 2px solid #d7b66a; outline-offset: 3px; }
+  #skyladder:focus-visible,
+  #spin-speed-bar:focus-visible { outline: 2px solid #d7b66a; outline-offset: 3px; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
      label: the needle turns with the world and the dial stays put. A
      civilization that cannot yet find north has the dial and no needle. */
@@ -1597,9 +1602,9 @@
   }
   /* Its neighbour is the same kind of thing: an instrument rather than a
      label. The button is a small globe, and while the world is turning its
-     meridian sweeps at the world's own pace — one pass every thirty-six
-     seconds, the period the viewer is watching — so the control says what the
-     map is doing without being read. A held world holds its meridian still,
+     meridian sweeps at the world's own pace, whatever the bar above it is set
+     to, so the control says what the map is doing without being read. A held
+     world holds its meridian still,
      and the gold below says the same thing again for anyone who cannot see
      motion. */
   #spin { position: relative; cursor: pointer; }
@@ -1622,7 +1627,7 @@
     border: 1px solid currentColor; opacity: .75; transform: scaleX(.45);
   }
   #spin[aria-pressed="true"]:not(:disabled) #spin-globe::after {
-    animation: spinMeridian 36s ease-in-out infinite;
+    animation: spinMeridian var(--world-spin-period, 36s) ease-in-out infinite;
   }
   @keyframes spinMeridian {
     0%, 100% { transform: scaleX(1); }
@@ -1632,6 +1637,42 @@
   /* A world with no axis to turn about is not a world that has been stopped,
      so a disabled control drops the lit state as well as the motion. */
   #spin:disabled { cursor: default; opacity: .5; }
+  #spin-wrap { position: relative; flex: 0 0 34px; width: 34px; height: 34px; }
+  #zoomctl #spin { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  /* The speed bar: a volume slider for the turn. It opens over the button and
+     stays open while the pointer is on either, and the marks stand beside the
+     positions they name, rabbit at the top, turtle low down, halt at the very
+     bottom. The rotated range keeps one set of track styles with the sky bar. */
+  #spin-speed {
+    position: absolute; left: 50%; bottom: calc(100% + 12px); z-index: 2;
+    width: 58px; height: 184px; margin-left: -29px;
+    border-radius: 12px; background: #090b0def; border: 1px solid #41484c;
+    box-shadow: 0 12px 26px #0006;
+    opacity: 0; pointer-events: none;
+  }
+  #spin-speed[hidden] { display: none; }
+  /* The gap between button and bar still counts as being on the control. */
+  #spin-speed::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px;
+  }
+  /* Closed by opacity rather than display: Tab has to be able to land on a
+     bar that only opens once something in here has the focus. */
+  #spin-wrap:hover #spin-speed,
+  #spin-wrap:has(:focus-visible) #spin-speed,
+  #spin-speed.held { opacity: 1; pointer-events: auto; }
+  #spin-speed-bar {
+    position: absolute; left: -62px; top: 82px; width: 164px; height: 18px;
+    margin: 0; padding: 0; transform: rotate(-90deg); touch-action: none;
+    -webkit-appearance: none; appearance: none; background: transparent;
+    cursor: pointer;
+  }
+  .spin-speed-mark {
+    position: absolute; left: 31px; width: 22px; height: 16px;
+    font-size: 14px; line-height: 16px; text-align: center; pointer-events: none;
+  }
+  .spin-speed-mark[data-mark="fast"] { top: 7px; }
+  .spin-speed-mark[data-mark="slow"] { top: 142px; }
+  .spin-speed-mark[data-mark="halt"] { top: 159px; font-size: 11px; color: #d7b66a; }
   @media (prefers-reduced-motion: reduce) {
     #spin #spin-globe::after { animation: none; }
   }
@@ -2261,6 +2302,12 @@
   .winner-playon {
     width: 100%;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
+  }
+  /* One more turn says on a smaller second line what it will play to. */
+  .winner-again-note {
+    display: block; margin-top: 3px;
+    font-size: var(--type-label); letter-spacing: .01em; opacity: .85;
+    text-wrap: balance;
   }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
@@ -5482,7 +5529,7 @@
     body.civ6-frame #ubar .ubar-head { position: sticky; left: 0; margin-bottom: 5px; }
     body.civ6-frame #ubar > button { display: inline-block; margin: 0 4px 0 0; padding: 7px 9px; }
     body.civ6-frame .minimap-frame, body.civ6-frame #mapareaset, body.civ6-frame #compass,
-    body.civ6-frame #spin, body.civ6-frame #paneltoggle, body.civ6-frame .civtop-era { display: none; }
+    body.civ6-frame #spin-wrap, body.civ6-frame #paneltoggle, body.civ6-frame .civtop-era { display: none; }
     body.civ6-frame #map-controls-dock { bottom: 158px; right: auto; width: auto; }
     body.civ6-frame #notify { bottom: 158px; }
     body.civ6-frame #lens-picker { bottom: 208px; width: min(270px, calc(100% - 24px)); }
@@ -5650,7 +5697,16 @@
           title="Map lenses" aria-label="Map lenses">◎</button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-        <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
+        <div id="spin-wrap">
+          <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
+          <div id="spin-speed" role="group" aria-label="How fast the world turns">
+            <input id="spin-speed-bar" type="range" min="0" max="20" step="1" value="0"
+              aria-label="World turning speed">
+            <span class="spin-speed-mark" data-mark="fast" aria-hidden="true">&#x1F407;</span>
+            <span class="spin-speed-mark" data-mark="slow" aria-hidden="true">&#x1F422;</span>
+            <span class="spin-speed-mark" data-mark="halt" aria-hidden="true">&#x25A0;</span>
+          </div>
+        </div>
         <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
       </div>
       <div id="skynav" hidden role="group" aria-label="Sky controls">
