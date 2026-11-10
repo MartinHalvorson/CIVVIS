@@ -1462,8 +1462,30 @@ fn research_prices_the_node_that_retires_the_army_already_in_the_field() {
 }
 
 #[test]
+fn temp_seed_search_researchlane() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut good = Vec::new();
+    for seed in 91_440..91_600u64 {
+        std::env::set_var("CIVVIS_FIXTURE_SEED_RESEARCHLANE", seed.to_string());
+        if std::panic::catch_unwind(advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap).is_ok() {
+            good.push(seed);
+        }
+    }
+    let _ = std::panic::take_hook();
+    panic!("TEMPSEEDS researchlane {good:?}");
+}
+
+#[test]
 fn advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap() {
-    let mut game = Game::new_full(1, 24, 16, 91_503, 120, 0, true);
+    let mut game = Game::new_full(
+        1,
+        24,
+        16,
+        crate::rng::fixture_seed("RESEARCHLANE", 91_503),
+        120,
+        0,
+        true,
+    );
     game.current = 0;
     let settler = game
         .player_unit_ids(0)
