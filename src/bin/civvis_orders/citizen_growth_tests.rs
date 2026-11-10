@@ -3,8 +3,12 @@ use super::*;
 use civvis::mirror::{Snapshot, StateSnapshot, TilesChunk};
 
 fn observation() -> (Snapshot, StateSnapshot) {
+    observation_at(60)
+}
+
+fn observation_at(turn: u32) -> (Snapshot, StateSnapshot) {
     let chunk: TilesChunk = serde_json::from_value(serde_json::json!({
-        "turn":60, "width":44, "height":26, "plots":[
+        "turn":turn, "width":44, "height":26, "plots":[
             {"x":13,"y":10,"oc":65536,"yl":[2,2,0,0,0,0]},
             {"x":12,"y":10,"oc":65536,"yl":[1,4,3,0,0,0]},
             {"x":13,"y":9,"oc":65536,"yl":[1,2,0,0,0,0]},
@@ -12,7 +16,7 @@ fn observation() -> (Snapshot, StateSnapshot) {
         ]
     }))
     .unwrap();
-    let state = serde_json::from_value(serde_json::json!({"turn":60,"cities":[{
+    let state = serde_json::from_value(serde_json::json!({"turn":turn,"cities":[{
         "id":65536,"x":13,"y":10,"pop":2,"housing":6,
         "food_surplus":0,"overall_growth_mult":1.19922,
         "damage":0,"wall_damage":0,
@@ -223,4 +227,50 @@ fn the_widened_request_spares_the_settler_pump() {
         orders_widened(&snapshot, &focused, true).is_empty(),
         "a stalled city keeps its focus"
     );
+}
+
+/// `food-focus-grows-the-small-city` v3: the capital is the settler pump for
+/// the whole opening, whatever it is training. It gets no widened request
+/// and releases a growing focus through turn `CAPITAL_PUMP_UNTIL`; a stalled
+/// capital keeps #4003's focus, and afterwards it is a city like any other.
+#[test]
+fn the_widened_request_spares_the_capital_in_the_opening() {
+    let (snapshot, state) = observation();
+    let mut capital = state.clone();
+    capital.cities[0].capital = true;
+    capital.cities[0].food_surplus = 2.0;
+    capital.cities[0].pop = 3;
+    capital.cities[0].producing = Some("UNIT_WARRIOR".into());
+    assert!(
+        orders_widened(&snapshot, &capital, true).is_empty(),
+        "the opening capital gets no widened request"
+    );
+    let mut town = capital.clone();
+    town.cities[0].capital = false;
+    assert_eq!(orders_widened(&snapshot, &town, true).len(), 1);
+
+    capital.cities[0].food_surplus = 0.0;
+    assert_eq!(
+        orders_widened(&snapshot, &capital, true).len(),
+        1,
+        "a stalled capital keeps the zero-surplus request"
+    );
+
+    let mut focused = capital.clone();
+    focused.cities[0].food_favored = Some(true);
+    focused.cities[0].food_focus_managed = Some(true);
+    focused.cities[0].food_surplus = 3.0;
+    let proposed = orders_widened(&snapshot, &focused, true);
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0].verb.as_deref(), Some("RELEASE_FOOD"));
+    assert!(orders(&snapshot, &focused).is_empty(), "off: no release");
+
+    let (later, state) = observation_at(CAPITAL_PUMP_UNTIL + 1);
+    let mut grown = state.clone();
+    grown.cities[0].capital = true;
+    grown.cities[0].food_surplus = 2.0;
+    grown.cities[0].pop = 3;
+    let proposed = orders_widened(&later, &grown, true);
+    assert_eq!(proposed.len(), 1, "past the opening it is served again");
+    assert_eq!(proposed[0].verb.as_deref(), Some("FAVOR_FOOD"));
 }
