@@ -14,18 +14,18 @@ import time
 candidate = sys.argv[sys.argv.index("--candidate") + 1]
 START = time.time()
 DEADLINE = START + 34 * 60
-FULL = "bodies=4,patience=8,noabort=1,bill=1,nomuster=1,norecovery=1,arm=1"
+FULL = "conquest=1,objective=1,arm=1,bodies=4,patience=8,noabort=1,bill=1,nomuster=1"
 RUNS = [
-    ("full", FULL, 13, 1200),
-    ("full", FULL, 14, 1200),
-    ("full", FULL, 22, 1200),
-    ("full", FULL, 23, 1200),
-    ("norecovery", "norecovery=1", 13, 3600),
-    ("economy", "bodies=4,norecovery=1,arm=1", 13, 3600),
-    ("siege", "patience=8,noabort=1,bill=1,nomuster=1", 13, 3600),
-    ("full", FULL, 19, 3600),
-    ("full", FULL, 11, 3600),
-    ("full", FULL, 12, 3600),
+    ("final", FULL, 13, 1200),
+    ("final", FULL, 14, 1200),
+    ("final", FULL, 22, 1200),
+    ("final", FULL, 23, 1200),
+    ("final", FULL, 19, 3600),
+    ("final", FULL, 11, 3600),
+    ("final", FULL, 12, 3600),
+    ("final", FULL, 24, 3600),
+    ("final", FULL, 15, 3600),
+    ("final", FULL, 16, 3600),
 ]
 os.makedirs("/tmp/lcs", exist_ok=True)
 pending = list(RUNS)

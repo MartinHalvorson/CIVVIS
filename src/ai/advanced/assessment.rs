@@ -578,7 +578,14 @@ impl AdvancedAi {
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
         let final_war_presses =
             g.plays_to_the_last_civ() && crate::lcs_knobs::get("norecovery") > 0.0;
-        let (strategy, because) = if at_war
+        let final_war_conquest =
+            g.plays_to_the_last_civ() && crate::lcs_knobs::get("conquest") > 0.0;
+        let (strategy, because) = if final_war_conquest {
+            (
+                GrandStrategy::Conquest,
+                "only the last civilization standing wins",
+            )
+        } else if at_war
             && !final_war_presses
             && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
@@ -1428,6 +1435,10 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        let (target_player, target_city) = match self.final_war_objective(g, pid) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
 
         if let Some(capital) =
             finishing_capital.filter(|capital| committed_target_city != Some(*capital))

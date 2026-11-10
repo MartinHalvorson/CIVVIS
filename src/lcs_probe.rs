@@ -113,10 +113,8 @@ pub fn run(seed: u64, extra_cap: u32, wall_s: u64, diag_dumps: u32, mut emit: im
         }
         let quiet = g.turn - last_change_turn;
         let scheduled = dumps == 0 && g.turn >= first + 40;
-        let stalled = (scheduled || quiet >= 30)
-            && g.turn >= last_diag + 20
-            && !done
-            && dumps < diag_dumps;
+        let stalled =
+            (scheduled || quiet >= 30) && g.turn >= last_diag + 20 && !done && dumps < diag_dumps;
         let reasoning = s.reasoning_json(cursor);
         cursor = reasoning["cursor"].as_u64().unwrap_or(cursor);
         let this_turn = u64::from(g.turn);
@@ -199,7 +197,12 @@ pub fn run(seed: u64, extra_cap: u32, wall_s: u64, diag_dumps: u32, mut emit: im
                     continue;
                 }
                 *count += 1;
-                let detail: String = t["detail"].as_str().unwrap_or("").chars().take(360).collect();
+                let detail: String = t["detail"]
+                    .as_str()
+                    .unwrap_or("")
+                    .chars()
+                    .take(360)
+                    .collect();
                 emit(format!(
                     "  think seed={seed} t={} p={} {kind} {head} :: {detail}",
                     t["turn"], t["player"]
@@ -228,13 +231,17 @@ mod experiments {
     /// Four baseline worlds at once; the report rides the panic into the CI log.
     #[test]
     fn lcs_base_matrix() {
+        const KNOBS: &str = "conquest=1,objective=1,arm=1,bodies=4";
+        crate::lcs_knobs::set(KNOBS);
         let handles: Vec<_> = [13u64, 14, 22, 23]
             .into_iter()
             .map(|seed| {
                 std::thread::Builder::new()
                     .stack_size(32 << 20)
                     .spawn(move || {
-                        let mut report = vec![format!("LCSREPORT seed={seed} knobs=\"\"")];
+                        let mut report = vec![format!(
+                            "LCSREPORT seed={seed} knobs=\"{KNOBS}\" label=nosiege"
+                        )];
                         super::run(seed, 400, 1380, 2, |line| report.push(line));
                         report.join("\n")
                     })
@@ -243,7 +250,11 @@ mod experiments {
             .collect();
         let reports: Vec<String> = handles
             .into_iter()
-            .map(|handle| handle.join().unwrap_or_else(|_| "LCSREPORT thread panicked".to_string()))
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| "LCSREPORT thread panicked".to_string())
+            })
             .collect();
         panic!("{}", reports.join("\n"));
     }
