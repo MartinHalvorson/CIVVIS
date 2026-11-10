@@ -969,6 +969,9 @@ impl Game {
         if spec.siege && u.moved && !self.siege_may_attack_after_moving(&u) {
             return Err("siege units cannot move and attack in the same turn".into());
         }
+        if self.shooter_stacked_in_city(uid) {
+            return Err("a unit stacked on a City Center cannot fire".into());
+        }
         if u.moves_left <= 0.0 || u.attacks_left <= 0 {
             return Err("no moves left".into());
         }
