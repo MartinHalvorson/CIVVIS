@@ -5569,6 +5569,11 @@ pub const GENES: &[Gene] = &[
     // keeps one with every siege. Opt-in; see
     // `advanced/domination_target_gets_its_breaker.rs`.
     Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `cold-war-then-heritage`: once a Culture target knows Cold War, its
+    // civic slot takes Conservation, then Cultural Heritage, before the
+    // government ladder (Class Struggle, Suffrage) and the culture list.
+    // Opt-in; see `advanced/cold_war_then_heritage.rs`.
+    Gene { tag: "cold-war-then-heritage", field: "cold_war_then_heritage", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_then_heritage, disable: AdvancedAi::disable_cold_war_then_heritage },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

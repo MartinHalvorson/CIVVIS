@@ -6829,6 +6829,11 @@ pub struct AdvancedAi {
     /// `domination-target-gets-its-breaker`: the turn a breaker was last
     /// bought for each target, by the target's tile, for the cooldown.
     domination_breaker_bought: BTreeMap<Pos, u32>,
+    /// `cold-war-then-heritage`: once a Culture target knows Cold War, the
+    /// civic slot takes Conservation and then Cultural Heritage before the
+    /// government ladder and the culture list. See
+    /// `advanced/cold_war_then_heritage.rs`. Opt-in.
+    cold_war_then_heritage: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10941,6 +10946,9 @@ mod coastal_sites;
 /// `cold-war-before-conservation`: a Culture target takes only the road to
 /// Cold War. See `advanced/cold_war_before_conservation.rs`.
 mod cold_war_before_conservation;
+/// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
+/// Heritage. See `advanced/cold_war_then_heritage.rs`.
+mod cold_war_then_heritage;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.

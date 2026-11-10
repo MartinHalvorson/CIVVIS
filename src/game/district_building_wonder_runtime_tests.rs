@@ -1145,6 +1145,31 @@ fn rock_bands_are_faith_bought_and_perform_at_local_venues() {
 }
 
 #[test]
+fn flower_power_keeps_the_rock_band_price_and_doubles_every_other_unit() {
+    // Live civvis-20261110T192354Z held Flower Power t171-185: the Rock Band
+    // Faith quote kept its +50 step (450, 500, 550, 600, 650) while every
+    // concert under the card was worth +50%.
+    let (mut game, city, _) = one_city(crate::rng::fixture_seed("FLOWERPOWER", 515_231));
+    game.players[0].civics.insert(crate::name!("cold_war"));
+    let band = game
+        .unit_purchase_cost(0, city, "rock_band", "faith")
+        .unwrap();
+    let warrior = game.unit_purchase_cost(0, city, "warrior", "gold").unwrap();
+    assert!(band > 0.0 && warrior > 0.0);
+    game.players[0]
+        .policies
+        .insert(crate::name!("flower_power"));
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "rock_band", "faith"),
+        Some(band)
+    );
+    assert_eq!(
+        game.unit_purchase_cost(0, city, "warrior", "gold"),
+        Some(2.0 * warrior)
+    );
+}
+
+#[test]
 fn resorts_scale_with_appeal_and_ski_resorts_are_spaced_and_unpillageable() {
     let (mut game, city, resort) = one_city(774_4061);
     game.players[0].techs.insert(crate::name!("radio"));
