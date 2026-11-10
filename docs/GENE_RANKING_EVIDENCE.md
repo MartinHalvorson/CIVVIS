@@ -355,6 +355,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-flips-the-cheapest` | off (unmeasured) | `religion-seat-flips-the-cheapest`: a Religion-target founder's spreaders go where a charge buys the most of the victory. | 1 \| 1 |
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `religion-seat-guards-the-race` | off (unmeasured) | Opt-in gene `religion-seat-guards-the-race`; see `advanced/religion_seat_guards_the_race.rs`. | 1 \| 1 |
+| `religion-seat-keeps-the-guard` | off (unmeasured) | Keep the Religion seat's nearest Holy City guard between casts. | 1 \| 1 |
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |

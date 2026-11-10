@@ -5509,6 +5509,7 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "religion-seat-reveals-the-capitals", field: "religion_seat_reveals_the_capitals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reveals_the_capitals, disable: AdvancedAi::disable_religion_seat_reveals_the_capitals },
     Gene { tag: "religion-denial-needs-the-edge", field: "religion_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_denial_needs_the_edge, disable: AdvancedAi::disable_religion_denial_needs_the_edge },
     Gene { tag: "religion-seat-slots-the-orders", field: "religion_seat_slots_the_orders", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_slots_the_orders, disable: AdvancedAi::disable_religion_seat_slots_the_orders },
+    Gene { tag: "religion-seat-keeps-the-guard", field: "religion_seat_keeps_the_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_keeps_the_guard, disable: AdvancedAi::disable_religion_seat_keeps_the_guard },
     // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.
     Gene { tag: "religion-seat-flips-the-cheapest", field: "religion_seat_flips_the_cheapest", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_flips_the_cheapest, disable: AdvancedAi::disable_religion_seat_flips_the_cheapest },
     // A legal, committed launch or laser keeps its queue through paused-district recovery. Unpriced, off.
