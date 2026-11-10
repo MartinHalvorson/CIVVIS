@@ -315,6 +315,15 @@ impl AdvancedAi {
             }
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let culture_education_goal = self.culture_education_goal(g, pid);
+            // `culture-road-earns-its-inspirations`: the technology that
+            // inspires a near civic of the road to Cold War. See
+            // `advanced/culture_road_inspirations.rs`. `None` with the gene off.
+            let culture_road_tech = self.culture_road_trigger_tech(g, pid);
+            if let Some((tech, _)) = culture_road_tech {
+                if !available.contains(&tech) {
+                    available.push(tech);
+                }
+            }
             // The rolling window protects unattended research from leaving
             // an old branch behind. An explicit Science target (or an
             // adaptive seat that is already driving) is a different contract:
@@ -638,8 +647,13 @@ impl AdvancedAi {
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
                 }
+                // `culture-faith-site-per-theater`: a Culture seat with a
+                // standing Theater Square takes it too, so its Holy Sites can
+                // start when the Faith sources open. See
+                // `advanced/culture_faith_sources.rs`.
                 _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
-                    || self.astrology_before_the_second_city_due(g, pid))
+                    || self.astrology_before_the_second_city_due(g, pid)
+                    || self.culture_faith_astrology_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
@@ -684,6 +698,9 @@ impl AdvancedAi {
                 // its Printing/Radio chain; emergencies and military goals
                 // above retain the slot, and existing research is untouched.
                 _ if culture_education_goal.is_some() => culture_education_goal,
+                _ if culture_road_tech.is_some() => {
+                    culture_road_tech.map(|(tech, _)| tech.as_str())
+                }
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
@@ -998,6 +1015,14 @@ impl AdvancedAi {
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
+                            } else if let Some((_, civic)) =
+                                culture_road_tech.filter(|(tech, _)| *tech == goal)
+                            {
+                                format!(
+                                    "culture-road-earns-its-inspirations: {} inspires {}, which the road to Cold War takes next",
+                                    plain(goal),
+                                    plain(&civic)
+                                )
                             } else {
                                 format!(
                                     "the {step} step toward {}, which {} needs",
@@ -1224,7 +1249,17 @@ impl AdvancedAi {
             // `civic-awaits-its-inspiration`: a civic that would finish before
             // its near inspiration lands gives way. See
             // `advanced/civic_inspiration_wait.rs`.
+            // `culture-road-earns-its-inspirations` orders the beeline in its
+            // place on a Culture seat. See `advanced/culture_road_inspirations.rs`.
             let pick = pick.map(|civic| {
+                if let Some(goal) = goal_pick
+                    .and(forced_goal)
+                    .filter(|_| self.culture_road_active(g))
+                {
+                    return self
+                        .culture_road_pick(g, pid, &available, &civic, goal, civic_objective)
+                        .unwrap_or(civic);
+                }
                 self.civic_awaits_its_inspiration_pick(
                     g,
                     pid,

@@ -2807,6 +2807,11 @@ pub struct BasicAi {
     /// Museum, the Museum tie breaks toward the Artifact slot. Lent by the
     /// Advanced gene to a Culture seat's delegated call; off by default.
     pub(crate) digs_one_museum: bool,
+    /// `culture-digs-every-site`: the Archaeological Museums a Culture seat
+    /// wants, built or queued; the Museum tie breaks toward the Artifact slot
+    /// while fewer stand. Lent by the Advanced gene to a Culture seat's
+    /// delegated call; zero (off) by default.
+    pub(crate) dig_museums_wanted: usize,
     /// `religion-seat-takes-the-faith-beliefs`: the founding tries the
     /// Faith-scaling founder beliefs first. Set each turn by the Advanced
     /// gene for a Religion-target seat; off by default.
@@ -3966,6 +3971,7 @@ impl BasicAi {
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
+            dig_museums_wanted: 0,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -4089,6 +4095,22 @@ impl BasicAi {
     pub(crate) fn disable_garrison_before_the_surprise(&mut self) {
         self.garrison_before_the_surprise = false;
         self.garrison_call_cache = None;
+    }
+
+    /// The cities of `pid` holding an Archaeological Museum, built or in any
+    /// queue (`culture-digs-every-site`).
+    pub(crate) fn dig_museums_owned(g: &Game, pid: usize) -> usize {
+        let dig = crate::name!("archaeological_museum");
+        g.cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .filter(|city| {
+                city.buildings.iter().any(|built| g.building_is_family(*built, dig))
+                    || city.queue.iter().any(|item| {
+                        matches!(item, Item::Building { building } if g.building_is_family(*building, dig))
+                    })
+            })
+            .count()
     }
 
     /// Whether `pid` owns an Archaeological Museum, built or in any queue.
@@ -4394,6 +4416,7 @@ impl BasicAi {
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
+            dig_museums_wanted: 0,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,

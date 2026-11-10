@@ -229,12 +229,15 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
 | `culture-bank-opens-at-nationalism` | off (unmeasured) | `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
+| `culture-digs-every-site` | off (unmeasured) | Opt-in gene `culture-digs-every-site`; see `advanced/culture_digs_every_site.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
+| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
+| `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
@@ -243,6 +246,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
+| `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
 | `deck-follows-the-queue` | off (unmeasured) | Opt-in gene `deck-follows-the-queue`; the behaviour lives on `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`. | 1 \| 1 |
 | `deck-prices-growth` | off (unmeasured) | Opt-in gene `deck-prices-growth`; see `BasicAi::deck_prices_growth`. | 1 \| 1 |
 | `defence-holds-under-fire` | off (unmeasured) | Opt-in gene `defence-holds-under-fire`; see `Self::defence_holds_under_fire`. | 1 \| 1 |
@@ -292,6 +296,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
 | `good-land-lifts-the-city-target` | off (unmeasured) | Opt-in gene `good-land-lifts-the-city-target`; see `advanced/good_land_lifts_the_city_target.rs`. | 1 \| 1 |
 | `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
+| `great-works-never-wait` | off (unmeasured) | Opt-in gene `great-works-never-wait`; see `advanced/great_works_never_wait.rs`. | 1 \| 1 |
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |
 | `guns-stay-out-of-reach-3` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-3`; version three of the family, so versions one and two are turned off. | 1 \| 3 |

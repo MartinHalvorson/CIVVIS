@@ -44,6 +44,19 @@ impl AdvancedAi {
     /// The bonus `production_value` adds to an Archaeological Museum while the
     /// Culture seat owns none, built or queued.
     pub(super) fn dig_museum_bonus(&self, g: &Game, pid: usize, building: Name) -> f64 {
+        // `culture-digs-every-site` carries this gene: the bonus lasts until
+        // the Museums its reachable sites want stand. See
+        // `advanced/culture_digs_every_site.rs`.
+        if self.dig_every_site_active(g)
+            && g.building_is_family(building, crate::name!("archaeological_museum"))
+        {
+            let wanted = self.dig_museums_wanted(g, pid);
+            return if crate::ai::BasicAi::dig_museums_owned(g, pid) < wanted {
+                DIG_MUSEUM_BONUS
+            } else {
+                0.0
+            };
+        }
         if !self.dig_museum_lane_active(g)
             || !g.building_is_family(building, crate::name!("archaeological_museum"))
             || crate::ai::BasicAi::owns_dig_museum(g, pid)
