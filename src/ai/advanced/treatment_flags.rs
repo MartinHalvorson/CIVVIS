@@ -182,6 +182,9 @@ impl AdvancedAi {
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
         flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
+        /// `first-capital-before-the-walls`: see
+        /// `advanced/first_capital_before_the_walls.rs`.
+        first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

@@ -117,6 +117,7 @@
 //! declares on a rival the shipped `campaign_target_legal` mask refuses.
 
 use super::city_campaign::{CampaignPlan, CAMPAIGN_MIN_BODIES};
+use super::first_capital_before_the_walls::FIRST_CAPITAL_WALL_CEILING;
 use super::{AdvancedAi, EmpireCounts, GrandStrategy, StrategicPlan};
 use crate::game::{Action, Game, Item};
 use crate::name::Name;
@@ -595,6 +596,10 @@ impl AdvancedAi {
     /// [`TargetRank`]: the capital first, then the lightest visible
     /// garrison, then the nearest, then the lowest id.
     pub(crate) fn conquest_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        // `first-capital-before-the-walls`: see that module.
+        if self.first_capital_active() {
+            return self.first_capital_target(g, pid);
+        }
         self.conquest_target_within(g, pid, self.conquest_reach())
     }
 
@@ -660,13 +665,14 @@ impl AdvancedAi {
     // 2. the reservation
     // ------------------------------------------------------------------
 
-    /// The original deadline plus preparation time after reservation opens.
-    fn conquest_commit_base(g: &Game, opening: &ConquestOpening) -> u32 {
+    /// The original deadline plus `preparation` turns after reservation opens
+    /// (see `AdvancedAi::conquest_preparation`).
+    fn conquest_commit_base(g: &Game, opening: &ConquestOpening, preparation: u32) -> u32 {
         g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
                 .max(opening.preparing_since.unwrap_or(opening.opened))
-                .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
+                .saturating_add(preparation),
         )
     }
 
@@ -696,8 +702,8 @@ impl AdvancedAi {
     /// has a real target and can reserve production, it gets a minimum
     /// preparation window. A near-assembled force may receive one fixed,
     /// bounded extension at that deadline.
-    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
-        let base = Self::conquest_commit_base(g, opening);
+    fn conquest_commit_due(&self, g: &Game, opening: &ConquestOpening) -> u32 {
+        let base = Self::conquest_commit_base(g, opening, self.conquest_preparation(g));
         base.max(opening.grace_until.unwrap_or(base))
     }
 
@@ -706,7 +712,7 @@ impl AdvancedAi {
     pub(super) fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none() && g.turn < Self::conquest_commit_due(g, opening)
+                opening.declared.is_none() && g.turn < self.conquest_commit_due(g, opening)
             })
     }
 
@@ -783,13 +789,41 @@ impl AdvancedAi {
         if self.conquest_breach_target(g).is_none() {
             return 0;
         }
-        let ram = Item::Unit {
-            unit: crate::name!("battering_ram"),
+        let breaker = Item::Unit {
+            unit: crate::name::Name::from(self.conquest_breaker_kind(g)),
         };
-        if !g.can_produce(pid, cid, &ram) {
+        if !g.can_produce(pid, cid, &breaker) {
             return 0;
         }
-        CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid))
+        CONQUEST_WALL_BREAKERS.saturating_sub(self.conquest_breakers_fit(g, pid))
+    }
+
+    /// The breaker the opening reserves: a Battering Ram, or under
+    /// `first-capital-before-the-walls` a Siege Tower once the target's
+    /// walls are past Ancient.
+    fn conquest_breaker_kind(&self, g: &Game) -> &'static str {
+        let medieval = self.first_capital_active()
+            && self
+                .conquest_opening
+                .as_ref()
+                .and_then(|opening| g.cities.get(&opening.city))
+                .is_some_and(|city| g.city_max_wall_hp(city) > FIRST_CAPITAL_WALL_CEILING);
+        if medieval {
+            "siege_tower"
+        } else {
+            "battering_ram"
+        }
+    }
+
+    /// Breakers held or queued that open the target's walls: any of them
+    /// shipped, only Siege Towers under `first-capital-before-the-walls`
+    /// against walls a Ram does not affect.
+    fn conquest_breakers_fit(&self, g: &Game, pid: usize) -> usize {
+        if self.conquest_breaker_kind(g) == "siege_tower" {
+            Self::first_capital_towers_held(g, pid)
+        } else {
+            Self::conquest_breakers_held(g, pid)
+        }
     }
 
     /// `early-conquest-opening`: what a Battering Ram trained in `cid` is
@@ -797,9 +831,9 @@ impl AdvancedAi {
     /// holds none. Only the capital, only after the first Settler's city
     /// exists, and only for the Ram itself.
     pub(super) fn conquest_breaker_value(&self, g: &Game, pid: usize, cid: u32, unit: &str) -> f64 {
-        if unit != "battering_ram"
+        if unit != self.conquest_breaker_kind(g)
             || Self::conquest_capital(g, pid) != Some(cid)
-            || g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES
+            || g.player_city_ids(pid).len() < self.conquest_first_settler_cities()
             || self.conquest_breakers_missing(g, pid, cid) == 0
         {
             return 0.0;
@@ -846,6 +880,17 @@ impl AdvancedAi {
         )
     }
 
+    /// [`Self::conquest_reservation_shortfall`], or under
+    /// `first-capital-before-the-walls` its melee-led force on top of the
+    /// city guards.
+    fn conquest_shortfall(&self, g: &Game, pid: usize, counts: &EmpireCounts) -> (usize, usize) {
+        if self.first_capital_active() {
+            self.first_capital_shortfall(g, pid, counts)
+        } else {
+            Self::conquest_reservation_shortfall(counts)
+        }
+    }
+
     /// `early-conquest-opening`: what training `spec` in `cid` is worth on
     /// top of the military arm's own sum. Zero with the gene off, outside
     /// the reservation window, in any city but the capital, for anything but
@@ -880,10 +925,10 @@ impl AdvancedAi {
         // Xanadu on turn 16 with one city, and the capital's half-built
         // Settler was displaced by a reserved Archer (t17) and Warrior (t20)
         // and restored by the Settler arm each time -- one city at turn 25.
-        if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES {
+        if g.player_city_ids(pid).len() < self.conquest_first_settler_cities() {
             return 0.0;
         }
-        let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
+        let (ranged, melee) = self.conquest_shortfall(g, pid, counts);
         let wanted = if Self::conquest_ranged_body(spec) {
             ranged
         } else if Self::conquest_melee_body(spec) {
@@ -922,7 +967,7 @@ impl AdvancedAi {
             || threatened
             || self.conquest_closed
             || self.conquest_opening.is_some()
-            || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+            || g.turn >= g.standard_duration(self.conquest_naming_floor())
             || counts.scouts >= CONQUEST_SEARCH_SCOUTS
             || g.cities.get(&cid).is_none_or(|city| city.owner != pid)
             || self.conquest_target(g, pid).is_some()
@@ -979,10 +1024,10 @@ impl AdvancedAi {
         if Self::conquest_capital(g, pid) != Some(cid) {
             return false;
         }
-        if city_count < CONQUEST_FIRST_SETTLER_CITIES {
+        if city_count < self.conquest_first_settler_cities() {
             return false;
         }
-        let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
+        let (ranged, melee) = self.conquest_shortfall(g, pid, counts);
         ranged + melee + self.conquest_breakers_missing(g, pid, cid) > 0
     }
 
@@ -1133,10 +1178,13 @@ impl AdvancedAi {
     /// assembly share would count a unit that is walking the other way.
     fn conquest_force(&self, g: &Game, pid: usize, rally: Pos) -> BTreeSet<u32> {
         let guards = self.all_reserved_civilian_guards();
+        // `first-capital-before-the-walls`: each city keeps its guard. Empty
+        // with the gene off.
+        let home = self.first_capital_home_guards(g, pid);
         let mut army: Vec<u32> = self
             .campaign_field_army(g, pid)
             .into_iter()
-            .filter(|uid| !guards.contains(uid))
+            .filter(|uid| !guards.contains(uid) && !home.contains(uid))
             .collect();
         army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, rally), *uid));
         army.truncate(CONQUEST_RANGED + CONQUEST_MELEE);
@@ -1166,7 +1214,7 @@ impl AdvancedAi {
         let opening = self.conquest_opening.as_ref()?;
         if opening.declared.is_some()
             || !opening.force.contains(&uid)
-            || (opening.assembled.is_none() && g.turn >= Self::conquest_commit_due(g, opening))
+            || (opening.assembled.is_none() && g.turn >= self.conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
         {
@@ -1505,7 +1553,7 @@ impl AdvancedAi {
             self.conquest_first_turn = Some(g.turn);
         }
         self.conquest_count_losses(g);
-        if g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES {
+        if g.player_city_ids(pid).len() >= self.conquest_first_settler_cities() {
             if let Some(opening) = self.conquest_opening.as_mut() {
                 if opening.preparing_since.is_none() {
                     opening.preparing_since = Some(g.turn);
@@ -1513,8 +1561,9 @@ impl AdvancedAi {
             }
         }
         self.conquest_revalidate_rally(g, pid);
+        let preparation = self.conquest_preparation(g);
         if let Some(opening) = self.conquest_opening.as_mut() {
-            let base = Self::conquest_commit_base(g, opening);
+            let base = Self::conquest_commit_base(g, opening, preparation);
             if opening.grace_until.is_none()
                 && opening.assembled.is_none()
                 && g.turn >= base
@@ -1610,9 +1659,27 @@ impl AdvancedAi {
                     self.conquest_release(g, why);
                     return;
                 }
+                // `first-capital-before-the-walls`: the same yield on the
+                // walls a Ram cannot open. `None` with the gene off.
+                if let Some(why) = self.first_capital_walled_out(g, pid, opening) {
+                    let (target, city) = (opening.target, opening.city);
+                    think!(self.journal(), Military, Strategy,
+                           "The conquest opening yields at {}", g.cities[&city].name;
+                           "{why}; asking {} for terms", g.players[target].civ;
+                           g.cities[&city].pos);
+                    self.conquest_sue_for_peace(g, pid, target);
+                    self.conquest_release(g, why);
+                    return;
+                }
             } else {
                 if !self.campaign_target_legal(g, pid, opening.target) {
                     self.conquest_release(g, "the rival is no longer a legal target");
+                    return;
+                }
+                // `first-capital-before-the-walls`: stand down before the
+                // war once the walls outgrow the army. `None` with it off.
+                if let Some(why) = self.first_capital_walled_out(g, pid, opening) {
+                    self.conquest_release(g, why);
                     return;
                 }
                 if let Some(assembled) = opening.assembled {
@@ -1627,7 +1694,7 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= Self::conquest_commit_due(g, opening) && opening.assembled.is_none() {
+                if g.turn >= self.conquest_commit_due(g, opening) && opening.assembled.is_none() {
                     self.conquest_release(
                         g,
                         "the commit deadline passed before the force ever assembled",
@@ -1653,7 +1720,7 @@ impl AdvancedAi {
     /// game whose opening died with the old process, and may name it again
     /// for [`CONQUEST_RESUME_GRACE_TURNS`] after its first turn.
     fn conquest_naming_deadline(&self, g: &Game) -> u32 {
-        let deadline = g.standard_duration(CONQUEST_COMMIT_DEADLINE);
+        let deadline = g.standard_duration(self.conquest_naming_floor());
         let grace = g.standard_duration(CONQUEST_RESUME_GRACE_TURNS).max(1);
         match self.conquest_first_turn {
             Some(first) if first > 1 && first <= deadline + grace => deadline.max(first + grace),
@@ -1710,7 +1777,7 @@ impl AdvancedAi {
                 .unwrap_or_else(|| g.item_cost_for(pid, item) / production)
         };
         let counts = self.counts(g, pid);
-        let (ranged, melee) = Self::conquest_reservation_shortfall(&counts);
+        let (ranged, melee) = self.conquest_shortfall(g, pid, &counts);
         let mut fastest_ranged: Option<f64> = None;
         let mut fastest_melee: Option<f64> = None;
         for item in g.producible_items(pid, capital) {
@@ -1755,16 +1822,18 @@ impl AdvancedAi {
         if melee > 0 {
             build += fastest_melee? * melee as f64;
         }
-        let ram = Item::Unit {
-            unit: crate::name!("battering_ram"),
-        };
-        let walled = g
+        let walls = g
             .cities
             .get(&city)
-            .is_some_and(|target| g.city_max_wall_hp(target) > 0);
-        if walled && g.can_produce(pid, capital, &ram) {
-            let breakers =
-                CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid));
+            .map_or(0, |target| g.city_max_wall_hp(target));
+        let (ram, held) = if self.first_capital_active() && walls > FIRST_CAPITAL_WALL_CEILING {
+            (crate::name!("siege_tower"), Self::first_capital_towers_held(g, pid))
+        } else {
+            (crate::name!("battering_ram"), Self::conquest_breakers_held(g, pid))
+        };
+        let ram = Item::Unit { unit: ram };
+        if walls > 0 && g.can_produce(pid, capital, &ram) {
+            let breakers = CONQUEST_WALL_BREAKERS.saturating_sub(held);
             build += turns_for(&ram) * breakers as f64;
         }
         let settler_turns = turns_for(&Item::Unit {
@@ -1776,7 +1845,7 @@ impl AdvancedAi {
             .any(|unit| unit.owner == pid && unit.kind.as_str() == "settler");
         // The first Settler is never deferred: the reservation waits for the
         // second city, and preparation starts there.
-        let first = if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES && !settler_out
+        let first = if g.player_city_ids(pid).len() < self.conquest_first_settler_cities() && !settler_out
         {
             settler_turns
         } else {
@@ -1795,7 +1864,7 @@ impl AdvancedAi {
         let march = (f64::from(g.wdist(home, rally)) / CONQUEST_MARCH_TILES_PER_TURN).ceil();
         let now = f64::from(g.turn);
         let deadline = f64::from(g.standard_duration(CONQUEST_COMMIT_DEADLINE))
-            .max(now + first + f64::from(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)));
+            .max(now + first + f64::from(self.conquest_preparation(g)));
         Some((first + book + build + march, deadline - now))
     }
 
@@ -1878,11 +1947,18 @@ impl AdvancedAi {
         if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
         }
+        let first_capital = self.first_capital_active();
         let Some((target, city)) = self.conquest_target(g, pid) else {
-            self.conquest_note_a_far_target(g, pid);
+            if first_capital {
+                self.first_capital_note_no_target(g, pid);
+            } else {
+                self.conquest_note_a_far_target(g, pid);
+            }
             return;
         };
-        if self.conquest_stands_down(g, target, city) {
+        // `first-capital-before-the-walls` opens on the capital the stand-down
+        // was not measured on.
+        if !first_capital && self.conquest_stands_down(g, target, city) {
             return;
         }
         let Some(capital) = Self::conquest_capital(g, pid) else {
@@ -1903,7 +1979,18 @@ impl AdvancedAi {
                            "raising and marching it takes about {:.0} turns; the opening would \
                             get {:.0} and plans on {:.0} of them", needed, window, budget);
                 }
-                if needed > budget {
+                // `first-capital-before-the-walls`: the estimate prices the
+                // capital alone training every body; the gene's window is the
+                // walls, so it is journalled and not a refusal.
+                if needed > budget && first_capital {
+                    think!(self.journal(), Military, Detail,
+                           "First capital before the walls: {} opens on a long estimate",
+                           g.cities[&city].name;
+                           "the capital alone would take {:.0} turns to raise and march the force \
+                            against a window of {:.0}; the other cities and the standing army \
+                            share it", needed, window);
+                }
+                if needed > budget && !first_capital {
                     let note_due = self.conquest_feasibility_noted.is_none_or(|noted| {
                         g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
                     });
@@ -1921,6 +2008,7 @@ impl AdvancedAi {
             }
         }
         let known = Self::conquest_known_cities(g, pid, target).len();
+        let (ranged, melee) = self.conquest_quota();
         think!(self.journal(), Military, Strategy,
                "Opening a conquest against {}", g.players[target].civ;
                "{} is {} tiles from the capital and they hold {} known cit{}; \
@@ -1929,13 +2017,21 @@ impl AdvancedAi {
                g.wdist(home, g.cities[&city].pos),
                known,
                if known == 1 { "y" } else { "ies" },
-               CONQUEST_RANGED, CONQUEST_MELEE;
+               ranged, melee;
                rally);
+        if first_capital {
+            think!(self.journal(), Military, Detail,
+                   "First capital before the walls: {}", g.cities[&city].name;
+                   "walls {} of at most {}; it can be named until turn {} and the force \
+                    prepares for {} turns",
+                   g.city_max_wall_hp(&g.cities[&city]), FIRST_CAPITAL_WALL_CEILING,
+                   self.conquest_naming_deadline(g), self.conquest_preparation(g));
+        }
         self.conquest_opening = Some(ConquestOpening {
             target,
             city,
             opened: g.turn,
-            preparing_since: (g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES)
+            preparing_since: (g.player_city_ids(pid).len() >= self.conquest_first_settler_cities())
                 .then_some(g.turn),
             grace_until: None,
             rally,
@@ -2025,9 +2121,14 @@ impl AdvancedAi {
                    "the treasury cannot carry the war it would open");
             return false;
         }
-        // `declaration-needs-production-parity`. Says so itself.
+        // `declaration-needs-production-parity`. Says so itself. Not for
+        // `first-capital-before-the-walls`, whose question is the local bill:
+        // a Deity neighbour out-produces us about four to one at t50.
         let objective = g.cities.get(&opening.city).map(|city| city.pos);
-        if !self.declaration_has_production_parity(g, pid, opening.target, objective) {
+        let first_capital = self.first_capital_active();
+        if !first_capital
+            && !self.declaration_has_production_parity(g, pid, opening.target, objective)
+        {
             return false;
         }
         let Some(action) = self.raid_opening(g, pid, opening.target) else {
@@ -2047,6 +2148,14 @@ impl AdvancedAi {
                share * 100.0,
                g.cities.get(&opening.city).map(|city| city.name.clone())
                    .unwrap_or_else(|| String::from("the objective")));
+        if first_capital {
+            if let Some(city) = g.cities.get(&opening.city) {
+                think!(self.journal(), Military, Detail,
+                       "First capital before the walls: declaring on {}", city.name;
+                       "walls {}, {} bodies in the force, production parity not asked",
+                       g.city_max_wall_hp(city), opening.force.len());
+            }
+        }
         self.conquest_pin_the_campaign(g);
         true
     }
@@ -2067,7 +2176,11 @@ impl AdvancedAi {
         }
         let taken = opening.taken + 1;
         let rate = self.conquest_kills_per_loss(g, pid, &opening);
-        if rate < CONQUEST_KILLS_PER_LOSS_FLOOR {
+        // `first-capital-before-the-walls`: the campaign goes on past the
+        // capital at any rate; a force that is wholly gone still asks for
+        // terms (`maintain_conquest_opening`).
+        let first_capital = self.first_capital_active();
+        if rate < CONQUEST_KILLS_PER_LOSS_FLOOR && !first_capital {
             think!(self.journal(), Military, Strategy,
                    "Closing the conquest against {}", g.players[opening.target].civ;
                    "the campaign has taken {} cit{} but is trading at {:.2} kills per loss, \
@@ -2116,13 +2229,28 @@ impl AdvancedAi {
             self.conquest_release(g, "no further known city of the rival remains");
             return;
         };
-        think!(self.journal(), Military, Strategy,
-               "The conquest continues to {}", g.cities[&next].name;
-               "trading at {:.2} kills per loss, at or above the {:.1} floor",
-               rate, CONQUEST_KILLS_PER_LOSS_FLOOR);
+        if first_capital {
+            think!(self.journal(), Military, Strategy,
+                   "The conquest continues to {}", g.cities[&next].name;
+                   "first-capital-before-the-walls: {} cit{} taken, trading at {:.2} kills per \
+                    loss; the campaign goes on to the rival's next city",
+                   taken, if taken == 1 { "y" } else { "ies" }, rate);
+        } else {
+            think!(self.journal(), Military, Strategy,
+                   "The conquest continues to {}", g.cities[&next].name;
+                   "trading at {:.2} kills per loss, at or above the {:.1} floor",
+                   rate, CONQUEST_KILLS_PER_LOSS_FLOOR);
+        }
+        let force = first_capital.then(|| {
+            let taken_at = g.cities[&opening.city].pos;
+            self.first_capital_reinforced_force(g, pid, &opening.force, taken_at)
+        });
         if let Some(opening) = self.conquest_opening.as_mut() {
             opening.taken = taken;
             opening.city = next;
+            if let Some(force) = force {
+                opening.force = force;
+            }
         }
         self.conquest_pin_the_campaign(g);
     }
@@ -2180,6 +2308,7 @@ impl AdvancedAi {
     /// its first casualty.
     fn conquest_peace(&mut self, g: &mut Game, pid: usize, opening: &ConquestOpening) {
         if opening.taken == 0
+            || self.first_capital_active()
             || self.conquest_kills_per_loss(g, pid, opening) >= CONQUEST_KILLS_PER_LOSS_FLOOR
         {
             return;

@@ -7548,6 +7548,11 @@ pub struct AdvancedAi {
     /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
     /// Off by default.
     flower_power_in_the_dark: bool,
+    /// `first-capital-before-the-walls`: a Domination seat opens the early
+    /// conquest on the nearest rival capital it can walk to while its walls
+    /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
+    /// Off by default.
+    first_capital_before_the_walls: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11541,6 +11546,10 @@ mod threatened_lane_lends_the_army;
 /// `advanced/threatened_war_holds_the_claims.rs`.
 mod threatened_war_holds_the_claims;
 
+/// `first-capital-before-the-walls`: a Domination seat's early conquest on
+/// the nearest walkable rival capital before its walls pass Ancient. One
+/// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
+mod first_capital_before_the_walls;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
