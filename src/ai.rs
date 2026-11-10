@@ -2122,6 +2122,13 @@ pub struct BasicAi {
     /// stood on the only stage it could have played. Off by default; opt-in
     /// gene. See `advanced/band_plays_what_it_can_reach.rs`.
     pub(crate) band_plays_what_it_can_reach: bool,
+    /// `bands-wait-at-the-door`: a Rock Band with no stage it can reach waits
+    /// on the near side of the border of the closed rival it would most like
+    /// to play (the Culture bar holder first, then by the stage), on the
+    /// open tile nearest that rival's best stage, instead of at home or
+    /// wherever it stopped. Off by default; opt-in gene. See
+    /// `advanced/bands_wait_at_the_door.rs`.
+    pub(crate) bands_wait_at_the_door: bool,
     /// `band-plays-what-it-can-reach`: each band's trip this turn, keyed by
     /// [`BasicAi::band_memory_key`]: the turn, the tile it stood on when it
     /// first moved that turn, and the venue it set out for.
@@ -2812,6 +2819,11 @@ pub struct BasicAi {
     /// while fewer stand. Lent by the Advanced gene to a Culture seat's
     /// delegated call; zero (off) by default.
     pub(crate) dig_museums_wanted: usize,
+    /// `curator-sits-with-the-works`: while a Culture seat's Pingala holds
+    /// Curator, `reassign_governor_for_loyalty` sends another Governor to a
+    /// loyalty emergency whenever one can go, instead of pulling Pingala off
+    /// the works. Set by `AdvancedAi` each turn; false (off) by default.
+    pub(crate) curator_keeps_his_seat: bool,
     /// `religion-seat-takes-the-faith-beliefs`: the founding tries the
     /// Faith-scaling founder beliefs first. Set each turn by the Advanced
     /// gene for a Religion-target seat; off by default.
@@ -3892,6 +3904,7 @@ impl BasicAi {
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
+            bands_wait_at_the_door: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -3972,6 +3985,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -4337,6 +4351,7 @@ impl BasicAi {
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
+            bands_wait_at_the_door: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -4417,6 +4432,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -7599,9 +7615,25 @@ impl BasicAi {
             return false;
         };
         let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
-        if self.band_plays_what_it_can_reach {
-            return self.rock_band_reachable_step(g, pid, uid, here, can_perform_here);
-        }
+        let acted = if self.band_plays_what_it_can_reach {
+            self.rock_band_reachable_step(g, pid, uid, here, can_perform_here)
+        } else {
+            self.rock_band_tour_step(g, pid, uid, here, can_perform_here)
+        };
+        // `bands-wait-at-the-door`: nothing to play or walk to, so wait where
+        // the land is most likely to open.
+        acted || (self.bands_wait_at_the_door && self.rock_band_door_step(g, pid, uid, here))
+    }
+
+    /// The stock tour: walk toward the best venue, or play here.
+    fn rock_band_tour_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        here: Pos,
+        can_perform_here: bool,
+    ) -> bool {
         // Passing through a legal venue must not abandon the better tour the
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex

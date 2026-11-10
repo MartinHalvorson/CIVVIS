@@ -1,0 +1,24 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-faith-site-per-theater-2",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards of two live Deity Online Kristina (Sweden) Culture games armed with culture-faith-site-per-theater (civvis-20261110T183027Z t108-t122, where wonders and a Spy held the Theater cities; 191037Z t90-t120, with Aqueduct heads), each the run's events.jsonl cut at frame 0 of the turn. Both arms run one frozen civvis_orders --resumed built from the branch at 5b831f1720 with the run's own requested genome; the on arm adds --with culture-faith-site-per-theater-2. Orders differ on 5/13 boards: on 183027Z t112-t118 the on arm starts V\u00e4ster\u00e5s's Holy Site at (51, 33) over the Kilwa Kisiwani it was building, and on 191037Z t110 \u00d6rebro's Holy Site at (26, 17) over its Aqueduct. The other boards show the remaining limits in the on arm's skip journal (no free district slot, Amphitheater, Builder and Settler holds, a city not safe).",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-faith-site-per-theater-2.native-queries.tar.xz",
+  "sha256": "3e4cfe771c37b3069a763db1f47320b48ec00e17b345333f71d869891642b7cf"
+ },
+ "members": [
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0003/result.json"
+ ]
+}

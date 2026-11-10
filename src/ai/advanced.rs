@@ -6812,6 +6812,11 @@ pub struct AdvancedAi {
     /// builds the last Market a near road civic's Inspiration counts. See
     /// `advanced/culture_road_triggers.rs`. Off by default.
     culture_road_builds_its_triggers: bool,
+    /// `culture-faith-site-per-theater-2`: version one, and the Culture Faith
+    /// sources are claimed in parallel, one item per Theater city, rather
+    /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
+    /// Opt-in.
+    culture_faith_site_per_theater_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9892,6 +9897,10 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `space-denial-promotes-the-rocket-scientist`: a Culture or Domination
+    /// seat whose spies answer a space race promotes them to Rocket Scientist
+    /// first. See `advanced/space_denial_rocket_scientist.rs`. Off by default.
+    space_denial_promotes_the_rocket_scientist: bool,
     /// `sweden-builds-open-air-museums`: Sweden's Builders price the
     /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
@@ -11283,6 +11292,10 @@ mod band_plays_what_it_can_reach;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
+/// `bands-wait-at-the-door`: a Rock Band with nothing it can play waits at
+/// the border of the closed land it most wants. See
+/// `advanced/bands_wait_at_the_door.rs`.
+mod bands_wait_at_the_door;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -11399,6 +11412,9 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-promotes-the-rocket-scientist`: see
+/// `advanced/space_denial_rocket_scientist.rs`.
+mod space_denial_rocket_scientist;
 /// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
 mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
@@ -25961,6 +25977,10 @@ impl AdvancedAi {
             self.strategic_governors(g, pid, &plan);
             self.relocate_governors_for_dividends(g, pid, &plan);
         }
+        // `curator-sits-with-the-works`: both loyalty backstops below (this
+        // one and the ancillary pass's) send another Governor before a
+        // Pingala holding Curator. False with the gene off.
+        self.base.curator_keeps_his_seat = self.curator_seat_active(g);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
