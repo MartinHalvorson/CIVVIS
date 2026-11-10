@@ -8459,6 +8459,9 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-lane-hands-over`: the turn the Prophet race first read as
+    /// lost, cleared when it reads open again.
+    religion_race_lost_since: Option<u32>,
     /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
