@@ -4,7 +4,7 @@
   "scope": "Same exact-source verified arm64 candidate, actual sealed native Russia inputs60-74 through one fresh-board/persistent-agentprocessperarm; onlynewoptindiffers, allactualreads bytechecked. At68/0 off movesguard1638404andspendsinNovgorod; onkeepsitbesideHolyCity. Completeinitial60/0orderlistsmatch. Historybefore60absent; replayednativepositions/outcomesfixedfromoriginalgame, notcounterfactualexecution,survivalorwinrateproof.",
   "archive": {
     "path": "docs/eval/2026-11-10-religion-seat-keeps-the-guard.native-queries.tar.xz",
-    "sha256": "ad13e345b1e142553af65c4ab110fe2f55454f2e6435ec8ba35ba667705518f2"
+    "sha256": "fa7e5c05686413a972dff6fdda03fa087052682c8451813d81cc4fe9c33261b6"
   },
   "members": [
     "native-queries/t60-frame0/result.json",
