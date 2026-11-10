@@ -8981,6 +8981,10 @@ pub struct AdvancedAi {
     /// Cartography sooner. See `advanced/religion_seat_charts_the_rivals.rs`.
     /// Off by default.
     religion_seat_charts_the_rivals: bool,
+    /// `religion-seat-spends-the-bank`: a Religion-target founder's corps
+    /// caps stop binding once the bank holds two Apostles. See
+    /// `advanced/religion_seat_spends_the_bank.rs`. Off by default.
+    religion_seat_spends_the_bank: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -26408,6 +26412,9 @@ mod religion_seat_charts_the_rivals;
 mod religion_seat_first_shrine;
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
+/// `religion-seat-spends-the-bank`: see
+/// `advanced/religion_seat_spends_the_bank.rs`.
+mod religion_seat_spends_the_bank;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 /// `religion-seat-guards-the-race`: see

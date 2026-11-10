@@ -5520,6 +5520,9 @@ pub const GENES: &[Gene] = &[
     // every rival's cities, and takes Cartography sooner. See
     // `advanced/religion_seat_charts_the_rivals.rs`.
     Gene { tag: "religion-seat-charts-the-rivals", field: "religion_seat_charts_the_rivals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_charts_the_rivals, disable: AdvancedAi::disable_religion_seat_charts_the_rivals },
+    // A Religion-target founder's corps caps stop binding once the bank
+    // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
+    Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
