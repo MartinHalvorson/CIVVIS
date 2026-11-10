@@ -6,7 +6,9 @@ All for fun. Everything is free, open source, and runs locally.
 
 Design & watch Civ 6 AI simulations yourself, or try a single player game against CIVVIS AI at [civvis.ai](https://www.civvis.ai). Single player is still a WIP.
 
-Posting progress videos on [YouTube](https://www.youtube.com/@civvis). Highest Level Won by Victory Type:
+Posting progress videos on ["Project CIVVIS"](https://www.youtube.com/@civvis) YouTube.
+
+Highest Level Won by Victory Type:
 - Lv 8 - [Science - 206](https://www.youtube.com/watch?v=Gu5cxEIGTuE), [Diplo - 173](https://www.youtube.com/watch?v=CQQM2uk4AkA), [Religion - 167](https://youtu.be/a12Fevo-0DM)
 - Lv 7 - ...
 - Lv 6 - [Culture](https://www.youtube.com/watch?v=S6oiMRpQ36M), [Domination](https://www.youtube.com/watch?v=DMdNOQT3NS0)
