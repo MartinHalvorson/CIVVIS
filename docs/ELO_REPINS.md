@@ -2304,3 +2304,24 @@ The engine before this change measures v46's **19,571 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v48 (2026-11-10) — city majorities and followers follow the rows the host shows
+
+A rules correction in `src/game/religion.rs`, read off the city banner rows a
+live Deity game exported (civvis-20261110T031523Z, 1,493 city-turns;
+`DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950`). Civ VI seats
+every Citizen among a city's faiths and its religionless Citizens by the
+largest-remainder split of `Population * Pressure / total Pressure`, and the
+faith with the most followers is the majority from half the Citizens up
+(exactly half only when the religionless half does not out-press it). CIVVIS
+rounded each faith's followers on its own and asked for more than half of all
+Pressure: it agreed with the host's `GetMajorityReligion()` on 1,363 of those
+city-turns and the corrected rule on all 1,493. Every controller,
+`AdvancedAi::legacy()` included, now plays under the corrected majorities.
+
+The engine before this change measures v47's **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The corrected engine measures **19,033 decisions /
+`0xcb6c_fcca_de94_9af3`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
