@@ -81,18 +81,25 @@ impl AdvancedAi {
             .copied()
             .filter(|cid| free(g, *cid))
             .find_map(|cid| {
-                BasicAi::plaza_building_item_for(g, pid, cid, self.base.plaza_serves_science)
+                // `kristina-builds-the-bibliotheque`: Sweden's tiers under the
+                // gene, the stock lists otherwise.
+                self.base
+                    .plaza_tier_item(g, pid, cid)
                     .map(|item| (cid, item))
             })
             .or_else(|| {
-                if !BasicAi::plaza_absent(g, pid) || self.base.plaza_prophet_race_open(g, pid) {
+                if !BasicAi::plaza_absent(g, pid) || self.base.plaza_waits_for_the_prophet(g, pid) {
                     return None;
                 }
                 let capital = city_ids.iter().copied().find(|cid| {
                     let city = &g.cities[cid];
                     city.is_capital && city.original_owner == pid
                 })?;
-                if free(g, capital) {
+                // `kristina-builds-the-bibliotheque`: a capital with no site
+                // for the Plaza hands it to the idle city that produces most.
+                let capital_cannot = self.base.kristina_builds_here(g, pid)
+                    && BasicAi::capital_cannot_hold_the_plaza(g, pid);
+                if free(g, capital) && !capital_cannot {
                     return BasicAi::plaza_site_item(g, pid, capital).map(|item| (capital, item));
                 }
                 // The capital is building a wonder or a Holy Site: the
@@ -106,7 +113,7 @@ impl AdvancedAi {
                         }
                         _ => false,
                     };
-                if !capital_busy {
+                if !capital_busy && !capital_cannot {
                     return None;
                 }
                 city_ids

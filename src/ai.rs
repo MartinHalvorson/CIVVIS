@@ -1823,6 +1823,17 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `plaza-in-the-district-list`.
     pub(crate) plaza_in_the_district_list: bool,
+    /// `kristina-builds-the-bibliotheque`: on Sweden's seat the Government
+    /// Plaza's tier buildings are the Ancestral Hall, then the Queen's
+    /// Bibliotheque, and the Plaza itself waits neither for a Prophet race
+    /// nor for a capital that has no site for it. See
+    /// `advanced/kristina_builds_the_bibliotheque.rs`. Set from `AdvancedAi`.
+    pub(crate) kristina_builds_the_bibliotheque: bool,
+    /// `kristina-fills-to-theme`: on Sweden's seat a Writer, Artist or
+    /// Musician with no slot asks for the Queen's Bibliotheque first, and the
+    /// works go where they fill a building that Minerva of the North themes.
+    /// See `advanced/kristina_fills_to_theme.rs`. Set from `AdvancedAi`.
+    pub(crate) kristina_fills_to_theme: bool,
     /// `industrial-hub`: one Industrial Zone, in the city whose zone site
     /// reaches the most own cities within a Factory's regional range (at
     /// least `INDUSTRIAL_HUB_MIN_REACH`), then its Workshop, its Factory and
@@ -3830,6 +3841,8 @@ impl BasicAi {
             industry_before_the_army_3: false,
             industry_in_the_district_list: false,
             plaza_in_the_district_list: false,
+            kristina_builds_the_bibliotheque: false,
+            kristina_fills_to_theme: false,
             industrial_hub: false,
             industrial_zone_in_the_producers: false,
             district_buildings_first: false,
@@ -4253,6 +4266,8 @@ impl BasicAi {
             industry_before_the_army_3: false,
             industry_in_the_district_list: false,
             plaza_in_the_district_list: false,
+            kristina_builds_the_bibliotheque: false,
+            kristina_fills_to_theme: false,
             industrial_hub: false,
             industrial_zone_in_the_producers: false,
             district_buildings_first: false,

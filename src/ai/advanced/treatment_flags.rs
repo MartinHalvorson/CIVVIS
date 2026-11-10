@@ -94,6 +94,12 @@ impl AdvancedAi {
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.
         acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
+        /// Opt-in gene `kristina-builds-the-bibliotheque`; see
+        /// `advanced/kristina_builds_the_bibliotheque.rs`.
+        base.kristina_builds_the_bibliotheque => enable_kristina_builds_the_bibliotheque, disable_kristina_builds_the_bibliotheque;
+        /// Opt-in gene `kristina-fills-to-theme`; see
+        /// `advanced/kristina_fills_to_theme.rs`.
+        base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -137,6 +143,9 @@ impl AdvancedAi {
         /// `culture-road-earns-its-inspirations`: see
         /// `advanced/culture_road_inspirations.rs`.
         culture_road_earns_its_inspirations => enable_culture_road_earns_its_inspirations, disable_culture_road_earns_its_inspirations;
+        /// `culture-seat-builds-past-the-deterrent`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

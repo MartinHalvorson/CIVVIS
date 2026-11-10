@@ -5487,6 +5487,11 @@ pub const GENES: &[Gene] = &[
     // Great People at t124-144 while the bank waited for Ideology. Opt-in;
     // see `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
+    // Live Deity Kristina 11-10: the near-rival deterrent held the capital
+    // t39-t69 and took the first Amphitheater back eleven times before t92.
+    // A Culture seat's culture claims pass it at peace. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
     // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     // beeline by when each Inspiration lands, and researches the technology
     // that inspires a near road civic first. Opt-in; see
@@ -5520,6 +5525,13 @@ pub const GENES: &[Gene] = &[
     // discretion, for good land only. The target rises above ten by one city
     // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
     Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
+    // Kristina Deity 11-10: no Government Plaza by t150 and the Queen's
+    // Bibliotheque ruled out by a fixed tier list. See
+    // `advanced/kristina_builds_the_bibliotheque.rs`.
+    Gene { tag: "kristina-builds-the-bibliotheque", field: "kristina_builds_the_bibliotheque", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_builds_the_bibliotheque, disable: AdvancedAi::disable_kristina_builds_the_bibliotheque },
+    // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
+    // with no slot. See `advanced/kristina_fills_to_theme.rs`.
+    Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
