@@ -25938,7 +25938,8 @@ impl AdvancedAi {
         if self.base.loyalty_rate_alarm {
             // `culture-keeps-pingala-home`: see `advanced/culture_pingala_first.rs`.
             let spared = self.culture_pingala_stays_home(g);
-            self.base.reassign_governor_for_loyalty_sparing(g, pid, spared);
+            self.base
+                .reassign_governor_for_loyalty_sparing(g, pid, spared);
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
