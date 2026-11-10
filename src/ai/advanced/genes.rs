@@ -5564,6 +5564,12 @@ pub const GENES: &[Gene] = &[
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
     Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // Kristina Deity 11-10: the delegated city loop fired each wall at the
+    // first hostile in disk order before the command phase priced anything;
+    // a gun stood in reach of a walled city that struck elsewhere on 19 of 26
+    // unhit gun-turns with siege-at-the-walls-dies-first armed. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
     // `domination-charts-every-capital`: a Domination seat keeps charting
     // until every rival's original capital is seen, and takes Cartography
     // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
