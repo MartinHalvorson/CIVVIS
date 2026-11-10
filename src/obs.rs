@@ -1048,6 +1048,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
         // from, and what can end the continuation.
+        // The only civilization left, once there is one. "One more turn" means
+        // playing to this point, so a result already here has no turn to give.
+        "last_civ_standing": g.last_side_standing(),
         "decided": g.decided.as_ref().map(|decided| json!({
             "winner": decided.winner,
             "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),

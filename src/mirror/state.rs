@@ -436,6 +436,25 @@ pub struct StateQueueItem {
     pub pr: Option<f64>,
 }
 
+/// One row of a city banner's religion list: a faith's followers, the
+/// pressure arriving each turn, and the lifetime pressure its tooltip prints
+/// (`DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950`,
+/// `:2090-2094`). A row with no `religion` is the host's row for citizens
+/// following none.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateCityFaith {
+    #[serde(default)]
+    pub religion: Option<String>,
+    #[serde(default)]
+    pub followers: f64,
+    /// `GetReligionsInCity()[i].Pressure`: accumulated over the city's life.
+    #[serde(default)]
+    pub pressure: f64,
+    /// `GetTotalPressureOnCity(religion)`: what arrives each turn.
+    #[serde(default)]
+    pub per_turn: f64,
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -478,6 +497,11 @@ pub struct StateCity {
     /// false or absent is unknown and must not clear a remembered religion.
     #[serde(default)]
     pub religion_observed: Option<bool>,
+    /// The banner's religion rows for this city: ours always, a foreign city's
+    /// when its majority was readable. `None` on an older export or a failed
+    /// read, which is an unknown and must not erase remembered rows.
+    #[serde(default)]
+    pub faiths: Option<Vec<StateCityFaith>>,
     /// The religion gaining on this city, if one is. `religion` alone is a level:
     /// a city holding steady and a city about to flip read identically — the same
     /// reason `loyalty_per_turn` exists beside `loyalty`.
