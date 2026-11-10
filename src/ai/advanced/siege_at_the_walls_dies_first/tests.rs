@@ -27,7 +27,8 @@ fn walls() -> (Game, crate::Pos) {
     game.at_war.insert((0, 1));
     let cid = game.player_city_ids(0)[0];
     game.cities.get_mut(&cid).unwrap().wall_hp = 100;
-    (game, game.cities[&cid].pos)
+    let capital = game.cities[&cid].pos;
+    (game, capital)
 }
 
 /// A free tile exactly `distance` from `from`, off any City Center.
@@ -50,10 +51,16 @@ fn a_gun_in_reach_of_our_walls_is_a_threat() {
     assert!(threatens_our_walls(&game, 0, gun), "in range of the walls");
     let reach = game.unit_attack_range(gun) + WALL_GUN_MARGIN;
     let one_move = game.spawn_test_unit("catapult", 1, free_at(&game, capital, reach));
-    assert!(threatens_our_walls(&game, 0, one_move), "one move from firing");
+    assert!(
+        threatens_our_walls(&game, 0, one_move),
+        "one move from firing"
+    );
     let far = game.spawn_test_unit("catapult", 1, free_at(&game, capital, reach + 1));
     assert!(!threatens_our_walls(&game, 0, far), "beyond a move");
-    assert!(!threatens_our_walls(&game, 1, gun), "our own gun is no threat");
+    assert!(
+        !threatens_our_walls(&game, 1, gun),
+        "our own gun is no threat"
+    );
     game.at_war.remove(&(0, 1));
     assert!(!threatens_our_walls(&game, 0, gun), "at peace");
 }
@@ -63,13 +70,25 @@ fn a_taker_threatens_only_an_open_city() {
     let (mut game, capital) = walls();
     let cid = game.player_city_ids(0)[0];
     let taker = game.spawn_test_unit("warrior", 1, free_at(&game, capital, 1));
-    assert!(!threatens_our_walls(&game, 0, taker), "walls up, full health");
+    assert!(
+        !threatens_our_walls(&game, 0, taker),
+        "walls up, full health"
+    );
     game.cities.get_mut(&cid).unwrap().wall_hp = 0;
-    assert!(!threatens_our_walls(&game, 0, taker), "walls down, full health");
+    assert!(
+        !threatens_our_walls(&game, 0, taker),
+        "walls down, full health"
+    );
     game.cities.get_mut(&cid).unwrap().hp = OPEN_CITY_HP;
-    assert!(threatens_our_walls(&game, 0, taker), "walls down, half its health");
+    assert!(
+        threatens_our_walls(&game, 0, taker),
+        "walls down, half its health"
+    );
     let shooter = game.spawn_test_unit("archer", 1, free_at(&game, capital, 1));
-    assert!(!threatens_our_walls(&game, 0, shooter), "a shooter takes no city");
+    assert!(
+        !threatens_our_walls(&game, 0, shooter),
+        "a shooter takes no city"
+    );
     let behind = game.spawn_test_unit("warrior", 1, free_at(&game, capital, 2));
     assert!(!threatens_our_walls(&game, 0, behind), "not yet beside it");
 }

@@ -36,13 +36,20 @@
 //! melee-capable soldier beside a City Center of ours whose walls are down
 //! (none, or broken) and whose health is at or under [`OPEN_CITY_HP`]. Every
 //! blow on a wall threat earns [`WALL_THREAT_KILL_PREMIUM`] when it kills and
-//! [`WALL_THREAT_DAMAGE_PREMIUM`] a point of damage when it does not:
+//! [`WALL_THREAT_DAMAGE_PREMIUM`] a point of damage when it does not (a
+//! wounded gun is a gun the Deity AI walks back to heal):
 //! - the kill plan (`battle_planner.rs`) carries the premium on the target's
 //!   kill value and wound value, and keeps wall threats first when it trims
 //!   the targets to `MAX_TARGETS`;
 //! - the per-unit ladder (`units.rs`) adds it to the blow's score, and a
 //!   ranged hit or a kill on a wall threat ranks with the lethal kills;
-//! - the city and Encampment strikes (`defensive_strike_value`) add it.
+//! - the city and Encampment strikes (`defensive_strike_value`) add it;
+//! - and while any wall threat stands, outside a Conquest plan, the Objective
+//!   Board raises no Siege row (`objective_board.rs`): the army that would
+//!   have marched on the enemy's city stays to kill the gun. In 173141Z the
+//!   board sent seven of our ten soldiers to stage on Jambi (t50-t62, "a land
+//!   force of 7 will advance for Siege Jambi") while Stockholm, its walls
+//!   down and 111 of 200 health gone, was defended by three.
 //!
 //! Off, nothing changes: `wall_threat` is false and every premium is zero.
 //! Every seat and lane reads it: the rule only ever names a unit standing at

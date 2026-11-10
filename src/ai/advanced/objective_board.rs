@@ -1296,6 +1296,23 @@ impl AdvancedAi {
             }
         }
         let mut previous_siege: Option<ObjectiveKey> = None;
+        // `siege-at-the-walls-dies-first`: while a gun or a taker stands at
+        // our walls, outside a Conquest plan, no Siege row is raised and the
+        // army stays to kill it. False with the gene off. See
+        // `advanced/siege_at_the_walls_dies_first.rs`.
+        let walls_hold = self.siege_at_the_walls_dies_first
+            && !arena
+            && plan.strategy != GrandStrategy::Conquest
+            && g.units.values().any(|unit| {
+                self.observed(g, pid, visible, unit)
+                    && super::siege_at_the_walls_dies_first::threatens_our_walls(g, pid, unit.id)
+            });
+        if walls_hold && !siege_cities.is_empty() {
+            think!(self.journal(), Military, Decision,
+                "Siege rows stand down: a gun or a taker stands at our walls";
+                "siege-at-the-walls-dies-first: {} Siege row(s) held while it lives; the army stays home",
+                siege_cities.len());
+        }
         // `outclassed-siege-stands-down`: cities whose Siege row is left out
         // this assessment. They still cover their neighbourhood against
         // Destroy rows below. Empty with the gene off.
@@ -1308,6 +1325,10 @@ impl AdvancedAi {
                 continue;
             }
             let city_pos = city.pos;
+            if walls_hold {
+                stood_down.push(city_pos);
+                continue;
+            }
             if self.siege_stands_down(g, pid, cid, pool) {
                 stood_down.push(city_pos);
                 continue;
