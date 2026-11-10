@@ -342,9 +342,10 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by Preslav's description, now its shipped Loyalty bonus.
     // Moved again by `Units.WMDCapable` on the Bomber, Jet Bomber and Nuclear
     // Submarine, which is what lets those three carry a device.
+    // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:1f5dad846d7a815b"
+        "fnv1a64:5e27c254aed61f85"
     );
 }
 

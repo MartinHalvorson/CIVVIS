@@ -5532,6 +5532,10 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // A Religion-target founder's spreaders go where the host's pressure
+    // rows say a majority is cheapest. See
+    // `advanced/religion_seat_counts_the_pressure.rs`.
+    Gene { tag: "religion-seat-counts-the-pressure", field: "religion_seat_counts_the_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_counts_the_pressure, disable: AdvancedAi::disable_religion_seat_counts_the_pressure },
     // Live 11-09: Apostles offered Debater that took it averaged 0.94 kills and
     // 2.79 spreads; those offered it that took another 0.07 and 1.22.
     Gene { tag: "religion-seat-takes-the-debater", field: "religion_seat_takes_the_debater", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_debater, disable: AdvancedAi::disable_religion_seat_takes_the_debater },

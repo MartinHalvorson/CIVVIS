@@ -331,18 +331,6 @@ impl Game {
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
-                    if self.grants_city_state_unique_bonus(city.owner, "Bandar Brunei") {
-                        let posts = self
-                            .players
-                            .iter()
-                            .filter(|player| {
-                                player
-                                    .counters
-                                    .contains_key(&format!("trading_post_city:{}", dc.id))
-                            })
-                            .count() as f64;
-                        rys.gold += posts;
-                    }
                     if self.grants_city_state_unique_bonus(city.owner, "Venice") {
                         rys.gold +=
                             dc.owned_tiles
