@@ -1,16 +1,18 @@
 {
   "kind": "captured_native_action_pairs_v1",
   "tag": "curator-sits-with-the-works",
-  "scope": "One frozen ci-profile civvis_orders built from this branch, run on clones of live Deity Kristina civvis-20261110T152217Z (t125, t142, t150) and civvis-20261110T144009Z (t145, t150) events.jsonl, each with its run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. Pingala held Curator in Goteborg with no Great Works in both runs. Orders changed at 152217Z t142/t150 (governor_assign Pingala to Stockholm, 4-5 Writing/Art/Music works) and 144009Z t145/t150 (to Vasteras, a full Art Museum); t125 is the unchanged control (no city cleared the margin). Proposed actions only; no host execution or strength claim.",
+  "scope": "One frozen ci-profile civvis_orders built from this branch (the seat fix), run on clones of live Deity Kristina civvis-20261110T152217Z (t142, t150), civvis-20261110T144009Z (t145, t150) and civvis-20261110T193814Z (t163, t178, t179) events.jsonl, each with its run's own forced tags (193814Z carried this gene; it is removed from both arms first), --victory culture and --resumed; the on arm adds only this tag. Orders changed at 152217Z t142/t150 (governor_assign Pingala, Curator in Goteborg with no works, to Stockholm) and 144009Z t145/t150 (to Vasteras), and at 193814Z t163, the board where the loyalty backstop took Pingala to newly settled Malmo: the off arm assigns GOVERNOR_THE_EDUCATOR to Malmo, the on arm GOVERNOR_THE_MERCHANT (Reyna). At 193814Z t178/t179 Pingala, already in Linkoping, holds his seat (Linkoping Loyalty 62-63; why line 'Pingala keeps his seat'). Proposed actions only; no host execution or strength claim.",
   "archive": {
     "path": "docs/eval/2026-11-10-curator-sits-with-the-works.native-queries.tar.xz",
-    "sha256": "adb4ebfd9afd38381ae6eab14a76911f636859ba9eed005885be8a9810d0d191"
+    "sha256": "24113634d73472be1554704d37256670d9c7339fdec0ca9fcf7f0931b774cbe3"
   },
   "members": [
     "native-queries/0000/result.json",
     "native-queries/0001/result.json",
     "native-queries/0002/result.json",
     "native-queries/0003/result.json",
-    "native-queries/0004/result.json"
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json",
+    "native-queries/0006/result.json"
   ]
 }

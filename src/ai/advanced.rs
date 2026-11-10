@@ -25972,6 +25972,10 @@ impl AdvancedAi {
             self.strategic_governors(g, pid, &plan);
             self.relocate_governors_for_dividends(g, pid, &plan);
         }
+        // `curator-sits-with-the-works`: both loyalty backstops below (this
+        // one and the ancillary pass's) send another Governor before a
+        // Pingala holding Curator. False with the gene off.
+        self.base.curator_keeps_his_seat = self.curator_seat_active(g);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured
