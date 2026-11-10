@@ -8134,6 +8134,39 @@ async function setPace(opts) {
 }
 function scheduleSpec(_st) {} // server-driven; kept for legacy call sites
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
+// A device belongs to the nation, so the order names a target rather than a
+// carrier: the engine sends whichever silo, submarine or bomber can reach it.
+function nuclearLaunchButtons() {
+  const offered = new Set();
+  let html = "";
+  for (const a of legalFor("wmd_strike")) {
+    const offer = `${key(a.target)}:${a.thermonuclear}`;
+    if (offered.has(offer)) continue;
+    offered.add(offer);
+    const city = state.cities.find(candidate => key(candidate.pos) === key(a.target));
+    const place = city ? escapeAttr(city.name) : a.target.join(",");
+    html += `<button class="danger" title="Launch from the nearest silo, submarine or bomber in range" ` +
+      `onclick='send(${JSON.stringify(a)})'>☢ ${a.thermonuclear ? "Thermonuclear" : "Nuclear"} @ ${place}</button>`;
+  }
+  return html;
+}
+// Strikes the city itself can fire. The map click that used to take these was
+// armed by a flag nothing ever set, so they had no way to be given.
+function cityStrikeButtons(cityId) {
+  const name = target => {
+    const unit = state.units.find(candidate => key(candidate.pos) === key(target));
+    return unit ? titleCase(unit.type) : target.join(",");
+  };
+  const labels = {city_strike: "🏹 City strike", encampment_strike: "🏹 Encampment strike",
+    district_strike: "🏹 District strike"};
+  let html = "";
+  for (const a of state.legal_actions) {
+    if (labels[a.type] && a.city === cityId)
+      html += `<button class="danger" onclick='send(${JSON.stringify(a)})'>${labels[a.type]} @ ${escapeAttr(name(a.target))}</button>`;
+  }
+  if (legalFor("wmd_strike").some(a => a.city === cityId)) html += nuclearLaunchButtons();
+  return html;
+}
 
 function eventViewKey(st) {
   if (!st) return "none";
@@ -30682,6 +30715,9 @@ function drawCityScreen() {
             `<span class="city-tag">${titleCase(job)}</span>`).join("")}</div>` : "") +
       `</div>`;
   }
+  const strikes = cityStrikeButtons(city.id);
+  if (strikes)
+    dossier += `<div class="city-group"><div class="city-group-head">Strikes</div>${strikes}</div>`;
   document.getElementById("cityscreen-dossier").innerHTML = dossier;
 
   // Everything this city could start, gathered by what it is rather than by
@@ -30892,6 +30928,18 @@ function drawUbar() {
       h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>⌖ Priority target @ ${a.target.join(",")}</button>`;
     if (a.type === "air_patrol")
       h += `<button onclick='send(${JSON.stringify(a)})'>✈ Air patrol</button>`;
+    if (a.type === "swap") {
+      const peer = state.units.find(candidate => candidate.id === a.other);
+      h += `<button onclick='send(${JSON.stringify(a)})'>⇄ Swap with ${peer ? titleCase(peer.type) : `#${a.other}`}</button>`;
+    }
+    if (a.type === "build_railroad")
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚒ Build railroad</button>`;
+    if (a.type === "contribute_district") {
+      const city = state.cities.find(candidate => candidate.id === a.city);
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚒ Contribute to ${city ? city.name : "city"}</button>`;
+    }
+    if (a.type === "disband_unit")
+      h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>✖ Disband</button>`;
     if (a.type === "fortify")
       h += `<button title="Fortify (F)" onclick='send({type:"fortify",unit:${u.id}})'>⛨ Fortify</button>`;
     if (a.type === "upgrade_unit")
@@ -30929,6 +30977,7 @@ function drawUbar() {
     if (a.type === "convert_barbarians")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
+  if ((RULES.units[u.type] || {}).wmd_capable) h += nuclearLaunchButtons();
   // The verb a new player looks for. Right-click is the fast way, and nothing
   // on screen would ever tell them so.
   if (u.moves_left > 0)
