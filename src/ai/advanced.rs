@@ -6769,6 +6769,10 @@ pub struct AdvancedAi {
     /// researches Astrology once its first Theater Square stands. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater: bool,
+    /// `culture-gold-buys-the-shrines`: while the Culture Faith sources are
+    /// open, the treasury buys one Shrine or Temple a turn in a standing Holy
+    /// Site city. See `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_gold_buys_the_shrines: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -25903,6 +25907,10 @@ impl AdvancedAi {
         // city-saving or surprise-defense purchase already owns the turn.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.modernize_before_the_purchase_pass(g, pid);
+            // `culture-gold-buys-the-shrines`: a standing Holy Site's Shrine
+            // or Temple, before the general purchase pass. Exact no-op while
+            // the gene is off. See `advanced/culture_faith_sources.rs`.
+            self.buy_culture_shrine(g, pid, &plan);
         }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);

@@ -146,6 +146,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-gold-buys-the-shrines`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_gold_buys_the_shrines => enable_culture_gold_buys_the_shrines, disable_culture_gold_buys_the_shrines;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

@@ -11,6 +11,13 @@
 //! Astrology once the first Theater Square stands
 //! (`AdvancedAi::culture_faith_astrology_due`), so the sites are unlocked
 //! when the sources open.
+//!
+//! `culture-gold-buys-the-shrines` pays for the buildings behind a finished
+//! Holy Site: while the sources are open, the purchase pass buys one Shrine
+//! (else Temple) a turn with Gold in a safe Holy Site city, cheapest first,
+//! keeping the upkeep floor plus `CULTURE_SHRINE_GOLD_RESERVE_PER_CITY` a city.
+//! The production the city would have spent (35 and 60 on Online) goes to its
+//! next claim instead.
 
 use super::*;
 
@@ -40,6 +47,13 @@ const CULTURE_FAITH_SITES_PER_THEATER_CAP: usize = 6;
 /// sources reach the 60 a turn the Rock Bands need by t100; the old ceiling
 /// of eight a city stopped a four-city empire at 32.
 const CULTURE_FAITH_PER_THEATER_INCOME: (f64, f64) = (20.0, 160.0);
+
+/// `culture-gold-buys-the-shrines`: Gold a city the Shrine or Temple buy
+/// leaves in the treasury, on top of the army's upkeep floor. Live Deity
+/// Online Kristina 2026-11-10 (six games with a Holy Site) held 120-290 Gold
+/// and earned +8 to +81 a turn when each Holy Site finished, yet waited 2-38
+/// turns for the Shrine and 5-53 for the Temple (Online prices 140 and 240).
+const CULTURE_SHRINE_GOLD_RESERVE_PER_CITY: f64 = 25.0;
 
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
@@ -304,6 +318,86 @@ impl AdvancedAi {
                 "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
                 "one safe source at a time, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
         }
+    }
+
+    /// `culture-gold-buys-the-shrines`: the Shrine or Temple the treasury
+    /// buys this turn, as (city, building, Gold price). While the Culture
+    /// Faith sources are open (`culture_faith_source_budget`, which already
+    /// stops once Faith meets its ceiling or the treasury is draining), a safe
+    /// city with a standing Holy Site and no Shrine (or a Shrine and no
+    /// Temple) is a candidate; the cheapest wins, lowest city id on a tie.
+    /// The buy must leave the upkeep floor plus
+    /// [`CULTURE_SHRINE_GOLD_RESERVE_PER_CITY`] a city, and income must not be
+    /// negative. `None` with the gene off or for another target.
+    pub(super) fn culture_shrine_purchase(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Name, f64)> {
+        if !self.culture_gold_buys_the_shrines || g.players[pid].gold_per_turn < 0.0 {
+            return None;
+        }
+        self.culture_faith_source_budget(g, pid)?;
+        let cities = g.player_city_ids(pid);
+        let floor = self.purchase_upkeep_floor(g, pid, 0.0)
+            + CULTURE_SHRINE_GOLD_RESERVE_PER_CITY * cities.len() as f64;
+        let gold = g.players[pid].gold;
+        let mut best: Option<(u32, Name, f64)> = None;
+        for cid in cities {
+            if !g.city_has_district_family(&g.cities[&cid], crate::name!("holy_site"))
+                || !Self::culture_faith_city_safe(g, pid, cid, plan)
+            {
+                continue;
+            }
+            let Some(Item::Building { building }) = BasicAi::civ_building(g, pid, cid, "shrine")
+                .or_else(|| BasicAi::civ_building(g, pid, cid, "temple"))
+            else {
+                continue;
+            };
+            let Some(price) = g.building_gold_purchase_cost(pid, cid, &building) else {
+                continue;
+            };
+            if !price.is_finite() || gold + f64::EPSILON < price + floor {
+                continue;
+            }
+            if best.as_ref().is_none_or(|(old_city, _, old_price)| {
+                price.total_cmp(old_price).then(cid.cmp(old_city)).is_lt()
+            }) {
+                best = Some((cid, building, price));
+            }
+        }
+        best
+    }
+
+    /// `culture-gold-buys-the-shrines`: buy [`Self::culture_shrine_purchase`].
+    /// True when bought. Exact no-op with the gene off.
+    pub(super) fn buy_culture_shrine(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        let Some((city, building, price)) = self.culture_shrine_purchase(g, pid, plan) else {
+            return false;
+        };
+        let bank = g.players[pid].gold;
+        if g.apply(
+            pid,
+            &Action::BuyBuilding {
+                city,
+                building,
+                currency: "gold".to_string(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        think!(self.journal(), Faith, Decision,
+            "{} buys its {} with Gold for Culture's Faith", g.cities[&city].name, building;
+            "culture-gold-buys-the-shrines: {price:.0} of {bank:.0} Gold; the Holy Site already stands, and each turn it waits is a turn of Faith the Rock Bands lose");
+        true
     }
 }
 

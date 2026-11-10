@@ -472,3 +472,80 @@ fn per_theater_researches_astrology_once_a_theater_stands() {
     g.players[0].techs.remove(&crate::name!("astrology"));
     assert!(!science.culture_faith_astrology_due(&g, 0));
 }
+
+fn shrine_board() -> (Game, AdvancedAi, StrategicPlan, u32) {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_gold_buys_the_shrines();
+    let cid = cities[0];
+    crate::game::install_test_district(&mut g, cid, "holy_site");
+    g.players[0].gold = 1_000.0;
+    g.players[0].gold_per_turn = 10.0;
+    (g, ai, plan, cid)
+}
+
+#[test]
+fn gold_buys_the_shrine_then_the_temple_behind_a_standing_holy_site() {
+    let (mut g, ai, plan, cid) = shrine_board();
+    let (city, building, price) = ai
+        .culture_shrine_purchase(&g, 0, &plan)
+        .expect("a Shrine is for sale");
+    assert_eq!((city, building), (cid, crate::name!("shrine")));
+    assert_eq!(Some(price), g.building_gold_purchase_cost(0, cid, "shrine"));
+    assert!(ai.buy_culture_shrine(&mut g, 0, &plan));
+    assert!(g.cities[&cid].buildings.contains(&crate::name!("shrine")));
+    assert_eq!(g.players[0].gold, 1_000.0 - price);
+    let (_, temple, _) = ai.culture_shrine_purchase(&g, 0, &plan).unwrap();
+    assert_eq!(temple, crate::name!("temple"));
+    assert!(ai.buy_culture_shrine(&mut g, 0, &plan));
+    assert!(g.cities[&cid].buildings.contains(&crate::name!("temple")));
+    assert!(
+        ai.culture_shrine_purchase(&g, 0, &plan).is_none(),
+        "nothing left to buy in the only Holy Site city"
+    );
+}
+
+#[test]
+fn gold_buys_a_queued_shrine_and_the_claim_moves_on() {
+    let (mut g, ai, plan, cid) = shrine_board();
+    ai.claim_culture_faith_source(&mut g, 0, &plan);
+    let shrine = Item::Building {
+        building: crate::name!("shrine"),
+    };
+    assert_eq!(g.cities[&cid].queue.first(), Some(&shrine));
+    assert!(ai.buy_culture_shrine(&mut g, 0, &plan));
+    assert!(g.cities[&cid].buildings.contains(&crate::name!("shrine")));
+    assert_ne!(g.cities[&cid].queue.first(), Some(&shrine));
+}
+
+#[test]
+fn gold_keeps_its_reserve_and_leaves_other_seats_alone() {
+    let (g, ai, plan, cid) = shrine_board();
+    let price = g.building_gold_purchase_cost(0, cid, "shrine").unwrap();
+    let reserve = CULTURE_SHRINE_GOLD_RESERVE_PER_CITY * 3.0;
+
+    let mut short = g.clone();
+    short.players[0].gold = price + reserve - 1.0;
+    assert!(ai.culture_shrine_purchase(&short, 0, &plan).is_none());
+    short.players[0].gold = price + reserve;
+    assert!(ai.culture_shrine_purchase(&short, 0, &plan).is_some());
+
+    let mut draining = g.clone();
+    draining.players[0].gold_per_turn = -1.0;
+    assert!(ai.culture_shrine_purchase(&draining, 0, &plan).is_none());
+
+    let mut off = ai.clone();
+    off.disable_culture_gold_buys_the_shrines();
+    let mut board = g.clone();
+    assert!(off.culture_shrine_purchase(&board, 0, &plan).is_none());
+    assert!(!off.buy_culture_shrine(&mut board, 0, &plan));
+    assert_eq!(board.players[0].gold, 1_000.0);
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_culture_seat_theater_first();
+    science.enable_culture_gold_buys_the_shrines();
+    assert!(science.culture_shrine_purchase(&g, 0, &plan).is_none());
+
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(cid);
+    assert!(ai.culture_shrine_purchase(&g, 0, &threatened).is_none());
+}
