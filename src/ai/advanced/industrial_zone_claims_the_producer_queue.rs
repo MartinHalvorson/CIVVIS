@@ -198,6 +198,7 @@ impl AdvancedAi {
                         || self.deterrence_unit_holds(g, pid, item)
                         || self.bound_granary_holds(g, pid, cid, plan, item)
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
+                        || self.charting_hull_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
                         || self.capped_aqueduct_holds(g, pid, cid, plan, item)
                         || self.capped_neighborhood_holds(g, pid, cid, plan, item)

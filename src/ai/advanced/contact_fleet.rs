@@ -237,7 +237,8 @@ impl AdvancedAi {
 
     /// `sea-scout-claims-the-queue`: lay down the sea scout the contact gap is
     /// waiting on, in the city that finishes it soonest, instead of waiting for
-    /// a queue to fall idle. Fires only once a hull can cross Ocean, with the
+    /// a queue to fall idle. Fires only once a hull can cross Ocean (a
+    /// technology sooner for a charting Religion founder), with the
     /// gap open and no ship afloat or queued (`naval_recon_is_the_missing_arm`
     /// counts both), so one claim stands until that ship is lost. `naval_eye_holds`
     /// keeps it from there, which is why `contact-fleet` is required. See the
@@ -250,7 +251,10 @@ impl AdvancedAi {
     ) {
         if !(self.sea_scout_claims_the_queue || self.sea_scout_claims_the_queue_2)
             || !self.base.contact_fleet
-            || !BasicAi::naval_recon_can_cross_ocean(g, pid)
+            // `religion-seat-charts-the-rivals`: a Religion founder lays the
+            // hull down one technology early, so it is afloat at Cartography.
+            || !(BasicAi::naval_recon_can_cross_ocean(g, pid)
+                || self.religion_seat_hull_before_cartography(g, pid))
             || !self.base.contact_gap_open(g, pid)
             || !self.base.naval_recon_is_the_missing_arm(g, pid)
             || self.base.naval_recon_yields_to_land_recon(g, pid)
@@ -321,6 +325,44 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
+        if !self.naval_eye_commitment(g, pid, cid, plan, item) {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);
+            let city_states = g
+                .players
+                .iter()
+                .filter(|other| {
+                    other.alive
+                        && other.is_minor
+                        && !other.is_barbarian
+                        && !other.is_free_city
+                        && !g.has_met(pid, other.id)
+                })
+                .count();
+            let turns = g.item_remaining_cost_for_city(pid, cid, item)
+                / g.city_yields(cid).production.max(1.0);
+            think!(self.journal(), Economy, Detail,
+                   "{} keeps its {} for the contact fleet", g.cities[&cid].name,
+                   Self::plain_item(item);
+                   "contact-fleet: {unmet} major(s) unmet, {unlocated} met but unlocated, \
+                    {city_states} city-state(s) unmet, and no ship of ours is charting; \
+                    {turns:.1} turns to launch");
+        }
+        true
+    }
+
+    /// [`Self::naval_eye_holds`] without its journal line, for the callers
+    /// that ask every frame whether a hull at the head is the committed one.
+    pub(super) fn naval_eye_commitment(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
         if !self.base.contact_fleet
             || !(self.base.naval_recon_on() || self.base.island_exploration_active(g, pid))
             || !self.contact_fleet_hull_may_hold(g, pid, cid, plan, item)
@@ -342,8 +384,7 @@ impl AdvancedAi {
             g.item_remaining_cost_for_city(pid, city, head)
                 / g.city_yields(city).production.max(1.0)
         };
-        let first = g
-            .player_city_ids(pid)
+        g.player_city_ids(pid)
             .into_iter()
             .filter_map(|city| {
                 let head = g.cities[&city].queue.first()?;
@@ -351,31 +392,8 @@ impl AdvancedAi {
                     .then(|| (turns(city, head), city))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
-            .map(|(_, city)| city);
-        if first != Some(cid) {
-            return false;
-        }
-        if self.journal().wants(crate::reasoning::Level::Detail) {
-            let (unmet, unlocated) = BasicAi::contact_fleet_missing_majors(g, pid);
-            let city_states = g
-                .players
-                .iter()
-                .filter(|other| {
-                    other.alive
-                        && other.is_minor
-                        && !other.is_barbarian
-                        && !other.is_free_city
-                        && !g.has_met(pid, other.id)
-                })
-                .count();
-            think!(self.journal(), Economy, Detail,
-                   "{} keeps its {} for the contact fleet", g.cities[&cid].name,
-                   Self::plain_item(item);
-                   "contact-fleet: {unmet} major(s) unmet, {unlocated} met but unlocated, \
-                    {city_states} city-state(s) unmet, and no ship of ours is charting; \
-                    {:.1} turns to launch", turns(cid, item));
-        }
-        true
+            .map(|(_, city)| city)
+            == Some(cid)
     }
 }
 

@@ -3795,6 +3795,36 @@ fn a_ranged_unit_stacked_on_a_city_center_cannot_fire() {
 }
 
 #[test]
+fn an_embarked_apostle_fights_onto_land_but_not_on_the_water() {
+    let fight_offered = |target_on_water: bool| {
+        let (mut g, center, ring) = controlled_game(3174);
+        g.at_war.clear();
+        g.players[0].religion = Some("A".to_string());
+        g.players[1].religion = Some("B".to_string());
+        g.players[0].techs.insert(crate::name!("shipbuilding"));
+        g.players[1].techs.insert(crate::name!("shipbuilding"));
+        g.map.tiles.get_mut(&ring[0]).unwrap().terrain = crate::name!("coast");
+        if target_on_water {
+            g.map.tiles.get_mut(&center).unwrap().terrain = crate::name!("coast");
+        }
+        let apostle = g.spawn_unit("apostle", 0, ring[0]);
+        g.spawn_unit("apostle", 1, center);
+        assert!(g.is_embarked(&g.units[&apostle]), "fixture: on the water");
+        let action = Action::TheologicalAttack {
+            unit: apostle,
+            target: center,
+        };
+        let legal = g.legal_actions(0).contains(&action);
+        let applied = g.apply(0, &action).is_ok();
+        assert_eq!(legal, applied, "legal_actions and apply must agree");
+        legal
+    };
+
+    assert!(fight_offered(false), "from the water onto land is a fight");
+    assert!(!fight_offered(true), "the host has no path on the water");
+}
+
+#[test]
 fn theological_combat_and_condemnation_change_nearby_pressure() {
     let (mut g, center, ring) = controlled_game(3163);
     g.at_war.clear();

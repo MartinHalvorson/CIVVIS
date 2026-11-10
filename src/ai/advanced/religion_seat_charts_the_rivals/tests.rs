@@ -535,3 +535,18 @@ fn a_charting_spreader_keeps_its_goal_until_it_is_seen() {
         assert!(!walked.players[0].explored.contains(&second));
     }
 }
+
+/// The contact hull may be laid down once Buttress is known, a technology
+/// before a ship can cross Ocean, and only for a seat the gene acts for.
+#[test]
+fn the_contact_hull_may_be_laid_down_at_buttress() {
+    let (mut game, _) = founder(5);
+    let on = seat(VictoryTarget::Religion, true);
+    assert!(!on.religion_seat_hull_before_cartography(&game, 0));
+    game.players[0].techs.insert(Name::new("buttress"));
+    assert!(on.religion_seat_hull_before_cartography(&game, 0));
+    assert!(!seat(VictoryTarget::Religion, false).religion_seat_hull_before_cartography(&game, 0));
+    assert!(!seat(VictoryTarget::Culture, true).religion_seat_hull_before_cartography(&game, 0));
+    game.players[0].religion = None;
+    assert!(!on.religion_seat_hull_before_cartography(&game, 0));
+}
