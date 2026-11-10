@@ -14457,6 +14457,43 @@ fn a_rocket_on_a_route_with_no_depth_keeps_its_own_length() {
     assert!(!js.contains("const depth = limb ? (ahead.z - behind.z) * limb.r : 0;"));
 }
 
+/// Parked at another world with home out of the picture, a launch going
+/// somewhere else goes by along the top of the frame, left to right, in
+/// about two seconds. One landing on the world in view still comes in and
+/// brakes, so that question has to be asked first.
+#[test]
+fn a_launch_passing_another_world_crosses_the_top_of_the_frame() {
+    let js = EMBEDDED_APP_JS;
+    let plan = js
+        .split_once("function skyPlanMission(")
+        .expect("the mission planner")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the mission planner")
+        .0;
+    let arrive = plan
+        .find("return {kind:\"arrive\"}")
+        .expect("a landing in view");
+    let passing = plan
+        .find("if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:\"crossing\"};")
+        .expect("a launch going by");
+    let ascent = plan.find("skyBestAscent(").expect("a climb from the pad");
+    assert!(arrive < passing && passing < ascent);
+
+    let flyby = js
+        .split_once("function skyLaunchFlyby(")
+        .expect("the flyby route")
+        .1
+        .split_once("\n}\n")
+        .expect("the end of the flyby route")
+        .0;
+    assert!(flyby.contains("launch.duration = SKY_FLYBY_MS;"));
+    assert!(flyby.contains("return {start:{x:left, y}, end:{x:right, y},"));
+    assert!(js.contains("const SKY_FLYBY_MS = 2200;"));
+    assert!(js.contains("const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18,"));
+    assert!(js.contains("const fade = film.flyby ? 1 : trailFade;"));
+}
+
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
 /// not make them navigable. Sixty-five notches is a distance nobody
 /// scrolls, and every one of them has to be aimed over empty space. So the
