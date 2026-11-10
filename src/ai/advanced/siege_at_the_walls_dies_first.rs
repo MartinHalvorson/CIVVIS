@@ -6,9 +6,10 @@
 //!
 //! **Why (live Deity Online Kristina, 2026-11-10).** Five of sixteen Sweden
 //! culture seats were eliminated, and nine of the sixteen lost Stockholm, the
-//! capital, between turns 34 and 103. In seven of the fourteen cities lost
-//! before turn 110 a Catapult, Trebuchet or Domrey did most of the damage to
-//! the walls over the eight turns before the fall, and we let it stand:
+//! capital, between turns 34 and 103. In eight of the eighteen cities lost
+//! at war before turn 130 a Catapult, Trebuchet or Domrey did most of the
+//! damage to the walls over the eight turns before the fall, and we let it
+//! stand:
 //! - 173141Z: one Catapult two tiles from Stockholm fired four turns running
 //!   (64, 79 and 20 damage; the walls fell, the city's own strike went with
 //!   them) while nine of ours stood within three tiles. The archers shot
@@ -22,13 +23,13 @@
 //!   two turns while the archers killed a Warrior and a Heavy Chariot; the
 //!   city fell at 60.
 //!
-//! Across the five eliminated games, on 59 turns an enemy siege gun stood
-//! within two tiles of a city of ours, and on 41 of them we did not hit one.
+//! Across the five eliminated games, on 77 turns an enemy siege gun stood
+//! within two tiles of a city of ours, and on 49 of them we did not hit one.
 //! The kill plan prices a kill at `unit_value` and a wound at
 //! `damage_value`, with a flat +65 / +18 for a siege unit: a full-health
-//! Catapult takes three or four blows, so a plan that finishes two wounded
-//! Warriors always outscores it. Nothing on that scale reads what the gun
-//! will do to the walls next turn.
+//! Catapult takes three or four blows, so finishing any wounded soldier
+//! outscores a blow on it, and nothing on that scale reads what the gun will
+//! do to the walls next turn.
 //!
 //! **What the gene does.** A *wall threat* is a hostile land unit we are at
 //! war with that is either a siege gun (`UnitSpec::siege`) within its

@@ -5644,9 +5644,9 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
-    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 7 of 14
-    // cities lost before t110 a Catapult/Trebuchet/Domrey broke the walls, and
-    // on 41 of 59 turns a gun stood within two tiles we did not hit one. See
+    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 8 of 18
+    // cities lost at war before t130 a Catapult/Trebuchet/Domrey broke the
+    // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
     // ---- append: t-z ------------------------------------------------
