@@ -513,6 +513,22 @@ def check_gate(dist: pathlib.Path) -> list[str]:
 # ------------------------------------------------------------------- checks
 
 
+# A canvas that drew nothing is uniformly transparent. Sample it rather than
+# trusting that a screenshot with chrome in it means the world underneath was
+# rendered. The map is asked for by id: the viewer also keeps a WebGL surface
+# under it, earlier in the document, and that one has no 2D context to read.
+# This check runs Chrome with --disable-gpu, where the viewer keeps painting
+# the whole map on the 2D canvas.
+MAP_CANVAS_COLOURS_JS = (
+    "(() => { const c = document.getElementById('map'); if (!c) return -1;"
+    " const g = c.getContext('2d'); if (!g) return -1;"
+    " const d = g.getImageData(0, 0, c.width, c.height).data;"
+    " const seen = new Set(); for (let i = 0; i < d.length; i += 4 * 997)"
+    "   seen.add(`${d[i]},${d[i+1]},${d[i+2]},${d[i+3]}`);"
+    " return seen.size; })()"
+)
+
+
 def uncaught_problems(console: list[str]) -> list[str]:
     """Whether the page threw. An uncaught exception reaches `Devtools.console`
     with its stack, which a warning does not, and a page throwing in its draw
@@ -846,17 +862,7 @@ def main(argv: list[str] | None = None) -> int:
         boot_failed = dev.evaluate(
             "document.body.innerText.includes('CIVVIS boot failed')"
         )
-        painted = dev.evaluate(
-            # A canvas that drew nothing is uniformly transparent. Sample it
-            # rather than trusting that a screenshot with chrome in it means
-            # the world underneath was rendered.
-            "(() => { const c = document.querySelector('canvas'); if (!c) return -1;"
-            " const g = c.getContext('2d'); if (!g) return -1;"
-            " const d = g.getImageData(0, 0, c.width, c.height).data;"
-            " const seen = new Set(); for (let i = 0; i < d.length; i += 4 * 997)"
-            "   seen.add(`${d[i]},${d[i+1]},${d[i+2]},${d[i+3]}`);"
-            " return seen.size; })()"
-        )
+        painted = dev.evaluate(MAP_CANVAS_COLOURS_JS)
         build_marker = dev.evaluate(
             "document.getElementById('buildmark')?.textContent || ''"
         )
