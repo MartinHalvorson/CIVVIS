@@ -4795,7 +4795,13 @@ fn religious_spreads_combat_and_guru_healing_follow_gathering_storm() {
     assert_eq!(g.cities[&cid].pressure["Rival"], 202.5);
     assert_eq!(g.cities[&cid].pressure["Our"], 420.0);
 
-    let victim = g.spawn_unit("missionary", 1, city_pos);
+    // Beside the city, not in it: the host has no path into a rival City Center.
+    let victim_pos = g
+        .nbrs(ring[1])
+        .into_iter()
+        .find(|pos| *pos != city_pos && g.unit_ids_at(*pos).is_empty())
+        .unwrap();
+    let victim = g.spawn_unit("missionary", 1, victim_pos);
     {
         let victim = g.units.get_mut(&victim).unwrap();
         victim.religion = Some("Rival".to_string());
@@ -4810,7 +4816,7 @@ fn religious_spreads_combat_and_guru_healing_follow_gathering_storm() {
         0,
         &Action::TheologicalAttack {
             unit: apostle,
-            target: city_pos,
+            target: victim_pos,
         },
     )
     .unwrap();
