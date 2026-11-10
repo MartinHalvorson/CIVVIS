@@ -15060,7 +15060,7 @@ fn banner_faith_rows_are_kept_beside_the_majority_markers() {
         ]))
         .unwrap(),
     );
-    mirror.update(&snapshot, &state);
+    mirror.sync(&snapshot, &state, 0);
     let rows = &mirror.game.observed_city_faiths[&city];
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].religion.as_deref(), Some("Buddhism"));
@@ -15086,7 +15086,7 @@ fn banner_faith_rows_are_kept_beside_the_majority_markers() {
 
     // An export without rows is an unknown and keeps the remembered ones.
     state.cities[0].faiths = None;
-    mirror.update(&snapshot, &state);
+    mirror.sync(&snapshot, &state, 0);
     assert_eq!(mirror.game.observed_city_faiths[&city].len(), 4);
 
     // The rows survive a save and load.
