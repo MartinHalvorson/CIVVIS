@@ -165,6 +165,10 @@ fn a_threatened_city_refuses_the_card() {
     ai.strategic_policies(&mut g, 0, GrandStrategy::Culture);
     assert!(!slotted(&g, "flower_power"));
     assert!(slotted(&g, "symphonies"));
+    let waits = lines(&ai, "Flower power waits");
+    assert_eq!(waits.len(), 1, "{waits:?}");
+    assert!(waits[0].contains("a home city is threatened"), "{waits:?}");
+    assert!(lines(&ai, "Dropping").is_empty());
 }
 
 #[test]

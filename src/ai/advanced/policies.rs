@@ -984,6 +984,9 @@ impl AdvancedAi {
                 if dropped {
                     think!(self.journal(), Policies, Decision, "Dropping flower power";
                            "flower-power-in-the-dark: {why}");
+                } else {
+                    think!(self.journal(), Policies, Detail, "Flower power waits";
+                           "flower-power-in-the-dark: {why}");
                 }
                 dropped
             }
