@@ -8447,6 +8447,9 @@ pub struct AdvancedAi {
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
     religion_seat_reaches_reformed_church: bool,
+    /// Require the launcher counter's military edge for a Religion seat's
+    /// separate science-denial declaration. Opt-in; see `religion_denial_needs_the_edge`.
+    religion_denial_needs_the_edge: bool,
     /// Let an active founder corps slot Religious Orders over a lower-ranked
     /// ordinary Economic card. See `religion_seat_slots_the_orders`. Opt-in.
     religion_seat_slots_the_orders: bool,
@@ -26415,6 +26418,7 @@ mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
+mod religion_denial_needs_the_edge;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 mod religious_interception;
