@@ -55,6 +55,21 @@
 //!     may lay the hull down
 //!     ([`AdvancedAi::religion_seat_hull_before_cartography`]); Cartography
 //!     gives every ship already afloat the Ocean.
+//! - **Across the water.** The charting goal was dry ground beside a rival
+//!   city we know, or dry fog within reach of the unit, so a rival overseas
+//!   with no city seen drew nobody. Six live games of 2026-11-10 on the armed
+//!   rule set, counting our Missionaries and Apostles embarked at t90, t105,
+//!   t120, t135 and t150: the two wins had 6, 12, 12, 11, 20 and 10, 13, 8,
+//!   18, 10; the four losses had 0 to 4 at every mark before t150. The wins
+//!   had explored 57% and 50% of the map by t125 and knew 41 of 43 and 56 of
+//!   57 rival cities at the end; the losses had explored 24% to 37%, and
+//!   civvis-20261110T125333Z ended at t185 with 34% explored, 22 of 50 rival
+//!   cities known, none of two rivals met at t110-117, and 24 spreaders with
+//!   75 charges standing. So with no dry goal left and a major still unmet
+//!   or under-charted, a charting spreader takes the fog an explorer of ours
+//!   would take from where it stands, water included
+//!   ([`AdvancedAi::religion_seat_sea_charting_goal`]), and keeps it like any
+//!   other charting goal.
 //! - **Spreaders.** A Scout cannot enter a rival's closed borders and a
 //!   religious unit can. In civvis-20261110T054430Z, with the gap and the
 //!   research parts armed, the seat bought fifteen Apostles between t75 and
@@ -240,6 +255,37 @@ impl AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Where a charting spreader sails when no dry ground it knows of is left
+    /// to chart and a major is still unmet or under-charted: the fog an
+    /// explorer of ours would take from here, water included, outside every
+    /// visible raider's reach and on a route this unit can follow. `None`
+    /// before the seat can embark, and once every major is met and charted.
+    /// See the module.
+    fn religion_seat_sea_charting_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        threats: &[BarbarianCaptureThreat],
+    ) -> Option<Pos> {
+        let unmet = g.players.iter().any(|rival| {
+            rival.id != pid
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && !rival.is_free_city
+                && !g.same_team(pid, rival.id)
+                && !g.has_met(pid, rival.id)
+        });
+        if !unmet && BasicAi::under_charted_majors(g, pid) == 0 {
+            return None;
+        }
+        self.base
+            .exploration_goal(g, pid, uid, false)
+            .filter(|goal| !Self::religious_tile_in_reach(g, pid, *goal, threats))
+            .filter(|goal| g.route_step(uid, *goal, 0).is_some())
+    }
+
     /// A spreader of ours with nothing left to convert walks into an
     /// under-charted rival's ground: unexplored dry ground within
     /// [`CHARTING_RADIUS`] of the rival city nearest it, outside every
@@ -261,7 +307,7 @@ impl AdvancedAi {
         };
         think!(self.journal(), Faith, Decision,
             "{} spreader charts a rival's ground", religion;
-            "religion-seat-charts-the-rivals: nothing we know is left to convert and a met rival holds cities we have not seen; a religious unit crosses closed borders, so it walks {} tiles to unexplored ground beside them",
+            "religion-seat-charts-the-rivals: nothing we know is left to convert and a rival holds cities we have not seen; a religious unit crosses closed borders and the sea, so it makes for unexplored ground {} tiles away",
             g.wdist(g.units[&uid].pos, goal));
         self.religious_step_toward_range(g, pid, uid, goal, 0)
     }
@@ -401,6 +447,8 @@ impl AdvancedAi {
             unlocated
                 .then(|| Self::missionary_expedition_goal(g, pid, uid, &threats))
                 .flatten()
+                // No dry ground it knows of is left: it crosses the water.
+                .or_else(|| self.religion_seat_sea_charting_goal(g, pid, uid, &threats))
         } else {
             Some(near[uid as usize % near.len()])
         };
