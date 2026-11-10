@@ -6808,6 +6808,10 @@ pub struct AdvancedAi {
     /// the threat faith stands at match point; the Faith stays for the Rock
     /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_holds_the_counterweight: bool,
+    /// `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    /// builds the last Market a near road civic's Inspiration counts. See
+    /// `advanced/culture_road_triggers.rs`. Off by default.
+    culture_road_builds_its_triggers: bool,
     /// `culture-road-takes-the-unique-first`: a Culture seat takes the civic
     /// that unlocks its own largest Culture source first and has its
     /// Builders standing when it lands. See `advanced/culture_unique_first.rs`.
@@ -9897,6 +9901,11 @@ pub struct AdvancedAi {
     /// spies answer a space race slots Machiavellianism and Cryptography. See
     /// `advanced/space_denial_spy_cards.rs`. Off by default.
     space_denial_slots_the_spy_cards: bool,
+    /// `siege-at-the-walls-dies-first`: a hostile siege gun in reach of our
+    /// walls, or a taker beside an open city of ours, is the first target of
+    /// the kill plan, the ladder and the city strike. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    siege_at_the_walls_dies_first: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10883,6 +10892,8 @@ mod culture_recovery_bank;
 /// `culture-road-earns-its-inspirations`: see
 /// `advanced/culture_road_inspirations.rs`.
 mod culture_road_inspirations;
+/// `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`.
+mod culture_road_triggers;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
@@ -11052,6 +11063,10 @@ pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 mod close_as_a_body;
 
 mod siege_production;
+
+/// `siege-at-the-walls-dies-first`: a gun at our walls is the first target.
+/// See `advanced/siege_at_the_walls_dies_first.rs`.
+mod siege_at_the_walls_dies_first;
 
 /// Opt-in routing from a Defend task force to its assigned city.
 mod anvil_assignment;
@@ -17471,6 +17486,10 @@ impl AdvancedAi {
             gold_buys_the_settler::SettlerFund::Saving { reserve: fund } => reserve.max(fund),
             gold_buys_the_settler::SettlerFund::Off => reserve,
         };
+        // `culture-gold-buys-the-shrines`: a wanted Shrine or Temple keeps its
+        // price from the discretionary purchases below. See
+        // `advanced/culture_faith_sources.rs`.
+        let reserve = reserve.max(self.culture_shrine_gold_fund(g, pid, plan));
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
@@ -24637,11 +24656,21 @@ impl AdvancedAi {
                             + strength * 2.0
                             + if siege { 70.0 } else { 0.0 }
                             + if captures { 30.0 } else { 0.0 }
+                            // `siege-at-the-walls-dies-first`: zero with the
+                            // gene off. See its module.
+                            + self.wall_threat_premium(g, pid, unit, 0.0, true)
                     }
                     Some(defender) => {
                         (hp - defender.hp).max(0) as f64 * (1.0 + strength / 100.0)
                             + if siege { 25.0 } else { 0.0 }
                             + if captures { 8.0 } else { 0.0 }
+                            + self.wall_threat_premium(
+                                g,
+                                pid,
+                                unit,
+                                f64::from((hp - defender.hp).max(0)),
+                                false,
+                            )
                     }
                 },
             )

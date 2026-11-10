@@ -186,6 +186,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_culture_monuments(g, pid, plan);
         }
+        // `culture-road-builds-its-triggers`: the last Market a near road
+        // civic's Inspiration counts, after the Culture claims. Exact no-op
+        // while the gene is off. See `advanced/culture_road_triggers.rs`.
+        if !war_holds {
+            self.claim_culture_road_triggers(g, pid, plan);
+        }
         // `culture-digs-every-site`: the Museum city's Archaeologist, after
         // the Culture claims, and while the war holds the economy's claims
         // too (a threatened city and a military head at war keep their

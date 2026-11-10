@@ -5539,6 +5539,10 @@ pub const GENES: &[Gene] = &[
     // Domination the war needs the launcher counter's edge and spares a
     // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
     Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    // builds the last Market a near road civic's Inspiration counts. Opt-in;
+    // see `advanced/culture_road_triggers.rs`.
+    Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
     // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
@@ -5660,6 +5664,11 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 8 of 18
+    // cities lost at war before t130 a Catapult/Trebuchet/Domrey broke the
+    // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
     // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
     // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
     // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
