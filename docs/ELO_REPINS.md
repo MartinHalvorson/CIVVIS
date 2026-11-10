@@ -2351,8 +2351,8 @@ city-turns and the corrected rule on all 1,493. Every controller,
 `AdvancedAi::legacy()` included, now plays under the corrected majorities.
 
 The engine before this change measures v49's **18,828 decisions /
-`0xd90f_0e2b_1eab_6f7a`**. The corrected engine measures **MEASURE decisions /
-`MEASURE`**. The legacy planning configuration and the five
+`0xd90f_0e2b_1eab_6f7a`**. The corrected engine measures **18,801 decisions /
+`0xcedd_2626_df03_b554`**. The legacy planning configuration and the five
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
