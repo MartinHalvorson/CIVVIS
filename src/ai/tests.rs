@@ -4946,7 +4946,7 @@ fn the_capital_opens_its_campus_before_the_next_settler() {
         1,
         24,
         16,
-        crate::rng::fixture_seed("CAPITALCAMPUS", 91_802),
+        crate::rng::fixture_seed("CAPITALCAMPUS", 91_803),
         250,
         0,
         false,
@@ -10142,7 +10142,7 @@ fn a_refused_shot_no_longer_shadows_the_legal_one() {
 /// turn.
 #[test]
 fn an_archer_steps_once_and_shoots_in_the_same_turn() {
-    let mut g = Game::new_full(2, 24, 16, 37_107, 30, 0, false);
+    let mut g = Game::new_full(2, 24, 16, 37_108, 30, 0, false);
     for unit in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(unit);
     }
@@ -11918,7 +11918,7 @@ fn one_queued_spaceport_reserves_the_empire_launch_site() {
         1,
         30,
         20,
-        crate::rng::fixture_seed("SPACEPORT", 324_006),
+        crate::rng::fixture_seed("SPACEPORT", 324_009),
         100,
         0,
         false,

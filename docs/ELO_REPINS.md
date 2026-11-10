@@ -2391,3 +2391,20 @@ The engine before this change measures **18,921 decisions /
 `0x9604_d47e_0940_3530`**. The legacy planning configuration and the five
 anchor profiles are unchanged. This re-pin records a rules boundary and does
 not establish stronger play.
+
+## v53 (2026-11-10) — volcanoes, fissures, seams, lakes and Woods follow the shipped map scripts
+
+A rules correction in map generation (`src/mapgen.rs`, `src/mapgen/lakes.rs`),
+read from `DLC/Expansion2/Maps/Utility`. `AddTerrainFromContinents` now sets the
+volcano budget and raises Mountains and Hills along continent seams, the fissure
+half of `AddFeaturesFromContinents` runs after the Natural Wonders, no world
+starts with Volcanic Soil, Marsh and Woods roll against 450, and each script
+keeps its own large-lake budget. Every seeded world is redrawn, so every
+controller, `AdvancedAi::legacy()` included, now plays on the corrected maps.
+`docs/FIDELITY.md` has the table.
+
+The engine before this change measures **18,761 decisions /
+`0x9604_d47e_0940_3530`**. The corrected engine measures **19,739 decisions /
+`0x89ea_660b_d416_d1c8`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

@@ -214,7 +214,7 @@ fn the_best_unthreatened_cities_open_a_commercial_hub_under_the_gene() {
 /// or queued close the step to the other cities.
 #[test]
 fn a_hub_builds_its_market_and_the_step_stops_at_three_hubs() {
-    let (mut game, ranked) = emperor_empire("COMMERCIALMARKET", 92_003);
+    let (mut game, ranked) = emperor_empire("COMMERCIALMARKET", 92_004);
     for cid in &ranked[..3] {
         install_test_district(&mut game, *cid, "commercial_hub");
     }
@@ -233,7 +233,7 @@ fn a_hub_builds_its_market_and_the_step_stops_at_three_hubs() {
         );
     }
     // A hub queued counts as held.
-    let (mut queued, ranked) = emperor_empire("COMMERCIALMARKET", 92_003);
+    let (mut queued, ranked) = emperor_empire("COMMERCIALMARKET", 92_004);
     for cid in &ranked[..3] {
         let hub = BasicAi::civ_district(&queued, 0, "commercial_hub");
         let pos = queued.district_sites(*cid, hub)[0];

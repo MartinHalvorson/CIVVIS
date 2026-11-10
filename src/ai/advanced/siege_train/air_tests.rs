@@ -9,7 +9,7 @@ use super::*;
 /// both; `hostile_near_home` places a 1-hp Warrior beside our city, else
 /// away from both cities.
 fn bomber_over_a_siege(hostile_near_home: bool) -> (Game, u32, u32, Pos, Pos) {
-    let mut g = Game::new_full(2, 24, 16, 71_031, 120, 0, false);
+    let mut g = Game::new_full(2, 24, 16, 71_034, 120, 0, false);
     g.at_war.insert((0, 1));
     for unit in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(unit);
