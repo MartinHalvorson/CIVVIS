@@ -2586,7 +2586,11 @@ function togglePlayerHudSort(key) {
       : playerHudSortDefaultDirection(key),
   };
   savePlayerHudSort();
-  if (state) drawPlayerHud();
+  if (state) {
+    drawPlayerHud();
+    // World politics lists its pairs in this table's order.
+    drawWorldPolitics();
+  }
 }
 
 function playerHudSortHead(key, label, title, classes = "", attrs = "") {
@@ -7466,6 +7470,13 @@ function restoreLogFilters(key, defaults) {
 reasonFilters = restoreLogFilters(REASON_FILTER_KEY, reasonFilters);
 warFilters = restoreLogFilters(WAR_FILTER_KEY, warFilters);
 eventFilters = restoreLogFilters(EVENT_FILTER_KEY, eventFilters);
+// The civilization World politics is narrowed to lasts one world, for the same
+// reason as the dossier's seat below: a new world reseats every civilization.
+// Which of its groups are folded says nothing about any seat, so that is kept.
+const POLITICS_FOLD_KEY = "civvis-politics-folded-v1";
+let politicsSeat = "all";
+let politicsSeatWorld = null;
+let politicsFolded = restoreLogFilters(POLITICS_FOLD_KEY, {bonds: false, wars: false});
 // Which seat the AI strategy dossier is speaking for, and the world that choice
 // belongs to. It scopes both the active plan and its decision factors, so a
 // reader never has to reconcile a plan for one civilization with a log for
@@ -27581,6 +27592,22 @@ function patchHudMarkup(root, markup) {
   patchHudChildren(root, next.content);
 }
 
+// The major civilizations in the order the masthead lists them, under whatever
+// sort its reader has chosen. World politics reads this same list, so the two
+// panels cannot disagree about who comes first.
+function playerHudStandings() {
+  // Rank remains the score standing even when the visible rows are sorted by
+  // another fact, so a #2 badge never starts meaning "second alphabetically".
+  const scoreRankedMajors = state.players
+    .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
+  const statsByPlayer = new Map(scoreRankedMajors.map(p =>
+    [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
+  return {scoreRankedMajors, majors, rankById, statsByPlayer};
+}
+
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
   const victoryHud = document.getElementById("victoryhud");
@@ -27619,15 +27646,7 @@ function drawPlayerHud() {
   // so it stands out of the standings at a glance (operator 2026-10-30).
   const focusSeatId = SPEC ? state.view_player : state.player;
   const focusSeat = Number.isInteger(focusSeatId) ? focusSeatId : null;
-  // Rank remains the score standing even when the visible rows are sorted by
-  // another fact, so a #2 badge never starts meaning "second alphabetically".
-  const scoreRankedMajors = state.players
-    .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
-    .sort((a, b) => b.score - a.score || a.id - b.id);
-  const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(scoreRankedMajors.map(p =>
-    [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
+  const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();
   // The one open city list belongs to a seat in this table, or to nobody.
   if (hudOpenCityList !== null && !majors.some(p => p.id === hudOpenCityList))
     hudOpenCityList = null;
@@ -32372,29 +32391,81 @@ function worldPoliticsWarRow(war) {
     `${worldPoliticsPair(war.first, war.second, "vs")}` +
     `${note ? `<span class="politics-note">${note}</span>` : ""}</div>`;
 }
-function worldPoliticsGroup(heading, tone, rows, none) {
-  return `<div class="politics-group"><div class="politics-heading${tone ? ` ${tone}` : ""}">` +
-    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</div>` +
-    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</div>`;
+function worldPoliticsGroup(group, heading, tone, rows, none) {
+  return `<details class="politics-group" data-politics-group="${group}"${politicsFolded[group] ? "" : " open"}>` +
+    `<summary class="politics-heading${tone ? ` ${tone}` : ""}">` +
+    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</summary>` +
+    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</details>`;
+}
+// The list is rebuilt every turn, so a group's fold has to outlive its element.
+// A <details> also announces itself when it is built open, hence the comparison.
+function rememberPoliticsFold(event) {
+  const group = event.target.dataset?.politicsGroup;
+  if (!group || politicsFolded[group] === !event.target.open) return;
+  politicsFolded[group] = !event.target.open;
+  try { localStorage.setItem(POLITICS_FOLD_KEY, JSON.stringify(politicsFolded)); }
+  catch (e) { /* a browser refusing storage still folds for this page */ }
+}
+// Pairs follow the masthead. Whoever stands higher in it is named first, and
+// the rows run down the higher civilization and then the lower one, so the top
+// row belongs to the first and second seats if they have a tie at all.
+function worldPoliticsOrdered(pairs, position) {
+  // A seat the masthead does not list still needs a place: after those it does.
+  const at = id => position.get(id) ?? position.size + id;
+  return pairs
+    .map(pair => at(pair.second) < at(pair.first)
+      ? {...pair, first: pair.second, second: pair.first}
+      : pair)
+    .sort((a, b) => at(a.first) - at(b.first) || at(a.second) - at(b.second));
+}
+// Any living civilization the masthead lists can be watched alone. The menu
+// runs by seat so it holds still while the standings move under it.
+function syncPoliticsSeat() {
+  if (politicsSeatWorld !== state.seed) {
+    politicsSeatWorld = state.seed;
+    politicsSeat = "all";
+  }
+  const living = state.players
+    .filter(p => !p.is_minor && !p.is_barbarian && p.alive && metPlayer(p))
+    .map(p => p.id);
+  politicsSeat = syncCivFilterOptions(document.getElementById("politicsplayer"),
+    logSeatsOrdered(living), "All civilizations", politicsSeat);
+  return politicsSeat === "all" ? null : Number(politicsSeat);
+}
+function setPoliticsSeat(value) {
+  politicsSeat = value;
+  if (state) drawWorldPolitics();
 }
 function drawWorldPolitics() {
   const list = document.getElementById("worldpolitics");
   const scope = document.getElementById("politicsscope");
   if (!list || !state) return;
   const politics = state.world_politics || {};
-  const bonds = Array.isArray(politics.bonds) ? politics.bonds : [];
-  const wars = Array.isArray(politics.wars) ? politics.wars : [];
+  const seat = syncPoliticsSeat();
+  const concerned = pair => seat === null || pair.first === seat || pair.second === seat;
+  const allWars = Array.isArray(politics.wars) ? politics.wars : [];
+  const wars = allWars.filter(concerned);
+  const warWord = `war${allWars.length === 1 ? "" : "s"}`;
   // The label has room for little beside the section's own name.
   scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
-  scope.title = wars.length ? `${wars.length} war${wars.length === 1 ? "" : "s"} in progress` : "";
+  scope.title = !wars.length ? ""
+    : seat === null ? `${wars.length} ${warWord} in progress`
+    : `${logSeatName(seat)} is in ${wars.length} of ${allWars.length} ${warWord} in progress`;
   if (inClosedSidebarSection(list)) return;
-  const signature = `${state.seed}|${state.turn}|${JSON.stringify(politics)}`;
+  const position = new Map(playerHudStandings().majors.map((p, index) => [p.id, index]));
+  const signature = `${state.seed}|${state.turn}|${seat}|${[...position.keys()]}|${JSON.stringify(politics)}`;
   if (list.dataset.signature === signature) return;
   list.dataset.signature = signature;
+  const bonds = (Array.isArray(politics.bonds) ? politics.bonds : []).filter(concerned);
+  // "No wars" alone is a claim about the world, which a filtered list cannot make.
+  const whose = seat === null ? "" : ` for ${escapeAttr(logSeatName(seat))}`;
   list.innerHTML =
-    worldPoliticsGroup("Alliances &amp; friendships", "", bonds.map(worldPoliticsBondRow),
-      "No alliances or friendships.") +
-    worldPoliticsGroup("At war", "war", wars.map(worldPoliticsWarRow), "No civilizations at war.") +
+    worldPoliticsGroup("bonds", "Alliances &amp; friendships", "",
+      worldPoliticsOrdered(bonds, position).map(worldPoliticsBondRow),
+      `No alliances or friendships${whose}.`) +
+    worldPoliticsGroup("wars", "At war", "war",
+      worldPoliticsOrdered(wars, position).map(worldPoliticsWarRow),
+      seat === null ? "No civilizations at war." : `No wars${whose}.`) +
     (politics.partial
       ? `<div class="politics-caveat">Civ VI reports pacts for our own seat only, so rival pacts are not listed.</div>`
       : "");
@@ -37947,6 +38018,12 @@ document.getElementById("tradebtn").onclick = () => openTrade();
 {
   const seat = document.getElementById("strategyplayer");
   seat.onchange = () => setStrategySeat(seat.value);
+}
+{
+  const seat = document.getElementById("politicsplayer");
+  seat.onchange = () => setPoliticsSeat(seat.value);
+  // A toggle does not bubble, so the list catches its groups' on the way down.
+  document.getElementById("worldpolitics").addEventListener("toggle", rememberPoliticsFold, true);
 }
 {
   const player = document.getElementById("warplayer");

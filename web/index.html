@@ -2665,13 +2665,25 @@
   .war-loss-specialty-mark { margin-right: 3px; color: var(--gold-bright); text-shadow: 0 0 6px #d7b66a88; }
   .war-loss-side:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
   .war-loss-none { color: var(--faint); font-style: italic; }
-  .politics-list { display: grid; gap: 10px; }
+  /* Civ VI's standard light green and blue: COLOR_STANDARD_GREEN_LT and
+     COLOR_STANDARD_BLUE_LT in the game's PlayerStandardColors.xml. */
+  .politics-list { display: grid; gap: 10px; --politics-friend: #79e077; --politics-alliance: #74a3f3; }
   .politics-heading {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
     padding-bottom: 3px; border-bottom: 1px solid var(--line);
     color: var(--gold); font-size: var(--type-label); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   }
+  .politics-heading::-webkit-details-marker { display: none; }
+  .politics-heading > span { flex: 1 1 auto; min-width: 0; }
+  .politics-heading::after {
+    content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin: 0 3px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: translateY(-1px) rotate(45deg); transition: transform .18s ease;
+  }
+  .politics-group:not([open]) > .politics-heading::after { transform: translateY(1px) rotate(-45deg); }
+  .politics-heading:hover { color: var(--gold-bright); }
   .politics-heading.war { color: #e58a7a; }
+  .politics-heading.war:hover { color: #f2a899; }
   .politics-heading small { color: var(--faint); font-size: inherit; font-weight: 600; letter-spacing: 0; }
   .politics-row {
     display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px;
@@ -2686,9 +2698,10 @@
   .politics-civ .war-entity-link { text-decoration: none; }
   .politics-civ .war-entity-link:hover, .politics-civ .war-entity-link:focus-visible { text-decoration: underline; }
   .politics-joiner { color: var(--faint); font-weight: 500; }
-  .politics-row.alliance .politics-joiner { color: var(--gold); }
   .politics-row.war .politics-joiner { color: #e58a7a; font-style: italic; }
   .politics-note { margin-left: auto; color: var(--muted); font-size: var(--type-label); white-space: nowrap; }
+  .politics-row.alliance .politics-joiner, .politics-row.alliance .politics-note { color: var(--politics-alliance); }
+  .politics-row.friendship .politics-joiner, .politics-row.friendship .politics-note { color: var(--politics-friend); }
   .politics-none { padding: 4px 0 0; color: var(--faint); font-size: var(--type-secondary); font-style: italic; }
   .politics-caveat { padding: 4px 0 0; color: var(--faint); font-size: var(--type-label); }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
@@ -6391,6 +6404,13 @@
         <span class="section-meta"><span class="event-scope" id="politicsscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec">
+        <div class="log-filters">
+          <label class="log-filter"><span>Civ</span>
+            <select id="politicsplayer" aria-label="Whose relationships to show">
+              <option value="all">All civilizations</option>
+            </select>
+          </label>
+        </div>
         <div id="worldpolitics" class="politics-list"></div>
       </div>
     </details>
