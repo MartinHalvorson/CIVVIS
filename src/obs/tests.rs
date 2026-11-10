@@ -2206,6 +2206,13 @@ fn world_politics_on_a_mirrored_seat_marks_what_the_host_withholds() {
     );
 }
 
+fn introduce_everyone(game: &mut Game) {
+    let everyone: Vec<usize> = game.players.iter().map(|player| player.id).collect();
+    for player in &mut game.players {
+        player.met.extend(everyone.iter().copied());
+    }
+}
+
 fn politics_attitude(politics: &Value, row: usize, column: usize) -> char {
     politics["attitudes"]["rows"][row]
         .as_str()
@@ -2220,6 +2227,7 @@ fn politics_attitude(politics: &Value, row: usize, column: usize) -> char {
 #[test]
 fn world_politics_says_what_each_leader_makes_of_each_other() {
     let mut game = world_politics_game();
+    introduce_everyone(&mut game);
     game.players[2].denounced_until.insert(1, game.turn + 5);
     game.players[3].grievances.insert(1, 60.0);
     game.players[1].grievances.insert(3, -60.0);
@@ -2241,6 +2249,28 @@ fn world_politics_says_what_each_leader_makes_of_each_other() {
     ] {
         assert_eq!(politics_attitude(&politics, row, column), '-', "{why}");
     }
+}
+
+/// Two leaders who have never met have no view of each other to show, however
+/// the ledger happens to read, and the mark goes the moment they do meet.
+#[test]
+fn world_politics_marks_a_pair_that_has_not_met() {
+    let mut game = world_politics_game();
+    game.players[3].grievances.insert(1, 60.0);
+    let strangers = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics_attitude(&strangers, 3, 1), '?');
+    assert_eq!(politics_attitude(&strangers, 1, 3), '?');
+    assert_eq!(
+        politics_attitude(&strangers, 1, 1),
+        '-',
+        "nobody meets themselves"
+    );
+
+    game.players[3].met.insert(1);
+    game.players[1].met.insert(3);
+    let introduced = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics_attitude(&introduced, 3, 1), 'U');
+    assert_ne!(politics_attitude(&introduced, 1, 3), '?');
 }
 
 /// The table is built from remembered measures, and must say exactly what the
@@ -2289,6 +2319,9 @@ fn world_politics_on_a_mirrored_seat_shows_only_what_the_host_named() {
         .observed_diplomatic_state
         .insert(0, "UNFRIENDLY".to_string());
     game.players[3].grievances.insert(1, 60.0);
+    game.at_war.clear();
+    game.players[0].met.insert(3);
+    game.players[3].met.insert(0);
     let politics = observation_spectator(&game, 0)["world_politics"].clone();
     assert_eq!(politics_attitude(&politics, 3, 0), 'U');
     assert_eq!(politics_attitude(&politics, 0, 3), 'U');
@@ -2296,6 +2329,16 @@ fn world_politics_on_a_mirrored_seat_shows_only_what_the_host_named() {
         politics_attitude(&politics, 3, 1),
         '-',
         "the local ledger must not stand in for a rival's real view"
+    );
+    assert_eq!(
+        politics_attitude(&politics, 0, 2),
+        '?',
+        "our own seat's contacts are the host's to name, and this one has not happened"
+    );
+    assert_eq!(
+        politics_attitude(&politics, 1, 2),
+        '-',
+        "whether two rivals have met is not something the host reports"
     );
 }
 
