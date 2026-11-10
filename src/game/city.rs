@@ -2466,6 +2466,11 @@ impl Game {
         pct.science += band;
         pct.culture += band;
         pct.faith += band;
+        // `MINOR_CIV_PRODUCTION_PENALTY`: a city-state's cities carry -50%
+        // Production in the same additive sum.
+        if self.players[city.owner].is_minor && !self.players[city.owner].is_barbarian {
+            pct.production -= 50.0;
+        }
         if self.grants_city_state_unique_bonus(city.owner, "Geneva")
             && !self.at_war_with_any_civilization(city.owner)
         {

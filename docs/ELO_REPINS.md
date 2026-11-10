@@ -2270,3 +2270,53 @@ action count is unchanged; the six-major profile accounts for the one-action
 reduction in the total. The existing test continues to enforce all five
 profiles and the full fingerprint. This re-pin records the deliberate rules
 boundary; it does not establish stronger play or a Native victory.
+
+## v46 (2026-11-09) — meteor showers fall in every Gathering Storm game
+
+#4896 removes a false gate from the shared engine. Meteor showers were tied to
+the Apocalypse game mode, but `GranColombia_Maya.modinfo` loads
+`GranColombia_Maya_Expansion2.xml` under `GranColombiaMaya_Expansion2`, so any
+Gathering Storm game has them, and only the `*_MODE.xml` files wait on
+`GAMEMODE_APOCALYPSE`. Live games with every mode verified off show Meteor Sites
+in 42 of 110 games. Every controller, `AdvancedAi::legacy()` included, now plays
+on a board where a meteor can fall.
+
+The engine before this change measures v45's **19,251 decisions /
+`0x791f_7a51_8002_0627`**. The corrected engine measures **19,571 decisions /
+`0x0857_04aa_df50_a040`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
+
+## v47 (2026-11-09) — Barbarian camps belong to their shipped tribes
+
+#4897 moves camps and their units onto the shipped `BarbarianTribes` rows. A
+camp is a Naval, Cavalry or Melee tribe by what surrounds it, raises that
+tribe's units, and never stands on a resource or a feature a camp cannot
+occupy. Live games back the split: horse units appear 27 times beside horse
+camps and twice elsewhere, and foot units 3 times beside them and 287 elsewhere.
+Every controller, `AdvancedAi::legacy()` included, now plays against these
+camps.
+
+The engine before this change measures v46's **19,571 decisions /
+`0x0857_04aa_df50_a040`**. The corrected engine measures **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
+
+## v48 (2026-11-09) — City-states run their shipped default kit
+
+#4906 gives every city-state `MINOR_CIV_DEFAULT_TRAIT`: half Production
+overall, +200% toward Builders, toward walls, and toward military units while
+it has fewer than ten, and free Gold upgrades. Preslav's cavalry kit is gone,
+as `RemoveData` deletes it, and it pays +2 Loyalty per Encampment line instead.
+The Foreign Ministry bonus now covers every Suzerain city-state unit. Every
+controller, `AdvancedAi::legacy()` included, now plays beside these city-states.
+
+The engine before this change measures v47's **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The corrected engine measures **18,765 decisions /
+`0xaa6b_4e3a_f767_b9e9`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.

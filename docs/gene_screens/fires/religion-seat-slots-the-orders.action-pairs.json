@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-slots-the-orders",
+  "scope": "Same candidate binary and immutable actual native Russia reads; only this bit differs. Resumed one-shot proposal activation, not execution, full-history reproduction or strength. All actual query reads were checked against sealed input bytes. t84 had two captured byte snapshots of the same turn/frame; the replay seals the final snapshot. The appended rows were export timing and autoclose events. The extra t84/frame1 probe verifies the free policy window after the observed government change, and keeps Civil Prestige, Retainers and Scripture.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religion-slots-the-orders.native-queries.tar.xz",
+    "sha256": "1c0d2393c5373331cbda3dbeddff64ea438dfe4e93d24166ab72c109d0288334"
+  },
+  "members": [
+    "native-queries/t84/result.json",
+    "native-queries/t89/result.json",
+    "native-queries/t92/result.json",
+    "native-queries/t98/result.json",
+    "native-queries/t84-frame1/result.json"
+  ]
+}

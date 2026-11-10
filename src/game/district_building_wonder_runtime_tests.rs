@@ -358,16 +358,9 @@ fn stonehenge_is_a_holy_site_for_founding_and_alhambra_is_a_fort() {
 #[test]
 fn meteors_pepper_open_land_and_grant_advanced_heavy_cavalry() {
     let (mut game, city, _) = one_city(90_4441);
-    // A stock lobby has the Apocalypse mode off and so never sees one.
+    // Showers fall with every game mode off. At the turn limit every remaining
+    // strike is forced in, and the default intensity's budget is six per game.
     game.turn = game.max_turns;
-    game.process_meteors();
-    assert_eq!(
-        game.meteor_strikes, 0,
-        "meteors are an Apocalypse-mode rule"
-    );
-    game.game_modes.insert("apocalypse".to_string());
-    // At the turn limit every remaining strike is forced in, and the
-    // budget never exceeds the shipped six per game.
     for expected in 1..=6u32 {
         game.process_meteors();
         assert_eq!(game.meteor_strikes, expected);
@@ -736,7 +729,7 @@ fn foreign_ministry_halves_levies_and_buffs_city_state_units() {
     game.players[0].gold = 100.0;
 
     assert_eq!(game.levy_cost(0, minor), Some(20.0));
-    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 23.0);
+    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 27.0);
     game.do_levy_military(0, minor).unwrap();
     assert_eq!(game.units[&warrior].owner, 0);
     assert_eq!(game.units[&warrior].levied_from, Some(minor));
@@ -747,6 +740,14 @@ fn foreign_ministry_halves_levies_and_buffs_city_state_units() {
     game.process_levies(0);
     assert_eq!(game.units[&warrior].owner, minor);
     assert_eq!(game.units[&warrior].levied_from, None);
+    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 27.0);
+
+    // Take the Ministry away and the Suzerain's +4 goes with it.
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .retain(|building| building != "foreign_ministry");
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 23.0);
 }
 

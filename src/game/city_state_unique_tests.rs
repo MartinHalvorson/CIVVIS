@@ -1447,51 +1447,83 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
 }
 
 #[test]
-fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
+fn preslav_pays_loyalty_for_each_line_of_encampment_building() {
+    // Both expansions' RemoveData delete the Base kit (+5 cavalry on hills).
     let (mut game, cities) = game_with_capitals(2, 89_011);
+    let city = cities[0];
     let preslav = add_city_state(&mut game, "Preslav");
-    let centre = game.cities[&cities[0]].pos;
-    let hill = game
-        .nbrs(centre)
-        .into_iter()
-        .find(|pos| {
-            game.map
-                .get(*pos)
-                .is_some_and(|tile| !game.rules.is_water(tile))
-        })
-        .unwrap();
-    game.map.tiles.get_mut(&hill).unwrap().hills = true;
-    game.map.tiles.get_mut(&centre).unwrap().hills = false;
+    let build = |game: &mut Game, building: Name| {
+        game.cities.get_mut(&city).unwrap().buildings.push(building);
+    };
+    let baseline = game.loyalty_change_for_city(0, city).delta;
 
-    let horseman = game.spawn_unit("horseman", 0, hill);
-    let warrior = game.spawn_unit("warrior", 0, centre);
-    let cavalry_flat = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    let footman = {
-        let unit = game.units[&warrior].clone();
-        game.unit_unembarked_strength(&unit)
-    };
+    build(&mut game, crate::name!("barracks"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline);
     make_suzerain(&mut game, 0, preslav);
-    let cavalry_hill = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    assert_close(cavalry_hill, cavalry_flat + 5.0);
-    // A melee unit gets nothing, hill or not.
-    let footman_after = {
-        let unit = game.units[&warrior].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    assert_close(footman_after, footman);
-    // And the cavalry loses it the moment it steps off the hill.
-    game.map.tiles.get_mut(&hill).unwrap().hills = false;
-    let cavalry_off = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    assert_close(cavalry_off, cavalry_flat);
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 2.0);
+
+    // A Barracks and a Stable are one `TEST_ANY` row.
+    build(&mut game, crate::name!("stable"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 2.0);
+    build(&mut game, crate::name!("armory"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 4.0);
+    build(&mut game, crate::name!("military_academy"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 6.0);
+}
+
+#[test]
+fn a_city_state_runs_the_shipped_default_kit() {
+    // `MINOR_CIV_DEFAULT_TRAIT` in Leaders.xml.
+    let (mut game, cities) = game_with_capitals(2, 89_012);
+    let city = cities[1];
+    let minor = add_city_state(&mut game, "Geneva");
+    let unit = |unit: Name| Item::Unit { unit };
+    let building = |building: Name| Item::Building { building };
+
+    let builder = game.item_prod_mult(minor, city, Some(&unit(crate::name!("builder"))));
+    assert_close(builder, 3.0);
+    for walls in [
+        crate::name!("walls"),
+        crate::name!("medieval_walls"),
+        crate::name!("renaissance_walls"),
+    ] {
+        assert_close(
+            game.item_prod_mult(minor, city, Some(&building(walls))),
+            3.0,
+        );
+    }
+    let monument = game.item_prod_mult(minor, city, Some(&building(crate::name!("monument"))));
+    assert_close(monument, 1.0);
+
+    // Military units only while it holds fewer than 10 of them.
+    let warrior = unit(crate::name!("warrior"));
+    assert_close(game.item_prod_mult(minor, city, Some(&warrior)), 3.0);
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| game.city_at(*position).is_none())
+        .take(10)
+        .collect();
+    for site in sites {
+        game.spawn_unit("warrior", minor, site);
+    }
+    assert_close(game.item_prod_mult(minor, city, Some(&warrior)), 1.0);
+
+    // Upgrades cost a city-state no Gold; a major still pays.
+    assert_eq!(game.upgrade_costs(minor, 100.0, 5.0), (0.0, 5.0));
+    assert_eq!(game.upgrade_costs(0, 100.0, 5.0), (100.0, 5.0));
+
+    // And its cities make half the Production.
+    let major = game.city_yields(city).production;
+    assert!(major > 0.0);
+    game.players[1].is_minor = true;
+    let halved = game.city_yields(city).production;
+    assert!(
+        (halved - major * 0.5).abs() < 0.51,
+        "{major} Production as a major, {halved} as a city-state"
+    );
 }
 
 #[test]

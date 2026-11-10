@@ -12,7 +12,9 @@ Usage::
     python3 tools/civ6_events.py failures           # failed orders, by type and reason
     python3 tools/civ6_events.py noops              # "the unit did not move", checked
 
-Pass ``--runs N`` for more games, or ``--root DIR`` for another directory.
+Pass ``--runs N`` for more logs, or ``--root DIR`` for another directory. One
+game continued from a save writes one log per sitting (``<run>-cont1`` and so
+on), so a report says how many logs and how many games it read.
 Line numbers in Lua errors refer to the installed agent; see civ6_agent_errors.py.
 """
 
@@ -35,6 +37,11 @@ def recent_games(root: Path, runs: int) -> list[Path]:
     """The newest event logs that hold a game, newest first."""
     logs = [path for path in root.glob("*/events.jsonl") if path.stat().st_size >= MIN_GAME_BYTES]
     return sorted(logs, key=lambda path: path.stat().st_mtime, reverse=True)[:runs]
+
+
+def game_of(path: Path) -> str:
+    """The game a log belongs to: every sitting of a continued game shares one."""
+    return re.sub(r"-cont\d+$", "", path.parent.name)
 
 
 def events(path: Path, needles: Iterable[str] = ()) -> Iterator[dict]:
@@ -70,25 +77,47 @@ def _verb_head(verb: object) -> str:
 
 
 def failures(logs: list[Path]) -> list[dict]:
-    """Failed orders per (kind, verb), worst rate first."""
-    verified: collections.Counter = collections.Counter()
-    failed: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
+    """Failed orders per (kind, verb), worst rate first.
+
+    Counts orders, not reports. A replan frame re-sends an order and each send
+    is checked, so one refusal can file three rows. Raw rows ranked retries
+    above real problems: Apostle `no_path`, Great Person `not_activated` and
+    religion founding each looked common and were not. An order is one
+    (log, turn, subject, verb). It failed if no check of it passed, and
+    `recovered` counts the ones that failed and then worked in the same turn.
+    """
+    checks: dict[tuple, dict] = {}
     for path in logs:
         for event in events(path, ('"order_failed"', '"order_verified"')):
-            key = (event.get("order_kind"), _verb_head(event.get("verb")))
-            if event.get("kind") == "order_verified":
-                verified[key] += 1
-            elif event.get("kind") == "order_failed":
-                failed[key][re.sub(r"\d+", "N", str(event.get("reason")))] += 1
+            if event.get("kind") not in ("order_failed", "order_verified"):
+                continue
+            order = (path, event.get("turn"), str(event.get("subject")), str(event.get("verb")))
+            row = checks.setdefault(
+                order, {"key": (event.get("order_kind"), _verb_head(event.get("verb"))),
+                        "worked": False, "reason": None})
+            if event["kind"] == "order_verified":
+                row["worked"] = True
+            else:
+                row["reason"] = re.sub(r"\d+", "N", str(event.get("reason")))
+    totals: collections.Counter = collections.Counter()
+    recovered: collections.Counter = collections.Counter()
+    failed: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
+    for row in checks.values():
+        totals[row["key"]] += 1
+        if row["reason"] is not None:
+            if row["worked"]:
+                recovered[row["key"]] += 1
+            else:
+                failed[row["key"]][row["reason"]] += 1
     rows = []
-    for key in set(verified) | set(failed):
+    for key, total in totals.items():
         bad = sum(failed[key].values())
-        total = verified[key] + bad
         rows.append(
             {"kind": key[0], "verb": key[1], "total": total, "failed": bad,
-             "rate": bad / total, "reasons": failed[key].most_common(3)}
+             "recovered": recovered[key], "rate": bad / total,
+             "reasons": failed[key].most_common(3)}
         )
-    return sorted(rows, key=lambda row: (-row["rate"], -row["total"]))
+    return sorted(rows, key=lambda row: (-row["failed"], -row["total"]))
 
 
 def noop_outcomes(logs: list[Path]) -> dict[str, collections.Counter]:
@@ -123,16 +152,18 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=RUN_ROOT)
     args = parser.parse_args()
     logs = recent_games(args.root, args.runs)
-    print(f"{len(logs)} games read")
+    print(f"{len(logs)} logs read, {len({game_of(path) for path in logs})} games")
     if args.report == "kinds":
         for kind, row in sorted(kinds(logs).items(), key=lambda item: -item[1]["count"]):
             fields = ",".join(sorted(row["fields"] - {"kind", "ctx", "run", "t", "utc"}))
             print(f"{row['count']:8} in {len(row['games']):3} games  {kind:28} {fields[:110]}")
     elif args.report == "failures":
         for row in failures(logs):
-            if row["total"] >= 8:
+            if row["failed"] or row["recovered"]:
                 reasons = ", ".join(f"{name} {count}" for name, count in row["reasons"])
-                print(f"{row['rate']:4.0%} of {row['total']:6}  {str(row['kind']):14} {row['verb']:24} {reasons}")
+                print(f"{row['failed']:5} of {row['total']:6} ({row['rate']:4.0%}) "
+                      f"recovered {row['recovered']:4}  "
+                      f"{str(row['kind']):14} {row['verb']:24} {reasons}")
     else:
         for why, outcomes in sorted(noop_outcomes(logs).items(), key=lambda item: -sum(item[1].values())):
             print(f"{why:18} {dict(outcomes)}")
