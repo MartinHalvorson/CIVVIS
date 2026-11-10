@@ -230,6 +230,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
+| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
