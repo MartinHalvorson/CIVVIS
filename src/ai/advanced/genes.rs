@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // takes a resource-priced melee unit whenever a city can start one.
     // Opt-in; see the field.
     Gene { tag: "domination-spends-the-stock", field: "domination_spends_the_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_spends_the_stock, disable: AdvancedAi::disable_domination_spends_the_stock },
+    // `chop-feeds-the-long-build`: a Builder clears a forest into a district
+    // or wonder its city needs many turns for, or into a space-race project.
+    // Opt-in; see `advanced/chop_feeds_the_long_build.rs`.
+    Gene { tag: "chop-feeds-the-long-build", field: "chop_feeds_the_long_build", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_long_build, disable: AdvancedAi::disable_chop_feeds_the_long_build },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -116,6 +116,10 @@ impl AdvancedAi {
         /// takes a resource-priced melee unit whenever a city can start one.
         /// See `AdvancedAi::domination_spends_the_stock`.
         domination_spends_the_stock => enable_domination_spends_the_stock, disable_domination_spends_the_stock;
+        /// `chop-feeds-the-long-build`: a Builder clears a forest into a district,
+        /// a wonder or a space-race project. See
+        /// `advanced/chop_feeds_the_long_build.rs`.
+        chop_feeds_the_long_build => enable_chop_feeds_the_long_build, disable_chop_feeds_the_long_build;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
