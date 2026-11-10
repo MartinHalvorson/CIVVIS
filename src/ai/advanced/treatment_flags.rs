@@ -106,6 +106,9 @@ impl AdvancedAi {
         /// Opt-in gene `bands-wait-at-the-door`; see
         /// `advanced/bands_wait_at_the_door.rs`.
         base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
+        /// Opt-in gene `band-plays-at-level-three`; see
+        /// `advanced/band_plays_at_level_three.rs`.
+        base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

@@ -11305,6 +11305,10 @@ mod backlog_builder_takes_the_queue;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
+/// `band-plays-at-level-three`: a Rock Band plays its first concerts where
+/// its performance level reaches 3, and is promoted to get there. See
+/// `advanced/band_plays_at_level_three.rs`.
+mod band_plays_at_level_three;
 mod band_plays_its_stage;
 /// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
 /// stage it can really reach; a refused trip turns it to another host. See
