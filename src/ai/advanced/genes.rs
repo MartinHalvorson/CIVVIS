@@ -5461,6 +5461,12 @@ pub const GENES: &[Gene] = &[
     // or wonder its city needs many turns for, or into a space-race project.
     // Opt-in; see `advanced/chop_feeds_the_long_build.rs`.
     Gene { tag: "chop-feeds-the-long-build", field: "chop_feeds_the_long_build", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_long_build, disable: AdvancedAi::disable_chop_feeds_the_long_build },
+    // `chop-feeds-the-space-race`: the space-race leg of the gene above on
+    // its own. The paired Deity read of the whole gene (20 seeds, 2026-11-10)
+    // was flat on share and 8% down on science at turn 100, and its seats
+    // never reached a space project, so the district leg and the space leg
+    // are priced separately. Opt-in.
+    Gene { tag: "chop-feeds-the-space-race", field: "chop_feeds_the_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_space_race, disable: AdvancedAi::disable_chop_feeds_the_space_race },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
