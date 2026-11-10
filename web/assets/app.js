@@ -51,11 +51,9 @@ function drawOpenedSidebarSection(section) {
   if (!state || !section.open) return;
   if (section.id === "strategysec") drawReasoning();
   else if (section.id === "eventsec") drawEvents();
-  else if (section.id === "politicssec") {
-    drawWorldPolitics();
-    // On a deck too short to pin its labels the table would open below the fold.
-    section.scrollIntoView({ block: "nearest" });
-  }
+  else if (section.id === "politicssec") drawWorldPolitics();
+  // On a deck too short to pin its labels the table would open below the fold.
+  if (section.id === "politicssec") section.scrollIntoView({ block: "nearest" });
 }
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {

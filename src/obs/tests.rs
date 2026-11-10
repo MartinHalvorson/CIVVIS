@@ -2208,8 +2208,8 @@ fn world_politics_on_a_mirrored_seat_marks_what_the_host_withholds() {
 
 fn introduce_everyone(game: &mut Game) {
     let everyone: Vec<usize> = game.players.iter().map(|player| player.id).collect();
-    for player in &mut game.players {
-        player.met.extend(everyone.iter().copied());
+    for &player in &everyone {
+        game.players[player].met.extend(everyone.iter().copied());
     }
 }
 
