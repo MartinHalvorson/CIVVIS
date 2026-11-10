@@ -645,6 +645,19 @@ impl BasicAi {
     /// the old threshold is treated as an emergency in its own right so a city
     /// already in trouble is never ranked behind a healthy one.
     pub(super) fn reassign_governor_for_loyalty(&self, g: &mut Game, pid: usize) -> bool {
+        self.reassign_governor_for_loyalty_sparing(g, pid, None)
+    }
+
+    /// [`Self::reassign_governor_for_loyalty`], with `spared` naming a seated
+    /// Governor that stays where it sits unless the target city's
+    /// [`Self::loyalty_emergency`] reads within the given turns
+    /// (`culture-keeps-pingala-home`, `advanced/culture_pingala_first.rs`).
+    pub(crate) fn reassign_governor_for_loyalty_sparing(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        spared: Option<(&str, f64)>,
+    ) -> bool {
         let target = g
             .player_city_ids(pid)
             .into_iter()
@@ -675,6 +688,16 @@ impl BasicAi {
                     return None;
                 }
                 let state = &g.players[pid].governor_roster[governor];
+                if let Some((name, within)) = spared {
+                    if governor == name
+                        && state.city.is_some()
+                        && self
+                            .loyalty_emergency(g, target)
+                            .is_some_and(|turns| turns > within)
+                    {
+                        return None;
+                    }
+                }
                 let source_loyalty = state
                     .city
                     .and_then(|city| g.cities.get(&city))

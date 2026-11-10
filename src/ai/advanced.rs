@@ -6808,6 +6808,10 @@ pub struct AdvancedAi {
     /// the threat faith stands at match point; the Faith stays for the Rock
     /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_holds_the_counterweight: bool,
+    /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
+    /// a Loyalty emergency only in a city about to flip. See
+    /// `advanced/culture_pingala_first.rs`. Opt-in.
+    culture_keeps_pingala_home: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -25932,7 +25936,9 @@ impl AdvancedAi {
         // emergency pass that protects an ungoverned city with a measured
         // Loyalty collapse. The frozen controller keeps its old path.
         if self.base.loyalty_rate_alarm {
-            self.base.reassign_governor_for_loyalty(g, pid);
+            // `culture-keeps-pingala-home`: see `advanced/culture_pingala_first.rs`.
+            let spared = self.culture_pingala_stays_home(g);
+            self.base.reassign_governor_for_loyalty_sparing(g, pid, spared);
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.

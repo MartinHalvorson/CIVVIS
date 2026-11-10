@@ -109,3 +109,17 @@ fn the_title_after_the_appointment_is_connoisseur() {
         pingala.promotions
     );
 }
+
+#[test]
+fn pingala_stays_home_only_on_a_culture_seat_with_the_gene() {
+    let game = board(9_106);
+    let mut culture = seat(VictoryTarget::Culture, false);
+    assert_eq!(culture.culture_pingala_stays_home(&game), None);
+    culture.enable_culture_keeps_pingala_home();
+    let (name, within) = culture.culture_pingala_stays_home(&game).unwrap();
+    assert_eq!(name, "pingala");
+    assert!(within > 0.0);
+    let mut science = seat(VictoryTarget::Science, false);
+    science.enable_culture_keeps_pingala_home();
+    assert_eq!(science.culture_pingala_stays_home(&game), None);
+}
