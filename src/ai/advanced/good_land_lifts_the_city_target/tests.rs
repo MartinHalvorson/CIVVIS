@@ -110,7 +110,9 @@ fn good_seats_are_worth_the_bar_and_clear_of_rival_cities() {
     let ai = armed();
     let seats = ai.good_land_seats(&game, 0, &origins(&game));
     assert!(!seats.is_empty(), "fixture: good land within reach");
-    assert!(seats.iter().all(|(_, worth)| *worth >= GOOD_LAND_SEAT_WORTH));
+    assert!(seats
+        .iter()
+        .all(|(_, worth)| *worth >= GOOD_LAND_SEAT_WORTH));
     assert!(
         seats.windows(2).all(|pair| pair[0].1 >= pair[1].1),
         "best-first"
@@ -124,53 +126,32 @@ fn good_seats_are_worth_the_bar_and_clear_of_rival_cities() {
         }
     }
 
-    // A charted rival city beside the best seat takes it off the list.
-    let mut contested = Game::new_full(2, 32, 20, 936_221, 200, 0, false);
-    let settler = contested
-        .player_unit_ids(0)
-        .into_iter()
-        .find(|uid| contested.units[uid].kind == "settler")
-        .expect("the player opens with a settler");
-    contested
-        .apply(0, &Action::FoundCity { unit: settler })
-        .unwrap();
-    contested.turn = 40;
-    let ours = origins(&contested);
-    let open = ai.good_land_seats(&contested, 0, &ours);
-    assert!(!open.is_empty(), "fixture: good land beside the capital");
-    let (best, _) = open[0];
-    let near_best: Vec<Pos> = contested
-        .map
-        .tiles
-        .keys()
-        .copied()
-        .filter(|pos| {
-            contested.wdist(*pos, best) >= SETTLEMENT_SPACING
-                && contested.wdist(*pos, best) < HOLDABLE_LAND_RIVAL_CITY_TILES
-        })
-        .collect();
-    let mut rival_site = None;
-    for pos in near_best {
-        let settler = contested.spawn_unit("settler", 1, pos);
-        if contested
-            .apply(1, &Action::FoundCity { unit: settler })
-            .is_ok()
-        {
-            rival_site = Some(pos);
-            break;
-        }
-        contested.remove_unit(settler);
-    }
-    let rival_site = rival_site.expect("a legal rival site near the best seat");
-    contested.players[0].explored.insert(rival_site);
-    let pressed = ai.good_land_seats(&contested, 0, &ours);
+    // A charted rival city inside the holdable-land distance of the best
+    // seat takes it off the list; one exactly at that distance does not.
+    let (best, _) = seats[0];
+    let at = |tiles: i32| {
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| game.wdist(*pos, best) == tiles)
+            .expect("a tile at that distance from the best seat")
+    };
+    let near = at(HOLDABLE_LAND_RIVAL_CITY_TILES - 1);
+    let pressed = ai.good_land_seats_clear_of(&game, 0, &origins(&game), &[near]);
     assert!(
         pressed
             .iter()
-            .all(|(seat, _)| contested.wdist(*seat, rival_site) >= HOLDABLE_LAND_RIVAL_CITY_TILES),
+            .all(|(seat, _)| game.wdist(*seat, near) >= HOLDABLE_LAND_RIVAL_CITY_TILES),
         "no good seat inside the holdable-land distance of a charted rival city"
     );
     assert!(!pressed.iter().any(|(seat, _)| *seat == best));
+    let edge = at(HOLDABLE_LAND_RIVAL_CITY_TILES);
+    let clear = ai.good_land_seats_clear_of(&game, 0, &origins(&game), &[edge]);
+    assert!(
+        clear.iter().any(|(seat, _)| *seat == best),
+        "a rival city nine tiles out leaves the seat"
+    );
 }
 
 /// The lift itself, and each of its bounds: off, far from the ordinary

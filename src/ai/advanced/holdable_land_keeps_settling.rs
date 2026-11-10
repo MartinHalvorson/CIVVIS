@@ -483,7 +483,9 @@ impl AdvancedAi {
                 // `good-land-lifts-the-city-target`: past the shared target
                 // only a good seat is worth a Settler. Zero with it off.
                 Ok((_, worth)) if worth < good_seat_floor => {
-                    *passed.entry("no good seat past the shared target").or_default() += 1;
+                    *passed
+                        .entry("no good seat past the shared target")
+                        .or_default() += 1;
                 }
                 Ok((site, worth)) => best = Some((turns, cid, site, worth)),
                 Err(why) => {

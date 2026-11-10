@@ -143,6 +143,18 @@ impl AdvancedAi {
     /// good.
     pub(super) fn good_land_seats(&self, g: &Game, pid: usize, origins: &[Pos]) -> Vec<(Pos, f64)> {
         let rival_cities = Self::holdable_land_threats(g, pid).rival_cities;
+        self.good_land_seats_clear_of(g, pid, origins, &rival_cities)
+    }
+
+    /// [`Self::good_land_seats`] against a given list of charted rival
+    /// cities.
+    pub(super) fn good_land_seats_clear_of(
+        &self,
+        g: &Game,
+        pid: usize,
+        origins: &[Pos],
+        rival_cities: &[Pos],
+    ) -> Vec<(Pos, f64)> {
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         // Every origin scans the same board for the same seat, so the site
         // values and the exclusion disks are shared, as `map_settlement_room`
