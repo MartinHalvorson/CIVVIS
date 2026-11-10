@@ -448,6 +448,7 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     game.cities.get_mut(&struck).unwrap().wall_hp = 100;
     let city_name = game.cities[&struck].name.clone();
     let defender = game.spawn_test_unit("warrior", 1, target);
+    game.install_test_silo(launch);
 
     let strike = Action::WmdStrike {
         city: launch,
@@ -527,7 +528,7 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     assert_eq!(record.attacker, 0);
     assert_eq!(record.target, target);
     assert!(record.thermonuclear);
-    assert_eq!(record.platform, "city");
+    assert_eq!(record.platform, "missile_silo");
     assert_eq!(record.launched_from, game.cities[&launch].pos);
     assert_eq!(record.blast_radius, spec.blast_radius);
     assert_eq!(record.units_destroyed, vaporized);
@@ -626,6 +627,139 @@ fn a_nuclear_submarine_carries_a_device_past_its_launch_city_reach() {
     );
 }
 
+/// Launches are silos and carriers. A city center was never one: the shipped
+/// game's only city launch is aimed from a silo's plot.
+#[test]
+fn a_city_center_is_not_a_launch_site() {
+    let (mut game, cities) = game_with_capitals(91_802);
+    let (launch, struck) = (cities[0], cities[1]);
+    let target = game.cities[&struck].pos;
+    game.at_war.insert(pair(0, 1));
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
+    for position in game.wdisk(target, 2) {
+        game.players[0].explored.insert(position);
+    }
+    let strike = Action::WmdStrike {
+        city: launch,
+        target,
+        thermonuclear: true,
+    };
+    assert!(!game.legal_actions(0).contains(&strike));
+    assert_eq!(
+        game.apply(0, &strike),
+        Err("target out of ICBM range".to_string())
+    );
+
+    game.install_test_silo(launch);
+    assert!(game.legal_actions(0).contains(&strike));
+    assert!(game.apply(0, &strike).is_ok());
+    assert_eq!(game.nuclear_strikes[0].platform, "missile_silo");
+}
+
+/// A bomber drops the device, so it reaches as far as it can fly rather than
+/// the silo's 12 or 15, and the launch costs it the turn's attack.
+#[test]
+fn bombers_and_jet_bombers_deliver_a_device_as_far_as_they_fly() {
+    for (kind, reach) in [("bomber", 10), ("jet_bomber", 15)] {
+        let (mut game, cities) = game_with_capitals(91_803);
+        let launch = cities[0];
+        // Open ground: nothing in the blast, so range is the only question.
+        let quiet = |game: &Game, position: Pos| {
+            game.wdisk(position, 1).into_iter().all(|tile| {
+                game.unit_ids_at(tile).is_empty()
+                    && game.city_at(tile).is_none()
+                    && game.defending_district_at(tile).is_none()
+            })
+        };
+        let (target, base, too_far) = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|target| quiet(&game, *target))
+            .find_map(|target| {
+                let at = |distance: i32| {
+                    game.map
+                        .tiles
+                        .keys()
+                        .copied()
+                        .find(|tile| game.wdist(*tile, target) == distance)
+                };
+                Some((target, at(reach)?, at(reach + 1)?))
+            })
+            .expect("a 24x16 map has tiles at both distances");
+        game.players[0].explored.insert(target);
+        game.players[0]
+            .counters
+            .insert("project_effect:nuclear_devices".to_string(), 2);
+        let strike = Action::WmdStrike {
+            city: launch,
+            target,
+            thermonuclear: false,
+        };
+
+        let short = game.spawn_test_unit(kind, 0, too_far);
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "{kind} one tile beyond its own range"
+        );
+        game.remove_unit(short);
+
+        let carrier = game.spawn_test_unit(kind, 0, base);
+        assert!(game.apply(0, &strike).is_ok(), "{kind} at its own range");
+        let record = game.nuclear_strikes.last().expect("the strike is recorded");
+        assert_eq!(record.platform, kind);
+        assert_eq!(record.launched_from, base);
+        assert_eq!(
+            game.players[0].counters["project_effect:nuclear_devices"],
+            1
+        );
+        assert_eq!(
+            game.units[&carrier].attacks_left, 0,
+            "{kind} spent its attack"
+        );
+
+        // One attack, one device, even with another in the stockpile.
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "{kind} has no attack left"
+        );
+    }
+}
+
+/// The AI's only path to a launch is `legal_actions`, so a carrier has to be
+/// offered there. Being merely legal through `apply` would leave it idle.
+#[test]
+fn a_bomber_in_range_puts_the_strike_on_the_menu() {
+    let (mut game, cities) = game_with_capitals(91_802);
+    let (launch, struck) = (cities[0], cities[1]);
+    let target = game.cities[&struck].pos;
+    game.at_war.insert(pair(0, 1));
+    game.players[0].explored.insert(target);
+    game.players[0]
+        .counters
+        .insert("project_effect:nuclear_devices".to_string(), 1);
+    let strike = Action::WmdStrike {
+        city: launch,
+        target,
+        thermonuclear: false,
+    };
+    assert!(!game.legal_actions(0).contains(&strike));
+    let base = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|tile| game.wdist(*tile, target) == 5)
+        .expect("a tile five away");
+    game.spawn_test_unit("bomber", 0, base);
+    assert!(game.legal_actions(0).contains(&strike));
+}
+
 /// A reloaded game has to remember the war it is in the middle of. The
 /// ledger is a new field on a long-lived save format, so the round trip is
 /// the thing that proves the `serde` plumbing on all four sides — struct,
@@ -642,6 +776,7 @@ fn the_strike_ledger_survives_a_save_round_trip() {
         "fixture capitals must sit within ICBM range ({distance})"
     );
     game.at_war.insert(pair(0, 1));
+    game.install_test_silo(launch);
     game.players[0]
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);

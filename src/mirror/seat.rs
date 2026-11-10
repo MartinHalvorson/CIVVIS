@@ -616,6 +616,22 @@ pub(super) fn apply_observed_host_metrics(
         Arc::make_mut(&mut game.observed_tourism_per_turn).insert(0, tourism);
     }
     apply_public_empire_stats(game, 0, &state.public_stats);
+    // The engine spends a stockpile from these counters, so a seat that read
+    // its devices only into the public stats could never be offered a launch.
+    for (counter, held) in [
+        (
+            "project_effect:nuclear_devices",
+            state.public_stats.nuclear_devices,
+        ),
+        (
+            "project_effect:thermonuclear_devices",
+            state.public_stats.thermonuclear_devices,
+        ),
+    ] {
+        if let Some(held) = held.filter(|held| *held >= 0) {
+            game.players[0].counters.insert(counter.to_string(), held);
+        }
+    }
     {
         // Same per-snapshot honesty as the rival counters: unknown is None.
         let count = |value: f64| {

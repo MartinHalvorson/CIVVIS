@@ -68,6 +68,7 @@ fn conquest_ai_spends_a_device_on_the_hard_city_but_spares_its_own() {
     let target_city = game.player_city_ids(1)[0];
     let target = game.cities[&target_city].pos;
     game.at_war.insert((0, 1));
+    game.install_test_silo(game.player_city_ids(0)[0]);
     game.players[0]
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);
@@ -158,6 +159,7 @@ fn the_doctrine_spares_a_power_it_is_not_fighting() {
         .expect("the map has a clean tile for the second city");
     let plain_city = game.found_city_for(1, plain, None);
     game.at_war.insert((0, 1));
+    game.install_test_silo(game.player_city_ids(0)[0]);
     game.players[0]
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);

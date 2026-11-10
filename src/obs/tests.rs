@@ -1374,6 +1374,7 @@ fn a_detonation_reaches_the_wire_whole() {
     for position in game.wdisk(target, spec.blast_radius) {
         game.players[0].explored.insert(position);
     }
+    game.install_test_silo(capitals[0]);
     game.apply(
         0,
         &crate::game::Action::WmdStrike {
@@ -1399,7 +1400,7 @@ fn a_detonation_reaches_the_wire_whole() {
         "ground zero cannot be inferred from a halved city"
     );
     assert_eq!(strike["thermonuclear"], serde_json::json!(true));
-    assert_eq!(strike["platform"], serde_json::json!("city"));
+    assert_eq!(strike["platform"], serde_json::json!("missile_silo"));
     assert_eq!(strike["blast_radius"], serde_json::json!(spec.blast_radius));
     assert_eq!(strike["cities"], serde_json::json!([city_name]));
     assert_eq!(strike["victims"], serde_json::json!([1]));
