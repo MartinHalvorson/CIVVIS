@@ -82,6 +82,19 @@ impl Game {
         self.players.iter().filter(|p| p.religion.is_some()).count()
     }
 
+    /// The four religion beliefs exclude the pantheon. The native mirror
+    /// retains the pantheon in `religion_beliefs` for its effects, whereas
+    /// founding in the simulator replaces that list with the founding pair.
+    /// ReligionScreen.lua:12,1262 counts four entries in `religion.Beliefs`
+    /// and displays the pantheon separately (:1022).
+    pub(crate) fn religion_belief_count(&self, pid: usize) -> usize {
+        self.players[pid]
+            .religion_beliefs
+            .iter()
+            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(*belief))
+            .count()
+    }
+
     pub(super) fn pantheon_effect(&self, pid: usize, effect: &str) -> f64 {
         self.players[pid]
             .pantheon
@@ -999,7 +1012,7 @@ impl Game {
         if apostle.kind != "apostle"
             || apostle.moves_left <= 0.0
             || apostle.religion != self.players[pid].religion
-            || self.players[pid].religion_beliefs.len() >= 4
+            || self.religion_belief_count(pid) >= 4
         {
             return Err("Apostle cannot evangelize another belief".into());
         }
@@ -1027,7 +1040,7 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].religion_beliefs.push(belief.to_string());
-        if self.players[pid].religion_beliefs.len() == 4 {
+        if self.religion_belief_count(pid) == 4 {
             self.first_historic_moment(
                 pid,
                 "religion_fully_developed",
