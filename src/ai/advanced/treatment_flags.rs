@@ -126,6 +126,9 @@ impl AdvancedAi {
         /// Opt-in gene `guru-walks-to-the-wounded`; see
         /// `advanced/guru_walks_to_the_wounded.rs`.
         guru_walks_to_the_wounded => enable_guru_walks_to_the_wounded, disable_guru_walks_to_the_wounded;
+        /// Opt-in gene `good-land-lifts-the-city-target`; see
+        /// `advanced/good_land_lifts_the_city_target.rs`.
+        good_land_lifts_the_city_target => enable_good_land_lifts_the_city_target, disable_good_land_lifts_the_city_target;
         // ---- append: l-o --------------------------------------------
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;

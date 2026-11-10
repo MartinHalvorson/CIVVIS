@@ -5474,6 +5474,10 @@ pub const GENES: &[Gene] = &[
     // Live 11-09: 21 Gurus spent 80 turns within 4 tiles of a wounded friend
     // and 13 beside one, and walked at rivals that killed 8 of 16 they hit.
     Gene { tag: "guru-walks-to-the-wounded", field: "guru_walks_to_the_wounded", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_walks_to_the_wounded, disable: AdvancedAi::disable_guru_walks_to_the_wounded },
+    // Operator 11-09: raise the city target to twelve, at the seat's
+    // discretion, for good land only. The target rises above ten by one city
+    // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
+    Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
     // ---- append: l-o ------------------------------------------------
     Gene { tag: "modernization-prices-the-path", field: "modernization_prices_the_path", kind: Kind::OptIn, enable: AdvancedAi::enable_modernization_prices_the_path, disable: AdvancedAi::disable_modernization_prices_the_path },
     // First-slot ranged support. Leaves later recon settings unchanged;

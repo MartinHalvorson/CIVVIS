@@ -286,6 +286,22 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the walker's own Loyalty forecast refuses `site`, asked the way
+    /// `settling.rs` asks it before the walk: `settle_site_loyalty_verdict`
+    /// on a Science seat or under the rate alarm, the frontier verdict under
+    /// `frontier_loyalty`, and no forecast at all otherwise.
+    pub(super) fn holdable_land_loyalty_refuses(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        if self.base.loyalty_rate_alarm || science_targeted {
+            self.settle_site_loyalty_verdict(g, pid, site).is_some()
+        } else if self.frontier_loyalty {
+            self.settle_site_frontier_loyalty_verdict(g, pid, site)
+                .is_some()
+        } else {
+            false
+        }
+    }
+
     /// The best holdable seat for a Settler trained in a city at `from`: the
     /// `settler-site-gate` verdict over the city's acceptable sites that pass
     /// [`Self::holdable_land_refusal`]. `Err` says why there is none.
@@ -320,23 +336,15 @@ impl AdvancedAi {
         // for seats the walker then refused ("beyond the empire's Loyalty
         // reach on ground the seat has not explored", 85 refusals), and one
         // stood stranded for 26 turns while the other was queued beside it.
-        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
-        if self.base.loyalty_rate_alarm || self.frontier_loyalty || science_targeted {
-            sites.retain(|(site, _)| {
-                let verdict = if self.base.loyalty_rate_alarm || science_targeted {
-                    self.settle_site_loyalty_verdict(g, pid, *site)
-                } else {
-                    self.settle_site_frontier_loyalty_verdict(g, pid, *site)
-                };
-                if verdict.is_some() {
-                    *refused
-                        .entry("the walker's Loyalty forecast refuses it")
-                        .or_default() += 1;
-                    return false;
-                }
-                true
-            });
-        }
+        sites.retain(|(site, _)| {
+            if self.holdable_land_loyalty_refuses(g, pid, *site) {
+                *refused
+                    .entry("the walker's Loyalty forecast refuses it")
+                    .or_default() += 1;
+                return false;
+            }
+            true
+        });
         let claimed: Vec<Pos> = self
             .settler_targets
             .iter()
@@ -427,6 +435,7 @@ impl AdvancedAi {
             })
             .flatten();
         let threats = Self::holdable_land_threats(g, pid);
+        let good_seat_floor = self.good_land_seat_floor(n_cities + walkers);
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
         let mut best: Option<(f64, u32, Pos, f64)> = None;
@@ -471,6 +480,11 @@ impl AdvancedAi {
                 continue;
             }
             match self.holdable_land_seat(g, pid, city.pos, walkers, &threats) {
+                // `good-land-lifts-the-city-target`: past the shared target
+                // only a good seat is worth a Settler. Zero with it off.
+                Ok((_, worth)) if worth < good_seat_floor => {
+                    *passed.entry("no good seat past the shared target").or_default() += 1;
+                }
                 Ok((site, worth)) => best = Some((turns, cid, site, worth)),
                 Err(why) => {
                     *passed.entry("no holdable seat").or_default() += 1;
