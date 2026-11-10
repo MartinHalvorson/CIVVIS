@@ -2157,16 +2157,14 @@ pub fn generate_with_script_and_leader_starts(
     remove_water_boundary_rivers(&mut wm);
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
-    // --- tribal villages (goody huts), roughly 1 per 40 land tiles. The
-    // battlefield has none: nothing on an arena exists to be discovered.
+    // Tribal Villages are placed last now (`add_goodies`), but this pass's
+    // draws stay: dropping them would redraw the terrain, wonders, and
+    // resources of every seeded world for a rule that touches none of those.
     if !script.is_battlefield() {
         for pos in &land_list {
-            let t = &wm.tiles[pos];
-            if t.terrain == "mountain" || t.has_river() {
-                continue;
-            }
-            if rng.f64() < 0.025 {
-                wm.tiles.get_mut(pos).unwrap().improvement = Some("goody_hut".into());
+            let tile = &wm.tiles[pos];
+            if tile.terrain != "mountain" && !tile.has_river() {
+                rng.f64();
             }
         }
     }
