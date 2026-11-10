@@ -407,6 +407,11 @@ impl AdvancedAi {
         let wide_city_target = self.expansion_wide_city_target(g);
         let desired_cities =
             wide_city_target.map_or(desired_cities, |wide| desired_cities.max(wide));
+        // `good-land-lifts-the-city-target`: one more city, to at most twelve,
+        // for each good seat the empire can hold while a city still repays.
+        // Every cut below still applies. See
+        // `advanced/good_land_lifts_the_city_target.rs`.
+        let desired_cities = self.good_land_city_target(g, pid, desired_cities, &cities);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(

@@ -7815,6 +7815,11 @@ pub struct AdvancedAi {
     /// stood at 360-478, and no war opened until turn 151. The same window
     /// came in 4 of 5 Gran Colombia games of 2026-11-09. Opt-in.
     gutted_rival_passes_the_edge: bool,
+    /// `good-land-lifts-the-city-target`: the plan's city target rises above
+    /// the shared ten, to at most twelve, by one city for each good seat the
+    /// empire can hold, while a city founded now still repays. See
+    /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
+    good_land_lifts_the_city_target: bool,
     // ---- append: l-o ------------------------------------------------
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
@@ -11160,6 +11165,10 @@ mod gold_buys_the_opening_builder;
 /// `advanced/gold_buys_the_production_tile.rs`.
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
+/// `good-land-lifts-the-city-target`: the city target rises to at most twelve
+/// for good seats the empire can hold. See
+/// `advanced/good_land_lifts_the_city_target.rs`.
+mod good_land_lifts_the_city_target;
 mod granary_claims_the_bound_queue;
 /// `group-steps-read-the-field`: the group step reads the danger field. See
 /// `advanced/group_steps_read_the_field.rs`.
