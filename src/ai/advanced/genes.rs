@@ -5477,6 +5477,11 @@ pub const GENES: &[Gene] = &[
     // Great People at t124-144 while the bank waited for Ideology. Opt-in;
     // see `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
+    // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    // beeline by when each Inspiration lands, and researches the technology
+    // that inspires a near road civic first. Opt-in; see
+    // `advanced/culture_road_inspirations.rs`.
+    Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

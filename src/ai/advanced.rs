@@ -6754,6 +6754,11 @@ pub struct AdvancedAi {
     /// Person but a Writer, Artist or Musician from then on. See
     /// `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_opens_at_nationalism: bool,
+    /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    /// beeline by when each Inspiration lands and researches the technology
+    /// that inspires a near civic of the road to Cold War first. See
+    /// `advanced/culture_road_inspirations.rs`. Off by default.
+    culture_road_earns_its_inspirations: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10791,6 +10796,9 @@ mod diplo_statue_harbor;
 mod culture_museum_swaps;
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
+/// `culture-road-earns-its-inspirations`: see
+/// `advanced/culture_road_inspirations.rs`.
+mod culture_road_inspirations;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
