@@ -11028,6 +11028,25 @@ impl Game {
                 if matches!(unit.as_str(), "builder" | "settler" | "trader") {
                     bonus += economic.civilian_unit_production_pct / 100.0;
                 }
+                // `MINOR_CIV_DEFAULT_TRAIT`: a city-state trains Builders 200%
+                // faster, and military units too while it holds fewer than 10
+                // of them (`PLAYER_HAS_SMALL_MILITARY`).
+                if self.players[pid].is_minor
+                    && !self.players[pid].is_barbarian
+                    && (unit == "builder"
+                        || (spec.class == "military"
+                            && self
+                                .units
+                                .values()
+                                .filter(|held| {
+                                    held.owner == pid
+                                        && self.rules.units[held.kind].class == "military"
+                                })
+                                .count()
+                                < 10))
+                {
+                    bonus += 2.0;
+                }
                 if spec.class == "military"
                     && self
                         .alliance_partner(pid, "military", 2)
@@ -11139,6 +11158,16 @@ impl Game {
             Some(Item::Building { building }) => {
                 let spec = &self.rules.buildings[building];
                 bonus += economic.building_production_pct / 100.0;
+                // `MINOR_CIV_PRODUCTION_WALLS`: 200% on all three tiers.
+                if self.players[pid].is_minor
+                    && !self.players[pid].is_barbarian
+                    && matches!(
+                        building.as_str(),
+                        "walls" | "medieval_walls" | "renaissance_walls"
+                    )
+                {
+                    bonus += 2.0;
+                }
                 let district = spec
                     .district
                     .map(|district| self.district_family(district))
