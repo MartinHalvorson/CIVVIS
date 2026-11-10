@@ -2251,6 +2251,11 @@ pub struct BasicAi {
     /// the frozen native controllers, enabled by the Civilization VI bridge.
     /// See `loyalty_emergency`.
     loyalty_rate_alarm: bool,
+    /// `culture-keeps-pingala-home`: set each turn by `AdvancedAi` on a
+    /// Culture seat with the gene on. A seated Pingala answers a Loyalty
+    /// emergency only in a city flipping within this many turns. `None`
+    /// leaves every Governor free, the stock rule.
+    pub(crate) pingala_loyalty_runway: Option<f64>,
     /// Record every tactical step through `path_move` instead of applying it
     /// raw, so a unit stepped a second time in the same turn cannot walk back
     /// onto the tile it just left.
@@ -3906,6 +3911,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
@@ -4351,6 +4357,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,

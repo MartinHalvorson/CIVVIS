@@ -25573,6 +25573,10 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // See `last_civ_standing`: "one more turn" leaves one lane.
         self.plays_for_the_last_civ(g, pid);
+        // `culture-keeps-pingala-home`: both Loyalty passes read the runway.
+        // See `advanced/culture_pingala_first.rs`.
+        self.base.pingala_loyalty_runway =
+            self.culture_pingala_stays_home(g).map(|(_, runway)| runway);
         // `districts-price-the-improvement`: what a District could bulldoze.
         self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
@@ -25936,10 +25940,7 @@ impl AdvancedAi {
         // emergency pass that protects an ungoverned city with a measured
         // Loyalty collapse. The frozen controller keeps its old path.
         if self.base.loyalty_rate_alarm {
-            // `culture-keeps-pingala-home`: see `advanced/culture_pingala_first.rs`.
-            let spared = self.culture_pingala_stays_home(g);
-            self.base
-                .reassign_governor_for_loyalty_sparing(g, pid, spared);
+            self.base.reassign_governor_for_loyalty(g, pid);
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.

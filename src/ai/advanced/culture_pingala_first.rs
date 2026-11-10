@@ -49,7 +49,10 @@
 //! day, 9 went to a city three or more citizens smaller. With the gene on, a
 //! Culture target's seated Pingala answers the emergency only when the city
 //! would flip within `PINGALA_LOYALTY_RUNWAY_STANDARD` turns; any other
-//! Governor, and an unassigned one, still goes as before.
+//! Governor, and an unassigned one, still goes as before. The runway rides on
+//! `BasicAi::pingala_loyalty_runway`, set at the top of each turn, because
+//! the Loyalty pass runs twice: from `AdvancedAi`'s governor block and from
+//! the base ancillary pass after the titles.
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::Game;

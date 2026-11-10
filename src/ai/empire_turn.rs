@@ -645,7 +645,10 @@ impl BasicAi {
     /// the old threshold is treated as an emergency in its own right so a city
     /// already in trouble is never ranked behind a healthy one.
     pub(super) fn reassign_governor_for_loyalty(&self, g: &mut Game, pid: usize) -> bool {
-        self.reassign_governor_for_loyalty_sparing(g, pid, None)
+        let spared = self
+            .pingala_loyalty_runway
+            .map(|runway| ("pingala", runway));
+        self.reassign_governor_for_loyalty_sparing(g, pid, spared)
     }
 
     /// [`Self::reassign_governor_for_loyalty`], with `spared` naming a seated
