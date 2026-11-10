@@ -425,3 +425,84 @@ fn the_most_spent_spreader_scouts_while_the_corps_works() {
         .city_count = Some(1);
     assert!(!on.religion_seat_scout_charts(&mut charted, 0, spent, "Buddhism", true));
 }
+
+/// ★ The 100022Z shape: a corps of eight with one cheap target in sight and
+/// four of the rival's cities unseen. The rows price the known work at one
+/// charge, so all but the spreaders that work needs chart; without rows the
+/// corps sends its one scout in four.
+#[test]
+fn a_corps_far_past_its_known_work_sends_the_surplus_to_chart() {
+    let (mut game, first, site) = charted_out();
+    let rival_city = game.city_at(site).unwrap();
+    {
+        let city = game.cities.get_mut(&rival_city).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 150.0;
+    }
+    let home = game.units[&first].pos;
+    let mut corps = vec![first];
+    for _ in 0..7 {
+        let uid = game.spawn_test_unit("missionary", 0, home);
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.religion = Some("Buddhism".to_string());
+        unit.charges = 3;
+        unit.hp = 100;
+        corps.push(uid);
+    }
+    corps.sort();
+    let on = seat(VictoryTarget::Religion, true);
+
+    // No rows: one scout for the one under-charted rival, the oldest unit.
+    let mut bare = game.clone();
+    assert!(on.religion_seat_scout_charts(&mut bare, 0, corps[0], "Buddhism", true));
+    assert!(!on.religion_seat_scout_charts(&mut bare, 0, corps[1], "Buddhism", true));
+
+    // Rows: the one known city asks one Apostle charge. 24 charges in the
+    // corps less twice that leaves 22, which is seven spreaders.
+    std::sync::Arc::make_mut(&mut game.observed_city_faiths).insert(
+        rival_city,
+        vec![crate::game::ObservedCityFaith {
+            religion: None,
+            followers: 1,
+            pressure: 150.0,
+            per_turn: 0.0,
+        }],
+    );
+    assert_eq!(
+        AdvancedAi::campaign_charges_known(&game, 0, "Buddhism"),
+        Some(1)
+    );
+    let mut board = game.clone();
+    assert!(on.religion_seat_scout_charts(&mut board, 0, corps[6], "Buddhism", true));
+    assert_ne!(board.units[&corps[6]].pos, home, "the seventh sets out");
+    assert!(
+        !on.religion_seat_scout_charts(&mut board, 0, corps[7], "Buddhism", true),
+        "the eighth stays for the city in sight"
+    );
+
+    // Work that asks as much as the corps holds leaves only the one scout.
+    let mut busy = game.clone();
+    std::sync::Arc::make_mut(&mut busy.observed_city_faiths).insert(
+        rival_city,
+        vec![
+            crate::game::ObservedCityFaith {
+                religion: None,
+                followers: 0,
+                pressure: 150.0,
+                per_turn: 0.0,
+            },
+            crate::game::ObservedCityFaith {
+                religion: Some("Hinduism".to_string()),
+                followers: 1,
+                pressure: 60_000.0,
+                per_turn: 0.0,
+            },
+        ],
+    );
+    assert_eq!(
+        AdvancedAi::campaign_charges_known(&busy, 0, "Buddhism"),
+        Some(12)
+    );
+    assert!(on.religion_seat_scout_charts(&mut busy, 0, corps[0], "Buddhism", true));
+    assert!(!on.religion_seat_scout_charts(&mut busy, 0, corps[1], "Buddhism", true));
+}
