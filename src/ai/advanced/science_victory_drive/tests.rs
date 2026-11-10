@@ -5,7 +5,7 @@ use crate::Pos;
 
 /// A two-player board with one founded city each on a 200-turn clock.
 fn board() -> (Game, u32, u32) {
-    let mut g = Game::new(2, 24, 16, 71, 200, 0);
+    let mut g = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_10", 71), 200, 0);
     let found = |g: &mut Game, pid: usize| {
         let settler = g
             .player_unit_ids(pid)

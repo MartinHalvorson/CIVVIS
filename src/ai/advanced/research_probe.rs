@@ -361,7 +361,7 @@ fn a_settler_on_a_site_it_can_no_longer_found_retires_it_and_moves_on() {
 /// their established selection path.
 #[test]
 fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
-    let mut game = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+    let mut game = Game::new_full(2, 40, 24, crate::rng::fixture_seed("AUTO_8", 91_775), 250, 0, false);
     game.current = 0;
     for pid in 0..2 {
         let settler = game

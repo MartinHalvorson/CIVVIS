@@ -9170,7 +9170,7 @@ fn defensible_sites_is_a_registered_reversible_opt_in() {
 fn an_isolated_site_is_penalised_and_the_penalty_is_bounded() {
     let mut ai = AdvancedAi::new();
     ai.enable_defensible_sites();
-    let mut game = Game::new(2, 60, 40, 6_102, 250, 0);
+    let mut game = Game::new(2, 60, 40, crate::rng::fixture_seed("AUTO_18", 6_102), 250, 0);
     game.found_city_for(0, (10, 20), None);
 
     // Inside the empire: no isolation penalty at all.

@@ -1230,7 +1230,7 @@ fn recon_explores_independently_while_combat_roles_form_the_army() {
 
 #[test]
 fn force_replans_focus_after_each_battlefield_action() {
-    let mut g = Game::new_full(2, 24, 16, 79, 80, 0, false);
+    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_26", 79), 80, 0, false);
     // Only the staged attackers belong in this force. Organic starting
     // units can otherwise split them into separate command-radius groups.
     for unit in g.player_unit_ids(0) {

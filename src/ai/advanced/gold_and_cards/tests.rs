@@ -2,7 +2,7 @@ use super::*;
 use crate::game::{Action, Game};
 
 fn board() -> (Game, u32) {
-    let mut g = Game::new(2, 24, 16, 71, 250, 0);
+    let mut g = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_4", 71), 250, 0);
     let settler = g
         .player_unit_ids(0)
         .into_iter()

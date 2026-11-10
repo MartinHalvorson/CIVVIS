@@ -1,7 +1,7 @@
 use super::super::*;
 
 pub(super) fn siege_gap_case() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
-    let mut g = Game::new_full(2, 40, 26, 79_301, 500, 0, false);
+    let mut g = Game::new_full(2, 40, 26, crate::rng::fixture_seed("AUTO_13", 79_301), 500, 0, false);
     g.current = 0;
     let settlers: Vec<_> = g
         .units

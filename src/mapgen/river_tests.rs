@@ -5482,83 +5482,95 @@ fn every_stamped_script_seats_every_player_at_every_stock_size() {
     }
 }
 
-/// TEMPORARY census of what the generator places.
+/// TEMPORARY: finds a seed for every fixture the map refresh redrew.
 #[test]
-fn temp_resource_census() {
-    let rules = Rules::embedded();
-    let mut out = String::from("\nCENSUS\n");
-    for script in [
-        MapScript::Continents,
-        MapScript::Pangaea,
-        MapScript::Islands,
-        MapScript::Lakes,
-    ] {
-        let mut land = 0usize;
-        let mut water = 0usize;
-        let mut coast = 0usize;
-        let mut counts = std::collections::BTreeMap::<String, usize>::new();
-        let mut per_continent = std::collections::BTreeMap::<usize, usize>::new();
-        let mut world_luxuries = 0usize;
-        const SEEDS: u64 = 12;
-        for seed in 0..SEEDS {
-            let mut rng = Rng::new(91_000 + seed);
-            let (world, _) = generate_with_script(
-                &rules, 84, 54, 8, 12, 5, 4, script, FLAT, POLED, &mut rng,
-            );
-            let mut lux =
-                std::collections::BTreeMap::<usize, std::collections::BTreeSet<String>>::new();
-            let mut land_lux = std::collections::BTreeSet::<String>::new();
-            for tile in world.tiles.values() {
-                let is_water = rules.is_water(tile);
-                if is_water {
-                    water += 1;
-                    coast += usize::from(tile.terrain.as_str() == "coast");
-                } else {
-                    land += 1;
-                }
-                let Some(resource) = tile.resource.as_ref() else {
-                    continue;
+fn temp_seed_search() {
+    use std::collections::VecDeque;
+    use std::process::{Command, Stdio};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    const SITES: &[(&str, u64, &[&str])] = &[
+    ("AUTO_0", 379700, &["ai::advanced::air_base_loyalty::tests::owned_public_rate_is_enough_when_the_pressure_city_is_hidden", "ai::advanced::air_base_loyalty::tests::a_destination_must_survive_arrival_and_the_next_sortie", "ai::advanced::air_base_loyalty::tests::a_full_safe_base_cannot_receive_an_illegal_evacuation", "ai::advanced::air_base_loyalty::tests::actual_dispatch_evacuates_before_a_profitable_kill_and_survives_revolt", "ai::advanced::air_base_loyalty::tests::carriers_and_airstrips_do_not_inherit_city_center_destruction", "ai::advanced::air_base_loyalty::tests::joint_battle_prepass_also_leaves_the_evacuated_aircraft_alone", "ai::advanced::air_base_loyalty::tests::multiple_aircraft_cannot_reserve_the_same_last_slot", "ai::advanced::air_base_loyalty::tests::off_and_other_victory_lanes_preserve_the_attack_first_dispatch", "ai::advanced::air_base_loyalty::tests::ordinary_rebase_choice_excludes_a_front_base_without_an_operating_turn", "ai::advanced::air_base_loyalty::tests::spent_planes_and_unknown_source_rates_do_not_invent_a_rebase", "ai::advanced::air_base_loyalty::tests::stable_source_keeps_the_profitable_kill", "ai::advanced::air_base_loyalty::tests::upgraded_jets_and_aerodrome_positions_survive_actual_revolt"]),
+    ("AUTO_1", 71011, &["ai::advanced::boost_planner::tests::an_improvement_trigger_is_cheap_only_once_we_already_build_that_improvement"]),
+    ("AUTO_2", 79212, &["ai::advanced::culture_strategy::tests::science_defense_lifts_the_culture_building_veto_without_switching_victory", "ai::advanced::culture_strategy::tests::a_ready_culture_museum_unlocks_archaeology_before_another_government", "ai::advanced::culture_strategy::tests::an_assigned_culture_racer_keeps_conservation_while_behind_on_visitors", "ai::advanced::culture_strategy::tests::censorship_amenity_cost_ends_even_without_a_replacement_card", "ai::advanced::culture_strategy::tests::cold_war_window_changes_the_legal_civic_order_only_for_culture", "ai::advanced::culture_strategy::tests::cold_war_window_keeps_the_opening_and_resumes_the_culture_chain", "ai::advanced::culture_strategy::tests::culture_chain_stays_valuable_during_expansion_but_must_finish_in_time", "ai::advanced::culture_strategy::tests::culture_defense_policies_replace_occupied_slots_and_release_after_threat", "ai::advanced::culture_strategy::tests::culture_production_recovers_the_treasury_before_adding_upkeep", "ai::advanced::culture_strategy::tests::culture_researches_a_government_its_chooser_will_adopt", "ai::advanced::culture_strategy::tests::defense_uses_the_global_bar_and_only_known_living_opponents", "ai::advanced::culture_strategy::tests::disabled_culture_and_frozen_controller_do_not_raise_new_defenses", "ai::advanced::culture_strategy::tests::early_defense_denounces_the_culture_threat_once", "ai::advanced::culture_strategy::tests::early_defense_refuses_the_threats_open_borders_proposal", "ai::advanced::culture_strategy::tests::early_threshold_admits_a_thirty_five_percent_rival_and_off_keeps_fifty", "ai::advanced::culture_strategy::tests::explicit_culture_target_keeps_theater_buildings_through_recovery", "ai::advanced::culture_strategy::tests::heritage_priority_requires_usable_works_and_existing_policy_capacity", "ai::advanced::culture_strategy::tests::housed_museum_works_unlock_heritage_before_a_later_government", "ai::advanced::culture_strategy::tests::strategic_trade_does_not_grant_passage_to_the_culture_threat", "ai::advanced::culture_strategy::tests::tourism_routes_only_reward_new_major_markets_and_favor_the_largest_bar"]),
+    ("AUTO_3", 91021, &["ai::advanced::victory_heuristics::denial_frontier_tests::prewar_suppression_prefers_reachable_infrastructure_over_a_cheaper_far_city", "ai::advanced::victory_heuristics::denial_frontier_tests::distant_culture_infrastructure_falls_back_to_the_selected_rivals_frontier", "ai::advanced::victory_heuristics::denial_frontier_tests::existing_wars_keep_distant_victory_infrastructure_available", "ai::advanced::victory_heuristics::denial_frontier_tests::prewar_suppression_does_not_name_an_objective_the_declaration_gate_refuses", "ai::advanced::victory_heuristics::denial_frontier_tests::reachable_infrastructure_keeps_priority_over_a_plain_frontier"]),
+    ("AUTO_4", 71, &["ai::advanced::gold_and_cards::tests::version_two_buys_the_first_builder_then_a_monument_and_never_the_reserve", "ai::advanced::gold_and_cards::tests::a_deficit_raises_the_working_reserve_by_ten_turns_of_it", "ai::advanced::gold_and_cards::tests::a_unit_purchase_must_keep_the_recurring_budget_at_or_above_zero", "ai::advanced::gold_and_cards::tests::native_emergency_v2_accepts_a_same_frame_host_hit_or_visible_legal_attacker", "ai::advanced::gold_and_cards::tests::off_the_reserve_is_the_stock_value_and_on_it_is_a_defender", "ai::advanced::gold_and_cards::tests::the_engine_prices_colonization_and_the_controller_reads_it", "ai::advanced::gold_and_cards::tests::the_governor_leans_toward_the_boosted_item_and_only_upward", "ai::advanced::gold_and_cards::tests::the_native_emergency_needs_damage_and_a_recent_strike", "ai::advanced::gold_and_cards::tests::the_treasury_keeps_one_defender_while_a_city_is_threatened", "ai::advanced::gold_and_cards::tests::the_upgrade_floor_keeps_the_armys_bill_only_while_on"]),
+    ("PLAZARESERVE", 91770, &["ai::advanced::government_plaza::tests::the_idle_capital_queues_the_first_plaza_ahead_of_the_shortfall", "ai::advanced::government_plaza::tests::culture_plaza_preference_requires_positive_native_quote_and_peace", "ai::advanced::government_plaza::tests::peaceful_native_culture_builds_the_quoted_economic_plaza_tiers", "ai::advanced::government_plaza::tests::the_standing_plaza_builds_its_throne_then_its_chapel"]),
+    ("AUTO_6", 936017, &["ai::advanced::growth_farm_tests::a_weak_housing_bound_city_farms_even_against_the_foundation_bonus", "ai::advanced::growth_farm_tests::a_city_with_room_and_food_keeps_its_mine", "ai::advanced::growth_farm_tests::a_housing_bound_city_farms_the_flat_before_mining_the_hill", "ai::advanced::growth_farm_tests::growth_prices_the_farm_2_is_off_by_default_and_reversible", "ai::advanced::growth_farm_tests::growth_prices_the_farm_is_off_by_default_and_reversible", "ai::advanced::growth_farm_tests::the_food_premium_is_the_grown_citizens_priced_as_production", "ai::advanced::growth_farm_tests::the_food_premium_stops_without_room_in_a_large_city_and_on_foreign_land", "ai::advanced::growth_farm_tests::the_premium_prices_housing_and_food_by_the_constants", "ai::advanced::growth_farm_tests::version_two_prices_a_growing_citys_food_where_version_one_pays_nothing", "ai::advanced::growth_farm_tests::version_two_prices_housing_before_the_cap"]),
+    ("AUTO_7", 92411, &["ai::advanced::lane_delegates_production::tests::the_gene_moves_an_assigned_lane_and_leaves_an_unassigned_seat_alone", "ai::advanced::lane_delegates_production::tests::version_two_keeps_delegating_after_the_clock"]),
+    ("AUTO_8", 91775, &["ai::advanced::research_probe::a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there"]),
+    ("AUTO_9", 95344, &["ai::advanced::science_campus_before_repeat_settler::tests::midgame_settler_claim_also_respects_the_first_city_campus_commitment", "ai::advanced::science_campus_before_repeat_settler::tests::commitment_survives_zero_progress_and_native_repricing_without_a_walker", "ai::advanced::science_campus_before_repeat_settler::tests::commitment_yields_to_new_defensive_or_victory_priorities", "ai::advanced::science_campus_before_repeat_settler::tests::exception_requires_native_quotes_pipeline_and_safe_science_plan", "ai::advanced::science_campus_before_repeat_settler::tests::short_native_campus_precedes_repeated_settler_without_losing_paid_work", "ai::advanced::science_campus_before_repeat_settler::tests::standalone_gene_does_not_enable_ordinary_campus_claims"]),
+    ("AUTO_10", 71, &["ai::advanced::science_victory_drive::tests::science_drive_v2_values_the_research_funnel_only_in_the_launch_city", "ai::advanced::science_victory_drive::tests::a_committed_adaptive_launch_drives_before_the_normal_review", "ai::advanced::science_victory_drive::tests::a_credible_adaptive_science_plan_drives_before_it_leads", "ai::advanced::science_victory_drive::tests::a_host_flight_reading_sets_the_support_horizon", "ai::advanced::science_victory_drive::tests::a_known_rival_flight_cuts_support_detours_without_private_information", "ai::advanced::science_victory_drive::tests::a_rival_flight_is_measured_against_this_games_trip", "ai::advanced::science_victory_drive::tests::a_seat_behind_the_field_does_not_drive_but_an_assigned_one_does", "ai::advanced::science_victory_drive::tests::a_seat_leading_the_field_drives_after_the_start_and_no_sooner", "ai::advanced::science_victory_drive::tests::another_lane_answers_a_rival_launch_when_it_leads", "ai::advanced::science_victory_drive::tests::before_rocketry_the_production_techs_carry_their_own_value", "ai::advanced::science_victory_drive::tests::pingala_prefers_the_launch_city_once_a_pad_stands", "ai::advanced::science_victory_drive::tests::science_drive_v2_keeps_a_live_pad_moving_on_its_next_rung", "ai::advanced::science_victory_drive::tests::science_drive_v2_only_selects_a_legal_launch_city", "ai::advanced::science_victory_drive::tests::science_race_repairs_a_pillaged_spaceport_before_stalling", "ai::advanced::science_victory_drive::tests::targeted_launch_uses_banked_progress_instead_of_raw_production_rank", "ai::advanced::science_victory_drive::tests::the_launch_city_prices_its_production_chain_and_its_pad", "ai::advanced::science_victory_drive::tests::the_milestone_is_the_next_unknown_tech_and_the_beeline_holds_through_a_build"]),
+    ("AUTO_11", 91777, &["ai::advanced::settler_never_idles::tests::the_sieve_keeps_the_forecast_for_plots_outside_the_rivals_sphere"]),
+    ("AUTO_12", 91347, &["ai::advanced::settler_never_idles::walk_price_tests::an_older_exhausted_settler_prices_the_remaining_walk"]),
+    ("AUTO_13", 79301, &["ai::advanced::siege_production::tests::a_full_army_can_add_missing_siege_for_medieval_walls", "ai::advanced::siege_production::tests::a_high_walled_target_is_supplied_with_guns_in_parallel", "ai::advanced::siege_production::tests::a_housing_bound_citys_fresh_granary_is_not_given_to_the_siege_gun_under_the_gene", "ai::advanced::siege_production::tests::a_train_that_cannot_breach_heavy_walls_keeps_reserving_guns", "ai::advanced::siege_production::tests::an_existing_or_queued_siege_unit_closes_the_composition_exception", "ai::advanced::siege_production::tests::delegated_domination_reserves_a_gun_before_a_known_masonry_enemy_raises_walls", "ai::advanced::siege_production::tests::delegated_domination_reserves_another_gun_when_the_first_cannot_breach", "ai::advanced::siege_production::tests::delegated_domination_reserves_one_real_wall_breaker", "ai::advanced::siege_production::tests::delegated_siege_adds_a_fast_second_gun_when_the_first_is_late", "ai::advanced::siege_production::tests::delegated_siege_reservation_survives_an_appointed_war_plan", "ai::advanced::siege_production::tests::delegated_siege_uses_a_fast_fresh_queue_before_a_hundred_turn_idle_city", "ai::advanced::siege_production::tests::fresh_delegated_siege_reservation_survives_the_same_pass", "ai::advanced::siege_production::tests::invested_wall_breaker_survives_a_later_city_order_unless_defense_claims_it", "ai::advanced::siege_production::tests::peaceful_wall_free_and_disabled_domination_plans_keep_the_army_ceiling", "ai::advanced::siege_production::tests::the_backlog_builder_is_not_given_to_the_siege_gun_under_the_gene", "ai::advanced::siege_production::tests::the_first_breaker_is_reserved_while_the_army_stages", "ai::advanced::siege_production::tests::version_two_supplies_only_a_capital_in_parallel"]),
+    ("AUTO_14", 941102, &["ai::advanced::tests::the_appointment_names_a_city_the_wing_can_reach"]),
+    ("AUTO_15", 79101, &["ai::advanced::tests::colonization_earns_its_slot_2_weighs_the_builder_cards_too"]),
+    ("AUTO_16", 71023, &["ai::advanced::tests::threatened_city_does_not_peel_a_defender_for_civilian_rescue"]),
+    ("AUTO_17", 940001, &["ai::advanced::tests::timed_war_chooser_appoints_the_earliest_excellent_unlock"]),
+    ("AUTO_18", 6102, &["ai::advanced::tests::battle_planner_tests::an_isolated_site_is_penalised_and_the_penalty_is_bounded"]),
+    ("AUTO_19", 71126, &["ai::advanced::tests::research_tests::boosted_bargain_v2_breaks_only_a_close_unforced_fallback"]),
+    ("AUTO_20", 8115, &["ai::advanced::tests::settling_tests::a_threat_detour_will_not_trade_a_site_for_half_of_one"]),
+    ("AUTO_21", 93203, &["ai::advanced::tests::settling_tests::a_settler_past_its_deadline_founds_within_reach_and_says_so"]),
+    ("AUTO_22", 71605, &["ai::advanced::tests::settling_tests::a_settler_stops_waiting_for_a_guard_that_is_not_coming"]),
+    ("AUTO_23", 6302, &["ai::advanced::tests::settling_tests::the_shipped_score_prefers_a_site_it_cannot_support"]),
+    ("AUTO_24", 8122, &["ai::advanced::tests::settling_tests::a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_marches"]),
+    ("AUTO_25", 8121, &["ai::advanced::tests::settling_tests::a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting"]),
+    ("AUTO_26", 79, &["ai::advanced::tests::tactics_tests::force_replans_focus_after_each_battlefield_action"]),
+    ("FIRSTPADFORGE", 47113, &["ai::first_pad_in_the_forge::tests::the_basic_picker_leaves_the_first_pad_to_the_forge", "ai::first_pad_in_the_forge::tests::a_committed_pad_lifts_the_veto", "ai::first_pad_in_the_forge::tests::only_a_forge_may_start_the_first_pad", "ai::first_pad_in_the_forge::tests::other_items_are_allowed"]),
+    ("AUTO_28", 91781, &["ai::policy_growth_tests::growth_is_read_only_when_priced"]),
+    ("SPACEPORT", 324009, &["ai::tests::one_queued_spaceport_reserves_the_empire_launch_site"]),
+    ("AUTO_30", 37108, &["ai::tests::an_archer_steps_once_and_shoots_in_the_same_turn"]),
+    ("DISTRICTBUILDINGS", 91812, &["ai::tests::a_campus_city_builds_its_industry_before_the_army", "ai::tests::a_standing_campus_takes_its_library_before_another_district", "ai::tests::a_district_buildings_first_city_does_not_raise_the_second_tier", "ai::tests::the_capital_takes_its_library_before_the_next_settler"]),
+    ("AUTO_32", 91, &["ai::tests::a_castaway_with_no_upgrade_waiting_still_comes_ashore", "ai::tests::a_breakthrough_modernizes_the_army_with_a_fixed_peacetime_reserve", "ai::tests::a_city_bleeding_loyalty_outranks_a_lower_but_stable_one", "ai::tests::a_short_loyalty_runway_takes_victor_before_an_unassigned_governor", "ai::tests::a_unit_stranded_outside_the_borders_walks_home_to_modernize", "ai::tests::advanced_settle_search_rejects_a_natural_wonder", "ai::tests::ai_reassigns_a_governor_from_a_safe_city_to_a_loyalty_emergency", "ai::tests::an_embarked_unit_comes_ashore_before_it_explores_any_further", "ai::tests::an_obsolete_garrison_no_longer_fills_the_standing_army_target", "ai::tests::coastal_cities_add_ranged_firepower_after_the_melee_screen", "ai::tests::coastal_cities_build_a_melee_ship_for_exploration_and_capture", "ai::tests::coastal_empires_research_navigation_before_generic_land_unlocks", "ai::tests::escorted_settler_unlinks_at_the_destination_coast_and_founds_the_colony", "ai::tests::island_exploration_prefers_the_known_foreign_landfall", "ai::tests::linked_ship_leads_settler_toward_the_persistent_colony_target", "ai::tests::modernize_army_upgrades_the_veteran_first_and_keeps_the_floor", "ai::tests::naval_escorts_link_to_embarked_settlers", "ai::tests::naval_wars_prioritize_the_next_fleet_upgrade", "ai::tests::settler_keeps_a_reachable_colony_target_across_water", "ai::tests::settler_retargets_a_natural_wonder_for_an_open_island_site", "ai::tests::ships_intercept_embarked_enemies_instead_of_chasing_inland_targets", "ai::tests::the_ai_spends_gold_to_modernize_the_garrison_it_already_has", "ai::tests::turns_to_flip_orders_loyalty_emergencies"]),
+    ("AUTO_33", 1, &["game::city_name_tests::a_host_refused_improvement_leaves_the_rest_of_the_tile_open"]),
+    ("AUTO_34", 1, &["game::city_name_tests::a_host_refused_tile_offers_no_improvements"]),
+    ("AUTO_35", 1, &["game::city_name_tests::a_tile_is_not_offered_the_improvement_it_already_has"]),
+    ("AUTO_36", 590105, &["game::actions::gran_colombia_promotions_tests::a_gran_colombia_veteran_can_attack_after_promoting_in_the_same_turn", "game::actions::gran_colombia_promotions_tests::gran_colombia_keeps_its_remaining_turn_after_healing_promotion", "game::actions::gran_colombia_promotions_tests::keeping_movement_cannot_repeat_a_promotion_for_free_healing", "game::actions::gran_colombia_promotions_tests::ordinary_promotions_still_finish_the_units_turn", "game::actions::gran_colombia_promotions_tests::promotion_does_not_refill_spent_movement_or_attacks", "game::actions::gran_colombia_promotions_tests::the_civilization_trait_does_not_bypass_promotion_permissions"]),
+    ("ADMIRAL", 95009, &["game::great_person_runtime_tests::named_admirals_apply_exact_unit_trade_building_and_flanking_effects"]),
+    ("MAORI", 0, &["ai::advanced::maori_founds_from_the_sea::tests::a_fogged_sea_start_sails_toward_the_middle"]),
+    ];
+    let exe = std::env::current_exe().expect("test binary");
+    let queue = Mutex::new(SITES.iter().collect::<VecDeque<_>>());
+    let found = Mutex::new(Vec::<String>::new());
+    let budget = Duration::from_secs(420);
+    std::thread::scope(|scope| {
+        for _ in 0..6 {
+            scope.spawn(|| loop {
+                let Some((key, base, tests)) = queue.lock().unwrap().pop_front() else {
+                    return;
                 };
-                let class = rules.resources[resource].class.as_str();
-                let side = if is_water { "water" } else { "land" };
-                *counts.entry(format!("{side} {class}")).or_default() += 1;
-                *counts.entry(format!("kind {resource}")).or_default() += 1;
-                if !is_water && class == "luxury" {
-                    land_lux.insert(resource.to_string());
-                    lux.entry(tile.continent.unwrap_or(999))
-                        .or_default()
-                        .insert(resource.to_string());
+                let started = Instant::now();
+                let mut answer = None;
+                let mut tried = 0u64;
+                for offset in 1..=80u64 {
+                    if started.elapsed() > budget {
+                        break;
+                    }
+                    tried = offset;
+                    let seed = base + offset;
+                    let passes = tests.iter().all(|test| {
+                        Command::new(&exe)
+                            .args(["--exact", test, "--test-threads=1"])
+                            .env(format!("CIVVIS_FIXTURE_SEED_{key}"), seed.to_string())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .is_ok_and(|status| status.success())
+                    });
+                    if passes {
+                        answer = Some(seed);
+                        break;
+                    }
                 }
-            }
-            world_luxuries += land_lux.len();
-            for kinds in lux.values() {
-                *per_continent.entry(kinds.len()).or_default() += 1;
-            }
+                found.lock().unwrap().push(format!(
+                    "SEEDFOUND {key} {} tried {tried} of {} tests in {}s",
+                    answer.map_or("NONE".to_string(), |seed| seed.to_string()),
+                    tests.len(),
+                    started.elapsed().as_secs(),
+                ));
+            });
         }
-        out += &format!(
-            "{script:?} land/world {} water/world {} coast/world {} landluxkinds/world {:.1} luxkinds-per-continent {per_continent:?}\n",
-            land / SEEDS as usize,
-            water / SEEDS as usize,
-            coast / SEEDS as usize,
-            world_luxuries as f64 / SEEDS as f64,
-        );
-        for side in ["land", "water"] {
-            let base = if side == "land" { land } else { water };
-            for class in ["bonus", "luxury", "strategic", "artifact"] {
-                let n = counts.get(&format!("{side} {class}")).copied().unwrap_or(0);
-                out += &format!(
-                    "  {side} {class}: {:.1} per world, {:.2}%\n",
-                    n as f64 / SEEDS as f64,
-                    100.0 * n as f64 / base.max(1) as f64
-                );
-            }
-        }
-        let kinds: Vec<String> = counts
-            .iter()
-            .filter(|(key, _)| key.starts_with("kind "))
-            .map(|(key, n)| format!("{}={:.1}", &key[5..], *n as f64 / SEEDS as f64))
-            .collect();
-        out += &format!("  {}\n", kinds.join(" "));
-    }
-    panic!("{out}");
+    });
+    panic!("\n{}", found.lock().unwrap().join("\n"));
 }

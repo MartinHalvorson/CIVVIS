@@ -1741,7 +1741,7 @@ fn charged_toa_attacks_an_adjacent_enemy_before_building_a_pa() {
 
 #[test]
 fn timed_war_chooser_appoints_the_earliest_excellent_unlock() {
-    let (game, _, _) = timed_war_fixture(940_001);
+    let (game, _, _) = timed_war_fixture(crate::rng::fixture_seed("AUTO_17", 940_001));
     let ai = AdvancedAi::new();
     let plan = ai
         .choose_war_plan(&game, 0)
@@ -9160,7 +9160,7 @@ fn the_gene_takes_a_barbarian_held_settler_despite_a_duplicate_settler() {
 #[test]
 fn threatened_city_does_not_peel_a_defender_for_civilian_rescue() {
     let setup = || {
-        let mut game = Game::new_full(2, 24, 16, 71_023, 120, 0, true);
+        let mut game = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_16", 71_023), 120, 0, true);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -10721,7 +10721,7 @@ fn science_bankruptcy_banks_a_spy_queue_and_preserves_victory_and_defence() {
 #[test]
 fn colonization_earns_its_slot_2_weighs_the_builder_cards_too() {
     let setup = |version: u8| {
-        let (mut game, city, _) = empire_with_a_capital(79_101);
+        let (mut game, city, _) = empire_with_a_capital(crate::rng::fixture_seed("AUTO_15", 79_101));
         game.cities.get_mut(&city).unwrap().pop = 3;
         game.players[0].government = Some("chiefdom".to_string());
         game.players[0].civics.extend([
@@ -19215,7 +19215,7 @@ fn a_chain_that_cannot_finish_in_time_is_never_appointed() {
 /// the melee package has no analogue for.
 #[test]
 fn the_appointment_names_a_city_the_wing_can_reach() {
-    let (game, _, objective) = air_surge_fixture(941_102);
+    let (game, _, objective) = air_surge_fixture(crate::rng::fixture_seed("AUTO_14", 941_102));
     let ai = air_surge_ai();
 
     let plan = ai

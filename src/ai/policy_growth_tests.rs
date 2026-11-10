@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// One founded city of four citizens with plenty of Food, its housing held at
 /// `housing`.
 fn city_with_housing(housing: f64) -> (Game, u32) {
-    let mut g = Game::new_full(2, 24, 16, 91_781, 250, 0, false);
+    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_28", 91_781), 250, 0, false);
     g.current = 0;
     let settler = g
         .player_unit_ids(0)

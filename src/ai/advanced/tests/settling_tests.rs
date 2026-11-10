@@ -1809,7 +1809,7 @@ fn a_lagging_guard_does_not_expire_on_a_visibly_capturable_step() {
 fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
     // Two majors at war, flat explored ground, our capital and theirs.
     let build = |with_enemy: bool| -> (Game, u32, u32, Pos) {
-        let mut game = Game::new_full(2, 30, 20, 8_121, 120, 0, false);
+        let mut game = Game::new_full(2, 30, 20, crate::rng::fixture_seed("AUTO_25", 8_121), 120, 0, false);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -1942,7 +1942,7 @@ fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
 #[test]
 fn a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_marches() {
     let build = || -> (Game, u32, u32, u32, Pos, Pos) {
-        let mut game = Game::new_full(2, 30, 20, 8_122, 120, 0, false);
+        let mut game = Game::new_full(2, 30, 20, crate::rng::fixture_seed("AUTO_24", 8_122), 120, 0, false);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -3260,7 +3260,7 @@ fn a_barbarian_camp_two_tiles_away_changes_the_shipped_score_by_nothing() {
 /// inside the empire — 148.3 against 62.7 on this board.
 #[test]
 fn the_shipped_score_prefers_a_site_it_cannot_support() {
-    let mut game = Game::new(2, 60, 40, 6_302, 250, 0);
+    let mut game = Game::new(2, 60, 40, crate::rng::fixture_seed("AUTO_23", 6_302), 250, 0);
     game.found_city_for(0, (10, 20), None);
     let shipped = AdvancedAi::new();
 
@@ -3784,7 +3784,7 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
     // ceiling — a visible hostile within reach of the settler's next route
     // step — because that is the state the opening actually sits in.
     let held = |waited: u8, gene: bool| {
-        let (mut game, _capital, home) = empire_with_a_capital(71_605);
+        let (mut game, _capital, home) = empire_with_a_capital(crate::rng::fixture_seed("AUTO_22", 71_605));
         game.turn = 20;
         let ring: Vec<Pos> = {
             let mut r: Vec<Pos> = game
@@ -4278,7 +4278,7 @@ fn the_deadline_pick_is_the_best_legal_site_within_reach() {
 
 #[test]
 fn a_settler_past_its_deadline_founds_within_reach_and_says_so() {
-    let (mut game, settler) = walk_deadline_board(93_203);
+    let (mut game, settler) = walk_deadline_board(crate::rng::fixture_seed("AUTO_21", 93_203));
     let mut ai = AdvancedAi::new();
     ai.enable_settler_walk_deadline();
     let journal = crate::reasoning::Journal::recording();
@@ -4542,7 +4542,7 @@ fn a_settler_that_will_not_move_still_stands_somewhere() {
 /// back so the site stays in the ranking.
 #[test]
 fn a_threat_detour_will_not_trade_a_site_for_half_of_one() {
-    let mut game = Game::new_full(2, 44, 28, 8_115, 200, 0, false);
+    let mut game = Game::new_full(2, 44, 28, crate::rng::fixture_seed("AUTO_20", 8_115), 200, 0, false);
     let start = game
         .player_unit_ids(0)
         .into_iter()

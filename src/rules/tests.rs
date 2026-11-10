@@ -343,9 +343,11 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by `Units.WMDCapable` on the Bomber, Jet Bomber and Nuclear
     // Submarine, which is what lets those three carry a device.
     // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
+    // Moved again by the resource rows Aluminum, Gypsum, Ivory, Marble, Whales
+    // and Amber carry for placement, and by Offshore Oil Rigs in lakes.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:5e27c254aed61f85"
+        "fnv1a64:4289931f8940c22a"
     );
 }
 

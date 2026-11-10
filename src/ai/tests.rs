@@ -1487,7 +1487,7 @@ fn walled_war_game(seed: u64) -> (Game, u32, u32) {
 }
 
 fn island_colony_game(players: usize) -> (Game, Pos, Pos) {
-    let mut g = Game::new_full(players, 18, 10, 91, 120, 0, false);
+    let mut g = Game::new_full(players, 18, 10, crate::rng::fixture_seed("AUTO_32", 91), 120, 0, false);
     let founding_settler = g
         .player_unit_ids(0)
         .into_iter()
@@ -10142,7 +10142,7 @@ fn a_refused_shot_no_longer_shadows_the_legal_one() {
 /// turn.
 #[test]
 fn an_archer_steps_once_and_shoots_in_the_same_turn() {
-    let mut g = Game::new_full(2, 24, 16, 37_108, 30, 0, false);
+    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_30", 37_108), 30, 0, false);
     for unit in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(unit);
     }

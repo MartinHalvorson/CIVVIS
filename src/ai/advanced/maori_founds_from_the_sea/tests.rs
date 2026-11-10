@@ -152,7 +152,8 @@ fn live_settler_ai(sails: bool) -> AdvancedAi {
 /// without the gene and `MOVE_TO` for the Settler with it.
 #[test]
 fn a_fogged_sea_start_sails_toward_the_middle() {
-    for seed in [936_731u64, 41_003] {
+    let offset = crate::rng::fixture_seed("MAORI", 0);
+    for seed in [936_731u64 + offset, 41_003 + offset] {
         let (mut g, settler, start) = maori_in_the_fog(seed);
         let centre = (g.map.width / 2, g.map.height / 2);
         let stock = live_settler_ai(false);
