@@ -103,6 +103,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-what-it-can-reach`; see
         /// `advanced/band_plays_what_it_can_reach.rs`.
         base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
+        /// Opt-in gene `bands-wait-at-the-door`; see
+        /// `advanced/bands_wait_at_the_door.rs`.
+        base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

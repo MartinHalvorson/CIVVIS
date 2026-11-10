@@ -18,17 +18,20 @@
 //! and came back between. The board, not knowing, planned every route to
 //! Rome's stages through Ethiopia: 65 of 102 band-turns stood still.
 //!
-//! Only a band with at least one offered plot is evidence. A band the host has
-//! not yet named offers none (`CivvisNameRockBands`), and a turn on which no
-//! rival is open offers none to anyone; then nothing is inferred, and with no
-//! stage on offer there is nowhere to route to anyway. A rival with a single
+//! A band the host has not yet named offers no plot at all
+//! (`CivvisNameRockBands`), so its empty list is no evidence. A named band's
+//! empty list is: every rival holding wonders has closed its land. That is the
+//! common case (live 20261110T192354Z t155-t172: three named bands, no stage
+//! offered anywhere, two rivals holding seven wonders between them), and it is
+//! the one `bands-wait-at-the-door` needs, to wait at the right border. Older
+//! exports carry no name; there only a non-empty list is evidence. A rival with a single
 //! wonder plot is not judged, because `Plot:GetWonderType` names a wonder from
 //! the turn it is placed and an unfinished one is no stage.
 //!
 //! Written fresh every frame into [`Game::rock_band_barred_hosts`], so a rival
 //! that drops the policy is open again the next turn the host offers its land.
 
-use super::Snapshot;
+use super::{Snapshot, StateSnapshot};
 use crate::game::{Game, MIRRORED_SEAT};
 use crate::hex::offset_to_axial;
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,8 +39,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Wonder plots a rival must hold before an empty offer reads as closed land.
 const WONDERS_TO_JUDGE: usize = 2;
 
-pub(super) fn apply(game: &mut Game, snapshot: &Snapshot) {
-    game.rock_band_barred_hosts = barred_hosts(game, snapshot);
+pub(super) fn apply(game: &mut Game, snapshot: &Snapshot, state: &StateSnapshot) {
+    game.rock_band_barred_hosts = barred_hosts(game, snapshot, state);
 }
 
 fn land_owner(game: &Game, pos: crate::Pos) -> Option<usize> {
@@ -48,24 +51,34 @@ fn land_owner(game: &Game, pos: crate::Pos) -> Option<usize> {
         .map(|city| city.owner)
 }
 
-fn barred_hosts(game: &Game, snapshot: &Snapshot) -> BTreeSet<(usize, usize)> {
+fn barred_hosts(
+    game: &Game,
+    snapshot: &Snapshot,
+    state: &StateSnapshot,
+) -> BTreeSet<(usize, usize)> {
     let mut offered = BTreeSet::new();
     let mut read = false;
-    for unit in game
+    for unit in state
         .units
-        .values()
-        .filter(|unit| unit.owner == MIRRORED_SEAT && unit.kind == "rock_band")
+        .iter()
+        .filter(|unit| unit.kind == "UNIT_ROCK_BAND")
     {
-        let Some(plots) = game
-            .host_unit_facts
-            .get(&unit.id)
-            .and_then(|facts| facts.concert_plots.as_ref())
-            .filter(|plots| !plots.is_empty())
-        else {
+        let Some(plots) = unit.concert_plots.as_ref() else {
             continue;
         };
+        let named = unit
+            .rock_band_name
+            .as_deref()
+            .is_some_and(|name| !name.is_empty() && !name.starts_with("LOC_"));
+        if plots.is_empty() && !named {
+            continue;
+        }
         read = true;
-        offered.extend(plots.iter().filter_map(|plot| land_owner(game, *plot)));
+        offered.extend(
+            plots
+                .iter()
+                .filter_map(|plot| land_owner(game, offset_to_axial(plot.x, plot.y))),
+        );
     }
     if !read {
         return BTreeSet::new();

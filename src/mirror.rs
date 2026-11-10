@@ -2809,6 +2809,7 @@ const UNIT_KEYS: &[&str] = &[
     "level",
     "rock_band_level",
     "album_sales",
+    "rock_band_name",
     "promotions",
     "offered_promotions",
     "build_charges",
@@ -7602,7 +7603,7 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     air_fog_targets::apply(ctx.game, ctx.snapshot);
     // After every band and its concert highlights are on the board. See
     // `band_closed_hosts`.
-    band_closed_hosts::apply(ctx.game, ctx.snapshot);
+    band_closed_hosts::apply(ctx.game, ctx.snapshot, ctx.state);
 }
 
 /// The derived net income, and the treasury reading the next call differences

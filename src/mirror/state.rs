@@ -1001,6 +1001,12 @@ pub struct StateUnit {
     /// Native cumulative album sales; zero is an observed counter value.
     #[serde(default)]
     pub album_sales: Option<i64>,
+    /// The Rock Band's name. The agent names each band itself
+    /// (`CivvisNameRockBands`) because the host offers an unnamed band no
+    /// concert plots, so a band still carrying the stock `LOC_` name has an
+    /// empty highlight list that says nothing about the venues.
+    #[serde(default)]
+    pub rock_band_name: Option<String>,
     #[serde(default)]
     pub promotions: Option<Vec<String>>,
     /// Current native Rock Band menu; empty is an observed lack of choices.
