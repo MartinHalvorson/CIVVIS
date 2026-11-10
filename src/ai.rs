@@ -1358,6 +1358,11 @@ pub struct BasicAi {
     /// each turn by the advanced agent; false for standalone controllers.
     /// See `advanced/religion_seat_charts_the_rivals.rs`.
     pub(crate) charts_rival_majorities: bool,
+    /// A lane's charting gene acts for this seat this turn, so the contact
+    /// gap stays open (`domination-charts-every-capital`: a rival's original
+    /// capital is uncharted). Set each turn by the advanced agent; false for
+    /// standalone controllers. See `advanced/domination_charts_every_capital.rs`.
+    pub(crate) lane_charting_gap: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
     /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
@@ -2129,6 +2134,14 @@ pub struct BasicAi {
     /// wherever it stopped. Off by default; opt-in gene. See
     /// `advanced/bands_wait_at_the_door.rs`.
     pub(crate) bands_wait_at_the_door: bool,
+    /// `band-plays-at-level-three`: a Rock Band below level 3 plays first
+    /// where its performance level (band level plus the stage's promotion
+    /// levels) reaches 3, when such a stage is open within four turns; the
+    /// promotion chooser takes the promotion that lifts the most open,
+    /// reachable stages to level 3. Breakup odds are 45% at level 1 and 25%
+    /// at level 3; today's live concerts died 51% at level 1 and 8% at 3.
+    /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
+    pub(crate) band_plays_at_level_three: bool,
     /// `band-plays-what-it-can-reach`: each band's trip this turn, keyed by
     /// [`BasicAi::band_memory_key`]: the turn, the tile it stood on when it
     /// first moved that turn, and the venue it set out for.
@@ -2704,6 +2717,12 @@ pub struct BasicAi {
     /// Entrant `live_without_barbarian_ranged_answer`; treatment
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
+    /// `city-strike-takes-the-gun`: the city loop's "walls fire at raiders in
+    /// range" pass, which fires each City Center at the first hostile tile in
+    /// disk order, stands aside, and every city and Encampment strike is
+    /// priced by the advanced command phase instead. Set each turn by
+    /// `AdvancedAi` only while its command phase runs; false everywhere else.
+    pub(crate) city_strikes_left_to_the_planner: bool,
     /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
     /// with a body before anything else is built, bought when no defender
     /// exists, and a recon unit is not a defender. Read by
@@ -3851,6 +3870,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            lane_charting_gap: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -3910,6 +3930,7 @@ impl BasicAi {
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
+            band_plays_at_level_three: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -3976,6 +3997,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -4299,6 +4321,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            lane_charting_gap: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -4358,6 +4381,7 @@ impl BasicAi {
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
+            band_plays_at_level_three: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -4424,6 +4448,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -5782,7 +5807,12 @@ impl BasicAi {
         // once after the city loop: rebuilding the complete action list for
         // every city also enumerates production, deals, Congress votes, and
         // every unit move, which becomes quadratic in a developed empire.
+        // `city-strike-takes-the-gun`: both passes stand aside for the
+        // advanced command phase, which prices every strike.
         for cid in &city_ids {
+            if self.city_strikes_left_to_the_planner {
+                break;
+            }
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
@@ -5804,10 +5834,12 @@ impl BasicAi {
             }
         }
         loop {
-            if !city_ids.iter().any(|cid| {
-                g.defending_districts(&g.cities[cid])
-                    .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
-            }) {
+            if self.city_strikes_left_to_the_planner
+                || !city_ids.iter().any(|cid| {
+                    g.defending_districts(&g.cities[cid])
+                        .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
+                })
+            {
                 break;
             }
             let strike = g
@@ -7621,7 +7653,13 @@ impl BasicAi {
         let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
             return false;
         };
-        let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        if can_perform_here && self.band_plays_at_level_three {
+            // `band-plays-at-level-three`: no lower-level show while a
+            // higher-level stage is on the tour.
+            let ranked = self.rock_band_ranked_venues(g, pid, uid);
+            can_perform_here = Self::rock_band_may_play_here(g, pid, uid, here, &ranked);
+        }
         let acted = if self.band_plays_what_it_can_reach {
             self.rock_band_reachable_step(g, pid, uid, here, can_perform_here)
         } else {
@@ -7661,6 +7699,15 @@ impl BasicAi {
     /// the seat plays (`bands-draw-from-the-bar`, `band-plays-its-stage`, or
     /// the stock tour).
     fn rock_band_ranked_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        let ranked = self.rock_band_scored_venues(g, pid, uid);
+        if self.band_plays_at_level_three {
+            Self::rock_band_level_three_first(g, pid, uid, ranked)
+        } else {
+            ranked
+        }
+    }
+
+    fn rock_band_scored_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
         if self.bands_draw_from_the_bar {
             Self::rock_band_career_ranking(g, uid, |position| {
                 g.rock_concert_bar_value(pid, uid, position)

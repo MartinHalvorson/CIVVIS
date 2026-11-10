@@ -5626,6 +5626,11 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-charts-every-capital`: a Domination seat keeps charting
+    /// until every rival's original capital is on its map, and takes
+    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
+    /// Opt-in.
+    domination_charts_every_capital: bool,
     /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
     /// Site of ours and heals, fights only what it survives, and reads every
     /// rival blow that can land on a tile together. See
@@ -6829,6 +6834,12 @@ pub struct AdvancedAi {
     /// `domination-target-gets-its-breaker`: the turn a breaker was last
     /// bought for each target, by the target's tile, for the cooldown.
     domination_breaker_bought: BTreeMap<Pos, u32>,
+    /// `city-strike-takes-the-gun`: every city and Encampment strike is
+    /// priced by the command phase (the delegated city loop's first-hostile
+    /// pass stands aside), and a gun at our walls carries the wall-threat
+    /// premium there. See `advanced/siege_at_the_walls_dies_first.rs`. Off by
+    /// default.
+    city_strike_takes_the_gun: bool,
     /// `culture-faith-braves-the-barbarians`: the Culture Faith claim's
     /// six-tile soldier rule skips Barbarian units. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
@@ -11300,6 +11311,10 @@ mod backlog_builder_takes_the_queue;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
+/// `band-plays-at-level-three`: a Rock Band plays its first concerts where
+/// its performance level reaches 3, and is promoted to get there. See
+/// `advanced/band_plays_at_level_three.rs`.
+mod band_plays_at_level_three;
 mod band_plays_its_stage;
 /// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
 /// stage it can really reach; a refused trip turns it to another host. See
@@ -11465,6 +11480,9 @@ pub use science_victory_drive::ScienceDrive;
 mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
+/// `domination-charts-every-capital`: see
+/// `advanced/domination_charts_every_capital.rs`.
+mod domination_charts_every_capital;
 mod domination_research;
 /// `domination-target-gets-its-breaker`: the Domination lane's breaker for
 /// its target. See `advanced/domination_target_gets_its_breaker.rs`.
@@ -25696,6 +25714,9 @@ impl AdvancedAi {
         // `religion-seat-charts-the-rivals`: read by the contact gap in
         // `BasicAi`'s exploration and the hull claims, after any hand-over.
         self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
+        // `domination-charts-every-capital`: the same read for a lane charting
+        // gene's own gap.
+        self.base.lane_charting_gap = self.lane_charts_the_water(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -25772,6 +25793,11 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        // `city-strike-takes-the-gun`: the delegated city loop leaves the
+        // strikes to `advanced_city_strikes`, which runs only under victory
+        // planning. See `advanced/siege_at_the_walls_dies_first.rs`.
+        self.base.city_strikes_left_to_the_planner =
+            self.city_strike_takes_the_gun && self.victory_planning;
         // The fallback record for `turn_start_hostiles`: nothing of ours has
         // acted yet on a native turn. The live bridge records earlier, before
         // its finishing volley, and this call then does nothing.

@@ -106,6 +106,9 @@ impl AdvancedAi {
         /// Opt-in gene `bands-wait-at-the-door`; see
         /// `advanced/bands_wait_at_the_door.rs`.
         base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
+        /// Opt-in gene `band-plays-at-level-three`; see
+        /// `advanced/band_plays_at_level_three.rs`.
+        base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -179,6 +182,12 @@ impl AdvancedAi {
         /// `denial-war-needs-the-lane-edge`: see
         /// `advanced/denial_war_needs_the_lane_edge.rs`.
         denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
+        /// Opt-in gene `city-strike-takes-the-gun`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `domination-charts-every-capital`: see
+        /// `advanced/domination_charts_every_capital.rs`.
+        domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
         /// `domination-target-gets-its-breaker`: see
         /// `advanced/domination_target_gets_its_breaker.rs`.
         domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;

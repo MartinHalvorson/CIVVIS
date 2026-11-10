@@ -5453,6 +5453,10 @@ pub const GENES: &[Gene] = &[
     // land it most wants, so it plays the turn that land reopens. Opt-in; see
     // `advanced/bands_wait_at_the_door.rs`.
     Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
+    // A Rock Band below level 3 plays first where its performance level
+    // reaches 3, and takes the promotion that lifts the most open stages
+    // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5566,6 +5570,16 @@ pub const GENES: &[Gene] = &[
     // Barbarians nearby; Faith stood at 1 a turn. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-braves-the-barbarians", field: "culture_faith_braves_the_barbarians", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_braves_the_barbarians, disable: AdvancedAi::disable_culture_faith_braves_the_barbarians },
+    // Kristina Deity 11-10: the delegated city loop fired each wall at the
+    // first hostile in disk order before the command phase priced anything;
+    // a gun stood in reach of a walled city that struck elsewhere on 19 of 26
+    // unhit gun-turns with siege-at-the-walls-dies-first armed. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
+    // `domination-charts-every-capital`: a Domination seat keeps charting
+    // until every rival's original capital is seen, and takes Cartography
+    // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
+    Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
     // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
     // Tower or gun matched to its target's walls before it declares, and
     // keeps one with every siege. Opt-in; see
