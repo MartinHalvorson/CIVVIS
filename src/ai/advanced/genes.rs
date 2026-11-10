@@ -5564,6 +5564,10 @@ pub const GENES: &[Gene] = &[
     // until every rival's original capital is seen, and takes Cartography
     // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
     Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
+    // `denial-charts-the-racer`: a Culture or Domination seat charts every
+    // city of the leading Science rival, so its Spies have the Spaceport city
+    // to go to. Opt-in; see `advanced/denial_charts_the_racer.rs`.
+    Gene { tag: "denial-charts-the-racer", field: "denial_charts_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_charts_the_racer, disable: AdvancedAi::disable_denial_charts_the_racer },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
