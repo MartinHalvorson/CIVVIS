@@ -182,6 +182,9 @@ impl AdvancedAi {
         /// `denial-war-needs-the-lane-edge`: see
         /// `advanced/denial_war_needs_the_lane_edge.rs`.
         denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
+        /// Opt-in gene `city-strike-takes-the-gun`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
         /// `domination-charts-every-capital`: see
         /// `advanced/domination_charts_every_capital.rs`.
         domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
