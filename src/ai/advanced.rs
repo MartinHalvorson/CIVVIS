@@ -8976,6 +8976,11 @@ pub struct AdvancedAi {
     /// across frames, so a claim can stand off from a city that took its item
     /// back. See `AdvancedAi::queue_claim_open`.
     queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
+    /// `religion-seat-charts-the-rivals`: a Religion-target founder keeps
+    /// charting until it knows a majority of every rival's cities, and takes
+    /// Cartography sooner. See `advanced/religion_seat_charts_the_rivals.rs`.
+    /// Off by default.
+    religion_seat_charts_the_rivals: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -25373,6 +25378,9 @@ impl AdvancedAi {
         // `religion-seat-takes-the-faith-beliefs`: read by the founding in
         // `BasicAi`'s ancillary pass, after any hand-over above.
         self.base.founder_takes_the_faith_beliefs = self.founder_takes_the_faith_beliefs(g);
+        // `religion-seat-charts-the-rivals`: read by the contact gap in
+        // `BasicAi`'s exploration and the hull claims, after any hand-over.
+        self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);
@@ -26393,6 +26401,9 @@ mod religion_prophet_queue;
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
 /// `religion-seat-flips-the-cheapest`: see
+/// `religion-seat-charts-the-rivals`: see
+/// `advanced/religion_seat_charts_the_rivals.rs`.
+mod religion_seat_charts_the_rivals;
 /// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
 mod religion_seat_first_shrine;
 /// `advanced/religion_seat_flips_the_cheapest.rs`.

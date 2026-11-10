@@ -5516,6 +5516,10 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // A Religion-target founder keeps charting until it knows a majority of
+    // every rival's cities, and takes Cartography sooner. See
+    // `advanced/religion_seat_charts_the_rivals.rs`.
+    Gene { tag: "religion-seat-charts-the-rivals", field: "religion_seat_charts_the_rivals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_charts_the_rivals, disable: AdvancedAi::disable_religion_seat_charts_the_rivals },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
