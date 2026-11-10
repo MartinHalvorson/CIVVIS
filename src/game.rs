@@ -4692,6 +4692,18 @@ pub struct WarTheaterSite {
     pub pos: Pos,
 }
 
+/// One way a device can reach its target this turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WmdPlatform {
+    /// `missile_silo`, or the kind of the unit carrying the device.
+    pub kind: Name,
+    /// Where the device leaves from.
+    pub from: Pos,
+    /// The carrier, which spends its attack on the launch. A silo has none.
+    pub unit: Option<u32>,
+    pub distance: i32,
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -5828,9 +5840,9 @@ pub enum Action {
         city: u32,
         target: Pos,
     },
-    /// Launch a stockpiled nuclear or thermonuclear device from a city (or
-    /// an owned Missile Silo) at a revealed tile within the shipped
-    /// ICBMStrikeRange.
+    /// Launch a stockpiled nuclear or thermonuclear device at a revealed tile,
+    /// from a working Missile Silo of the named city or from any `wmd_capable`
+    /// unit in reach. See [`Game::wmd_platforms`] for what reaches how far.
     WmdStrike {
         city: u32,
         target: Pos,
@@ -9784,6 +9796,19 @@ impl Game {
     /// Pericles cares about your envoys against his, and nothing about
     /// anyone else's.
     pub fn agenda_opinion(&self, observer: usize, subject: usize) -> f64 {
+        self.agenda_opinion_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    /// `agenda_opinion` with the comparative measures supplied by `read`, so
+    /// that a caller scoring every pair need work each one out only once.
+    fn agenda_opinion_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> f64 {
         if observer == subject {
             return 0.0;
         }
@@ -9810,7 +9835,7 @@ impl Game {
             "trustworthiness" => self.trustworthiness(observer, subject),
             // Comparative measures are scored against the rest of the world.
             other => {
-                let value = self.agenda_measure(subject, other);
+                let value = read(subject, other);
                 let peers: Vec<f64> = self
                     .players
                     .iter()
@@ -9820,7 +9845,7 @@ impl Game {
                             && !player.is_barbarian
                             && player.id != subject
                     })
-                    .map(|player| self.agenda_measure(player.id, other))
+                    .map(|player| read(player.id, other))
                     .collect();
                 if peers.is_empty() {
                     return 0.0;
