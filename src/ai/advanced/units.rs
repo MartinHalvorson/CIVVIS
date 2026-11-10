@@ -1822,6 +1822,17 @@ impl AdvancedAi {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
             let mut score = attack_value - threshold;
+            // `siege-at-the-walls-dies-first`: a blow on a gun at our walls,
+            // or on the taker beside an open city, carries the premium, and a
+            // shot at one or a kill of one ranks with the lethal kills. Zero
+            // with the gene off. See `advanced/siege_at_the_walls_dies_first.rs`.
+            let wall_premium = if attack_value.is_finite() {
+                self.wall_threat_blow_premium(g, pid, &action)
+            } else {
+                0.0
+            };
+            score += wall_premium;
+            let wall_tier = wall_premium > 0.0 && (ranged || eliminates_enemy_unit);
             // `chase-every-boost`: a kill this unit survives that fires an open
             // Eureka or Inspiration (`kill_with:` its own kind, a barbarian for
             // Bronze Working, a camp) is worth the research it earns. Zero with
@@ -1867,7 +1878,8 @@ impl AdvancedAi {
                 // `advanced_v1` is a frozen evaluator anchor.  This is a
                 // production policy, so leave that controller's historical
                 // candidate ordering untouched.
-                lethal_kill: self.victory_planning && eliminates_enemy_unit && attack_value > 0.0,
+                lethal_kill: self.victory_planning
+                    && ((eliminates_enemy_unit && attack_value > 0.0) || wall_tier),
                 parts: [attack_value, threshold, caution, reply, 0.0],
                 order,
             });

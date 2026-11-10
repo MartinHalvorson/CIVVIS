@@ -473,6 +473,92 @@ fn per_theater_researches_astrology_once_a_theater_stands() {
     assert!(!science.culture_faith_astrology_due(&g, 0));
 }
 
+/// Claim what the target names, the way `claim_culture_faith_source` does.
+fn claim(g: &mut Game, ai: &AdvancedAi, plan: &StrategicPlan) -> Option<u32> {
+    let (city, item, _) = ai.culture_faith_source_target(g, 0, plan)?;
+    if g.cities[&city].queue.first() == Some(&item) {
+        return None;
+    }
+    g.apply(0, &Action::Produce { city, item }).unwrap();
+    Some(city)
+}
+
+#[test]
+fn version_two_claims_a_source_in_every_theater_city_at_once() {
+    let (mut g, mut ai, plan, cities) = fixture(4);
+    ai.enable_culture_faith_site_per_theater();
+    let first = claim(&mut g, &ai, &plan).expect("the first source");
+    assert!(
+        claim(&mut g, &ai, &plan).is_none(),
+        "version one without a host quote keeps one source in the empire"
+    );
+    ai.enable_culture_faith_site_per_theater_2();
+    let mut claimed = vec![first];
+    while let Some(city) = claim(&mut g, &ai, &plan) {
+        assert!(!claimed.contains(&city), "one source per city at a time");
+        claimed.push(city);
+    }
+    assert!(
+        claimed.len() >= 2 && claimed.len() <= cities.len(),
+        "a second Theater city starts its source: {claimed:?}"
+    );
+}
+
+#[test]
+fn version_two_carries_version_one() {
+    let (mut g, mut ai, plan, _) = fixture(3);
+    g.players[0].techs.remove(&crate::name!("astrology"));
+    ai.enable_culture_faith_site_per_theater_2();
+    assert!(ai.culture_faith_astrology_due(&g, 0));
+    assert_eq!(ai.culture_faith_source_budget(&g, 0), Some(3));
+    g.players[0].techs.insert(crate::name!("astrology"));
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
+}
+
+#[test]
+fn version_two_goes_ahead_of_a_wonder_but_not_a_spy() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_faith_site_per_theater();
+    for &cid in &cities {
+        let pos = g.cities[&cid].pos;
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Wonder {
+            wonder: crate::name!("pyramids"),
+            pos,
+        }];
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "version one keeps a wonder"
+    );
+    ai.enable_culture_faith_site_per_theater_2();
+    let (city, item, _) = ai
+        .culture_faith_source_target(&g, 0, &plan)
+        .expect("version two claims a source over the wonder");
+    assert!(cities.contains(&city));
+    assert!(AdvancedAi::culture_faith_item(&g, &item));
+    for &cid in &cities {
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("spy"),
+        }];
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "the Spy pipeline takes a passed queue back, so a Spy is kept"
+    );
+}
+
+#[test]
+fn version_two_keeps_a_settler() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_faith_site_per_theater_2();
+    for &cid in &cities {
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("settler"),
+        }];
+    }
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
+}
+
 fn shrine_board() -> (Game, AdvancedAi, StrategicPlan, u32) {
     let (mut g, mut ai, plan, cities) = fixture(3);
     ai.enable_culture_gold_buys_the_shrines();

@@ -3267,6 +3267,10 @@ impl AdvancedAi {
                 })
             })
             .min();
+        // `space-denial-promotes-the-rocket-scientist`: Rocket Scientist first
+        // on a Culture or Domination seat whose spies answer a space race.
+        // False with the gene off. See `advanced/space_denial_rocket_scientist.rs`.
+        let rocket_scientist_first = self.denial_wants_the_rocket_scientist(g, pid);
         for spy_id in ids {
             // A Spy whose last order is still running is left alone; the
             // rebuilt mirror cannot see the running operation, so without
@@ -3332,6 +3336,13 @@ impl AdvancedAi {
                     "technologist",
                     "linguist",
                 ],
+            };
+            let denial_priority: Vec<&str>;
+            let promotion_priority: &[&str] = if rocket_scientist_first {
+                denial_priority = Self::rocket_scientist_first(promotion_priority);
+                &denial_priority
+            } else {
+                promotion_priority
             };
             if let Some(action) = promotion_priority
                 .iter()
