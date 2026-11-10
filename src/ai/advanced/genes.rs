@@ -5511,6 +5511,12 @@ pub const GENES: &[Gene] = &[
     // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-seat-appoints-pingala-first`: a Culture target's first titles
+    // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
+    // Magnus took the first three titles under the opening's Expansion plan,
+    // so Connoisseur (+1 Culture per citizen) came at t75-t117. Opt-in; see
+    // `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-seat-appoints-pingala-first", field: "culture_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_appoints_pingala_first, disable: AdvancedAi::disable_culture_seat_appoints_pingala_first },
     // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     // beeline by when each Inspiration lands, and researches the technology
     // that inspires a near road civic first. Opt-in; see

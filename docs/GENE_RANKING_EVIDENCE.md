@@ -240,6 +240,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
+| `culture-seat-appoints-pingala-first` | off (unmeasured) | `culture-seat-appoints-pingala-first`: see `advanced/culture_pingala_first.rs`. | 1 \| 1 |
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |

@@ -1,0 +1,29 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-seat-appoints-pingala-first",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 18 boards of nine live Deity Online Kristina (Sweden) Culture games of 2026-11-10 (140731Z, 144009Z, 152217Z, 153619Z, 160429Z, 164254Z, 165607Z, 171451Z, 173750Z): each game's first two turns, before t80, on which a state frame inside the turn shows a new Governor appointment or promotion, the run's events.jsonl cut at that turn's frame 0. Both arms run one frozen civvis_orders --resumed built from the branch at 72eefd2439 with the run's own requested genome; the on arm adds --with culture-seat-appoints-pingala-first. Governor orders differ on 8/18 boards: on all seven first-title boards (t24-t31) the off arm appoints Magnus (GOVERNOR_THE_RESOURCE_MANAGER) and the on arm appoints Pingala (GOVERNOR_THE_EDUCATOR); on 152217Z t77 the off arm promotes Pingala to Researcher and the on arm to Connoisseur. The other ten boards already held the live Magnus, so both arms promote him alike.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-seat-appoints-pingala-first.native-queries.tar.xz",
+  "sha256": "3622ea5229d7d24cdf737e01ea31f016031ab78b811696963341b2c19901bd62"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json",
+  "native-queries-01/0016/result.json",
+  "native-queries-01/0017/result.json"
+ ]
+}
