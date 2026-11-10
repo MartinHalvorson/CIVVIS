@@ -3489,6 +3489,11 @@ the only one with production and gold at 1.20 and the rest at 1.08.
 
 ## Measured: the live host lets our siege units fire after they move (2026-10-03)
 
+⚠ **No longer true (2026-11-10).** In 33 recent live logs the host refused 75 of
+76 siege shots made after a move in the same turn, against 58 of 283 for guns
+that had not moved. `Game::siege_may_attack_after_moving` now honours only
+Expert Crew (#4959). What follows is the October reading.
+
 Civilization VI's data gives every siege unit (`CLASS_SIEGE_SETUP`: Catapult,
 Trebuchet, Bombard, Artillery, Rocket Artillery) `ABILITY_NO_MOVE_AND_SHOOT`,
 "Cannot move and attack in the same turn" (`MODIFIER_PLAYER_UNIT_ADJUST_MOVE_AND_ATTACK`

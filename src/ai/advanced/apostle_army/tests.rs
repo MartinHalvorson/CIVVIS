@@ -319,6 +319,24 @@ fn a_plain_apostle_with_charges_is_not_held() {
 }
 
 #[test]
+fn any_apostle_hunts_a_raider_on_home_ground() {
+    let (mut g, _, _, _) = field();
+    let guard = spawn(&mut g, "apostle", 0, (9, 8), 100, 3);
+    let raider = spawn(&mut g, "missionary", 1, (11, 8), 100, 3);
+    let before = g.wdist(g.units[&guard].pos, g.units[&raider].pos);
+    assert_eq!(army().army_apostle_step(&mut g, 0, guard), Some(true));
+    let closed = g.wdist(g.units[&guard].pos, g.units[&raider].pos) < before;
+    let struck = g.units.get(&raider).is_none_or(|unit| unit.hp < 100);
+    assert!(closed || struck);
+    assert_eq!(g.units[&guard].charges, 3);
+    assert_eq!(
+        spender().army_apostle_step(&mut g, 0, guard),
+        None,
+        "gene off"
+    );
+}
+
+#[test]
 fn the_kept_charge_does_not_count_against_the_caps() {
     let (mut g, _, _, _) = field();
     spawn(&mut g, "apostle", 0, (16, 8), 100, 1);
