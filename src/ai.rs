@@ -2263,6 +2263,11 @@ pub struct BasicAi {
     /// the frozen native controllers, enabled by the Civilization VI bridge.
     /// See `loyalty_emergency`.
     loyalty_rate_alarm: bool,
+    /// `culture-keeps-pingala-home`: set each turn by `AdvancedAi` on a
+    /// Culture seat with the gene on. A seated Pingala answers a Loyalty
+    /// emergency only in a city flipping within this many turns. `None`
+    /// leaves every Governor free, the stock rule.
+    pub(crate) pingala_loyalty_runway: Option<f64>,
     /// Record every tactical step through `path_move` instead of applying it
     /// raw, so a unit stepped a second time in the same turn cannot walk back
     /// onto the tile it just left.
@@ -2824,6 +2829,11 @@ pub struct BasicAi {
     /// while fewer stand. Lent by the Advanced gene to a Culture seat's
     /// delegated call; zero (off) by default.
     pub(crate) dig_museums_wanted: usize,
+    /// `curator-sits-with-the-works`: while a Culture seat's Pingala holds
+    /// Curator, `reassign_governor_for_loyalty` sends another Governor to a
+    /// loyalty emergency whenever one can go, instead of pulling Pingala off
+    /// the works. Set by `AdvancedAi` each turn; false (off) by default.
+    pub(crate) curator_keeps_his_seat: bool,
     /// `religion-seat-takes-the-faith-beliefs`: the founding tries the
     /// Faith-scaling founder beliefs first. Set each turn by the Advanced
     /// gene for a Religion-target seat; off by default.
@@ -3920,6 +3930,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
@@ -3986,6 +3997,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -4367,6 +4379,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
@@ -4433,6 +4446,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,

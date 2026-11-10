@@ -182,6 +182,9 @@ impl AdvancedAi {
         /// `domination-charts-every-capital`: see
         /// `advanced/domination_charts_every_capital.rs`.
         domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
+        /// `culture-keeps-pingala-home`: see
+        /// `advanced/culture_pingala_first.rs`.
+        culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
