@@ -40,8 +40,10 @@
 //!   (Renaissance Walls, Urban Defenses).
 //! - **Claim** ([`AdvancedAi::claim_domination_breaker`]): with no such
 //!   breaker alive or queued, the safe city with an idle queue whose breaker
-//!   reaches the target soonest lays it down (the routine governors fill idle
-//!   queues after it).
+//!   reaches the target soonest lays it down, in the idle-queue claims after
+//!   the Settler, Monument and Granary and ahead of `near-rival-deterrence`
+//!   (which took every idle queue on the live boards it was replayed on), and
+//!   again before the delegated governor so a wartime claim is restored.
 //! - **Purchase** ([`AdvancedAi::buy_domination_breaker`]): with none alive,
 //!   while the declaration is held for a breaker on that target or our land
 //!   units stand within `MUSTER_BREACH_FAR` of it at war, and nothing queued
