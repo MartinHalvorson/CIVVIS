@@ -3371,6 +3371,43 @@ fn ai_reassigns_a_governor_from_a_safe_city_to_a_loyalty_emergency() {
     assert_eq!(game.players[0].governor_roster["victor"].city, Some(second));
 }
 
+/// `culture-keeps-pingala-home`: a spared, seated Pingala stays where she
+/// sits unless the target city's emergency reads within the runway. Off the
+/// frozen rate alarm, `loyalty_emergency` reads the Loyalty level itself.
+#[test]
+fn a_spared_pingala_answers_only_a_near_flip() {
+    let run = |spared: Option<(&str, f64)>, loyalty: f64| {
+        let (mut game, source, target) = island_colony_game(1);
+        let second_settler = game.spawn_test_unit("settler", 0, target);
+        let second = game.found_city_for(0, game.units[&second_settler].pos, None);
+        let first = game.city_at(source).unwrap();
+        game.players[0]
+            .counters
+            .insert("district_governor_titles".to_string(), 1);
+        game.apply(
+            0,
+            &Action::AppointGovernor {
+                governor: crate::name!("pingala"),
+                city: first,
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&first).unwrap().loyalty = 100.0;
+        game.cities.get_mut(&second).unwrap().loyalty = loyalty;
+        BasicAi::new().reassign_governor_for_loyalty_sparing(&mut game, 0, spared);
+        game.players[0].governor_roster["pingala"].city == Some(second)
+    };
+    assert!(run(None, 35.0), "unspared, Pingala answers the emergency");
+    assert!(
+        !run(Some(("pingala", 8.0)), 35.0),
+        "spared, she stays for a long runway"
+    );
+    assert!(
+        run(Some(("pingala", 8.0)), 5.0),
+        "spared, she still answers a city about to flip"
+    );
+}
+
 /// `victor_first_for_a_short_runway`: a city about to flip takes Victor,
 /// who establishes in three turns, ahead of an unassigned Governor; a
 /// longer runway keeps the unassigned Governor first.

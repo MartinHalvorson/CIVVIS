@@ -6817,6 +6817,10 @@ pub struct AdvancedAi {
     /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
     /// Opt-in.
     culture_faith_site_per_theater_2: bool,
+    /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
+    /// a Loyalty emergency only in a city about to flip. See
+    /// `advanced/culture_pingala_first.rs`. Opt-in.
+    culture_keeps_pingala_home: bool,
     /// `domination-target-gets-its-breaker`: the Domination lane owns a wall
     /// breaker matched to its target's walls before it declares, and keeps
     /// one with every siege. See
@@ -25621,6 +25625,10 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // See `last_civ_standing`: "one more turn" leaves one lane.
         self.plays_for_the_last_civ(g, pid);
+        // `culture-keeps-pingala-home`: both Loyalty passes read the runway.
+        // See `advanced/culture_pingala_first.rs`.
+        self.base.pingala_loyalty_runway =
+            self.culture_pingala_stays_home(g).map(|(_, runway)| runway);
         // `districts-price-the-improvement`: what a District could bulldoze.
         self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
@@ -25984,6 +25992,10 @@ impl AdvancedAi {
             self.strategic_governors(g, pid, &plan);
             self.relocate_governors_for_dividends(g, pid, &plan);
         }
+        // `curator-sits-with-the-works`: both loyalty backstops below (this
+        // one and the ancillary pass's) send another Governor before a
+        // Pingala holding Curator. False with the gene off.
+        self.base.curator_keeps_his_seat = self.curator_seat_active(g);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured

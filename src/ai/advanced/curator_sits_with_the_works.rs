@@ -24,13 +24,29 @@
 //! - **The post.** Every turn, at war or at peace, a Pingala holding Curator
 //!   moves to the city of ours that holds the most Writing, Art and Music
 //!   works, when that city holds at least [`CURATOR_MARGIN_WORKS`] more than
-//!   his own and at least half as many again. A Pingala in a city with works
-//!   stays at least [`CURATOR_MIN_STAY_STANDARD`] standard turns (and never
-//!   less than the establishment time) before he moves again; one in a city
-//!   with none moves as soon as he may. The new city must be safe and
-//!   unoccupied by another governor; the host's establishment delay and
-//!   Neutralize are respected. Cities are read from the board every turn, so
+//!   his own and at least half as many again. The new city must be safe and
+//!   unoccupied by another governor, and he is never re-sent to the city he
+//!   is posted to (or travelling to); Neutralize and a request already made
+//!   this turn are respected. Cities are read from the board every turn, so
 //!   no live city id is kept between frames.
+//! - **The seat is held, never traded.** After his last assignment by
+//!   anyone he stays until he is established there (the host's
+//!   establishment time), and at least [`CURATOR_MIN_STAY_STANDARD`]
+//!   standard turns where he sits with works; and he does
+//!   not leave a city of ours whose Loyalty is below
+//!   [`CURATOR_LEAVES_LOYALTY`] or in a loyalty emergency: the same cushion
+//!   the loyalty backstop (`BasicAi::reassign_governor_for_loyalty`) asks of
+//!   a Governor it pulls. In turn that backstop, with this gene on, sends any
+//!   other eligible Governor to a loyalty emergency before a Pingala holding
+//!   Curator (`BasicAi::curator_keeps_his_seat`).
+//!
+//!   **Why the hold (live Deity Kristina civvis-20261110T193814Z).** The
+//!   backstop, which runs every turn inside the ancillary pass and writes no
+//!   journal line, took Pingala from Stockholm (6 works, Loyalty 100) to
+//!   newly settled Malmö (Loyalty 67, under the 70 alarm) on t163-t166, the
+//!   alphabet breaking his tie with Reyna; this gene moved him back each
+//!   frame because Malmö held no works. At t178-t182 the same happened with
+//!   Linköping and Västerås, and he was established nowhere for five turns.
 //!
 //! Off, or for another target, nothing changes.
 
@@ -40,8 +56,29 @@ use super::*;
 pub(super) const CURATOR_MIN_WORKS: usize = 4;
 /// Works a city must hold beyond Pingala's own before he moves there.
 pub(super) const CURATOR_MARGIN_WORKS: usize = 2;
-/// Standard turns a Pingala sitting with works stays before he moves again.
+/// Standard turns Pingala stays where he sits with works after his last
+/// assignment by anyone (elsewhere he stays until established).
 pub(super) const CURATOR_MIN_STAY_STANDARD: u32 = 10;
+/// Pingala does not leave a city of ours below this Loyalty: the cushion
+/// `BasicAi::reassign_governor_for_loyalty` asks of a Governor it pulls.
+pub(super) const CURATOR_LEAVES_LOYALTY: f64 = 90.0;
+
+/// What a Pingala holding Curator does with his post this turn.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum CuratorPost {
+    /// Move to `city`, which holds `works` against `here` where he sits.
+    Move {
+        city: u32,
+        works: usize,
+        here: usize,
+    },
+    /// A city with more works waits; he keeps his seat for `reason`.
+    Hold {
+        city: u32,
+        works: usize,
+        reason: String,
+    },
+}
 
 /// The kinds of work Curator doubles in Pingala's city.
 const CURATED_KINDS: [&str; 3] = ["writing", "art", "music"];
@@ -109,15 +146,16 @@ impl AdvancedAi {
         applied
     }
 
-    /// The city a Pingala holding Curator should move to now, with its works
-    /// and his own city's. `None` with the gene off, without Curator, inside
-    /// the stay or the host's delays, or when no city clears the margin.
-    pub(super) fn curator_destination(
+    /// What a Pingala holding Curator does with his post this turn: move to
+    /// the city with the most works, or hold his seat while the stay or his
+    /// city's Loyalty says so. `None` with the gene off, without Curator,
+    /// inside the host's delays, or when no city clears the margin.
+    pub(super) fn curator_post(
         &self,
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
-    ) -> Option<(u32, usize, usize)> {
+    ) -> Option<CuratorPost> {
         if !self.curator_seat_active(g) {
             return None;
         }
@@ -131,24 +169,14 @@ impl AdvancedAi {
             return None;
         }
         let works = Self::curated_works_by_city(g, pid);
-        let here = g
-            .cities
-            .get(&current)
-            .filter(|city| city.owner == pid)
-            .map_or(0, |_| works.get(&current).copied().unwrap_or(0));
-        let settle = g
-            .standard_duration(g.rules.governors["pingala"].establish_turns)
-            .max(1);
-        let stay = g.standard_duration(CURATOR_MIN_STAY_STANDARD).max(settle);
-        if here > 0 && self.governor_residence_age(g, pid, "pingala") < stay {
-            return None;
-        }
+        let seat = g.cities.get(&current).filter(|city| city.owner == pid);
+        let here = seat.map_or(0, |_| works.get(&current).copied().unwrap_or(0));
         let occupied: BTreeSet<u32> = g.players[pid]
             .governor_roster
             .values()
             .filter_map(|other| other.city)
             .collect();
-        works
+        let (city, count) = works
             .iter()
             .filter(|(city, count)| {
                 **city != current
@@ -158,19 +186,84 @@ impl AdvancedAi {
                     && self.governor_dividend_safe_city(g, pid, **city, plan)
             })
             .max_by_key(|(city, count)| (**count, std::cmp::Reverse(g.cities[*city].pos)))
-            .map(|(city, count)| (*city, *count, here))
+            .map(|(city, count)| (*city, *count))?;
+        if let Some(seat) = seat {
+            if seat.loyalty < CURATOR_LEAVES_LOYALTY
+                || self.base.loyalty_emergency(g, current).is_some()
+            {
+                return Some(CuratorPost::Hold {
+                    city,
+                    works: count,
+                    reason: format!(
+                        "{} needs a Governor for its Loyalty ({:.0})",
+                        seat.name, seat.loyalty
+                    ),
+                });
+            }
+        }
+        let settle = g
+            .standard_duration(g.rules.governors["pingala"].establish_turns)
+            .max(1);
+        // Until he is established wherever anyone posted him; and where he
+        // sits with works, the longer stay that keeps him off a near tie.
+        let stay = if here > 0 {
+            g.standard_duration(CURATOR_MIN_STAY_STANDARD).max(settle)
+        } else {
+            settle
+        };
+        let age = self.governor_residence_age(g, pid, "pingala");
+        if age < stay {
+            return Some(CuratorPost::Hold {
+                city,
+                works: count,
+                reason: format!("he was posted {age} turn(s) ago and stays {stay}"),
+            });
+        }
+        Some(CuratorPost::Move {
+            city,
+            works: count,
+            here,
+        })
     }
 
-    /// See the module: move a Pingala holding Curator to the works. True when
-    /// a reassignment was requested. Exact no-op with the gene off.
+    /// The city a Pingala holding Curator moves to now, with its works and
+    /// his own city's: [`Self::curator_post`]'s move, if any.
+    #[cfg(test)]
+    pub(super) fn curator_destination(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, usize, usize)> {
+        match self.curator_post(g, pid, plan)? {
+            CuratorPost::Move { city, works, here } => Some((city, works, here)),
+            CuratorPost::Hold { .. } => None,
+        }
+    }
+
+    /// See the module: move a Pingala holding Curator to the works, or say
+    /// why he holds his seat. True when a reassignment was requested. Exact
+    /// no-op with the gene off.
     pub(super) fn curator_follows_the_works(
         &mut self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        let Some((city, works, here)) = self.curator_destination(g, pid, plan) else {
-            return false;
+        let (city, works, here) = match self.curator_post(g, pid, plan) {
+            None => return false,
+            Some(CuratorPost::Hold {
+                city,
+                works,
+                reason,
+            }) => {
+                think!(self.journal(), Government, Detail,
+                       "Pingala keeps his seat";
+                       "curator-sits-with-the-works: {} holds {works} Writing, Art and Music \
+                        work(s), but {reason}", g.cities[&city].name);
+                return false;
+            }
+            Some(CuratorPost::Move { city, works, here }) => (city, works, here),
         };
         if g.apply(
             pid,

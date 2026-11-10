@@ -35,14 +35,52 @@
 //! The cost is that Magnus arrives later, after Pingala's two tier-one
 //! promotions. His Provision title spares a citizen per Settler, so the gene
 //! is judged on cities at t60 as well as on Culture at t60 and t100.
+//!
+//! ## `culture-keeps-pingala-home`
+//!
+//! The base Loyalty pass (`reassign_governor_for_loyalty`) moves any seated
+//! Governor from a city at 90+ Loyalty to the city that flips soonest. With
+//! Pingala the only Governor, it pulled her out of the capital within 25
+//! turns of her appointment in four of the first five live Kristina games
+//! carrying `culture-seat-appoints-pingala-first` (195741Z t34, 201305Z t31
+//! and t57, 201752Z t50, 202929Z t32), each time to a two-citizen border city
+//! at 22-69 Loyalty; in the fifth, 193814Z, it took her from a 13-citizen
+//! capital to a five-citizen city at 68 Loyalty at t100. Over all 20 Pingala moves of the
+//! day, 9 went to a city three or more citizens smaller. With the gene on, a
+//! Culture target's seated Pingala answers the emergency only when the city
+//! would flip within `PINGALA_LOYALTY_RUNWAY_STANDARD` turns; any other
+//! Governor, and an unassigned one, still goes as before. The runway rides on
+//! `BasicAi::pingala_loyalty_runway`, set at the top of each turn, because
+//! the Loyalty pass runs twice: from `AdvancedAi`'s governor block and from
+//! the base ancillary pass after the titles.
 
 use super::{AdvancedAi, GrandStrategy, VictoryTarget};
 use crate::game::Game;
+
+/// `culture-keeps-pingala-home`: standard turns of Loyalty runway inside
+/// which a seated Pingala still answers the emergency (about eight Online
+/// turns). A Governor needs five turns to establish, so a longer runway can
+/// wait for another Governor's title.
+const PINGALA_LOYALTY_RUNWAY_STANDARD: u32 = 12;
 
 impl AdvancedAi {
     fn culture_seat_titles_pingala_first(&self, g: &Game) -> bool {
         self.culture_seat_appoints_pingala_first
             && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+    }
+
+    /// `culture-keeps-pingala-home`: the Governor the Loyalty pass spares and
+    /// the runway inside which it still goes. `None` with the gene off or for
+    /// another target.
+    pub(super) fn culture_pingala_stays_home(&self, g: &Game) -> Option<(&'static str, f64)> {
+        (self.culture_keeps_pingala_home
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture))
+        .then(|| {
+            (
+                "pingala",
+                g.standard_duration(PINGALA_LOYALTY_RUNWAY_STANDARD) as f64,
+            )
+        })
     }
 
     /// The plan that orders this frame's Governor titles.
