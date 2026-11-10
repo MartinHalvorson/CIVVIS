@@ -2205,6 +2205,96 @@ fn world_politics_on_a_mirrored_seat_marks_what_the_host_withholds() {
     );
 }
 
+fn politics_attitude(politics: &Value, row: usize, column: usize) -> char {
+    politics["attitudes"]["rows"][row]
+        .as_str()
+        .unwrap()
+        .chars()
+        .nth(column)
+        .unwrap()
+}
+
+/// A pact belongs to the pair, but an attitude belongs to one leader, so the
+/// two cells of a pair can disagree.
+#[test]
+fn world_politics_says_what_each_leader_makes_of_each_other() {
+    let mut game = world_politics_game();
+    game.players[2].denounced_until.insert(1, game.turn + 5);
+    game.players[3].grievances.insert(1, 60.0);
+    game.players[1].grievances.insert(3, -60.0);
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics["attitudes"]["civs"], json!([0, 1, 2, 3]));
+    assert_eq!(politics_attitude(&politics, 2, 1), 'D');
+    assert_ne!(
+        politics_attitude(&politics, 1, 2),
+        'D',
+        "a denouncement is one leader's"
+    );
+    assert_eq!(politics_attitude(&politics, 3, 1), 'U');
+    assert_eq!(politics_attitude(&politics, 1, 3), 'F');
+    for (row, column, why) in [
+        (0, 0, "a civilization has no view of itself"),
+        (0, 1, "the alliance speaks for this pair"),
+        (2, 3, "the friendship speaks for this pair"),
+        (0, 2, "the war speaks for this pair"),
+    ] {
+        assert_eq!(politics_attitude(&politics, row, column), '-', "{why}");
+    }
+}
+
+/// The table is built from remembered measures, and must say exactly what the
+/// diplomacy screen says when it asks about one pair.
+#[test]
+fn world_politics_attitudes_agree_with_the_diplomacy_screen() {
+    let mut game = Game::new(6, 32, 22, 90_003, 80, 0);
+    for pid in 0..6 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        let pos = game.units[&settler].pos;
+        game.found_city_for(pid, pos, None);
+    }
+    // One civilization ahead of the rest gives the comparing agendas a verdict.
+    let spare = game.map.tiles.keys().copied().find(|pos| {
+        game.map.tiles[pos].owner_city.is_none()
+            && !game.rules.is_water(&game.map.tiles[pos])
+            && game.cities.values().all(|city| game.wdist(*pos, city.pos) > 4)
+    });
+    game.found_city_for(1, spare.expect("an empty tile"), None);
+    let civs: Vec<usize> = (0..6).collect();
+    let table = game.relationship_states_among(&civs);
+    for &observer in &civs {
+        for &subject in &civs {
+            assert_eq!(
+                table[observer][subject],
+                game.relationship_state(observer, subject),
+                "{observer} toward {subject}"
+            );
+        }
+    }
+}
+
+/// Civilization VI names one state per rival: the one it holds toward us.
+#[test]
+fn world_politics_on_a_mirrored_seat_shows_only_what_the_host_named() {
+    let mut game = world_politics_game();
+    std::sync::Arc::make_mut(&mut game.observed_leader_types).insert(3, "LEADER_X".to_string());
+    game.players[3]
+        .observed_diplomatic_state
+        .insert(0, "UNFRIENDLY".to_string());
+    game.players[3].grievances.insert(1, 60.0);
+    let politics = observation_spectator(&game, 0)["world_politics"].clone();
+    assert_eq!(politics_attitude(&politics, 3, 0), 'U');
+    assert_eq!(politics_attitude(&politics, 0, 3), 'U');
+    assert_eq!(
+        politics_attitude(&politics, 3, 1),
+        '-',
+        "the local ledger must not stand in for a rival's real view"
+    );
+}
+
 #[test]
 fn world_politics_is_silent_on_a_battlefield() {
     let mut game = world_politics_game();
@@ -2216,4 +2306,5 @@ fn world_politics_is_silent_on_a_battlefield() {
         json!([]),
         "everyone fights on a battlefield"
     );
+    assert_eq!(politics["attitudes"]["rows"], json!([]));
 }
