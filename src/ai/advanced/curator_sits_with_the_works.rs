@@ -29,9 +29,10 @@
 //!   is posted to (or travelling to); Neutralize and a request already made
 //!   this turn are respected. Cities are read from the board every turn, so
 //!   no live city id is kept between frames.
-//! - **The seat is held, never traded.** He stays at least
-//!   [`CURATOR_MIN_STAY_STANDARD`] standard turns (never less than the
-//!   establishment time) after his last assignment by anyone, and he does
+//! - **The seat is held, never traded.** After his last assignment by
+//!   anyone he stays until he is established there (the host's
+//!   establishment time), and at least [`CURATOR_MIN_STAY_STANDARD`]
+//!   standard turns where he sits with works; and he does
 //!   not leave a city of ours whose Loyalty is below
 //!   [`CURATOR_LEAVES_LOYALTY`] or in a loyalty emergency: the same cushion
 //!   the loyalty backstop (`BasicAi::reassign_governor_for_loyalty`) asks of
@@ -55,7 +56,8 @@ use super::*;
 pub(super) const CURATOR_MIN_WORKS: usize = 4;
 /// Works a city must hold beyond Pingala's own before he moves there.
 pub(super) const CURATOR_MARGIN_WORKS: usize = 2;
-/// Standard turns Pingala stays after his last assignment by anyone.
+/// Standard turns Pingala stays where he sits with works after his last
+/// assignment by anyone (elsewhere he stays until established).
 pub(super) const CURATOR_MIN_STAY_STANDARD: u32 = 10;
 /// Pingala does not leave a city of ours below this Loyalty: the cushion
 /// `BasicAi::reassign_governor_for_loyalty` asks of a Governor it pulls.
@@ -202,7 +204,13 @@ impl AdvancedAi {
         let settle = g
             .standard_duration(g.rules.governors["pingala"].establish_turns)
             .max(1);
-        let stay = g.standard_duration(CURATOR_MIN_STAY_STANDARD).max(settle);
+        // Until he is established wherever anyone posted him; and where he
+        // sits with works, the longer stay that keeps him off a near tie.
+        let stay = if here > 0 {
+            g.standard_duration(CURATOR_MIN_STAY_STANDARD).max(settle)
+        } else {
+            settle
+        };
         let age = self.governor_residence_age(g, pid, "pingala");
         if age < stay {
             return Some(CuratorPost::Hold {
