@@ -358,16 +358,9 @@ fn stonehenge_is_a_holy_site_for_founding_and_alhambra_is_a_fort() {
 #[test]
 fn meteors_pepper_open_land_and_grant_advanced_heavy_cavalry() {
     let (mut game, city, _) = one_city(90_4441);
-    // A stock lobby has the Apocalypse mode off and so never sees one.
+    // Showers fall with every game mode off. At the turn limit every remaining
+    // strike is forced in, and the default intensity's budget is six per game.
     game.turn = game.max_turns;
-    game.process_meteors();
-    assert_eq!(
-        game.meteor_strikes, 0,
-        "meteors are an Apocalypse-mode rule"
-    );
-    game.game_modes.insert("apocalypse".to_string());
-    // At the turn limit every remaining strike is forced in, and the
-    // budget never exceeds the shipped six per game.
     for expected in 1..=6u32 {
         game.process_meteors();
         assert_eq!(game.meteor_strikes, expected);

@@ -124,6 +124,10 @@ impl Game {
     /// after it is made, which is what turned this AI's diplomacy into a
     /// stutter of one-turn wars nobody fought.
     pub fn peace_available_at(&self, a: usize, b: usize) -> Option<u32> {
+        // Nothing settles the war a world plays out to its last civilization.
+        if self.plays_to_the_last_civ() && self.major_diplomatic_counterpart(a, b) {
+            return Some(u32::MAX);
+        }
         let (first, second) = self.war_sides(a, b)?;
         let war = self.wars.get(&pair(first, second))?;
         let earliest = (war.started + self.standard_duration(WAR_MIN_TURNS))

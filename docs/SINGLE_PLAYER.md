@@ -341,8 +341,9 @@ project values them:
 
 1. **AI-only simulation**, the default. It is what the engine exists for and
    what the exhibition deployment runs, so it is what the panel opens on.
-2. **Single player**, a person in seat 0 against the agents.
-3. **Multiplayer · later**, still greyed out.
+2. **Single player - WIP**, a person in seat 0 against the agents.
+
+Multiplayer is not listed for now.
 
 The bridge to a real Civilization VI game is retained as a hidden `civ6` option
 for browser verification; it is not a public left-panel choice. When
@@ -570,8 +571,11 @@ At the end of a simulation, the supervisor countdown remains in charge and
 the result screen has two choices:
 
 - **One more turn** resumes the same map, seed, and empires with no turn limit
-  and no later victory able to end them. The world plays on until somebody
-  presses **Restart sim**.
+  until only one civilization remains. Every other victory is ignored, every
+  civilization left is at war with every other, peace is refused, and every AI
+  plays for conquest. City-states and Free Cities do not count, and a team left
+  together counts as one. **Restart sim** still ends it early. The button is
+  not offered when one civilization is already left.
 - **New Game** starts the next world immediately. Leaving the screen alone
   keeps the existing countdown behavior and starts that next world when it
   reaches zero.

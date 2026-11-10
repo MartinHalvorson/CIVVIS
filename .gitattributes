@@ -1,0 +1,10 @@
+# Every gene adds one row to each of these two files, at a shared per-letter
+# anchor, so two gene PRs collide on the same line even though both rows belong.
+# Replayed over the last 60 merges of each file, 34 of 118 consecutive pairs
+# collided, and keeping both sides gave every row exactly once in a file that
+# parses. Anything union gets wrong is caught later: a twice-edited row fails
+# `test_genes`, and a broken file fails to compile.
+#
+# Do not add a file here unless its conflicts are appends of independent lines.
+src/ai/advanced/genes.rs merge=union
+src/ai/advanced/treatment_flags.rs merge=union

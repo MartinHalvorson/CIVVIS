@@ -90,15 +90,21 @@ impl Game {
             .unwrap_or(self.players[pid].exoplanet_distance)
     }
 
-    /// The Science Victory Points required in this game. Civilization VI's
-    /// game-speed setting owns this number on a mirrored board, while the
-    /// native simulator retains its fixed destination.
+    /// The expedition's whole trip at this game's speed, when no host has
+    /// said otherwise. Rounded because the host's total is a whole number
+    /// and Quick's 33.5 cannot be one.
+    pub fn exoplanet_destination(&self) -> f64 {
+        self.game_speed.scale(EXOPLANET_DESTINATION).round()
+    }
+
+    /// The Science Victory Points required in this game: the total a
+    /// mirrored host reports, otherwise this game's speed-scaled trip.
     pub fn science_victory_points_needed(&self, pid: usize) -> f64 {
         self.observed_public_empire_stats
             .get(&pid)
             .and_then(|stats| stats.science_victory_points_needed)
             .filter(|points| points.is_finite() && *points > 0.0)
-            .unwrap_or(EXOPLANET_DESTINATION)
+            .unwrap_or_else(|| self.exoplanet_destination())
     }
 
     /// Science-victory movement per turn. A live host's World Rankings value
@@ -290,14 +296,18 @@ impl Game {
         };
 
         let capital_target = all_majors.len();
+        // Each major's first capital, by one walk of the cities rather than a
+        // walk per major: `find` over id-ordered cities keeps the lowest id,
+        // and so does the first entry for an owner here.
+        let mut first_capitals: BTreeMap<usize, &City> = BTreeMap::new();
+        for city in self.cities.values().filter(|city| city.is_capital) {
+            first_capitals.entry(city.original_owner).or_insert(city);
+        }
         let controlled_capitals = if player.team.is_some() {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    let capital = self
-                        .cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner);
+                    let capital = first_capitals.get(*original_owner).copied();
                     if **original_owner == pid || self.same_team(pid, **original_owner) {
                         capital.is_some_and(|capital| capital.owner == **original_owner)
                     } else {
@@ -309,13 +319,10 @@ impl Game {
             all_majors
                 .iter()
                 .filter(|original_owner| {
-                    self.cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == **original_owner)
-                        .map_or(
-                            **original_owner == pid || !self.players[**original_owner].alive,
-                            |capital| capital.owner == pid,
-                        )
+                    first_capitals.get(*original_owner).copied().map_or(
+                        **original_owner == pid || !self.players[**original_owner].alive,
+                        |capital| capital.owner == pid,
+                    )
                 })
                 .count()
         };
@@ -613,6 +620,7 @@ impl Game {
             }
             self.players[pid].alive = false;
             self.sync_war_log();
+            self.check_last_civ_standing();
             return;
         }
         if self.unseen_city_owners.contains(&pid) {
@@ -647,6 +655,7 @@ impl Game {
         // stopped existing; close those records now so they carry the turn it
         // happened rather than the turn something else touched diplomacy.
         self.sync_war_log();
+        self.check_last_civ_standing();
     }
 
     pub(super) fn check_domination(&mut self) {
@@ -806,12 +815,18 @@ impl Game {
     /// path, so an already-satisfied Culture or Domination condition cannot
     /// instantly re-declare the same result; every genuinely later result can
     /// still land. `Indefinite` suppresses every later result.
+    /// `LastCivStanding` suppresses them too and sets every civilization left
+    /// against every other, so the one result still open is the survivor.
     ///
-    /// Returns `false` when there is no result to play on past.
+    /// Returns `false` when there is no result to play on past, and when a
+    /// world asked to play to its last civilization is already there.
     pub fn play_on(&mut self, mode: PlayOnMode) -> bool {
         let (Some(winner), Some(victory_type)) = (self.winner, self.victory_type.clone()) else {
             return false;
         };
+        if mode == PlayOnMode::LastCivStanding && self.last_side_standing().is_some() {
+            return false;
+        }
         // Read before `decided` is set: a played-on world has no turn limit
         // left to date a score victory against.
         let decided_on = self.reported_turn();
@@ -840,9 +855,13 @@ impl Game {
                 match mode {
                     PlayOnMode::UntilNextVictory => "plays on until the next victory".to_string(),
                     PlayOnMode::Indefinite => "plays on indefinitely".to_string(),
+                    PlayOnMode::LastCivStanding => "plays on until one civ remains".to_string(),
                 },
                 None,
             );
+        }
+        if mode == PlayOnMode::LastCivStanding {
+            self.open_the_final_war();
         }
         // A decided game stopped mid-turn: whoever is up has to be given their
         // turn again, or the extension opens on a seat that cannot act.
@@ -857,10 +876,71 @@ impl Game {
             .as_ref()
             .is_some_and(|decided| match decided.mode {
                 PlayOnMode::Indefinite => true,
+                PlayOnMode::LastCivStanding => vtype != LAST_CIV_VICTORY,
                 PlayOnMode::UntilNextVictory => {
                     decided.winner == pid && decided.victory_type == vtype
                 }
             })
+    }
+
+    /// Whether this world can now only end with one civilization left.
+    pub fn plays_to_the_last_civ(&self) -> bool {
+        self.decided
+            .as_ref()
+            .is_some_and(|decided| decided.mode == PlayOnMode::LastCivStanding)
+    }
+
+    /// The civilization left once every other is gone, or `None` while there
+    /// is still someone to fight. City-states, barbarians and Free Cities are
+    /// not civilizations here. A team counts as one side, because teammates
+    /// can never be at war and two of them could otherwise play on forever.
+    pub fn last_side_standing(&self) -> Option<usize> {
+        let mut living = self
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id);
+        let first = living.next()?;
+        living
+            .all(|other| self.same_team(first, other))
+            .then_some(first)
+    }
+
+    /// Put every civilization left at war with every other, and void the
+    /// agreements that could keep any two of them from fighting.
+    fn open_the_final_war(&mut self) {
+        let civs: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        for (index, first) in civs.iter().copied().enumerate() {
+            for second in civs[index + 1..].iter().copied() {
+                if self.same_team(first, second) {
+                    continue;
+                }
+                self.at_war.insert(pair(first, second));
+                self.peace_treaties.remove(&pair(first, second));
+                for (seat, other) in [(first, second), (second, first)] {
+                    let player = &mut self.players[seat];
+                    player.friends_until.remove(&other);
+                    player.open_borders_until.remove(&other);
+                    player.alliances.remove(&other);
+                    player.defensive_pacts.remove(&other);
+                }
+            }
+        }
+    }
+
+    /// Crown the survivor of a world played on to its last civilization.
+    fn check_last_civ_standing(&mut self) {
+        if !self.plays_to_the_last_civ() {
+            return;
+        }
+        if let Some(survivor) = self.last_side_standing() {
+            self.crown(survivor, LAST_CIV_VICTORY);
+        }
     }
 
     /// The Require-N setting, clamped to what the lobby actually enabled:
@@ -932,6 +1012,12 @@ impl Game {
             // The verdict names the deed: a flag battle is not "a flag
             // victory", it is the flag captured.
             "captured the flag".to_string()
+        } else if vtype == LAST_CIV_VICTORY {
+            if winners.len() > 1 {
+                "are the last civilizations standing".to_string()
+            } else {
+                "is the last civilization standing".to_string()
+            }
         } else {
             format!("won a {vtype} victory")
         };

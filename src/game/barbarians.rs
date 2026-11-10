@@ -1,8 +1,8 @@
 //! Barbarians: their camps, raids and scouts.
 //!
 //! The barbarian spec and difficulty, camp placement and spawning
-//! (`spawn_camp`, `spawn_barbarian_camp_recon`/`_units`), the unit pools
-//! (land, naval, guards, raid forces and their ranged share), the scout and
+//! (`spawn_camp`, `spawn_barbarian_camp_recon`/`_units`), the tribes and
+//! their unit pools (guards, raid forces and their ranged share), the scout and
 //! raid phases (`barbarian_scout_phase`, `barbarian_phase`), and clearing or
 //! converting a camp.
 //!
@@ -11,6 +11,27 @@
 //! methods stay public; the code is otherwise unchanged.
 
 use super::*;
+
+/// `TRIBE_CAVALRY`'s `ResourceRange` in `Barbarians.xml`.
+const BARBARIAN_CAVALRY_RESOURCE_RANGE: i32 = 3;
+
+/// The three `BarbarianTribes` rows in `Base/Assets/Gameplay/Data/Barbarians.xml`.
+/// A camp's tribe fixes which unit classes it raises.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BarbarianTribe {
+    Melee,
+    Cavalry,
+    Naval,
+}
+
+/// The tribe columns that name a unit class: `MeleeTag`, `RangedTag` and
+/// `ScoutTag`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BarbarianRole {
+    Melee,
+    Ranged,
+    Recon,
+}
 
 impl Game {
     /// The rung the barbarian seat plays by: its raid band and spawn cadence.
@@ -69,6 +90,25 @@ impl Game {
     fn spawn_camp(&mut self) {
         let watched = self.watched_by_the_living();
         self.spawn_camp_unwatched(&watched);
+    }
+
+    /// `Improvement_ValidFeatures` for the camp, which has no
+    /// `Improvement_ValidResources` row: none of 113 camps seen in live games
+    /// sat on a resource.
+    fn barbarian_camp_can_stand_on(tile: &Tile) -> bool {
+        tile.resource.is_none()
+            && tile.feature.as_deref().is_none_or(|feature| {
+                matches!(
+                    feature,
+                    "forest"
+                        | "jungle"
+                        | "marsh"
+                        | "floodplains"
+                        | "grassland_floodplains"
+                        | "plains_floodplains"
+                        | "volcanic_soil"
+                )
+            })
     }
 
     /// Seat one camp, given what the world can already see. Setup places a
@@ -135,7 +175,16 @@ impl Game {
         if cands.is_empty() {
             return;
         }
-        let pos = cands[self.rng.below(cands.len())];
+        // One draw over every open plot, then the first plot from there a camp
+        // can stand on. Filtering before the draw would change which index
+        // every camp rolls, and so move the camps of every seeded world.
+        let first = self.rng.below(cands.len());
+        let Some(pos) = (0..cands.len())
+            .map(|step| cands[(first + step) % cands.len()])
+            .find(|pos| Self::barbarian_camp_can_stand_on(&self.map.tiles[pos]))
+        else {
+            return;
+        };
         self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         let coastal = self.nbrs(pos).into_iter().any(|neighbor| {
             self.map
@@ -304,12 +353,75 @@ impl Game {
         }
     }
 
-    /// The shipped rule: Barbarians fight with half the leading
-    /// civilization's technology (BARBARIAN_TECH_PERCENT). Rank the tech
-    /// tree the way research walks it and give the camps everything the
-    /// first half of the leader's tech count unlocks - muskets and tanks
-    /// included, late enough.
-    pub(crate) fn barbarian_unit_pool(&self) -> Vec<Name> {
+    /// Which tribe a camp belongs to. A camp the coastal roll made naval is
+    /// `TRIBE_NAVAL`; otherwise `TRIBE_CAVALRY`'s `RequiredResource` decides:
+    /// Horses within `ResourceRange`. Live games bear it out: of the Barbarian
+    /// units first seen within 6 tiles of a camp, 27 of 29 horse units were by
+    /// a camp with Horses in range and 287 of 290 foot units by one without.
+    pub(crate) fn barbarian_camp_tribe(&self, camp: Pos) -> BarbarianTribe {
+        if self.barb_naval_camps.contains(&camp) {
+            return BarbarianTribe::Naval;
+        }
+        let horses = self
+            .wdisk(camp, BARBARIAN_CAVALRY_RESOURCE_RANGE)
+            .into_iter()
+            .any(|position| {
+                self.map
+                    .get(position)
+                    .is_some_and(|tile| tile.resource.as_deref() == Some("horses"))
+            });
+        if horses {
+            BarbarianTribe::Cavalry
+        } else {
+            BarbarianTribe::Melee
+        }
+    }
+
+    /// Whether a unit carries the class a tribe names for this role, read
+    /// from the `BarbarianTribes` tag columns and the units' `TypeTags`.
+    fn barbarian_role_admits(
+        tribe: BarbarianTribe,
+        role: BarbarianRole,
+        name: &str,
+        promotion_class: &str,
+    ) -> bool {
+        use BarbarianRole as R;
+        use BarbarianTribe as T;
+        match (tribe, role) {
+            // CLASS_RECON.
+            (T::Melee | T::Cavalry, R::Recon) => promotion_class == "recon",
+            // CLASS_NAVAL_MELEE is the Naval tribe's ScoutTag and MeleeTag.
+            (T::Naval, R::Recon | R::Melee) => promotion_class == "naval_melee",
+            // CLASS_NAVAL_RANGED tags the raiders as well as the Quadrireme line.
+            (T::Naval, R::Ranged) => matches!(promotion_class, "naval_ranged" | "naval_raider"),
+            // CLASS_MELEE.
+            (T::Melee, R::Melee) => promotion_class == "melee",
+            // CLASS_RANGED, which the Ranger also carries. The horse archer's
+            // promotion class is ranged, but its tag is CLASS_MOBILE_RANGED.
+            (T::Melee, R::Ranged) => {
+                (promotion_class == "ranged" && name != "barbarian_horse_archer")
+                    || name == "ranger"
+            }
+            // CLASS_LIGHT_CAVALRY.
+            (T::Cavalry, R::Melee) => promotion_class == "light_cavalry",
+            // CLASS_MOBILE_RANGED.
+            (T::Cavalry, R::Ranged) => {
+                matches!(name, "barbarian_horse_archer" | "skirmisher" | "ranger")
+            }
+        }
+    }
+
+    /// What a tribe can field in one role. The shipped rule on technology:
+    /// Barbarians fight with half the leading civilization's
+    /// (BARBARIAN_TECH_PERCENT). Rank the tech tree the way research walks it
+    /// and take what the first half of the leader's tech count unlocks. The
+    /// two `UNIT_BARBARIAN_*` riders are nobody else's to build, and a Galley
+    /// is always eligible, even before any major has researched Sailing.
+    pub(crate) fn barbarian_tribe_pool(
+        &self,
+        tribe: BarbarianTribe,
+        role: BarbarianRole,
+    ) -> Vec<Name> {
         let leader_techs = self
             .players
             .iter()
@@ -328,15 +440,19 @@ impl Game {
         self.rules
             .units
             .iter()
-            .filter(|(_, spec)| {
+            .filter(|(name, spec)| {
                 spec.class == "military"
-                    && spec.buildable
+                    && (spec.buildable || name.as_str().starts_with("barbarian_"))
                     && spec.unique_to.is_none()
-                    && !matches!(spec.domain.as_deref(), Some("sea") | Some("air"))
-                    && spec.promotion_class != "support"
-                    && spec.promotion_class != "recon"
                     && spec.civic.is_none()
-                    && spec.tech.as_deref().is_none_or(|tech| known.contains(tech))
+                    && Self::barbarian_role_admits(
+                        tribe,
+                        role,
+                        name.as_str(),
+                        &spec.promotion_class,
+                    )
+                    && (name.as_str() == "galley"
+                        || spec.tech.as_deref().is_none_or(|tech| known.contains(tech)))
             })
             .map(|(name, _)| *name)
             .collect()
@@ -376,40 +492,17 @@ impl Game {
             .unwrap_or_else(|| crate::name!("spearman"))
     }
 
-    /// Naval outposts use the same technology ceiling as land camps, but a
-    /// Galley is always eligible for the special recon slot even before any
-    /// major civilization has researched Sailing.
-    fn barbarian_naval_unit_pool(&self) -> Vec<Name> {
-        let leader_techs = self
-            .players
-            .iter()
-            .filter(|p| !p.is_minor)
-            .map(|p| p.techs.len())
-            .max()
-            .unwrap_or(0);
-        let mut ranked: Vec<(&Name, &crate::rules::TechSpec)> = self.rules.techs.iter().collect();
-        ranked
-            .sort_by(|a, b| (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0)));
-        let known: BTreeSet<&str> = ranked
-            .iter()
-            .take(leader_techs * 50 / 100)
-            .map(|(name, _)| name.as_str())
-            .collect();
-        self.rules
-            .units
-            .iter()
-            .filter(|(name, spec)| {
-                spec.class == "military"
-                    && spec.buildable
-                    && spec.unique_to.is_none()
-                    && spec.domain.as_deref() == Some("sea")
-                    && spec.promotion_class != "support"
-                    && spec.civic.is_none()
-                    && (name.as_str() == "galley"
-                        || spec.tech.as_deref().is_none_or(|tech| known.contains(tech)))
+    /// A camp's recon: the strongest unit of its tribe's `ScoutTag` it can
+    /// field. Live camps open with Scouts and move to Skirmishers and Rangers
+    /// as the leaders' technology climbs.
+    fn barbarian_recon_unit(&self, tribe: BarbarianTribe) -> Name {
+        self.barbarian_tribe_pool(tribe, BarbarianRole::Recon)
+            .into_iter()
+            .max_by_key(|kind| {
+                let spec = &self.rules.units[kind.as_str()];
+                (spec.strength.max(spec.ranged_strength) as i64, *kind)
             })
-            .map(|(name, _)| *name)
-            .collect()
+            .unwrap_or_else(|| crate::name!("scout"))
     }
 
     fn choose_barbarian_unit(&mut self, pool: &[Name]) -> Option<Name> {
@@ -427,21 +520,25 @@ impl Game {
             })
     }
 
-    /// Build the documented melee/ranged mix of a reported raid where the
-    /// current pool permits it. A coastal camp may not have a ranged ship at
-    /// this technology, so it falls back to an otherwise legal hull instead
-    /// of stalling the entire party.
-    fn choose_barbarian_raid_unit(&mut self, pool: &[Name], want_ranged: bool) -> Option<Name> {
-        let role_pool: Vec<Name> = pool
-            .iter()
-            .copied()
-            .filter(|kind| self.rules.units[kind].has_ranged_attack() == want_ranged)
-            .collect();
-        self.choose_barbarian_unit(if role_pool.is_empty() {
-            pool
+    /// Build the documented melee/ranged mix of a reported raid from the
+    /// camp's own tribe. A coastal camp may not have a ranged ship at this
+    /// technology, so it falls back to its tribe's other role instead of
+    /// stalling the entire party.
+    fn choose_barbarian_raid_unit(
+        &mut self,
+        tribe: BarbarianTribe,
+        want_ranged: bool,
+    ) -> Option<Name> {
+        let (wanted, other) = if want_ranged {
+            (BarbarianRole::Ranged, BarbarianRole::Melee)
         } else {
-            &role_pool
-        })
+            (BarbarianRole::Melee, BarbarianRole::Ranged)
+        };
+        let mut pool = self.barbarian_tribe_pool(tribe, wanted);
+        if pool.is_empty() {
+            pool = self.barbarian_tribe_pool(tribe, other);
+        }
+        self.choose_barbarian_unit(&pool)
     }
 
     fn spawn_barbarian_camp_recon(&mut self, kind: &str, owner: usize, camp: Pos) -> Option<u32> {
@@ -481,15 +578,10 @@ impl Game {
         }
         self.barb_camp_guards.insert(camp, guard_id);
 
-        let naval = self.barb_naval_camps.contains(&camp);
-        let recon_kind = if naval && self.rules.units.contains_key("galley") {
-            "galley"
-        } else {
-            "scout"
-        };
+        let recon_kind = self.barbarian_recon_unit(self.barbarian_camp_tribe(camp));
         let recon = self
-            .spawn_barbarian_camp_recon(recon_kind, bpid, camp)
-            .or_else(|| self.place_new_unit(recon_kind, bpid, camp));
+            .spawn_barbarian_camp_recon(recon_kind.as_str(), bpid, camp)
+            .or_else(|| self.place_new_unit(recon_kind.as_str(), bpid, camp));
         if let Some(unit) = recon {
             self.barb_scout_homes.insert(unit, camp);
         }
@@ -542,8 +634,6 @@ impl Game {
         let force_size = self.barbarian_raid_force_size();
         let ranged_size = self.barbarian_raid_ranged_size();
         let spawn_scale = self.barbarian_spec().barb_spawn_scale;
-        let land_pool = self.barbarian_unit_pool();
-        let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
         for (pos, nxt) in camps {
             let alerted = self
@@ -572,12 +662,8 @@ impl Game {
                 .count();
             let melee = party.len().saturating_sub(ranged);
             let want_ranged = ranged < ranged_size && melee >= force_size - ranged_size;
-            let pool = if self.barb_naval_camps.contains(&pos) {
-                &naval_pool
-            } else {
-                &land_pool
-            };
-            let Some(utype) = self.choose_barbarian_raid_unit(pool, want_ranged) else {
+            let tribe = self.barbarian_camp_tribe(pos);
+            let Some(utype) = self.choose_barbarian_raid_unit(tribe, want_ranged) else {
                 continue;
             };
             if let Some(unit) = self.place_new_unit(utype.as_str(), bpid, pos) {

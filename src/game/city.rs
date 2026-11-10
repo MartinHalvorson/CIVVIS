@@ -1649,6 +1649,7 @@ impl Game {
             *self.query_memo.regional_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.tourism.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.domestic_tourists.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
