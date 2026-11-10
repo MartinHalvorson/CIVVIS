@@ -157,6 +157,8 @@ fn verify_order_with_context(
                 Verdict::Verified
             } else if unit_appeared && purchase_conflict {
                 failed("unit_appearance_ambiguous_purchase".to_string())
+            } else if let Some(verdict) = finished_project(before, city, verb) {
+                verdict
             } else {
                 failed(format!(
                     "producing={}",
@@ -905,4 +907,35 @@ pub(super) fn audit_orders(events: &Path, orders_path: &Path) {
             "by_kind": by_kind,
         })
     );
+}
+
+/// What the frame can say about a city project that has left production.
+///
+/// A project leaves nothing for `city_holds` to list, so one that finished
+/// reads exactly like one the host refused: `producing=nothing`. The wall
+/// repair finishes in a single turn, so it always read that way: all 10 repairs
+/// in 10 live games (2026-11-10) reported failure, and the walls were back in 9.
+/// Three such reports on one city withhold its next repair for ten turns
+/// (`ORDER_REFUSAL_STRIKES`), which is when a besieged city needs it most.
+///
+/// The walls are the repair's own witness. Any other project that was already
+/// running when this order went out has finished. One first ordered here may
+/// equally have been refused, and the frame cannot say which.
+fn finished_project(
+    before: &civvis::mirror::StateSnapshot,
+    city: &civvis::mirror::StateCity,
+    verb: &str,
+) -> Option<Verdict> {
+    if !verb.starts_with("PROJECT_") || city.producing.is_some() {
+        return None;
+    }
+    let prior = own_city(before, city.id)?;
+    if verb == "PROJECT_REPAIR_OUTER_DEFENSES" {
+        return (city.wall_damage < prior.wall_damage).then_some(Verdict::Verified);
+    }
+    Some(if prior.producing.as_deref() == Some(verb) {
+        Verdict::Verified
+    } else {
+        Verdict::Unverifiable
+    })
 }

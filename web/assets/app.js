@@ -146,6 +146,7 @@ function syncSectionStops() {
   // the stack too, so the window is the same whichever section is open.
   const room = scroller.clientHeight - top - stack;
   side.style.setProperty("--stop-gap", `${SECTION_STOP_GAP}px`);
+  side.style.setProperty("--deck-window", `${Math.round(room)}px`);
   side.classList.toggle("deck-stops", room >= SECTION_STOP_MIN_WINDOW);
   let above = top;
   let below = stack;
@@ -2587,11 +2588,7 @@ function togglePlayerHudSort(key) {
       : playerHudSortDefaultDirection(key),
   };
   savePlayerHudSort();
-  if (state) {
-    drawPlayerHud();
-    // World politics lists its pairs in this table's order.
-    drawWorldPolitics();
-  }
+  if (state) drawPlayerHud();
 }
 
 function playerHudSortHead(key, label, title, classes = "", attrs = "") {
@@ -7563,13 +7560,6 @@ function restoreLogFilters(key, defaults) {
 reasonFilters = restoreLogFilters(REASON_FILTER_KEY, reasonFilters);
 warFilters = restoreLogFilters(WAR_FILTER_KEY, warFilters);
 eventFilters = restoreLogFilters(EVENT_FILTER_KEY, eventFilters);
-// The civilization World politics is narrowed to lasts one world, for the same
-// reason as the dossier's seat below: a new world reseats every civilization.
-// Which of its groups are folded says nothing about any seat, so that is kept.
-const POLITICS_FOLD_KEY = "civvis-politics-folded-v1";
-let politicsSeat = "all";
-let politicsSeatWorld = null;
-let politicsFolded = restoreLogFilters(POLITICS_FOLD_KEY, {bonds: false, wars: false});
 // Which seat the AI strategy dossier is speaking for, and the world that choice
 // belongs to. It scopes both the active plan and its decision factors, so a
 // reader never has to reconcile a plan for one civilization with a log for
@@ -20981,10 +20971,52 @@ function skyStageEdge(stage, dx, dy, margin) {
   return {x:(stage.left + stage.right) / 2 + ux * reach,
           y:(stage.top + stage.bottom) / 2 + uy * reach};
 }
-// A launch the camera cannot see from where it is: zoomed in on the other side
-// of the world, or parked at another planet. Everyone watching still gets to
-// see it go, so it comes in over the edge of the frame on the bearing of its
-// Spaceport and leaves on the bearing of where it is going.
+// Parked out at another world, with home nowhere in the picture, a rocket on its
+// way somewhere else has no pad to leave here and nothing to land on. It goes by:
+// one straight line along the top of the frame, left to right, at one speed and
+// in about two seconds whatever the mission's own film would have been.
+const SKY_FLYBY_MS = 2200;
+// How far down the frame the line runs: the name above the rocket has to clear
+// the masthead's shadow. Rockets in the air together take a lane each, or two
+// launched on one turn would fly exactly on top of each other.
+const SKY_FLYBY_TOP = SKY_LABEL_TOP + 18, SKY_FLYBY_LANE = 36;
+function skyHomeInPicture(radius, centerX, centerY, stage) {
+  const nearX = Math.max(stage.left, Math.min(stage.right, centerX));
+  const nearY = Math.max(stage.top, Math.min(stage.bottom, centerY));
+  return Math.hypot(centerX - nearX, centerY - nearY) <= radius;
+}
+function skyLaunchFlyby(launch, stage, margin) {
+  launch.duration = SKY_FLYBY_MS; launch.endsAt = launch.t0 + SKY_FLYBY_MS;
+  const busy = new Set(anim.skyLaunches.flatMap(other =>
+    other !== launch && other.flybyLane !== undefined && other.t0 + other.duration > launch.t0
+      ? [other.flybyLane] : []));
+  const lanes = Math.max(1, Math.floor((stage.bottom - stage.top) / 3 / SKY_FLYBY_LANE));
+  launch.flybyLane = 0;
+  while (busy.has(launch.flybyLane) && launch.flybyLane < lanes - 1) launch.flybyLane++;
+  const left = stage.left - margin, right = stage.right + margin;
+  // The highest line most of the frame can see, counting the name riding above
+  // it: a panel across the top of the map pushes it down below the panel, and a
+  // small one is simply passed behind.
+  const boxes = skyWidgetBoxes(), head = 28;
+  const hidden = y => boxes.reduce((sum, box) => y > box.top && y - head < box.bottom
+    ? sum + Math.max(0, Math.min(box.right, stage.right) - Math.max(box.left, stage.left)) : sum, 0);
+  const top = stage.top + SKY_FLYBY_TOP;
+  const heights = [top, ...boxes.map(box => box.bottom + head)]
+    .filter(y => y >= top && y <= (stage.top + stage.bottom) / 2).sort((a, b) => a - b);
+  let base = top;
+  for (const y of heights) {
+    if (hidden(y) < hidden(base)) base = y;
+    if (hidden(y) <= (stage.right - stage.left) * .3) break;
+  }
+  const y = base + launch.flybyLane * SKY_FLYBY_LANE;
+  return {start:{x:left, y}, end:{x:right, y}, entering:true, leaving:true, law:skyCoastLaw,
+          flyby:true, pointAt:progress => ({x:left + (right - left) * progress, y})};
+}
+
+// A launch the camera cannot see from where it is, zoomed in on the other side
+// of the world. Everyone watching still gets to see it go, so it comes in over
+// the edge of the frame on the bearing of its Spaceport and leaves on the
+// bearing of where it is going.
 function skyLaunchCrossing(from, goal, stage, margin) {
   const midX = (stage.left + stage.right) / 2, midY = (stage.top + stage.bottom) / 2;
   const inX = from.x - midX, inY = from.y - midY;
@@ -21119,6 +21151,7 @@ function skyPlanMission(launch, player, place, crews, camera, radius, centerX, c
     if (home && radius <= SKY_WORLD_IS_A_DOT) return {kind:"transfer"};
     if (!home && skyArrivalRoute(site, goal, margin)) return {kind:"arrive"};
   }
+  if (!skyHomeInPicture(radius, centerX, centerY, stage)) return {kind:"crossing"};
   const shape = skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, margin);
   return shape ? {kind:"ascent", shape} : {kind:"crossing"};
 }
@@ -21281,6 +21314,8 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     return {start:pointAt(0), end:pointAt(1), entering:shape.from > 0, leaving:true,
             law:shape.law, pointAt};
   }
+  if (!route.crossing && !skyHomeInPicture(radius, centerX, centerY, stage))
+    route.crossing = skyLaunchFlyby(launch, stage, margin);
   if (!route.crossing) {
     const east = skyPadEast(pad);
     route.crossing = skyLaunchCrossing(planetProject(pad, view, radius, centerX, centerY), place
@@ -21361,8 +21396,10 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const colour = pcol(player.id);
   // A satellite becomes its craft; anything else that is somehow still in the
   // picture at the end of its film goes out rather than switching off.
-  const fade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
+  const trailFade = launch.mission === "satellite" ? 1 - skySatelliteDeployed(player.id, now)
     : 1 - skySmooth((clock - .9) / .1);
+  // A rocket going by flies all the way out of the frame; only its trail thins.
+  const fade = film.flyby ? 1 : trailFade;
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
@@ -21391,7 +21428,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
     const when = Math.min(clock, step / 64);
     const point = pointAt(film.law(when));
     if (!unseen(point) && !unseen(last)) {
-      const thin = Math.max(.16, 1 - (clock - when) / .6) * fade;
+      const thin = Math.max(.16, 1 - (clock - when) / .6) * trailFade;
       cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(point.x, point.y);
       cx.globalAlpha = thin * .3; cx.strokeStyle = "#e8e6dc";
       cx.lineWidth = 3.4 * pixel; cx.stroke();
@@ -27772,8 +27809,7 @@ function patchHudMarkup(root, markup) {
 }
 
 // The major civilizations in the order the masthead lists them, under whatever
-// sort its reader has chosen. World politics reads this same list, so the two
-// panels cannot disagree about who comes first.
+// sort its reader has chosen.
 function playerHudStandings() {
   // Rank remains the score standing even when the visible rows are sorted by
   // another fact, so a #2 badge never starts meaning "second alphabetically".
@@ -32546,120 +32582,103 @@ function releaseWatchedWar() {
   if (state) drawWarLog();
 }
 
-// World politics: who stands with whom at this moment. The engine reports it
-// as pairs of major civilizations, so the panel only has to lay them out; the
-// War log below it keeps the history. The heading's count is cheap and always
-// current, and the rows are built only while somebody can see them.
-function worldPoliticsPair(first, second, joiner) {
-  const civ = id =>
-    `<span class="politics-civ"><i class="politics-chip" aria-hidden="true" ` +
-    `style="background:${pcol(id)};border-color:${pcol2(id)}"></i>${warEntityLink(id)}</span>`;
-  return `<span class="politics-pair">${civ(first)}` +
-    `<span class="politics-joiner">${joiner}</span>${civ(second)}</span>`;
+// World politics: who stands with whom at this moment, as a table with one row
+// and one column for every living major civilization, both in alphabetical
+// order so nobody's place moves as the game goes on. A pair's tie is written in
+// both of its cells, so one civilization's whole position reads along its row
+// or down its column. The engine reports the pairs; the War log below keeps the
+// history. The heading's count is cheap and always current, and the table is
+// built only while somebody can see it.
+const WORLD_POLITICS_MARKS = [
+  ["war", "War"], ["alliance", "Alliance"], ["friendship", "Friends"], ["team", "Team"],
+];
+function worldPoliticsMark(kind, level = "") {
+  const [, label] = WORLD_POLITICS_MARKS.find(([mark]) => mark === kind);
+  return `<i class="politics-mark ${kind}" role="img" aria-label="${label}">${level}</i>`;
 }
-function worldPoliticsBondRow(bond) {
+function worldPoliticsBondTie(bond) {
   const left = bond.until === null || bond.until === undefined ? null : Math.max(0, bond.until - state.turn);
-  const name = bond.kind === "team" ? "Team"
-    : bond.kind === "alliance" ? `${titleCase(bond.alliance)} Lv ${bond.level}`
-    : "Friends";
-  const kind = bond.kind === "team" ? "On the same team for the whole game"
+  const kind = bond.kind === "team" ? "on the same team for the whole game"
     : bond.kind === "alliance" ? `${titleCase(bond.alliance)} alliance, level ${bond.level}`
-    : "Declared friends";
-  const title = left === null ? kind : `${kind}, ${left} turn${left === 1 ? "" : "s"} left`;
-  const tone = bond.kind === "friendship" ? "friendship" : "alliance";
-  return `<div class="politics-row ${tone}" title="${escapeAttr(title)}">` +
-    `${worldPoliticsPair(bond.first, bond.second, "&amp;")}` +
-    `<span class="politics-note">${name}${left === null ? "" : ` · ${left}t`}</span></div>`;
+    : "declared friends";
+  return {
+    mark: worldPoliticsMark(bond.kind, bond.kind === "alliance" ? bond.level : ""),
+    text: left === null ? kind : `${kind}, ${left} turn${left === 1 ? "" : "s"} left`,
+  };
 }
-function worldPoliticsWarRow(war) {
+function worldPoliticsWarTie(war) {
   const known = war.since !== null && war.since !== undefined;
   const length = known ? Math.max(0, state.turn - war.since) : null;
-  const note = known ? (length ? `${length}t` : "new") : "";
-  const title = known
-    ? `At war since turn ${war.since}, ${length} turn${length === 1 ? "" : "s"} so far`
-    : "At war, as reported by the host";
-  return `<div class="politics-row war" title="${escapeAttr(title)}">` +
-    `${worldPoliticsPair(war.first, war.second, "vs")}` +
-    `${note ? `<span class="politics-note">${note}</span>` : ""}</div>`;
+  return {
+    mark: worldPoliticsMark("war"),
+    text: known ? `at war since turn ${war.since}, ${length} turn${length === 1 ? "" : "s"} so far`
+      : "at war, as reported by the host",
+  };
 }
-function worldPoliticsGroup(group, heading, tone, rows, none) {
-  return `<details class="politics-group" data-politics-group="${group}"${politicsFolded[group] ? "" : " open"}>` +
-    `<summary class="politics-heading${tone ? ` ${tone}` : ""}">` +
-    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</summary>` +
-    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</details>`;
+function worldPoliticsMatrix(civs, bonds, wars) {
+  const ties = new Map();
+  const place = (pair, tie) => {
+    ties.set(`${pair.first}:${pair.second}`, tie);
+    ties.set(`${pair.second}:${pair.first}`, tie);
+  };
+  for (const bond of bonds) place(bond, worldPoliticsBondTie(bond));
+  for (const war of wars) place(war, worldPoliticsWarTie(war));
+  const label = id => `<i class="politics-chip" aria-hidden="true" ` +
+    `style="background:${pcol(id)};border-color:${pcol2(id)}"></i>${warEntityLink(id)}`;
+  // Teams exist only in a game set up with them, so only that game explains one.
+  const legend = WORLD_POLITICS_MARKS
+    .filter(([kind]) => kind !== "team" || bonds.some(bond => bond.kind === "team"))
+    .map(([kind, name]) => `<span>${worldPoliticsMark(kind)}${name}</span>`).join("");
+  const head = civs.map(civ => `<th scope="col"><span>${label(civ.id)}</span></th>`).join("");
+  const rows = civs.map(row => {
+    const cells = civs.map(column => {
+      if (column.id === row.id) return `<td class="self"></td>`;
+      const tie = ties.get(`${row.id}:${column.id}`);
+      if (!tie) return `<td></td>`;
+      return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
+    }).join("");
+    return `<tr><th scope="row"><span>${label(row.id)}</span></th>${cells}</tr>`;
+  }).join("");
+  return `<table class="politics-matrix"><colgroup><col>${"<col>".repeat(civs.length)}</colgroup>` +
+    `<thead><tr><td class="politics-legend">${legend}</td>${head}</tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
 }
-// The list is rebuilt every turn, so a group's fold has to outlive its element.
-// A <details> also announces itself when it is built open, hence the comparison.
-function rememberPoliticsFold(event) {
-  const group = event.target.dataset?.politicsGroup;
-  if (!group || politicsFolded[group] === !event.target.open) return;
-  politicsFolded[group] = !event.target.open;
-  try { localStorage.setItem(POLITICS_FOLD_KEY, JSON.stringify(politicsFolded)); }
-  catch (e) { /* a browser refusing storage still folds for this page */ }
-}
-// Pairs follow the masthead. Whoever stands higher in it is named first, and
-// the rows run down the higher civilization and then the lower one, so the top
-// row belongs to the first and second seats if they have a tie at all.
-function worldPoliticsOrdered(pairs, position) {
-  // A seat the masthead does not list still needs a place: after those it does.
-  const at = id => position.get(id) ?? position.size + id;
-  return pairs
-    .map(pair => at(pair.second) < at(pair.first)
-      ? {...pair, first: pair.second, second: pair.first}
-      : pair)
-    .sort((a, b) => at(a.first) - at(b.first) || at(a.second) - at(b.second));
-}
-// Any living civilization the masthead lists can be watched alone. The menu
-// runs by seat so it holds still while the standings move under it.
-function syncPoliticsSeat() {
-  if (politicsSeatWorld !== state.seed) {
-    politicsSeatWorld = state.seed;
-    politicsSeat = "all";
-  }
-  const living = state.players
-    .filter(p => !p.is_minor && !p.is_barbarian && p.alive && metPlayer(p))
-    .map(p => p.id);
-  politicsSeat = syncCivFilterOptions(document.getElementById("politicsplayer"),
-    logSeatsOrdered(living), "All civilizations", politicsSeat);
-  return politicsSeat === "all" ? null : Number(politicsSeat);
-}
-function setPoliticsSeat(value) {
-  politicsSeat = value;
-  if (state) drawWorldPolitics();
+// Hovering a row is CSS's to light, but no selector can light a column. The
+// column is remembered because a new turn's patch takes the marks back off.
+let politicsColumn = -1;
+function markPoliticsColumn(column) {
+  politicsColumn = column;
+  const list = document.getElementById("worldpolitics");
+  for (const lit of list.querySelectorAll(".politics-crossed")) lit.classList.remove("politics-crossed");
+  const table = list.querySelector("table");
+  if (!table || column < 1) return;
+  table.querySelector("colgroup").children[column]?.classList.add("politics-crossed");
+  table.tHead.rows[0].cells[column]?.classList.add("politics-crossed");
 }
 function drawWorldPolitics() {
   const list = document.getElementById("worldpolitics");
   const scope = document.getElementById("politicsscope");
   if (!list || !state) return;
   const politics = state.world_politics || {};
-  const seat = syncPoliticsSeat();
-  const concerned = pair => seat === null || pair.first === seat || pair.second === seat;
-  const allWars = Array.isArray(politics.wars) ? politics.wars : [];
-  const wars = allWars.filter(concerned);
-  const warWord = `war${allWars.length === 1 ? "" : "s"}`;
+  const bonds = Array.isArray(politics.bonds) ? politics.bonds : [];
+  const wars = Array.isArray(politics.wars) ? politics.wars : [];
   // The label has room for little beside the section's own name.
   scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
-  scope.title = !wars.length ? ""
-    : seat === null ? `${wars.length} ${warWord} in progress`
-    : `${logSeatName(seat)} is in ${wars.length} of ${allWars.length} ${warWord} in progress`;
+  scope.title = wars.length ? `${wars.length} war${wars.length === 1 ? "" : "s"} in progress` : "";
   if (inClosedSidebarSection(list)) return;
-  const position = new Map(playerHudStandings().majors.map((p, index) => [p.id, index]));
-  const signature = `${state.seed}|${state.turn}|${seat}|${[...position.keys()]}|${JSON.stringify(politics)}`;
+  const civs = state.players
+    .filter(p => !p.is_minor && !p.is_barbarian && p.alive && metPlayer(p))
+    .sort((a, b) => a.civ.localeCompare(b.civ) || a.id - b.id);
+  const signature = `${state.seed}|${state.turn}|${civs.map(p => p.id)}|${JSON.stringify(politics)}`;
   if (list.dataset.signature === signature) return;
   list.dataset.signature = signature;
-  const bonds = (Array.isArray(politics.bonds) ? politics.bonds : []).filter(concerned);
-  // "No wars" alone is a claim about the world, which a filtered list cannot make.
-  const whose = seat === null ? "" : ` for ${escapeAttr(logSeatName(seat))}`;
-  list.innerHTML =
-    worldPoliticsGroup("bonds", "Alliances &amp; friendships", "",
-      worldPoliticsOrdered(bonds, position).map(worldPoliticsBondRow),
-      `No alliances or friendships${whose}.`) +
-    worldPoliticsGroup("wars", "At war", "war",
-      worldPoliticsOrdered(wars, position).map(worldPoliticsWarRow),
-      seat === null ? "No civilizations at war." : `No wars${whose}.`) +
-    (politics.partial
-      ? `<div class="politics-caveat">Civ VI reports pacts for our own seat only, so rival pacts are not listed.</div>`
-      : "");
+  // Patched rather than replaced, so a turn arriving mid-scroll keeps the
+  // reader's place in a table wider than the deck.
+  patchHudMarkup(list, civs.length < 2
+    ? `<div class="politics-none">No other civilizations met yet.</div>`
+    : worldPoliticsMatrix(civs, bonds, wars));
+  markPoliticsColumn(politicsColumn);
+  document.getElementById("politicscaveat").hidden = !politics.partial;
 }
 
 function drawWarLog() {
@@ -38247,10 +38266,10 @@ document.getElementById("tradebtn").onclick = () => openTrade();
   seat.onchange = () => setStrategySeat(seat.value);
 }
 {
-  const seat = document.getElementById("politicsplayer");
-  seat.onchange = () => setPoliticsSeat(seat.value);
-  // A toggle does not bubble, so the list catches its groups' on the way down.
-  document.getElementById("worldpolitics").addEventListener("toggle", rememberPoliticsFold, true);
+  const matrix = document.getElementById("worldpolitics");
+  matrix.addEventListener("pointerover", event =>
+    markPoliticsColumn(event.target.closest("td, th")?.cellIndex ?? -1));
+  matrix.addEventListener("pointerleave", () => markPoliticsColumn(-1));
 }
 {
   const player = document.getElementById("warplayer");
