@@ -962,6 +962,25 @@ let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== 
 const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
 const WORLD_SPIN_PERIOD_MS = 36000;
 let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
+// The bar that opens over the button sets how fast. Its notches run from 1, the
+// turtle, up to the rabbit's one full turn a second, each a fixed multiple of
+// the last so that a notch is the same change anywhere on the bar. Notch 8 is
+// the thirty-six seconds above, exactly. 0 is not a speed: it is the world held
+// still, the same state the button turns off to.
+const WORLD_SPIN_SPEED_STORAGE_KEY = "civvis-world-spin-speed";
+const WORLD_SPIN_FASTEST_PERIOD_MS = 1000;
+const WORLD_SPIN_DEFAULT_SPEED = 8, WORLD_SPIN_TOP_SPEED = 20;
+function worldSpinPeriodAt(speed) {
+  return WORLD_SPIN_PERIOD_MS * (WORLD_SPIN_FASTEST_PERIOD_MS / WORLD_SPIN_PERIOD_MS) **
+    ((speed - WORLD_SPIN_DEFAULT_SPEED) / (WORLD_SPIN_TOP_SPEED - WORLD_SPIN_DEFAULT_SPEED));
+}
+function savedWorldSpinSpeed() {
+  const saved = Number(localStorage.getItem(WORLD_SPIN_SPEED_STORAGE_KEY));
+  return Number.isInteger(saved) && saved >= 1 && saved <= WORLD_SPIN_TOP_SPEED
+    ? saved : WORLD_SPIN_DEFAULT_SPEED;
+}
+let worldSpinSpeed = savedWorldSpinSpeed();
+let worldSpinPeriodMs = worldSpinPeriodAt(worldSpinSpeed);
 // Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
@@ -3317,6 +3336,24 @@ const RESPONSIVE_TYPE_ROOT_SELECTOR = [
 const responsiveTypeRoots = new Set();
 const responsiveTextRange = document.createRange();
 let responsiveTypeFrame = 0;
+// What the fitter last settled for an element: the rule and the words it
+// fitted, the size it wrote, and the boxes that size left standing. A running
+// simulation changes a handful of figures a turn in panels that hold a hundred
+// and fifty fitted runs; an element whose words, look and boxes are all as the
+// last fit left them keeps its size without being measured again.
+//
+// That shortcut is taken only on the path that follows a change of content.
+// A root whose own size or tracks changed is fitted from nothing, exactly as
+// before, and so is every root once its content has been still for a second
+// and at least every four seconds while it has not — so what a resting page
+// shows is always the full pass's answer, never a remembered one.
+const responsiveTypeFits = new WeakMap();
+const responsiveTypeWholeRoots = new Set();
+const responsiveTypeWholeAt = new WeakMap();
+const responsiveTypeSettling = new Set();
+let responsiveTypeSettleTimer = 0;
+const RESPONSIVE_TYPE_WHOLE_EVERY_MS = 4000;
+const RESPONSIVE_TYPE_SETTLE_MS = 1000;
 
 function responsiveTypeBand(root, width) {
   if (root.id === "playerhud") return width < 760 ? "compact" : width >= 1250 ? "roomy" : "standard";
@@ -3347,6 +3384,7 @@ function syncResponsiveTypeBox(root, width, height) {
 function scheduleResponsiveType(root) {
   if (!root?.isConnected) return;
   responsiveTypeRoots.add(root);
+  responsiveTypeWholeRoots.add(root);
   if (!responsiveTypeFrame) responsiveTypeFrame = requestAnimationFrame(fitResponsiveType);
 }
 
@@ -3378,29 +3416,43 @@ function responsiveTextTargets(root) {
   return targets;
 }
 
+// The boxes a fitted size leaves behind: the element's own, the run inside it,
+// and the parent it is measured against. Read only while every size is written
+// and no layout is owed, so asking costs nothing the next paint would not.
+function responsiveFitBox(element) {
+  const parent = element.parentElement;
+  return `${element.clientWidth},${element.clientHeight},${element.scrollWidth},` +
+    `${element.scrollHeight},${parent?.clientWidth},${parent?.clientHeight}`;
+}
+
+function responsiveFitHolds(element, rule) {
+  const fit = responsiveTypeFits.get(element);
+  return Boolean(fit) && fit.rule === rule && fit.text === element.textContent &&
+    fit.look === element.className && fit.css === element.style.fontSize &&
+    fit.clipped === (element.dataset.fitClipped === "true") &&
+    fit.box === responsiveFitBox(element);
+}
+
 // All maximum-size writes happen before the first read, and every fitted write
 // happens after the last read. That batching keeps a 12-player update to two
 // layouts instead of forcing one layout per cell.
-function fitResponsiveType() {
-  responsiveTypeFrame = 0;
-  const targets = new Map();
-  for (const root of responsiveTypeRoots) {
-    if (!root.isConnected) continue;
-    for (const [element, rule] of responsiveTextTargets(root)) targets.set(element, rule);
-  }
-  responsiveTypeRoots.clear();
+function responsiveFit(elements, targets) {
   // Read the run as it sets at full size: a cell clipped on the last pass is
   // unclipped for this one, so a rule whose clipped look changes its own
   // layout is measured against its natural run rather than against itself.
-  for (const [element, rule] of targets) {
-    element.style.fontSize = `${rule.max}px`;
+  for (const element of elements) {
+    element.style.fontSize = `${targets.get(element).max}px`;
     delete element.dataset.fitClipped;
   }
   const fitted = [];
-  for (const [element, rule] of targets) {
-    if (!element.isConnected || !element.textContent.trim()) continue;
+  for (const element of elements) {
+    const rule = targets.get(element);
     const width = element.clientWidth, height = element.clientHeight;
-    if (width < 1 || height < 1) continue;
+    // Nothing to measure: it stays at the ceiling, as it always has.
+    if (!element.isConnected || !element.textContent.trim() || width < 1 || height < 1) {
+      fitted.push({element, rule, size:rule.max, clipped:false});
+      continue;
+    }
     const parentStyle = rule.parentWidth && element.parentElement
       ? getComputedStyle(element.parentElement) : null;
     const availableWidth = parentStyle
@@ -3435,13 +3487,72 @@ function fitResponsiveType() {
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
     const size = Math.max(rule.min, Math.floor(ideal * 4) / 4);
-    fitted.push({element, size, clipped:size === rule.min && ideal < rule.min});
+    fitted.push({element, rule, size, clipped:size === rule.min && ideal < rule.min});
   }
-  for (const {element, size, clipped} of fitted) {
+  for (const {element, rule, size, clipped} of fitted) {
     element.style.fontSize = `${size}px`;
     if (clipped) element.dataset.fitClipped = "true";
     else delete element.dataset.fitClipped;
+    responsiveTypeFits.set(element, {rule, text:element.textContent, look:element.className,
+                                     css:element.style.fontSize, clipped, box:null});
   }
+}
+
+function fitResponsiveType() {
+  responsiveTypeFrame = 0;
+  const now = performance.now();
+  const targets = new Map(), whole = new Set();
+  for (const root of responsiveTypeRoots) {
+    if (!root.isConnected) continue;
+    const fromNothing = responsiveTypeWholeRoots.has(root) ||
+      now - (responsiveTypeWholeAt.get(root) ?? -Infinity) >= RESPONSIVE_TYPE_WHOLE_EVERY_MS;
+    if (fromNothing) {
+      responsiveTypeWholeAt.set(root, now);
+      responsiveTypeSettling.delete(root);
+    } else {
+      responsiveTypeSettling.add(root);
+    }
+    for (const [element, rule] of responsiveTextTargets(root)) {
+      targets.set(element, rule);
+      if (fromNothing) whole.add(element);
+    }
+  }
+  responsiveTypeRoots.clear();
+  responsiveTypeWholeRoots.clear();
+  // Reads only until the first fit, so the one layout they ask for is the one
+  // the changed content owed the page anyway.
+  let stale = [];
+  for (const [element, rule] of targets)
+    if (whole.has(element) || !responsiveFitHolds(element, rule)) stale.push(element);
+  // A fit can move the boxes beside it, so with every size written the boxes
+  // are read back: a fresh fit records what it left, and a kept one whose room
+  // changed under it is fitted in turn. Three rounds bound a layout that will
+  // not settle; anything still moving then is fitted on the next pass.
+  for (let round = 0; stale.length && round < 3; round++) {
+    responsiveFit(stale, targets);
+    const fresh = new Set(stale);
+    stale = [];
+    for (const element of targets.keys()) {
+      const fit = responsiveTypeFits.get(element);
+      if (!fit) continue;
+      const box = responsiveFitBox(element);
+      if (fresh.has(element)) fit.box = box;
+      else if (fit.box !== box) stale.push(element);
+    }
+  }
+  if (responsiveTypeSettling.size) {
+    clearTimeout(responsiveTypeSettleTimer);
+    responsiveTypeSettleTimer = setTimeout(settleResponsiveType, RESPONSIVE_TYPE_SETTLE_MS);
+  }
+}
+
+// The content has been still for a moment: fit what changed since the last
+// full pass from nothing, so nothing on a resting page stands on a memory.
+function settleResponsiveType() {
+  responsiveTypeSettleTimer = 0;
+  const roots = [...responsiveTypeSettling];
+  responsiveTypeSettling.clear();
+  for (const root of roots) scheduleResponsiveType(root);
 }
 
 const responsiveTypeSizeObserver = typeof ResizeObserver === "function"
@@ -4561,6 +4672,8 @@ if (compassButton) compassButton.onclick = () => resetMapFacing();
 // end of the paper rather than round the world.
 const WORLD_POLE = [0, 0, 1];
 const spinButton = document.getElementById("spin");
+const spinSpeedPanel = document.getElementById("spin-speed");
+const spinSpeedBar = document.getElementById("spin-speed-bar");
 // A reader who has asked their system for less motion is not asking for a
 // planet that never stops moving, so that setting takes the control away
 // rather than merely being a default. Before the first observation the world's
@@ -4588,6 +4701,8 @@ function updateSpinButton() {
   const available = spinAvailable();
   spinButton.disabled = !available;
   spinButton.setAttribute("aria-pressed", WORLD_SPIN && available ? "true" : "false");
+  spinButton.style.setProperty("--world-spin-period", `${worldSpinPeriodMs}ms`);
+  updateSpinSpeedBar(available);
   const title = REDUCED_MOTION_QUERY.matches
     ? "Reduced motion is on, so the world holds still"
     : state && !SPEC
@@ -4600,6 +4715,25 @@ function updateSpinButton() {
   if (spinButton.title === title) return;
   spinButton.title = title;
   spinButton.setAttribute("aria-label", title);
+}
+// A held world sits at the very bottom whatever speed is remembered, the way a
+// muted volume bar reads empty and goes back up when it is unmuted.
+function updateSpinSpeedBar(available) {
+  if (!spinSpeedBar) return;
+  spinSpeedPanel.hidden = !available;
+  spinSpeedBar.value = String(WORLD_SPIN ? worldSpinSpeed : 0);
+  const seconds = worldSpinPeriodMs / 1000;
+  const reading = !WORLD_SPIN ? "Halted"
+    : worldSpinSpeed === WORLD_SPIN_TOP_SPEED ? "One full turn a second"
+    : seconds < 10 ? `One turn every ${seconds.toFixed(1)} seconds`
+    : seconds < 120 ? `One turn every ${Math.round(seconds)} seconds`
+    : `One turn every ${(seconds / 60).toFixed(1)} minutes`;
+  spinSpeedBar.title = reading;
+  spinSpeedBar.setAttribute("aria-valuetext", reading);
+}
+function setWorldSpinSpeed(speed) {
+  worldSpinSpeed = speed;
+  worldSpinPeriodMs = worldSpinPeriodAt(speed);
 }
 function setWorldSpin(on) {
   WORLD_SPIN = !!on;
@@ -4627,7 +4761,7 @@ function advanceWorldSpin(dt) {
     // The camera goes west so the ground goes east: turning the basis about
     // the pole is the same motion as dragging the globe eastward, without
     // borrowing the screen's idea of which way that is.
-    applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));
+    applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / worldSpinPeriodMs));
     advanceSkyWorldSpin(dt);
     return true;
   }
@@ -4635,7 +4769,7 @@ function advanceWorldSpin(dt) {
   // walks west and the seam never arrives. It is left where the walk puts it,
   // exactly as a long drag would: the copy the camera stands on is the one
   // every wrapped reading is taken about.
-  cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;
+  cam.x -= WW() * dt / worldSpinPeriodMs;
   return true;
 }
 // The button means every world, at the one pace, in the same direction a drag
@@ -4649,10 +4783,29 @@ function advanceSkyWorldSpin(dt) {
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
     if (skyOnCanvas(place) && skyGroundFade(place) > 0)
-      skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;
+      skyView(body.id).longitude -= 2 * Math.PI * dt / worldSpinPeriodMs;
   }
 }
 if (spinButton) spinButton.onclick = () => setWorldSpin(!WORLD_SPIN);
+if (spinSpeedBar) {
+  spinSpeedBar.addEventListener("input", () => {
+    const speed = Number(spinSpeedBar.value);
+    if (speed) setWorldSpinSpeed(speed);
+    setWorldSpin(speed > 0);
+  });
+  // The notches passed on the way down to halt are not a speed anyone chose,
+  // so letting go there keeps the one the button should bring back.
+  spinSpeedBar.addEventListener("change", () => {
+    if (Number(spinSpeedBar.value))
+      localStorage.setItem(WORLD_SPIN_SPEED_STORAGE_KEY, String(worldSpinSpeed));
+    else setWorldSpinSpeed(savedWorldSpinSpeed());
+    updateSpinButton();
+  });
+  // A drag can wander off the bar, and the bar has to stay open under it.
+  spinSpeedBar.addEventListener("pointerdown", () => spinSpeedPanel.classList.add("held"));
+  for (const name of ["pointerup", "pointercancel"])
+    window.addEventListener(name, () => spinSpeedPanel.classList.remove("held"));
+}
 updateSpinButton();
 
 // ----------------------------------------------------- the shape of the world
@@ -7981,6 +8134,39 @@ async function setPace(opts) {
 }
 function scheduleSpec(_st) {} // server-driven; kept for legacy call sites
 function legalFor(type) { return state.legal_actions.filter(a => a.type === type); }
+// A device belongs to the nation, so the order names a target rather than a
+// carrier: the engine sends whichever silo, submarine or bomber can reach it.
+function nuclearLaunchButtons() {
+  const offered = new Set();
+  let html = "";
+  for (const a of legalFor("wmd_strike")) {
+    const offer = `${key(a.target)}:${a.thermonuclear}`;
+    if (offered.has(offer)) continue;
+    offered.add(offer);
+    const city = state.cities.find(candidate => key(candidate.pos) === key(a.target));
+    const place = city ? escapeAttr(city.name) : a.target.join(",");
+    html += `<button class="danger" title="Launch from the nearest silo, submarine or bomber in range" ` +
+      `onclick='send(${JSON.stringify(a)})'>☢ ${a.thermonuclear ? "Thermonuclear" : "Nuclear"} @ ${place}</button>`;
+  }
+  return html;
+}
+// Strikes the city itself can fire. The map click that used to take these was
+// armed by a flag nothing ever set, so they had no way to be given.
+function cityStrikeButtons(cityId) {
+  const name = target => {
+    const unit = state.units.find(candidate => key(candidate.pos) === key(target));
+    return unit ? titleCase(unit.type) : target.join(",");
+  };
+  const labels = {city_strike: "🏹 City strike", encampment_strike: "🏹 Encampment strike",
+    district_strike: "🏹 District strike"};
+  let html = "";
+  for (const a of state.legal_actions) {
+    if (labels[a.type] && a.city === cityId)
+      html += `<button class="danger" onclick='send(${JSON.stringify(a)})'>${labels[a.type]} @ ${escapeAttr(name(a.target))}</button>`;
+  }
+  if (legalFor("wmd_strike").some(a => a.city === cityId)) html += nuclearLaunchButtons();
+  return html;
+}
 
 function eventViewKey(st) {
   if (!st) return "none";
@@ -20800,7 +20986,7 @@ function skyPadEast(pad) {
 // flight planned on a turning world knows where the limb will be by then.
 function skyCameraIn(camera, ms) {
   return spinRunning()
-    ? {...camera, longitude:camera.longitude - 2 * Math.PI * ms / WORLD_SPIN_PERIOD_MS}
+    ? {...camera, longitude:camera.longitude - 2 * Math.PI * ms / worldSpinPeriodMs}
     : camera;
 }
 // What the camera will be seeing when a launch is `progress` of the way along.
@@ -27650,20 +27836,34 @@ let hudHtml = "", victoryHudHtml = "";
 const HUD_PATCH_KEEPS = new Set(["hidden", "style", "data-fit-clipped"]);
 const hudPatchKey = node => node.getAttribute?.("data-key") ?? null;
 
+// The standings run this over every node they hold on every turn, so it asks
+// for names rather than attribute objects, and sweeps for something to take
+// off only a node that holds more than its markup names.
 function patchHudAttributes(live, fresh) {
-  for (const {name} of [...live.attributes])
-    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
-  for (const {name, value} of fresh.attributes)
+  const named = fresh.getAttributeNames();
+  for (const name of named) {
+    const value = fresh.getAttribute(name);
     if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  const held = live.getAttributeNames();
+  if (held.length === named.length) return;
+  for (const name of held)
+    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
 }
 
 function patchHudChildren(live, fresh) {
-  const keyed = new Map();
-  for (const node of live.childNodes)
-    if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+  // Most of what is patched carries no keys at all; the index of the ones that
+  // do is built when the first keyed node asks for it.
+  let keyed = null;
   let cursor = live.firstChild;
-  for (const want of [...fresh.childNodes]) {
+  for (let want = fresh.firstChild, next; want; want = next) {
+    next = want.nextSibling;
     const key = hudPatchKey(want);
+    if (key !== null && !keyed) {
+      keyed = new Map();
+      for (const node of live.childNodes)
+        if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+    }
     const held = key === null ? cursor : keyed.get(key);
     if (!held || held.nodeName !== want.nodeName || hudPatchKey(held) !== key) {
       live.insertBefore(want, cursor);
@@ -27674,6 +27874,7 @@ function patchHudChildren(live, fresh) {
     if (held.nodeType === Node.ELEMENT_NODE) {
       patchHudAttributes(held, want);
       patchHudChildren(held, want);
+      if (held.nodeName === "SELECT") patchHudSelect(held);
     } else if (held.nodeValue !== want.nodeValue) {
       held.nodeValue = want.nodeValue;
     }
@@ -27683,6 +27884,16 @@ function patchHudChildren(live, fresh) {
     cursor = cursor.nextSibling;
     spent.remove();
   }
+}
+
+// A select shows what its options' `selected` properties say, and once it has
+// been picked from those stop following the attribute a patch writes. New
+// markup would have opened on the option it marks, so a patched one is put
+// there: a pace changed from the deck still reads true on the turn plate.
+function patchHudSelect(select) {
+  if (!select.options.length) return;
+  const marked = [...select.options].findIndex(option => option.hasAttribute("selected"));
+  if (select.selectedIndex !== Math.max(0, marked)) select.selectedIndex = Math.max(0, marked);
 }
 
 function patchHudMarkup(root, markup) {
@@ -28052,11 +28263,17 @@ function drawPlayerHud() {
     return;
   }
   hudHtml = html;
-  hud.innerHTML = html;
+  // The standings change a few figures a turn. Writing them as new markup made
+  // the browser build, style and lay out all five hundred of its boxes again
+  // on every turn, and gave the type fitter a hundred runs it had never seen;
+  // patched in place, the rows that did not change are not touched at all, and
+  // a press, a hover or the keyboard's place in the table outlives the turn.
+  patchHudMarkup(hud, html);
   syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon && playerScroll) playerRibbon.scrollTop = playerScroll;
-  // innerHTML replaced the elements the observer was watching.
+  // The first paint, or a table rebuilt around a new structure, puts new
+  // elements where the observer's were.
   observePlayerRibbon();
   syncPlayerLockPins();
   // Not only the bars: a column can *arrive* between two frames — the turn the
@@ -28068,8 +28285,8 @@ function drawPlayerHud() {
   syncHudColumnRoster();
   const playerStandings = hud.querySelector(".player-standings");
   if (playerStandings && playerScrollLeft) playerStandings.scrollLeft = playerScrollLeft;
-  // innerHTML also replaced the plate seam; restamp its live automatic or
-  // preferred width and accessibility range.
+  // The patch strips what the markup does not name, the plate seam's range
+  // among it; restamp its live automatic or preferred width and that range.
   syncTurnPlateWidth();
   // The very first paint had no table to measure, and nothing else would ask
   // again until the panel changed size.
@@ -28270,7 +28487,12 @@ function syncPlayerLockPins() {
   const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
   if (!ribbon) return;
   const cards = [...ribbon.children].filter(child => child.classList.contains("diplomacy-card"));
+  // Only a card that carries a pin is written to: the rows outlive the turn
+  // now, and clearing a pin that is not there still asked the browser to style
+  // every row again on every turn.
   for (const card of cards) {
+    if (!card.classList.contains("pinned") && !card.style.getPropertyValue("--pin-head") &&
+        !card.style.getPropertyValue("--pin-tail")) continue;
     card.classList.remove("pinned");
     card.style.removeProperty("--pin-head");
     card.style.removeProperty("--pin-tail");
@@ -28362,7 +28584,7 @@ function focusHudCity(cityId) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
-// The table's rows live inside a scroller that innerHTML replaces, and a
+// The table's rows live inside a scroller that a rebuilt table replaces, and a
 // scroll event does not bubble, so this listens through the capture phase.
 hudRibbon.addEventListener("scroll", event => {
   if (event.target.classList?.contains("diplomacy-ribbon")) schedulePlayerHudWindowRefill();
@@ -30493,6 +30715,9 @@ function drawCityScreen() {
             `<span class="city-tag">${titleCase(job)}</span>`).join("")}</div>` : "") +
       `</div>`;
   }
+  const strikes = cityStrikeButtons(city.id);
+  if (strikes)
+    dossier += `<div class="city-group"><div class="city-group-head">Strikes</div>${strikes}</div>`;
   document.getElementById("cityscreen-dossier").innerHTML = dossier;
 
   // Everything this city could start, gathered by what it is rather than by
@@ -30703,6 +30928,18 @@ function drawUbar() {
       h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>⌖ Priority target @ ${a.target.join(",")}</button>`;
     if (a.type === "air_patrol")
       h += `<button onclick='send(${JSON.stringify(a)})'>✈ Air patrol</button>`;
+    if (a.type === "swap") {
+      const peer = state.units.find(candidate => candidate.id === a.other);
+      h += `<button onclick='send(${JSON.stringify(a)})'>⇄ Swap with ${peer ? titleCase(peer.type) : `#${a.other}`}</button>`;
+    }
+    if (a.type === "build_railroad")
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚒ Build railroad</button>`;
+    if (a.type === "contribute_district") {
+      const city = state.cities.find(candidate => candidate.id === a.city);
+      h += `<button onclick='send(${JSON.stringify(a)})'>⚒ Contribute to ${city ? city.name : "city"}</button>`;
+    }
+    if (a.type === "disband_unit")
+      h += `<button class="danger" onclick='send(${JSON.stringify(a)})'>✖ Disband</button>`;
     if (a.type === "fortify")
       h += `<button title="Fortify (F)" onclick='send({type:"fortify",unit:${u.id}})'>⛨ Fortify</button>`;
     if (a.type === "upgrade_unit")
@@ -30740,6 +30977,7 @@ function drawUbar() {
     if (a.type === "convert_barbarians")
       h += `<button onclick='send(${JSON.stringify(a)})'>☼ Convert adjacent Barbarians</button>`;
   }
+  if ((RULES.units[u.type] || {}).wmd_capable) h += nuclearLaunchButtons();
   // The verb a new player looks for. Right-click is the fast way, and nothing
   // on screen would ever tell them so.
   if (u.moves_left > 0)
@@ -32456,17 +32694,21 @@ function releaseWatchedWar() {
 
 // World politics: who stands with whom at this moment, as a table with one row
 // and one column for every living major civilization, both in alphabetical
-// order so nobody's place moves as the game goes on. A pair's tie is written in
-// both of its cells, so one civilization's whole position reads along its row
-// or down its column. The engine reports the pairs; the War log below keeps the
-// history. The heading's count is cheap and always current, and the table is
-// built only while somebody can see it.
+// order so nobody's place moves as the game goes on. A pact or a war belongs to
+// the pair and is written in both of its cells. Otherwise a cell holds what its
+// row's leader makes of its column's, which the other leader need not share.
+// The engine reports the pairs; the War log below keeps the history. The
+// heading's count is cheap and always current, and the table is built only
+// while somebody can see it.
 const WORLD_POLITICS_MARKS = [
-  ["war", "War"], ["alliance", "Alliance"], ["friendship", "Friends"], ["team", "Team"],
+  ["alliance", "Alliance"], ["team", "Team"], ["friendship", "Friends"],
+  ["friendly", "Friendly"], ["neutral", "Neutral"], ["unfriendly", "Unfriendly"],
+  ["denounced", "Denounced"], ["war", "War"],
 ];
+const WORLD_POLITICS_LABELS = new Map(WORLD_POLITICS_MARKS);
+const WORLD_POLITICS_ATTITUDES = { F: "friendly", N: "neutral", U: "unfriendly", D: "denounced" };
 function worldPoliticsMark(kind, level = "") {
-  const [, label] = WORLD_POLITICS_MARKS.find(([mark]) => mark === kind);
-  return `<i class="politics-mark ${kind}" role="img" aria-label="${label}">${level}</i>`;
+  return `<i class="politics-mark ${kind}" role="img" aria-label="${WORLD_POLITICS_LABELS.get(kind)}">${level}</i>`;
 }
 function worldPoliticsBondTie(bond) {
   const left = bond.until === null || bond.until === undefined ? null : Math.max(0, bond.until - state.turn);
@@ -32487,7 +32729,14 @@ function worldPoliticsWarTie(war) {
       : "at war, as reported by the host",
   };
 }
-function worldPoliticsMatrix(civs, bonds, wars) {
+function worldPoliticsKey(bonds) {
+  // Teams exist only in a game set up with them, so only that game explains one.
+  const marks = WORLD_POLITICS_MARKS
+    .filter(([kind]) => kind !== "team" || bonds.some(bond => bond.kind === "team"))
+    .map(([kind, name]) => `<span>${worldPoliticsMark(kind)}${name}</span>`).join("");
+  return `${marks}<span class="politics-key-note">A face is how the row's leader sees the column's.</span>`;
+}
+function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   const ties = new Map();
   const place = (pair, tie) => {
     ties.set(`${pair.first}:${pair.second}`, tie);
@@ -32495,24 +32744,25 @@ function worldPoliticsMatrix(civs, bonds, wars) {
   };
   for (const bond of bonds) place(bond, worldPoliticsBondTie(bond));
   for (const war of wars) place(war, worldPoliticsWarTie(war));
+  const seat = new Map((attitudes.civs || []).map((id, index) => [id, index]));
   const label = id => `<i class="politics-chip" aria-hidden="true" ` +
     `style="background:${pcol(id)};border-color:${pcol2(id)}"></i>${warEntityLink(id)}`;
-  // Teams exist only in a game set up with them, so only that game explains one.
-  const legend = WORLD_POLITICS_MARKS
-    .filter(([kind]) => kind !== "team" || bonds.some(bond => bond.kind === "team"))
-    .map(([kind, name]) => `<span>${worldPoliticsMark(kind)}${name}</span>`).join("");
   const head = civs.map(civ => `<th scope="col"><span>${label(civ.id)}</span></th>`).join("");
   const rows = civs.map(row => {
+    const stances = attitudes.rows?.[seat.get(row.id)] || "";
     const cells = civs.map(column => {
       if (column.id === row.id) return `<td class="self"></td>`;
       const tie = ties.get(`${row.id}:${column.id}`);
-      if (!tie) return `<td></td>`;
-      return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
+      if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
+      const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
+      if (!kind) return `<td></td>`;
+      const text = `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
+      return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
     return `<tr><th scope="row"><span>${label(row.id)}</span></th>${cells}</tr>`;
   }).join("");
   return `<table class="politics-matrix"><colgroup><col>${"<col>".repeat(civs.length)}</colgroup>` +
-    `<thead><tr><td class="politics-legend">${legend}</td>${head}</tr></thead>` +
+    `<thead><tr><td class="politics-corner"></td>${head}</tr></thead>` +
     `<tbody>${rows}</tbody></table>`;
 }
 // Hovering a row is CSS's to light, but no selector can light a column. The
@@ -32534,6 +32784,7 @@ function drawWorldPolitics() {
   const politics = state.world_politics || {};
   const bonds = Array.isArray(politics.bonds) ? politics.bonds : [];
   const wars = Array.isArray(politics.wars) ? politics.wars : [];
+  const attitudes = politics.attitudes || {};
   // The label has room for little beside the section's own name.
   scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
   scope.title = wars.length ? `${wars.length} war${wars.length === 1 ? "" : "s"} in progress` : "";
@@ -32546,10 +32797,14 @@ function drawWorldPolitics() {
   list.dataset.signature = signature;
   // Patched rather than replaced, so a turn arriving mid-scroll keeps the
   // reader's place in a table wider than the deck.
-  patchHudMarkup(list, civs.length < 2
-    ? `<div class="politics-none">No other civilizations met yet.</div>`
-    : worldPoliticsMatrix(civs, bonds, wars));
+  const met = civs.length >= 2;
+  patchHudMarkup(list, met
+    ? worldPoliticsMatrix(civs, bonds, wars, attitudes)
+    : `<div class="politics-none">No other civilizations met yet.</div>`);
   markPoliticsColumn(politicsColumn);
+  const key = document.getElementById("politicskey");
+  key.hidden = !met;
+  key.innerHTML = met ? worldPoliticsKey(bonds) : "";
   document.getElementById("politicscaveat").hidden = !politics.partial;
 }
 

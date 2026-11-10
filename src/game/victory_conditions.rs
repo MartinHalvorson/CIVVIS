@@ -2965,7 +2965,12 @@ fn late_congress_rules_change_wmd_policy_projects_energy_borders_and_chops() {
     g.active_congress_effects
         .push(effect("deforestation_treaty", "A", "forest"));
     let gold_before = g.players[0].gold;
-    let clearing_reward = 20.0 * (g.world_era as f64 + 1.0);
+    let clearing_reward: f64 = g
+        .builder_operation_payout(0, chop_tile, "chop_woods")
+        .iter()
+        .map(|(_, amount)| *amount)
+        .sum();
+    assert!(clearing_reward > 0.0);
     g.do_improve(0, builder, "chop_woods").unwrap();
     assert_eq!(g.players[0].gold, gold_before + clearing_reward);
 

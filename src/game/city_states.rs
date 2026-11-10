@@ -357,7 +357,19 @@ impl Game {
             .filter(|leader| self.players[*leader].government != self.players[pid].government)
             .map(|_| self.policy_effect(pid, "different_government_envoy_bonus") as i64)
             .unwrap_or(0);
-        let amount = 1 + first_bonus + different_government_bonus;
+        // Tamar: `ADJUST_DUPLICATE_INFLUENCE_TOKEN_WHEN_SAME_RELIGION` 1. An
+        // Envoy counts double at a city-state following your religion.
+        let same_religion_bonus = self.players[pid]
+            .religion
+            .as_deref()
+            .filter(|religion| {
+                self.player_city_ids(minor)
+                    .first()
+                    .is_some_and(|city| self.city_religion(&self.cities[city]) == Some(*religion))
+            })
+            .map(|_| self.civ_effect(pid, "same_religion_envoy_bonus") as i64)
+            .unwrap_or(0);
+        let amount = 1 + first_bonus + different_government_bonus + same_religion_bonus;
         let papal_religion = self.players[pid].religion.clone();
         let papal_pressure = papal_religion
             .as_deref()
@@ -443,9 +455,12 @@ impl Game {
         if units.is_empty() {
             return None;
         }
+        // `LEVY_MILITARY_PERCENT_OF_UNIT_PURCHASE_COST` is 25 of a purchase
+        // price of four times the unit's cost, which is that cost at this
+        // game's speed.
         let base = units
             .iter()
-            .map(|unit| self.rules.units[unit.kind].cost)
+            .map(|unit| self.item_cost_for(minor, &Item::Unit { unit: unit.kind }))
             .sum::<f64>();
         let discount = self.empire_building_sum(pid, |building| {
             building
@@ -453,7 +468,7 @@ impl Game {
                 .get("levy_discount_pct")
                 .copied()
                 .unwrap_or(0.0)
-        });
+        }) + self.civ_effect(pid, "levy_discount_pct");
         Some(base * (1.0 - discount / 100.0).max(0.0))
     }
 

@@ -3812,6 +3812,79 @@ fn a_capture_is_verified_by_arrival_or_by_the_civilian_gone() {
 /// `UNITOPERATION_SWAP_UNITS` — instead of falling through to
 /// `unit_action_untranslated`.
 #[test]
+fn a_coastal_raid_crosses_as_its_verb_aimed_at_the_shore() {
+    let (snapshot, state) = local_barbarian_defense_board();
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let (unit, host) = mirror.civ6_of.iter().next().map(|(u, h)| (*u, *h)).unwrap();
+    let target = mirror.game.units[&unit].pos;
+    let raid = translate(&Action::CoastalRaid { unit, target }, &mirror, &state)
+        .expect("the raid crosses");
+    assert_eq!(raid.kind, "unit");
+    assert_eq!(raid.subject, Some(host));
+    assert_eq!(raid.verb.as_deref(), Some("COASTAL_RAID"));
+    assert_eq!(
+        raid.pos,
+        Some(civvis::hex::axial_to_offset(target.0, target.1))
+    );
+}
+
+/// The two launches are different calls in the host: a unit operation for a
+/// carrier, and a city command aimed from the silo's plot.
+#[test]
+fn a_launch_crosses_as_the_call_its_platform_needs() {
+    let (snapshot, state) = local_barbarian_defense_board();
+    let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let (host_city, city) = mirror.cid_of.iter().next().map(|(h, c)| (*h, *c)).unwrap();
+    let home = mirror.game.cities[&city].pos;
+    let strike = Action::WmdStrike {
+        city,
+        target: home,
+        thermonuclear: false,
+    };
+    assert!(
+        translate(&strike, &mirror, &state).is_none(),
+        "no platform, no order"
+    );
+
+    let (unit, host_unit) = mirror.civ6_of.iter().next().map(|(u, h)| (*u, *h)).unwrap();
+    let carrier = mirror.game.units.get_mut(&unit).unwrap();
+    carrier.kind = civvis::name!("bomber");
+    carrier.pos = home;
+    carrier.attacks_left = 1;
+    carrier.moves_left = 10.0;
+    let flown = translate(&strike, &mirror, &state).expect("a bomber in range launches");
+    assert_eq!(flown.kind, "unit");
+    assert_eq!(flown.subject, Some(host_unit));
+    assert_eq!(flown.verb.as_deref(), Some("WMD_NUCLEAR_DEVICE"));
+    assert_eq!(
+        flown.pos,
+        Some(civvis::hex::axial_to_offset(home.0, home.1))
+    );
+
+    mirror.game.units.get_mut(&unit).unwrap().attacks_left = 0;
+    let tile = mirror.game.map.tiles.get_mut(&home).unwrap();
+    tile.improvement = Some(civvis::name!("missile_silo"));
+    tile.pillaged = false;
+    let owned = &mut mirror.game.cities.get_mut(&city).unwrap().owned_tiles;
+    if !owned.contains(&home) {
+        owned.push(home);
+    }
+    let thermo = Action::WmdStrike {
+        city,
+        target: home,
+        thermonuclear: true,
+    };
+    let silo = translate(&thermo, &mirror, &state).expect("a silo launches");
+    let (x, y) = civvis::hex::axial_to_offset(home.0, home.1);
+    assert_eq!(silo.kind, "wmd_strike");
+    assert_eq!(silo.subject, Some(host_city));
+    assert_eq!(
+        silo.verb.as_deref(),
+        Some(format!("{x}:{y}:WMD_THERMONUCLEAR_DEVICE").as_str())
+    );
+}
+
+#[test]
 fn a_swap_crosses_as_the_swap_verb_aimed_at_the_partners_tile() {
     let (snapshot, state) = local_barbarian_defense_board();
     let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);

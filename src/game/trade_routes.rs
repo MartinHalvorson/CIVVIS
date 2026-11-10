@@ -444,8 +444,15 @@ impl Game {
         else {
             return 0.0;
         };
-        // `TRADING_POST_GOLD_IN_FOREIGN_CITY`, a shipped GlobalParameter.
-        let foreign_post_gold = 1.0;
+        // `TRADING_POST_GOLD_IN_FOREIGN_CITY`, a shipped GlobalParameter, and
+        // Bandar Brunei's `MODIFIER_PLAYER_ADJUST_TRADE_ROUTE_YIELD_PER_POST_IN_FOREIGN_CITY`
+        // (`MINOR_CIV_JAKARTA_TRADING_POST_BONUS`, 1 Gold), which pays again
+        // for each of the same posts: the owner's, anywhere on the route.
+        let foreign_post_gold = if self.grants_city_state_unique_bonus(owner, "Bandar Brunei") {
+            2.0
+        } else {
+            1.0
+        };
         let own_post_gold = self.civ_effect(owner, "own_trading_post_route_gold");
         // Where the host has told the mirror which posts its own path
         // crosses, that answer stands in for the walk below: the pathfinder

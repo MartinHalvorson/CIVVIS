@@ -1,0 +1,18 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "faith-strike-at-a-quiet-parity",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Seven boards from five live Russia-lane games of 2026-11-09, each the run's events.jsonl cut at the turn's first state frame. Both arms carry faith-strike-wipes-the-spreaders and run one frozen civvis_orders --resumed built from this branch with the run's own requested genome; the on arm adds --with faith-strike-at-a-quiet-parity. On six boards the rival's steady power was 0.74 to 0.94 of ours: the off arm holds on the 0.7 edge, and the on arm's orders add a war declaration and 2 or 3 CONDEMN_HERETIC orders. The seventh (142418Z t129) is a control: the edge clears but too few spreaders can be reached, and the orders are unchanged. An eighth case (165525Z t135) could not run because its summary has no forced list; its error is retained in the archive and it is not a member.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-faith-strike-at-a-quiet-parity.native-queries.tar.xz",
+    "sha256": "cf6993f4f91d0e0706c161fe75a3ef9a37f822f58443f2c3e2578842915e02a1"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}
