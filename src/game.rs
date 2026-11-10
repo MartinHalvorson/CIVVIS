@@ -1138,6 +1138,25 @@ pub struct GreatWorkPiece {
     pub creator: String,
 }
 
+/// The Great Person a kill by this unit feeds under Wolin, by the class lists
+/// of `ABILITY_WOLIN_LAND_UNITS` and `ABILITY_WOLIN_NAVAL_UNITS`.
+///
+/// The killer decides; the victim's domain does not enter into it, so a
+/// Crossbowman that sinks a Galley earns General points. Air units, carriers
+/// and the Giant Death Robot (`CLASS_GIANT_DEATH_ROBOT` alone) are on neither
+/// list, and CIVVIS files the Robot under `melee`, so it is named here.
+fn wolin_great_person_class(kind: &str, spec: &crate::rules::UnitSpec) -> Option<&'static str> {
+    if kind == "giant_death_robot" {
+        return None;
+    }
+    match spec.promotion_class.as_str() {
+        "melee" | "ranged" | "anti_cavalry" | "heavy_cavalry" | "light_cavalry" | "recon"
+        | "siege" | "warrior_monk" | "nihang" => Some("general"),
+        "naval_melee" | "naval_raider" | "naval_ranged" => Some("admiral"),
+        _ => None,
+    }
+}
+
 fn pair(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
@@ -10767,20 +10786,22 @@ impl Game {
             .values()
             .filter_map(|c| {
                 self.city_religion(c).map(|r| {
-                    // A Holy Site doubles its city's passive pressure. Jerusalem
-                    // then makes the player's Holy City four times stronger.
+                    // `RELIGION_SPREAD_HOLY_SITE_PRESSURE_MULTIPLIER` 2 and
+                    // `RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER` 4. Jerusalem's
+                    // Suzerain has every city with a Holy Site count as a Holy
+                    // City (`TREAT_HOLY_SITES_AS_HOLY_CITIES`).
                     let mut boost = 1.0;
                     let holy_site =
                         self.city_has_active_district_family(c, crate::name!("holy_site"));
                     if holy_site {
                         boost *= 2.0;
                     }
-                    if holy_site
-                        && self.grants_city_state_unique_bonus(c.owner, "Jerusalem")
-                        && self
-                            .religion_founder(r)
-                            .and_then(|founder| self.players[founder].holy_city)
-                            == Some(c.id)
+                    let holy_city = self
+                        .religion_founder(r)
+                        .and_then(|founder| self.players[founder].holy_city)
+                        == Some(c.id);
+                    if holy_city
+                        || (holy_site && self.grants_city_state_unique_bonus(c.owner, "Jerusalem"))
                     {
                         boost *= 4.0;
                     }
@@ -13445,24 +13466,21 @@ impl Game {
         }
         if !self.players[victim.owner].is_barbarian
             && self.grants_city_state_unique_bonus(pid, "Wolin")
-            && weapon.is_some_and(|kind| {
+        {
+            let point_kind = weapon.and_then(|kind| {
                 self.rules
                     .units
                     .get(kind)
-                    .is_some_and(|spec| spec.class == "military")
-            })
-        {
-            let point_kind = if self.rules.units[victim.kind].domain.as_deref() == Some("sea") {
-                "admiral"
-            } else {
-                "general"
-            };
-            *self.players[pid]
-                .gpp
-                .entry(point_kind.to_string())
-                .or_insert(0.0) += self
-                .game_speed
-                .scale(self.rules.units[victim.kind].strength * 0.25);
+                    .and_then(|spec| wolin_great_person_class(kind, spec))
+            });
+            if let Some(point_kind) = point_kind {
+                *self.players[pid]
+                    .gpp
+                    .entry(point_kind.to_string())
+                    .or_insert(0.0) += self
+                    .game_speed
+                    .scale(self.rules.units[victim.kind].strength * 0.25);
+            }
         }
         if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
             if let Some(religion) = self.players[pid].religion.clone() {

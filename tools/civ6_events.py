@@ -12,6 +12,7 @@ Usage::
     python3 tools/civ6_events.py failures           # failed orders, by type and reason
     python3 tools/civ6_events.py noops              # "the unit did not move", checked
     python3 tools/civ6_events.py strikes            # could each melee attack have landed?
+    python3 tools/civ6_events.py plots VERB ...     # what stood on the plot when a unit order failed
 
 Pass ``--runs N`` for more logs, or ``--root DIR`` for another directory. One
 game continued from a save writes one log per sitting (``<run>-cont1`` and so
@@ -189,12 +190,56 @@ def strike_paths(logs: list[Path]) -> dict[tuple[str, str], collections.Counter]
     return table
 
 
+def order_plots(logs: list[Path], verbs: Iterable[str] = ()) -> dict[tuple, collections.Counter]:
+    """(verb, improvement, feature, resource) under the unit -> orders that worked or failed.
+
+    A rule the simulator and the host disagree on shows up as one order failing
+    on one kind of plot. That is how Builders chopping under Lumber Mills were
+    found. An order is one (turn, unit, verb) in a log, read as in `failures`.
+    The unit stands where the last frame of its turn left it, and the plot is as
+    it was before that turn, so an order that worked does not show its own result.
+    """
+    wanted = set(verbs)
+    table: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
+    for path in logs:
+        where: dict[int, dict] = collections.defaultdict(dict)
+        chunks: collections.deque = collections.deque()
+        plots: dict[tuple, dict] = {}
+        orders: dict[tuple, dict] = {}
+        for event in events(path, ('"kind": "state"', '"kind": "tiles"', '"order_failed"', '"order_verified"')):
+            kind = event.get("kind")
+            if kind == "state":
+                where[event.get("turn")] = {unit.get("id"): (unit.get("x"), unit.get("y")) for unit in event.get("units") or []}
+            elif kind == "tiles":
+                chunks.append(event)
+            elif kind in ("order_failed", "order_verified") and event.get("order_kind") == "unit":
+                verb = _verb_head(event.get("verb"))
+                if wanted and verb not in wanted:
+                    continue
+                turn = event.get("turn")
+                while chunks and isinstance(turn, int) and chunks[0].get("turn", turn) < turn:
+                    for plot in chunks.popleft().get("plots") or []:
+                        plots[(plot.get("x"), plot.get("y"))] = plot
+                stood = where[turn].get(event.get("subject"))
+                if stood is None:
+                    continue
+                plot = plots.get(stood, {})
+                order = orders.setdefault(
+                    (turn, event.get("subject"), verb),
+                    {"key": (verb, plot.get("im") or "-", plot.get("f") or "-", plot.get("r") or "-"), "worked": False})
+                order["worked"] = order["worked"] or kind == "order_verified"
+        for order in orders.values():
+            table[order["key"]]["worked" if order["worked"] else "failed"] += 1
+    return table
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("report", choices=("kinds", "failures", "noops", "strikes"))
+    parser.add_argument("report", choices=("kinds", "failures", "noops", "strikes", "plots"))
+    parser.add_argument("verbs", nargs="*", help="plots only: the unit verbs to read, or every one")
     parser.add_argument("--runs", type=int, default=8, help="newest games to read")
     parser.add_argument("--root", type=Path, default=RUN_ROOT)
-    args = parser.parse_args()
+    args = parser.parse_intermixed_args()
     logs = recent_games(args.root, args.runs)
     print(f"{len(logs)} logs read, {len({game_of(path) for path in logs})} games")
     if args.report == "kinds":
@@ -208,6 +253,11 @@ def main() -> int:
                 print(f"{row['failed']:5} of {row['total']:6} ({row['rate']:4.0%}) "
                       f"recovered {row['recovered']:4}  "
                       f"{str(row['kind']):14} {row['verb']:24} {reasons}")
+    elif args.report == "plots":
+        for (verb, improvement, feature, resource), outcomes in sorted(
+                order_plots(logs, args.verbs).items(), key=lambda item: (-item[1]["failed"], item[0])):
+            print(f"failed {outcomes['failed']:5}  worked {outcomes['worked']:5}  "
+                  f"{verb:20} {improvement:30} {feature:26} {resource}")
     elif args.report == "strikes":
         for (family, verdict), outcomes in sorted(strike_paths(logs).items()):
             print(f"{family:10} {verdict:15} landed {outcomes['landed']:5}  missed {outcomes['missed']:5}")

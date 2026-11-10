@@ -1,0 +1,23 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-takes-the-debater",
+  "scope": "Twelve recorded boards from nine live Deity Religious-target games (2026-11-09), each at the first state frame of the first turn an Apostle of ours had no promotion, had moves, and was offered Debater in its exported promotion menu, and went on to take a different promotion. Each board was replayed twice through one frozen `civvis_orders --resumed` built from this branch, with the run's own forced genome; the on arm adds `--with religion-seat-takes-the-debater`. The Apostle's order changed on 12 of 12 boards, from Translator, Proselytizer or Orator to Debater.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religious-corps-religion-seat-takes-the-debater.native-queries.tar.xz",
+    "sha256": "958de402c7857ffcc16145d148693e5d5f3dfd932a31e366d2032b1de7f59c6f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}

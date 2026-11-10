@@ -1,0 +1,22 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "corps-comes-home-alive",
+  "scope": "Eleven recorded boards from four live Deity Russia Religious-target games (2026-11-09 and 11-10), each at the first state frame of a turn where a religious unit of ours stood at 60 hit points or less at least three tiles from any city of ours. Each board was replayed twice through one frozen `civvis_orders --resumed` built from this branch, with the run's own forced genome; the on arm adds `--with corps-comes-home-alive`. Orders changed on 10 of 11 boards and the wounded unit's own orders on 5: it turns for our nearest Lavra instead of walking on. On the other boards an earlier evasion rule had already moved the unit the same way in both arms.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religious-corps-corps-comes-home-alive.native-queries.tar.xz",
+    "sha256": "b0927a4d1f0bf441998396c196f9f2fb1d9ff017064018461c399c22f3ee03ad"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json"
+  ]
+}

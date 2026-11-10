@@ -835,7 +835,7 @@ fn people(check: &mut Check) {
     // engine that reads it, or the civilization silently has no ability at
     // all — a misspelt key is indistinguishable from a fair one until someone
     // measures a whole game against the note in the ruleset.
-    const CIV_EFFECTS: [&str; 35] = [
+    const CIV_EFFECTS: [&str; 37] = [
         "city_food",
         "city_production",
         "city_gold",
@@ -869,6 +869,8 @@ fn people(check: &mut Check) {
         "garrison_loyalty",
         "formation_garrison_loyalty",
         "golden_dedication_era_score",
+        "levy_discount_pct",
+        "same_religion_envoy_bonus",
         // Rome's All Roads Lead to Rome; read by `Game::trading_post_route_gold`.
         "free_trading_posts",
         "own_trading_post_route_gold",
