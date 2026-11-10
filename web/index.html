@@ -2667,43 +2667,79 @@
   .war-loss-none { color: var(--faint); font-style: italic; }
   /* Civ VI's standard light green and blue: COLOR_STANDARD_GREEN_LT and
      COLOR_STANDARD_BLUE_LT in the game's PlayerStandardColors.xml. */
-  .politics-list { display: grid; gap: 10px; --politics-friend: #79e077; --politics-alliance: #74a3f3; }
-  .politics-heading {
-    display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
-    padding-bottom: 3px; border-bottom: 1px solid var(--line);
-    color: var(--gold); font-size: var(--type-label); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  /* One row and one column per civilization, inside its own scroller so the
+     deck keeps its width. Where the deck pins its labels the scroller is held
+     to the reading window between them, because a box any taller would hand
+     vertical scrolling to the deck and the column names would scroll away with
+     the top of the section. */
+  #politicssec .sec { padding: 10px 8px; }
+  .politics-list {
+    --politics-friend: #79e077; --politics-alliance: #74a3f3; --politics-war: #e58a7a;
+    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px;
+    position: relative; overflow: auto; max-width: 100%; max-height: 220px;
+    overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
-  .politics-heading::-webkit-details-marker { display: none; }
-  .politics-heading > span { flex: 1 1 auto; min-width: 0; }
-  .politics-heading::after {
-    content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin: 0 3px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-    transform: translateY(-1px) rotate(45deg); transition: transform .18s ease;
+  /* The window less the scroller's bottom inset and this section's own padding. */
+  #side.deck-stops .politics-list { max-height: calc(var(--deck-window) - 43px); }
+  .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
+  .politics-matrix th, .politics-matrix td { padding: 0; }
+  .politics-matrix tbody td, .politics-matrix thead th {
+    min-width: var(--politics-cell); text-align: center;
+    border-right: 1px solid #29413b66; border-bottom: 1px solid #29413b66;
   }
-  .politics-group:not([open]) > .politics-heading::after { transform: translateY(1px) rotate(-45deg); }
-  .politics-heading:hover { color: var(--gold-bright); }
-  .politics-heading.war { color: #e58a7a; }
-  .politics-heading.war:hover { color: #f2a899; }
-  .politics-heading small { color: var(--faint); font-size: inherit; font-weight: 600; letter-spacing: 0; }
-  .politics-row {
-    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px;
-    padding: 4px 0; border-bottom: 1px solid #29413b66; font-size: var(--type-secondary);
+  .politics-matrix tbody td { height: var(--politics-cell); }
+  .politics-matrix tbody td.self { background: #ffffff0d; }
+  .politics-matrix tbody tr:hover td:not(.self), .politics-matrix col.politics-crossed { background: #ffffff0a; }
+  /* Both rails are opaque so that what scrolls under them cannot show through. */
+  .politics-matrix thead th, .politics-matrix tbody th, .politics-legend { position: sticky; background: var(--politics-ground); }
+  .politics-matrix thead th { top: 0; z-index: 2; vertical-align: bottom; padding: 3px 0; box-shadow: 0 1px 0 var(--line); }
+  .politics-matrix tbody th { left: 0; z-index: 1; text-align: left; font-weight: 650; box-shadow: 1px 0 0 var(--line); }
+  .politics-matrix tbody tr:hover th, .politics-matrix thead th.politics-crossed { background: var(--politics-lit); }
+  .politics-matrix tbody th > span {
+    display: flex; align-items: center; gap: 4px; max-width: 96px; padding-right: 6px;
   }
-  .politics-pair { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; color: var(--text); font-weight: 650; }
-  .politics-civ { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; }
+  .politics-matrix thead th > span {
+    display: inline-flex; align-items: center; gap: 4px; font-weight: 650;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+  }
+  .politics-legend {
+    top: 0; left: 0; z-index: 3; vertical-align: bottom; padding: 0 6px 3px 0; box-shadow: 1px 1px 0 var(--line);
+    color: var(--muted); font-size: var(--type-label); text-align: left; white-space: nowrap;
+  }
+  .politics-legend > span { display: flex; align-items: center; gap: 4px; min-height: 14px; }
+  .politics-matrix .war-entity-link { overflow: hidden; color: var(--text); font-weight: inherit; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+  .politics-matrix .war-entity-link:hover, .politics-matrix .war-entity-link:focus-visible { text-decoration: underline; }
   .politics-chip {
-    flex: 0 0 auto; align-self: center; box-sizing: border-box; width: 9px; height: 9px;
+    flex: 0 0 auto; box-sizing: border-box; width: 9px; height: 9px;
     border: 1.5px solid; border-radius: 50%;
   }
-  .politics-civ .war-entity-link { text-decoration: none; }
-  .politics-civ .war-entity-link:hover, .politics-civ .war-entity-link:focus-visible { text-decoration: underline; }
-  .politics-joiner { color: var(--faint); font-weight: 500; }
-  .politics-row.war .politics-joiner { color: #e58a7a; font-style: italic; }
-  .politics-note { margin-left: auto; color: var(--muted); font-size: var(--type-label); white-space: nowrap; }
-  .politics-row.alliance .politics-joiner, .politics-row.alliance .politics-note { color: var(--politics-alliance); }
-  .politics-row.friendship .politics-joiner, .politics-row.friendship .politics-note { color: var(--politics-friend); }
-  .politics-none { padding: 4px 0 0; color: var(--faint); font-size: var(--type-secondary); font-style: italic; }
-  .politics-caveat { padding: 4px 0 0; color: var(--faint); font-size: var(--type-label); }
+  .politics-mark {
+    position: relative; isolation: isolate; display: inline-grid; place-items: center; flex: 0 0 auto;
+    width: 14px; height: 14px; vertical-align: middle;
+    color: #08110f; font-size: 9px; font-style: normal; font-weight: 800; line-height: 1;
+  }
+  .politics-mark::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; background: var(--mark-color);
+    -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat;
+  }
+  .politics-mark.war {
+    --mark-color: var(--politics-war);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2.5 2.5 12 12M13.5 2.5 4 12M9.5 13.5l4-4M2.5 9.5l4 4'/%3E%3C/svg%3E");
+  }
+  .politics-mark.alliance {
+    --mark-color: var(--politics-alliance);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 .8 14.2 3v5c0 3.7-2.7 6.1-6.2 7.2C4.5 14.1 1.8 11.7 1.8 8V3z'/%3E%3C/svg%3E");
+  }
+  .politics-mark.friendship {
+    --mark-color: var(--politics-friend);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 14.6S1 10.3 1 5.4A3.8 3.8 0 0 1 8 3.4a3.8 3.8 0 0 1 7 2c0 4.9-7 9.2-7 9.2z'/%3E%3C/svg%3E");
+  }
+  .politics-mark.team {
+    --mark-color: var(--politics-alliance);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m8 .9 2.2 4.6 5 .7-3.6 3.5.9 5L8 12.3 3.5 14.7l.9-5L.8 6.2l5-.7z'/%3E%3C/svg%3E");
+  }
+  .politics-none { color: var(--faint); font-size: var(--type-secondary); font-style: italic; }
+  .politics-caveat { padding: 6px 0 0; color: var(--faint); font-size: var(--type-label); }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
   .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: var(--type-label); }
   .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .04em; }
@@ -6404,14 +6440,8 @@
         <span class="section-meta"><span class="event-scope" id="politicsscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec">
-        <div class="log-filters">
-          <label class="log-filter"><span>Civ</span>
-            <select id="politicsplayer" aria-label="Whose relationships to show">
-              <option value="all">All civilizations</option>
-            </select>
-          </label>
-        </div>
         <div id="worldpolitics" class="politics-list"></div>
+        <div id="politicscaveat" class="politics-caveat" hidden>Civ VI reports pacts for our own seat only, so rival pacts are not shown.</div>
       </div>
     </details>
 
