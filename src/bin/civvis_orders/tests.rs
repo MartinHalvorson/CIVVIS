@@ -2916,7 +2916,7 @@ fn temp_seed_search_survivalvolley() {
 fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
     let (snapshot, mut state) = local_barbarian_defense_board();
     state.units[0].hp = 30.0;
-    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, civvis::rng::fixture_seed("SURVIVALVOLLEY", 1), 250, 0);
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, std::env::var("CIVVIS_FIXTURE_SEED_SURVIVALVOLLEY").ok().and_then(|v| v.parse().ok()).unwrap_or(1), 250, 0);
     let mut old = mirror.game.clone();
     let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
     eprintln!("TEMPDIAG volley actions={} reserves={} targets={} units={:?}", old_volley.actions.len(), old_volley.reserves, old_volley.targets, mirror.game.units.values().map(|u| (u.id, u.kind.to_string(), u.owner, u.pos, u.hp)).collect::<Vec<_>>());
