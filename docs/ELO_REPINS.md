@@ -2270,3 +2270,20 @@ action count is unchanged; the six-major profile accounts for the one-action
 reduction in the total. The existing test continues to enforce all five
 profiles and the full fingerprint. This re-pin records the deliberate rules
 boundary; it does not establish stronger play or a Native victory.
+
+## v46 (2026-11-09) — meteor showers fall in every Gathering Storm game
+
+#4896 removes a false gate from the shared engine. Meteor showers were tied to
+the Apocalypse game mode, but `GranColombia_Maya.modinfo` loads
+`GranColombia_Maya_Expansion2.xml` under `GranColombiaMaya_Expansion2`, so any
+Gathering Storm game has them, and only the `*_MODE.xml` files wait on
+`GAMEMODE_APOCALYPSE`. Live games with every mode verified off show Meteor Sites
+in 42 of 110 games. Every controller, `AdvancedAi::legacy()` included, now plays
+on a board where a meteor can fall.
+
+The engine before this change measures v45's **19,251 decisions /
+`0x791f_7a51_8002_0627`**. The corrected engine measures **19,571 decisions /
+`0x0857_04aa_df50_a040`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.

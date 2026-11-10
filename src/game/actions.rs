@@ -1315,11 +1315,14 @@ impl Game {
             self.add_historic_moment(pid, "MOMENT_CITY_BUILT_ON_TUNDRA");
         }
         let (floodable_river, volcano, natural_wonder) = {
+            // The ball itself rather than a filter over the world: on a
+            // 57,762-tile globe that filter ran a path search per tile, about
+            // ten seconds for every city founded.
             let nearby: Vec<&crate::world::Tile> = self
                 .map
-                .tiles
-                .values()
-                .filter(|near| self.wdist(near.pos, pos) <= 2)
+                .disk(pos, 2)
+                .into_iter()
+                .filter_map(|near| self.map.tiles.get(&near))
                 .collect();
             (
                 nearby.iter().any(|near| {

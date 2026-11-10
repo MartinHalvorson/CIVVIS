@@ -53,7 +53,9 @@ each says about itself. `--gene TAG` gives a gene's flag, every read of it and
 whether it is armed live. `--turn` prints the order an AI seat plays its turn.
 It reads the source each time and writes no file, so it cannot be stale.
 Every shipping Rust module opens with a `//!` line saying what it is for, and
-`tools/test_codemap.py` fails when one does not.
+`tools/test_codemap.py` fails when one does not. For what live games actually
+did, `python3 tools/civ6_events.py kinds|failures|noops` reads their event logs
+and `tools/civ6_agent_errors.py` adds up the Lua errors the agent caught.
 
 ## Mandatory Git isolation
 
