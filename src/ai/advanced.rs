@@ -5626,6 +5626,11 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
+    /// Site of ours and heals, fights only what it survives, and reads every
+    /// rival blow that can land on a tile together. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    corps_comes_home_alive: bool,
     /// Prefer a safe legal site for a new native Science Campus. Opt-in.
     campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
@@ -7807,6 +7812,11 @@ pub struct AdvancedAi {
     /// came in 4 of 5 Gran Colombia games of 2026-11-09. Opt-in.
     gutted_rival_passes_the_edge: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
+    /// last charge and hunts rival religious units, and a Missionary keeps
+    /// its last charge and scouts. See `advanced/apostle_army.rs`. Off by
+    /// default.
+    last_charge_joins_the_army: bool,
     /// Rank wartime upgrade goals by gain per remaining research. Opt-in.
     modernization_prices_the_path: bool,
     /// `nusantara-settles-the-shore`: an Indonesian seat's site score prices
@@ -10787,6 +10797,9 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
+/// `corps-comes-home-alive` and `last-charge-joins-the-army`: see
+/// `advanced/apostle_army.rs`.
+mod apostle_army;
 /// `apostle-evangelizes-unspent`: see `advanced/apostle_evangelizes_unspent.rs`.
 mod apostle_evangelizes_unspent;
 /// The Missionary in the field: a last-charge Missionary explores the fog,

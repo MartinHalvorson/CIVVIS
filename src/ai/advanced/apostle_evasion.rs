@@ -57,7 +57,15 @@ pub(super) struct TheologicalThreat {
     strike_from: Vec<Pos>,
     /// `stalled-spreader-braves-the-march`: only a lethal blow counts.
     lethal_only: bool,
+    /// `corps-comes-home-alive`: the blows of every rival in reach are
+    /// counted together. See [`AdvancedAi::every_blow_kills`].
+    every_blow: bool,
 }
+
+/// What a rival's blow can reach above the mean the model reads: the top of
+/// the roll, and the difficulty and Intel strength the live host adds to a
+/// rival Apostle (+7 or more in 55 of 75 previews on 2026-11-09).
+const EVERY_BLOW_MARGIN: f64 = super::apostle_army::ROLL_MARGIN * 1.3;
 
 impl AdvancedAi {
     /// The visible rival Apostles and Inquisitors of another faith within
@@ -113,6 +121,7 @@ impl AdvancedAi {
                     rival: rival.id,
                     strike_from,
                     lethal_only,
+                    every_blow: self.corps_comes_home_alive,
                 }
             })
             .collect()
@@ -155,6 +164,39 @@ impl AdvancedAi {
         threats
             .iter()
             .all(|threat| !Self::theological_threat_reaches(game, ours, position, threat))
+            && Self::every_blow_kills(game, ours, position, threats) == 0
+    }
+
+    /// `corps-comes-home-alive`: how many rivals can strike `ours` on `pos`
+    /// this turn, when their blows together would kill it. Zero with the gene
+    /// off or when the unit survives them all. 20 of 74 kills on our corps in
+    /// four games of 2026-11-09/10 took two or three attacks in one turn,
+    /// none of them lethal alone.
+    fn every_blow_kills(g: &Game, ours: u32, pos: Pos, threats: &[TheologicalThreat]) -> usize {
+        if !threats.iter().any(|threat| threat.every_blow) {
+            return 0;
+        }
+        let Some(unit) = g.units.get(&ours) else {
+            return 0;
+        };
+        let blows: Vec<f64> = threats
+            .iter()
+            .filter(|threat| {
+                threat
+                    .strike_from
+                    .iter()
+                    .any(|from| *from != pos && g.wdist(*from, pos) <= 1)
+            })
+            .filter_map(|threat| {
+                g.theological_exchange_preview_with_defender_at(threat.rival, ours, pos)
+            })
+            .map(|(dealt, _, _)| dealt * EVERY_BLOW_MARGIN)
+            .collect();
+        if blows.iter().sum::<f64>() >= f64::from(unit.hp) {
+            blows.len()
+        } else {
+            0
+        }
     }
 
     /// How many threats can strike `ours` standing on `pos` and win.
@@ -164,10 +206,14 @@ impl AdvancedAi {
         pos: Pos,
         threats: &[TheologicalThreat],
     ) -> usize {
-        threats
+        let winning = threats
             .iter()
             .filter(|threat| Self::theological_threat_reaches(g, ours, pos, threat))
-            .count()
+            .count();
+        if winning > 0 {
+            return winning;
+        }
+        Self::every_blow_kills(g, ours, pos, threats)
     }
 
     /// `spreader-steps-out-of-the-apostle`, the flee. `None` when the gene is
@@ -190,7 +236,8 @@ impl AdvancedAi {
             return None;
         }
         let kind = g.units[&uid].kind.as_str().to_string();
-        if Self::last_charge_spends_here(g, pid, uid) {
+        // `last-charge-joins-the-army`: a kept charge flees instead.
+        if Self::last_charge_spends_here(g, pid, uid) && !self.keeps_its_last_charge(g, pid, uid) {
             crate::think!(self.journal(), Faith, Detail,
                 "{kind} {uid} spends its last charge before a rival Apostle reaches it";
                 "spreader-steps-out-of-the-apostle: the charge removes the unit, so the \
@@ -259,7 +306,9 @@ impl AdvancedAi {
                 && unit.moves_left > 0.0
                 && g.rules.units[unit.kind].religious_spread > 0.0
         };
-        let useful = can_spread && Self::spread_helps_here(g, pid, uid);
+        let useful = can_spread
+            && Self::spread_helps_here(g, pid, uid)
+            && !self.keeps_its_last_charge(g, pid, uid);
         if useful {
             crate::think!(self.journal(), Faith, Detail,
                 "{kind} {uid} spreads before a rival Apostle reaches it";
