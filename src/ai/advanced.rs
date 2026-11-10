@@ -7829,6 +7829,10 @@ pub struct AdvancedAi {
     /// empire can hold, while a city founded now still repays. See
     /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
     good_land_lifts_the_city_target: bool,
+    /// `gold-buys-the-chopping-builder`: the treasury buys a Builder for a
+    /// city that is building a Settler and has Forests to clear into it. See
+    /// `advanced/gold_buys_the_chopping_builder.rs`. Opt-in.
+    gold_buys_the_chopping_builder: bool,
     // ---- append: l-o ------------------------------------------------
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
@@ -11169,6 +11173,9 @@ mod fresh_water_site;
 mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
+/// `gold-buys-the-chopping-builder`: Gold buys a Builder to clear land into a
+/// Settler. See `advanced/gold_buys_the_chopping_builder.rs`.
+mod gold_buys_the_chopping_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -25696,6 +25703,10 @@ impl AdvancedAi {
             // before the route slot's Trader. See
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
+            // `gold-buys-the-chopping-builder`: then a Builder for a city
+            // that is building a Settler and has Forests to clear into it.
+            // See `advanced/gold_buys_the_chopping_builder.rs`.
+            self.chopping_builder_purchase(g, pid, &plan);
             held_acropolis_site = self.culture_acropolis_site_purchase(g, pid, &plan);
             // `gold-buys-the-production-tile`: then a border tile of two or
             // more Production beside a city working a poorer one. See

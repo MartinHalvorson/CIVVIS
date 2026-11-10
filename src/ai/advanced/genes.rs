@@ -5495,6 +5495,11 @@ pub const GENES: &[Gene] = &[
     // discretion, for good land only. The target rises above ten by one city
     // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
     Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
+    // `gold-buys-the-chopping-builder`: the treasury buys a Builder for a
+    // city that is building a Settler and has Forests to clear into it, so
+    // the Settler errand of `chop-for-expansion` has charges to spend.
+    // Opt-in; see `advanced/gold_buys_the_chopping_builder.rs`.
+    Gene { tag: "gold-buys-the-chopping-builder", field: "gold_buys_the_chopping_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_chopping_builder, disable: AdvancedAi::disable_gold_buys_the_chopping_builder },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.

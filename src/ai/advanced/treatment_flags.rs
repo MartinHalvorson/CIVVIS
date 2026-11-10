@@ -143,6 +143,9 @@ impl AdvancedAi {
         /// Opt-in gene `good-land-lifts-the-city-target`; see
         /// `advanced/good_land_lifts_the_city_target.rs`.
         good_land_lifts_the_city_target => enable_good_land_lifts_the_city_target, disable_good_land_lifts_the_city_target;
+        /// `gold-buys-the-chopping-builder`: Gold buys a Builder to clear land
+        /// into a Settler. See `advanced/gold_buys_the_chopping_builder.rs`.
+        gold_buys_the_chopping_builder => enable_gold_buys_the_chopping_builder, disable_gold_buys_the_chopping_builder;
         // ---- append: l-o --------------------------------------------
         /// Opt-in gene `last-charge-joins-the-army`; see
         /// `advanced/apostle_army.rs`.

@@ -282,6 +282,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `garrison-before-the-surprise` | off (unmeasured) | Opt-in gene `garrison-before-the-surprise`; see `BasicAi::garrison_before_the_surprise`. | 1 \| 1 |
 | `generals-lead-the-army` | off (unmeasured) | Opt-in gene `generals-lead-the-army`; see `Self::generals_lead_the_army`. | 1 \| 1 |
 | `gold-buys-the-backlog-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-backlog-builder`; see `advanced/gold_buys_the_backlog_builder.rs`. | 1 \| 1 |
+| `gold-buys-the-chopping-builder` | off (unmeasured) | `gold-buys-the-chopping-builder`: Gold buys a Builder to clear land into a Settler. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
 | `good-land-lifts-the-city-target` | off (unmeasured) | Opt-in gene `good-land-lifts-the-city-target`; see `advanced/good_land_lifts_the_city_target.rs`. | 1 \| 1 |
