@@ -9859,6 +9859,10 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `space-denial-promotes-the-rocket-scientist`: a Culture or Domination
+    /// seat whose spies answer a space race promotes them to Rocket Scientist
+    /// first. See `advanced/space_denial_rocket_scientist.rs`. Off by default.
+    space_denial_promotes_the_rocket_scientist: bool,
     /// `sweden-builds-open-air-museums`: Sweden's Builders price the
     /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
@@ -11342,6 +11346,9 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-promotes-the-rocket-scientist`: see
+/// `advanced/space_denial_rocket_scientist.rs`.
+mod space_denial_rocket_scientist;
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
