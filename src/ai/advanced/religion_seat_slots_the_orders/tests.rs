@@ -26,6 +26,7 @@ fn board() -> (Game, AdvancedAi, u32) {
             "recorded_history",
             "theology",
             "divine_right",
+            "civil_service",
             "reformed_church",
         ]
         .into_iter()
@@ -140,10 +141,9 @@ fn the_card_must_be_on_the_menu() {
     let (mut g, mut ai, _) = board();
     ai.enable_religion_seat_slots_the_orders();
     g.players[0].civics.remove(&crate::name!("reformed_church"));
-    assert!(
-        !g.available_policies(0)
-            .contains(&crate::name!("religious_orders"))
-    );
+    assert!(!g
+        .available_policies(0)
+        .contains(&crate::name!("religious_orders")));
     let before = g.players[0].policies.clone();
     ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
     assert_eq!(g.players[0].policies, before);
@@ -208,12 +208,25 @@ fn a_wanted_other_type_cannot_donate_its_wildcard_capacity() {
     .into_iter()
     .map(Name::new)
     .collect();
-    assert!(AdvancedAi::policy_swap_fits(
-        &g,
-        0,
-        &crate::name!("levee_en_masse"),
-        "religious_orders"
-    ));
+    // Demonstrate that the wanted military card really occupies capacity
+    // Orders could borrow; the planner must still refuse this donor.
+    let mut borrowed = g.clone();
+    borrowed
+        .apply(
+            0,
+            &Action::UnslotPolicy {
+                policy: crate::name!("levee_en_masse"),
+            },
+        )
+        .unwrap();
+    borrowed
+        .apply(
+            0,
+            &Action::SlotPolicy {
+                policy: crate::name!("religious_orders"),
+            },
+        )
+        .unwrap();
     let before = g.players[0].policies.clone();
     ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
     assert_eq!(g.players[0].policies, before);
