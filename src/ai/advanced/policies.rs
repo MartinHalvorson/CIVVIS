@@ -650,7 +650,7 @@ impl AdvancedAi {
         // Amenities at all.
         // Luxury allocation is empire-wide: one memo scope per sweep, or each
         // city's surplus allocates the whole empire again.
-        if self.amenity_project_preemption_on() && {
+        let liberalism_repair = self.amenity_project_preemption_on() && {
             let _memo = g.query_memo();
             city_ids
                 .iter()
@@ -661,7 +661,8 @@ impl AdvancedAi {
                 })
                 .count()
                 >= 2
-        } {
+        };
+        if liberalism_repair {
             desired.retain(|card| !matches!(*card, "aesthetics" | "liberalism"));
             desired.insert(0, "liberalism");
         }
@@ -784,6 +785,17 @@ impl AdvancedAi {
         temporary.extend(desired);
         desired = temporary;
         desired.retain(|card| g.rules.policies[*card].offered(&g.players[pid].age, g.world_era));
+
+        // `flower-power-in-the-dark`: Flower Power at the front of the
+        // portfolio while the Culture seat wants it; the contest and
+        // emergency cards spliced in below still rank first. See
+        // `advanced/flower_power_in_the_dark.rs`. `None` with the gene off.
+        let flower_power = self.flower_power_verdict(g, pid);
+        let flower_power_card = matches!(flower_power, Some(Ok(_))).then_some("flower_power");
+        if let Some(card) = flower_power_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
 
         // `prophet-race-earns-its-points`: Revelation's +2 Prophet points a
         // turn while the race has a Prophet for this seat. The deck prices a
@@ -962,9 +974,26 @@ impl AdvancedAi {
             })
             .cloned()
             .collect();
+        // `flower-power-in-the-dark`: one line when the seat lets the card go,
+        // whether this pass unslots it or the base deck already has.
+        let flower_power_dropped = match &flower_power {
+            Some(Err(why)) => {
+                let card = crate::name!("flower_power");
+                let dropped = g.players[pid].policies.contains(&card)
+                    || self.turn_start_policies.contains(&card);
+                if dropped {
+                    think!(self.journal(), Policies, Decision, "Dropping flower power";
+                           "flower-power-in-the-dark: {why}");
+                }
+                dropped
+            }
+            _ => false,
+        };
         for card in unsafe_dark_cards {
-            think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
-                   "its downside no longer suits the {} plan", objective.as_str());
+            if !(flower_power_dropped && card == "flower_power") {
+                think!(self.journal(), Policies, Decision, "Dropping the situational card {}", plain(&card);
+                       "its downside no longer suits the {} plan", objective.as_str());
+            }
             let _ = g.apply(pid, &Action::UnslotPolicy { policy: card });
         }
 
@@ -1014,6 +1043,10 @@ impl AdvancedAi {
                             districts gain +2 Housing; into a free slot");
                     continue;
                 }
+                if flower_power_card == Some(card) {
+                    self.journal_flower_power_slotted(flower_power.as_ref(), None);
+                    continue;
+                }
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
                        "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
@@ -1060,6 +1093,21 @@ impl AdvancedAi {
                             && builder_window_card != Some(current)
                             && upgrade_card != Some(current)
                             && race_card != Some(current);
+                    }
+                    // `flower-power-in-the-dark`: the card takes the seat of a
+                    // card the portfolio ranks after it (the cards spliced in
+                    // ahead of it rank first), never a loyalty card, the
+                    // maintenance emergency's relief or the Amenity repair.
+                    if flower_power_card == Some(card) {
+                        let current = current.as_str();
+                        return desired
+                            .iter()
+                            .position(|wanted| *wanted == current)
+                            .is_none_or(|theirs| theirs > rank)
+                            && !matches!(current, "limitanei" | "praetorium")
+                            && !(maintenance_emergency
+                                && matches!(current, "conscription" | "levee_en_masse"))
+                            && !(liberalism_repair && current == "liberalism");
                     }
                     // `urban-planning-fills-the-slot`: the tail entry takes only
                     // an orphaned timed economy card's slot.
@@ -1221,7 +1269,9 @@ impl AdvancedAi {
                 };
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
-            if medina_quarter.is_some() && card == "medina_quarter" {
+            if (medina_quarter.is_some() && card == "medina_quarter")
+                || flower_power_card == Some(card)
+            {
                 Self::medina_quarter_weakest_first(g, &desired, &mut replaceable);
             }
             for current in replaceable {
@@ -1243,6 +1293,8 @@ impl AdvancedAi {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
                                "a Builder is almost finished; Serfdom adds two build charges");
+                    } else if flower_power_card == Some(card) {
+                        self.journal_flower_power_slotted(flower_power.as_ref(), Some(&current));
                     } else if let (true, Some(qualifying)) =
                         (card == "medina_quarter", medina_quarter)
                     {

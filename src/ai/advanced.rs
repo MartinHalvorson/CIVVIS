@@ -7494,6 +7494,11 @@ pub struct AdvancedAi {
     /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
+    /// `flower-power-in-the-dark`: a Culture seat in a peaceful Dark Age
+    /// slots Flower Power while it holds or can buy a Rock Band, and drops it
+    /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
+    /// Off by default.
+    flower_power_in_the_dark: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10592,6 +10597,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+mod flower_power_in_the_dark;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;

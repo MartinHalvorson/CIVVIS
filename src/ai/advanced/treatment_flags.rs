@@ -150,6 +150,8 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-at-a-quiet-parity`; see
         /// `AdvancedAi::faith_strike_at_a_quiet_parity`.
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
+        /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+        flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

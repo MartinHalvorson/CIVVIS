@@ -5508,6 +5508,11 @@ pub const GENES: &[Gene] = &[
     // the rival's army is away from our cities. Needs the strike gene. Unpriced,
     // off. See `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
+    // Live Deity Kristina 11-10: 6 of 12 games sat in a Dark Age in the
+    // Atomic era or later with Flower Power on offer, and no deck named it.
+    // A Culture seat slots it at peace while it holds or can buy a Rock Band.
+    // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
+    Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
