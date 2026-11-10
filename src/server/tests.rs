@@ -5671,25 +5671,22 @@ fn browser_orders_controls_interface_setup_and_logs() {
     }
     assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
     // The modes in the order they are offered: the AI-only simulation this
-    // engine exists for, then the human seat, then the one that is still
-    // "later". Single player is no longer "later" and is the only mode
-    // that offers a leader and a difficulty.
+    // engine exists for, then the human seat, marked as work in progress and
+    // the only mode that offers a leader and a difficulty. Multiplayer is not
+    // listed at all for now.
     assert!(
         EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player - WIP</option>"));
     assert!(!EMBEDDED_INDEX.contains("Single player · later"));
-    assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+    assert!(!EMBEDDED_INDEX.contains("Multiplayer · later"));
     let ai_sim_mode = EMBEDDED_INDEX
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find("<option value=\"single\">Single player</option>")
+        .find("<option value=\"single\">Single player - WIP</option>")
         .expect("single player mode");
-    let multiplayer_mode = EMBEDDED_INDEX
-        .find("Multiplayer · later")
-        .expect("multiplayer mode");
-    assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
+    assert!(ai_sim_mode < single_mode);
     // A world already on screen sets the mode select, so the panel beside a
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
@@ -13482,9 +13479,19 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
     assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
     assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
-    // Single player opens on the map; an explicit preference can keep the
-    // command deck open. Applying the default does not persist a choice.
-    assert!(EMBEDDED_INDEX.contains("togglePanel(chosen !== \"open\", false);"));
+    // Single player opens with the command deck showing, because auto-play
+    // lives there; a phone keeps the map, and a player's own choice survives.
+    // Applying the default does not persist a choice.
+    assert!(EMBEDDED_INDEX.contains(
+        "togglePanel(chosen ? chosen === \"closed\" : window.matchMedia(\"(max-width: 720px)\").matches, false);"
+    ));
+    // The published site says what single player is at each new game, Ack is
+    // the way out of it, and the game's keys wait until it has been answered.
+    assert!(EMBEDDED_INDEX
+        .contains("<button id=\"solo-notice-ack\" class=\"primary\" type=\"button\">Ack</button>"));
+    assert!(EMBEDDED_INDEX
+        .contains("if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;"));
+    assert!(EMBEDDED_INDEX.contains("return anyScreenOpen() || soloNoticeOpen();"));
 
     // Rankings remain available on demand. Initialization must not save the
     // default as though the player had explicitly chosen it.

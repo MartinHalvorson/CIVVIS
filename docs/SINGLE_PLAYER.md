@@ -341,8 +341,9 @@ project values them:
 
 1. **AI-only simulation**, the default. It is what the engine exists for and
    what the exhibition deployment runs, so it is what the panel opens on.
-2. **Single player**, a person in seat 0 against the agents.
-3. **Multiplayer · later**, still greyed out.
+2. **Single player - WIP**, a person in seat 0 against the agents.
+
+Multiplayer is not listed for now.
 
 The bridge to a real Civilization VI game is retained as a hidden `civ6` option
 for browser verification; it is not a public left-panel choice. When

@@ -5310,6 +5310,21 @@
     background: linear-gradient(180deg, #f3d995, #c9a24f);
   }
   #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  /* What single player is, said at the start of each new game. Above the main
+     menu too, because a game begun from there opens its leader intro at once:
+     the player acknowledges this and finds the intro waiting underneath. */
+  #solo-notice {
+    position: fixed; inset: 0; z-index: 9100; display: grid; place-items: center;
+    padding: 16px; background: #050b09b8;
+  }
+  #solo-notice[hidden] { display: none; }
+  .solo-notice-card {
+    box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto;
+    padding: clamp(16px, 3vmin, 26px); color: var(--text);
+    border: 1px solid #9f8050; border-radius: 18px;
+    background: radial-gradient(circle at 25% 0, #3a3024f8, #091310fc 62%);
+    box-shadow: 0 32px 120px #000f, inset 0 1px #ffffff17;
+  }
   /* Payoffs: what a turn delivered, across the top and clear of the panels. */
   #moments {
     /* Above the map's panels and under the screens (14 and up): a banner over
@@ -5477,6 +5492,15 @@
 </head>
 <body aria-busy="false">
 <div id="moments" aria-live="polite"></div>
+<div id="solo-notice" hidden>
+  <section class="solo-notice-card" role="dialog" aria-modal="true" aria-labelledby="solo-notice-title">
+    <div class="capture-kicker">Heads up</div>
+    <div class="capture-title" id="solo-notice-title">Single player is very questionable right now</div>
+    <p class="capture-copy">I haven't really played much of it myself yet. Feel free to give it a shot, but just a warning: it isn't really polished at all.</p>
+    <p class="capture-copy">Auto-play N turns is probably the most interesting bit of the single-player experience at the moment. It's at the top of the left panel: pick how many turns and press the button.</p>
+    <div class="capture-actions"><button id="solo-notice-ack" class="primary" type="button">Ack</button></div>
+  </section>
+</div>
 <div id="frontdoor" role="dialog" aria-modal="true" aria-label="CIVVIS main menu" hidden>
   <section class="fd-menu" id="fd-menu">
     <header>
@@ -6070,9 +6094,8 @@
         </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
-          <option value="single">Single player</option>
+          <option value="single">Single player - WIP</option>
           <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
-          <option disabled>Multiplayer · later</option>
         </select></label>
         <div id="civ6-status">
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
