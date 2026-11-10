@@ -6754,6 +6754,11 @@ pub struct AdvancedAi {
     /// Person but a Writer, Artist or Musician from then on. See
     /// `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_opens_at_nationalism: bool,
+    /// `culture-faith-site-per-theater`: the Culture Faith claim develops one
+    /// Holy Site per city with a standing Theater Square (up to six) and keeps
+    /// opening sources until Faith reaches twenty a city. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

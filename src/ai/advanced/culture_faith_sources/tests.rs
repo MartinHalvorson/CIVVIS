@@ -337,3 +337,95 @@ fn two_theaters_open_the_sources_before_an_amphitheater_when_the_gene_is_on() {
     ai.enable_culture_faith_opens_at_the_theaters();
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
 }
+
+fn complete_source(g: &mut Game, cid: u32) {
+    crate::game::install_test_district(g, cid, "holy_site");
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .extend([crate::name!("shrine"), crate::name!("temple")]);
+}
+
+#[test]
+fn per_theater_budget_opens_a_site_in_every_theater_city() {
+    let (mut g, mut ai, plan, cities) = fixture(4);
+    complete_source(&mut g, cities[0]);
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "off: one site per three cities"
+    );
+    ai.enable_culture_faith_site_per_theater();
+    for _ in &cities[1..] {
+        let (city, item, _) = ai
+            .culture_faith_source_target(&g, 0, &plan)
+            .expect("a Theater city without a site gets one");
+        assert_ne!(city, cities[0]);
+        assert!(
+            matches!(&item, Item::District { district, .. } if g.district_family(*district) == "holy_site")
+        );
+        complete_source(&mut g, city);
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "every Theater city holds its site"
+    );
+}
+
+#[test]
+fn per_theater_budget_never_outruns_the_theaters() {
+    let (mut g, mut ai, plan, cities) = fixture(4);
+    ai.enable_culture_faith_site_per_theater();
+    let bare = cities[3];
+    let removed = g
+        .cities
+        .get_mut(&bare)
+        .unwrap()
+        .districts
+        .remove(crate::name!("theater_square"))
+        .unwrap();
+    for pos in removed {
+        g.map.tiles.get_mut(&pos).unwrap().district = None;
+    }
+    for &cid in &cities[..3] {
+        complete_source(&mut g, cid);
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "three Theater cities, three sites: the fourth city builds its Theater first"
+    );
+}
+
+#[test]
+fn per_theater_ceiling_is_twenty_a_city() {
+    let (mut g, mut ai, plan, _) = fixture(3);
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        0,
+        Yields {
+            faith: 40.0,
+            ..Default::default()
+        },
+    );
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "off: eight a city stops three cities at 24"
+    );
+    ai.enable_culture_faith_site_per_theater();
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        0,
+        Yields {
+            faith: 60.0,
+            ..Default::default()
+        },
+    );
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
+}
+
+#[test]
+fn per_theater_opens_two_theater_cities() {
+    let (g, mut ai, plan, _) = fixture(2);
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
+    ai.enable_culture_faith_site_per_theater();
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
+}
