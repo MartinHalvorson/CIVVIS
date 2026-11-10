@@ -631,7 +631,18 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     game.players[carthage].civ = "Auckland".to_string();
     let ancient = game.player_tile_yields(0, water, &game.map.tiles[&water]);
     assert_close(ancient.production, baseline.production + 1.0);
+    // `REQUIREMENT_PLAYER_ERA_AT_LEAST`: the world moving on is not enough.
     game.world_era = 4;
+    let world_only = game.player_tile_yields(0, water, &game.map.tiles[&water]);
+    assert_close(world_only.production, baseline.production + 1.0);
+    let industrial_tech = game
+        .rules
+        .techs
+        .iter()
+        .find(|(_, spec)| spec.era == 4)
+        .map(|(name, _)| name.clone())
+        .expect("the tree has an Industrial technology");
+    game.players[0].techs.insert(industrial_tech);
     let industrial = game.player_tile_yields(0, water, &game.map.tiles[&water]);
     assert_close(industrial.production, baseline.production + 2.0);
 }
@@ -1817,4 +1828,45 @@ fn envoy_and_tributary_policy_income_is_the_players_not_the_capitals() {
     assert!((with_raj.gold - before_raj.gold - 4.0).abs() < 1e-9);
     // And the per-turn extras every reader adds carry it.
     assert!((game.player_yield_extras(0).science - with_raj.science).abs() < 1e-9);
+}
+
+#[test]
+fn wolin_pays_the_great_person_of_the_killers_own_class() {
+    // `ABILITY_WOLIN_LAND_UNITS` and `ABILITY_WOLIN_NAVAL_UNITS` hang the
+    // points on the unit that made the kill, 25% of the victim's strength.
+    let (mut game, cities) = game_with_capitals(2, 89_120);
+    let minor = add_city_state(&mut game, "Wolin");
+    make_suzerain(&mut game, 0, minor);
+    let id = game.spawn_test_unit("warrior", 1, game.cities[&cities[1]].pos);
+    let warrior = game.units[&id].clone();
+    let mut galley = warrior.clone();
+    galley.kind = crate::name!("galley");
+    let points = |game: &Game, kind: &str| game.players[0].gpp.get(kind).copied().unwrap_or(0.0);
+
+    // A land unit that sinks a ship earns General points.
+    game.record_kill(0, Some("warrior"), &galley);
+    assert_close(
+        points(&game, "general"),
+        game.game_speed
+            .scale(game.rules.units["galley"].strength * 0.25),
+    );
+    assert_close(points(&game, "admiral"), 0.0);
+
+    // And a ship that kills a land unit earns Admiral points.
+    game.players[0].gpp.clear();
+    game.record_kill(0, Some("galley"), &warrior);
+    assert_close(
+        points(&game, "admiral"),
+        game.game_speed
+            .scale(game.rules.units["warrior"].strength * 0.25),
+    );
+    assert_close(points(&game, "general"), 0.0);
+
+    // Aircraft, carriers and the Giant Death Robot are on neither list.
+    game.players[0].gpp.clear();
+    for killer in ["biplane", "aircraft_carrier", "giant_death_robot"] {
+        game.record_kill(0, Some(killer), &warrior);
+    }
+    assert_close(points(&game, "general"), 0.0);
+    assert_close(points(&game, "admiral"), 0.0);
 }

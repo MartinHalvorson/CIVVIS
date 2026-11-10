@@ -1360,7 +1360,9 @@ impl Game {
             });
 
         if is_coast_or_lake && self.grants_city_state_unique_bonus(pid, "Auckland") {
-            yields.production += if self.world_era >= 4 { 2.0 } else { 1.0 };
+            // `REQUIRES_PLAYER_IS_INDUSTRIAL_ERA` is
+            // `REQUIREMENT_PLAYER_ERA_AT_LEAST`: the suzerain's own era.
+            yields.production += if self.player_era(pid) >= 4 { 2.0 } else { 1.0 };
         }
 
         if !tile.pillaged && tile.improvement.is_none() && tile.feature.is_some() {
