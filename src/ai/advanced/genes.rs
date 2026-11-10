@@ -5492,6 +5492,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: p-r ------------------------------------------------
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },
+    Gene { tag: "religion-seat-reveals-the-capitals", field: "religion_seat_reveals_the_capitals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reveals_the_capitals, disable: AdvancedAi::disable_religion_seat_reveals_the_capitals },
     Gene { tag: "religion-denial-needs-the-edge", field: "religion_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_denial_needs_the_edge, disable: AdvancedAi::disable_religion_denial_needs_the_edge },
     Gene { tag: "religion-seat-slots-the-orders", field: "religion_seat_slots_the_orders", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_slots_the_orders, disable: AdvancedAi::disable_religion_seat_slots_the_orders },
     // A Religion-target founder's spreaders take the cheapest conversions first. Unpriced, off.

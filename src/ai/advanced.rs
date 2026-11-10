@@ -8465,6 +8465,9 @@ pub struct AdvancedAi {
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
     religion_seat_reaches_reformed_church: bool,
+    /// A Religion-target founder sends an Embassy to a rival with no known
+    /// city. See `religion_seat_reveals_the_capitals`. Opt-in, off by default.
+    religion_seat_reveals_the_capitals: bool,
     /// Require the launcher counter's military edge for a Religion seat's
     /// separate science-denial declaration. Opt-in; see `religion_denial_needs_the_edge`.
     religion_denial_needs_the_edge: bool,
@@ -26475,6 +26478,8 @@ mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
+/// An Embassy locates an otherwise unlocated rival for the religious corps.
+mod religion_seat_reveals_the_capitals;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 /// `religion-seat-spends-the-bank`: see
