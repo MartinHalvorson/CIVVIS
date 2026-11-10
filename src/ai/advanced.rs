@@ -6769,6 +6769,11 @@ pub struct AdvancedAi {
     /// researches Astrology once its first Theater Square stands. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater: bool,
+    /// `culture-seat-appoints-pingala-first`: a Culture target spends its
+    /// first Governor titles on Pingala and Connoisseur instead of the
+    /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
+    /// Opt-in.
+    culture_seat_appoints_pingala_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10801,6 +10806,7 @@ mod culture_open_borders;
 /// `culture-seat-builds-past-the-deterrent`: see
 /// `advanced/culture_past_the_deterrent.rs`.
 mod culture_past_the_deterrent;
+mod culture_pingala_first;
 mod culture_work_purchase;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.

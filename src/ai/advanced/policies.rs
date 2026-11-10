@@ -1510,7 +1510,7 @@ impl AdvancedAi {
         })
     }
 
-    fn preferred_governor_promotion(
+    pub(super) fn preferred_governor_promotion(
         &self,
         g: &Game,
         pid: usize,
@@ -1518,6 +1518,7 @@ impl AdvancedAi {
         governor: &str,
     ) -> Option<String> {
         let available = g.available_governor_promotions(pid, governor);
+        let strategy = self.pingala_title_strategy(g, strategy, governor);
         Self::governor_promotion_priority(strategy, governor)
             .iter()
             .find(|promotion| available.iter().any(|candidate| candidate == **promotion))
@@ -1525,8 +1526,9 @@ impl AdvancedAi {
     }
 
     pub(super) fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let strategy = self.governor_title_strategy(g, plan.strategy);
         while g.governor_titles_available(pid) > 0 {
-            let priority = self.governor_priority_for(g, pid, plan.strategy);
+            let priority = self.governor_priority_for(g, pid, strategy);
             let priority = priority.as_slice();
             // Strategy can change every assessment window, but Governor
             // Titles arrive much more slowly. Finish the earliest incumbent's
@@ -1563,7 +1565,7 @@ impl AdvancedAi {
                 .unwrap_or(0);
             if primary_promotions < 2 {
                 if let Some(promotion) =
-                    self.preferred_governor_promotion(g, pid, plan.strategy, primary)
+                    self.preferred_governor_promotion(g, pid, strategy, primary)
                 {
                     if g.apply(
                         pid,
@@ -1605,7 +1607,7 @@ impl AdvancedAi {
             }
 
             if let Some(promotion) =
-                self.preferred_governor_promotion(g, pid, plan.strategy, primary)
+                self.preferred_governor_promotion(g, pid, strategy, primary)
             {
                 if g.apply(
                     pid,
@@ -1647,7 +1649,7 @@ impl AdvancedAi {
             }
 
             let next_promotion = priority.iter().find_map(|governor| {
-                self.preferred_governor_promotion(g, pid, plan.strategy, governor)
+                self.preferred_governor_promotion(g, pid, strategy, governor)
                     .map(|promotion| ((*governor).to_string(), promotion))
             });
             if let Some((governor, promotion)) = next_promotion {
