@@ -146,7 +146,7 @@ impl AdvancedAi {
         match trigger {
             "corps" => (g.players[pid].civics.contains(&Name::new(CORPS_CIVIC))
                 && Self::corps_pairs(g, pid) >= remaining)
-                .then(|| CORPS_TURNS_EACH * remaining as f64),
+                .then_some(CORPS_TURNS_EACH * remaining as f64),
             "pop" if remaining == 1 => g
                 .player_city_ids(pid)
                 .into_iter()
@@ -271,7 +271,7 @@ impl AdvancedAi {
         let current = player
             .research
             .as_deref()
-            .filter(|current| g.rules.techs.contains_key(*current))
+            .filter(|&current| g.rules.techs.contains_key(current))
             .map_or(0.0, |current| left(current, player.research_progress));
         Some(current + left(tech, 0.0))
     }
