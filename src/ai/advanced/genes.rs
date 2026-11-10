@@ -5504,6 +5504,11 @@ pub const GENES: &[Gene] = &[
     // Temple with 120-290 Gold banked. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
+    // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
+    // beeline by when each Inspiration lands, and researches the technology
+    // that inspires a near road civic first. Opt-in; see
+    // `advanced/culture_road_inspirations.rs`.
+    Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
