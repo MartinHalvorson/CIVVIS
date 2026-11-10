@@ -6044,7 +6044,13 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     let city = game.player_city_ids(0)[0];
     game.players[0].religion = Some("Planned Faith".to_string());
-    game.players[0].religion_beliefs = vec!["work_ethic".to_string(), "tithe".to_string()];
+    // Native mirrors retain the pantheon as well as the two founding beliefs.
+    game.players[0].pantheon = Some("divine_spark".to_string());
+    game.players[0].religion_beliefs = vec![
+        "divine_spark".to_string(),
+        "work_ethic".to_string(),
+        "tithe".to_string(),
+    ];
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
 
     let first = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
@@ -6057,7 +6063,8 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     let second = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
     game.units.get_mut(&second).unwrap().religion = Some("Planned Faith".to_string());
     assert!(ai.advanced_religious_step(&mut game, 0, second, false));
-    assert_eq!(game.players[0].religion_beliefs.len(), 4);
+    assert_eq!(game.religion_belief_count(0), 4);
+    assert_eq!(game.players[0].religion_beliefs.len(), 5);
     assert_eq!(
         game.players[0]
             .religion_beliefs
