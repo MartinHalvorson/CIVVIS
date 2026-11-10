@@ -79,6 +79,17 @@ fn refused_harvest_cannot_spend_the_builders_turn_in_speculation() {
 }
 
 #[test]
+fn an_improved_tile_offers_no_clearing_or_harvest() {
+    let (mut game, builder, site, _) = fixture();
+    assert!(!game.builder_operations(0, site).is_empty(), "fixture");
+    game.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("camp"));
+    assert!(game.builder_operations(0, site).is_empty());
+    assert!(game.do_improve(0, builder, "harvest_resource").is_err());
+    assert!(game.do_improve(0, builder, "chop_woods").is_err());
+    assert_eq!(game.map.tiles[&site].resource, Some(crate::name!("deer")));
+}
+
+#[test]
 fn site_refusals_cover_clearing_and_releasing_them_restores_it() {
     let (mut game, builder, site, _) = fixture();
     std::sync::Arc::make_mut(&mut game.blocked_improvement_sites).insert(site);

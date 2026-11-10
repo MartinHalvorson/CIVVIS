@@ -1407,6 +1407,11 @@ impl Game {
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
             || self.city_at(pos).is_some()
+            // The host will not clear or harvest under an improvement. Across
+            // 70 live logs (2026-11-10), all 81 orders to chop or clear an
+            // improved tile failed (43 of them forests under Lumber Mills),
+            // as did 32 of 33 harvests. Each one spent a planned Builder turn.
+            || tile.improvement.is_some()
         {
             return vec![];
         }
