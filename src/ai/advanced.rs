@@ -6774,6 +6774,21 @@ pub struct AdvancedAi {
     /// that inspires a near civic of the road to Cold War first. See
     /// `advanced/culture_road_inspirations.rs`. Off by default.
     culture_road_earns_its_inspirations: bool,
+    /// `culture-digs-every-site`: a Culture seat keeps an Archaeological
+    /// Museum per three reachable Antiquity Sites (at most two), claims the
+    /// Museum city's queue for an Archaeologist, and walks it on past a site
+    /// it cannot reach. Carries `culture-digs-one-museum`. See
+    /// `advanced/culture_digs_every_site.rs`. Off by default.
+    culture_digs_every_site: bool,
+    /// `curator-sits-with-the-works`: once a Culture seat holds four Writing,
+    /// Art or Music works, Curator is Pingala's next promotion, and a Pingala
+    /// holding it sits in the city holding the most of them. See
+    /// `advanced/curator_sits_with_the_works.rs`. Off by default.
+    curator_sits_with_the_works: bool,
+    /// `culture-digs-every-site`: sites an Archaeologist failed to step
+    /// toward, by tile, with the turn each is open again. Empty with the gene
+    /// off.
+    dig_dead_sites: BTreeMap<Pos, u32>,
     /// `denial-war-needs-the-lane-edge`: off Domination, the science-denial
     /// war needs the launcher counter's edge over the rival's steady power
     /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.
@@ -7866,6 +7881,11 @@ pub struct AdvancedAi {
     /// empire can hold, while a city founded now still repays. See
     /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
     good_land_lifts_the_city_target: bool,
+    /// `great-works-never-wait`: a Culture seat never sells a Great Work,
+    /// moves a Writing out of the Palace into an empty Amphitheater slot, and
+    /// claims a slot building for an Artist or Musician the host cannot seat.
+    /// See `advanced/great_works_never_wait.rs`. Off by default.
+    great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
@@ -10615,6 +10635,8 @@ mod granary_payback;
 /// remedies for a class earned and blocked. See
 /// `advanced/great_person_housing.rs`.
 mod great_person_housing;
+/// `great-works-never-wait`: see `advanced/great_works_never_wait.rs`.
+mod great_works_never_wait;
 mod host_war_losses;
 mod housing_research;
 mod live_gp_commitment;
@@ -10807,6 +10829,8 @@ mod diplo_wonder_claim;
 mod artifact_activation_tests;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
+/// `culture-digs-every-site`: see `advanced/culture_digs_every_site.rs`.
+mod culture_digs_every_site;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 mod culture_open_borders;
@@ -10814,6 +10838,8 @@ mod culture_open_borders;
 /// `advanced/culture_past_the_deterrent.rs`.
 mod culture_past_the_deterrent;
 mod culture_work_purchase;
+/// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
+mod curator_sits_with_the_works;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
@@ -14839,6 +14865,9 @@ impl AdvancedAi {
         // Museums. Lent for the call; see `advanced/culture_dig_museum.rs`.
         let restore_dig_museum = self.base.digs_one_museum;
         self.base.digs_one_museum = self.dig_museum_lane_active(g);
+        // `culture-digs-every-site`: lent the same way; zero with it off.
+        let restore_dig_museums_wanted = self.base.dig_museums_wanted;
+        self.base.dig_museums_wanted = self.dig_museums_wanted(g, pid);
         // `purchases-keep-the-upkeep-reserve`: the delegated governor's own
         // Gold pass bought the Lighthouse that, with a Shrine, took
         // civvis-20261013T220550Z to 17 Gold at turn 199. Lent for the call;
@@ -14869,6 +14898,7 @@ impl AdvancedAi {
             self.base.prefers_priced_melee = restore_priced_melee;
             self.base.exclude_space_race = restore_space_race;
             self.base.digs_one_museum = restore_dig_museum;
+            self.base.dig_museums_wanted = restore_dig_museums_wanted;
             self.base.w.mil_per_city = restore_military;
             self.base.w.faith_builder = restore_faith_builder;
             self.base.lent_military_floor_base = None;
@@ -14903,6 +14933,7 @@ impl AdvancedAi {
         self.base.prefers_priced_melee = restore_priced_melee;
         self.base.exclude_space_race = restore_space_race;
         self.base.digs_one_museum = restore_dig_museum;
+        self.base.dig_museums_wanted = restore_dig_museums_wanted;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
@@ -20071,9 +20102,13 @@ impl AdvancedAi {
                 .as_ref()
                 .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
             // `culture-seat-monuments`: the claimed Monument finishes.
-            let culture_monument_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
+            // `culture-digs-every-site` and `great-works-never-wait`: the
+            // claimed Archaeologist and slot building finish too.
+            let culture_monument_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.culture_monument_holds(g, pid, cid, plan, item)
+                    || self.dig_archaeologist_holds(g, pid, cid, plan, item)
+                    || self.great_work_slot_building_holds(g, pid, cid, plan, item)
+            });
             // `diplo-seat-statue-harbor`: the Statue's Harbor finishes.
             let statue_harbor_commitment = committed
                 .as_ref()
@@ -25795,6 +25830,9 @@ impl AdvancedAi {
             // `advanced/gold_buys_the_production_tile.rs`.
             self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
+            // `culture-digs-every-site`: an Archaeologist whose queue is slow.
+            // See `advanced/culture_digs_every_site.rs`.
+            self.dig_archaeologist_purchase(g, pid, &plan);
             // `gold-buys-the-backlog-builder`: past the opening buy and the
             // route slot's Trader, a Builder for the unimproved worked tiles
             // the queues have not answered. See

@@ -1,0 +1,18 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "great-works-never-wait",
+  "scope": "One frozen ci-profile civvis_orders built from this branch, run on clones of live Deity Kristina civvis-20261110T140731Z (t119, t130, t140) and civvis-20261110T161648Z-cont2 (t75, t124, t161, t178) events.jsonl, each with its run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. Orders changed at 140731Z t119 and cont2 t161 (the off arm's sell order for a placed Great Work, Cantemir and Kengyo, is withheld; note work_sale_held) and cont2 t75 (Margaret Cavendish's MOVE_TO the Palace plot (12,21) becomes MOVE_TO the Theater (13,21) with two empty Amphitheater slots; note writer_palace_retargets=1). The slot-building claim changed no order on these boards (140731Z t130/t140: Goteborg was already building the Art Museum; cont2 t124/t178: no Theater city could build one). Proposed actions only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-great-works-never-wait.native-queries.tar.xz",
+    "sha256": "9e63aaffc269c5b8dfcbd7be3823b8faa0deea3c146e5c8d199b2ec3be2c68ef"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json",
+    "native-queries/0006/result.json"
+  ]
+}

@@ -1651,7 +1651,11 @@ impl BasicAi {
             let tiebreak = self.slot_kind_tiebreak;
             // `culture-digs-one-museum`: a Culture seat's first Museum takes the
             // Artifact slot. See `advanced/culture_dig_museum.rs`.
-            let dig_first = self.digs_one_museum && !Self::owns_dig_museum(g, pid);
+            // `culture-digs-every-site`: the same tie-break until the wanted
+            // Museums stand. Zero (off) leaves the line above unchanged.
+            let dig_first = (self.digs_one_museum && !Self::owns_dig_museum(g, pid))
+                || (self.dig_museums_wanted > 0
+                    && Self::dig_museums_owned(g, pid) < self.dig_museums_wanted);
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak && !dig_first {
                     return 0.0;
@@ -1750,7 +1754,7 @@ impl BasicAi {
     }
 
     fn culture_museum_digger(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        if !self.digs_one_museum
+        if !(self.digs_one_museum || self.dig_museums_wanted > 0)
             || self.minor
             || self.barb
             || self.plan_threatened_city == Some(cid)
