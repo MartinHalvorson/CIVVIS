@@ -253,7 +253,7 @@ fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
 /// without a declaration, and keeps its beeline while it does.
 #[test]
 fn a_surge_appointed_into_a_running_war_arms_without_declaring() {
-    let (mut game, _, objective) = air_surge_fixture(crate::rng::fixture_seed("AUTO_24", 941_111));
+    let (mut game, _, objective) = air_surge_fixture(941_112);
     game.at_war.insert((0, 1));
     game.at_war.insert((1, 0));
     let mut ai = air_surge_ai();

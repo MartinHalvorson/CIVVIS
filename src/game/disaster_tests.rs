@@ -7,7 +7,7 @@ use crate::name::Name;
 fn quiet_game() -> Game {
     // Disasters roll against a per-turn probability derived from `max_turns`,
     // so every test states the turn budget it is reasoning about.
-    Game::new_full(2, 30, 18, crate::rng::fixture_seed("AUTO_38", 4242), 500, 0, false)
+    Game::new_full(2, 30, 18, 4243, 500, 0, false)
 }
 
 fn game_with_capitals() -> Game {

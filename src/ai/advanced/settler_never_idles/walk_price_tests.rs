@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn an_older_exhausted_settler_prices_the_remaining_walk() {
-    let mut g = Game::new_full(1, 30, 20, crate::rng::fixture_seed("AUTO_14", 91_301), 250, 0, false);
+    let mut g = Game::new_full(1, 30, 20, 91_347, 250, 0, false);
     let settler = g
         .player_unit_ids(0)
         .into_iter()

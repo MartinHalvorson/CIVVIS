@@ -8,7 +8,7 @@ fn board() -> (Game, u32, Vec<u32>, StrategicPlan) {
         2,
         24,
         16,
-        crate::rng::fixture_seed("CAPITALCAMPUS", 91_771),
+        crate::rng::fixture_seed("CAPITALCAMPUS", 91_772),
         250,
         0,
         false,

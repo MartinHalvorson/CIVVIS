@@ -7,7 +7,7 @@ fn board() -> (Game, AdvancedAi, StrategicPlan, u32) {
 }
 
 fn board_with_players(players: usize) -> (Game, AdvancedAi, StrategicPlan, u32) {
-    let mut g = Game::new(players, 32, 22, crate::rng::fixture_seed("AUTO_8", 71), 250, 0);
+    let mut g = Game::new(players, 32, 22, 71, 250, 0);
     g.game_speed = GameSpeed::Online;
     // The rules under test are the investment planner's. Where this seed's
     // Barbarians happen to land must not decide what the city is free to do.
@@ -476,7 +476,7 @@ fn wide() -> AdvancedAi {
 
 /// A capital plus one other city, everything explored, both queues empty.
 fn two_cities() -> (Game, u32, u32) {
-    let mut g = Game::new(2, 32, 22, crate::rng::fixture_seed("AUTO_7", 71), 250, 0);
+    let mut g = Game::new(2, 32, 22, 73, 250, 0);
     g.game_speed = GameSpeed::Online;
     g.difficulty = "emperor".to_string();
     let settler = g

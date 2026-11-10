@@ -571,7 +571,7 @@ fn at_war_a_unit_keeps_its_queue() {
 /// the same turn.
 #[test]
 fn version_two_claims_every_eligible_city_from_two_citizens() {
-    let (mut game, ranked) = campus_less_empire(crate::rng::fixture_seed("AUTO_2", 95_107), 1);
+    let (mut game, ranked) = campus_less_empire(95_108, 1);
     all_queue(&mut game, &ranked, &unit("knight"));
     for cid in &ranked {
         game.cities.get_mut(cid).unwrap().pop = FREE_SLOT_CAMPUS_MIN_POP_2;

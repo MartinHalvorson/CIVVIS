@@ -4,7 +4,7 @@ use crate::game::{Action, DealItems};
 use std::sync::Arc;
 
 fn board() -> Game {
-    let mut g = Game::new_full(3, 30, 20, 79_208, 250, 0, false);
+    let mut g = Game::new_full(3, 30, 20, crate::rng::fixture_seed("AUTO_101", 79_208), 250, 0, false);
     for pid in 0..3 {
         g.current = pid;
         let unit = g

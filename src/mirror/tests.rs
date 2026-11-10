@@ -3280,7 +3280,7 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
         chunk: 1,
         plots: vec![plot(3, 3, "TERRAIN_GRASS")],
     }]);
-    let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+    let rebuilt = rebuild_from_state(&snapshot, &state, 6, crate::rng::fixture_seed("MIRRORCONGRESS", 1), 250, 0);
     // Seat 0 is ours and host player 3 is the met rival, so its stable model
     // seat is 3. The congress table fills the other host ids in place,
     // including the majors the seat has never met.
@@ -3320,7 +3320,7 @@ fn congress_standing_seats_the_majors_this_seat_never_met() {
             ..state.clone()
         },
         6,
-        1,
+        crate::rng::fixture_seed("MIRRORCONGRESS", 1),
         250,
         0,
     );
