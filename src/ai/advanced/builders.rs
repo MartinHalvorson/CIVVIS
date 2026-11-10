@@ -614,6 +614,12 @@ impl AdvancedAi {
         if let Some(acted) = self.chop_for_expansion_step(g, pid, uid, strategy) {
             return acted;
         }
+        // `chop-feeds-the-long-build`: the same errand for a district, a
+        // wonder or a space-race project. After the Settler, which is the
+        // shorter deadline. `None` with the gene off, before anything is read.
+        if let Some(acted) = self.chop_feeds_the_long_build_step(g, pid, uid, strategy) {
+            return acted;
+        }
         if let Some(acted) = self.air_resource_builder_step(g, pid, uid) {
             return acted;
         }

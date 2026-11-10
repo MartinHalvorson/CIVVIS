@@ -407,6 +407,11 @@ impl AdvancedAi {
         let wide_city_target = self.expansion_wide_city_target(g);
         let desired_cities =
             wide_city_target.map_or(desired_cities, |wide| desired_cities.max(wide));
+        // `good-land-lifts-the-city-target`: one more city, to at most twelve,
+        // for each good seat the empire can hold while a city still repays.
+        // Every cut below still applies. See
+        // `advanced/good_land_lifts_the_city_target.rs`.
+        let desired_cities = self.good_land_city_target(g, pid, desired_cities, &cities);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -576,7 +581,14 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
-        let (strategy, because) = if at_war
+        // A final war has no later to recover for and no race left to deny:
+        // every civilization in it attacks. See `last_civ_standing`.
+        let (strategy, because) = if last_civ_standing::fights_the_final_war(g, pid) {
+            (
+                GrandStrategy::Conquest,
+                "only the last civilization standing wins",
+            )
+        } else if at_war
             && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
@@ -1425,6 +1437,12 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // A final war aims at the nearest rival city, whichever race the
+        // ranking above would still be countering. See `last_civ_standing`.
+        let (target_player, target_city) = match self.final_war_objective(g, pid) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
 
         if let Some(capital) =
             finishing_capital.filter(|capital| committed_target_city != Some(*capital))

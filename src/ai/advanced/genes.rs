@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // takes a resource-priced melee unit whenever a city can start one.
     // Opt-in; see the field.
     Gene { tag: "domination-spends-the-stock", field: "domination_spends_the_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_spends_the_stock, disable: AdvancedAi::disable_domination_spends_the_stock },
+    // `chop-feeds-the-long-build`: a Builder clears a forest into a district
+    // or wonder its city needs many turns for, or into a space-race project.
+    // Opt-in; see `advanced/chop_feeds_the_long_build.rs`.
+    Gene { tag: "chop-feeds-the-long-build", field: "chop_feeds_the_long_build", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_long_build, disable: AdvancedAi::disable_chop_feeds_the_long_build },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5481,6 +5485,10 @@ pub const GENES: &[Gene] = &[
     // Live 11-09: 21 Gurus spent 80 turns within 4 tiles of a wounded friend
     // and 13 beside one, and walked at rivals that killed 8 of 16 they hit.
     Gene { tag: "guru-walks-to-the-wounded", field: "guru_walks_to_the_wounded", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_walks_to_the_wounded, disable: AdvancedAi::disable_guru_walks_to_the_wounded },
+    // Operator 11-09: raise the city target to twelve, at the seat's
+    // discretion, for good land only. The target rises above ten by one city
+    // per good holdable seat. See `good_land_lifts_the_city_target.rs`.
+    Gene { tag: "good-land-lifts-the-city-target", field: "good_land_lifts_the_city_target", kind: Kind::OptIn, enable: AdvancedAi::enable_good_land_lifts_the_city_target, disable: AdvancedAi::disable_good_land_lifts_the_city_target },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
