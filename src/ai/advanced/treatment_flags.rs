@@ -100,6 +100,9 @@ impl AdvancedAi {
         /// Opt-in gene `kristina-fills-to-theme`; see
         /// `advanced/kristina_fills_to_theme.rs`.
         base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
+        /// Opt-in gene `band-plays-what-it-can-reach`; see
+        /// `advanced/band_plays_what_it_can_reach.rs`.
+        base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

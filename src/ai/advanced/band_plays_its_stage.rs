@@ -21,8 +21,21 @@ struct StageCounts {
     surf: usize,
 }
 
-fn stage_counts(g: &Game, pid: usize) -> StageCounts {
+/// `reach`: under `band-plays-what-it-can-reach`, the band being promoted. A
+/// stage then counts only in land open to our bands and within the tour's
+/// fifteen turns of it: live 20261110T164254Z took Reggae Rock for three
+/// Water Parks, two of them behind Music Censorship and the third a sea
+/// voyage away.
+fn stage_counts(g: &Game, pid: usize, reach: Option<u32>) -> StageCounts {
     let mut counts = StageCounts::default();
+    let moves = reach.map_or(1.0, |uid| g.unit_max_moves(uid).max(1.0));
+    let reachable = |pos: Pos| {
+        reach.is_none_or(|uid| {
+            g.route_distance(uid, pos, 0).is_some_and(|distance| {
+                distance as f64 / moves <= crate::ai::ROCK_BAND_TOUR_MAX_TURNS
+            })
+        })
+    };
     for (pos, tile) in &g.map.tiles {
         let Some(city) = tile.owner_city.and_then(|cid| g.cities.get(&cid)) else {
             continue;
@@ -34,7 +47,11 @@ fn stage_counts(g: &Game, pid: usize) -> StageCounts {
             || owner.is_barbarian
             || !owner.alive
             || !g.players[pid].explored.contains(pos)
+            || (reach.is_some() && g.bars_foreign_rock_bands(city.owner, pid))
         {
+            continue;
+        }
+        if reach.is_some() && !reachable(*pos) {
             continue;
         }
         if tile.wonder.is_some() {
@@ -89,7 +106,11 @@ impl AdvancedAi {
         if offered.is_empty() {
             return None;
         }
-        let counts = stage_counts(g, pid);
+        let counts = stage_counts(
+            g,
+            pid,
+            self.base.band_plays_what_it_can_reach.then_some(uid),
+        );
         let level = g.rock_band_performance_level(unit, 0).clamp(1, 4) as usize;
         let multiple = |bonus: usize| Game::rock_band_stage_multiple(level, bonus).0;
         let held_bonus = unit

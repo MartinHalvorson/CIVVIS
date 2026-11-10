@@ -139,6 +139,15 @@ const MOVE_REFUSAL_STRIKES: u8 = 2;
 /// mirror mis-guessed — to change, short enough that a transient one does not
 /// disfigure routes for an era.
 const MOVE_REFUSAL_BLOCK_TURNS: u32 = 8;
+/// `band-plays-what-it-can-reach`: standard turns a host's venues are skipped
+/// after it walked one of our bands nowhere. The rule's own blocker (Music
+/// Censorship, a war, a closed passage) rarely lifts sooner.
+const BAND_REFUSAL_BAR_TURNS: u32 = 8;
+/// `band-plays-what-it-can-reach`: venues a band tries to step toward in one
+/// call before it settles for the stage under it.
+const BAND_TOUR_TRIES: usize = 6;
+/// The longest trip, in turns at full movement, the career-priced tours take.
+const ROCK_BAND_TOUR_MAX_TURNS: f64 = 15.0;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
@@ -2102,6 +2111,25 @@ pub struct BasicAi {
     /// one drawn from a rival far below the bar closes it once. Off by
     /// default; opt-in gene. See `advanced/bands_draw_from_the_bar.rs`.
     pub(crate) bands_draw_from_the_bar: bool,
+    /// `band-plays-what-it-can-reach`: a Rock Band never stands idle beside a
+    /// venue it cannot get into. Each turn it plays, or steps toward the best
+    /// venue it can actually take a step toward (the next one down when the
+    /// best one's step is refused), and a trip the host walked nowhere bars
+    /// that venue's host for a few turns, so the next turn aims elsewhere. The
+    /// promotion chooser counts only stages in land open to our bands and
+    /// within the tour's reach. Live 20261110T164254Z: three bands spent 65 of
+    /// 102 band-turns standing still at a closed border while the band itself
+    /// stood on the only stage it could have played. Off by default; opt-in
+    /// gene. See `advanced/band_plays_what_it_can_reach.rs`.
+    pub(crate) band_plays_what_it_can_reach: bool,
+    /// `band-plays-what-it-can-reach`: each band's trip this turn, keyed by
+    /// [`BasicAi::band_memory_key`]: the turn, the tile it stood on when it
+    /// first moved that turn, and the venue it set out for.
+    band_trips: RefCell<HashMap<i64, (u32, Pos, Pos)>>,
+    /// `band-plays-what-it-can-reach`: hosts, by civilization, whose venues
+    /// our bands skip until the turn given, because the host refused a trip
+    /// toward one of them.
+    band_refused_hosts: RefCell<HashMap<String, u32>>,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -3858,6 +3886,9 @@ impl BasicAi {
             apostle_promotion_by_role: false,
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
+            band_plays_what_it_can_reach: false,
+            band_trips: RefCell::new(HashMap::new()),
+            band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4283,6 +4314,9 @@ impl BasicAi {
             apostle_promotion_by_role: false,
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
+            band_plays_what_it_can_reach: false,
+            band_trips: RefCell::new(HashMap::new()),
+            band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
             live_religious_purchase_guard: false,
             recon_replacement: false,
@@ -4788,6 +4822,7 @@ impl BasicAi {
         self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
         self.move_refusal_watch.get_mut().clear();
+        self.band_trips.get_mut().clear();
         self.move_refusal_strikes.clear();
         self.move_refusal_blocks.clear();
         self.host_move_feedback.clear();
@@ -7541,17 +7576,14 @@ impl BasicAi {
             return false;
         };
         let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        if self.band_plays_what_it_can_reach {
+            return self.rock_band_reachable_step(g, pid, uid, here, can_perform_here);
+        }
         // Passing through a legal venue must not abandon the better tour the
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex
         // away. Rank the current venue at zero travel alongside the others.
-        let tour = if self.bands_draw_from_the_bar {
-            Self::rock_band_bar_destination(g, pid, uid)
-        } else if self.band_plays_its_stage {
-            Self::rock_band_stage_destination(g, pid, uid)
-        } else {
-            Self::rock_band_tour_destination(g, pid, uid)
-        };
+        let tour = self.rock_band_ranked_venues(g, pid, uid).first().copied();
         if let Some(target) = tour.filter(|target| *target != here) {
             if let Some(next) = g.route_step(uid, target, 0) {
                 if self.path_move(g, pid, uid, next) {
@@ -7563,11 +7595,137 @@ impl BasicAi {
         can_perform_here && g.apply(pid, &Action::PerformConcert { unit: uid }).is_ok()
     }
 
+    /// Every venue this band could tour to, best first, by whichever scorer
+    /// the seat plays (`bands-draw-from-the-bar`, `band-plays-its-stage`, or
+    /// the stock tour).
+    fn rock_band_ranked_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        if self.bands_draw_from_the_bar {
+            Self::rock_band_career_ranking(g, uid, |position| {
+                g.rock_concert_bar_value(pid, uid, position)
+            })
+        } else if self.band_plays_its_stage {
+            Self::rock_band_career_ranking(g, uid, |position| {
+                g.rock_concert_stage_value(pid, uid, position)
+            })
+        } else {
+            Self::rock_band_tour_ranking(g, pid, uid)
+        }
+    }
+
+    /// `band-plays-what-it-can-reach`: play, or step toward a venue the band
+    /// can really step toward, never stand. The ranking is the seat's own
+    /// scorer; a venue whose step is refused here (a barred step, a danger
+    /// veto) gives way to the next one, a host whose land walked a trip
+    /// nowhere last turn is skipped for [`BAND_REFUSAL_BAR_TURNS`], and the
+    /// band plays where it stands when that venue is the best one left or
+    /// nothing better can be started.
+    fn rock_band_reachable_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        here: Pos,
+        can_perform_here: bool,
+    ) -> bool {
+        let key = Self::band_memory_key(g, uid);
+        self.judge_band_trip(g, key, here);
+        let refused: HashSet<String> = self
+            .band_refused_hosts
+            .borrow()
+            .iter()
+            .filter(|(_, until)| g.turn < **until)
+            .map(|(civ, _)| civ.clone())
+            .collect();
+        let mut tries = 0;
+        for target in self.rock_band_ranked_venues(g, pid, uid) {
+            if target == here {
+                break;
+            }
+            if Self::band_venue_host(g, target)
+                .is_some_and(|host| refused.contains(&g.players[host].civ))
+            {
+                continue;
+            }
+            if tries == BAND_TOUR_TRIES {
+                break;
+            }
+            tries += 1;
+            let Some(next) = g.route_step(uid, target, 0) else {
+                continue;
+            };
+            if self.path_move(g, pid, uid, next) {
+                let mut trips = self.band_trips.borrow_mut();
+                let from = match trips.get(&key) {
+                    Some((turn, from, _)) if *turn == g.turn => *from,
+                    _ => here,
+                };
+                trips.insert(key, (g.turn, from, target));
+                return true;
+            }
+        }
+        can_perform_here && g.apply(pid, &Action::PerformConcert { unit: uid }).is_ok()
+    }
+
+    /// The identity band memory is kept under: the band's Civilization VI id
+    /// on a live mirror, whose board ids are reassigned every frame, and the
+    /// board id everywhere else.
+    fn band_memory_key(g: &Game, uid: u32) -> i64 {
+        g.host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.civ6_id)
+            .unwrap_or(i64::from(uid))
+    }
+
+    /// The civilization whose land holds this venue.
+    fn band_venue_host(g: &Game, venue: Pos) -> Option<usize> {
+        g.map
+            .get(venue)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Judge the band's last trip, once, on the first frame of a later turn:
+    /// a band still on the tile it set out from was walked nowhere by the
+    /// host, so the host of the venue it set out for is skipped by every band
+    /// for [`BAND_REFUSAL_BAR_TURNS`] standard turns. Live 20261110T164254Z:
+    /// the host refused the same walk into Ethiopia 23 times while the
+    /// planner kept choosing it.
+    fn judge_band_trip(&self, g: &Game, key: i64, here: Pos) {
+        let Some((turn, from, target)) = self.band_trips.borrow().get(&key).copied() else {
+            return;
+        };
+        if turn == g.turn {
+            // A same-turn replan: the host has not answered yet.
+            return;
+        }
+        self.band_trips.borrow_mut().remove(&key);
+        if turn + 1 != g.turn || here != from {
+            return;
+        }
+        let Some(host) = Self::band_venue_host(g, target) else {
+            return;
+        };
+        let civ = g.players[host].civ.clone();
+        let until = g.turn + g.standard_duration(BAND_REFUSAL_BAR_TURNS);
+        think!(self.journal, Military, Detail,
+               "Rock Band skips {civ}'s venues; the host walked it nowhere";
+               "set out from {from:?} for {target:?} last turn and is still there; \
+                {civ}'s venues wait {BAND_REFUSAL_BAR_TURNS} standard turns";
+               here);
+        self.band_refused_hosts.borrow_mut().insert(civ, until);
+    }
+
     /// Rank a tour by its existing concert valuation and the time spent
     /// reaching it. A distant premium venue must repay its longer journey.
     /// Route length is an estimate in hex steps, divided by the band's actual
     /// full movement allowance; it is not a terrain-exact arrival prediction.
+    #[cfg(test)]
     fn rock_band_tour_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        Self::rock_band_tour_ranking(g, pid, uid).first().copied()
+    }
+
+    fn rock_band_tour_ranking(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
         let moves = g.unit_max_moves(uid).max(1.0);
         let mut venues: Vec<(f64, usize, Pos)> = g
             .map
@@ -7588,7 +7746,7 @@ impl BasicAi {
                 .then(left.1.cmp(&right.1))
                 .then(left.2.cmp(&right.2))
         });
-        venues.first().map(|(_, _, position)| *position)
+        venues.into_iter().map(|(_, _, position)| position).collect()
     }
 
     /// `band-plays-its-stage`: the same tour, ranked by the concert plus what
@@ -7596,26 +7754,32 @@ impl BasicAi {
     /// holding the Culture bar. Travel is priced gently because the band's
     /// future, not this one concert, is what the trip buys; a trip beyond
     /// fifteen turns is off the table.
+    #[cfg(test)]
     pub(crate) fn rock_band_stage_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
-        Self::rock_band_career_destination(g, uid, |position| {
+        Self::rock_band_career_ranking(g, uid, |position| {
             g.rock_concert_stage_value(pid, uid, position)
         })
+        .first()
+        .copied()
     }
 
     /// `bands-draw-from-the-bar`: the same career-priced tour, weighted by how
     /// much of the Culture race a visitor from the host closes. See
     /// [`Game::rock_concert_bar_value`].
+    #[cfg(test)]
     pub(crate) fn rock_band_bar_destination(g: &Game, pid: usize, uid: u32) -> Option<Pos> {
-        Self::rock_band_career_destination(g, uid, |position| {
+        Self::rock_band_career_ranking(g, uid, |position| {
             g.rock_concert_bar_value(pid, uid, position)
         })
+        .first()
+        .copied()
     }
 
-    fn rock_band_career_destination(
+    fn rock_band_career_ranking(
         g: &Game,
         uid: u32,
         value_at: impl Fn(Pos) -> Option<f64>,
-    ) -> Option<Pos> {
+    ) -> Vec<Pos> {
         let moves = g.unit_max_moves(uid).max(1.0);
         let mut venues: Vec<(f64, usize, Pos)> = g
             .map
@@ -7626,7 +7790,7 @@ impl BasicAi {
                 let value = value_at(position)?;
                 let distance = g.route_distance(uid, position, 0)?;
                 let travel_turns = distance as f64 / moves;
-                (travel_turns <= 15.0).then_some((
+                (travel_turns <= ROCK_BAND_TOUR_MAX_TURNS).then_some((
                     value / (1.0 + 0.1 * travel_turns),
                     distance,
                     position,
@@ -7640,7 +7804,7 @@ impl BasicAi {
                 .then(left.1.cmp(&right.1))
                 .then(left.2.cmp(&right.2))
         });
-        venues.first().map(|(_, _, position)| *position)
+        venues.into_iter().map(|(_, _, position)| position).collect()
     }
 
     /// The district a civilization builds in place of `family`: its unique

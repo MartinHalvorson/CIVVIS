@@ -11183,6 +11183,10 @@ mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
 mod band_plays_its_stage;
+/// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
+/// stage it can really reach; a refused trip turns it to another host. See
+/// `advanced/band_plays_what_it_can_reach.rs`.
+mod band_plays_what_it_can_reach;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
