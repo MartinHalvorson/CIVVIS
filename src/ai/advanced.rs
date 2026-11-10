@@ -6728,6 +6728,11 @@ pub struct AdvancedAi {
     /// or Iron stand at the stockpile cap (civvis-20261109T024657Z,
     /// 050249Z, 054003Z and 071914Z). Opt-in.
     domination_spends_the_stock: bool,
+    /// `chop-feeds-the-long-build`: a Builder clears a feature or harvests a
+    /// resource into a district or wonder its city needs many turns for, or
+    /// into a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
+    /// Opt-in.
+    chop_feeds_the_long_build: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10753,6 +10758,9 @@ mod boost_planner;
 /// `builder-prices-travel-in-turns`: a Builder prices a walk in the turns it
 /// costs, not in hexes. See `advanced/builder_travel_turns.rs`.
 mod builder_travel_turns;
+/// `chop-feeds-the-long-build`: a Builder clears a forest into a district, a
+/// wonder or a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
+mod chop_feeds_the_long_build;
 /// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
 /// has always modelled feature removal and harvesting; nothing ever asked for
 /// one. See `advanced/chop_for_expansion.rs`.
