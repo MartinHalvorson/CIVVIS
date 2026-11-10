@@ -158,6 +158,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-bank-holds-the-counterweight`: see
+        /// `advanced/culture_band_bank.rs`.
+        culture_bank_holds_the_counterweight => enable_culture_bank_holds_the_counterweight, disable_culture_bank_holds_the_counterweight;
         /// `culture-gold-buys-the-shrines`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_gold_buys_the_shrines => enable_culture_gold_buys_the_shrines, disable_culture_gold_buys_the_shrines;

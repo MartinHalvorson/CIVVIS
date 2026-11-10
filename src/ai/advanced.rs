@@ -6803,6 +6803,11 @@ pub struct AdvancedAi {
     /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
     /// Opt-in.
     culture_seat_appoints_pingala_first: bool,
+    /// `culture-bank-holds-the-counterweight`: from Nationalism, a Culture
+    /// seat's home religious defence buys no counterweight Missionary unless
+    /// the threat faith stands at match point; the Faith stays for the Rock
+    /// Bands. See `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_holds_the_counterweight: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
