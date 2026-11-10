@@ -5453,6 +5453,10 @@ pub const GENES: &[Gene] = &[
     // land it most wants, so it plays the turn that land reopens. Opt-in; see
     // `advanced/bands_wait_at_the_door.rs`.
     Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
+    // A Rock Band below level 3 plays first where its performance level
+    // reaches 3, and takes the promotion that lifts the most open stages
+    // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5566,6 +5570,11 @@ pub const GENES: &[Gene] = &[
     // unhit gun-turns with siege-at-the-walls-dies-first armed. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
+    // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
+    // Tower or gun matched to its target's walls before it declares, and
+    // keeps one with every siege. Opt-in; see
+    // `advanced/domination_target_gets_its_breaker.rs`.
+    Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5587,6 +5596,15 @@ pub const GENES: &[Gene] = &[
     // A Culture seat slots it at peace while it holds or can buy a Rock Band.
     // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
     Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
+    // Deity domination: 0 early-conquest openings in 72 surviving Deity runs
+    // (183 refusals for the 10-tile reach, 118 for the stand-down; naming
+    // closes at t40 Online) while 38 of 40 rival capitals stood at walls of
+    // 100 or less at t50. A Domination seat opens on the nearest walkable
+    // rival capital within 20 tiles while its walls are Ancient or none,
+    // melee-led, guards left home, standing down when the walls outgrow its
+    // Ram or Siege Tower. Opt-in;
+    // see `advanced/first_capital_before_the_walls.rs`.
+    Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

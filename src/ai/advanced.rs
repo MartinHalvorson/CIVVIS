@@ -6821,6 +6821,14 @@ pub struct AdvancedAi {
     /// a Loyalty emergency only in a city about to flip. See
     /// `advanced/culture_pingala_first.rs`. Opt-in.
     culture_keeps_pingala_home: bool,
+    /// `domination-target-gets-its-breaker`: the Domination lane owns a wall
+    /// breaker matched to its target's walls before it declares, and keeps
+    /// one with every siege. See
+    /// `advanced/domination_target_gets_its_breaker.rs`. Opt-in.
+    domination_target_gets_its_breaker: bool,
+    /// `domination-target-gets-its-breaker`: the turn a breaker was last
+    /// bought for each target, by the target's tile, for the cooldown.
+    domination_breaker_bought: BTreeMap<Pos, u32>,
     /// `city-strike-takes-the-gun`: every city and Encampment strike is
     /// priced by the command phase (the delegated city loop's first-hostile
     /// pass stands aside), and a gun at our walls carries the wall-threat
@@ -7563,6 +7571,11 @@ pub struct AdvancedAi {
     /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
     /// Off by default.
     flower_power_in_the_dark: bool,
+    /// `first-capital-before-the-walls`: a Domination seat opens the early
+    /// conquest on the nearest rival capital it can walk to while its walls
+    /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
+    /// Off by default.
+    first_capital_before_the_walls: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11289,6 +11302,10 @@ mod backlog_builder_takes_the_queue;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
+/// `band-plays-at-level-three`: a Rock Band plays its first concerts where
+/// its performance level reaches 3, and is promoted to get there. See
+/// `advanced/band_plays_at_level_three.rs`.
+mod band_plays_at_level_three;
 mod band_plays_its_stage;
 /// `band-plays-what-it-can-reach`: a Rock Band plays, or steps toward a
 /// stage it can really reach; a refused trip turns it to another host. See
@@ -11455,6 +11472,9 @@ mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
 mod domination_research;
+/// `domination-target-gets-its-breaker`: the Domination lane's breaker for
+/// its target. See `advanced/domination_target_gets_its_breaker.rs`.
+mod domination_target_gets_its_breaker;
 mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
@@ -11567,6 +11587,10 @@ mod threatened_lane_lends_the_army;
 /// `advanced/threatened_war_holds_the_claims.rs`.
 mod threatened_war_holds_the_claims;
 
+/// `first-capital-before-the-walls`: a Domination seat's early conquest on
+/// the nearest walkable rival capital before its walls pass Ancient. One
+/// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
+mod first_capital_before_the_walls;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
@@ -25908,7 +25932,12 @@ impl AdvancedAi {
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
-            self.siege_breaker_purchase(g, pid);
+            // `domination-target-gets-its-breaker`: the Domination target's
+            // breaker, when the war or the declaration waits on it. Exact
+            // no-op while the gene is off.
+            if !self.buy_domination_breaker(g, pid, &plan) {
+                self.siege_breaker_purchase(g, pid);
+            }
         }
         let mut held_acropolis_site = None;
         // A watched prewar capital can arm one healthy Slinger before the
@@ -26294,6 +26323,12 @@ impl AdvancedAi {
                 if let Some(claim) = self.reserve_delegated_domination_siege(g, pid, &plan) {
                     wall_breaker_claims.push(claim);
                 }
+            }
+            // `domination-target-gets-its-breaker`: the target's Ram, Tower or
+            // gun, before the war as well as during it. Exact no-op while the
+            // gene is off. See `advanced/domination_target_gets_its_breaker.rs`.
+            if let Some(claim) = self.claim_domination_breaker(g, pid, &plan) {
+                wall_breaker_claims.push(claim);
             }
             // Reserve one useful support element before broad production
             // consumes the idle queues of an active foreign-city assault.

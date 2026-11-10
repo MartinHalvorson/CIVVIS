@@ -106,6 +106,9 @@ impl AdvancedAi {
         /// Opt-in gene `bands-wait-at-the-door`; see
         /// `advanced/bands_wait_at_the_door.rs`.
         base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
+        /// Opt-in gene `band-plays-at-level-three`; see
+        /// `advanced/band_plays_at_level_three.rs`.
+        base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -182,6 +185,9 @@ impl AdvancedAi {
         /// Opt-in gene `city-strike-takes-the-gun`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `domination-target-gets-its-breaker`: see
+        /// `advanced/domination_target_gets_its_breaker.rs`.
+        domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;
         /// `culture-keeps-pingala-home`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
@@ -194,6 +200,9 @@ impl AdvancedAi {
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
         flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
+        /// `first-capital-before-the-walls`: see
+        /// `advanced/first_capital_before_the_walls.rs`.
+        first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
