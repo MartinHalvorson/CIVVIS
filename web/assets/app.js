@@ -753,6 +753,7 @@ let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
 let mapSearchQuery = "", mapSearchExclude = "", mapSearchCivId = "";
 let mapSearchCache = {state:null, rules:null, query:"", exclude:"", civ:"", matches:new Set()};
+let mapSearchSites = {viewer:"", asked:"", list:[]};
 // Map verb buttons arm their next click rather than acting on the spot. The
 // flag lives with the other map modes because `modeline()` reads it early.
 let interfaceMode = null;
@@ -34041,6 +34042,14 @@ function computeMapSearchMatches(st, query, civFilter = mapSearchCivId, exclude 
     for (const item of city.queue || [])
       if (item.wonder) add(item.pos, city.owner, "Wonder", ...mapSearchNames(item.wonder), "Under Construction");
   }
+  // The observation stops at another empire's walls, so what stands inside
+  // comes from the search's own request: a tile, its owner, its buildings.
+  for (const site of mapSearchSitesFor(st)) {
+    const pillaged = new Set(site.pillaged || []);
+    for (const building of site.buildings || [])
+      add(site.pos, site.owner, "Building", ...mapSearchNames(building),
+          pillaged.has(building) && "Pillaged");
+  }
   for (const unit of st.units || []) {
     if (!visible.has(key(unit.pos))) continue;
     const owner = players.get(unit.owner);
@@ -34153,7 +34162,8 @@ function mapSearchTileTerms(st, tile, owner, cities) {
 function mapSearchBuildingTile(city, building) {
   const home = RULES?.buildings?.[building]?.district;
   for (const [district, pos] of Object.entries(city.districts || {}))
-    if (district === home || RULES?.districts?.[district]?.replaces === home) return pos;
+    if (district === home || RULES?.districts?.[district]?.replaces === home)
+      return districtIconPositions(pos)[0] || city.pos;
   return city.pos;
 }
 // The panel's unit block. Its "Melee", "Ranged" and "Siege" are simply which
@@ -34171,10 +34181,37 @@ function mapSearchUnitTerms(unit) {
     unit.formation === 1 && (naval ? "Fleet" : "Corps"),
     unit.formation === 2 && (naval ? "Armada" : "Army")];
 }
+// Whose eyes a search looks through, or "" for the omniscient spectator, whose
+// observation already holds every city's buildings.
+function mapSearchSiteViewer(st) {
+  if (!st || (st.spectate && !Number.isInteger(st.view_player))) return "";
+  return `${st.seed}:${st.view_player ?? st.player}`;
+}
+function mapSearchSitesFor(st) {
+  const viewer = mapSearchSiteViewer(st);
+  return viewer && mapSearchSites.viewer === viewer ? mapSearchSites.list : [];
+}
+// Once a turn, and only while a search wants terms: nobody who does not search
+// pays for this, and the state sent every frame does not grow. Last turn's
+// answer stands until this one lands, so matches do not blink at each turn.
+function requestMapSearchSites() {
+  const viewer = mapSearchSiteViewer(state);
+  const asked = viewer && `${viewer}:${state.turn}`;
+  if (!asked || mapSearchSites.asked === asked) return;
+  mapSearchSites.asked = asked;
+  fetchJSON("/map-search-buildings").then(answer => answer.sites || [], () => []).then(list => {
+    if (mapSearchSites.asked !== asked) return;
+    mapSearchSites = {viewer, asked, list};
+    mapSearchCache.state = null;
+    syncMapSearchStatus();
+    if (state) draw();
+  });
+}
 function mapSearchMatches() {
   const query = normalizeMapSearch(mapSearchQuery);
   const exclude = normalizeMapSearch(mapSearchExclude);
   const civ = mapSearchCivId || "";
+  if (query || exclude) requestMapSearchSites();
   if (mapSearchCache.state !== state || mapSearchCache.rules !== RULES ||
       mapSearchCache.query !== query || mapSearchCache.exclude !== exclude ||
       mapSearchCache.civ !== civ) {

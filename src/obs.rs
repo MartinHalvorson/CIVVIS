@@ -1948,7 +1948,90 @@ fn live_city_json(
         },
     });
     merge(&mut value, private);
+    // Nearly always empty, so it is left out rather than sent as an empty
+    // array per city per frame.
+    if !city.pillaged_buildings.is_empty() {
+        value["pillaged_buildings"] = json!(city.pillaged_buildings);
+    }
     value
+}
+
+/// The tile a finished building stands on. A city's buildings are held per
+/// city, so one in a district family it has twice is seated on the first.
+fn building_site(g: &Game, city: &City, building: Name) -> Pos {
+    let home = g
+        .rules
+        .buildings
+        .get_interned(building)
+        .and_then(|spec| spec.district)
+        .filter(|home| *home != "city_center");
+    let Some(home) = home else {
+        return city.pos;
+    };
+    let family = g.district_family(home);
+    city.districts
+        .iter()
+        .find(|(district, _)| g.district_family(**district) == family)
+        .map_or(city.pos, |(_, pos)| *pos)
+}
+
+/// The buildings Map Search can find in other empires' cities, tile by tile.
+///
+/// Civ VI's panel walks every plot the player has revealed and lists what
+/// stands on it, whoever owns the city and however long ago the plot was last
+/// in sight (`GetPlotInfo` in `MapSearchPanel.lua`). A site says only that: a
+/// tile, its owner and the buildings there, and it takes the tile being
+/// revealed to earn one. A city whose centre was never seen answers for the
+/// Campus that was, and not for its Monument. The one rule stricter than the
+/// panel is contact: [`Game::has_met`] governs everything else this viewer is
+/// told about an empire.
+///
+/// `viewer` is the seat the observation was built for, or `None` for the
+/// omniscient spectator, whose observation already holds all of this. The page
+/// asks only while a search is open, because the observation is rebuilt every
+/// frame and its size is already a large share of the worker's time.
+pub fn map_search_buildings(g: &Game, viewer: Option<usize>) -> Value {
+    let Some(pid) = viewer else {
+        return json!({ "sites": [] });
+    };
+    let seats = g.visibility_viewers(pid);
+    let revealed = |pos: &Pos| {
+        seats
+            .iter()
+            .any(|seat| g.players[*seat].explored.contains(pos))
+    };
+    let mut sites: BTreeMap<Pos, (usize, Vec<Name>, Vec<Name>)> = BTreeMap::new();
+    for city in g
+        .cities
+        .values()
+        .filter(|city| city.owner != pid && g.has_met(pid, city.owner))
+    {
+        for building in &city.buildings {
+            let pos = building_site(g, city, *building);
+            if !revealed(&pos) {
+                continue;
+            }
+            let site = sites
+                .entry(pos)
+                .or_insert_with(|| (city.owner, Vec::new(), Vec::new()));
+            site.1.push(*building);
+            if city.pillaged_buildings.contains(building) {
+                site.2.push(*building);
+            }
+        }
+    }
+    let sites: Vec<Value> = sites
+        .into_iter()
+        .map(|(pos, (owner, buildings, pillaged))| {
+            json!({
+                "pos": [pos.0, pos.1],
+                "owner": owner,
+                "buildings": buildings,
+                "pillaged": pillaged,
+            })
+        })
+        .collect();
+    json!({ "sites": sites })
 }
 
 fn round1(v: f64) -> f64 {
