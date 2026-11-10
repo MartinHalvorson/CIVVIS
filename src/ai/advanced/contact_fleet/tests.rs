@@ -494,3 +494,60 @@ fn version_two_stands_off_a_city_that_took_the_hull_back() {
     claimant().claim_queue_for_the_sea_scout(&mut game, 0, &plan(81));
     assert!(head_is_a_ship(&game, city));
 }
+
+/// ★ The 100022Z shape: the hull the sea scout's claim laid down lost the
+/// head to other queue claims 15 times and floated 18 turns after
+/// Cartography. A Religion founder under `religion-seat-charts-the-rivals`
+/// keeps the committed hull at the head; any other seat still yields it.
+#[test]
+fn a_religion_founders_hull_keeps_the_head_from_other_claims() {
+    let (mut game, city) = coastal_seat();
+    let hull = unit("quadrireme");
+    let granary = Item::Building {
+        building: Name::new("granary"),
+    };
+    game.players[0].techs.insert(Name::new("pottery"));
+    game.players[0].religion = Some("Buddhism".to_string());
+    let housing = game.city_housing(&game.cities[&city]);
+    {
+        let held = game.cities.get_mut(&city).unwrap();
+        held.pop = (housing.ceil() as i32).max(2);
+        held.production_progress
+            .insert(Game::item_progress_key(&granary), 50.0);
+    }
+    queue(&mut game, city, &hull);
+    let plan = plan(game.turn);
+    let founder = |charts: bool| {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+        ai.enable_contact_fleet();
+        ai.enable_granary_claims_the_bound_queue();
+        if charts {
+            ai.enable_religion_seat_charts_the_rivals();
+        }
+        ai
+    };
+    assert!(founder(true).charting_hull_holds(&game, 0, city, &plan, &hull));
+    assert!(!founder(false).charting_hull_holds(&game, 0, city, &plan, &hull));
+    assert!(
+        !founder(true).charting_hull_holds(&game, 0, city, &plan, &granary),
+        "only the hull holds"
+    );
+    let mut other = diplomat(true);
+    other.enable_religion_seat_charts_the_rivals();
+    assert!(
+        !other.charting_hull_holds(&game, 0, city, &plan, &hull),
+        "another aim keeps the old order"
+    );
+
+    let mut yielded = game.clone();
+    founder(false).claim_bound_granaries(&mut yielded, 0, &plan);
+    assert_eq!(
+        yielded.cities[&city].queue.first(),
+        Some(&granary),
+        "fixture: without the gene the Granary claim takes the head"
+    );
+
+    let mut kept = game.clone();
+    founder(true).claim_bound_granaries(&mut kept, 0, &plan);
+    assert_eq!(kept.cities[&city].queue.first(), Some(&hull));
+}
