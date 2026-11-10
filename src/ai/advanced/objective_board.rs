@@ -801,7 +801,8 @@ impl AdvancedAi {
     /// Our field units: military and support, land and sea, not air, not a
     /// scout with somewhere to explore except one admitted for a capital
     /// hunt, not a guard bound to a settler, not a member of the crossing in
-    /// hand under `amphibious-siege-train-2`.
+    /// hand under `amphibious-siege-train-2`, not a Religion founder's
+    /// charting ship.
     pub(super) fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
         // A free explorer can do the capital hunt itself. Excluding every
         // Recon with fog to explore left this row to combat units while the
@@ -815,6 +816,9 @@ impl AdvancedAi {
                 .filter(|uid| f64::from(g.units[uid].hp) > self.base.w.withdraw_hp + 10.0)
                 .min_by_key(|uid| (g.wdist(g.units[uid].pos, row.at), *uid))
         });
+        // `religion-seat-charts-the-rivals`: the founder's one charting ship
+        // is an eye, not a soldier. `None` with the gene off.
+        let charting_ship = self.religion_seat_charting_ship(g, pid);
         let mut pool: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -823,6 +827,7 @@ impl AdvancedAi {
                 let spec = &g.rules.units[unit.kind];
                 matches!(spec.class.as_str(), "military" | "support")
                     && spec.domain.as_deref() != Some("air")
+                    && charting_ship != Some(*uid)
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid)
                         && capital_scout != Some(*uid))
