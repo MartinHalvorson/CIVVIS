@@ -1826,6 +1826,82 @@ fn a_same_turn_replan_drops_stale_unit_replays_but_keeps_new_tactics() {
     assert_eq!(next_turn.len(), 1);
 }
 
+/// Unit 7 steps onto the plot unit 8 is leaving. The host drops 7's request
+/// while 8 still stands there, so the replan's repeat of it must go out.
+fn chained_move_frames() -> (civvis::mirror::StateSnapshot, HostMoveRefusals) {
+    let (_snapshot, mut state) = production_board();
+    state.turn = 42;
+    state.frame = 0;
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 3, 3)];
+    let mut refusals = HostMoveRefusals::default();
+    let mut ours = std::collections::BTreeMap::new();
+    let mut first = vec![
+        unit_order(8, "MOVE_TO", Some((4, 4))),
+        unit_order(7, "MOVE_TO", Some((3, 3))),
+    ];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut first, &state, &mut ours),
+        0
+    );
+    state.frame = 1;
+    (state, refusals)
+}
+
+fn placed_unit(id: i64, x: i32, y: i32) -> civvis::mirror::StateUnit {
+    civvis::mirror::StateUnit {
+        id,
+        kind: "UNIT_WARRIOR".to_string(),
+        x,
+        y,
+        ..civvis::mirror::StateUnit::default()
+    }
+}
+
+#[test]
+fn a_move_onto_a_plot_its_occupant_left_is_sent_again_once() {
+    let (mut state, mut refusals) = chained_move_frames();
+    let mut ours = std::collections::BTreeMap::new();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 4, 4)];
+    let mut replan = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
+        0,
+        "the plot has cleared and the unit has not moved"
+    );
+    assert_eq!(replan.len(), 1);
+
+    state.frame = 2;
+    let mut again = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut again, &state, &mut ours),
+        1,
+        "one retry only"
+    );
+}
+
+#[test]
+fn a_chained_move_stays_a_replay_while_the_plot_is_taken_or_the_unit_went() {
+    let mut ours = std::collections::BTreeMap::new();
+
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 3, 3)];
+    let mut occupied = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut occupied, &state, &mut ours),
+        1,
+        "the occupant is still there"
+    );
+
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 3), placed_unit(8, 4, 4)];
+    let mut arrived = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut arrived, &state, &mut ours),
+        1,
+        "the unit got there, so the frame is the ordinary stale replay"
+    );
+}
+
 #[test]
 fn an_explicitly_refused_build_releases_the_same_turn_queue_lease() {
     let (_, mut state) = production_board();
