@@ -2374,3 +2374,20 @@ The engine before this change measures v50's **18,801 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v52 (2026-11-10) — a Builder works on bare ground
+
+A rules correction in `Game::valid_improvements` (`src/game/city.rs`). The
+simulator let a Builder build over a different improvement, and the host
+refuses it: across 101 live logs, 98 such orders failed and 7 worked
+(`docs/eval/2026-09-22-strategic-improvement-replacement.md` found the same
+refusal). An improved tile now offers nothing, except the improvement that
+connects a strategic deposit the current one does not, which the agent performs
+as `REMOVE_IMPROVEMENT` and then the build. Every controller,
+`AdvancedAi::legacy()` included, now plays under the corrected offer.
+
+The engine before this change measures **18,921 decisions /
+`0xc0d7_2582_ba49_717e`**. The corrected engine measures **18,761 decisions /
+`0x9604_d47e_0940_3530`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

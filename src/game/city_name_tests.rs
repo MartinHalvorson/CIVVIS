@@ -117,15 +117,6 @@ fn a_tile_is_not_offered_the_improvement_it_already_has() {
         "a tile holding {improvement} must not be offered {improvement} again, \
          or CIVVIS re-orders what it has just built"
     );
-    // ⚠ And only that one. Replacing an improvement is a real decision in
-    // Civilization VI — a Farm over a Mine — so the tile must still offer
-    // something, or this would be a much bigger change than it looks.
-    // ⚠ NOT asserted here: that a DIFFERENT improvement survives, which is
-    // the other half of the rule (replacing a Mine with a Farm is a real
-    // Civilization VI decision). No tile within two rings of a capital
-    // offers two valid improvements on this map — terrain, feature and
-    // resource constrain them to one each — so the fixture cannot state it
-    // without inventing ground. Left unclaimed rather than asserted weakly.
 }
 
 /// The largest refusal category measured — 311 `IMPROVEMENT_MINE` refusals in one

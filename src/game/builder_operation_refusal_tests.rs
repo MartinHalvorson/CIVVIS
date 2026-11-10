@@ -79,17 +79,6 @@ fn refused_harvest_cannot_spend_the_builders_turn_in_speculation() {
 }
 
 #[test]
-fn an_improved_tile_offers_no_clearing_or_harvest() {
-    let (mut game, builder, site, _) = fixture();
-    assert!(!game.builder_operations(0, site).is_empty(), "fixture");
-    game.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("camp"));
-    assert!(game.builder_operations(0, site).is_empty());
-    assert!(game.do_improve(0, builder, "harvest_resource").is_err());
-    assert!(game.do_improve(0, builder, "chop_woods").is_err());
-    assert_eq!(game.map.tiles[&site].resource, Some(crate::name!("deer")));
-}
-
-#[test]
 fn site_refusals_cover_clearing_and_releasing_them_restores_it() {
     let (mut game, builder, site, _) = fixture();
     std::sync::Arc::make_mut(&mut game.blocked_improvement_sites).insert(site);
@@ -133,6 +122,40 @@ fn an_improved_tile_offers_no_clearing_and_no_harvest() {
         game.map.tiles[&site].feature,
         Some(crate::name!("forest")),
         "the refused clearing leaves the Forest standing"
+    );
+    assert!(game.do_improve(0, builder, "harvest_resource").is_err());
+    assert_eq!(game.map.tiles[&site].resource, Some(crate::name!("deer")));
+}
+
+#[test]
+fn a_builder_cannot_build_over_another_improvement() {
+    let (mut game, _, site, _) = fixture();
+    assert!(
+        game.valid_improvements(0, site)
+            .contains(&crate::name!("camp")),
+        "fixture"
+    );
+    game.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("lumber_mill"));
+    assert!(game.valid_improvements(0, site).is_empty());
+}
+
+#[test]
+fn only_a_strategic_connection_replaces_an_improvement() {
+    let (mut game, _, site, _) = fixture();
+    let tile = game.map.tiles.get_mut(&site).unwrap();
+    tile.feature = None;
+    tile.resource = Some(crate::name!("iron"));
+    tile.improvement = Some(crate::name!("farm"));
+    assert_eq!(
+        game.valid_improvements(0, site),
+        vec![crate::name!("mine")],
+        "the agent removes the Farm and then builds the Mine"
+    );
+
+    game.map.tiles.get_mut(&site).unwrap().resource = Some(crate::name!("wheat"));
+    assert!(
+        game.valid_improvements(0, site).is_empty(),
+        "a bonus resource is not worth the swap the host refuses"
     );
 }
 

@@ -368,7 +368,7 @@ fn bounded_purchase_menu_workers_keep_four_city_order_exact() {
 }
 
 #[test]
-fn culture_builders_upgrade_farms_to_resorts_without_reverting_them() {
+fn culture_builders_site_resorts_on_bare_ground_and_keep_them() {
     let mut g = Game::new(2, 24, 16, 74, 80, 0);
     let settler = g
         .player_unit_ids(0)
@@ -403,6 +403,13 @@ fn culture_builders_upgrade_farms_to_resorts_without_reverting_them() {
     assert!(g.tile_appeal(pos) >= 4);
 
     let ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert!(
+        ai.worthwhile_improvements(&g, 0, pos, GrandStrategy::Culture)
+            .is_empty(),
+        "the host does not build over a Farm"
+    );
+
+    g.map.tiles.get_mut(&pos).unwrap().improvement = None;
     let upgrades = ai.worthwhile_improvements(&g, 0, pos, GrandStrategy::Culture);
     assert_eq!(
         upgrades.first().map(|name| name.as_str()),

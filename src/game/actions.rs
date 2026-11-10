@@ -1415,37 +1415,29 @@ impl Game {
         {
             return vec![];
         }
-        // The host refuses REMOVE_FEATURE and HARVEST_RESOURCE on a tile that
-        // carries an improvement. Live Deity census, 2026-11-09: 75 of 75
-        // accepted clearings stood on unimproved ground, and 55 of 64 refusals
-        // on a Lumber Mill, Plantation, Camp, Mine, Quarry or Farm.
-        let improved = tile.improvement.is_some();
         let mut operations = Vec::new();
         match tile.feature.as_deref() {
             Some("forest")
-                if !improved
-                    && self.tree_effect(pid, "chop_woods") > 0.0
+                if self.tree_effect(pid, "chop_woods") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "forest") =>
             {
                 operations.push("chop_woods".to_string())
             }
             Some("jungle")
-                if !improved
-                    && self.tree_effect(pid, "chop_rainforest") > 0.0
+                if self.tree_effect(pid, "chop_rainforest") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "jungle") =>
             {
                 operations.push("chop_rainforest".to_string())
             }
             Some("marsh")
-                if !improved
-                    && self.tree_effect(pid, "clear_marsh") > 0.0
+                if self.tree_effect(pid, "clear_marsh") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "marsh") =>
             {
                 operations.push("clear_marsh".to_string())
             }
             _ => {}
         }
-        if let Some(resource) = tile.resource.as_deref().filter(|_| !improved) {
+        if let Some(resource) = tile.resource.as_deref() {
             // Only the resources with a shipped Resource_Harvests row can be
             // harvested, each from its own technology on.
             if let Some(harvest) = self
@@ -4055,9 +4047,19 @@ impl Game {
     }
 
     /// Remove one of `pid`'s own units, as the host's Delete button does.
+    /// The host refuses to disband a wounded unit. Across 70 live logs
+    /// (2026-11-10), 82 of 83 orders to delete a wounded unit were refused and
+    /// all 28 for a unit at full health went through.
+    pub(crate) fn unit_can_be_disbanded(&self, unit: u32) -> bool {
+        self.units.get(&unit).is_some_and(|unit| unit.hp >= 100)
+    }
+
     pub(super) fn do_disband_unit(&mut self, pid: usize, unit: u32) -> Result<(), String> {
         if self.units.get(&unit).is_none_or(|u| u.owner != pid) {
             return Err("not your unit".into());
+        }
+        if !self.unit_can_be_disbanded(unit) {
+            return Err("a wounded unit cannot be disbanded".into());
         }
         self.remove_unit(unit);
         Ok(())
