@@ -1,7 +1,8 @@
 use super::*;
 
-/// Two founded empires at peace, met, our army of two Warriors at home, the
-/// rival's capital unwalled, turn 60, the Domination lane with the gene `on`.
+/// Two founded empires at peace, met, our army of two Warriors at home, idle
+/// queues, the rival's capital unwalled, turn 60, the Domination lane with
+/// the gene `on`.
 fn case(on: bool) -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let mut g = Game::new_full(2, 40, 26, 79_301, 500, 0, false);
     g.current = 0;
@@ -18,6 +19,9 @@ fn case(on: bool) -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let target = g.player_city_ids(1)[0];
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
+    }
+    for cid in [home, target] {
+        g.cities.get_mut(&cid).unwrap().queue.clear();
     }
     let pos = g.cities[&home].pos;
     for kind in ["warrior", "warrior"] {

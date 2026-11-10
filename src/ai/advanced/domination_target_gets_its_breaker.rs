@@ -39,8 +39,9 @@
 //!   siege gun whose shot does more than `BREAKER_MATCH_MIN_HIT` to the city
 //!   (Renaissance Walls, Urban Defenses).
 //! - **Claim** ([`AdvancedAi::claim_domination_breaker`]): with no such
-//!   breaker alive or queued, the safe city with an empty queue (or a fresh
-//!   Builder or Trader) whose breaker reaches the target soonest lays it down.
+//!   breaker alive or queued, the safe city with an idle queue whose breaker
+//!   reaches the target soonest lays it down (the routine governors fill idle
+//!   queues after it).
 //! - **Purchase** ([`AdvancedAi::buy_domination_breaker`]): with none alive,
 //!   while the declaration is held for a breaker on that target or our land
 //!   units stand within `MUSTER_BREACH_FAR` of it at war, and nothing queued
@@ -292,15 +293,9 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let open = match city.queue.as_slice() {
-                [] => true,
-                [queued] => {
-                    matches!(queued, Item::Unit { unit } if matches!(unit.as_str(), "builder" | "trader"))
-                        && g.item_invested_production(own, queued) <= f64::EPSILON
-                }
-                _ => false,
-            };
-            if !open {
+            // An idle queue only: the Builder and building claims own their
+            // heads, and a breaker that took one would trade it back and forth.
+            if !city.queue.is_empty() {
                 continue;
             }
             for (support, kind) in &kinds {
@@ -326,7 +321,6 @@ impl AdvancedAi {
         }
         let (_, arrival, own, kind) = best?;
         let item = Item::Unit { unit: kind };
-        let displaced = g.cities[&own].queue.first().map(Self::plain_item);
         if g.apply(
             pid,
             &Action::Produce {
@@ -342,10 +336,9 @@ impl AdvancedAi {
         think!(self.journal(), Military, Decision,
             "{} reserves a {} for the walls of {}", g.cities[&own].name,
             crate::reasoning::plain(kind.as_str()), city.name;
-            "domination-target-gets-its-breaker: walls {}/{}, {}, no breaker that opens them is alive or queued; it reaches them in about {arrival:.0} turns{}",
+            "domination-target-gets-its-breaker: walls {}/{}, {}, no breaker that opens them is alive or queued; it reaches them in about {arrival:.0} turns",
             city.wall_hp, g.city_max_wall_hp(city),
-            if g.is_at_war(pid, city.owner) { "at war" } else { "before the war" },
-            displaced.map(|old| format!(", in place of a fresh {old}")).unwrap_or_default();
+            if g.is_at_war(pid, city.owner) { "at war" } else { "before the war" };
             objective);
         Some((own, item))
     }
