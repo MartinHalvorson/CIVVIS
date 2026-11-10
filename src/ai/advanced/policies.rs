@@ -1510,7 +1510,7 @@ impl AdvancedAi {
         })
     }
 
-    fn preferred_governor_promotion(
+    pub(super) fn preferred_governor_promotion(
         &self,
         g: &Game,
         pid: usize,
@@ -1518,14 +1518,24 @@ impl AdvancedAi {
         governor: &str,
     ) -> Option<String> {
         let available = g.available_governor_promotions(pid, governor);
-        Self::governor_promotion_priority(strategy, governor)
+        // `curator-sits-with-the-works`: a Culture seat's Pingala keeps the
+        // Culture order whatever the plan, never takes Space Initiative, and
+        // takes Curator once the works stand. `None` with the gene off.
+        self.curator_promotion_order(g, governor)
+            .unwrap_or_else(|| Self::governor_promotion_priority(strategy, governor))
             .iter()
+            .filter(|promotion| !self.curator_withholds_promotion(g, pid, governor, promotion))
             .find(|promotion| available.iter().any(|candidate| candidate == **promotion))
             .map(|promotion| (*promotion).to_string())
     }
 
     pub(super) fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         while g.governor_titles_available(pid) > 0 {
+            // `curator-sits-with-the-works`: Curator first once the works
+            // stand. Exact no-op with the gene off.
+            if self.promote_the_curator(g, pid) {
+                continue;
+            }
             let priority = self.governor_priority_for(g, pid, plan.strategy);
             let priority = priority.as_slice();
             // Strategy can change every assessment window, but Governor
