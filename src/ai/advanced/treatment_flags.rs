@@ -170,6 +170,9 @@ impl AdvancedAi {
         /// `denial-war-needs-the-lane-edge`: see
         /// `advanced/denial_war_needs_the_lane_edge.rs`.
         denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
+        /// `culture-road-takes-the-unique-first`: see
+        /// `advanced/culture_unique_first.rs`.
+        culture_road_takes_the_unique_first => enable_culture_road_takes_the_unique_first, disable_culture_road_takes_the_unique_first;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

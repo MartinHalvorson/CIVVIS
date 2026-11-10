@@ -240,6 +240,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
+| `culture-road-takes-the-unique-first` | off (unmeasured) | `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-allies` | off (unmeasured) | Opt-in gene `culture-seat-allies`; see `Self::culture_seat_allies`. | 1 \| 1 |
 | `culture-seat-appoints-pingala-first` | off (unmeasured) | `culture-seat-appoints-pingala-first`: see `advanced/culture_pingala_first.rs`. | 1 \| 1 |

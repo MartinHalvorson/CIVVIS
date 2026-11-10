@@ -174,6 +174,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_culture_theaters(g, pid, plan);
         }
+        // `culture-road-takes-the-unique-first`: Builders for the seat's own
+        // Culture improvement shortly before its civic lands. Exact no-op
+        // while the gene is off. See `advanced/culture_unique_first.rs`.
+        if !war_holds {
+            self.claim_unique_source_builders(g, pid, plan);
+        }
         // `culture-seat-monuments`: a Culture seat's Monuments, after the
         // Theater claim (whose heads they leave alone). Exact no-op while
         // the gene is off. See `advanced/culture_monuments.rs`.

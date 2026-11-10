@@ -5539,6 +5539,10 @@ pub const GENES: &[Gene] = &[
     // Domination the war needs the launcher counter's edge and spares a
     // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
     Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
+    // that unlocks its own largest Culture source first, with its Builders
+    // ready. Opt-in; see `advanced/culture_unique_first.rs`.
+    Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
