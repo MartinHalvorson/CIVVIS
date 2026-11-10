@@ -23,9 +23,10 @@
 //! affordable within [`FLOWER_POWER_FAITH_STANDARD_TURNS`] standard turns of
 //! Faith income, Flower Power goes to the front of the plan's portfolio,
 //! ahead of the Great Person and adjacency cards that hold the wildcard
-//! seats. It may take the seat of a card the portfolio ranks after it,
-//! weakest first, but never Limitanei, Praetorium, a maintenance
-//! emergency's relief or the Liberalism of an Amenity repair. The cards
+//! seats. It keeps that rank but takes its seat after the other cards are
+//! seated, from the lowest-ranked card it outranks whose removal frees a
+//! wildcard seat; never Limitanei, Praetorium, a maintenance emergency's
+//! relief or the Liberalism of an Amenity repair. The cards
 //! spliced in ahead of the portfolio (culture defence, Nobel Peace Favor,
 //! bankruptcy gold, and the rest) still rank first. Being wanted keeps it
 //! past the situational-card drop.
