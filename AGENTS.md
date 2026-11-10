@@ -54,8 +54,15 @@ whether it is armed live. `--turn` prints the order an AI seat plays its turn.
 It reads the source each time and writes no file, so it cannot be stale.
 Every shipping Rust module opens with a `//!` line saying what it is for, and
 `tools/test_codemap.py` fails when one does not. For what live games actually
-did, `python3 tools/civ6_events.py kinds|failures|noops` reads their event logs
-and `tools/civ6_agent_errors.py` adds up the Lua errors the agent caught.
+did, `python3 tools/civ6_events.py kinds|failures|noops|strikes|plots` reads
+their event logs and `tools/civ6_agent_errors.py` adds up the Lua errors the
+agent caught.
+
+To find a rule the simulator gets wrong, run `failures`, then `plots VERB` for
+a verb that fails often. An order that fails on one kind of plot usually means
+`legal_actions` offers something the host refuses (Apostles attacking into
+rival cities, Builders clearing under improvements). Fix the rule, not the
+order, and read the same report on the next games to confirm it.
 
 ## Mandatory Git isolation
 
