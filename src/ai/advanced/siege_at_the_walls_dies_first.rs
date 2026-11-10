@@ -40,7 +40,9 @@
 //! wounded gun is a gun the Deity AI walks back to heal):
 //! - the kill plan (`battle_planner.rs`) carries the premium on the target's
 //!   kill value and wound value, and keeps wall threats first when it trims
-//!   the targets to `MAX_TARGETS`;
+//!   the targets to `MAX_TARGETS`; the positions plan lays its shooter slots
+//!   at range of the guns before the most finishable contacts, so a shooter
+//!   that could not reach a gun this turn stands where it fires next turn;
 //! - the per-unit ladder (`units.rs`) adds it to the blow's score, and a
 //!   ranged hit or a kill on a wall threat ranks with the lethal kills;
 //! - the city and Encampment strikes (`defensive_strike_value`) add it;

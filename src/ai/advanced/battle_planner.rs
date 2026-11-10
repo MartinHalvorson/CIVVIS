@@ -3056,6 +3056,13 @@ impl AdvancedAi {
             city.owner != pid && g.is_at_war(pid, city.owner)
         });
         let mut contacts = Self::contacts(g, pid, &members, CONTACT_BAND);
+        // `siege-at-the-walls-dies-first`: the shooters are laid at range of
+        // the guns at our walls before the most finishable contacts, so the
+        // next turn's shot is from where they stand. A stable sort; nothing
+        // moves with the gene off.
+        if self.siege_at_the_walls_dies_first {
+            contacts.sort_by_key(|contact| !self.wall_threat(g, pid, contact.uid));
+        }
         if let Some(anchor) = defense_anchor {
             contacts.retain(|contact| {
                 g.wdist(contact.pos, anchor) <= super::defenders_hold_the_walls::WALL_THREAT_REACH
