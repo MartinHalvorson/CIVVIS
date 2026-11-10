@@ -241,3 +241,49 @@ fn the_plan_is_empty_without_the_gene_the_target_the_faith_or_the_rows() {
         .religion_seat_pressure_plan(&bare, 0, missionary, "Buddhism")
         .is_empty());
 }
+
+/// A Translator's charge is worth three abroad, so the entrenched city costs
+/// it fewer charges than it costs an unpromoted Apostle, and each charge
+/// saved is paid for: the promoted unit is drawn to where its promotion
+/// counts.
+#[test]
+fn a_promoted_apostle_is_paid_for_the_charges_it_saves() {
+    let (mut game, _, rival) = founder();
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    let mut apostle = |game: &mut Game, promotion: Option<&str>| {
+        let uid = game.spawn_test_unit("apostle", 0, home);
+        let unit = game.units.get_mut(&uid).unwrap();
+        unit.religion = Some("Buddhism".to_string());
+        unit.charges = 3;
+        unit.hp = 100;
+        if let Some(promotion) = promotion {
+            unit.promotions.insert(Name::new(promotion));
+        }
+        uid
+    };
+    let plain = apostle(&mut game, None);
+    let translator = apostle(&mut game, Some("translator"));
+    let on = seat(VictoryTarget::Religion, true);
+    let rows = FlipRows::observed(&game, &game.cities[&rival[2]], "Buddhism").unwrap();
+    let reference = rows.charges(220.0, 0.25);
+    let translated = rows.charges(660.0, 0.25);
+    assert!(translated < reference, "{translated} against {reference}");
+
+    let shipped =
+        |cid: u32| game.cities[&cid].pop * 12 + i32::from(game.cities[&cid].is_capital) * 18;
+    let price = |uid: u32| {
+        on.religion_seat_pressure_plan(&game, 0, uid, "Buddhism")[&rival[2]] + shipped(rival[2])
+    };
+    let solo = |needed: u32| if needed <= 3 { SOLO_FLIP_BONUS } else { 0 };
+    assert_eq!(
+        price(plain),
+        CAMPAIGN_BONUS - reference as i32 * CHARGE_COST + solo(reference)
+    );
+    assert_eq!(
+        price(translator),
+        CAMPAIGN_BONUS - translated as i32 * CHARGE_COST
+            + solo(translated)
+            + (reference - translated) as i32 * ADVANTAGE_BONUS
+    );
+    assert!(price(translator) > price(plain));
+}
