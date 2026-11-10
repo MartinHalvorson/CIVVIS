@@ -2408,3 +2408,18 @@ The engine before this change measures **18,761 decisions /
 `0x89ea_660b_d416_d1c8`**. The legacy planning configuration and the five
 anchor profiles are unchanged. This re-pin records a rules boundary and does
 not establish stronger play.
+
+## v54 (2026-11-10) — resources follow the shipped generator
+
+A rules correction in map generation (`src/mapgen/resources.rs`), ported from
+`ResourceGenerator.lua`. Luxuries and strategics are dealt continent by continent,
+bonus resources by weight across the map, and sea luxuries and offshore Oil by
+latitude band. The per-tile lottery and the strategic top-up are gone. Every
+seeded world is redrawn, so every controller, `AdvancedAi::legacy()` included, now
+plays on the corrected maps. `docs/FIDELITY.md` has the table.
+
+The engine before this change measures **19,739 decisions /
+`0x89ea_660b_d416_d1c8`**. The corrected engine measures **18,731 decisions /
+`0x2a9f_2bbf_70cd_3e3d`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

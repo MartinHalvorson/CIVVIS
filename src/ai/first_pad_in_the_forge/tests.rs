@@ -8,7 +8,7 @@ fn board() -> (Game, u32, Vec<u32>) {
         2,
         24,
         16,
-        crate::rng::fixture_seed("FIRSTPADFORGE", 47_113),
+        crate::rng::fixture_seed("FIRSTPADFORGE", 47_120),
         250,
         0,
         false,

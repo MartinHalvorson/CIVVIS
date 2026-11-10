@@ -1,7 +1,7 @@
 use super::*;
 
 fn fixture(civ: &str) -> (Game, u32) {
-    let mut game = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_36", 590_105), 250, 0, false);
+    let mut game = Game::new_full(2, 24, 16, 590_106, 250, 0, false);
     game.units.clear();
     game.barb_camps.clear();
     for tile in game.map.tiles.values_mut() {

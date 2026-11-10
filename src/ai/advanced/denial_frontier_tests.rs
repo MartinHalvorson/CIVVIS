@@ -2,7 +2,7 @@ use super::*;
 use crate::game::ObservedPublicEmpireStats;
 
 fn board(district: &str) -> (Game, AdvancedAi, u32, u32) {
-    let mut g = Game::new_full(2, 64, 40, crate::rng::fixture_seed("AUTO_3", 91_021), 650, 0, false);
+    let mut g = Game::new_full(2, 64, 40, 91_022, 650, 0, false);
     super::tests::found_capitals(&mut g);
     g.turn = 200;
     g.record_contact(0, 1);

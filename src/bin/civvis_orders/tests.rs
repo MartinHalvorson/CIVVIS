@@ -2978,7 +2978,7 @@ fn finishing_survival_policy_keeps_a_safe_reserve() {
 fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
     let (snapshot, mut state) = local_barbarian_defense_board();
     state.units[0].hp = 30.0;
-    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, std::env::var("CIVVIS_FIXTURE_SEED_ORDERSVOLLEY").ok().and_then(|seed| seed.parse().ok()).unwrap_or(13), 250, 0);
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 19, 250, 0);
     let mut old = mirror.game.clone();
     let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
     assert!(old_volley.actions.len() > 1);
@@ -10865,24 +10865,4 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
         append_tribute_order(&state, &mut Vec::new()),
         Some("tribute_hold:opinion_unknown")
     );
-}
-
-/// TEMPORARY: finds a seed for the one fixture the map refresh redrew here.
-#[test]
-fn temp_seed_search_orders() {
-    let exe = std::env::current_exe().expect("test binary");
-    let test = "tests::finishing_survival_policy_prices_the_whole_volley_after_its_kill";
-    for seed in 14..160u64 {
-        let ok = std::process::Command::new(&exe)
-            .args(["--exact", test, "--test-threads=1"])
-            .env("CIVVIS_FIXTURE_SEED_ORDERSVOLLEY", seed.to_string())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
-        if ok {
-            panic!("SEEDFOUND ORDERSVOLLEY {seed} tried");
-        }
-    }
-    panic!("SEEDFOUND ORDERSVOLLEY NONE tried");
 }

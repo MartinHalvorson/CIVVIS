@@ -82,7 +82,7 @@ fn a_host_refused_site_is_not_settleable_but_its_neighbour_still_is() {
 /// loop, not beside the national-park check at the top.
 #[test]
 fn a_tile_is_not_offered_the_improvement_it_already_has() {
-    let mut game = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_35", 1), 200, 0);
+    let mut game = Game::new(2, 24, 16, 2, 200, 0);
     let centre = game
         .map
         .tiles
@@ -125,7 +125,7 @@ fn a_tile_is_not_offered_the_improvement_it_already_has() {
 /// the single chokepoint every improvement decision passes through.
 #[test]
 fn a_host_refused_tile_offers_no_improvements() {
-    let mut game = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_34", 1), 200, 0);
+    let mut game = Game::new(2, 24, 16, 2, 200, 0);
     // A builder may only improve territory its own civilization holds, so the
     // seat needs a CITY before any tile is improvable at all. `Game::new` hands
     // out starting units, not cities, so one has to be founded here or the search
@@ -363,7 +363,7 @@ fn every_civilization_has_a_deep_unique_city_name_pool() {
 /// only Aluminum Mine to one refused Alcázar on the same Farm.
 #[test]
 fn a_host_refused_improvement_leaves_the_rest_of_the_tile_open() {
-    let mut game = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_33", 1), 200, 0);
+    let mut game = Game::new(2, 24, 16, 2, 200, 0);
     let centre = game
         .map
         .tiles

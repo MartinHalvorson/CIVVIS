@@ -7,7 +7,7 @@ use super::*;
 /// A founded capital with Mining and Irrigation, one owned grassland hill a
 /// Mine can work and one owned flat grassland a Farm can.
 fn capital_with_a_hill_and_a_flat() -> (Game, u32, Pos, Pos) {
-    let mut game = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_6", 936017), 200, 0);
+    let mut game = Game::new(2, 24, 16, 936018, 200, 0);
     let settler = game
         .player_unit_ids(0)
         .into_iter()

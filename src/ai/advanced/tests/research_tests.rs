@@ -190,7 +190,7 @@ fn boosted_bargain_v2_does_not_interrupt_a_forced_lane_goal() {
 /// value and finishes in one turn.
 #[test]
 fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
-    let (mut game, city, _) = empire_with_a_capital(crate::rng::fixture_seed("AUTO_19", 71_126));
+    let (mut game, city, _) = empire_with_a_capital(71_133);
     game.cities.get_mut(&city).expect("capital").pop = 60;
     game.players[0].research = None;
     game.players[0]

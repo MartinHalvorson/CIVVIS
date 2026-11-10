@@ -686,7 +686,7 @@ fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
         2,
         28,
         18,
-        crate::rng::fixture_seed("ADMIRAL", 95_009),
+        crate::rng::fixture_seed("ADMIRAL", 95_016),
         300,
         0,
         false,

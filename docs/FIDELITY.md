@@ -867,6 +867,37 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
+## Closed: where resources go
+
+Read against the shipped `ResourceGenerator.lua` and `Resources.xml` on
+2026-11-10, and checked against 101 recorded Continents games. Live figures cover
+revealed plots only, so sea shares are per Coast plot.
+
+| Rule | Shipped | CIVVIS before |
+|---|---|---|
+| Land luxuries | one shuffled deck deals 4 kinds to each continent, so a kind lies on one continent; each kind placed `plots * 30% * 19.33% / 4` times, at least once, with at most one resource beside it and no ice | a 13% roll on every tile from the whole catalog |
+| Strategics | each continent takes `plots * 30% * 21.7% * Frequency / 63` of a kind, at least one where a plot allows it | the same roll, topped up world-wide to `max(majors + 1, land / 90)` of each |
+| Bonus | across the map, `30% * 58.97%` of the plots that can hold one, split by weight; sea counts are `* 1.25`, `* 1.0` on Inland Sea | the same roll |
+| Sea luxuries, offshore Oil | kinds from `Resource_SeaLuxuries` and `Resource_SeaStrategics` by size and each script's `iWaterLux`; water plots roll west to east, polar band then equatorial, to a cap | the same roll |
+| Crowding | a bonus resource with two of its own kind beside it is removed | nothing |
+| Valid plots | a feature alone decides a plot that has one; Lakes count as Coast except for Whales; Amber at sea needs land beside it; Aluminum, Gypsum, Ivory and Marble list single forms of a terrain | a feature also had to match the hills rule, Marsh was skipped, Lakes held nothing |
+| Start sites | a plot holding a luxury or strategic is refused | any plot, its resource cleared |
+
+| 84x54 Continents | Live | Now | Before |
+|---|---|---|---|
+| Land luxury kinds on a continent | 4 on 90 of 106 explored, never more | 4 on all 48 | 11 on average |
+| Land holding a luxury | 5.41% | 5.47% | 3.80% |
+| Land holding a bonus | 9.13% | 11.60% | 2.32% |
+| Coast holding a bonus | 18.8% | 20.5% | 10.0% |
+| Coast holding a luxury | 4.8% | 4.8% | 0.7% |
+
+🟡 `CanHaveResource` and `GetAdjacentResourceCount` are compiled, so they are read
+from where live games put resources. The base `Resources.xml` lists Niter on
+desert Floodplains, but 101 live games show none, so it stays off. The shipped
+Earth maps carry hand-placed resources that CIVVIS does not have, so CIVVIS's
+Earth uses this generator. Land bonus runs above the live share and the cause is
+not settled. The Sparse and Abundant settings and Legendary Start are not modelled.
+
 ## Closed: continent seams, volcanoes, fissures, lakes and the Woods roll
 
 Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-10, and checked

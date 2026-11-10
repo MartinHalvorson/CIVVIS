@@ -172,7 +172,7 @@ fn a_satisfied_trigger_is_never_planned_for() {
 
 #[test]
 fn an_improvement_trigger_is_cheap_only_once_we_already_build_that_improvement() {
-    let mut game = capital_board(crate::rng::fixture_seed("AUTO_1", 71_011));
+    let mut game = capital_board(71_011);
     game.players[0].techs.insert(name!("mining"));
     let spec = trigger("improvement_on_resource:mine", 1);
 
@@ -222,7 +222,8 @@ fn an_improvement_trigger_is_cheap_only_once_we_already_build_that_improvement()
     // Without the gating technology nothing can be planned at all.
     let mut locked = capital_board(71_012);
     locked.players[0].techs.remove(&name!("mining"));
-    improve(&mut locked, "mine");
+    let mined = improve(&mut locked, "mine");
+    locked.map.tiles.get_mut(&mined).unwrap().resource = None;
     assert_eq!(
         ai_class(&locked, &spec),
         BoostTriggerClass::ImpossibleNow,

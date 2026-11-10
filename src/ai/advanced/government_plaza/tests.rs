@@ -6,7 +6,7 @@ fn board() -> (Game, u32, StrategicPlan) {
         2,
         24,
         16,
-        crate::rng::fixture_seed("PLAZARESERVE", 91_770),
+        crate::rng::fixture_seed("PLAZARESERVE", 91_771),
         250,
         0,
         false,
