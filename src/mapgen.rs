@@ -1973,15 +1973,12 @@ pub fn generate_with_script_and_leader_starts(
         None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
     };
 
-    // The dedicated continent scripts use their named regions as moving
-    // plates. Plan those regions before relief so their seams can grow into
-    // narrow rift belts, while preserving the legacy generation path for
-    // other map scripts.
-    let continental_rifts = matches!(script, MapScript::Continents | MapScript::SmallContinents);
-    if continental_rifts {
-        // Keep that planning on a clone: the legacy main-stream draw stays at
-        // its original point below, so unrelated seeded geography does not
-        // reroll.
+    // Every stock script stamps its continents before the relief pass whose
+    // volcanoes and mountains follow the seams between them. Keep the planning
+    // on a clone: the legacy main-stream draw stays at its original point
+    // below, so unrelated seeded geography does not reroll.
+    let stamps_continents = stamps_continents_before_relief(script);
+    if stamps_continents {
         let mut continent_rng = rng.clone();
         assign_continents(&mut wm, &land, num_continents, &mut continent_rng);
     }
@@ -1997,7 +1994,7 @@ pub fn generate_with_script_and_leader_starts(
     let mut mountain_terrain = if script.is_fixed_geography() {
         paint_earth(&mut wm, &land, poles, earth.as_ref(), rng)
     } else {
-        apply_tectonics(&mut wm, &land, script, continental_rifts, rng);
+        apply_tectonics(&mut wm, &land, script, rng);
         assign_biomes(&mut wm, &land_list, poles, rng)
     };
 
@@ -2022,6 +2019,24 @@ pub fn generate_with_script_and_leader_starts(
                 _ => {}
             }
         }
+    }
+
+    // --- `AddTerrainFromContinents`, which the stock scripts run after the
+    // biomes and before the rivers, so a river can start in the mountains it
+    // raises. An arena has no room for eruptions rewriting its ground.
+    if !script.is_battlefield() {
+        let desired_volcanoes = if script.is_fixed_geography() {
+            land.len() as f64 / FIXED_GEOGRAPHY_LAND_PER_VOLCANO
+        } else {
+            land.len() as f64 / f64::from((8 - stock_world_age(script)) * 50)
+        };
+        add_terrain_from_continents(
+            &mut wm,
+            &land,
+            &mut mountain_terrain,
+            desired_volcanoes,
+            rng,
+        );
     }
 
     // --- coast. A shelf is one tile of shallow water plus the stock's three
@@ -2169,137 +2184,7 @@ pub fn generate_with_script_and_leader_starts(
         }
     }
 
-    // --- tectonic and polar features
-    // Volcanoes replace a small, well-spaced subset of mountain tiles. Every
-    // candidate needs exposed land at its foot so the volcano reads as part of
-    // the landscape and can seed the volcanic soil produced by old eruptions.
-    let mut volcano_candidates: Vec<Pos> = land_list
-        .iter()
-        .copied()
-        .filter(|position| wm.tiles[position].terrain == "mountain")
-        .filter(|position| {
-            wm.neighbors(*position).into_iter().any(|neighbor| {
-                wm.tiles.get(&neighbor).is_some_and(|tile| {
-                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
-                })
-            })
-        })
-        .collect();
-    for index in (1..volcano_candidates.len()).rev() {
-        let other = rng.below(index + 1);
-        volcano_candidates.swap(index, other);
-    }
-    // The battlefield keeps its mountains ordinary: an arena a dozen tiles
-    // across has no room for eruptions rewriting the ground mid-battle.
-    let volcano_target = if script.is_battlefield() {
-        0
-    } else {
-        (land_list.len() / 180).max(1)
-    };
-    let mut volcanoes = Vec::new();
-    for position in volcano_candidates {
-        if volcanoes.len() >= volcano_target {
-            break;
-        }
-        if volcanoes
-            .iter()
-            .all(|other| wm.distance(position, *other) >= 4)
-        {
-            wm.tiles.get_mut(&position).unwrap().feature = Some("volcano".into());
-            volcanoes.push(position);
-        }
-    }
-
-    // Ancient eruption deposits make volcanoes legible even while dormant.
-    // Guarantee one deposit where geography allows, then scatter a few more
-    // without consuming the RNG differently for later per-tile feature rolls.
-    for volcano in &volcanoes {
-        let mut foothills: Vec<Pos> = wm
-            .neighbors(*volcano)
-            .into_iter()
-            .filter(|neighbor| {
-                wm.tiles.get(neighbor).is_some_and(|tile| {
-                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
-                        && tile.feature.is_none()
-                })
-            })
-            .collect();
-        for index in (1..foothills.len()).rev() {
-            let other = rng.below(index + 1);
-            foothills.swap(index, other);
-        }
-        for (index, position) in foothills.into_iter().enumerate() {
-            if index == 0 || rng.chance(0.28) {
-                wm.tiles.get_mut(&position).unwrap().feature = Some("volcanic_soil".into());
-            }
-        }
-    }
-
-    // Fissures follow tectonic relief rather than appearing on arbitrary flat
-    // tiles. Spacing them preserves their value as recognizable landmarks.
-    let mut fissure_candidates: Vec<Pos> = land_list
-        .iter()
-        .copied()
-        .filter(|position| {
-            let tile = &wm.tiles[position];
-            tile.terrain != "mountain"
-                && tile.feature.is_none()
-                && wm.neighbors(*position).into_iter().any(|neighbor| {
-                    wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
-                        neighbor_tile.terrain == "mountain"
-                            || neighbor_tile.feature.as_deref() == Some("volcano")
-                    })
-                })
-        })
-        .collect();
-    for index in (1..fissure_candidates.len()).rev() {
-        let other = rng.below(index + 1);
-        fissure_candidates.swap(index, other);
-    }
-    let fissure_target = if script.is_battlefield() {
-        0
-    } else {
-        (land_list.len() / 140).max(1)
-    };
-    let mut fissures = Vec::new();
-    if continental_rifts {
-        let rift_fissure_target = (fissure_target * CONTINENTAL_RIFT_FISSURE_NUMERATOR)
-            .div_ceil(CONTINENTAL_RIFT_FISSURE_DENOMINATOR);
-        // The full candidate list has already been shuffled. Stable sorting
-        // keeps each class random while giving the continental rift its share.
-        fissure_candidates.sort_by_key(|position| !continent_rift_band(&wm, *position));
-        let rift_candidate_count =
-            fissure_candidates.partition_point(|position| continent_rift_band(&wm, *position));
-        for (index, position) in fissure_candidates.into_iter().enumerate() {
-            if index < rift_candidate_count && fissures.len() >= rift_fissure_target {
-                continue;
-            }
-            if index >= rift_candidate_count && fissures.len() >= fissure_target {
-                break;
-            }
-            if fissures
-                .iter()
-                .all(|other| wm.distance(position, *other) >= 3)
-            {
-                wm.tiles.get_mut(&position).unwrap().feature = Some("geothermal_fissure".into());
-                fissures.push(position);
-            }
-        }
-    } else {
-        for position in fissure_candidates {
-            if fissures.len() >= fissure_target {
-                break;
-            }
-            if fissures
-                .iter()
-                .all(|other| wm.distance(position, *other) >= 3)
-            {
-                wm.tiles.get_mut(&position).unwrap().feature = Some("geothermal_fissure".into());
-                fissures.push(position);
-            }
-        }
-    }
-
+    // --- polar features
     // Polar sea ice occupies both Ocean and Coast. Latitude controls density,
     // leaving navigable gaps instead of drawing an artificial solid wall. A
     // world with no poles has no cold end for it to form on, so it forms none:
@@ -2326,6 +2211,15 @@ pub fn generate_with_script_and_leader_starts(
 
     // --- vegetative, wetland and river-basin features, and the reefs that
     // supply the Campus's major Gathering Storm adjacency source.
+    // `iNumLandPlots`, which `AddFeatures` counts as it scans: passable land
+    // no feature has claimed. It sets the fissure budget further down.
+    let open_land = land
+        .iter()
+        .filter(|pos| {
+            let tile = &wm.tiles[*pos];
+            tile.terrain != "mountain" && tile.feature.is_none()
+        })
+        .count();
     add_features(&mut wm, &land, rng);
 
     // --- natural wonders. See `mapgen/natural_wonders.rs`.
@@ -2337,6 +2231,17 @@ pub fn generate_with_script_and_leader_starts(
         script,
         rng,
     );
+
+    // --- Geothermal Fissures, in the stock position: after the wonders, so a
+    // wonder never has to give way to one.
+    if !script.is_battlefield() {
+        let desired_fissures = if script.is_fixed_geography() {
+            land.len() as f64 / FIXED_GEOGRAPHY_LAND_PER_FISSURE
+        } else {
+            open_land as f64 / LAND_PER_FISSURE
+        };
+        add_geothermal_fissures(&mut wm, &land, desired_fissures, rng);
+    }
 
     // --- resources. The battlefield places none — no lottery, no strategic
     // floors, no artifacts: its ground is terrain to fight over, not to work.
@@ -2399,7 +2304,7 @@ pub fn generate_with_script_and_leader_starts(
         );
     }
 
-    if continental_rifts {
+    if stamps_continents {
         // `assign_continents` historically used one phase draw here. Its early
         // tectonic plan uses a cloned stream, so retain the main-stream draw
         // at the original point and preserve every later random roll.
@@ -2548,34 +2453,240 @@ struct TectonicProfile {
     exact_mountain_percent: Option<usize>,
 }
 
-/// A continental rift lowers its mountain cutoff by eight percentiles. With
-/// the stock normal-age cutoff of ninety-four that is eighty-six; Continents'
-/// deliberately denser base profile gets the matching eighty-four so the
-/// seam remains visibly more tectonic without becoming an impassable wall.
-const CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE_DELTA: u32 = 8;
-
-/// Most fissures should read as part of a continental rift, while leaving a
-/// minority for other mountain systems such as isolated volcanic ranges.
-const CONTINENTAL_RIFT_FISSURE_NUMERATOR: usize = 2;
-const CONTINENTAL_RIFT_FISSURE_DENOMINATOR: usize = 3;
-
-/// A land tile touches another named continent.
-fn continent_boundary(wm: &WorldMap, position: Pos) -> bool {
-    let Some(continent) = wm.tiles.get(&position).and_then(|tile| tile.continent) else {
-        return false;
-    };
-    wm.neighbors(position).into_iter().any(|neighbor| {
-        wm.tiles
-            .get(&neighbor)
-            .and_then(|tile| tile.continent)
-            .is_some_and(|other| other != continent)
-    })
+/// The stock scripts this generator mirrors, which all call
+/// `TerrainBuilder.StampContinents` and then `AddTerrainFromContinents`. CIVVIS's
+/// own world types have no shipped seam rules, so they get volcanoes on lone
+/// mountains only.
+fn stamps_continents_before_relief(script: MapScript) -> bool {
+    matches!(
+        script,
+        MapScript::Continents
+            | MapScript::SmallContinents
+            | MapScript::Pangaea
+            | MapScript::Islands
+            | MapScript::Lakes
+            | MapScript::InlandSea
+    )
 }
 
-/// The one-hex-wide continental seam. Narrowing the rift to actual border
-/// plots keeps maps with many named regions from losing too much capital land.
-fn continent_rift_band(wm: &WorldMap, position: Pos) -> bool {
-    continent_boundary(wm, position)
+/// The `world_age_normal` each stock script declares. Only Island Plates
+/// differs, and it is what sets that script's volcano budget.
+fn stock_world_age(script: MapScript) -> i32 {
+    match script {
+        MapScript::Islands => 2,
+        _ => WORLD_AGE,
+    }
+}
+
+/// `iNumLandPlots / 200` in `FeatureGenerator:AddFeaturesFromContinents`.
+const LAND_PER_FISSURE: f64 = 200.0;
+
+/// The shipped Earth maps place these by hand, between 127 and 195 land plots
+/// per volcano and 152 and 182 per fissure on `EarthStandard_XP2` and
+/// `WorldMapHuge_XP2`. CIVVIS rolls the sites but keeps a density in that band.
+const FIXED_GEOGRAPHY_LAND_PER_VOLCANO: f64 = 180.0;
+const FIXED_GEOGRAPHY_LAND_PER_FISSURE: f64 = 140.0;
+
+/// `Map.FindSecondContinent` reports whether two continents fall within a
+/// range of a plot. This returns the smallest range, up to the three the
+/// scripts ask about, at which it would say yes.
+///
+/// 🟡 The function is compiled. Two continents in range is the reading its name
+/// gives, and it is the only one under which a water plot can answer at all.
+fn second_continent_distance(wm: &WorldMap, pos: Pos) -> Option<i32> {
+    let mut nearest: BTreeMap<usize, i32> = BTreeMap::new();
+    for other in wm.disk(pos, 3) {
+        if let Some(continent) = wm.tiles.get(&other).and_then(|tile| tile.continent) {
+            let distance = wm.distance(pos, other);
+            nearest
+                .entry(continent)
+                .and_modify(|best| *best = (*best).min(distance))
+                .or_insert(distance);
+        }
+    }
+    let mut distances: Vec<i32> = nearest.into_values().collect();
+    distances.sort_unstable();
+    distances.get(1).copied()
+}
+
+/// Plots a second continent reaches, with the range at which it does.
+fn continent_seams(wm: &WorldMap) -> BTreeMap<Pos, i32> {
+    wm.tiles
+        .keys()
+        .filter_map(|pos| second_continent_distance(wm, *pos).map(|range| (*pos, range)))
+        .collect()
+}
+
+/// A die of a Lua-computed size. `GetRandomNumber` takes an integer, so the
+/// fraction truncates, and a die smaller than one always lands on zero.
+fn fractional_die(rng: &mut Rng, sides: f64) -> usize {
+    rng.below((sides as usize).max(1))
+}
+
+/// `iMountainPercentByDistance` and `iHillPercentByDistance`, indexed by the
+/// distance to the second continent less one.
+const SEAM_MOUNTAIN_PERCENT: [usize; 3] = [42, 24, 6];
+const SEAM_HILL_PERCENT: [usize; 3] = [50, 40, 30];
+
+/// `AddTerrainFromContinents` (`TerrainGenerator.lua`).
+///
+/// Two thirds of the volcano budget is rolled along continent seams, where the
+/// same scan raises Mountains and Hills. Whatever is left falls on lone
+/// mountains, shared between continents by how many each has. The `/ 2` the
+/// script applies to mountains beside a volcano cannot fire: a plot within
+/// three of a placed volcano never reaches that roll.
+fn add_terrain_from_continents(
+    wm: &mut WorldMap,
+    land: &BTreeSet<Pos>,
+    mountain_terrain: &mut BTreeMap<Pos, Name>,
+    desired_volcanoes: f64,
+    rng: &mut Rng,
+) {
+    let seams = continent_seams(wm);
+    let desired_near_seams = desired_volcanoes * 2.0 / 3.0;
+    // Counted over every plot, the water included.
+    let plots_per_volcano = seams.len() as f64 / desired_near_seams.max(f64::MIN_POSITIVE);
+    let mut placed: Vec<Pos> = Vec::new();
+    let mut lonely: BTreeMap<Option<usize>, Vec<Pos>> = BTreeMap::new();
+
+    let (width, height) = (wm.width, wm.height);
+    for col in 0..width {
+        for row in 0..height {
+            let pos = hex::offset_to_axial(col, row);
+            if !land.contains(&pos) {
+                continue;
+            }
+            let adjacent_mountains = wm
+                .neighbors(pos)
+                .into_iter()
+                .filter(|neighbor| {
+                    wm.tiles
+                        .get(neighbor)
+                        .is_some_and(|tile| tile.terrain == "mountain")
+                })
+                .count();
+            let mut seam_range = None;
+            let mut volcano_here = false;
+            if adjacent_mountains != 6 && placed.iter().all(|v| wm.distance(pos, *v) > 3) {
+                seam_range = seams.get(&pos).copied();
+                match seam_range {
+                    Some(1) => {
+                        volcano_here = fractional_die(rng, plots_per_volcano * 0.7) == 0;
+                    }
+                    Some(2) => {
+                        volcano_here = fractional_die(rng, plots_per_volcano) == 0;
+                    }
+                    Some(_) => {
+                        volcano_here = fractional_die(rng, plots_per_volcano * 1.5) == 0;
+                    }
+                    None => {
+                        if wm.tiles[&pos].terrain == "mountain"
+                            && matches!(adjacent_mountains, 0 | 2 | 3)
+                        {
+                            lonely
+                                .entry(wm.tiles[&pos].continent)
+                                .or_default()
+                                .push(pos);
+                        }
+                    }
+                }
+            }
+            if volcano_here {
+                raise_mountain(wm, mountain_terrain, pos);
+                wm.tiles.get_mut(&pos).unwrap().feature = Some("volcano".into());
+                placed.push(pos);
+            } else if let Some(range) = seam_range {
+                let index = (range - 1) as usize;
+                if rng.below(100) < SEAM_MOUNTAIN_PERCENT[index] {
+                    raise_mountain(wm, mountain_terrain, pos);
+                } else if rng.below(100) < SEAM_HILL_PERCENT[index] {
+                    // `ConvertToHills` also takes a standing Mountain down.
+                    let tile = wm.tiles.get_mut(&pos).unwrap();
+                    if tile.terrain == "mountain" {
+                        tile.terrain = mountain_terrain
+                            .remove(&pos)
+                            .unwrap_or_else(|| Name::new("grassland"));
+                    }
+                    tile.hills = true;
+                }
+            }
+        }
+    }
+
+    let lonely_volcanoes = desired_volcanoes - placed.len() as f64;
+    let total_mountains: usize = lonely.values().map(Vec::len).sum();
+    if total_mountains == 0 || lonely_volcanoes <= 0.0 {
+        return;
+    }
+    for mut mountains in lonely.into_values() {
+        let share = lonely_volcanoes * mountains.len() as f64 / total_mountains as f64;
+        for index in (1..mountains.len()).rev() {
+            let other = rng.below(index + 1);
+            mountains.swap(index, other);
+        }
+        let mut placed_here = 0usize;
+        for pos in mountains {
+            if placed.iter().all(|v| wm.distance(pos, *v) > 4) {
+                wm.tiles.get_mut(&pos).unwrap().feature = Some("volcano".into());
+                placed.push(pos);
+                placed_here += 1;
+                if placed_here as f64 >= share {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// `ConvertToMountain`, keeping the biome so the tile can come back down.
+fn raise_mountain(wm: &mut WorldMap, mountain_terrain: &mut BTreeMap<Pos, Name>, pos: Pos) {
+    let tile = wm.tiles.get_mut(&pos).unwrap();
+    if tile.terrain != "mountain" {
+        mountain_terrain.insert(pos, tile.terrain);
+        tile.terrain = "mountain".into();
+    }
+    tile.hills = false;
+}
+
+/// The fissure half of `FeatureGenerator:AddFeaturesFromContinents`: shuffled
+/// plots near a continent seam first, then anywhere. Nothing spaces them.
+fn add_geothermal_fissures(
+    wm: &mut WorldMap,
+    land: &BTreeSet<Pos>,
+    desired_fissures: f64,
+    rng: &mut Rng,
+) {
+    if desired_fissures <= 0.0 {
+        return;
+    }
+    let seams = continent_seams(wm);
+    let mut placed = 0usize;
+    for near_seam in [true, false] {
+        if placed as f64 >= desired_fissures {
+            break;
+        }
+        let mut candidates: Vec<Pos> = land
+            .iter()
+            .filter(|pos| {
+                let tile = &wm.tiles[*pos];
+                tile.terrain != "mountain"
+                    && tile.feature.is_none()
+                    && seams.contains_key(*pos) == near_seam
+            })
+            .copied()
+            .collect();
+        for index in (1..candidates.len()).rev() {
+            let other = rng.below(index + 1);
+            candidates.swap(index, other);
+        }
+        for pos in candidates {
+            wm.tiles.get_mut(&pos).unwrap().feature = Some("geothermal_fissure".into());
+            placed += 1;
+            if placed as f64 >= desired_fissures {
+                break;
+            }
+        }
+    }
 }
 
 /// Elevation, the way `MountainsCliffs.lua` builds it: two fractal fields,
@@ -2705,7 +2816,6 @@ fn apply_tectonics(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
     script: MapScript,
-    continental_rifts: bool,
     rng: &mut Rng,
 ) {
     let profile = tectonic_profile(script);
@@ -2729,23 +2839,6 @@ fn apply_tectonics(
         &[profile.mountain_percentile, profile.foothills_percentile],
     );
     let mountain_threshold = mountain_bands[0];
-    let rift_mountain_threshold = if continental_rifts {
-        let rift_cells: Vec<(i32, i32)> = land
-            .iter()
-            .filter(|position| continent_rift_band(wm, **position))
-            .map(|position| noise_cell(wm, *position))
-            .collect();
-        mountains
-            .percentile_within(
-                rift_cells.iter().copied(),
-                profile
-                    .mountain_percentile
-                    .saturating_sub(CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE_DELTA),
-            )
-            .min(mountain_threshold)
-    } else {
-        mountain_threshold
-    };
     let foothills_threshold = mountain_bands[1];
     let hill_bands = hills.percentiles_within(
         &cells,
@@ -2765,13 +2858,8 @@ fn apply_tectonics(
         let (col, row) = noise_cell(wm, *pos);
         let mountain_value = mountains.at(col, row);
         let hill_value = hills.at(col, row);
-        let mountain_cutoff = if continental_rifts && continent_rift_band(wm, *pos) {
-            rift_mountain_threshold
-        } else {
-            mountain_threshold
-        };
         let tile = wm.tiles.get_mut(pos).unwrap();
-        if mountain_value >= mountain_cutoff {
+        if mountain_value >= mountain_threshold {
             if hill_value >= pass_threshold {
                 // A pass through the ridgeline, so a range is crossable.
                 tile.hills = true;
@@ -3038,7 +3126,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             if terrain == "grassland"
                 && !hills
                 && within_share(marshes, considered_land, MARSH_PERCENT)
-                && (rng.below(300) as i32)
+                && (rng.below(450) as i32)
                     <= cluster_score(adjacent_feature_count(wm, pos, "marsh"))
             {
                 wm.tiles.get_mut(&pos).unwrap().feature = Some("marsh".into());
@@ -3070,7 +3158,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
 
             if matches!(terrain.as_str(), "grassland" | "plains" | "tundra")
                 && within_share(forests, considered_land, FOREST_PERCENT)
-                && (rng.below(300) as i32)
+                && (rng.below(450) as i32)
                     <= cluster_score(adjacent_feature_count(wm, pos, "forest"))
             {
                 wm.tiles.get_mut(&pos).unwrap().feature = Some("forest".into());

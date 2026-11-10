@@ -25,14 +25,10 @@ pub(super) const LAKE_MAX_AREA_SIZE: usize = 9;
 
 /// How many bodies a world type may spread past a single plot.
 ///
-/// `Lakes.lua` asks for four per continent region; every other stock script
-/// asks for none and receives the one-plot ponds the same roll produces. The
-/// two single-supercontinent types are given a budget of their own here, which
-/// is a deliberate departure: their interiors are deep enough to hold an
-/// inland sea, and a supercontinent whose only water is its own shoreline
-/// plays as a flat expanse. The island types keep the stock zero — an island
-/// has no interior to put a lake in, and the enclosure rule would refuse one
-/// anyway.
+/// Each stock script passes `AddLakes` a multiple of the `Maps.Continents`
+/// column: four times it on Lakes, one and a half on Pangaea, once on
+/// Continents and Small Continents, and half on Inland Sea and Island Plates,
+/// rounded up. Every roll past that budget is a one-plot pond.
 ///
 /// Earth asks for none, but for a third reason again: it already has its own.
 /// The Caspian, the Great Lakes, Victoria, Baikal, Balkhash and the Aral are
@@ -47,14 +43,13 @@ pub(super) const LAKE_MAX_AREA_SIZE: usize = 9;
 pub(super) fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
     match script {
         MapScript::Lakes => num_continents * 4,
+        MapScript::Pangaea => (num_continents * 3).div_ceil(2),
+        MapScript::Continents | MapScript::SmallContinents => num_continents,
+        MapScript::InlandSea | MapScript::Islands => num_continents.div_ceil(2),
         // The blocks a canal world is cut into are broad enough to hold one,
         // and a lake is the water a canal world does not already have: fresh,
         // enclosed, and nothing a ship arrives by.
-        MapScript::Pangaea
-        | MapScript::TacticsPlanet
-        | MapScript::InlandSea
-        | MapScript::GrandCanals => num_continents,
-        MapScript::Continents => num_continents / 2,
+        MapScript::TacticsPlanet | MapScript::GrandCanals => num_continents,
         // A block of a Grand Canals II world is a few dozen tiles of ground
         // with a canal already around it, so its middle is never far from a
         // bank and a spread lake would be most of what a city had to work.
@@ -64,9 +59,7 @@ pub(super) fn large_lake_budget(script: MapScript, num_continents: usize) -> usi
         | MapScript::TrueStartEarth
         | MapScript::LandOnly
         | MapScript::TeninsBall
-        | MapScript::SmallContinents
         | MapScript::Fjords
-        | MapScript::Islands
         | MapScript::WaterWorld => 0,
         // The battlefield carves its own ponds when its land is laid; a
         // spread lake on a ten-tile-wide arena would be most of the arena.
@@ -105,13 +98,18 @@ pub(super) fn large_lake_budget(script: MapScript, num_continents: usize) -> usi
 
 /// Whether a plot may flood, using the stock script's filters.
 ///
-/// A lake plot has to be inland land: not water, not *coastal* land, and clear
-/// of rivers and of tiles carrying one. The enclosure is a precondition of
+/// A lake plot has to be inland land: not water, not *coastal* land, not a
+/// volcano, and clear of rivers and of tiles carrying one. The enclosure is a precondition of
 /// placement rather than something checked afterwards, and it is also what
 /// keeps two lakes apart — a plot beside one that has already flooded is
 /// coastal land by the time the scan reaches it.
 fn lake_eligible(wm: &WorldMap, land: &BTreeSet<Pos>, pos: Pos) -> bool {
-    if !land.contains(&pos) || wm.tiles.get(&pos).is_none_or(|tile| tile.has_river()) {
+    if !land.contains(&pos)
+        || wm
+            .tiles
+            .get(&pos)
+            .is_none_or(|tile| tile.has_river() || tile.feature.as_deref() == Some("volcano"))
+    {
         return false;
     }
     wm.around(pos)

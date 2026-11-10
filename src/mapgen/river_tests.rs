@@ -4784,8 +4784,11 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
                             adjacent.terrain, "coast",
                             "oasis at {position:?} touches Coast at {neighbor:?}"
                         );
+                        // A fissure is laid after the oases and nothing keeps
+                        // it off one.
                         assert!(
-                            adjacent.feature.is_none(),
+                            adjacent.feature.is_none()
+                                || adjacent.feature.as_deref() == Some("geothermal_fissure"),
                             "oasis at {position:?} touches feature {:?} at {neighbor:?}",
                             adjacent.feature
                         );
@@ -4800,28 +4803,12 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
                 "volcano" => {
                     assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                 }
-                "volcanic_soil" => {
-                    assert!(
-                        volcanic_soil_valid_terrain(tile),
-                        "volcanic soil generated on {} at {position:?}",
-                        tile.terrain
-                    );
-                    assert!(
-                        world.neighbors(*position).into_iter().any(|neighbor| world
-                            .tiles
-                            .get(&neighbor)
-                            .is_some_and(|neighbor_tile| {
-                                neighbor_tile.feature.as_deref() == Some("volcano")
-                            })),
-                        "volcanic soil at {position:?} has no volcano"
-                    );
-                }
+                // No shipped script places it: only an eruption leaves soil.
+                "volcanic_soil" => panic!("volcanic soil generated at {position:?}"),
                 "geothermal_fissure" => assert!(
-                    world.neighbors(*position).into_iter().any(|neighbor| world
-                        .tiles
-                        .get(&neighbor)
-                        .is_some_and(|neighbor_tile| { neighbor_tile.terrain == "mountain" })),
-                    "geothermal fissure at {position:?} is not tectonic"
+                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean"),
+                    "geothermal fissure on {} at {position:?}",
+                    tile.terrain
                 ),
                 _ => {}
             }
@@ -4839,7 +4826,6 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
         "geothermal_fissure",
         "ice",
         "volcano",
-        "volcanic_soil",
     ] {
         assert!(
             generated.contains(feature),
@@ -4849,7 +4835,7 @@ fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
 }
 
 #[test]
-fn continental_rifts_concentrate_mountains_and_geothermal_fissures() {
+fn continent_seams_concentrate_mountains_and_geothermal_fissures() {
     let rules = Rules::embedded();
     let mut rift_land = 0usize;
     let mut interior_land = 0usize;
@@ -4877,7 +4863,7 @@ fn continental_rifts_concentrate_mountains_and_geothermal_fissures() {
             if rules.is_water(tile) {
                 continue;
             }
-            let rift = continent_rift_band(&world, *position);
+            let rift = second_continent_distance(&world, *position).is_some();
             let land = if rift {
                 &mut rift_land
             } else {
@@ -5504,4 +5490,71 @@ fn measure_start_spread() {
             }
         }
     }
+}
+
+/// `numLargeLakes` in each stock script, on four continents and on five so
+/// every rounding shows.
+#[test]
+fn large_lake_budgets_follow_each_stock_script() {
+    for (script, four, five) in [
+        (MapScript::Lakes, 16, 20),
+        (MapScript::Pangaea, 6, 8),
+        (MapScript::Continents, 4, 5),
+        (MapScript::SmallContinents, 4, 5),
+        (MapScript::InlandSea, 2, 3),
+        (MapScript::Islands, 2, 3),
+    ] {
+        assert_eq!(large_lake_budget(script, 4), four, "{script:?} on four");
+        assert_eq!(large_lake_budget(script, 5), five, "{script:?} on five");
+    }
+}
+
+/// TEMPORARY census: land, open land, mountains, volcanoes, fissures per script.
+#[test]
+fn temp_tectonic_census() {
+    let rules = Rules::embedded();
+    let mut report = String::new();
+    for (name, script) in [
+        ("continents", MapScript::Continents),
+        ("small", MapScript::SmallContinents),
+        ("pangaea", MapScript::Pangaea),
+        ("islands", MapScript::Islands),
+        ("lakes", MapScript::Lakes),
+        ("inland", MapScript::InlandSea),
+    ] {
+        let (mut land, mut mountains, mut volcanoes, mut fissures, mut seam_volcanoes) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        let (mut hills, mut marshes, mut woods, mut lake_plots) = (0usize, 0usize, 0usize, 0usize);
+        for seed in 0..10 {
+            let mut rng = Rng::new(80_700 + seed);
+            let (world, _) = generate_with_script(
+                &rules, 84, 54, 8, 10, 4, 4, script, FLAT, POLED, &mut rng,
+            );
+            for (position, tile) in &world.tiles {
+                if tile.terrain == "coast" && tile.lake {
+                    lake_plots += 1;
+                }
+                if rules.is_water(tile) {
+                    continue;
+                }
+                land += 1;
+                mountains += usize::from(tile.terrain == "mountain");
+                hills += usize::from(tile.hills);
+                marshes += usize::from(tile.feature.as_deref() == Some("marsh"));
+                woods += usize::from(tile.feature.as_deref() == Some("forest"));
+                if tile.feature.as_deref() == Some("volcano") {
+                    volcanoes += 1;
+                    seam_volcanoes +=
+                        usize::from(second_continent_distance(&world, *position).is_some());
+                }
+                fissures += usize::from(tile.feature.as_deref() == Some("geothermal_fissure"));
+            }
+        }
+        report.push_str(&format!(
+            "\nCENSUS {name}: land {land} mountains {mountains} hills {hills} volcanoes \
+             {volcanoes} (seam {seam_volcanoes}) fissures {fissures} marsh {marshes} woods \
+             {woods} lake_plots {lake_plots}"
+        ));
+    }
+    panic!("{report}");
 }
