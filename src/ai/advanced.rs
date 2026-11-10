@@ -6763,6 +6763,12 @@ pub struct AdvancedAi {
     /// unit and the deterrent leaves them alone. See
     /// `advanced/culture_past_the_deterrent.rs`. Off by default.
     culture_seat_builds_past_the_deterrent: bool,
+    /// `culture-faith-site-per-theater`: the Culture Faith claim develops one
+    /// Holy Site per city with a standing Theater Square (up to six) and keeps
+    /// opening sources until Faith reaches twenty a city, and the seat
+    /// researches Astrology once its first Theater Square stands. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater: bool,
     /// `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     /// beeline by when each Inspiration lands and researches the technology
     /// that inspires a near civic of the road to Cold War first. See

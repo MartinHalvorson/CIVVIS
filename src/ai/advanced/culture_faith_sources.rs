@@ -4,6 +4,13 @@
 //! cannot supply this economy. Once the first writing slots stand, reserve
 //! safe faith items within the existing source budget, developing at most one Holy Site per three
 //! cities (three total), and stop once observed Faith income meets the budget.
+//!
+//! `culture-faith-site-per-theater` lifts both limits: one Holy Site for every
+//! city with a standing Theater Square, and Faith claims until income reaches
+//! twenty a city. See `CULTURE_FAITH_SITES_PER_THEATER_CAP`. It also researches
+//! Astrology once the first Theater Square stands
+//! (`AdvancedAi::culture_faith_astrology_due`), so the sites are unlocked
+//! when the sources open.
 
 use super::*;
 
@@ -15,6 +22,25 @@ use super::*;
 /// Rock Bands that unlock at Cold War.
 const CULTURE_FAITH_OPENING_THEATERS: usize = 2;
 
+/// `culture-faith-site-per-theater`: the most Holy Sites the Culture Faith
+/// claim develops, one per city with a standing Theater Square. Live Deity
+/// Online Kristina 2026-11-10 (six games, 3-8 cities at t100) held 0-2 Holy
+/// Sites and 0-15 Faith a turn at t100: the one-per-three-cities budget
+/// allowed one site in every three- to five-city game, and three of the six
+/// games started none before t130. The religion seat on the same lane
+/// made 147 Faith a turn at t100 from Shrines and Temples in six of seven
+/// cities. A finished Holy Site with its Shrine, Temple, the faith-bought
+/// worship building of the faith its city follows and three Holy Site
+/// specialists paid 13-29 Faith a turn (most above 20) in every live
+/// Kristina game that built one (140731Z, 144009Z, 152217Z, 153619Z).
+const CULTURE_FAITH_SITES_PER_THEATER_CAP: usize = 6;
+
+/// `culture-faith-site-per-theater`: Faith a turn per city, and the empire
+/// ceiling, below which the claim keeps opening sources. Three complete
+/// sources reach the 60 a turn the Rock Bands need by t100; the old ceiling
+/// of eight a city stopped a four-city empire at 32.
+const CULTURE_FAITH_PER_THEATER_INCOME: (f64, f64) = (20.0, 160.0);
+
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
         if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
@@ -25,15 +51,16 @@ impl AdvancedAi {
         }
         let city_ids = g.player_city_ids(pid);
         let cities = city_ids.len();
+        let theater_cities = city_ids
+            .iter()
+            .filter(|cid| {
+                g.city_has_district_family(&g.cities[*cid], crate::name!("theater_square"))
+            })
+            .count();
         let opened_by_theaters = self.culture_faith_opens_at_the_theaters
-            && city_ids
-                .iter()
-                .filter(|cid| {
-                    g.city_has_district_family(&g.cities[*cid], crate::name!("theater_square"))
-                })
-                .count()
-                >= CULTURE_FAITH_OPENING_THEATERS;
-        if cities < 3
+            && theater_cities >= CULTURE_FAITH_OPENING_THEATERS;
+        let per_theater = self.culture_faith_site_per_theater;
+        if cities < if per_theater { 2 } else { 3 }
             || !(opened_by_theaters
                 || city_ids.iter().any(|cid| {
                     g.cities[cid].buildings.iter().any(|building| {
@@ -52,14 +79,41 @@ impl AdvancedAi {
             + g.observed_yield_adjustments
                 .get(&pid)
                 .map_or(0.0, |yield_| yield_.faith);
+        let (per_city, ceiling) = if per_theater {
+            CULTURE_FAITH_PER_THEATER_INCOME
+        } else {
+            (8.0, 80.0)
+        };
         if !income.is_finite()
-            || income >= (cities as f64 * 8.0).min(80.0)
+            || income >= (cities as f64 * per_city).min(ceiling)
             || (g.players[pid].gold_per_turn < 0.0
                 && g.players[pid].gold < 100.0 + 25.0 * cities as f64)
         {
             return None;
         }
-        Some((cities / 3).min(3))
+        Some(if per_theater {
+            theater_cities.clamp(1, CULTURE_FAITH_SITES_PER_THEATER_CAP)
+        } else {
+            (cities / 3).min(3)
+        })
+    }
+
+    /// `culture-faith-site-per-theater`: whether the research slot takes
+    /// Astrology, the Holy Site's unlock, for a Culture seat that has a
+    /// standing Theater Square. Astrology is a dead-end branch no Culture
+    /// goal walks through: live Deity Kristina 2026-11-10 learned it at t74-79
+    /// in four of six games (t43 and t51 in the others), after the Faith
+    /// sources had opened, and its first Holy Site followed at t86-t130.
+    /// False with the gene off, for another target, and once it is known.
+    pub(super) fn culture_faith_astrology_due(&self, g: &Game, pid: usize) -> bool {
+        self.culture_faith_site_per_theater
+            && (self.culture_seat_theater_first || self.culture_seat_theater_first_2)
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && !g.players[pid].techs.contains(&crate::name!("astrology"))
+            && g.player_city_ids(pid).into_iter().any(|cid| {
+                g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square"))
+            })
     }
 
     fn culture_faith_item(g: &Game, item: &Item) -> bool {
