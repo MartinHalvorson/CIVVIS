@@ -161,6 +161,9 @@ impl AdvancedAi {
         /// `culture-road-builds-its-triggers`: see
         /// `advanced/culture_road_triggers.rs`.
         culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
+        /// `culture-bank-holds-the-counterweight`: see
+        /// `advanced/culture_band_bank.rs`.
+        culture_bank_holds_the_counterweight => enable_culture_bank_holds_the_counterweight, disable_culture_bank_holds_the_counterweight;
         /// `culture-gold-buys-the-shrines`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_gold_buys_the_shrines => enable_culture_gold_buys_the_shrines, disable_culture_gold_buys_the_shrines;
