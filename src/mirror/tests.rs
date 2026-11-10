@@ -13012,7 +13012,8 @@ fn a_city_states_city_reaches_the_board_and_blocks_the_ring_civ6_refuses() {
         ..StateMinor::default()
     });
 
-    let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+    // Seed 2 leaves room on this 12x12 board for a city-state seat.
+    let recon = rebuild_from_state(&snapshot, &state, 4, 2, 500, 0);
     assert_eq!(
         recon.placed_minor_cities, 1,
         "the city-state's city must be planted"

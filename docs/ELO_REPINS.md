@@ -2356,3 +2356,21 @@ The engine before this change measures v49's **18,828 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v51 (2026-11-10) — Tribal Villages follow AddGoodies and starts keep the wonder buffer
+
+#4904 moves two map rules onto the shipped scripts. `AddGoodies` now places the
+Tribal Villages last, one per 128 plots walked on a coin flip, off resources and
+clear of every start by `GoodyRange` 3. A start site now refuses a Natural Wonder
+at exactly the buffer distance, as `__NaturalWonderBuffer` does. Live games back
+the village rule: 193 villages in 47 games, none on a resource and none nearer
+than 3 to another. Terrain is unchanged, but villages and the camps that avoid
+them moved. Every controller, `AdvancedAi::legacy()` included, now plays on
+these worlds.
+
+The engine before this change measures v50's **18,801 decisions /
+`0xcedd_2626_df03_b554`**. The corrected engine measures **18,921 decisions /
+`0xc0d7_2582_ba49_717e`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
