@@ -1154,8 +1154,9 @@ fn flower_power_keeps_the_rock_band_price_and_doubles_every_other_unit() {
     let band = game
         .unit_purchase_cost(0, city, "rock_band", "faith")
         .unwrap();
-    let warrior = game.unit_purchase_cost(0, city, "warrior", "gold").unwrap();
-    assert!(band > 0.0 && warrior > 0.0);
+    // A civilian: the starting Warrior holds the city's land-combat slot.
+    let builder = game.unit_purchase_cost(0, city, "builder", "gold").unwrap();
+    assert!(band > 0.0 && builder > 0.0);
     game.players[0]
         .policies
         .insert(crate::name!("flower_power"));
@@ -1164,8 +1165,8 @@ fn flower_power_keeps_the_rock_band_price_and_doubles_every_other_unit() {
         Some(band)
     );
     assert_eq!(
-        game.unit_purchase_cost(0, city, "warrior", "gold"),
-        Some(2.0 * warrior)
+        game.unit_purchase_cost(0, city, "builder", "gold"),
+        Some(2.0 * builder)
     );
 }
 
