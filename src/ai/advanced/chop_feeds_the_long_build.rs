@@ -187,7 +187,8 @@ impl AdvancedAi {
                 if payout <= 0.0 {
                     continue;
                 }
-                let turns_saved = payout / build.per_turn.max(1.0);
+                // A clearing cannot save more turns than the item has left.
+                let turns_saved = payout.min(build.remaining) / build.per_turn.max(1.0);
                 if !build.space_race && turns_saved < LONG_BUILD_TURNS_SAVED {
                     continue;
                 }
