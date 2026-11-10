@@ -5498,6 +5498,12 @@ pub const GENES: &[Gene] = &[
     // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-bank-holds-the-counterweight`: from Nationalism a Culture seat
+    // buys no counterweight Missionary unless the threat faith is at match
+    // point. Live Deity Kristina 11-10: 18 bought between Nationalism and
+    // Cold War (or the end) in 5 of 8 games. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-holds-the-counterweight", field: "culture_bank_holds_the_counterweight", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_holds_the_counterweight, disable: AdvancedAi::disable_culture_bank_holds_the_counterweight },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
