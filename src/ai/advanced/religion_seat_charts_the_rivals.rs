@@ -57,12 +57,12 @@
 //!     gives every ship already afloat the Ocean.
 //!   - *It is an eye, not a soldier.* civvis-20261110T123943Z floated its
 //!     Galley at t77, eleven turns before Cartography, and met its last two
-//!     rivals at t112 and t144: the journal has that one ship in sea task
-//!     forces on 198 lines between t77 and t133 (the reserve 127, a
-//!     Settler's escort 50, Destroy missions 21) and it never sailed more
-//!     than 32 tiles from the capital. civvis-20261110T112233Z lost its only
-//!     ship at t110 striking for a Destroy mission at 0.8 local strength.
-//!     The first unlinked warship of ours with water still to chart
+//!     rivals at t112 and t144. Between t77 and t133 the journal has its
+//!     sea task forces on 206 lines (the reserve 127, a Settler's escort 50,
+//!     Destroy missions 26, other 3), and that Galley never sailed more than
+//!     32 tiles from the capital. civvis-20261110T112233Z lost its only ship
+//!     at t110 striking for a Destroy mission at 0.8 local strength. The
+//!     first unlinked warship of ours with water still to chart
 //!     ([`AdvancedAi::religion_seat_charting_ship`]) is left out of the
 //!     objective board's pool and is not bound as a Settler's naval guard,
 //!     so the sea scout's turn has it. One ship: the rest of the fleet
