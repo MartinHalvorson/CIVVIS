@@ -46,22 +46,28 @@ fn fixture(gene: bool) -> (AdvancedAi, Game, Vec<u32>) {
     (ai, g, cities)
 }
 
-/// Bury `count` Antiquity Sites on plain land the first city owns, nearest
-/// its centre first, and return them.
-fn bury(g: &mut Game, city: u32, count: usize) -> Vec<Pos> {
-    let centre = g.cities[&city].pos;
-    let mut land: Vec<Pos> = g.cities[&city]
-        .owned_tiles
-        .iter()
-        .copied()
-        .filter(|pos| {
-            *pos != centre
-                && g.map.tiles[pos].district.is_none()
-                && g.map.tiles[pos].resource.is_none()
-                && !g.rules.is_water(&g.map.tiles[pos])
-        })
-        .collect();
-    land.sort_by_key(|pos| (g.wdist(centre, *pos), *pos));
+/// Bury `count` Antiquity Sites on plain land our cities own, the first
+/// city's tiles first and each city's nearest its centre first, and return
+/// them.
+fn bury(g: &mut Game, cities: &[u32], count: usize) -> Vec<Pos> {
+    let mut land: Vec<Pos> = Vec::new();
+    for city in cities {
+        let centre = g.cities[city].pos;
+        let mut own: Vec<Pos> = g.cities[city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|pos| {
+                *pos != centre
+                    && g.map.tiles[pos].district.is_none()
+                    && g.map.tiles[pos].resource.is_none()
+                    && g.city_at(*pos).is_none()
+                    && !g.rules.is_water(&g.map.tiles[pos])
+            })
+            .collect();
+        own.sort_by_key(|pos| (g.wdist(centre, *pos), *pos));
+        land.extend(own);
+    }
     land.truncate(count);
     assert_eq!(land.len(), count, "fixture: room for the sites");
     for site in &land {
@@ -100,7 +106,7 @@ fn the_museums_follow_the_reachable_sites() {
         1,
         "no site visible: one Museum"
     );
-    bury(&mut g, cities[0], 3);
+    bury(&mut g, &cities, 3);
     assert_eq!(AdvancedAi::reachable_dig_sites(&g, 0), 3);
     assert_eq!(
         ai.dig_museums_wanted(&g, 0),
@@ -108,14 +114,14 @@ fn the_museums_follow_the_reachable_sites() {
         "three sites fill one Museum"
     );
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 4);
+    bury(&mut g, &cities, 4);
     assert_eq!(
         ai.dig_museums_wanted(&g, 0),
         2,
         "a fourth site wants a second"
     );
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 8);
+    bury(&mut g, &cities, 8);
     assert_eq!(ai.dig_museums_wanted(&g, 0), DIG_MUSEUM_CAP, "capped");
 
     // Before Natural History reveals the sites the gene keeps one Museum.
@@ -126,7 +132,7 @@ fn the_museums_follow_the_reachable_sites() {
 #[test]
 fn off_or_another_target_wants_no_museum() {
     let (ai, mut g, cities) = fixture(false);
-    bury(&mut g, cities[0], 6);
+    bury(&mut g, &cities, 6);
     assert_eq!(ai.dig_museums_wanted(&g, 0), 0, "gene off");
     let mut science = AdvancedAi::targeting(VictoryTarget::Science);
     science.enable_culture_digs_every_site();
@@ -137,7 +143,7 @@ fn off_or_another_target_wants_no_museum() {
 fn the_museum_bonus_lasts_until_the_wanted_count_stands() {
     let dig = crate::name!("archaeological_museum");
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 5);
+    bury(&mut g, &cities, 5);
     assert!(!ai.culture_digs_one_museum, "carried without the old gene");
     assert_eq!(
         ai.dig_museum_bonus(&g, 0, dig),
@@ -153,7 +159,7 @@ fn the_museum_bonus_lasts_until_the_wanted_count_stands() {
     assert_eq!(ai.dig_museum_bonus(&g, 0, dig), 0.0, "the second is queued");
 
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 2);
+    bury(&mut g, &cities, 2);
     assert_eq!(
         ai.dig_museum_bonus(&g, 0, dig),
         0.0,
@@ -164,7 +170,7 @@ fn the_museum_bonus_lasts_until_the_wanted_count_stands() {
 #[test]
 fn the_museum_city_claims_the_archaeologist() {
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 2);
+    bury(&mut g, &cities, 2);
     assert!(g.can_produce(0, cities[0], &digger()));
     let plan = ai.assess(&g, 0);
     assert!(
@@ -190,7 +196,7 @@ fn no_slot_no_site_or_gene_off_claims_nothing() {
     assert!(g.cities[&cities[0]].queue.is_empty(), "no site");
 
     let (ai, mut g, cities) = fixture(true);
-    bury(&mut g, cities[0], 2);
+    bury(&mut g, &cities, 2);
     g.players[0].live_open_great_work_slots = Some(Default::default());
     let plan = ai.assess(&g, 0);
     ai.claim_dig_archaeologist(&mut g, 0, &plan);
@@ -200,7 +206,7 @@ fn no_slot_no_site_or_gene_off_claims_nothing() {
     );
 
     let (ai, mut g, cities) = fixture(false);
-    bury(&mut g, cities[0], 2);
+    bury(&mut g, &cities, 2);
     let plan = ai.assess(&g, 0);
     ai.claim_dig_archaeologist(&mut g, 0, &plan);
     assert!(g.cities[&cities[0]].queue.is_empty(), "gene off");
@@ -234,7 +240,7 @@ fn own_sites_come_before_unowned_and_foreign_ones() {
 #[test]
 fn a_barred_site_is_passed_over() {
     let (mut ai, mut g, cities) = fixture(true);
-    let sites = bury(&mut g, cities[0], 1);
+    let sites = bury(&mut g, &cities, 1);
     let at = g.cities[&cities[0]].pos;
     let uid = g.spawn_test_unit("archaeologist", 0, at);
     g.current = 0;

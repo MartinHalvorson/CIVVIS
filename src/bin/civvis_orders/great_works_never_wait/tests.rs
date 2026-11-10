@@ -88,7 +88,7 @@ fn a_writer_on_the_palace_walks_to_the_open_amphitheater() {
             plot(20, 10, 10, true),
         ],
     );
-    let mut orders = vec![order("ACTIVATE_GREAT_PERSON", None)];
+    let mut orders = [order("ACTIVATE_GREAT_PERSON", None)];
     assert_eq!(retarget_writers(&state, &mut orders), 1);
     assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
     assert_eq!(orders[0].pos, Some((11, 10)));
@@ -97,7 +97,7 @@ fn a_writer_on_the_palace_walks_to_the_open_amphitheater() {
 #[test]
 fn a_writer_walking_to_the_palace_takes_the_open_slot_elsewhere() {
     let state = board(WRITER, vec![plot(10, 10, 0, true), plot(20, 10, 6, true)]);
-    let mut orders = vec![order("MOVE_TO", Some((10, 10)))];
+    let mut orders = [order("MOVE_TO", Some((10, 10)))];
     assert_eq!(retarget_writers(&state, &mut orders), 1);
     assert_eq!(orders[0].pos, Some((20, 10)));
 }
@@ -105,7 +105,7 @@ fn a_writer_walking_to_the_palace_takes_the_open_slot_elsewhere() {
 #[test]
 fn the_palace_stays_the_writers_when_nothing_else_is_open_or_near() {
     let full = board(WRITER, vec![plot(10, 10, 0, true), plot(11, 10, 1, false)]);
-    let mut orders = vec![order("ACTIVATE_GREAT_PERSON", None)];
+    let mut orders = [order("ACTIVATE_GREAT_PERSON", None)];
     assert_eq!(
         retarget_writers(&full, &mut orders),
         0,
@@ -117,7 +117,7 @@ fn the_palace_stays_the_writers_when_nothing_else_is_open_or_near() {
         WRITER,
         vec![plot(10, 10, 0, true), plot(20, 10, DETOUR + 1, true)],
     );
-    let mut orders = vec![order("ACTIVATE_GREAT_PERSON", None)];
+    let mut orders = [order("ACTIVATE_GREAT_PERSON", None)];
     assert_eq!(retarget_writers(&far, &mut orders), 0, "beyond the detour");
 }
 
@@ -127,7 +127,7 @@ fn other_people_and_other_tiles_are_left_alone() {
         "GREAT_PERSON_CLASS_ARTIST",
         vec![plot(10, 10, 0, true), plot(11, 10, 1, true)],
     );
-    let mut orders = vec![order("ACTIVATE_GREAT_PERSON", None)];
+    let mut orders = [order("ACTIVATE_GREAT_PERSON", None)];
     assert_eq!(
         retarget_writers(&artist, &mut orders),
         0,
@@ -135,7 +135,7 @@ fn other_people_and_other_tiles_are_left_alone() {
     );
 
     let theater = board(WRITER, vec![plot(11, 10, 1, true), plot(20, 10, 4, true)]);
-    let mut orders = vec![order("MOVE_TO", Some((11, 10)))];
+    let mut orders = [order("MOVE_TO", Some((11, 10)))];
     assert_eq!(
         retarget_writers(&theater, &mut orders),
         0,

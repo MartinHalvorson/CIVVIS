@@ -43,11 +43,8 @@ fn art_museum() -> Item {
     }
 }
 
-fn heads(g: &Game, cities: &[u32]) -> Vec<Option<Item>> {
-    cities
-        .iter()
-        .map(|cid| g.cities[cid].queue.first().cloned())
-        .collect()
+fn all_idle(g: &Game, cities: &[u32]) -> bool {
+    cities.iter().all(|cid| g.cities[cid].queue.is_empty())
 }
 
 #[test]
@@ -102,25 +99,17 @@ fn an_open_slot_a_writer_or_the_gene_off_claims_nothing() {
     g.players[0].live_open_great_work_slots = Some(["any".to_string()].into_iter().collect());
     let plan = ai.assess(&g, 0);
     ai.claim_great_work_slot_building(&mut g, 0, &plan);
-    assert_eq!(
-        heads(&g, &cities),
-        vec![None, None],
-        "the Palace slot is open"
-    );
+    assert!(all_idle(&g, &cities), "the Palace slot is open");
 
     let (ai, mut g, cities) = fixture(true, "writer");
     let plan = ai.assess(&g, 0);
     ai.claim_great_work_slot_building(&mut g, 0, &plan);
-    assert_eq!(
-        heads(&g, &cities),
-        vec![None, None],
-        "a Writer has Amphitheaters"
-    );
+    assert!(all_idle(&g, &cities), "a Writer has Amphitheaters");
 
     let (ai, mut g, cities) = fixture(false, "artist");
     let plan = ai.assess(&g, 0);
     ai.claim_great_work_slot_building(&mut g, 0, &plan);
-    assert_eq!(heads(&g, &cities), vec![None, None], "gene off");
+    assert!(all_idle(&g, &cities), "gene off");
     assert!(!ai.great_work_slot_building_holds(&g, 0, cities[0], &plan, &art_museum()));
 }
 

@@ -362,7 +362,7 @@ impl AdvancedAi {
                     pid,
                     &Action::Improve {
                         unit: uid,
-                        improvement: Name::new(&improvement),
+                        improvement,
                     },
                 )
                 .is_ok();
