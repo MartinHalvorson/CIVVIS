@@ -179,4 +179,3 @@ score, won)` and passing the finished table to `EloPool::record_game`.
 Use the shared ledger to prioritize low-rated player/leader/civilization rows
 with meaningful sample counts, then rerun the same evaluation battery after a
 strategy change. Missing rows are unmeasured, not evidence of parity.
-
