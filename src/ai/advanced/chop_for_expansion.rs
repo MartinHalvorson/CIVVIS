@@ -21,8 +21,8 @@
 //! [`Game::builder_operations`] offers `chop_woods`, `chop_rainforest`,
 //! `clear_marsh`, `harvest_resource` and `plant_woods`;
 //! `Game::do_builder_operation` executes them, pays the shipped
-//! `Feature_Removes` and `Resource_Harvests` bases scaled by the world era
-//! and by Magnus' `harvest_pct`, honours the Deforestation Treaty, spends the
+//! `Feature_Removes` and `Resource_Harvests` bases scaled by the player's
+//! progress, the game speed and Magnus' `harvest_pct`, honours the Deforestation Treaty, spends the
 //! charge and retires the Builder — and `Action::Improve` already carries
 //! them, so `legal_actions_within` enumerates every one.
 //!
@@ -374,9 +374,13 @@ mod tests {
         let payout = g.builder_operation_payout(0, wood, "chop_woods");
         assert_eq!(
             payout,
-            vec![("production".to_string(), 20.0)],
-            "the shipped Feature_Removes base for Forest, Ancient era"
+            vec![(
+                "production".to_string(),
+                (20.0 * g.builder_harvest_scale(0)).floor()
+            )],
+            "the shipped Feature_Removes base for Forest, grown by progress and speed"
         );
+        assert!(payout[0].1 >= 10.0, "never below the Online-speed base");
     }
 
     /// The gap the gene closes: the ordinary Builder ranking cannot see one.
@@ -396,14 +400,15 @@ mod tests {
     fn a_builder_on_a_forest_chops_it_for_the_settler() {
         let (mut g, mut ai, city, builder, wood) = fixture();
         build_a_settler(&mut g, city);
+        let payout = ai.chop_production_payout(&g, 0, wood, "chop_woods");
         assert_eq!(
             ai.chop_for_expansion_step(&mut g, 0, builder, GrandStrategy::Expansion),
             Some(true)
         );
         assert_eq!(g.map.tiles[&wood].feature, None, "the Forest is cleared");
         assert_eq!(
-            g.cities[&city].production, 20.0,
-            "and the Settler is paid the shipped Forest base"
+            g.cities[&city].production, payout,
+            "and the Settler is paid what the engine priced the Forest at"
         );
     }
 
@@ -463,7 +468,8 @@ mod tests {
             unit: crate::name!("settler"),
         }];
         g.cities.get_mut(&city).unwrap().production = 0.0;
-        let remaining = 20.0 / CHOP_MIN_SHARE + 1.0;
+        let wood = g.units[&builder].pos;
+        let remaining = ai.chop_production_payout(&g, 0, wood, "chop_woods") / CHOP_MIN_SHARE + 1.0;
         assert!(
             ai.chop_settler_shortfall(&g, 0, city).unwrap() < remaining,
             "the fixture's Settler is inside the floor, so the gene fires"
