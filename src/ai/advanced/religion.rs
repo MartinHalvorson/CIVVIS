@@ -145,6 +145,11 @@ impl AdvancedAi {
         if unit.hp >= SPREADER_HEALTH_FLOOR || g.unit_heal_rate(uid) <= 0 {
             return false;
         }
+        // `corps-comes-home-alive`: the rate is also positive beside a
+        // Chaplain of ours, where the host heals nothing.
+        if self.corps_comes_home_alive && !Self::heals_in_a_ring_of_ours(g, pid, uid) {
+            return false;
+        }
         let Some(religion) = unit
             .religion
             .clone()

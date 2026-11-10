@@ -101,6 +101,33 @@ impl AdvancedAi {
             .min_by_key(|pos| (g.wdist(from, *pos), *pos))
     }
 
+    /// Whether `uid` stands where the host heals a religious unit: on or
+    /// beside a Holy Site of ours. The engine's rate alone is not that
+    /// place. It is also positive beside an Apostle of ours with the
+    /// Chaplain promotion, and the host gives nothing there. Live 122425Z: a
+    /// Chaplain at 78 hit points and an Apostle at 72 beside it stood abroad
+    /// from turn 144 to the end at 182 without gaining a point; 123943Z:
+    /// five Apostles holding 17 charges stood around a Chaplain from turn
+    /// 136 to 173. In three games 134 to 225 wounded unit-turns were spent
+    /// standing still abroad with no health gained, against 4 to 17 that
+    /// healed in a ring.
+    pub(super) fn heals_in_a_ring_of_ours(g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        g.unit_heal_rate(uid) > 0
+            && g.wdisk(unit.pos, 1).into_iter().any(|pos| {
+                g.map.get(pos).is_some_and(|tile| {
+                    tile.district
+                        .is_some_and(|district| g.district_family(district) == "holy_site")
+                        && tile
+                            .owner_city
+                            .and_then(|cid| g.cities.get(&cid))
+                            .is_some_and(|city| city.owner == pid)
+                })
+            })
+    }
+
     /// Whether a city of ours on or beside `uid`'s tile needs its faith back
     /// and `uid` has a charge to give it.
     fn defends_a_city_from_here(g: &Game, pid: usize, uid: u32, religion: &str) -> bool {
@@ -134,7 +161,7 @@ impl AdvancedAi {
         if unit.kind == "guru" && unit.charges > 0 {
             return None;
         }
-        let healing_here = g.unit_heal_rate(uid) > 0;
+        let healing_here = Self::heals_in_a_ring_of_ours(g, pid, uid);
         // An Inquisitor works at home, where the ring is: holding it there
         // above the floor would keep it from the heresy it was bought for.
         let stays_to_finish = healing_here && unit.kind != "inquisitor";
@@ -299,17 +326,22 @@ impl AdvancedAi {
         !emergency && Self::last_charge_roster(g, pid, unit.kind.as_str(), ceiling).contains(&uid)
     }
 
-    /// `corps-comes-home-alive`: the visible land soldiers at war with us
-    /// within [`CONDEMNER_RADIUS`] of `uid`, each with the tiles it can stand
-    /// on before our unit moves again. A soldier that enters a religious
-    /// unit's tile condemns it, and the unit's faith loses pressure in the
-    /// cities around. Barbarians are `religious_raider_threats`' to read.
-    /// Empty with the gene off.
+    /// `corps-comes-home-alive`: the visible soldiers and warships at war
+    /// with us within [`CONDEMNER_RADIUS`] of `uid`, each with the tiles it
+    /// can stand on before our unit moves again. A soldier that enters a
+    /// religious unit's tile condemns it, and the unit's faith loses pressure
+    /// in the cities around. A warship does it to an embarked unit, so its
+    /// tiles are the water ones: a unit on the shore is out of its reach.
+    /// Barbarians are `religious_raider_threats`' to read. Empty with the
+    /// gene off.
     ///
     /// Live Russia 102036Z (2026-11-10): the Khmer were at war with us from
     /// turn 132 to the end at 176 and 23 religious units of ours vanished in
     /// or beside their land holding two or more charges, against 6 lost to
     /// theological combat. 100022Z lost 7 that way beside Sumer in 35 turns.
+    /// 120557Z, at war with Canada from turn 155: eight Missionaries and
+    /// Apostles bought at home from turn 182 to 188 each embarked beside the
+    /// five Battleships off St. Petersburg and were gone the next turn.
     pub(super) fn condemners_near(
         &self,
         g: &Game,
@@ -334,11 +366,17 @@ impl AdvancedAi {
             })
             .filter(|soldier| {
                 let spec = &g.rules.units[soldier.kind];
-                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("air" | "sea"))
+                spec.class == "military" && spec.domain.as_deref() != Some("air")
             })
             .map(|soldier| {
                 let mut capture_tiles = g.threat_reach(soldier.id);
                 capture_tiles.push(soldier.pos);
+                if g.rules.units[soldier.kind].domain.as_deref() == Some("sea") {
+                    capture_tiles
+                        .retain(|pos| g.map.get(*pos).is_some_and(|tile| g.rules.is_water(tile)));
+                }
+                // `sea` stays false: that flag is the Builder's rule, a
+                // raider taking the shore tile from the water beside it.
                 BarbarianCaptureThreat {
                     capture_tiles,
                     sea: false,
