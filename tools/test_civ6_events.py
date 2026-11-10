@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import civ6_events as ev
 
@@ -27,6 +30,14 @@ def state(units: list[tuple[int, int, int]]) -> dict:
 def order(kind: str, subject: int, verb: str = "FORTIFY", turn: int = 5, reason: str | None = None) -> dict:
     row = {"kind": kind, "order_kind": "unit", "verb": verb, "subject": subject, "turn": turn}
     return row if reason is None else {**row, "reason": reason}
+
+
+def plot_chunk(turn: int, plots: list[dict]) -> dict:
+    return {"kind": "tiles", "turn": turn, "plots": plots}
+
+
+def standing(turn: int, unit: int, x: int, y: int) -> dict:
+    return {"kind": "state", "turn": turn, "units": [{"id": unit, "x": x, "y": y}]}
 
 
 def strike(unit: int, length: int = 2, end: tuple[int, int] = (3, 4), kind: str = "UNIT_APOSTLE") -> dict:
@@ -147,6 +158,57 @@ class Reports(unittest.TestCase):
     def test_unread_path_data_is_unknown(self):
         rows = [{**strike(1), "native_move_path_known": False}, order("order_verified", 1, verb="ATTACK")]
         self.assertIn(("religious", "unknown"), ev.strike_paths([game(self.root, "a", rows)]))
+
+    def test_a_failed_order_is_filed_under_the_plot_it_stood_on(self):
+        rows = [
+            plot_chunk(4, [{"x": 3, "y": 4, "im": "IMPROVEMENT_LUMBER_MILL", "f": "FEATURE_FOREST"}]),
+            standing(5, 1, 3, 4),
+            order("order_failed", 1, verb="REMOVE_FEATURE", reason="no_improvement"),
+        ]
+        table = ev.order_plots([game(self.root, "a", rows)])
+        self.assertEqual(dict(table[("REMOVE_FEATURE", "IMPROVEMENT_LUMBER_MILL", "FEATURE_FOREST", "-")]), {"failed": 1})
+
+    def test_an_order_that_worked_is_filed_under_the_plot_before_it(self):
+        rows = [
+            plot_chunk(4, [{"x": 3, "y": 4, "f": "FEATURE_FOREST"}]),
+            standing(5, 1, 3, 4),
+            plot_chunk(5, [{"x": 3, "y": 4}]),
+            order("order_verified", 1, verb="REMOVE_FEATURE"),
+        ]
+        table = ev.order_plots([game(self.root, "a", rows)])
+        self.assertEqual(dict(table[("REMOVE_FEATURE", "-", "FEATURE_FOREST", "-")]), {"worked": 1})
+
+    def test_the_unit_stands_where_its_own_turn_left_it(self):
+        rows = [
+            plot_chunk(4, [{"x": 3, "y": 4, "r": "RESOURCE_STONE"}, {"x": 9, "y": 9, "r": "RESOURCE_DEER"}]),
+            standing(5, 1, 0, 0), standing(5, 1, 3, 4), standing(6, 1, 9, 9),
+            order("order_failed", 1, verb="HARVEST_RESOURCE", reason="x"),
+        ]
+        self.assertIn(("HARVEST_RESOURCE", "-", "-", "RESOURCE_STONE"), ev.order_plots([game(self.root, "a", rows)]))
+
+    def test_named_verbs_leave_the_rest_out(self):
+        rows = [
+            standing(5, 1, 3, 4),
+            order("order_failed", 1, verb="HARVEST_RESOURCE", reason="x"),
+            order("order_failed", 1, verb="FORTIFY", reason="x"),
+        ]
+        table = ev.order_plots([game(self.root, "a", rows)], ["FORTIFY"])
+        self.assertEqual([key[0] for key in table], ["FORTIFY"])
+
+    def test_a_city_order_has_no_plot(self):
+        rows = [standing(5, 1, 3, 4), {**order("order_failed", 1, reason="x"), "order_kind": "produce"}]
+        self.assertEqual(dict(ev.order_plots([game(self.root, "a", rows)])), {})
+
+    def test_a_unit_no_frame_saw_is_left_out(self):
+        self.assertEqual(dict(ev.order_plots([game(self.root, "a", [order("order_failed", 1, reason="x")])])), {})
+
+    def test_flags_can_sit_among_the_verbs(self):
+        game(self.root, "a", [standing(5, 1, 3, 4), order("order_failed", 1, reason="x")])
+        out = io.StringIO()
+        argv = ["civ6_events.py", "plots", "FORTIFY", "--root", str(self.root), "IMPROVE"]
+        with mock.patch("sys.argv", argv), contextlib.redirect_stdout(out):
+            self.assertEqual(ev.main(), 0)
+        self.assertIn("FORTIFY", out.getvalue())
 
     def test_a_noop_is_judged_by_the_next_state(self):
         rows = [
