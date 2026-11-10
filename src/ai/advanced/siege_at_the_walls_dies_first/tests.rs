@@ -161,7 +161,10 @@ fn the_city_strike_gene_ships_off_and_prices_the_gun_alone() {
     assert!(!off.city_strike_takes_the_gun, "an opt-in ships off");
     let mut on = AdvancedAi::new();
     on.enable_city_strike_takes_the_gun();
-    assert!(!on.wall_threat(&game, 0, gun), "the kill plan's reading stays off");
+    assert!(
+        !on.wall_threat(&game, 0, gun),
+        "the kill plan's reading stays off"
+    );
     assert_eq!(
         on.wall_threat_premium(&game, 0, gun, 0.0, true),
         WALL_THREAT_KILL_PREMIUM,
@@ -170,10 +173,9 @@ fn the_city_strike_gene_ships_off_and_prices_the_gun_alone() {
     assert!(super::super::GENES
         .iter()
         .any(|gene| gene.opt_in() && gene.field == "city_strike_takes_the_gun"));
-    super::super::test_support::opt_in_off_in_both_controllers(
-        "city-strike-takes-the-gun",
-        |ai| ai.city_strike_takes_the_gun,
-    );
+    super::super::test_support::opt_in_off_in_both_controllers("city-strike-takes-the-gun", |ai| {
+        ai.city_strike_takes_the_gun
+    });
 }
 
 /// The delegated city loop fires the walls at the first hostile it finds;
