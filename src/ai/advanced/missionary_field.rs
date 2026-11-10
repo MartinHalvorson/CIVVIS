@@ -95,7 +95,11 @@ impl AdvancedAi {
     /// The visible barbarian raiders that could stand on a land tile before
     /// this unit moves again. Sea threats are dropped: a galley cannot
     /// condemn.
-    fn religious_raider_threats(&self, g: &Game, pid: usize) -> Vec<BarbarianCaptureThreat> {
+    pub(super) fn religious_raider_threats(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Vec<BarbarianCaptureThreat> {
         let visible = self.battlefront_visibility(g, pid);
         self.visible_barbarian_capture_threats(g, pid, &visible)
             .into_iter()
@@ -187,7 +191,8 @@ impl AdvancedAi {
         if !Self::religious_tile_in_reach(g, pid, current, &threats) {
             return None;
         }
-        if Self::last_charge_spends_here(g, pid, uid) {
+        // `last-charge-joins-the-army`: a kept charge flees like any other.
+        if Self::last_charge_spends_here(g, pid, uid) && !self.keeps_its_last_charge(g, pid, uid) {
             return None;
         }
         let home_distance = |position: Pos| {
@@ -312,7 +317,7 @@ impl AdvancedAi {
     /// intentional: a Missionary can cross foreign closed borders, unlike a
     /// Scout, but it still cannot cross an ocean before embarkation or a
     /// mountain wall at all.
-    fn missionary_expedition_goal(
+    pub(super) fn missionary_expedition_goal(
         g: &Game,
         pid: usize,
         uid: u32,

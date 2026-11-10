@@ -1,0 +1,23 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "last-charge-joins-the-army",
+  "scope": "Twelve recorded boards from three live Deity Russia Religious-target games (2026-11-09), each at the first state frame of the last turn an Apostle or Missionary of ours was seen holding exactly one spread charge, which is the turn the live game spent it. Each board was replayed twice through one frozen `civvis_orders --resumed` built from this branch, with the run's own forced genome; the on arm adds `--with last-charge-joins-the-army`. The unit's orders changed on 12 of 12 boards: the off arm spends the charge, the on arm keeps the unit and moves it to hunt, to its post or to scout, and on one board it attacks a rival religious unit that turn.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religious-corps-last-charge-joins-the-army.native-queries.tar.xz",
+    "sha256": "3fc67ba45dd050bed1298935b79b243d77739685dd57771a48bad7409a93245f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json"
+  ]
+}

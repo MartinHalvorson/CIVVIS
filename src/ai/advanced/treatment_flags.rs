@@ -93,6 +93,9 @@ impl AdvancedAi {
         /// `advanced/acropolis_before_the_deterrent.rs`.
         acropolis_before_the_deterrent => enable_acropolis_before_the_deterrent, disable_acropolis_before_the_deterrent;
         // ---- append: c-d --------------------------------------------
+        /// Opt-in gene `corps-comes-home-alive`; see
+        /// `advanced/apostle_army.rs`.
+        corps_comes_home_alive => enable_corps_comes_home_alive, disable_corps_comes_home_alive;
         /// `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`.
         culture_seat_drama_first => enable_culture_seat_drama_first, disable_culture_seat_drama_first;
         /// `culture-seat-drama-before-government`: see
@@ -130,6 +133,9 @@ impl AdvancedAi {
         /// `advanced/guru_walks_to_the_wounded.rs`.
         guru_walks_to_the_wounded => enable_guru_walks_to_the_wounded, disable_guru_walks_to_the_wounded;
         // ---- append: l-o --------------------------------------------
+        /// Opt-in gene `last-charge-joins-the-army`; see
+        /// `advanced/apostle_army.rs`.
+        last_charge_joins_the_army => enable_last_charge_joins_the_army, disable_last_charge_joins_the_army;
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
@@ -167,6 +173,9 @@ impl AdvancedAi {
         paused_district_spares_the_launch => enable_paused_district_spares_the_launch, disable_paused_district_spares_the_launch;
         /// Coordinate a quoted opening Library and backlog Builder.
         parallel_library_backlog => enable_parallel_library_backlog, disable_parallel_library_backlog;
+        /// Opt-in gene `religion-seat-takes-the-debater`; see
+        /// `advanced/religion_seat_takes_the_debater.rs`.
+        religion_seat_takes_the_debater => enable_religion_seat_takes_the_debater, disable_religion_seat_takes_the_debater;
         /// See `advanced/religion_seat_charts_the_rivals.rs`.
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.

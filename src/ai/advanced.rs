@@ -5626,6 +5626,11 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
+    /// Site of ours and heals, fights only what it survives, and reads every
+    /// rival blow that can land on a tile together. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    corps_comes_home_alive: bool,
     /// Prefer a safe legal site for a new native Science Campus. Opt-in.
     campus_above_the_sea: bool,
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
@@ -7811,6 +7816,11 @@ pub struct AdvancedAi {
     /// came in 4 of 5 Gran Colombia games of 2026-11-09. Opt-in.
     gutted_rival_passes_the_edge: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
+    /// last charge and hunts rival religious units, and a Missionary keeps
+    /// its last charge and scouts. See `advanced/apostle_army.rs`. Off by
+    /// default.
+    last_charge_joins_the_army: bool,
     /// Rank wartime upgrade goals by gain per remaining research. Opt-in.
     modernization_prices_the_path: bool,
     /// `nusantara-settles-the-shore`: an Indonesian seat's site score prices
@@ -8435,6 +8445,10 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
+    /// offered Debater takes it. See
+    /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
+    religion_seat_takes_the_debater: bool,
     /// `russia-settles-the-tundra`: a Russian seat's site score reads what
     /// Mother Russia pays on Tundra. See `advanced/russia_tundra.rs`. Off by
     /// default.
@@ -10807,6 +10821,9 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
+/// `corps-comes-home-alive` and `last-charge-joins-the-army`: see
+/// `advanced/apostle_army.rs`.
+mod apostle_army;
 /// `apostle-evangelizes-unspent`: see `advanced/apostle_evangelizes_unspent.rs`.
 mod apostle_evangelizes_unspent;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
@@ -24124,6 +24141,18 @@ impl AdvancedAi {
                 continue;
             }
             let promotions = g.available_promotions(uid);
+            // `religion-seat-takes-the-debater`: see
+            // `advanced/religion_seat_takes_the_debater.rs`.
+            if self.religion_seat_takes_debater(g, &promotions) {
+                let _ = g.apply(
+                    pid,
+                    &Action::Promote {
+                        unit: uid,
+                        promotion: crate::name!("debater"),
+                    },
+                );
+                continue;
+            }
             let apostle = self.base.apostle_promotion_by_role
                 && g.units.get(&uid).is_some_and(|unit| {
                     g.rules
@@ -26443,6 +26472,7 @@ mod religion_seat_slots_the_orders;
 /// `religion-seat-spends-the-bank`: see
 /// `advanced/religion_seat_spends_the_bank.rs`.
 mod religion_seat_spends_the_bank;
+mod religion_seat_takes_the_debater;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
