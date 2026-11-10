@@ -87,6 +87,50 @@ fn stage_counts(g: &Game, pid: usize, reach: Option<u32>) -> StageCounts {
     counts
 }
 
+/// `band-plays-at-level-three`: the offered promotion that lifts the most
+/// open, reachable stages to performance level 3; failing that, the one that
+/// raises the level at the most of them (levels times stages); `None` when no
+/// offered promotion raises the level anywhere the band can play, which
+/// leaves the career chooser to decide. See `advanced/band_plays_at_level_three.rs`.
+fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Option<Name> {
+    let unit = g.units.get(&uid)?;
+    let counts = stage_counts(g, pid, Some(uid));
+    let base = g.rock_band_performance_level(unit, 0);
+    let mut best: Option<((bool, usize, usize), Name)> = None;
+    for &name in offered {
+        let Some(promotion) = g.rules.promotions.get(&name) else {
+            continue;
+        };
+        let lift = [
+            ("rock_theater_levels", counts.theater),
+            ("rock_entertainment_levels", counts.entertainment),
+            ("rock_water_park_levels", counts.water_park),
+            ("rock_wonder_levels", counts.wonder),
+            ("rock_nature_levels", counts.nature),
+            ("rock_space_levels", counts.space),
+            ("rock_surf_levels", counts.surf),
+        ]
+        .into_iter()
+        .find_map(|(effect, stages)| {
+            promotion
+                .effects
+                .get(effect)
+                .map(|bonus| (*bonus as usize, stages))
+        });
+        let Some((bonus, stages)) = lift.filter(|(bonus, stages)| *bonus > 0 && *stages > 0) else {
+            continue;
+        };
+        let reaches = base + bonus as i32 >= super::band_plays_at_level_three::LEVEL_THREE;
+        let key = (reaches, if reaches { stages } else { bonus * stages }, bonus);
+        if best.as_ref().is_none_or(|(held, held_name)| {
+            key > *held || (key == *held && name.as_str() < held_name.as_str())
+        }) {
+            best = Some((key, name));
+        }
+    }
+    best.map(|(_, name)| name)
+}
+
 /// A band needs about five stages to spend a career on.
 fn coverage(stages: usize) -> f64 {
     (stages as f64 / 5.0).min(1.0)
@@ -105,6 +149,11 @@ impl AdvancedAi {
         let unit = g.units.get(&uid).filter(|unit| unit.kind == "rock_band")?;
         if offered.is_empty() {
             return None;
+        }
+        if self.base.band_plays_at_level_three {
+            if let Some(promotion) = level_three_promotion(g, pid, uid, offered) {
+                return Some(promotion);
+            }
         }
         let counts = stage_counts(
             g,

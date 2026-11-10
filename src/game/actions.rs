@@ -2251,6 +2251,20 @@ impl Game {
         level.saturating_add(venue_levels).clamp(1, 6)
     }
 
+    /// The performance level this band would play `position` at (its Rock
+    /// Band level plus the venue's matching-promotion levels), or `None` where
+    /// it has no concert. `band-plays-at-level-three` reads it.
+    pub(crate) fn rock_concert_performance_level(
+        &self,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+    ) -> Option<i32> {
+        let unit = self.units.get(&uid)?;
+        let (_, venue_levels, _) = self.rock_concert_venue_details(pid, Some(unit), position)?;
+        Some(self.rock_band_performance_level(unit, venue_levels))
+    }
+
     /// The band's concert reading at this venue: venue Tourism, the expected
     /// result and album multiplier, survival odds and the Goes To 11 audience.
     fn rock_concert_read(&self, pid: usize, unit: &Unit, position: Pos) -> Option<RockConcertRead> {

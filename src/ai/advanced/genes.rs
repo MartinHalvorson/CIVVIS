@@ -5453,6 +5453,10 @@ pub const GENES: &[Gene] = &[
     // land it most wants, so it plays the turn that land reopens. Opt-in; see
     // `advanced/bands_wait_at_the_door.rs`.
     Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
+    // A Rock Band below level 3 plays first where its performance level
+    // reaches 3, and takes the promotion that lifts the most open stages
+    // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
