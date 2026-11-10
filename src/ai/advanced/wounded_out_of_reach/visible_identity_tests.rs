@@ -2,10 +2,11 @@ use super::*;
 use std::sync::Arc;
 
 fn board() -> (Game, AdvancedAi, Pos, u32) {
-    std::env::set_var("RUST_BACKTRACE", "1"); // TEMP DIAGNOSTIC
     let mut g = Game::new(3, 24, 16, 914_357_900, 250, 0);
-    g.units.clear();
-    // Each camp names its defender, who has just been cleared.
+    // Through the engine, so the occupancy index forgets them too.
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
     g.barb_camps.clear();
     g.cities.clear();
     g.at_war.clear();

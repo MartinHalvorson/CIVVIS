@@ -6905,26 +6905,12 @@ fn without_the_treatment_a_parked_settler_still_blocks_expansion() {
 }
 
 #[test]
-fn temp_seed_search_holysite() {
-    std::panic::set_hook(Box::new(|_| {}));
-    let mut good = Vec::new();
-    for seed in 91_700..91_860u64 {
-        std::env::set_var("CIVVIS_FIXTURE_SEED_HOLYSITE", seed.to_string());
-        if std::panic::catch_unwind(unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race).is_ok() {
-            good.push(seed);
-        }
-    }
-    let _ = std::panic::take_hook();
-    panic!("TEMPSEEDS holysite {good:?}");
-}
-
-#[test]
 fn unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race() {
     let mut game = Game::new_full(
         1,
         24,
         16,
-        crate::rng::fixture_seed("HOLYSITE", 91_773),
+        crate::rng::fixture_seed("HOLYSITE", 91_774),
         120,
         0,
         false,

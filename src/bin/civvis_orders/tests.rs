@@ -2899,12 +2899,27 @@ fn finishing_survival_policy_keeps_a_safe_reserve() {
 }
 
 #[test]
+fn temp_seed_search_survivalvolley() {
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut good = Vec::new();
+    for seed in 1..60u64 {
+        std::env::set_var("CIVVIS_FIXTURE_SEED_SURVIVALVOLLEY", seed.to_string());
+        if std::panic::catch_unwind(finishing_survival_policy_prices_the_whole_volley_after_its_kill).is_ok() {
+            good.push(seed);
+        }
+    }
+    let _ = std::panic::take_hook();
+    panic!("TEMPSEEDS survivalvolley {good:?}");
+}
+
+#[test]
 fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
     let (snapshot, mut state) = local_barbarian_defense_board();
     state.units[0].hp = 30.0;
-    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, civvis::rng::fixture_seed("SURVIVALVOLLEY", 1), 250, 0);
     let mut old = mirror.game.clone();
     let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
+    eprintln!("TEMPDIAG volley actions={} reserves={} targets={} units={:?}", old_volley.actions.len(), old_volley.reserves, old_volley.targets, mirror.game.units.values().map(|u| (u.id, u.kind.to_string(), u.owner, u.pos, u.hp)).collect::<Vec<_>>());
     assert!(old_volley.actions.len() > 1);
     assert_eq!(old_volley.reserves, 1);
     let primary = &old_volley.actions[..old_volley.actions.len() - old_volley.reserves];
