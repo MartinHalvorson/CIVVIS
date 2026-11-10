@@ -5531,7 +5531,7 @@ fn temp_tectonic_census() {
                 &rules, 84, 54, 8, 10, 4, 4, script, FLAT, POLED, &mut rng,
             );
             for (position, tile) in &world.tiles {
-                if tile.terrain == "coast" && tile.lake {
+                if tile.terrain == "lake" {
                     lake_plots += 1;
                 }
                 if rules.is_water(tile) {
