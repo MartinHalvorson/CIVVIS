@@ -203,7 +203,7 @@ fn a_wanted_other_type_cannot_donate_its_wildcard_capacity() {
         "wars_of_religion",
         "levee_en_masse",
         "civil_prestige",
-        "wisselbanken",
+        "retainers",
     ]
     .into_iter()
     .map(Name::new)
