@@ -5508,3 +5508,52 @@ fn large_lake_budgets_follow_each_stock_script() {
         assert_eq!(large_lake_budget(script, 5), five, "{script:?} on five");
     }
 }
+
+/// The seam pass raises Mountains over land a seat could have stood on, so
+/// every shipped script at every shipped size still has to seat everyone.
+#[test]
+fn every_stamped_script_seats_every_player_at_every_stock_size() {
+    let rules = Rules::embedded();
+    for script in [
+        MapScript::Continents,
+        MapScript::SmallContinents,
+        MapScript::Pangaea,
+        MapScript::Islands,
+        MapScript::Lakes,
+        MapScript::InlandSea,
+    ] {
+        for size in CIV6_MAP_SIZES.iter().take(6) {
+            for seed in 0..3 {
+                let mut rng = Rng::new(84_100 + seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    size.default_players,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    script,
+                    FLAT,
+                    POLED,
+                    &mut rng,
+                );
+                assert!(
+                    spawns.len() >= size.default_players + size.default_city_states,
+                    "{script:?} {} seed {seed}: {} starts",
+                    size.id,
+                    spawns.len()
+                );
+                for start in &spawns {
+                    let tile = &world.tiles[start];
+                    assert!(
+                        !rules.is_water(tile) && tile.terrain != "mountain",
+                        "{script:?} {} seed {seed}: a start on {}",
+                        size.id,
+                        tile.terrain
+                    );
+                }
+            }
+        }
+    }
+}
