@@ -579,12 +579,14 @@ impl Game {
             }
         }
         let besieged = self.city_under_siege(cid);
+        let final_war_no_heal =
+            self.plays_to_the_last_civ() && crate::lcs_knobs::get("noheal") > 0.0;
         let encampment =
             self.city_district_family_position(&self.cities[&cid], crate::name!("encampment"));
         let encampment_besieged =
             encampment.is_some_and(|position| self.district_under_siege(pid, position));
         let city = self.cities.get_mut(&cid).unwrap();
-        if !besieged {
+        if !besieged && !final_war_no_heal {
             city.hp = (city.hp + 20).min(200); // Civ 6 heal rate
         }
         if encampment.is_some() && !city.encampment_pillaged && !encampment_besieged {

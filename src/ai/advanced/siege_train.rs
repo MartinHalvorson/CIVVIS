@@ -1074,6 +1074,9 @@ fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
         .filter(|unit| {
             unit.owner != pid
                 && g.is_at_war(pid, unit.owner)
+                && (!(g.plays_to_the_last_civ() && crate::lcs_knobs::get("bill") > 0.0)
+                    || unit.owner == city.owner
+                    || g.same_team(city.owner, unit.owner))
                 && g.rules.units[unit.kind].class == "military"
                 && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                 && g.unit_visible_to(unit.id, pid)
@@ -3080,7 +3083,9 @@ impl AdvancedAi {
             let weak_target = self.weak_target_skips_the_muster
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
-            let ready = dying || walls_answered || committed || weak_target || restored;
+            let final_commit = g.plays_to_the_last_civ() && crate::lcs_knobs::get("patience") > 0.0;
+            let ready =
+                dying || walls_answered || committed || weak_target || restored || final_commit;
             // `siege-shortfall-claims-the-projects`: a held train whose whole
             // force is short of the bill asks the cities for soldiers.
             self.note_siege_shortfall(cid, turn, !ready && strength < bill);
@@ -3185,7 +3190,9 @@ impl AdvancedAi {
             // budget even while the nominal force still covers the bill.
             // Regroup for breach support instead of remaining in Reduce with
             // no attack that can finish before the force is exhausted.
-            let invested = stage != SiegeStage::Stage && !arena;
+            let invested = stage != SiegeStage::Stage
+                && !arena
+                && !(g.plays_to_the_last_civ() && crate::lcs_knobs::get("noabort") > 0.0);
             // `siege-holds-a-breach`: a wall already a quarter down is a
             // running assault; only a deep shortfall abandons it.
             let held_breach = self.siege_holds_a_breach
@@ -3224,9 +3231,17 @@ impl AdvancedAi {
                     // rest of the train fills distant staging posts. Keep
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
-                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
+                    let patience = crate::lcs_knobs::get("patience");
+                    let final_commit = g.plays_to_the_last_civ()
+                        && patience > 0.0
+                        && strength > 0.0
+                        && (staged >= crate::lcs_knobs::get("share").max(0.5) * strength
+                            || turn.saturating_sub(record.entered)
+                                >= g.standard_duration(patience as u32));
+                    if (((arena && gathered) || staged >= bill || breach_taker.is_some())
                         && (damage_entry_ready || opens_walls || grind)
-                        && !no_breaker
+                        && !no_breaker)
+                        || final_commit
                     {
                         stage = SiegeStage::Invest;
                     }

@@ -21928,6 +21928,7 @@ impl AdvancedAi {
             desired_military
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
+        let desired_military = self.last_civ_army_target(g, pid, city_count, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
