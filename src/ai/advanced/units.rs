@@ -179,6 +179,11 @@ impl AdvancedAi {
         if let Some(acted) = self.holy_city_guard_step(g, pid, uid, &religion) {
             return acted;
         }
+        // `religion-seat-charts-the-rivals`: the corps' scout charts an
+        // under-charted rival while the rest work. False off.
+        if self.religion_seat_scout_charts(g, pid, uid, &religion, offensive) {
+            return true;
+        }
         let current = g.units[&uid].pos;
         // `religious_veto_defence`: our cities the threat faith holds or is
         // closing on outrank the rest, cheapest flip first.

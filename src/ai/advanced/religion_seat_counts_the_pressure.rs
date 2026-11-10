@@ -36,7 +36,12 @@
 //!   each charge this spreader would need there at its own strength, health
 //!   and promotions (counted up to [`CHARGE_CAP`], so a campaign city never
 //!   reads below one outside it), plus [`SOLO_FLIP_BONUS`] when its
-//!   remaining charges finish the flip;
+//!   remaining charges finish the flip, plus [`ADVANTAGE_BONUS`] for each
+//!   charge it saves there against an unpromoted Apostle. The host deals an
+//!   Apostle one useful promotion of seven in turn (41 Apostles of
+//!   civvis-20261110T075110Z: six each of Translator, Proselytizer and the
+//!   rest), so a Translator, whose charge is worth three abroad, is one unit
+//!   in seven and belongs on the entrenched cities;
 //! - a city outside the campaign is charged [`OUTSIDE_CAMPAIGN`];
 //! - the shipped population and capital terms are taken back for both.
 //!
@@ -65,6 +70,11 @@ pub(super) const CHARGE_COST: i32 = 30;
 
 /// Paid when this spreader's own remaining charges finish the flip.
 pub(super) const SOLO_FLIP_BONUS: i32 = 45;
+
+/// Paid for each charge this spreader saves in a campaign city against an
+/// unpromoted Apostle: a Translator or Proselytizer goes where its promotion
+/// counts, and leaves the cheap cities to the rest.
+pub(super) const ADVANTAGE_BONUS: i32 = 25;
 
 /// Paid against a major's city outside its campaign.
 pub(super) const OUTSIDE_CAMPAIGN: i32 = 180;
@@ -259,7 +269,7 @@ impl AdvancedAi {
                 })
                 .collect();
             open.sort_by_key(|row| (row.0, row.1));
-            for (rank, (_, cid, rows)) in open.iter().enumerate() {
+            for (rank, (reference, cid, rows)) in open.iter().enumerate() {
                 let city = &g.cities[cid];
                 let shipped = if self.religion_seat_flips_the_cheapest {
                     // That gene already takes the shipped terms back.
@@ -279,6 +289,7 @@ impl AdvancedAi {
                         } else {
                             0
                         }
+                        + reference.saturating_sub(needed) as i32 * ADVANTAGE_BONUS
                 } else {
                     -OUTSIDE_CAMPAIGN
                 };
