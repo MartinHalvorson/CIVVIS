@@ -3197,6 +3197,47 @@ fn favor_banked_for_votes(state: &civvis::mirror::StateSnapshot) -> bool {
             .iter()
             .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_HOLD_DVP)
 }
+/// Turns of negative income the treasury must cover before the favor bank is
+/// let go for it. Ten: the planner starts disbanding units inside one to
+/// three turns of runway (`bankruptcy-exits-the-drain`), and a sale placed
+/// this turn pays on the next.
+const FAVOR_DRAIN_RUNWAY_TURNS: f64 = 10.0;
+/// The favor a drained treasury still keeps: one extra vote's worth.
+const FAVOR_DRAIN_RESERVE: f64 = 20.0;
+/// The Diplomatic Victory points at which even a drained treasury holds its
+/// bank: eight short of the win, where a single session can decide it.
+const FAVOR_DRAIN_HOLD_DVP: i64 = 12;
+
+/// Whether the treasury is being drained: income is negative and the Gold in
+/// hand covers fewer than [`FAVOR_DRAIN_RUNWAY_TURNS`] turns of it.
+///
+/// ★ THE BANK WAS HELD WHILE THE ARMY WAS DISBANDED FOR GOLD. Live Deity
+/// Russia, 2026-11-10: 19 of 43 games disbanded three or more units "to leave
+/// the bankruptcy drain". civvis-20261110T091939Z held 117 favor at t100 on
+/// 19 Gold and -1 a turn, 244 at t140 and 332 at t160, with every rival past
+/// [`FAVOR_HOLD_DVP`], and disbanded 14 units. civvis-20261110T090948Z
+/// deleted 16 soldiers in peace from t66 at 0 Gold and -3 to -8 a turn; its
+/// neighbour declared at t103 with 1,190 military strength against 202 and
+/// took four of its five cities. A rival at four points of twenty is a
+/// threat a session away from mattering; an army deleted this turn is not
+/// coming back.
+fn treasury_drained(state: &civvis::mirror::StateSnapshot) -> bool {
+    state
+        .gold_per_turn
+        .filter(|income| income.is_finite() && *income < 0.0)
+        .is_some_and(|income| (state.gold as f64) < -income * FAVOR_DRAIN_RUNWAY_TURNS)
+}
+
+/// Whether a drained treasury may sell past the vote hold: it is drained and
+/// no met rival has reached [`FAVOR_DRAIN_HOLD_DVP`].
+fn drain_sells_the_bank(state: &civvis::mirror::StateSnapshot) -> bool {
+    treasury_drained(state)
+        && !state
+            .rivals
+            .iter()
+            .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_DRAIN_HOLD_DVP)
+}
+
 /// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
 /// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
 /// over a game, and the caller now passes it. Kept as the floor of floors.
@@ -3288,7 +3329,10 @@ fn hold_planner_favor_sales(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> usize {
-    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) && !plan_races_diplomacy(plan) {
+    if !plan_keeps_favor(plan)
+        && !plan_races_diplomacy(plan)
+        && (!favor_banked_for_votes(state) || drain_sells_the_bank(state))
+    {
         return 0;
     }
     let before = orders.len();
@@ -3387,16 +3431,24 @@ fn append_favor_sale_order(
     if plan_races_diplomacy(plan) {
         return Some("favor_hold:diplomatic_lane");
     }
-    if favor_banked_for_votes(state) {
+    // See `treasury_drained`: a drained treasury sells past the vote hold,
+    // off the cadence, and down to a smaller reserve.
+    let drained = drain_sells_the_bank(state);
+    if favor_banked_for_votes(state) && !drained {
         return Some("favor_hold:contender");
     }
-    if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
+    if !drained && state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
     }
     let Some(favor) = state.favor.filter(|favor| favor.is_finite()) else {
         return Some("favor_hold:unknown");
     };
-    let surplus = favor - FAVOR_RESERVE;
+    let surplus = favor
+        - if drained {
+            FAVOR_DRAIN_RESERVE
+        } else {
+            FAVOR_RESERVE
+        };
     if surplus < FAVOR_SALE_MIN {
         return Some("favor_hold:reserve");
     }
