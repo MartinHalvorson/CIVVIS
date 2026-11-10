@@ -961,6 +961,25 @@ let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== 
 const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
 const WORLD_SPIN_PERIOD_MS = 36000;
 let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
+// The bar that opens over the button sets how fast. Its notches run from 1, the
+// turtle, up to the rabbit's one full turn a second, each a fixed multiple of
+// the last so that a notch is the same change anywhere on the bar. Notch 8 is
+// the thirty-six seconds above, exactly. 0 is not a speed: it is the world held
+// still, the same state the button turns off to.
+const WORLD_SPIN_SPEED_STORAGE_KEY = "civvis-world-spin-speed";
+const WORLD_SPIN_FASTEST_PERIOD_MS = 1000;
+const WORLD_SPIN_DEFAULT_SPEED = 8, WORLD_SPIN_TOP_SPEED = 20;
+function worldSpinPeriodAt(speed) {
+  return WORLD_SPIN_PERIOD_MS * (WORLD_SPIN_FASTEST_PERIOD_MS / WORLD_SPIN_PERIOD_MS) **
+    ((speed - WORLD_SPIN_DEFAULT_SPEED) / (WORLD_SPIN_TOP_SPEED - WORLD_SPIN_DEFAULT_SPEED));
+}
+function savedWorldSpinSpeed() {
+  const saved = Number(localStorage.getItem(WORLD_SPIN_SPEED_STORAGE_KEY));
+  return Number.isInteger(saved) && saved >= 1 && saved <= WORLD_SPIN_TOP_SPEED
+    ? saved : WORLD_SPIN_DEFAULT_SPEED;
+}
+let worldSpinSpeed = savedWorldSpinSpeed();
+let worldSpinPeriodMs = worldSpinPeriodAt(worldSpinSpeed);
 // Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
@@ -4564,6 +4583,8 @@ if (compassButton) compassButton.onclick = () => resetMapFacing();
 // end of the paper rather than round the world.
 const WORLD_POLE = [0, 0, 1];
 const spinButton = document.getElementById("spin");
+const spinSpeedPanel = document.getElementById("spin-speed");
+const spinSpeedBar = document.getElementById("spin-speed-bar");
 // A reader who has asked their system for less motion is not asking for a
 // planet that never stops moving, so that setting takes the control away
 // rather than merely being a default. Before the first observation the world's
@@ -4591,6 +4612,8 @@ function updateSpinButton() {
   const available = spinAvailable();
   spinButton.disabled = !available;
   spinButton.setAttribute("aria-pressed", WORLD_SPIN && available ? "true" : "false");
+  spinButton.style.setProperty("--world-spin-period", `${worldSpinPeriodMs}ms`);
+  updateSpinSpeedBar(available);
   const title = REDUCED_MOTION_QUERY.matches
     ? "Reduced motion is on, so the world holds still"
     : state && !SPEC
@@ -4603,6 +4626,25 @@ function updateSpinButton() {
   if (spinButton.title === title) return;
   spinButton.title = title;
   spinButton.setAttribute("aria-label", title);
+}
+// A held world sits at the very bottom whatever speed is remembered, the way a
+// muted volume bar reads empty and goes back up when it is unmuted.
+function updateSpinSpeedBar(available) {
+  if (!spinSpeedBar) return;
+  spinSpeedPanel.hidden = !available;
+  spinSpeedBar.value = String(WORLD_SPIN ? worldSpinSpeed : 0);
+  const seconds = worldSpinPeriodMs / 1000;
+  const reading = !WORLD_SPIN ? "Halted"
+    : worldSpinSpeed === WORLD_SPIN_TOP_SPEED ? "One full turn a second"
+    : seconds < 10 ? `One turn every ${seconds.toFixed(1)} seconds`
+    : seconds < 120 ? `One turn every ${Math.round(seconds)} seconds`
+    : `One turn every ${(seconds / 60).toFixed(1)} minutes`;
+  spinSpeedBar.title = reading;
+  spinSpeedBar.setAttribute("aria-valuetext", reading);
+}
+function setWorldSpinSpeed(speed) {
+  worldSpinSpeed = speed;
+  worldSpinPeriodMs = worldSpinPeriodAt(speed);
 }
 function setWorldSpin(on) {
   WORLD_SPIN = !!on;
@@ -4630,7 +4672,7 @@ function advanceWorldSpin(dt) {
     // The camera goes west so the ground goes east: turning the basis about
     // the pole is the same motion as dragging the globe eastward, without
     // borrowing the screen's idea of which way that is.
-    applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));
+    applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / worldSpinPeriodMs));
     advanceSkyWorldSpin(dt);
     return true;
   }
@@ -4638,7 +4680,7 @@ function advanceWorldSpin(dt) {
   // walks west and the seam never arrives. It is left where the walk puts it,
   // exactly as a long drag would: the copy the camera stands on is the one
   // every wrapped reading is taken about.
-  cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;
+  cam.x -= WW() * dt / worldSpinPeriodMs;
   return true;
 }
 // The button means every world, at the one pace, in the same direction a drag
@@ -4652,10 +4694,29 @@ function advanceSkyWorldSpin(dt) {
   for (const body of visibleSkyBodies()) {
     const place = skyPlacement(body, radius, centerX, centerY);
     if (skyOnCanvas(place) && skyGroundFade(place) > 0)
-      skyView(body.id).longitude -= 2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS;
+      skyView(body.id).longitude -= 2 * Math.PI * dt / worldSpinPeriodMs;
   }
 }
 if (spinButton) spinButton.onclick = () => setWorldSpin(!WORLD_SPIN);
+if (spinSpeedBar) {
+  spinSpeedBar.addEventListener("input", () => {
+    const speed = Number(spinSpeedBar.value);
+    if (speed) setWorldSpinSpeed(speed);
+    setWorldSpin(speed > 0);
+  });
+  // The notches passed on the way down to halt are not a speed anyone chose,
+  // so letting go there keeps the one the button should bring back.
+  spinSpeedBar.addEventListener("change", () => {
+    if (Number(spinSpeedBar.value))
+      localStorage.setItem(WORLD_SPIN_SPEED_STORAGE_KEY, String(worldSpinSpeed));
+    else setWorldSpinSpeed(savedWorldSpinSpeed());
+    updateSpinButton();
+  });
+  // A drag can wander off the bar, and the bar has to stay open under it.
+  spinSpeedBar.addEventListener("pointerdown", () => spinSpeedPanel.classList.add("held"));
+  for (const name of ["pointerup", "pointercancel"])
+    window.addEventListener(name, () => spinSpeedPanel.classList.remove("held"));
+}
 updateSpinButton();
 
 // ----------------------------------------------------- the shape of the world
@@ -20810,7 +20871,7 @@ function skyPadEast(pad) {
 // flight planned on a turning world knows where the limb will be by then.
 function skyCameraIn(camera, ms) {
   return spinRunning()
-    ? {...camera, longitude:camera.longitude - 2 * Math.PI * ms / WORLD_SPIN_PERIOD_MS}
+    ? {...camera, longitude:camera.longitude - 2 * Math.PI * ms / worldSpinPeriodMs}
     : camera;
 }
 // What the camera will be seeing when a launch is `progress` of the way along.
