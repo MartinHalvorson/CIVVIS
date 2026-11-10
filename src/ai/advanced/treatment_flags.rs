@@ -182,6 +182,9 @@ impl AdvancedAi {
         /// `domination-charts-every-capital`: see
         /// `advanced/domination_charts_every_capital.rs`.
         domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
+        /// `domination-target-gets-its-breaker`: see
+        /// `advanced/domination_target_gets_its_breaker.rs`.
+        domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;
         /// `culture-keeps-pingala-home`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
@@ -194,6 +197,9 @@ impl AdvancedAi {
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
         flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
+        /// `first-capital-before-the-walls`: see
+        /// `advanced/first_capital_before_the_walls.rs`.
+        first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
