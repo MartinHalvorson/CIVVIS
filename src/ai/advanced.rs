@@ -8462,6 +8462,12 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// Keep the Religion seat's nearest Holy City guard between casts.
+    /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
+    religion_seat_keeps_the_guard: bool,
+    /// `religion-lane-hands-over`: the turn the Prophet race first read as
+    /// lost, cleared when it reads open again.
+    religion_race_lost_since: Option<u32>,
     /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
@@ -26503,6 +26509,8 @@ mod religion_seat_founds_first;
 /// `religion-seat-guards-the-race`: see
 /// `advanced/religion_seat_guards_the_race.rs`.
 mod religion_seat_guards_the_race;
+/// The warned Holy City's guard keeps its post during the spread cooldown.
+mod religion_seat_keeps_the_guard;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
