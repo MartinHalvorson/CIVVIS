@@ -574,6 +574,7 @@ mod power;
 /// Religion: pantheons, founding, beliefs, followers, theological combat.
 /// See `game/religion.rs`.
 mod religion;
+pub use religion::ObservedCityFaith;
 /// Strategic resources: connections, per-turn income, stockpiles. See
 /// `game/strategic_resources.rs`.
 mod strategic_resources;
@@ -6851,6 +6852,11 @@ pub struct Game {
     /// religious combat cannot forecast a conversion from these markers.
     #[serde(default)]
     pub observed_city_religion_markers: Arc<BTreeSet<u32>>,
+    /// The religion rows a live host's city banner showed for each mirrored
+    /// city: followers, pressure per turn and lifetime pressure. Empty in
+    /// simulated games, whose `City::pressure` is already the real figure.
+    #[serde(default)]
+    pub observed_city_faiths: Arc<BTreeMap<u32, Vec<ObservedCityFaith>>>,
     /// Host gross strategic income minus the reconstructed board's income.
     /// Corrections preserve policy and improvement counterfactuals on clones.
     /// Empty in simulated games; refreshed on each host snapshot.
@@ -7806,6 +7812,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_religion_markers: BTreeSet<u32>,
     #[serde(default)]
+    observed_city_faiths: BTreeMap<u32, Vec<ObservedCityFaith>>,
+    #[serde(default)]
     observed_strategic_income_adjustments: BTreeMap<usize, BTreeMap<Name, f64>>,
     #[serde(default)]
     observed_trade_capacity: BTreeMap<usize, i64>,
@@ -8045,6 +8053,7 @@ impl From<GameSer> for Game {
             observed_rival_wars: Arc::new(s.observed_rival_wars),
             observed_city_palaces: Arc::new(s.observed_city_palaces),
             observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
+            observed_city_faiths: Arc::new(s.observed_city_faiths),
             observed_strategic_income_adjustments: Arc::new(
                 s.observed_strategic_income_adjustments,
             ),
@@ -8319,6 +8328,7 @@ impl From<Game> for GameSer {
             observed_rival_wars: Arc::unwrap_or_clone(g.observed_rival_wars),
             observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
             observed_city_religion_markers: Arc::unwrap_or_clone(g.observed_city_religion_markers),
+            observed_city_faiths: Arc::unwrap_or_clone(g.observed_city_faiths),
             observed_strategic_income_adjustments: Arc::unwrap_or_clone(
                 g.observed_strategic_income_adjustments,
             ),
@@ -8453,6 +8463,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_ranged_strength).clear();
         Arc::make_mut(&mut self.observed_city_palaces).clear();
         Arc::make_mut(&mut self.observed_city_religion_markers).clear();
+        Arc::make_mut(&mut self.observed_city_faiths).clear();
         Arc::make_mut(&mut self.observed_city_max_wall_hp).clear();
         Arc::make_mut(&mut self.observed_city_yield_adjustments).clear();
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).clear();
@@ -8535,6 +8546,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_ranged_strength).remove(&cid);
         Arc::make_mut(&mut self.observed_city_palaces).remove(&cid);
         Arc::make_mut(&mut self.observed_city_religion_markers).remove(&cid);
+        Arc::make_mut(&mut self.observed_city_faiths).remove(&cid);
         Arc::make_mut(&mut self.observed_city_max_wall_hp).remove(&cid);
         Arc::make_mut(&mut self.observed_city_yield_adjustments).remove(&cid);
         Arc::make_mut(&mut self.observed_city_amenity_adjustments).remove(&cid);
@@ -8829,6 +8841,7 @@ impl Game {
             observed_rival_wars: Arc::new(BTreeSet::new()),
             observed_city_palaces: Arc::new(BTreeMap::new()),
             observed_city_religion_markers: Arc::new(BTreeSet::new()),
+            observed_city_faiths: Arc::new(BTreeMap::new()),
             observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
             observed_trade_capacity: Arc::new(BTreeMap::new()),
             observed_leader_types: Arc::new(BTreeMap::new()),

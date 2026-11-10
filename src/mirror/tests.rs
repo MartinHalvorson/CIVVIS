@@ -15037,6 +15037,68 @@ fn native_marker_spread_fixture(
 }
 
 #[test]
+fn banner_faith_rows_are_kept_beside_the_majority_markers() {
+    // DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950: the
+    // banner lists each faith's followers, pressure per turn and lifetime
+    // pressure. The mirror keeps those rows and leaves the 100/60/50 markers
+    // in `City::pressure` exactly as they were.
+    let (snapshot, mut state, mut mirror) = native_marker_spread_fixture(11, 2, 0);
+    let city = mirror.cid_of[&65536];
+    assert!(mirror.game.observed_city_faiths.is_empty());
+    assert_eq!(
+        mirror.game.observed_city_faith_pressure(city, "Buddhism"),
+        None
+    );
+    let markers = mirror.game.cities[&city].pressure.clone();
+
+    state.cities[0].faiths = Some(
+        serde_json::from_value(serde_json::json!([
+            {"religion": "RELIGION_BUDDHISM", "followers": 7, "pressure": 1840.5, "per_turn": 12},
+            {"religion": "RELIGION_CONFUCIANISM", "followers": 3, "pressure": 610},
+            {"religion": "RELIGION_PANTHEON", "followers": 1, "pressure": 55.25, "per_turn": 0},
+            {"followers": 0, "pressure": 4},
+        ]))
+        .unwrap(),
+    );
+    mirror.update(&snapshot, &state);
+    let rows = &mirror.game.observed_city_faiths[&city];
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[0].religion.as_deref(), Some("Buddhism"));
+    assert_eq!((rows[0].followers, rows[0].per_turn), (7, 12.0));
+    assert_eq!(
+        rows[1].per_turn, 0.0,
+        "a missing per-turn figure reads as none"
+    );
+    assert_eq!(
+        rows[2].religion, None,
+        "the pantheon row is the religionless one"
+    );
+    assert_eq!(rows[3].religion, None);
+    assert_eq!(
+        mirror.game.observed_city_faith_pressure(city, "Buddhism"),
+        Some((1840.5, 1840.5 + 610.0 + 55.25 + 4.0))
+    );
+    assert_eq!(
+        mirror.game.observed_city_faith_pressure(city, "Islam"),
+        Some((0.0, 2509.75))
+    );
+    assert_eq!(mirror.game.cities[&city].pressure, markers);
+
+    // An export without rows is an unknown and keeps the remembered ones.
+    state.cities[0].faiths = None;
+    mirror.update(&snapshot, &state);
+    assert_eq!(mirror.game.observed_city_faiths[&city].len(), 4);
+
+    // The rows survive a save and load.
+    let saved = serde_json::to_value(&mirror.game).unwrap();
+    let restored: crate::game::Game = serde_json::from_value(saved).unwrap();
+    assert_eq!(
+        restored.observed_city_faiths,
+        mirror.game.observed_city_faiths
+    );
+}
+
+#[test]
 fn native_marker_spread_bogota_cannot_invent_one_charge_conversion() {
     let (_, _, mut mirror) = native_marker_spread_fixture(11, 2, 0);
     let city = mirror.cid_of[&65536];
