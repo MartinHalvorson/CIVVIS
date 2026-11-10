@@ -56,6 +56,16 @@
 //!   to one in every [`SCOUT_SHARE`] of the corps, charts before it spreads
 //!   ([`AdvancedAi::religion_seat_scout_charts`]): the spreaders with the
 //!   fewest charges left, whose next spread is worth least.
+//! - **Surplus.** A corps far larger than its known work is the same
+//!   problem at scale. civvis-20261110T100022Z bought twenty Apostles
+//!   between t75 and t125 and held 26 to 36 religious units while it knew 3
+//!   of the 15 cities of the rivals it had met; its one priced target asked
+//!   five charges and stood behind rival Apostles, and two or three scouts
+//!   charted. It held no major until t144, four of five at t203, and lost to
+//!   a rival's Science that turn eight Apostle charges short. So where the
+//!   host's rows price the known work
+//!   (`AdvancedAi::campaign_charges_known`), every spreader beyond
+//!   [`SURPLUS_COVER`] charges for each charge that work asks charts too.
 //!
 //! Off, for a seat aiming elsewhere, or before the founding, nothing changes.
 
@@ -76,6 +86,14 @@ const CHARTING_ROUTE_TRIES: usize = 6;
 
 /// One spreader in this many may be a scout. A corps of three sends none.
 pub(super) const SCOUT_SHARE: usize = 4;
+
+/// The charges the corps keeps for each charge the cities it can see still
+/// ask of it, before the rest chart. Two: a spread can be lost to a death on
+/// the way or undone by a rival's visit.
+pub(super) const SURPLUS_COVER: u32 = 2;
+
+/// Charges a fresh spreader carries, for turning surplus charges into units.
+const CHARGES_PER_SPREADER: u32 = 3;
 
 /// Added to a technology on the way to Cartography. The shipped water goal
 /// pays 150-230 for the same step when it applies (`research_value`).
@@ -227,7 +245,11 @@ impl AdvancedAi {
             .map(|unit| (unit.charges, unit.id))
             .collect();
         corps.sort();
-        let scouts = under_charted.min(corps.len() / SCOUT_SHARE);
+        let supply: u32 = corps.iter().map(|(charges, _)| *charges as u32).sum();
+        let surplus = Self::campaign_charges_known(g, pid, religion).map_or(0, |demand| {
+            (supply.saturating_sub(SURPLUS_COVER * demand) / CHARGES_PER_SPREADER) as usize
+        });
+        let scouts = under_charted.min(corps.len() / SCOUT_SHARE).max(surplus);
         if !corps.iter().take(scouts).any(|(_, id)| *id == uid) {
             return false;
         }
