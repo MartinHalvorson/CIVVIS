@@ -5517,6 +5517,12 @@ pub const GENES: &[Gene] = &[
     // Temple with 120-290 Gold banked. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-gold-buys-the-shrines", field: "culture_gold_buys_the_shrines", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_gold_buys_the_shrines, disable: AdvancedAi::disable_culture_gold_buys_the_shrines },
+    // `culture-seat-appoints-pingala-first`: a Culture target's first titles
+    // go to Pingala and Connoisseur. Live Deity Kristina 11-10, 13 games:
+    // Magnus took the first three titles under the opening's Expansion plan,
+    // so Connoisseur (+1 Culture per citizen) came at t75-t117. Opt-in; see
+    // `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-seat-appoints-pingala-first", field: "culture_seat_appoints_pingala_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_appoints_pingala_first, disable: AdvancedAi::disable_culture_seat_appoints_pingala_first },
     // `culture-road-earns-its-inspirations`: a Culture seat orders its civic
     // beeline by when each Inspiration lands, and researches the technology
     // that inspires a near road civic first. Opt-in; see
@@ -5543,6 +5549,11 @@ pub const GENES: &[Gene] = &[
     // the rival's army is away from our cities. Needs the strike gene. Unpriced,
     // off. See `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
+    // Live Deity Kristina 11-10: 6 of 12 games sat in a Dark Age in the
+    // Atomic era or later with Flower Power on offer, and no deck named it.
+    // A Culture seat slots it at peace while it holds or can buy a Rock Band.
+    // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
+    Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

@@ -6798,6 +6798,11 @@ pub struct AdvancedAi {
     /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.
     /// Off by default.
     denial_war_needs_the_lane_edge: bool,
+    /// `culture-seat-appoints-pingala-first`: a Culture target spends its
+    /// first Governor titles on Pingala and Connoisseur instead of the
+    /// opening's Expansion roster. See `advanced/culture_pingala_first.rs`.
+    /// Opt-in.
+    culture_seat_appoints_pingala_first: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7529,6 +7534,11 @@ pub struct AdvancedAi {
     /// `exalted-goddess-buys-the-coastal-guard`: the turn each city last
     /// bought its guard. Empty with the gene off.
     exalted_goddess_guard_bought: BTreeMap<u32, u32>,
+    /// `flower-power-in-the-dark`: a Culture seat in a peaceful Dark Age
+    /// slots Flower Power while it holds or can buy a Rock Band, and drops it
+    /// when the seat needs units. See `advanced/flower_power_in_the_dark.rs`.
+    /// Off by default.
+    flower_power_in_the_dark: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10632,6 +10642,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+mod flower_power_in_the_dark;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;
@@ -10841,6 +10853,7 @@ mod culture_open_borders;
 /// `culture-seat-builds-past-the-deterrent`: see
 /// `advanced/culture_past_the_deterrent.rs`.
 mod culture_past_the_deterrent;
+mod culture_pingala_first;
 mod culture_work_purchase;
 /// `curator-sits-with-the-works`: see `advanced/curator_sits_with_the_works.rs`.
 mod curator_sits_with_the_works;

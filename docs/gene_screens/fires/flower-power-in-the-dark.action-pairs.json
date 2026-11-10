@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "flower-power-in-the-dark",
+  "scope": "One frozen ci-profile civvis_orders built from this branch (01ad173e89), run on clones of live Deity Online Kristina culture runs' events.jsonl, each cut after the first state frame of the turn whose host policy window was free (civvis_orders --turn reads a turn's last frame, where a deck change already shows made=true). Boards: Dark Age, era 8, Flower Power in available_policies, Cold War known. Each arm passes the run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. At peace (164254Z t178/t184, 161648Z-cont2 t171/t176, 171451Z t180, holding 2-4 Rock Bands) the on arm's policy_deck adds POLICY_FLOWER_POWER over New Deal, the portfolio's lowest-ranked fitting card (5/5); the off arm never holds it, as the live seat never did. At war with a threatened home city (164254Z t174, 171451Z t172, 161648Z-cont2 t182) both arms send the same deck and the journal says Flower power waits (3/3). Proposed actions only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-flower-power-in-the-dark.native-queries.tar.xz",
+    "sha256": "04e0e30c339091150a7a420a8020dd9ecd1dc83f383c702ff626bb48ab3a5adf"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json",
+    "native-queries/0006/result.json",
+    "native-queries/0007/result.json"
+  ]
+}
