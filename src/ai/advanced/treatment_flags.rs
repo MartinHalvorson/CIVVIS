@@ -150,6 +150,8 @@ impl AdvancedAi {
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         // ---- append: p-r --------------------------------------------
+        /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
+        religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
         /// Opt-in gene `russia-settles-the-tundra`; see
         /// `advanced/russia_tundra.rs`.
         russia_settles_the_tundra => enable_russia_settles_the_tundra, disable_russia_settles_the_tundra;

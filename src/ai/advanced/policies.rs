@@ -935,6 +935,19 @@ impl AdvancedAi {
                    drain_cards.iter().map(|(card, gold)| format!("{} about {gold:.0}", plain(card)))
                        .collect::<Vec<_>>().join(", "));
         }
+        // Use a real policy window before bankruptcy costs the Religion
+        // founder its defenders. The held card stays wanted while its removal
+        // would restore the deficit; see `religion_seat_cuts_the_upkeep`.
+        let religion_upkeep = self.religion_upkeep_card(g, pid);
+        if let Some((card, saving)) = religion_upkeep {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+            think!(self.journal(), Policies, Detail,
+                "Upkeep relief funds the Religion army";
+                "religion-seat-cuts-the-upkeep: {} saves about {saving:.1} Gold a turn, \
+                 {:.0} Gold at {:+.1} a turn", plain(card),
+                g.players[pid].gold, g.players[pid].gold_per_turn);
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -1004,7 +1017,9 @@ impl AdvancedAi {
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
                        "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
-                if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                if drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
+                    || religion_upkeep.is_some_and(|(relief, _)| relief == card)
+                {
                     self.drain_card_turn.set(Some(g.turn));
                 }
                 continue;
@@ -1017,6 +1032,14 @@ impl AdvancedAi {
                 .filter(|current| {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
+                    }
+                    if let Some((_, saving)) = religion_upkeep.filter(|(relief, _)| *relief == card) {
+                        return !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && upgrade_card != Some(current.as_str())
+                            && builder_window_card != Some(current.as_str())
+                            && race_card != Some(current.as_str())
+                            && Self::religion_upkeep_may_displace(g, pid, current.as_str(), saving);
                     }
                     // `medina-quarter-houses-the-districts`: the housing card may
                     // take an ordinary Economic card's slot (wanted or not),
@@ -1156,7 +1179,10 @@ impl AdvancedAi {
             // upkeep card gives its slot only to a card of the same kind. See
             // `advanced/solvency.rs`.
             if self.solvency_guard(g, pid) {
-                let priced = protect_wartime_income.filter(|_| card == "economic_union");
+                let priced = religion_upkeep
+                    .filter(|(relief, _)| *relief == card)
+                    .map(|(_, saving)| saving)
+                    .or_else(|| protect_wartime_income.filter(|_| card == "economic_union"));
                 let kept: Vec<Name> = replaceable
                     .iter()
                     .filter(|current| {
@@ -1200,7 +1226,9 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
-                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
+                        || religion_upkeep.is_some_and(|(relief, _)| relief == card)
+                    {
                         self.drain_card_turn.set(Some(g.turn));
                     }
                     if builder_window_card == Some(card) {

@@ -8459,6 +8459,9 @@ pub struct AdvancedAi {
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
     // ---- append: p-r ------------------------------------------------
+    /// A drained Religion founder uses upkeep relief before losing its army.
+    /// Opt-in; see `religion_seat_cuts_the_upkeep`.
+    religion_seat_cuts_the_upkeep: bool,
     /// `religion-lane-hands-over`: the turn the Prophet race first read as
     /// lost, cleared when it reads open again.
     religion_race_lost_since: Option<u32>,
@@ -26508,6 +26511,8 @@ mod religion_seat_guards_the_race;
 mod religion_seat_reformed_church;
 /// An Embassy locates an otherwise unlocated rival for the religious corps.
 mod religion_seat_reveals_the_capitals;
+/// A drained founder uses upkeep relief before losing its standing army.
+mod religion_seat_cuts_the_upkeep;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 /// `religion-seat-spends-the-bank`: see
