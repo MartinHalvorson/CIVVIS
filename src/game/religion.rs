@@ -14,7 +14,37 @@
 
 use super::*;
 
+/// One row of a Civ VI city banner's religion list as a live host showed it
+/// (`DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950`).
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ObservedCityFaith {
+    /// The faith by its CIVVIS name; `None` for citizens following none
+    /// (the host's pantheon row).
+    pub religion: Option<String>,
+    /// Citizens following it.
+    pub followers: i32,
+    /// Pressure accumulated over the city's life, the banner tooltip's figure.
+    pub pressure: f64,
+    /// Pressure arriving each turn.
+    pub per_turn: f64,
+}
+
 impl Game {
+    /// What the host's banner showed of `religion` in city `cid`: its lifetime
+    /// pressure and the lifetime pressure of every row together, the
+    /// religionless row included. `None` when the host has shown no rows for
+    /// the city, which is every city of a simulated game.
+    pub fn observed_city_faith_pressure(&self, cid: u32, religion: &str) -> Option<(f64, f64)> {
+        let rows = self.observed_city_faiths.get(&cid)?;
+        let own = rows
+            .iter()
+            .filter(|row| row.religion.as_deref() == Some(religion))
+            .map(|row| row.pressure)
+            .sum();
+        let total = rows.iter().map(|row| row.pressure).sum();
+        Some((own, total))
+    }
+
     /// God of Healing: `GOD_OF_HEALING_UNIT_HEALING_MODIFIER`,
     /// `MODIFIER_PLAYER_UNITS_ADJUST_HEAL_PER_TURN` with `Amount 30` and
     /// `Type ALL`, over `PLOT_ADJACENT_INCLUDE_HOLY_SITE`

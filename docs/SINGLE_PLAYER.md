@@ -571,8 +571,11 @@ At the end of a simulation, the supervisor countdown remains in charge and
 the result screen has two choices:
 
 - **One more turn** resumes the same map, seed, and empires with no turn limit
-  and no later victory able to end them. The world plays on until somebody
-  presses **Restart sim**.
+  until only one civilization remains. Every other victory is ignored, every
+  civilization left is at war with every other, peace is refused, and every AI
+  plays for conquest. City-states and Free Cities do not count, and a team left
+  together counts as one. **Restart sim** still ends it early. The button is
+  not offered when one civilization is already left.
 - **New Game** starts the next world immediately. Leaving the screen alone
   keeps the existing countdown behavior and starts that next world when it
   reaches zero.

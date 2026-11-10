@@ -3069,8 +3069,14 @@ fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
         // A stricter reply reserve can leave the healthy warrior in
         // cover and allow only the garrison's nonlethal opening blow.
         // That is safe: it cannot kill and advance onto the archer's
-        // exposed tile. It must never follow the healthy warrior's hit.
-        assert_eq!(strikers, vec![101], "no wounded followup: {reply}");
+        // exposed tile. The healthy warrior may then finish, which is the
+        // reverse of the unsafe order. The garrison must never follow it.
+        assert_eq!(strikers[0], 101, "no wounded followup: {reply}");
+        assert_eq!(
+            strikers.iter().filter(|striker| **striker == 101).count(),
+            1,
+            "no wounded followup: {reply}"
+        );
         let ours = mirror
             .civ6_of
             .iter()

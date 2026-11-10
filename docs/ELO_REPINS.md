@@ -2287,3 +2287,20 @@ The engine before this change measures v45's **19,251 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v47 (2026-11-09) — Barbarian camps belong to their shipped tribes
+
+#4897 moves camps and their units onto the shipped `BarbarianTribes` rows. A
+camp is a Naval, Cavalry or Melee tribe by what surrounds it, raises that
+tribe's units, and never stands on a resource or a feature a camp cannot
+occupy. Live games back the split: horse units appear 27 times beside horse
+camps and twice elsewhere, and foot units 3 times beside them and 287 elsewhere.
+Every controller, `AdvancedAi::legacy()` included, now plays against these
+camps.
+
+The engine before this change measures v46's **19,571 decisions /
+`0x0857_04aa_df50_a040`**. The corrected engine measures **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
