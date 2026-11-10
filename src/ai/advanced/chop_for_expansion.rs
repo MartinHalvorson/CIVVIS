@@ -148,6 +148,9 @@ impl AdvancedAi {
         pos: Pos,
         operation: &str,
     ) -> f64 {
+        if self.chop_spares(g, pid, pos) {
+            return 0.0;
+        }
         g.builder_operation_payout(pid, pos, operation)
             .into_iter()
             .filter(|(yield_type, _)| yield_type == "production")
@@ -160,6 +163,31 @@ impl AdvancedAi {
     ///
     /// The whole payout of a chop is wasted on a Settler that completes
     /// anyway, so that case is not a weak candidate — it is not a candidate.
+    /// `chop-spares-the-worked-tile`: whether a citizen of ours works `pos`
+    /// now, so that clearing it would cost a city yield at once.
+    ///
+    /// Every chop errand prices its tiles through
+    /// [`Self::chop_production_payout`], which reads this first and prices a
+    /// spared tile at nothing, so the Settler errand, the long-build errand
+    /// and the Builder purchase all skip it without a rule of their own.
+    ///
+    /// Why: five paired Deity reads on 2026-11-10 put every chop errand at
+    /// flat or worse, with the loss arriving in the mid-game economy (cities
+    /// at turn 125 down 1.2, science down 15 to 25 by turn 150) after a small
+    /// early gain. A Forest pays 10 to 20 Production once on Online speed and
+    /// a worked Forest pays one or two every turn, so the errand loses on
+    /// exactly the tiles a small city is working; a Forest nobody works costs
+    /// nothing to clear today. The errands rank by payout and improvement
+    /// value and never asked which kind they were clearing.
+    ///
+    /// `false` with the gene off, before anything is read.
+    pub(super) fn chop_spares(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+        self.chop_spares_the_worked_tile
+            && g.player_city_ids(pid)
+                .into_iter()
+                .any(|cid| g.cities[&cid].worked_tiles.contains(&pos))
+    }
+
     pub(super) fn chop_settler_shortfall(&self, g: &Game, pid: usize, cid: u32) -> Option<f64> {
         let city = g.cities.get(&cid)?;
         if city.owner != pid {
@@ -503,6 +531,48 @@ mod tests {
             None,
             "but Marsh pays Food and a Settler is bought with hammers"
         );
+    }
+
+    #[test]
+    fn chop_spares_the_worked_tile_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("chop-spares-the-worked-tile", |ai| {
+            ai.chop_spares_the_worked_tile
+        });
+    }
+
+    /// A worked Forest is left standing; the same Forest unworked is cleared.
+    #[test]
+    fn a_worked_forest_is_spared_and_an_idle_one_is_cleared() {
+        let (mut g, mut ai, city, builder, wood) = fixture();
+        build_a_settler(&mut g, city);
+        ai.enable_chop_spares_the_worked_tile();
+
+        g.cities.get_mut(&city).unwrap().worked_tiles = vec![wood];
+        assert!(ai.chop_spares(&g, 0, wood));
+        assert_eq!(ai.chop_production_payout(&g, 0, wood, "chop_woods"), 0.0);
+        assert_eq!(
+            ai.chop_for_expansion_step(&mut g, 0, builder, GrandStrategy::Expansion),
+            None,
+            "the only Forest is worked, so there is no errand"
+        );
+        assert_eq!(g.map.tiles[&wood].feature, Some(crate::name!("forest")));
+
+        g.cities.get_mut(&city).unwrap().worked_tiles.clear();
+        assert!(!ai.chop_spares(&g, 0, wood));
+        assert_eq!(
+            ai.chop_for_expansion_step(&mut g, 0, builder, GrandStrategy::Expansion),
+            Some(true)
+        );
+        assert_eq!(
+            g.map.tiles[&wood].feature, None,
+            "the idle Forest is cleared"
+        );
+
+        // With the gene off a worked Forest is priced as before.
+        let (mut g, ai, city, _, wood) = fixture();
+        g.cities.get_mut(&city).unwrap().worked_tiles = vec![wood];
+        assert!(!ai.chop_spares(&g, 0, wood));
+        assert!(ai.chop_production_payout(&g, 0, wood, "chop_woods") > 0.0);
     }
 
     #[test]
