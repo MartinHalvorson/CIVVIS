@@ -5517,6 +5517,10 @@ pub const GENES: &[Gene] = &[
     // a Prayers project finishing this turn. See
     // `advanced/religion_seat_guards_the_race.rs`.
     Gene { tag: "religion-seat-guards-the-race", field: "religion_seat_guards_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_guards_the_race, disable: AdvancedAi::disable_religion_seat_guards_the_race },
+    // A Religion-target founder's spreaders go where the host's pressure
+    // rows say a majority is cheapest. See
+    // `advanced/religion_seat_counts_the_pressure.rs`.
+    Gene { tag: "religion-seat-counts-the-pressure", field: "religion_seat_counts_the_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_counts_the_pressure, disable: AdvancedAi::disable_religion_seat_counts_the_pressure },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4

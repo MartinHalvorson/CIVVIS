@@ -8979,6 +8979,11 @@ pub struct AdvancedAi {
     /// across frames, so a claim can stand off from a city that took its item
     /// back. See `AdvancedAi::queue_claim_open`.
     queue_claim_turns: BTreeMap<(u32, &'static str), u32>,
+    /// `religion-seat-counts-the-pressure`: a Religion-target founder's
+    /// spreaders go where the host's own pressure rows say a majority is
+    /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
+    /// default.
+    religion_seat_counts_the_pressure: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -26399,6 +26404,9 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religion_prophet_queue;
+/// `religion-seat-counts-the-pressure`: see
+/// `advanced/religion_seat_counts_the_pressure.rs`.
+mod religion_seat_counts_the_pressure;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
