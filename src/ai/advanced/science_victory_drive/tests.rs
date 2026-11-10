@@ -96,6 +96,36 @@ fn targeted_launch_uses_banked_progress_instead_of_raw_production_rank() {
 }
 
 #[test]
+fn a_rival_flight_is_measured_against_this_games_trip() {
+    let (mut g, _, _) = board();
+    g.game_speed = crate::setup::GameSpeed::Online;
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".into());
+    g.players[1].exoplanet_distance = 20.0;
+    g.players[0].met.insert(1);
+    assert_eq!(AdvancedAi::science_support_horizon(&g, 0), 5.0);
+}
+
+#[test]
+fn a_host_flight_reading_sets_the_support_horizon() {
+    let (mut g, _, _) = board();
+    g.game_speed = crate::setup::GameSpeed::Online;
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".into());
+    g.players[0].met.insert(1);
+    // The simulator's own field stays at zero on a mirrored board.
+    let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default();
+    stats.science_victory_points = Some(23.0);
+    stats.science_victory_points_needed = Some(25.0);
+    stats.science_victory_points_per_turn = Some(1.0);
+    assert_eq!(AdvancedAi::science_support_horizon(&g, 0), 2.0);
+}
+
+#[test]
 fn a_known_rival_flight_cuts_support_detours_without_private_information() {
     let (mut g, ours, _) = board();
     g.players[1]

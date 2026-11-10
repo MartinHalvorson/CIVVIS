@@ -532,6 +532,85 @@ class TheVictoryTrackerFitsItsRoom(unittest.TestCase):
         self.assertIn("victory fit checks passed", done.stdout)
 
 
+HUD_WINDOW_SCENARIOS = r"""
+const SPEC = false;
+__CONSTS__
+const stubHud = {style:{getPropertyValue:() => ""}};
+const document = {getElementById:id => id === "maparea" ? {clientHeight:900} : ribbonHost};
+const getComputedStyle = () => ({getPropertyValue:() => ""});
+const playerHudRowPitch = () => 32;
+let ribbonHost = null;
+__BLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const seats = n => Array.from({length:n}, (_, id) => ({id}));
+const keys = majors => new Map(majors.map(p => [p.id, "s" + p.id]));
+const plan = (n, scrollTop, clientHeight, locked = [], open = -1, cityRows = 0) => {
+  const majors = seats(n);
+  ribbonHost = {querySelector:() => clientHeight === null ? null : {scrollTop, clientHeight}};
+  return {majors, w:planPlayerHudWindow(majors, keys(majors),
+    new Set(locked.map(id => "s" + id)), open >= 0 ? majors[open] : null, cityRows)};
+};
+const built = ({majors, w}) => majors.map((p, i) => w.built(i) ? i : -1).filter(i => i >= 0);
+// A stock-sized table is never windowed: every row stays real.
+eq(plan(30, 0, 300).w, null, "thirty seats keep every row");
+// A hundred seats at the top: what shows, plus eight rows of overscan.
+const top = plan(100, 0, 320);
+eq(built(top), Array.from({length:19}, (_, i) => i), "first rows");
+// One spacer per unbuilt run, spanning exactly the rows it replaces.
+eq(top.majors.map((p, i) => top.w.built(i) ? "" : top.w.gap(i)).join("").match(/span (\d+)/g),
+   ["span 81"], "spacer spans the rest of the table");
+const middle = plan(100, 1600, 320);
+const seatsOf = built(middle);
+eq(seatsOf[0], 42, "eight above row 50");
+eq(seatsOf[seatsOf.length - 1], 68, "eight below");
+const gaps = middle.majors.map((p, i) => middle.w.built(i) ? "" : middle.w.gap(i)).join("").match(/span (\d+)/g);
+eq(gaps, ["span 42", "span 31"], "a spacer either side");
+// A locked row exists wherever the table is scrolled, so it can hold at an edge.
+eq(built(plan(100, 0, 320, [54])).includes(54), true, "locked row is built");
+// An open city list hangs under its seat: the rows below read back through it.
+const listed = plan(100, 0, 320, [], 2, 40);
+eq(built(listed).includes(2), true, "open seat is built");
+eq(built(listed).slice(-1)[0], 10, "the list fills the view, so overscan stops short of the rows under it");
+const deep = plan(100, 1600, 320, [], 2, 20);
+eq(built(deep).filter(i => i > 2)[0], 22, "the list's rows shift every later seat");
+// Scrolling near the edge of what exists asks for more; inside it does not.
+const live = plan(100, 0, 320);
+eq(live.w.stale({scrollTop:0, clientHeight:320}), false, "top of a fresh window");
+eq(live.w.stale({scrollTop:15 * 32, clientHeight:320}), true, "two rows from the unbuilt part");
+// The masthead takes its share of a 900px map in whole rows and never more.
+eq(playerHudSeatHeight(100, 900), 370, "ten rows and the chrome");
+eq(playerHudSeatHeight(8, 900), 306, "a table that fits stays whole");
+console.log("hud window checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
+    """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking
+    over the whole screen". A hundred rows also rebuilt 790 KB of markup a turn,
+    so only the rows near what is showing are built."""
+
+    def test_the_window(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        consts = source[source.index("const PLAYER_HUD_ROW_GAP = 2;"):
+                        source.index("function playerHudRowPitch()")]
+        heights = source[source.index("function playerHudSeatHeight"):
+                         source.index("const HUD_WIDGETS = {")]
+        window = source[source.index("function planPlayerHudWindow"):
+                        source.index("function refillPlayerHudWindow")]
+        chrome = source[source.index("const PLAYER_HUD_CHROME_HEIGHT ="):
+                        source.index("const PLAYER_HUD_ROW_GAP = 2;")]
+        script = HUD_WINDOW_SCENARIOS.replace("__CONSTS__", chrome + consts).replace(
+            "__BLOCK__", heights + window)
+        done = subprocess.run(
+            [NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("hud window checks passed", done.stdout)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class PublishedViewingDefaults(unittest.TestCase):
     def test_fresh_visitors_spin_with_two_turn_trails_and_saved_choices_win(self):

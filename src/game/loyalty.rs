@@ -203,7 +203,7 @@ impl Game {
             if (owner.is_minor || owner.is_free_city) && source.id != cid {
                 continue;
             }
-            let distance = self.wdist(source.pos, cpos);
+            let distance = self.wdist_capped(source.pos, cpos, 9);
             if distance > 9 {
                 continue;
             }

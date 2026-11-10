@@ -10307,6 +10307,29 @@ fn browser_keeps_the_sky_off_the_azimuthal_main_map() {
 /// the sheet instead, and does so in the one place every painter, hit
 /// test and overlay gets its cell geometry from.
 #[test]
+fn a_hundred_civ_world_keeps_the_map_and_paints_only_the_tiles_that_carry_ink() {
+    // Operator, 2026-11-09: the player HUD should cap "such that it isn't
+    // taking over the whole screen", and a 100-civ map should stay performant.
+    assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_MAP_SHARE = .42;"));
+    assert!(EMBEDDED_INDEX.contains("function playerHudSeatHeight(seats, mapHeight) {"));
+    assert!(EMBEDDED_INDEX.contains(
+        "`${Math.min(requestedHeight, seatHeight + cityRowsShown * playerHudRowPitch())}px`"
+    ));
+    // A table past every stock world builds only the seats near what shows.
+    assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_WINDOW_MIN_SEATS = 30;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (hudWindow && !hudWindow.built(seatIndex)) return hudWindow.gap(seatIndex);"
+    ));
+    assert!(EMBEDDED_INDEX.contains("liveRibbon.replaceChildren("));
+    // Past 25,000 tiles the omniscient view stops at the tiles Canvas inks,
+    // and hit testing, on demand, still sees every cell.
+    assert!(EMBEDDED_INDEX.contains("const PLANET_INK_ONLY_MIN_TILES = 25000;"));
+    assert!(EMBEDDED_INDEX.contains("function planetHitCells() {"));
+    assert!(EMBEDDED_INDEX.contains("const cells = frame.inkOnly"));
+    assert!(EMBEDDED_INDEX.contains("if (center.z <= behind) return null;"));
+}
+
+#[test]
 fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
     // The margin is a bound in cell-widths, measured off the globe once.
     assert!(EMBEDDED_INDEX.contains("const PLANET_CHART_ANTIPODE_CELLS = 5;"));
@@ -10320,7 +10343,7 @@ fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
     // Applied at the source of every projected cell, on the chart only:
     // the globe has a limb to fold at and no antipode in view.
     let geometry = EMBEDDED_INDEX
-        .split("function planetCellGeometry(tile, camera, scale, centerX, centerY) {")
+        .split("function planetCellGeometry(tile, camera, scale, centerX, centerY, behind = -Infinity) {")
         .nth(1)
         .and_then(|tail| tail.split("function planetChartHorizon").next())
         .expect("planet cell geometry");
@@ -10328,12 +10351,12 @@ fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
         "const center = planetProject(cell.center, camera, scale, centerX, centerY);\n  if (camera.chart && center.z < planetChartAntipodeFloor()) return null;"
     ));
     assert!(geometry.contains("return {cell, points, center};"));
-    // Both consumers of cell geometry go through it, so no painter can
+    // Every consumer of cell geometry goes through it, so no painter can
     // project an antipode cell on its own.
     assert_eq!(
         EMBEDDED_INDEX.matches("planetCellGeometry(").count(),
-        3,
-        "cell geometry has one definition and two callers"
+        4,
+        "cell geometry has one definition and three callers"
     );
 }
 
