@@ -2260,7 +2260,10 @@ fn world_politics_attitudes_agree_with_the_diplomacy_screen() {
     let spare = game.map.tiles.keys().copied().find(|pos| {
         game.map.tiles[pos].owner_city.is_none()
             && !game.rules.is_water(&game.map.tiles[pos])
-            && game.cities.values().all(|city| game.wdist(*pos, city.pos) > 4)
+            && game
+                .cities
+                .values()
+                .all(|city| game.wdist(*pos, city.pos) > 4)
     });
     game.found_city_for(1, spare.expect("an empty tile"), None);
     let civs: Vec<usize> = (0..6).collect();
