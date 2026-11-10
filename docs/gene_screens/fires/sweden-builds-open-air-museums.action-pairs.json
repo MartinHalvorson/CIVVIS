@@ -1,0 +1,17 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "sweden-builds-open-air-museums",
+  "scope": "One frozen ci-profile civvis_orders built from this branch, run on clones of live Deity Kristina civvis-20261110T140731Z events.jsonl at t122-127 (Nationalism known from t122, three Builders with charges, no Open-Air Museum ever built), with the run's own 455 forced tags, --victory culture and --resumed; the on arm adds only this tag. Orders changed at t123 and t124; the on arm's Builders take jobs at civ6 (54,34) Plains Hills and (57,32) Desert Hills, bare museum sites the off arm never targets. Proposed actions only: the museums are walked to, not yet built, in these one-shot frames; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-sweden-builds-open-air-museums.native-queries.tar.xz",
+    "sha256": "8946e433a4259b1ef8066ff8d823ddefca916db94e7a1f0f8f139edac47541f5"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json"
+  ]
+}

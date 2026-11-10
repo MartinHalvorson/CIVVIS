@@ -127,6 +127,8 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
+        culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
         /// `culture-seat-builds-past-the-deterrent`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
@@ -209,6 +211,9 @@ impl AdvancedAi {
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `sweden-builds-open-air-museums`; see
+        /// `advanced/sweden_builds_open_air_museums.rs`.
+        sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

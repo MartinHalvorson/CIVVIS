@@ -5471,6 +5471,12 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // `culture-bank-opens-at-nationalism`: the Rock Band Faith bank opens at
+    // Nationalism, and Faith buys only Writers, Artists and Musicians from
+    // then on. Live Kristina 20261110T140731Z spent 1,370 Faith on three
+    // Great People at t124-144 while the bank waited for Ideology. Opt-in;
+    // see `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
     // Live Deity Kristina 11-10: the near-rival deterrent held the capital
     // t39-t69 and took the first Amphitheater back eleven times before t92.
     // A Culture seat's culture claims pass it at peace. Opt-in; see
@@ -5572,6 +5578,10 @@ pub const GENES: &[Gene] = &[
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
+    // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
+    // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
+    // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
+    Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

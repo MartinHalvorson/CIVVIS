@@ -224,6 +224,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
+| `culture-bank-opens-at-nationalism` | off (unmeasured) | `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
@@ -407,6 +408,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `stalled-conquest-takes-science` | off (unmeasured) | Opt-in gene `stalled-conquest-takes-science`; see `Self::stalled_conquest_takes_science`. | 1 \| 1 |
 | `stalled-spreader-braves-the-march` | off (unmeasured) | Opt-in gene `stalled-spreader-braves-the-march`; see `Self::stalled_spreader_braves_the_march`. | 1 \| 1 |
 | `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
+| `sweden-builds-open-air-museums` | off (unmeasured) | Opt-in gene `sweden-builds-open-air-museums`; see `advanced/sweden_builds_open_air_museums.rs`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
 | `theology-fights-count-the-host-edge` | off (unmeasured) | Opt-in gene `theology-fights-count-the-host-edge`; see `advanced/theology_fights.rs`. | 1 \| 1 |

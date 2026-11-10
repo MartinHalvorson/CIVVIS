@@ -6749,6 +6749,11 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `culture-bank-opens-at-nationalism`: a Culture target holds its Rock
+    /// Band bank from Nationalism, not Ideology, and spends Faith on no Great
+    /// Person but a Writer, Artist or Musician from then on. See
+    /// `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_opens_at_nationalism: bool,
     /// `culture-seat-builds-past-the-deterrent`: at peace, a Culture seat's
     /// Theater, Amphitheater, Art Museum and Monument claims pass a deterrent
     /// unit and the deterrent leaves them alone. See
@@ -9819,6 +9824,11 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `sweden-builds-open-air-museums`: Sweden's Builders price the
+    /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
+    /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
+    /// default.
+    sweden_builds_open_air_museums: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11299,6 +11309,9 @@ mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
+/// `sweden-builds-open-air-museums`: see
+/// `advanced/sweden_builds_open_air_museums.rs`.
+mod sweden_builds_open_air_museums;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
@@ -16778,6 +16791,13 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
+                // See `advanced/culture_band_bank.rs`
+                // (`culture-bank-opens-at-nationalism`).
+                if currency == "faith"
+                    && self.culture_bank_bars_faith_great_person(g, pid, strategy, kind)
+                {
+                    continue;
+                }
                 let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0
