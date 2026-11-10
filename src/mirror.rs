@@ -2706,6 +2706,7 @@ const CITY_KEYS: &[&str] = &[
     "pillaged_buildings",
     "religion",
     "religion_observed",
+    "faiths",
     "religion_next",
     "religion_turns",
     "pantheon_active",
