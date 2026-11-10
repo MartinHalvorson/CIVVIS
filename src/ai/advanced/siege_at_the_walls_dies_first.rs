@@ -57,6 +57,25 @@
 //! Off, nothing changes: `wall_threat` is false and every premium is zero.
 //! Every seat and lane reads it: the rule only ever names a unit standing at
 //! our own walls.
+//!
+//! **`city-strike-takes-the-gun`** (separate opt-in, same module). The
+//! delegated city loop (`BasicAi::cities`, which every victory-planning seat
+//! runs for its production) fires each walled City Center at the first tile
+//! holding a hostile in `wdisk` order, before the command phase's
+//! `advanced_city_strikes` prices anything, so the strike was spent before
+//! the premium above could aim it. Over the live Kristina games of
+//! 2026-11-10, a gun stood within two tiles of a walled city of ours and
+//! the city struck something else, or nothing, on 19 of the 71 unhit
+//! gun-turns of the five eliminated games and on 19 of the 26 unhit
+//! gun-turns of the eight games played with `siege-at-the-walls-dies-first`
+//! armed: the largest single cause once the shooters were aimed. With the
+//! gene on, under victory planning, that pass and its Encampment pass
+//! stand aside (`BasicAi::city_strikes_left_to_the_planner`, set each turn
+//! in `take_turn_inner`), every strike is priced on an exact clone by
+//! `defensive_strike_value`, and a gun at our walls carries the premium
+//! there whether or not `siege-at-the-walls-dies-first` is armed. A seat
+//! without victory planning, a minor and a barbarian keep the old pass:
+//! their command phase never runs.
 
 use super::*;
 
@@ -108,9 +127,11 @@ impl AdvancedAi {
         self.siege_at_the_walls_dies_first && threatens_our_walls(g, pid, enemy)
     }
 
-    /// The premium a blow on `enemy` earns: the kill premium if it removes
-    /// the unit, else the damage premium on the hit points it took. Zero
-    /// when `enemy` is no wall threat, and always zero with the gene off.
+    /// The premium a city or Encampment strike on `enemy` earns: the kill
+    /// premium if it removes the unit, else the damage premium on the hit
+    /// points it took. Zero when `enemy` is no wall threat, and always zero
+    /// with both `siege-at-the-walls-dies-first` and
+    /// `city-strike-takes-the-gun` off.
     pub(super) fn wall_threat_premium(
         &self,
         g: &Game,
@@ -119,7 +140,9 @@ impl AdvancedAi {
         damage: f64,
         killed: bool,
     ) -> f64 {
-        if !self.wall_threat(g, pid, enemy) {
+        if !(self.siege_at_the_walls_dies_first || self.city_strike_takes_the_gun)
+            || !threatens_our_walls(g, pid, enemy)
+        {
             return 0.0;
         }
         if killed {

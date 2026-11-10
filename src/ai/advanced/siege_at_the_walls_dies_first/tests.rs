@@ -1,4 +1,4 @@
-use super::super::AdvancedAi;
+use super::super::{AdvancedAi, VictoryTarget};
 use super::{
     threatens_our_walls, OPEN_CITY_HP, WALL_GUN_MARGIN, WALL_THREAT_DAMAGE_PREMIUM,
     WALL_THREAT_KILL_PREMIUM,
@@ -151,4 +151,57 @@ fn the_city_strike_prices_the_gun_first() {
         gun_on - gun_off
     );
     assert_eq!(off.wall_threat_blow_premium(&game, 0, &strike(gun_at)), 0.0);
+}
+
+#[test]
+fn the_city_strike_gene_ships_off_and_prices_the_gun_alone() {
+    let (mut game, capital) = walls();
+    let gun = game.spawn_test_unit("catapult", 1, free_at(&game, capital, 2));
+    let off = AdvancedAi::new();
+    assert!(!off.city_strike_takes_the_gun, "an opt-in ships off");
+    let mut on = AdvancedAi::new();
+    on.enable_city_strike_takes_the_gun();
+    assert!(!on.wall_threat(&game, 0, gun), "the kill plan's reading stays off");
+    assert_eq!(
+        on.wall_threat_premium(&game, 0, gun, 0.0, true),
+        WALL_THREAT_KILL_PREMIUM,
+        "the strike's premium reads either gene"
+    );
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "city_strike_takes_the_gun"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "city-strike-takes-the-gun",
+        |ai| ai.city_strike_takes_the_gun,
+    );
+}
+
+/// The delegated city loop fires the walls at the first hostile it finds;
+/// with the flag it stands aside and the command phase takes the gun.
+#[test]
+fn the_old_pass_stands_aside_and_the_command_phase_takes_the_gun() {
+    let (mut game, capital) = walls();
+    let cid = game.player_city_ids(0)[0];
+    let gun_at = free_at(&game, capital, 2);
+    let gun = game.spawn_test_unit("catapult", 1, gun_at);
+    game.spawn_test_unit("warrior", 1, free_at(&game, capital, 1));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_city_strike_takes_the_gun();
+
+    let mut old = game.clone();
+    ai.base.city_strikes_left_to_the_planner = false;
+    ai.base.cities(&mut old, 0);
+    assert!(old.cities[&cid].struck, "the old pass fires the walls");
+
+    let mut board = game.clone();
+    ai.base.city_strikes_left_to_the_planner = true;
+    ai.base.cities(&mut board, 0);
+    assert!(!board.cities[&cid].struck, "the old pass stands aside");
+    let hp = board.units[&gun].hp;
+    ai.advanced_city_strikes(&mut board, 0);
+    assert!(board.cities[&cid].struck, "the command phase fires");
+    assert!(
+        board.units.get(&gun).is_none_or(|unit| unit.hp < hp),
+        "and takes the gun"
+    );
 }

@@ -6817,6 +6817,12 @@ pub struct AdvancedAi {
     /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
     /// Opt-in.
     culture_faith_site_per_theater_2: bool,
+    /// `city-strike-takes-the-gun`: every city and Encampment strike is
+    /// priced by the command phase (the delegated city loop's first-hostile
+    /// pass stands aside), and a gun at our walls carries the wall-threat
+    /// premium there. See `advanced/siege_at_the_walls_dies_first.rs`. Off by
+    /// default.
+    city_strike_takes_the_gun: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -25740,6 +25746,11 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        // `city-strike-takes-the-gun`: the delegated city loop leaves the
+        // strikes to `advanced_city_strikes`, which runs only under victory
+        // planning. See `advanced/siege_at_the_walls_dies_first.rs`.
+        self.base.city_strikes_left_to_the_planner =
+            self.city_strike_takes_the_gun && self.victory_planning;
         // The fallback record for `turn_start_hostiles`: nothing of ours has
         // acted yet on a native turn. The live bridge records earlier, before
         // its finishing volley, and this call then does nothing.

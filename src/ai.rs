@@ -2699,6 +2699,12 @@ pub struct BasicAi {
     /// Entrant `live_without_barbarian_ranged_answer`; treatment
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
+    /// `city-strike-takes-the-gun`: the city loop's "walls fire at raiders in
+    /// range" pass, which fires each City Center at the first hostile tile in
+    /// disk order, stands aside, and every city and Encampment strike is
+    /// priced by the advanced command phase instead. Set each turn by
+    /// `AdvancedAi` only while its command phase runs; false everywhere else.
+    pub(crate) city_strikes_left_to_the_planner: bool,
     /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
     /// with a body before anything else is built, bought when no defender
     /// exists, and a recon unit is not a defender. Read by
@@ -3970,6 +3976,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -4417,6 +4424,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -5775,7 +5783,12 @@ impl BasicAi {
         // once after the city loop: rebuilding the complete action list for
         // every city also enumerates production, deals, Congress votes, and
         // every unit move, which becomes quadratic in a developed empire.
+        // `city-strike-takes-the-gun`: both passes stand aside for the
+        // advanced command phase, which prices every strike.
         for cid in &city_ids {
+            if self.city_strikes_left_to_the_planner {
+                break;
+            }
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
@@ -5797,10 +5810,12 @@ impl BasicAi {
             }
         }
         loop {
-            if !city_ids.iter().any(|cid| {
-                g.defending_districts(&g.cities[cid])
-                    .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
-            }) {
+            if self.city_strikes_left_to_the_planner
+                || !city_ids.iter().any(|cid| {
+                    g.defending_districts(&g.cities[cid])
+                        .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
+                })
+            {
                 break;
             }
             let strike = g
