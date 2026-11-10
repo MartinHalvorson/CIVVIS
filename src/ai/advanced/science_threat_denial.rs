@@ -783,7 +783,11 @@ impl AdvancedAi {
         if ours.is_some_and(|ours| ours < theirs || ours <= horizon) {
             return false;
         }
-        self.war_is_affordable(g, pid) && !self.one_war_holds_declaration(g, pid, threat.rival)
+        // `denial-war-needs-the-lane-edge` reads last, so its journal line
+        // marks only a war every other gate admits.
+        self.war_is_affordable(g, pid)
+            && !self.one_war_holds_declaration(g, pid, threat.rival)
+            && self.denial_war_has_the_lane_edge(g, pid, threat.rival)
     }
 
     /// Rung 4: open a denial war, or close the one that is running. Returns

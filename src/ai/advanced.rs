@@ -6789,6 +6789,11 @@ pub struct AdvancedAi {
     /// toward, by tile, with the turn each is open again. Empty with the gene
     /// off.
     dig_dead_sites: BTreeMap<Pos, u32>,
+    /// `denial-war-needs-the-lane-edge`: off Domination, the science-denial
+    /// war needs the launcher counter's edge over the rival's steady power
+    /// and spares a friend. See `advanced/denial_war_needs_the_lane_edge.rs`.
+    /// Off by default.
+    denial_war_needs_the_lane_edge: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10766,6 +10771,8 @@ mod denial_spies_count_their_losses;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`.
+mod denial_war_needs_the_lane_edge;
 /// `denounce-only-to-declare`: see `advanced/denounce_only_to_declare.rs`.
 mod denounce_only_to_declare;
 /// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
