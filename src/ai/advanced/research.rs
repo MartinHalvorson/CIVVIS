@@ -1847,6 +1847,9 @@ impl AdvancedAi {
         if strategy == GrandStrategy::Religion && tech == "astrology" {
             value += 95.0;
         }
+        // See `advanced/religion_seat_charts_the_rivals.rs`: the way to
+        // Cartography while a rival is unmet or under-charted. Zero off.
+        value += self.religion_seat_cartography_value(g, pid, tech);
         // See `advanced/early_archers.rs`: the node that unlocks the
         // shooter, and every node on the way, while the empire lacks it.
         // Zero with the gene off.
