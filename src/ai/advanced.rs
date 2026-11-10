@@ -17464,6 +17464,10 @@ impl AdvancedAi {
             gold_buys_the_settler::SettlerFund::Saving { reserve: fund } => reserve.max(fund),
             gold_buys_the_settler::SettlerFund::Off => reserve,
         };
+        // `culture-gold-buys-the-shrines`: a wanted Shrine or Temple keeps its
+        // price from the discretionary purchases below. See
+        // `advanced/culture_faith_sources.rs`.
+        let reserve = reserve.max(self.culture_shrine_gold_fund(g, pid, plan));
         // `camp_tile_buyout`: an outpost inside a city's own rings costs
         // that city something no yield in the ranking below can express, and
         // every plot there is a surplus purchase that a unit or a building
