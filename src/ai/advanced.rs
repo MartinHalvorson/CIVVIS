@@ -6817,6 +6817,10 @@ pub struct AdvancedAi {
     /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
     /// Opt-in.
     culture_faith_site_per_theater_2: bool,
+    /// `culture-keeps-pingala-home`: a Culture target's seated Pingala answers
+    /// a Loyalty emergency only in a city about to flip. See
+    /// `advanced/culture_pingala_first.rs`. Opt-in.
+    culture_keeps_pingala_home: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -25614,6 +25618,10 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // See `last_civ_standing`: "one more turn" leaves one lane.
         self.plays_for_the_last_civ(g, pid);
+        // `culture-keeps-pingala-home`: both Loyalty passes read the runway.
+        // See `advanced/culture_pingala_first.rs`.
+        self.base.pingala_loyalty_runway =
+            self.culture_pingala_stays_home(g).map(|(_, runway)| runway);
         // `districts-price-the-improvement`: what a District could bulldoze.
         self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.

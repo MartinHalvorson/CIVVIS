@@ -5553,6 +5553,13 @@ pub const GENES: &[Gene] = &[
     // Domination the war needs the launcher counter's edge and spares a
     // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
     Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-keeps-pingala-home`: a Culture target's seated Pingala answers a
+    // Loyalty emergency only in a city flipping within twelve standard turns.
+    // Live Kristina 11-10: 9 of 20 Pingala moves went to a city 3+ citizens
+    // smaller; four of the first five carriers of the Pingala-first gene lost
+    // her to a two-citizen border city within 25 turns of her appointment.
+    // Opt-in; see `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-keeps-pingala-home", field: "culture_keeps_pingala_home", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_pingala_home, disable: AdvancedAi::disable_culture_keeps_pingala_home },
     // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
