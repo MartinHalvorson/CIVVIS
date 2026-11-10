@@ -1344,6 +1344,11 @@ pub struct BasicAi {
     /// routine city governor from spending that bank on a Missionary.
     /// False for standalone and frozen controllers.
     pub(crate) bank_faith_for_apostle: bool,
+    /// `religion-seat-charts-the-rivals` acts for this seat this turn: the
+    /// contact gap also stays open while a met major is under-charted. Set
+    /// each turn by the advanced agent; false for standalone controllers.
+    /// See `advanced/religion_seat_charts_the_rivals.rs`.
+    pub(crate) charts_rival_majorities: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
     /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
@@ -3778,6 +3783,7 @@ impl BasicAi {
             slot_kind_tiebreak: false,
             pursue_religion: true,
             bank_faith_for_apostle: false,
+            charts_rival_majorities: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -4199,6 +4205,7 @@ impl BasicAi {
             slot_kind_tiebreak: false,
             pursue_religion: true,
             bank_faith_for_apostle: false,
+            charts_rival_majorities: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,

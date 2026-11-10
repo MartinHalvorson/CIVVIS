@@ -669,11 +669,12 @@ class SimulationWorldRotation(unittest.TestCase):
 const WORLD_SPIN_STORAGE_KEY = "spin", localStorage = {setItem() {}};
 let state = {}, SPEC = false, WORLD_SPIN = true;
 let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
-let cameraFollowManual = false, wraps = true;
+let cameraFollowManual = false, wraps = true, worldSpinPeriodMs = 36000;
 const REDUCED_MOTION_QUERY = {matches:false};
+const spinSpeedBar = null;
 function mapWrapsX() { return wraps; }
 const attributes = {};
-const spinButton = {title:"", setAttribute:(k,v) => attributes[k] = v};
+const spinButton = {title:"", setAttribute:(k,v) => attributes[k] = v, style:{setProperty() {}}};
 function expect(condition, message) { if (!condition) throw Error(message); }
 updateSpinButton();
 expect(!spinAvailable() && !spinRunning(), "player game rotates with saved spin enabled");
@@ -700,6 +701,62 @@ stopWorldSpin();
 expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_speed_bar_runs_from_a_halt_to_one_turn_a_second(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("const WORLD_SPIN_SPEED_STORAGE_KEY")
+        speeds = source[start:source.index("\n", source.index("let worldSpinPeriodMs", start))]
+        start = source.index("function spinAvailable()")
+        block = source[start:source.index("function advanceWorldSpin(dt)", start)]
+        start = source.index("if (spinSpeedBar) {\n  spinSpeedBar.addEventListener")
+        wiring = source[start:source.index("\n}\n", start) + 3]
+        stubs = r'''
+const WORLD_SPIN_PERIOD_MS = 36000, WORLD_SPIN_STORAGE_KEY = "spin";
+const saved = new Map();
+const localStorage = {getItem:k => saved.has(k) ? saved.get(k) : null, setItem:(k,v) => saved.set(k, v)};
+let state = null, SPEC = true, WORLD_SPIN = true, wraps = true;
+let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null, cameraFollowManual = false;
+const REDUCED_MOTION_QUERY = {matches:false};
+function mapWrapsX() { return wraps; }
+const window = {addEventListener() {}};
+const heard = {};
+const spinSpeedBar = {value:"0", attributes:{}, setAttribute(k, v) { this.attributes[k] = v; },
+  addEventListener(name, listener) { heard[name] = listener; }};
+const spinSpeedPanel = {hidden:false, classList:{add() {}, remove() {}}};
+const spinButton = {title:"", setAttribute() {}, style:{setProperty() {}}};
+'''
+        scenarios = r'''
+function expect(condition, message) { if (!condition) throw Error(message); }
+function drag(...notches) { for (const n of notches) { spinSpeedBar.value = String(n); heard.input(); } heard.change(); }
+updateSpinButton();
+expect(worldSpinPeriodAt(WORLD_SPIN_DEFAULT_SPEED) === 36000, "the default notch is not today's pace");
+expect(Math.abs(worldSpinPeriodAt(WORLD_SPIN_TOP_SPEED) - 1000) < 1e-6, "the rabbit is not one turn a second");
+expect(worldSpinPeriodAt(1) > 36000, "the turtle is not slower than the default");
+expect(spinSpeedBar.value === "8", "the bar does not open at the default pace");
+drag(12, 20);
+expect(WORLD_SPIN && Math.abs(worldSpinPeriodMs - 1000) < 1e-6, "the top of the bar is not the top speed");
+expect(saved.get(WORLD_SPIN_SPEED_STORAGE_KEY) === "20", "the chosen speed is not remembered");
+expect(spinSpeedBar.attributes["aria-valuetext"] === "One full turn a second", "the bar does not read out its speed");
+drag(10, 4, 1, 0);
+expect(!WORLD_SPIN && spinSpeedBar.value === "0", "the very bottom does not halt the world");
+expect(worldSpinSpeed === 20 && saved.get(WORLD_SPIN_SPEED_STORAGE_KEY) === "20", "the way down to halt overwrote the speed");
+expect(spinSpeedBar.attributes["aria-valuetext"] === "Halted", "the bar does not read out a halt");
+setWorldSpin(true);
+expect(spinSpeedBar.value === "20" && worldSpinPeriodMs === worldSpinPeriodAt(20), "the button does not bring the speed back");
+stopWorldSpin();
+expect(spinSpeedBar.value === "0", "a hand on the world leaves the bar reading a speed");
+drag(3);
+expect(WORLD_SPIN && worldSpinSpeed === 3, "raising the bar from a halt does not turn the world");
+for (const value of ["0", "21", "1.5", "fast"]) {
+  saved.set(WORLD_SPIN_SPEED_STORAGE_KEY, value);
+  expect(savedWorldSpinSpeed() === WORLD_SPIN_DEFAULT_SPEED, "a bad saved speed was believed: " + value);
+}
+state = {view_player:1}; updateSpinButton();
+expect(spinSpeedPanel.hidden, "the bar offers a speed while the world is held for Watch as");
+'''
+        done = subprocess.run([NODE, "-e", stubs + speeds + block + wiring + scenarios],
+                              capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
 
 

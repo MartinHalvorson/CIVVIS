@@ -260,6 +260,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
+| `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
@@ -341,6 +342,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
 | `religion-seat-builds-holy-sites` | off (unmeasured) | `religion-seat-builds-holy-sites`: a Religion-target founder claims a Holy Site in each idle city without one. | 1 \| 1 |
+| `religion-seat-charts-the-rivals` | off (unmeasured) | `religion-seat-charts-the-rivals`: a Religion-target founder keeps charting until it knows a majority of every rival's cities, and takes Cartography sooner. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
 | `religion-seat-earns-its-prophet` | off (unmeasured) | Opt-in gene `religion-seat-earns-its-prophet`; see `Self::religion_seat_earns_its_prophet`. | 1 \| 1 |
 | `religion-seat-fields-apostles` | off (unmeasured) | `religion-seat-fields-apostles`: a Religion-target founder on the offensive saves its Faith for an Apostle-led corps. | 1 \| 1 |
@@ -352,6 +354,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
 | `religion-seat-slots-the-orders` | off (unmeasured) | Slot Religious Orders over a lower-ranked ordinary Economic card. | 1 \| 1 |
+| `religion-seat-spends-the-bank` | off (unmeasured) | `religion-seat-spends-the-bank`: a Religion-target founder's corps caps stop binding once the bank holds two Apostles. | 1 \| 1 |
 | `religion-seat-takes-the-debater` | off (unmeasured) | Opt-in gene `religion-seat-takes-the-debater`; see `advanced/religion_seat_takes_the_debater.rs`. | 1 \| 1 |
 | `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |

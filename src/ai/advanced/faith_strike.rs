@@ -46,6 +46,21 @@
 //! `faith_war_exit_peace`): it is no campaign front, and the seat offers
 //! peace once the founder's spreaders have left and the host's term is over.
 //!
+//! `faith-strike-at-a-quiet-parity` moves one gate. The 0.7 edge is the faith
+//! war's, set for a war that may run for a hundred turns; a Deity seat rarely
+//! has it. In the 57 games of the Russia religion lane from 2026-11-09 14:00Z
+//! on, bare-distance reach found two or more spreaders worth a strike, with a
+//! legal declaration, on 255 rival-turns in 25 games. The edge left 27 of
+//! them, in 5 games; a rival no stronger than us leaves 86, in 12. Power is
+//! empire-wide, and it is a poor read of a short war: on the first such turn
+//! for each rival, the median rival had none of its land units within six
+//! tiles of our cities. So a rival over the edge may still be struck when its
+//! steady power is at most [`FAITH_STRIKE_PARITY`] of ours and it has no
+//! soldier or ship within [`FAITH_STRIKE_QUIET_TILES`] tiles of a city of
+//! ours. Recon units do not count. Those same turns show the rival was at
+//! war with us within 30 turns only about one time in five, so this war is
+//! a new one, which is why parity stays a bar and every other gate holds.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -71,6 +86,14 @@ const FAITH_STRIKE_MIN_HP: i32 = 30;
 
 /// Standard turns between two "held" lines about one rival for one gate.
 const FAITH_STRIKE_NOTE_TURNS: u32 = 5;
+
+/// `faith-strike-at-a-quiet-parity`: a rival over the faith war's edge may
+/// still be struck at this share of our power, if its army is away.
+pub(crate) const FAITH_STRIKE_PARITY: f64 = 1.0;
+
+/// `faith-strike-at-a-quiet-parity`: "away" means no soldier or ship of the
+/// rival within this many tiles of a city of ours.
+const FAITH_STRIKE_QUIET_TILES: i32 = 6;
 
 /// A strike ready to carry out.
 struct FaithStrike {
@@ -147,6 +170,37 @@ impl AdvancedAi {
         100 * converted / living.max(1) >= FAITH_STRIKE_RACE
     }
 
+    /// `faith-strike-at-a-quiet-parity`: whether `rival` is no stronger than
+    /// us and has no soldier or ship near our cities. Recon units roam
+    /// everywhere and cannot take a city, so they do not break the quiet.
+    fn faith_strike_quiet_parity(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        steady: f64,
+        ours: f64,
+    ) -> bool {
+        if !self.faith_strike_at_a_quiet_parity || steady > FAITH_STRIKE_PARITY * ours {
+            return false;
+        }
+        let homes: Vec<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pos)
+            .collect();
+        !g.units.values().any(|unit| {
+            let spec = &g.rules.units[unit.kind];
+            unit.owner == rival
+                && spec.class == "military"
+                && spec.promotion_class != "recon"
+                && spec.domain.as_deref() != Some("air")
+                && homes
+                    .iter()
+                    .any(|home| g.wdist(*home, unit.pos) <= FAITH_STRIKE_QUIET_TILES)
+        })
+    }
+
     /// The first gate that holds a strike on `rival`, as a gate key and its
     /// journal reason; `None` when every gate is clear.
     fn faith_strike_gate(
@@ -173,7 +227,9 @@ impl AdvancedAi {
         }
         let ours = g.military_power(pid);
         let steady = self.steady_rival_power(g, rival).max(1.0);
-        if steady > faith_war_before_the_flip::FAITH_WAR_EDGE * ours {
+        if steady > faith_war_before_the_flip::FAITH_WAR_EDGE * ours
+            && !self.faith_strike_quiet_parity(g, pid, rival, steady, ours)
+        {
             return Some((
                 "edge",
                 format!(
