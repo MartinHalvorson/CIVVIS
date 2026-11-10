@@ -23012,8 +23012,10 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
 // While the GPU turns the ground on every display refresh, the Canvas above it
 // is repainted only as often as its cost allows, so a name painted there stands
 // still for a few frames and then catches up. Names get a small layer of their
-// own, just above the ground and below the Canvas ink, that keeps the ground's
-// time. Cities and armies still sit on top of them, as they always have.
+// own that keeps the ground's time. It sits above the Canvas, so a name is the
+// top of the map, over every city and army. A flight still has to cross over
+// it, and does: `planetGpuEligible` stands this path down while anything is in
+// the air, and the names then go on the Canvas underneath the sky.
 function paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY) {
   const gpu = PLANET_GPU;
   if (!gpu.labels) {
@@ -23021,7 +23023,8 @@ function paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY) {
     canvas.id = "planet-empire-labels";
     canvas.setAttribute("aria-hidden", "true");
     canvas.style.cssText = gpu.canvas.style.cssText;
-    gpu.canvas.after(canvas);
+    canvas.style.zIndex = "1";
+    cv.after(canvas);
     gpu.labels = {canvas, context:canvas.getContext("2d")};
   }
   const {canvas, context} = gpu.labels;
@@ -24353,12 +24356,6 @@ function drawPlanetMap() {
   // The selected unit's movement: range perimeter, then per-seam arrows.
   if (radius >= SKY_MARKERS)
     drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
-  // At the same scale where major-city names leave the globe, replace the
-  // settlement vocabulary with cartographic empire names. This is deliberately
-  // before the city/icon pass so close markers remain readable over the label
-  // if the two levels meet during a zoom animation.
-  if (gpuSurface) paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
-  else drawPlanetEmpireLabels(cx, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -24490,6 +24487,16 @@ function drawPlanetMap() {
     cx.strokeStyle = "rgba(196,235,255,.48)";
     cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
     cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  }
+  // At the same scale where major-city names leave the globe, cartographic
+  // empire names replace them. They are the top of the map, over every city,
+  // army and marker on the ground, and only what is flying goes over them,
+  // which is why the sky comes next.
+  if (gpuSurface) paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
+  else {
+    // That layer is above this canvas, so a stale one would cover it.
+    if (PLANET_GPU?.labels) PLANET_GPU.labels.canvas.style.display = "none";
+    drawPlanetEmpireLabels(cx, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   }
   cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
