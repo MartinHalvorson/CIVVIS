@@ -2451,7 +2451,19 @@ impl Game {
                     .get_mut(&host_city)
                     .unwrap()
                     .pressure
-                    .insert(religion, competing + 1.0);
+                    .insert(religion.clone(), competing + 1.0);
+                // Followers are whole Citizens, so one point past the rest
+                // can still seat fewer than half of them when the rest is
+                // split over several rows. Out-press them by the city's size
+                // and every split leaves this faith at least half.
+                if self.city_religion(&self.cities[&host_city]) != Some(religion.as_str()) {
+                    let size = f64::from(self.cities[&host_city].pop.max(1));
+                    self.cities
+                        .get_mut(&host_city)
+                        .unwrap()
+                        .pressure
+                        .insert(religion, competing * size + 1.0);
+                }
             }
         }
         if converts_religion {
