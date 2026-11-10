@@ -72,11 +72,6 @@ function initSidebarSections() {
   // sections; the first in reading order keeps its place and the rest close,
   // and the store is rewritten so the next load agrees with what was shown.
   let opened = false;
-  // A section that opens by default and that this reader has never seen is
-  // the one thing the deck opens on, once. After that their own choice is the
-  // saved one, as it is for every other section.
-  const firstMeeting = [...document.querySelectorAll(SIDEBAR_SECTIONS)].find(section =>
-    section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section));
   // The lens dock is a fixed panel at the deck's lower edge now, so it needs
   // no scroll-into-view choreography — only the same saved disclosure state
   // as the scrolling sections above it.
@@ -93,7 +88,6 @@ function initSidebarSections() {
       open = !!saved["ai-reasoning"];
     }
     if (section.classList.contains("sidebar-section")) {
-      if (firstMeeting && section !== firstMeeting) open = false;
       if (open && opened) open = false;
       if (open) opened = true;
     }
