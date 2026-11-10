@@ -6757,8 +6757,8 @@ fn favor_is_bought_before_a_contested_session() {
     );
 }
 
-/// ★ The 091939Z shape: 117 favor at t100 on 19 Gold and -1 a turn, every
-/// rival past the vote hold, units being disbanded for Gold. A drained
+/// ★ 091939Z's bank on 090948Z's treasury: 117 favor, 19 Gold at -4 a turn
+/// (under five turns of it), every rival past the vote hold. A drained
 /// treasury sells past the hold, off the cadence, down to twenty; a solvent
 /// one, or one facing a rival at twelve points, holds as before.
 #[test]
@@ -6773,7 +6773,7 @@ fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
         turn: 100,
         favor: Some(117.0),
         gold: 19,
-        gold_per_turn: Some(-1.0),
+        gold_per_turn: Some(-4.0),
         rivals: vec![rival(2, 900.0, 5), rival(3, 400.0, 6)],
         ..StateSnapshot::default()
     };
@@ -6791,7 +6791,7 @@ fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
     );
     // A deficit the treasury covers for ten turns is not a drain.
     let mut covered = held.clone();
-    covered.gold = 10;
+    covered.gold = 40;
     assert_eq!(
         append_favor_sale_order(science, &covered, &mut orders, 2.0),
         Some("favor_hold:contender")
