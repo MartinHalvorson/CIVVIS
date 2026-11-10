@@ -182,6 +182,9 @@ impl AdvancedAi {
         /// Opt-in gene `city-strike-takes-the-gun`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `culture-keeps-pingala-home`: see
+        /// `advanced/culture_pingala_first.rs`.
+        culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
