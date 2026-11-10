@@ -640,7 +640,7 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
         .techs
         .iter()
         .find(|(_, spec)| spec.era == 4)
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .expect("the tree has an Industrial technology");
     game.players[0].techs.insert(industrial_tech);
     let industrial = game.player_tile_yields(0, water, &game.map.tiles[&water]);
@@ -1600,6 +1600,9 @@ fn tamars_envoys_count_double_at_a_city_state_of_her_faith() {
         .unwrap();
     let city = game.found_city_for(minor, site, None);
     game.record_contact(0, minor);
+    // Meeting a city-state grants the first-discovery Envoy; this test counts
+    // only the ones sent below.
+    game.players[0].envoys.clear();
     let faith = "test_faith".to_string();
     game.players[0].civ = "Georgia".to_string();
     game.players[0].religion = Some(faith.clone());
@@ -1869,4 +1872,26 @@ fn wolin_pays_the_great_person_of_the_killers_own_class() {
     }
     assert_close(points(&game, "general"), 0.0);
     assert_close(points(&game, "admiral"), 0.0);
+}
+
+#[test]
+fn bandar_brunei_pays_again_for_the_owners_foreign_trading_posts() {
+    // `MINOR_CIV_JAKARTA_TRADING_POST_BONUS`: 1 Gold per post in a foreign
+    // city on the route, on top of the shipped `TRADING_POST_GOLD_IN_FOREIGN_CITY`.
+    let (mut game, cities) = game_with_capitals(3, 89_121);
+    let minor = add_city_state(&mut game, "Bandar Brunei");
+    let post = format!("trading_post_city:{}", cities[1]);
+
+    // Someone else's post in the destination pays this route nothing.
+    game.players[2].counters.insert(post.clone(), 1);
+    make_suzerain(&mut game, 0, minor);
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 0.0);
+
+    // The owner's own post pays the base Gold and Brunei's again.
+    game.players[0].counters.insert(post, 1);
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 2.0);
+
+    // Without the Suzerain bonus only the base Gold is left.
+    game.players[minor].civ = "Hattusa".to_string();
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 1.0);
 }
