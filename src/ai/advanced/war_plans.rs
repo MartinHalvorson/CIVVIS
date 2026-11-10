@@ -895,9 +895,9 @@ impl AdvancedAi {
     }
 
     /// Find a late-game nuclear response that can affect the board now.  A
-    /// target must be revealed and inside a current city launcher's range:
-    /// this is a quick counter-program, not a hope that a future silo or
-    /// submarine might eventually reach an unseen opponent.
+    /// target must be revealed and inside the reach of a platform this seat
+    /// holds today: this is a quick counter-program, not a hope that a future
+    /// silo, bomber or submarine might eventually reach an unseen opponent.
     pub(super) fn nuclear_war_goal(
         &self,
         g: &Game,
@@ -915,9 +915,11 @@ impl AdvancedAi {
         {
             return None;
         }
-        let launchers = g.player_city_ids(pid);
-        if launchers.is_empty()
-            || !launchers.iter().any(|city| {
+        // Cities that can run the programme. Delivery is a separate question,
+        // answered per target by `Game::wmd_can_reach`.
+        let builders = g.player_city_ids(pid);
+        if builders.is_empty()
+            || !builders.iter().any(|city| {
                 g.cities[city].districts.iter().any(|(district, position)| {
                     g.district_family(*district) == crate::name!("industrial_zone")
                         && !g.map.tiles[position].pillaged
@@ -926,9 +928,6 @@ impl AdvancedAi {
         {
             return None;
         }
-        let nuclear_range = g.rules.wmds["nuclear_device"].icbm_strike_range;
-        let thermonuclear_range = g.rules.wmds["thermonuclear_device"].icbm_strike_range;
-        let range = nuclear_range.max(thermonuclear_range);
         let mut best: Option<(f64, NuclearWarGoal)> = None;
         for rival in g.players.iter().filter(|rival| {
             rival.id != pid
@@ -959,27 +958,18 @@ impl AdvancedAi {
                 .values()
                 .filter(|city| city.owner == rival.id)
                 .filter(|city| g.players[pid].explored.contains(&city.pos))
-                .filter(|city| {
-                    launchers
-                        .iter()
-                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= range)
-                })
                 // Plan from the best device the program can unlock.  A
                 // Spaceport two tiles from its centre is a real
                 // thermonuclear target even if a standard device's smaller
                 // blast cannot quite reach it; rejecting that board state
                 // would strand the Fusion half of a useful counter-program.
                 .filter_map(|city| {
-                    let standard = launchers
-                        .iter()
-                        .any(|launcher| g.wdist(g.cities[launcher].pos, city.pos) <= nuclear_range)
+                    let standard = g
+                        .wmd_can_reach(pid, city.pos, false)
                         .then(|| self.nuclear_target_value(g, pid, city.pos, false))
                         .flatten();
-                    let thermonuclear = launchers
-                        .iter()
-                        .any(|launcher| {
-                            g.wdist(g.cities[launcher].pos, city.pos) <= thermonuclear_range
-                        })
+                    let thermonuclear = g
+                        .wmd_can_reach(pid, city.pos, true)
                         .then(|| self.nuclear_target_value(g, pid, city.pos, true))
                         .flatten();
                     let priority = standard

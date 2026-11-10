@@ -7248,7 +7248,104 @@ fn translate(
                 })
             }
         }
-        _ => None,
+        // A naval raider lands on the coast it stands beside. The shipped UI
+        // requests it with the plot as the ordinary pair,
+        // `Base/Assets/UI/WorldInput.lua:2331-2353` (`CoastalRaid`).
+        Action::CoastalRaid { unit, target } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("COASTAL_RAID".to_string()),
+            pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+        }),
+        // A device leaves one of two ways, and the host has a different call
+        // for each: a carrier is a unit operation
+        // (`WorldInput.lua:2162-2168`, `WMDStrike`), a silo is a command of
+        // the city that owns it, aimed from the silo's plot
+        // (`WorldInput.lua:2264-2272`, `ICBMStrike`). The engine picks the
+        // platform; `mirror_state.game` is still the board it was picked on.
+        Action::WmdStrike {
+            city,
+            target,
+            thermonuclear,
+        } => {
+            let weapon = if *thermonuclear {
+                "WMD_THERMONUCLEAR_DEVICE"
+            } else {
+                "WMD_NUCLEAR_DEVICE"
+            };
+            let platform = *mirror_state
+                .game
+                .wmd_platforms(
+                    civvis::game::MIRRORED_SEAT,
+                    Some(*city),
+                    *target,
+                    *thermonuclear,
+                )
+                .first()?;
+            let pos = Some(civvis::hex::axial_to_offset(target.0, target.1));
+            match platform.unit {
+                Some(carrier) => civ6_of.get(&carrier).map(|civ6| Order {
+                    kind: "unit",
+                    subject: Some(*civ6),
+                    verb: Some(weapon.to_string()),
+                    pos,
+                }),
+                None => {
+                    let (x, y) = civvis::hex::axial_to_offset(platform.from.0, platform.from.1);
+                    mirror_state
+                        .cid_of
+                        .iter()
+                        .find(|(_, cid)| **cid == *city)
+                        .map(|(civ6, _)| Order {
+                            kind: "wmd_strike",
+                            subject: Some(*civ6),
+                            verb: Some(format!("{x}:{y}:{weapon}")),
+                            pos,
+                        })
+                }
+            }
+        }
+        // ⚠ NO WILDCARD HERE, ON PURPOSE. This match used to end in `_ => None`,
+        // so every new `Action` reached the live board as nothing at all and
+        // the compiler said nothing: the air verbs, swaps, coastal raids and
+        // nuclear strikes each sat there until somebody happened to notice.
+        // A new variant now fails to compile until it is given an arm above
+        // or a reason below. These are the orders the live seat does not send.
+        //
+        // The host's own flow answers these: the mod's deal and congress
+        // handlers respond to the popups, the mod appoints and posts its own
+        // Governors, and the harness ends the turn.
+        Action::AcceptDeal { .. }
+        | Action::RejectDeal { .. }
+        | Action::CongressVote { .. }
+        | Action::EndTurn
+        | Action::AssignGovernor { .. }
+        // The caller folds every policy change into one deck order.
+        | Action::SlotPolicy { .. }
+        | Action::UnslotPolicy { .. }
+        // Game modes the live seat does not play, or CIVVIS's own Future Era.
+        | Action::ChooseSecretSociety { .. }
+        | Action::FoundCorporation { .. }
+        | Action::MoveProduct { .. }
+        | Action::AimMassDriver { .. }
+        | Action::MassDriverStrike { .. }
+        // Real host orders with no bridge arm yet. Any the planner chooses
+        // lands in the run's `skipped` notes by variant name.
+        | Action::BuildRailroad { .. }
+        | Action::ContributeDistrict { .. }
+        | Action::DemandGold { .. }
+        | Action::PriorityTarget { .. }
+        | Action::ProposeDefensivePact { .. }
+        | Action::ProposeJointWar { .. }
+        | Action::RequestPromise { .. }
+        | Action::Upgrade { .. }
+        // The arms above are guarded, so these catch what the guards refuse:
+        // a purchase in anything but gold or faith, and any deal that is not
+        // peace, an alliance or a bare friendship (open borders, gold).
+        | Action::Buy { .. }
+        | Action::BuyBuilding { .. }
+        | Action::BuyDistrict { .. }
+        | Action::ProposeDeal { .. } => None,
     }
 }
 
@@ -7925,6 +8022,29 @@ fn friendship_turn_of(state: &civvis::mirror::StateSnapshot, player: i64) -> Opt
 }
 
 /// Whether whatever stood on `pos` before the order is damaged, gone, or ours.
+/// A launch leaves two marks the next frame can show: one device fewer in the
+/// stockpile, and a hurt target. Either proves it. A device finished the same
+/// turn can hide the first and an empty target hides the second, so a launch
+/// fails only when neither shows.
+fn launch_landed(
+    weapon: &str,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    target: Option<(i32, i32)>,
+) -> bool {
+    let held = |frame: &civvis::mirror::StateSnapshot| {
+        let stats = &frame.public_stats;
+        let count = if weapon == "WMD_THERMONUCLEAR_DEVICE" {
+            stats.thermonuclear_devices
+        } else {
+            stats.nuclear_devices
+        };
+        count.filter(|held| *held >= 0)
+    };
+    let spent = matches!((held(before), held(after)), (Some(was), Some(now)) if now < was);
+    spent || target.is_some_and(|pos| target_harmed(before, after, pos))
+}
+
 fn target_harmed(
     before: &civvis::mirror::StateSnapshot,
     after: &civvis::mirror::StateSnapshot,
@@ -8540,6 +8660,25 @@ fn verify_unit_order(
         // so the plot it ends on is as much a witness as the one it started
         // on; reading only the start plot failed every raid, and three
         // failures withhold the unit's PILLAGE for ten turns.
+        // The raider stays at sea, so the proof is the shore tile it named.
+        "COASTAL_RAID" => {
+            if order
+                .pos
+                .and_then(|pos| tiles.plot(pos))
+                .is_some_and(|plot| plot.p)
+            {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("not_pillaged".to_string())
+            }
+        }
+        "WMD_NUCLEAR_DEVICE" | "WMD_THERMONUCLEAR_DEVICE" => {
+            if launch_landed(op, before, after, order.pos) {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("device_not_spent".to_string())
+            }
+        }
         "PILLAGE" => {
             let pillaged_under =
                 |u: &civvis::mirror::StateUnit| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p);

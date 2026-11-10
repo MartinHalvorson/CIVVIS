@@ -2497,6 +2497,52 @@ class SwapVerbIsWiredTest(unittest.TestCase):
         resolver = resolver.split("local resolved, missing = {}, {};", 1)[0]
         self.assertIn('"UNITOPERATION_SWAP_UNITS",', resolver)
 
+    def test_a_coastal_raid_uses_the_shipped_positional_operation(self) -> None:
+        """`Base/Assets/UI/WorldInput.lua:2331-2353`."""
+        source = self._agent_source()
+        block = source.split("CivvisWmd.coastalRaid = function", 1)[1].split("end;", 1)[0]
+        self.assertIn('OP["UNITOPERATION_COASTAL_RAID"]', block)
+        self.assertIn("params[UnitOperationTypes.PARAM_X] = x;", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_Y] = y;", block)
+        self.assertIn("refuseWarStarter", block)
+        self.assertIn("canOperate(unit, hash, params)", block)
+
+    def test_a_carrier_launch_names_the_weapon_and_the_war_it_would_start(self) -> None:
+        """`Base/Assets/UI/WorldInput.lua:2143` and `:2162-2168`."""
+        source = self._agent_source()
+        block = source.split("CivvisWmd.fromUnit = function", 1)[1]
+        block = block.split("CivvisWmd.fromSilo", 1)[0]
+        self.assertIn('OP["UNITOPERATION_WMD_STRIKE"]', block)
+        self.assertIn("params[UnitOperationTypes.PARAM_WMD_TYPE] = device.Index;", block)
+        self.assertIn("refuseWarStarter(unit, subject, weapon, x, y, turn, device.Index)", block)
+        self.assertIn("IsAttackChangeWarState(actor:GetComponentID(), x, y, weapon)", source)
+
+    def test_a_silo_launch_is_a_city_command_aimed_from_the_silo(self) -> None:
+        """`Base/Assets/UI/WorldInput.lua:2264-2272`."""
+        source = self._agent_source()
+        block = source.split("CivvisWmd.fromSilo = function", 1)[1]
+        block = block.split("local function applyOrder", 1)[0]
+        for parameter in ("PARAM_X0] = sx", "PARAM_Y0] = sy", "PARAM_X1] = x", "PARAM_Y1] = y"):
+            self.assertIn(f"params[CityCommandTypes.{parameter};", block)
+        self.assertIn("CityManager.CanStartCommand(city, CityCommandTypes.WMD_STRIKE, params)", block)
+        self.assertIn("CityManager.RequestCommand(city, CityCommandTypes.WMD_STRIKE, params)", block)
+
+    def test_every_unit_verb_the_bridge_sends_has_a_handler(self) -> None:
+        """A verb the mod has no arm for fails at the `unknown_op_` tail, live."""
+        import re
+
+        source = self._agent_source()
+        bridge = (Path(__file__).resolve().parents[1] / "src/bin/civvis_orders.rs").read_text(
+            encoding="utf-8"
+        )
+        unit_orders = re.findall(
+            r'kind: "unit",\s*subject: [^\n]*\s*verb: Some\("([A-Z_]+)"\.to_string\(\)\)', bridge
+        )
+        self.assertGreater(len(unit_orders), 10, "the scan found the bridge's unit orders")
+        for verb in sorted(set(unit_orders)):
+            handled = f'"{verb}"' in source or f'"UNITOPERATION_{verb}"' in source
+            self.assertTrue(handled, f"the mod has no handler for the bridge's {verb}")
+
     def test_the_swap_verb_checks_then_requests_with_the_partners_plot(self) -> None:
         source = self._agent_source()
         handler = source.split("local function applyOrder", 1)[1]

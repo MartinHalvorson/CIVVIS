@@ -1580,42 +1580,113 @@ impl Game {
         }
     }
 
-    /// Every platform of `pid`'s that could deliver a device to `target`,
-    /// nearest first, as (distance, what carried it, where it fired from).
+    /// Every unit able to deliver a device this turn: its id, where it would
+    /// launch from, and how far it reaches.
     ///
-    /// A device is national stockpile rather than a unit, so the order names a
-    /// city and the question is only which of that civilization's platforms is
-    /// closest: the city center, one of that city's working Missile Silos, or —
-    /// and this is the whole point of an SSBN — a Nuclear Submarine, which
-    /// carries the device's range wherever it sails instead of waiting for the
-    /// target to come inside a silo's reach.
-    pub(in crate::game) fn wmd_launch_platforms(
+    /// Civilization VI's rule, from the shipped Civilopedia
+    /// (`LOC_PEDIA_CONCEPTS_PAGE_NUKES_1_CHAPTER_CONTENT_PARA_1`): a device "can
+    /// then be used by any unit or improvement capable of deploying it on the
+    /// map. This includes bomber aircraft, Nuclear Submarines, and the Missile
+    /// Silo." The carriers are the `Units.WMDCapable` rows. A Nuclear Submarine
+    /// launches at the device's own strike range. An aircraft drops the device
+    /// and so reaches only as far as it can fly.
+    pub(crate) fn wmd_carriers(&self, pid: usize, thermonuclear: bool) -> Vec<(u32, Pos, i32)> {
+        let device_range = self.wmd_spec(thermonuclear).icbm_strike_range;
+        self.units
+            .iter()
+            .filter(|(_, unit)| {
+                unit.owner == pid
+                    && unit.attacks_left > 0
+                    && unit.moves_left > 0.0
+                    && self.rules.units[unit.kind].wmd_capable
+            })
+            .map(|(uid, unit)| {
+                let flies = self.rules.units[unit.kind].domain.as_deref() == Some("air");
+                let reach = if flies {
+                    self.unit_attack_range(*uid)
+                } else {
+                    device_range
+                };
+                (*uid, self.air_operation_origin(*uid), reach)
+            })
+            .collect()
+    }
+
+    fn wmd_spec(&self, thermonuclear: bool) -> &crate::rules::WmdSpec {
+        &self.rules.wmds[if thermonuclear {
+            "thermonuclear_device"
+        } else {
+            "nuclear_device"
+        }]
+    }
+
+    /// Every way this civilization can put a device on `target` this turn,
+    /// best first. `city` limits the silos to that city's; carriers answer to
+    /// the empire, so they are offered either way.
+    ///
+    /// A silo goes first because a launch costs it nothing, where a carrier
+    /// spends its attack. A city center is not a launch site: the only city
+    /// launch the shipped game has is `CityManager.RequestCommand(fromCity,
+    /// CityCommandTypes.WMD_STRIKE, …)` aimed from a silo's plot
+    /// (`Base/Assets/UI/WorldInput.lua:2264-2272`), and the banner that offers
+    /// it is `BANNERTYPE_MISSILE_SILO`.
+    pub fn wmd_platforms(
         &self,
         pid: usize,
-        cid: u32,
+        city: Option<u32>,
         target: Pos,
-    ) -> Vec<(i32, &'static str, Pos)> {
-        let mut platforms: Vec<(i32, &'static str, Pos)> = Vec::new();
-        if let Some(city) = self.cities.get(&cid).filter(|city| city.owner == pid) {
-            platforms.push((self.wdist(city.pos, target), "city", city.pos));
-            for position in &city.owned_tiles {
-                let silo = self.map.tiles.get(position).is_some_and(|tile| {
+        thermonuclear: bool,
+    ) -> Vec<WmdPlatform> {
+        let device_range = self.wmd_spec(thermonuclear).icbm_strike_range;
+        let mut platforms = Vec::new();
+        for owned in self
+            .cities
+            .values()
+            .filter(|owned| owned.owner == pid && city.is_none_or(|named| named == owned.id))
+        {
+            for position in &owned.owned_tiles {
+                let working_silo = self.map.tiles.get(position).is_some_and(|tile| {
                     tile.improvement.as_deref() == Some("missile_silo") && !tile.pillaged
                 });
-                if silo {
-                    platforms.push((self.wdist(*position, target), "missile_silo", *position));
+                let distance = self.wdist(*position, target);
+                if working_silo && distance <= device_range {
+                    platforms.push(WmdPlatform {
+                        kind: crate::name!("missile_silo"),
+                        from: *position,
+                        unit: None,
+                        distance,
+                    });
                 }
             }
         }
-        for unit in self.units.values() {
-            if unit.owner == pid && unit.kind == "nuclear_submarine" {
-                platforms.push((self.wdist(unit.pos, target), "nuclear_submarine", unit.pos));
+        for (uid, from, reach) in self.wmd_carriers(pid, thermonuclear) {
+            let distance = self.wdist(from, target);
+            if distance <= reach {
+                platforms.push(WmdPlatform {
+                    kind: self.units[&uid].kind,
+                    from,
+                    unit: Some(uid),
+                    distance,
+                });
             }
         }
-        platforms.sort_by_key(|(distance, platform, position)| {
-            (*distance, *platform, position.0, position.1)
+        platforms.sort_by_key(|platform| {
+            (
+                platform.unit.is_some(),
+                platform.distance,
+                platform.from.0,
+                platform.from.1,
+                platform.unit,
+            )
         });
         platforms
+    }
+
+    /// Whether anything this civilization holds can deliver a device there.
+    pub fn wmd_can_reach(&self, pid: usize, target: Pos, thermonuclear: bool) -> bool {
+        !self
+            .wmd_platforms(pid, None, target, thermonuclear)
+            .is_empty()
     }
 
     /// Launch a stockpiled device. Range, blast radius and fallout duration
@@ -1662,12 +1733,13 @@ impl Game {
         if !self.players[pid].explored.contains(&target) {
             return Err("target tile is unrevealed".into());
         }
-        // The closest platform carries the shot.
-        let (_, platform, launched_from) = self
-            .wmd_launch_platforms(pid, cid, target)
+        let carrier = self
+            .wmd_platforms(pid, Some(cid), target, thermonuclear)
             .into_iter()
-            .find(|(distance, _, _)| *distance <= spec.icbm_strike_range)
+            .next()
             .ok_or_else(|| "target out of ICBM range".to_string())?;
+        let platform = carrier.kind.to_string();
+        let launched_from = carrier.from;
         // Nuking a major you are at peace with is not a legal order.
         let blast: Vec<Pos> = self.wdisk(target, spec.blast_radius);
         let mut targeted_owners = BTreeSet::new();
@@ -1722,18 +1794,16 @@ impl Game {
         for defender in &exposed_military {
             self.record_war_unit_participation(defender, pid);
         }
-        let launch_unit = if platform == "nuclear_submarine" {
-            self.units
-                .values()
-                .find(|unit| {
-                    unit.owner == pid
-                        && unit.kind == "nuclear_submarine"
-                        && unit.pos == launched_from
-                })
-                .cloned()
-        } else {
-            None
-        };
+        let launch_unit = carrier.unit.and_then(|uid| self.units.get(&uid).cloned());
+        // `UNITOPERATION_WMD_STRIKE` is an attack (`CategoryInUI="ATTACK"`,
+        // Base/Assets/Gameplay/Data/UnitOperations.xml:87), so a carrier spends
+        // its attack on it. An aircraft comes off patrol the way a sortie does.
+        if let Some(uid) = carrier.unit {
+            self.consume_unit_attack(uid);
+            let aircraft = self.units.get_mut(&uid).expect("the carrier was just read");
+            aircraft.air_patrol = false;
+            aircraft.air_patrol_pos = None;
+        }
         for position in blast.iter().copied() {
             if let Some(tile) = self.map.tiles.get_mut(&position) {
                 tile.fallout_until = tile.fallout_until.max(fallout_until);
@@ -1804,7 +1874,7 @@ impl Game {
             attacker: pid,
             target,
             thermonuclear,
-            platform: platform.to_string(),
+            platform,
             launched_from,
             blast_radius: spec.blast_radius,
             fallout_until,
@@ -1862,6 +1932,8 @@ impl Game {
         let from = match strike.platform.as_str() {
             "missile_silo" => " from a Missile Silo",
             "nuclear_submarine" => " from a Nuclear Submarine",
+            "bomber" => " from a Bomber",
+            "jet_bomber" => " from a Jet Bomber",
             _ => "",
         };
         self.note_important(
