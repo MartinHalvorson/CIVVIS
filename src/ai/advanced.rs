@@ -6754,6 +6754,10 @@ pub struct AdvancedAi {
     /// Person but a Writer, Artist or Musician from then on. See
     /// `advanced/culture_band_bank.rs`. Opt-in.
     culture_bank_opens_at_nationalism: bool,
+    /// `culture-builds-through-a-quiet-war`: a Culture seat's culture claims
+    /// run through a war whose soldiers stay away from its cities. See
+    /// `advanced/culture_quiet_war.rs`. Off by default.
+    culture_builds_through_a_quiet_war: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10783,6 +10787,8 @@ mod culture_dig_museum;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 mod culture_open_borders;
+/// `culture-builds-through-a-quiet-war`: see `advanced/culture_quiet_war.rs`.
+mod culture_quiet_war;
 mod culture_work_purchase;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.

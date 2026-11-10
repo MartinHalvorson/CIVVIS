@@ -129,6 +129,9 @@ impl AdvancedAi {
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
         /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
         culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
+        /// `culture-builds-through-a-quiet-war`: see
+        /// `advanced/culture_quiet_war.rs`.
+        culture_builds_through_a_quiet_war => enable_culture_builds_through_a_quiet_war, disable_culture_builds_through_a_quiet_war;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

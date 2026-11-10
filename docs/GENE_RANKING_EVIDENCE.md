@@ -226,6 +226,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
 | `culture-bank-opens-at-nationalism` | off (unmeasured) | `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
+| `culture-builds-through-a-quiet-war` | off (unmeasured) | `culture-builds-through-a-quiet-war`: see `advanced/culture_quiet_war.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |

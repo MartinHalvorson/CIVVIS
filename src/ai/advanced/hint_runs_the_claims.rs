@@ -171,13 +171,15 @@ impl AdvancedAi {
         // Squares, after the Campus claims (which yield those cities) and
         // ahead of the Prophet race and the routine claims. Exact no-op
         // while the gene is off. See `advanced/culture_theater_first.rs`.
-        if !war_holds {
+        // `culture-builds-through-a-quiet-war`: a quiet war does not hold
+        // them. See `advanced/culture_quiet_war.rs`.
+        if !war_holds || self.culture_quiet_war(g, pid, plan) {
             self.claim_culture_theaters(g, pid, plan);
         }
         // `culture-seat-monuments`: a Culture seat's Monuments, after the
         // Theater claim (whose heads they leave alone). Exact no-op while
         // the gene is off. See `advanced/culture_monuments.rs`.
-        if !war_holds {
+        if !war_holds || self.culture_quiet_war(g, pid, plan) {
             self.claim_culture_monuments(g, pid, plan);
         }
         // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a

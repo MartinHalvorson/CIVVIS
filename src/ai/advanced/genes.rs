@@ -5477,6 +5477,11 @@ pub const GENES: &[Gene] = &[
     // Great People at t124-144 while the bank waited for Ideology. Opt-in;
     // see `advanced/culture_band_bank.rs`.
     Gene { tag: "culture-bank-opens-at-nationalism", field: "culture_bank_opens_at_nationalism", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_opens_at_nationalism, disable: AdvancedAi::disable_culture_bank_opens_at_nationalism },
+    // Live Deity Kristina 11-10: the war hold paused the culture claims for
+    // 31, 78 and 54 turns of wars whose soldiers mostly never came near. A
+    // Culture seat's culture claims run through a quiet war. Opt-in; see
+    // `advanced/culture_quiet_war.rs`.
+    Gene { tag: "culture-builds-through-a-quiet-war", field: "culture_builds_through_a_quiet_war", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_builds_through_a_quiet_war, disable: AdvancedAi::disable_culture_builds_through_a_quiet_war },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

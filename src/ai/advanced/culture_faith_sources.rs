@@ -160,13 +160,8 @@ impl AdvancedAi {
             .iter()
             .filter(|cid| Self::culture_faith_site_held(g, **cid))
             .count();
-        let at_war = g.players.iter().any(|other| {
-            other.id != pid
-                && other.alive
-                && !other.is_minor
-                && !other.is_barbarian
-                && g.is_at_war(pid, other.id)
-        });
+        // `culture-builds-through-a-quiet-war`: see `advanced/culture_quiet_war.rs`.
+        let at_war = self.culture_reads_a_major_war(g, pid, plan);
         let mut best: Option<(u32, Item, f64)> = None;
         for cid in cities {
             let city = &g.cities[&cid];

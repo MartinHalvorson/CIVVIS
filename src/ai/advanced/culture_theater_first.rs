@@ -373,13 +373,8 @@ impl AdvancedAi {
         {
             return;
         }
-        let at_major_war = g.players.iter().any(|other| {
-            other.id != pid
-                && other.alive
-                && !other.is_barbarian
-                && !other.is_minor
-                && g.is_at_war(pid, other.id)
-        });
+        // `culture-builds-through-a-quiet-war`: see `advanced/culture_quiet_war.rs`.
+        let at_major_war = self.culture_reads_a_major_war(g, pid, plan);
         for cid in g.player_city_ids(pid) {
             let Some((theater, turns)) = self.culture_theater_item(g, pid, cid, plan) else {
                 continue;
