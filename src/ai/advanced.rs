@@ -9009,6 +9009,11 @@ pub struct AdvancedAi {
     /// caps stop binding once the bank holds two Apostles. See
     /// `advanced/religion_seat_spends_the_bank.rs`. Off by default.
     religion_seat_spends_the_bank: bool,
+    /// `religion-seat-counts-the-pressure`: a Religion-target founder's
+    /// spreaders go where the host's own pressure rows say a majority is
+    /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
+    /// default.
+    religion_seat_counts_the_pressure: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -26451,6 +26456,9 @@ mod religion_prophet_queue;
 /// `religion-seat-charts-the-rivals`: see
 /// `advanced/religion_seat_charts_the_rivals.rs`.
 mod religion_seat_charts_the_rivals;
+/// `religion-seat-counts-the-pressure`: see
+/// `advanced/religion_seat_counts_the_pressure.rs`.
+mod religion_seat_counts_the_pressure;
 /// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
 /// see `advanced/religion_seat_fields_apostles.rs`.
 mod religion_seat_fields_apostles;
