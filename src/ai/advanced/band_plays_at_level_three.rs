@@ -22,16 +22,22 @@
 //! and eight concerts. A band's first two concerts decide its career.
 //!
 //! **What the gene does.**
-//! - Tour: a band below level 3 plays first wherever it would perform at level
-//!   3 or more, among the stages it can reach within four turns, in the order
-//!   the seat's scorer ranks them (so the bar holder first among those). With
-//!   none in reach, the scorer's order stands.
-//! - Promotion (inside `band-plays-its-stage`'s chooser): the offered
-//!   promotion that lifts the most open, reachable stages to level 3 (for a
-//!   fresh band, the +2 promotion with the most such stages); failing that,
-//!   the one that raises the level at the most of them; failing that, the
-//!   career-value choice as before. Stages in land closed to our bands, or
-//!   beyond the tour's fifteen turns, do not count.
+//! - Tour: a band below level 3 ranks the stages by the level it would play
+//!   them at: level 3 or more within four turns first, then level 3 or more
+//!   farther within the tour's reach, then level 2, then level 1, each group in
+//!   the seat's scorer order (so the bar holder first within it). It never
+//!   plays the stage under it while a stage of a higher level is on that
+//!   list: a Glam Rock band skips a wonder (level 1) for a Theater Square
+//!   (level 3), because a level-3 concert breaks a band up a sixth as often.
+//! - Promotion (inside `band-plays-its-stage`'s chooser): among the offered
+//!   promotions that lift an open, reachable stage to level 3, the one with
+//!   the most levels (a +2 over a +1 at a band's first level-up), then the
+//!   most such stages; failing that, the one that raises the level at the
+//!   most of them; failing that, the career-value choice as before. Stages in
+//!   land closed to our bands, or beyond the tour's fifteen turns, do not
+//!   count. Live, 37 of 69 bands were offered a +2 promotion first (three of
+//!   the twelve are drawn), so the first promotion is a real choice about
+//!   half the time.
 
 use crate::ai::BasicAi;
 use crate::game::Game;
@@ -44,29 +50,75 @@ pub(crate) const LEVEL_THREE: i32 = 3;
 const LEVEL_THREE_TRIP_TURNS: f64 = 4.0;
 
 impl BasicAi {
-    /// `band-plays-at-level-three`: the scorer's ranking with the level-3
-    /// stages within four turns moved to the front, for a band below level 3.
+    /// The level class a stage gives this band: 3 for level 3 or more,
+    /// otherwise its performance level; 0 where it has no concert.
+    fn rock_band_level_class(g: &Game, pid: usize, uid: u32, pos: Pos) -> i32 {
+        g.rock_concert_performance_level(pid, uid, pos)
+            .map_or(0, |level| level.min(LEVEL_THREE))
+    }
+
+    /// Whether the band is below level 3 and so tours by level class.
+    fn rock_band_below_level_three(g: &Game, uid: u32) -> bool {
+        g.units
+            .get(&uid)
+            .is_some_and(|unit| g.rock_band_performance_level(unit, 0) < LEVEL_THREE)
+    }
+
+    /// `band-plays-at-level-three`: the scorer's ranking regrouped by the
+    /// level a band below level 3 would play each stage at (level 3 within
+    /// four turns, level 3 farther, level 2, level 1), keeping the scorer's
+    /// order inside each group.
     pub(crate) fn rock_band_level_three_first(
         g: &Game,
         pid: usize,
         uid: u32,
         ranked: Vec<Pos>,
     ) -> Vec<Pos> {
-        let Some(unit) = g.units.get(&uid) else {
-            return ranked;
-        };
-        if g.rock_band_performance_level(unit, 0) >= LEVEL_THREE {
+        if !Self::rock_band_below_level_three(g, uid) {
             return ranked;
         }
         let moves = g.unit_max_moves(uid).max(1.0);
-        let (mut first, rest): (Vec<Pos>, Vec<Pos>) = ranked.into_iter().partition(|pos| {
-            g.rock_concert_performance_level(pid, uid, *pos)
-                .is_some_and(|level| level >= LEVEL_THREE)
-                && g.route_distance(uid, *pos, 0)
-                    .is_some_and(|distance| distance as f64 / moves <= LEVEL_THREE_TRIP_TURNS)
-        });
-        first.extend(rest);
-        first
+        let mut grouped: Vec<(u8, Pos)> = ranked
+            .into_iter()
+            .map(|pos| {
+                let group = match Self::rock_band_level_class(g, pid, uid, pos) {
+                    LEVEL_THREE => {
+                        let near = g.route_distance(uid, pos, 0).is_some_and(|distance| {
+                            distance as f64 / moves <= LEVEL_THREE_TRIP_TURNS
+                        });
+                        if near {
+                            0
+                        } else {
+                            1
+                        }
+                    }
+                    2 => 2,
+                    _ => 3,
+                };
+                (group, pos)
+            })
+            .collect();
+        grouped.sort_by_key(|(group, _)| *group);
+        grouped.into_iter().map(|(_, pos)| pos).collect()
+    }
+
+    /// `band-plays-at-level-three`: whether a band below level 3 may play the
+    /// stage under it, which it may not while a stage of a higher level class
+    /// is on its tour.
+    pub(crate) fn rock_band_may_play_here(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        here: Pos,
+        ranked: &[Pos],
+    ) -> bool {
+        if !Self::rock_band_below_level_three(g, uid) {
+            return true;
+        }
+        let class = Self::rock_band_level_class(g, pid, uid, here);
+        ranked
+            .iter()
+            .all(|pos| *pos == here || Self::rock_band_level_class(g, pid, uid, *pos) <= class)
     }
 }
 
@@ -139,6 +191,15 @@ mod tests {
         let mut ai = BasicAi::new();
         ai.band_plays_at_level_three = true;
         assert_eq!(ai.rock_band_ranked_venues(&game, 0, band)[0], theater);
+        // Standing on the wonder, it walks on to the Theater rather than play
+        // a level-1 show.
+        game.relocate(band, wonder);
+        let full = game.unit_max_moves(band);
+        game.units.get_mut(&band).unwrap().moves_left = full;
+        assert!(game.rock_concert_tourism(0, band).is_some());
+        assert!(ai.rock_band_step(&mut game, 0, band));
+        assert!(game.wdist(game.units[&band].pos, theater) < game.wdist(wonder, theater));
+        game.relocate(band, (9, 6));
         // A band already at level 3 keeps the scorer's order.
         game.units.get_mut(&band).unwrap().level = 3;
         assert_eq!(ai.rock_band_ranked_venues(&game, 0, band)[0], wonder);

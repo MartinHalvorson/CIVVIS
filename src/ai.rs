@@ -7624,7 +7624,13 @@ impl BasicAi {
         let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
             return false;
         };
-        let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        if can_perform_here && self.band_plays_at_level_three {
+            // `band-plays-at-level-three`: no lower-level show while a
+            // higher-level stage is on the tour.
+            let ranked = self.rock_band_ranked_venues(g, pid, uid);
+            can_perform_here = Self::rock_band_may_play_here(g, pid, uid, here, &ranked);
+        }
         let acted = if self.band_plays_what_it_can_reach {
             self.rock_band_reachable_step(g, pid, uid, here, can_perform_here)
         } else {

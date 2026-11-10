@@ -87,9 +87,10 @@ fn stage_counts(g: &Game, pid: usize, reach: Option<u32>) -> StageCounts {
     counts
 }
 
-/// `band-plays-at-level-three`: the offered promotion that lifts the most
-/// open, reachable stages to performance level 3; failing that, the one that
-/// raises the level at the most of them (levels times stages); `None` when no
+/// `band-plays-at-level-three`: among the offered promotions that lift an
+/// open, reachable stage to performance level 3, the one with the most
+/// levels, then the most such stages; failing that, the one that raises the
+/// level at the most of them (levels times stages); `None` when no
 /// offered promotion raises the level anywhere the band can play, which
 /// leaves the career chooser to decide. See `advanced/band_plays_at_level_three.rs`.
 fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Option<Name> {
@@ -123,8 +124,8 @@ fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Op
         let reaches = base + bonus as i32 >= super::band_plays_at_level_three::LEVEL_THREE;
         let key = (
             reaches,
-            if reaches { stages } else { bonus * stages },
-            bonus,
+            if reaches { bonus } else { bonus * stages },
+            stages,
         );
         if best.as_ref().is_none_or(|(held, held_name)| {
             key > *held || (key == *held && name.as_str() < held_name.as_str())
