@@ -514,3 +514,38 @@ fn version_two_carries_version_one() {
     g.players[0].techs.insert(crate::name!("astrology"));
     assert!(ai.culture_faith_source_target(&g, 0, &plan).is_some());
 }
+
+#[test]
+fn version_two_goes_ahead_of_a_spy() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_faith_site_per_theater();
+    let spy = Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    for &cid in &cities {
+        g.cities.get_mut(&cid).unwrap().queue = vec![spy.clone()];
+    }
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan).is_none(),
+        "version one keeps a Spy"
+    );
+    ai.enable_culture_faith_site_per_theater_2();
+    let (city, item, _) = ai
+        .culture_faith_source_target(&g, 0, &plan)
+        .expect("version two claims a source over the Spy");
+    assert!(cities.contains(&city));
+    assert!(AdvancedAi::culture_faith_item(&g, &item));
+}
+
+#[test]
+fn version_two_keeps_a_settler_and_a_builder() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    ai.enable_culture_faith_site_per_theater_2();
+    for (index, &cid) in cities.iter().enumerate() {
+        let unit = if index % 2 == 0 { "settler" } else { "builder" };
+        g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+            unit: Name::new(unit),
+        }];
+    }
+    assert!(ai.culture_faith_source_target(&g, 0, &plan).is_none());
+}

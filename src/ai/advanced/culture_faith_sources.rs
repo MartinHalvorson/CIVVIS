@@ -19,8 +19,12 @@
 //! Holy Site at t60, the Shrine at t69, the Temple at t92 and the next Holy
 //! Site only at t121, while that city also ran a festival, a Spy and Mont St
 //! Michel; Faith stood at 12 a turn at t100 against the 60 the bands need.
-//! Every hold that protects a Theater, Amphitheater, Settler, Granary or
-//! deterrent head still applies city by city.
+//! Version two also goes ahead of a wonder, a Spy or an Aqueduct at the head
+//! of a Theater city's queue (`culture_faith_passes_the_head`): a paired
+//! decider read of 22 live boards found serialization never bound, while
+//! those heads, a backlog Builder, an early-floor Settler, an Amphitheater
+//! and war nearby did. The Settler, Builder, Theater, Amphitheater, Trader
+//! and threatened-defence holds still apply, and so does the safety rule.
 
 use super::*;
 
@@ -131,6 +135,31 @@ impl AdvancedAi {
         self.culture_faith_site_per_theater || self.culture_faith_site_per_theater_2
     }
 
+    /// `culture-faith-site-per-theater-2`: a queue head the Culture Faith
+    /// claim goes ahead of: a wonder, a Spy or an Aqueduct with more than two
+    /// turns of work left. A Holy Site with its Shrine and Temple costs about
+    /// 120 Online production and pays 13-29 Faith a turn, two or three more
+    /// Rock Bands over t80-t180 (about 22-33 visitors); a 355-460 production
+    /// wonder is worth about one visitor. Every other head keeps its holds.
+    fn culture_faith_passes_the_head(g: &Game, pid: usize, cid: u32, head: &Item) -> bool {
+        let remaining =
+            g.item_cost_for_city(pid, cid, head) - g.item_invested_production(cid, head);
+        if !(remaining > 2.0 * g.city_yields(cid).production.max(0.5)) {
+            return false;
+        }
+        match head {
+            Item::Wonder { .. } => true,
+            Item::Building { building } => g
+                .rules
+                .buildings
+                .get(building)
+                .is_some_and(|spec| spec.wonder),
+            Item::Unit { unit } => *unit == "spy",
+            Item::District { district, .. } => g.district_family(*district) == "aqueduct",
+            _ => false,
+        }
+    }
+
     fn culture_faith_item(g: &Game, item: &Item) -> bool {
         match item {
             Item::District { district, .. } => g.district_family(*district) == "holy_site",
@@ -203,6 +232,24 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item, f64)> {
+        self.culture_faith_source_scan(g, pid, plan, None)
+    }
+
+    /// [`Self::culture_faith_source_target`], noting in `skips` why each
+    /// Theater city took no source (`culture-faith-site-per-theater-2`'s
+    /// journal line).
+    fn culture_faith_source_scan(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        mut skips: Option<&mut Vec<String>>,
+    ) -> Option<(u32, Item, f64)> {
+        let mut skip = |cid: u32, why: String| {
+            if let Some(skips) = skips.as_deref_mut() {
+                skips.push(format!("{} {why}", g.cities[&cid].name));
+            }
+        };
         let limit = self.culture_faith_source_budget(g, pid)?;
         let cities = g.player_city_ids(pid);
         // Retain every existing commitment, but a positively quoted Native
@@ -239,27 +286,35 @@ impl AdvancedAi {
         let mut best: Option<(u32, Item, f64)> = None;
         for cid in cities {
             let city = &g.cities[&cid];
-            if !Self::culture_faith_city_safe(g, pid, cid, plan)
-                || !g.city_has_district_family(city, crate::name!("theater_square"))
-            {
+            if !g.city_has_district_family(city, crate::name!("theater_square")) {
+                continue;
+            }
+            if !Self::culture_faith_city_safe(g, pid, cid, plan) {
+                skip(cid, "is not safe".into());
                 continue;
             }
             if let Some(head) = city.queue.first() {
                 // `culture-faith-site-per-theater-2`: a city already building
                 // a source keeps it; the next claim goes to another city.
                 if self.culture_faith_site_per_theater_2 && Self::culture_faith_item(g, head) {
+                    skip(cid, "is building its source".into());
                     continue;
                 }
-                if self.culture_theater_holds(g, pid, cid, plan, head)
-                    || self.early_settler_floor_holds(g, pid, cid, plan)
-                    || self.bound_granary_holds(g, pid, cid, plan, head)
-                    || self.capital_monument_holds(g, pid, cid, plan, head)
-                    || self.deterrent_holds_against_culture(g, pid, head)
-                    || self.idle_route_trader_holds(g, pid, cid, plan, head)
-                    || self.backlog_builder_holds(g, pid, cid, plan, head)
-                    || self.capped_aqueduct_holds(g, pid, cid, plan, head)
-                    || !Self::culture_theater_may_defer(g, pid, cid, head, at_war)
+                let passes = self.culture_faith_site_per_theater_2
+                    && !self.early_settler_floor_holds(g, pid, cid, plan)
+                    && Self::culture_faith_passes_the_head(g, pid, cid, head);
+                if !passes
+                    && (self.culture_theater_holds(g, pid, cid, plan, head)
+                        || self.early_settler_floor_holds(g, pid, cid, plan)
+                        || self.bound_granary_holds(g, pid, cid, plan, head)
+                        || self.capital_monument_holds(g, pid, cid, plan, head)
+                        || self.deterrent_holds_against_culture(g, pid, head)
+                        || self.idle_route_trader_holds(g, pid, cid, plan, head)
+                        || self.backlog_builder_holds(g, pid, cid, plan, head)
+                        || self.capped_aqueduct_holds(g, pid, cid, plan, head)
+                        || !Self::culture_theater_may_defer(g, pid, cid, head, at_war))
                 {
+                    skip(cid, format!("keeps its {}", Self::plain_item(head)));
                     continue;
                 }
             }
@@ -272,6 +327,7 @@ impl AdvancedAi {
                 None
             };
             let Some(item) = item else {
+                skip(cid, "has no legal source within the budget".into());
                 continue;
             };
             let quote = g.host_production_turns(cid, &item);
@@ -283,11 +339,25 @@ impl AdvancedAi {
                     .max(0.0)
                     / g.city_yields(cid).production.max(0.5)
             });
-            let cap = g.standard_duration(20) as f64;
+            // `culture-faith-site-per-theater-2`: a Holy Site priced by the
+            // tree's progress takes 10-20 Online turns from t90, past the
+            // twenty-standard-turn cap, so the version-two cap is thirty.
+            let cap = g.standard_duration(if self.culture_faith_site_per_theater_2 {
+                30
+            } else {
+                20
+            }) as f64;
             if !turns.is_finite()
                 || turns > cap
                 || g.max_turns.saturating_sub(g.turn) as f64 <= turns + cap * 2.0
             {
+                skip(
+                    cid,
+                    format!(
+                        "needs {turns:.0} turns for its {} (cap {cap:.0})",
+                        Self::plain_item(&item)
+                    ),
+                );
                 continue;
             }
             if best.as_ref().is_none_or(|(old_city, _, old_turns)| {
@@ -305,7 +375,19 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        let Some((city, item, turns)) = self.culture_faith_source_target(g, pid, plan) else {
+        let mut skips = Vec::new();
+        let target = self.culture_faith_source_scan(
+            g,
+            pid,
+            plan,
+            self.culture_faith_site_per_theater_2.then_some(&mut skips),
+        );
+        let Some((city, item, turns)) = target else {
+            if !skips.is_empty() {
+                think!(self.journal(), Cities, Detail,
+                    "No new Faith source this turn";
+                    "culture-faith-site-per-theater-2: {}", skips.join("; "));
+            }
             return;
         };
         if g.cities[&city].queue.first() == Some(&item) {
