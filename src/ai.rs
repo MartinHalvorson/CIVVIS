@@ -1358,6 +1358,11 @@ pub struct BasicAi {
     /// each turn by the advanced agent; false for standalone controllers.
     /// See `advanced/religion_seat_charts_the_rivals.rs`.
     pub(crate) charts_rival_majorities: bool,
+    /// `domination-charts-every-capital` acts for this seat this turn: the
+    /// contact gap also stays open while a rival's original capital is
+    /// uncharted. Set each turn by the advanced agent; false for standalone
+    /// controllers. See `advanced/domination_charts_every_capital.rs`.
+    pub(crate) charts_rival_capitals: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
     /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
@@ -3841,6 +3846,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            charts_rival_capitals: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -4287,6 +4293,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            charts_rival_capitals: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,

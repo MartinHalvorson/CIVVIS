@@ -6817,6 +6817,11 @@ pub struct AdvancedAi {
     /// than one in the whole empire. See `advanced/culture_faith_sources.rs`.
     /// Opt-in.
     culture_faith_site_per_theater_2: bool,
+    /// `domination-charts-every-capital`: a Domination seat keeps charting
+    /// until every rival's original capital is on its map, and takes
+    /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
+    /// Opt-in.
+    domination_charts_every_capital: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11444,6 +11449,9 @@ pub use science_victory_drive::ScienceDrive;
 mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
+/// `domination-charts-every-capital`: see
+/// `advanced/domination_charts_every_capital.rs`.
+mod domination_charts_every_capital;
 mod domination_research;
 mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
@@ -25664,6 +25672,9 @@ impl AdvancedAi {
         // `religion-seat-charts-the-rivals`: read by the contact gap in
         // `BasicAi`'s exploration and the hull claims, after any hand-over.
         self.base.charts_rival_majorities = self.religion_seat_charts_the_rivals_active(g, pid);
+        // `domination-charts-every-capital`: the same read for a Domination
+        // seat with a rival capital still uncharted.
+        self.base.charts_rival_capitals = self.domination_charts_every_capital_active(g, pid);
         // `stalled-conquest-takes-science`: see
         // `advanced/stalled_conquest_takes_science.rs`.
         self.hand_over_a_stalled_conquest(g, pid);

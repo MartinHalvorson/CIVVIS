@@ -5553,6 +5553,10 @@ pub const GENES: &[Gene] = &[
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
     Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // `domination-charts-every-capital`: a Domination seat keeps charting
+    // until every rival's original capital is seen, and takes Cartography
+    // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
+    Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

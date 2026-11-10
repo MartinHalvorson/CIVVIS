@@ -179,6 +179,9 @@ impl AdvancedAi {
         /// `denial-war-needs-the-lane-edge`: see
         /// `advanced/denial_war_needs_the_lane_edge.rs`.
         denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
+        /// `domination-charts-every-capital`: see
+        /// `advanced/domination_charts_every_capital.rs`.
+        domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
