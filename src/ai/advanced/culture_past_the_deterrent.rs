@@ -140,12 +140,20 @@ mod tests {
         observed.insert(0, 100.0);
         observed.insert(1, 200.0);
         game.turn = game.standard_duration(DETERRENCE_START_STANDARD) + 5;
+        // A Monument one turn of work from done, so the claim's build-time
+        // bound holds whatever the bare capital makes.
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        let nearly = game.item_cost_for_city(0, ours, &monument) - 0.5;
         let city = game.cities.get_mut(&ours).unwrap();
         city.pop = 4;
         city.queue.clear();
         city.queue.push(Item::Unit {
             unit: crate::name!("warrior"),
         });
+        city.production_progress
+            .insert(Game::item_progress_key(&monument), nearly);
         Some((game, ours))
     }
 
@@ -188,6 +196,21 @@ mod tests {
         let on = culture_seat(true);
         let mut passed = game.clone();
         let plan = on.assess(&passed, 0);
+        assert!(
+            on.culture_monument_item(&passed, 0, ours, &plan).is_some(),
+            "fixture: the capital's Monument is claimable"
+        );
+        assert!(
+            on.deterrence_unit_holds(
+                &passed,
+                0,
+                &Item::Unit {
+                    unit: crate::name!("warrior"),
+                }
+            ),
+            "fixture: the warrior is the deterrent's"
+        );
+        assert!(on.culture_builds_past_the_deterrent(&passed, 0));
         on.claim_culture_monuments(&mut passed, 0, &plan);
         assert_eq!(
             passed.cities[&ours].queue.first(),

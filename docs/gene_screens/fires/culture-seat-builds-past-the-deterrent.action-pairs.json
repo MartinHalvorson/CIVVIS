@@ -1,0 +1,24 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-seat-builds-past-the-deterrent",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards of two live Deity Online Kristina (Sweden) Culture games at peace with the near rival (civvis-20261110T140731Z t40-t79, 141854Z t43-t76), each the run's events.jsonl cut at frame 0 of a turn whose why.log records a near-rival-deterrence claim. Both arms run one frozen civvis_orders --resumed built from the branch at ae2f26526f with the run's own requested genome; the on arm adds --with culture-seat-builds-past-the-deterrent. Production orders differ on 11/13 boards: the on arm starts Stockholm's (or Göteborg's) first Amphitheater, or a Monument, where the off arm leaves the deterrent's unit; 141854Z t43 does not fire (no Theater Square stood yet and the first Theater was already queued), and 140731Z t79 already had the Monument claimed in both arms.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-seat-builds-past-the-deterrent.native-queries.tar.xz",
+  "sha256": "58c6080b013ba754c389f7f3276e0d4d41869feb1eb67e67a78f81aceac0ab7c"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json"
+ ]
+}
