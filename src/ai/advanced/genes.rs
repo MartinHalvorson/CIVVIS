@@ -5579,6 +5579,11 @@ pub const GENES: &[Gene] = &[
     // keeps one with every siege. Opt-in; see
     // `advanced/domination_target_gets_its_breaker.rs`.
     Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
+    // lets the culture claims pass the near-rival deterrent only while our
+    // power is at least half the near neighbour's. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

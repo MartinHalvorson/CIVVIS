@@ -6840,6 +6840,10 @@ pub struct AdvancedAi {
     /// premium there. See `advanced/siege_at_the_walls_dies_first.rs`. Off by
     /// default.
     city_strike_takes_the_gun: bool,
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
