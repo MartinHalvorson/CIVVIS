@@ -635,3 +635,37 @@ fn gold_keeps_its_reserve_and_leaves_other_seats_alone() {
     threatened.threatened_city = Some(cid);
     assert!(ai.culture_shrine_purchase(&g, 0, &threatened).is_none());
 }
+
+#[test]
+fn gold_fund_keeps_the_wanted_shrine_price_from_the_general_pass() {
+    let (mut g, ai, plan, cid) = shrine_board();
+    let price = g.building_gold_purchase_cost(0, cid, "shrine").unwrap();
+    let floor = ai.purchase_upkeep_floor(&g, 0, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
+    assert_eq!(ai.culture_shrine_gold_fund(&g, 0, &plan), price + floor);
+
+    let mut off = ai.clone();
+    off.disable_culture_gold_buys_the_shrines();
+    assert_eq!(off.culture_shrine_gold_fund(&g, 0, &plan), 0.0);
+
+    let mut far = g.clone();
+    far.players[0].gold = 0.0;
+    far.players[0].gold_per_turn = 1.0;
+    assert_eq!(
+        ai.culture_shrine_gold_fund(&far, 0, &plan),
+        0.0,
+        "a price beyond six turns of income does not freeze the treasury"
+    );
+
+    for building in ["shrine", "temple"] {
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(Name::new(building));
+    }
+    assert_eq!(
+        ai.culture_shrine_gold_fund(&g, 0, &plan),
+        0.0,
+        "nothing left to save for"
+    );
+}

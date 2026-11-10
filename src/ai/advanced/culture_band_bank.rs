@@ -100,6 +100,50 @@ impl AdvancedAi {
             && (strategy == GrandStrategy::Recovery
                 || !matches!(kind, "writer" | "artist" | "musician"))
     }
+
+    /// `culture-bank-holds-the-counterweight`: whether a Culture seat's home
+    /// religious defence (`religious_defense`) leaves its Faith for the Rock
+    /// Bands instead of buying a counterweight Missionary against `threat`.
+    /// From Nationalism on (the band bank's window, then the bands
+    /// themselves), unless the faith's founder stands at the religious match
+    /// point (`faith_at_match_point`), when the veto is worth the Faith.
+    ///
+    /// The counterweight buys ignore the band bank: live Deity Online Kristina
+    /// 2026-11-10 bought 21 Missionaries (about 85 Faith each) from
+    /// Nationalism on in 5 of 8 games (2, 3, 4, 5 and 7, three of the seven
+    /// after Cold War), while 171451Z reached Cold War at t143 with 156 Faith
+    /// and bought its first 300-Faith band at t161. One of 294 Pericles
+    /// and Kristina ladder games from 11-06 to 11-10 ended in a rival's
+    /// Religious victory (179 to a rival's Science). False with the gene off
+    /// or for another target.
+    pub(super) fn culture_bank_holds_counterweight(
+        &self,
+        g: &Game,
+        pid: usize,
+        threat: &str,
+    ) -> bool {
+        if !self.culture_bank_holds_the_counterweight
+            || self.lane_lost
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+            || !g.players[pid].civics.contains(&crate::name!("nationalism"))
+        {
+            return false;
+        }
+        let at_match_point = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && player.religion.as_deref() == Some(threat)
+                && self.faith_at_match_point(g, player.id)
+        });
+        if at_match_point {
+            return false;
+        }
+        think!(self.journal(), Faith, Detail,
+            "Holding the counterweight Missionary against {}", threat;
+            "culture-bank-holds-the-counterweight: Nationalism is known and {} is short of match point; the Faith stays for the Rock Bands",
+            threat);
+        true
+    }
 }
 
 #[cfg(test)]
@@ -330,5 +374,46 @@ mod tests {
         let mut ai = seat();
         ai.lane_lost = true;
         assert_eq!(ai.culture_band_bank(&g, 0), 0.0);
+    }
+
+    fn counterweight_seat() -> AdvancedAi {
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+        ai.enable_culture_bank_holds_the_counterweight();
+        ai
+    }
+
+    #[test]
+    fn counterweight_hold_opens_at_nationalism_on_a_culture_seat_only() {
+        let mut g = board();
+        g.players[1].religion = Some("buddhism".into());
+        let ai = counterweight_seat();
+        assert!(
+            !ai.culture_bank_holds_counterweight(&g, 0, "buddhism"),
+            "before Nationalism the shipped defence buys"
+        );
+        known(&mut g, "nationalism");
+        assert_eq!(
+            ai.culture_bank_holds_counterweight(&g, 0, "buddhism"),
+            !ai.faith_at_match_point(&g, 1)
+        );
+        assert!(
+            !ai.faith_at_match_point(&g, 1),
+            "the fixture is short of match point"
+        );
+        assert!(ai.culture_bank_holds_counterweight(&g, 0, "buddhism"));
+        known(&mut g, "cold_war");
+        assert!(
+            ai.culture_bank_holds_counterweight(&g, 0, "buddhism"),
+            "the Rock Bands keep the Faith after Cold War too"
+        );
+
+        let off = AdvancedAi::targeting(VictoryTarget::Culture);
+        assert!(!off.culture_bank_holds_counterweight(&g, 0, "buddhism"));
+        let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+        science.enable_culture_bank_holds_the_counterweight();
+        assert!(!science.culture_bank_holds_counterweight(&g, 0, "buddhism"));
+        let mut lost = counterweight_seat();
+        lost.lane_lost = true;
+        assert!(!lost.culture_bank_holds_counterweight(&g, 0, "buddhism"));
     }
 }

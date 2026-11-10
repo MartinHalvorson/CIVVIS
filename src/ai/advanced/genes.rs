@@ -5511,6 +5511,12 @@ pub const GENES: &[Gene] = &[
     // with Astrology at t74-79 in four of six games. Opt-in; see
     // `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater", field: "culture_faith_site_per_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater, disable: AdvancedAi::disable_culture_faith_site_per_theater },
+    // `culture-bank-holds-the-counterweight`: from Nationalism a Culture seat
+    // buys no counterweight Missionary unless the threat faith is at match
+    // point. Live Deity Kristina 11-10: 21 bought from Nationalism on in 5
+    // of 8 games. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "culture-bank-holds-the-counterweight", field: "culture_bank_holds_the_counterweight", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_bank_holds_the_counterweight, disable: AdvancedAi::disable_culture_bank_holds_the_counterweight },
     // `culture-gold-buys-the-shrines`: while the Culture Faith sources are
     // open, Gold buys one Shrine or Temple a turn in a standing Holy Site
     // city. Live Deity Kristina 11-10 waited 5-53 turns from Holy Site to
@@ -5539,6 +5545,10 @@ pub const GENES: &[Gene] = &[
     // Domination the war needs the launcher counter's edge and spares a
     // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
     Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
+    // builds the last Market a near road civic's Inspiration counts. Opt-in;
+    // see `advanced/culture_road_triggers.rs`.
+    Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5656,6 +5666,11 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 9 of 16 games lost Stockholm by t103; in 8 of 18
+    // cities lost at war before t130 a Catapult/Trebuchet/Domrey broke the
+    // walls, and on 49 of 77 turns a gun stood within two tiles we hit none. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "siege-at-the-walls-dies-first", field: "siege_at_the_walls_dies_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_at_the_walls_dies_first, disable: AdvancedAi::disable_siege_at_the_walls_dies_first },
     // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
     // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
     // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.

@@ -459,6 +459,10 @@ impl AdvancedAi {
         if defenders >= cap {
             return;
         }
+        // See `culture_bank_holds_counterweight` (`advanced/culture_band_bank.rs`).
+        if self.culture_bank_holds_counterweight(g, pid, threat) {
+            return;
+        }
         for cid in g.player_city_ids(pid) {
             let Some(majority) = g.city_religion(&g.cities[&cid]) else {
                 continue;

@@ -70,6 +70,12 @@ const CULTURE_FAITH_PER_THEATER_INCOME: (f64, f64) = (20.0, 160.0);
 /// grew with the empire (25 a city) would have kept most Temples unaffordable.
 const CULTURE_SHRINE_GOLD_RESERVE: f64 = 50.0;
 
+/// `culture-gold-buys-the-shrines`: turns of Gold income within which the
+/// general purchase pass starts saving for a wanted Shrine or Temple. Live
+/// Kristina earned +8 to +81 a turn when its Holy Sites finished, so a
+/// 140-Gold Shrine is in reach within a few turns in most games.
+const CULTURE_SHRINE_FUND_TURNS: f64 = 6.0;
+
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
         if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
@@ -448,21 +454,10 @@ impl AdvancedAi {
             return None;
         }
         self.culture_faith_source_budget(g, pid)?;
-        let cities = g.player_city_ids(pid);
         let floor = self.purchase_upkeep_floor(g, pid, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
         let gold = g.players[pid].gold;
         let mut best: Option<(u32, Name, f64)> = None;
-        for cid in cities {
-            if !g.city_has_district_family(&g.cities[&cid], crate::name!("holy_site"))
-                || !Self::culture_faith_city_safe(g, pid, cid, plan)
-            {
-                continue;
-            }
-            let Some(Item::Building { building }) = BasicAi::civ_building(g, pid, cid, "shrine")
-                .or_else(|| BasicAi::civ_building(g, pid, cid, "temple"))
-            else {
-                continue;
-            };
+        for (cid, building) in Self::culture_shrine_wants(g, pid, plan) {
             let Some(price) = g.building_gold_purchase_cost(pid, cid, &building) else {
                 continue;
             };
@@ -476,6 +471,73 @@ impl AdvancedAi {
             }
         }
         best
+    }
+
+    /// `culture-gold-buys-the-shrines`: each safe city of ours with a standing
+    /// Holy Site and its next Faith building, the Shrine or, once the Shrine
+    /// stands, the Temple.
+    fn culture_shrine_wants(g: &Game, pid: usize, plan: &StrategicPlan) -> Vec<(u32, Name)> {
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                g.city_has_district_family(&g.cities[cid], crate::name!("holy_site"))
+                    && Self::culture_faith_city_safe(g, pid, *cid, plan)
+            })
+            .filter_map(|cid| {
+                match BasicAi::civ_building(g, pid, cid, "shrine")
+                    .or_else(|| BasicAi::civ_building(g, pid, cid, "temple"))
+                {
+                    Some(Item::Building { building }) => Some((cid, building)),
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// `culture-gold-buys-the-shrines`: the treasury the general purchase pass
+    /// (`advanced_gold_spending`) leaves behind while a Shrine or Temple is
+    /// wanted: the cheapest one's price plus the buy's own floor, once that
+    /// price is within [`CULTURE_SHRINE_FUND_TURNS`] turns of income. The
+    /// host lists a Shrine for sale only on frames where the city is producing
+    /// something, and the general pass ran first on the others: live
+    /// civvis-20261110T195741Z, the first armed game, finished Göteborg's
+    /// Holy Site at t115 with 251 Gold, the general pass spent 120 that frame
+    /// and again at t117 and t119, and the Shrine and Temple were built, not
+    /// bought (t120, t124). Unlisted, the price is four times the production
+    /// cost (`building_purchase_cost`'s Gold rate). 0.0 with the gene off or
+    /// while nothing is wanted.
+    pub(super) fn culture_shrine_gold_fund(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> f64 {
+        let income = g.players[pid].gold_per_turn;
+        if !self.culture_gold_buys_the_shrines
+            || income < 0.0
+            || self.culture_faith_source_budget(g, pid).is_none()
+        {
+            return 0.0;
+        }
+        let cheapest = Self::culture_shrine_wants(g, pid, plan)
+            .into_iter()
+            .filter_map(|(cid, building)| {
+                g.building_gold_purchase_cost(pid, cid, &building)
+                    .or_else(|| {
+                        let item = Item::Building { building };
+                        Some(4.0 * g.item_cost_for_city(pid, cid, &item))
+                    })
+                    .filter(|price| price.is_finite() && *price > 0.0)
+            })
+            .min_by(f64::total_cmp);
+        let Some(price) = cheapest else {
+            return 0.0;
+        };
+        let fund = price + self.purchase_upkeep_floor(g, pid, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
+        if fund > g.players[pid].gold + income * CULTURE_SHRINE_FUND_TURNS {
+            return 0.0;
+        }
+        fund
     }
 
     /// `culture-gold-buys-the-shrines`: buy [`Self::culture_shrine_purchase`].
