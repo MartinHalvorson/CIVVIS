@@ -25845,6 +25845,7 @@ impl AdvancedAi {
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
         self.claim_religion_seat_faith_economy(g, pid, &plan);
+        self.arm_for_the_final_war(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {

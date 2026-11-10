@@ -576,7 +576,10 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
+        let final_war_presses =
+            g.plays_to_the_last_civ() && crate::lcs_knobs::get("norecovery") > 0.0;
         let (strategy, because) = if at_war
+            && !final_war_presses
             && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
@@ -584,7 +587,7 @@ impl AdvancedAi {
                     && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
-        } else if impossible_denial {
+        } else if impossible_denial && !final_war_presses {
             (
                 GrandStrategy::Recovery,
                 "holding the line before an impossible counter-campaign",
