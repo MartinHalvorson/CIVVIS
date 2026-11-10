@@ -125,6 +125,143 @@ fn unit_intel_answers_the_spectator_and_keeps_a_seat_inside_its_own_fog() {
 /// the west wall is a unit off the map. `shape` cannot answer it — an
 /// arena is flat like every stock script — so the observation carries the
 /// wrap itself, read off the built map so a loaded save answers too.
+/// Civ VI's Map Search lists the buildings on every plot the player has
+/// revealed. That is all a seat may learn this way: nothing from ground it
+/// has not revealed, nothing about an empire it has not met, and nothing in
+/// the document sent every frame.
+#[test]
+fn map_search_finds_rival_buildings_only_on_revealed_ground_of_met_empires() {
+    let mut game = Game::new(3, 40, 24, 70_127, 60, 0);
+    let settler = |game: &Game, pid: usize| {
+        game.player_unit_ids(pid)
+            .into_iter()
+            .find_map(|unit| (game.units[&unit].kind == "settler").then_some(game.units[&unit].pos))
+            .expect("every seat starts with a settler")
+    };
+    let centre = settler(&game, 1);
+    let rival = game.found_city_for(1, centre, Some("Rivalton".to_string()));
+    let campus = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| *pos != centre && pos.1 == centre.1 && (pos.0 - centre.0).abs() == 1)
+        .expect("the city has a neighbouring tile");
+    {
+        let city = game.cities.get_mut(&rival).unwrap();
+        city.buildings = vec![crate::name!("monument"), crate::name!("library")];
+        city.districts.insert(crate::name!("campus"), campus);
+        city.pillaged_buildings.insert(crate::name!("library"));
+    }
+    let reveal = |game: &mut Game, tiles: &[Pos]| {
+        game.players[0].explored = tiles.iter().copied().collect();
+    };
+    let site = |game: &Game, pos: Pos| {
+        let answer = map_search_buildings(game, Some(0));
+        answer["sites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|site| site["pos"] == json!([pos.0, pos.1]))
+            .cloned()
+    };
+    game.players[0].met.insert(1);
+
+    reveal(&mut game, &[centre, campus]);
+    let town = site(&game, centre).expect("the revealed centre answers");
+    assert_eq!(town["owner"], json!(1));
+    assert_eq!(town["buildings"], json!(["monument"]));
+    assert_eq!(town["pillaged"], json!([]));
+    let district = site(&game, campus).expect("the revealed district answers");
+    assert_eq!(
+        district["buildings"],
+        json!(["library"]),
+        "a building is found on its own district, not at the city"
+    );
+    assert_eq!(district["pillaged"], json!(["library"]));
+    assert_eq!(
+        district.as_object().map(serde_json::Map::len),
+        Some(4),
+        "a site is a tile, its owner and what stands there, and nothing else"
+    );
+
+    reveal(&mut game, &[centre]);
+    assert!(site(&game, centre).is_some());
+    assert!(
+        site(&game, campus).is_none(),
+        "an unrevealed district stays secret though its city is known"
+    );
+
+    reveal(&mut game, &[campus]);
+    assert!(site(&game, campus).is_some());
+    assert!(
+        site(&game, centre).is_none(),
+        "an unrevealed centre stays secret though its district is known"
+    );
+
+    reveal(&mut game, &[]);
+    assert_eq!(map_search_buildings(&game, Some(0))["sites"], json!([]));
+
+    reveal(&mut game, &[centre, campus]);
+    game.players[0].met.clear();
+    assert_eq!(
+        map_search_buildings(&game, Some(0))["sites"],
+        json!([]),
+        "an empire this seat has not met is told about on no surface"
+    );
+
+    game.players[1].explored = [centre, campus].into_iter().collect();
+    assert_eq!(
+        map_search_buildings(&game, Some(1))["sites"],
+        json!([]),
+        "a seat's own buildings are already in its observation"
+    );
+    assert_eq!(
+        map_search_buildings(&game, None)["sites"],
+        json!([]),
+        "and so are everyone's for the omniscient spectator"
+    );
+
+    game.players[0].met.insert(1);
+    let seen_from_outside = live_city_json(
+        &game,
+        0,
+        &game.cities[&rival],
+        false,
+        &[centre].into_iter().collect(),
+    );
+    for private in ["buildings", "districts", "pillaged_buildings"] {
+        assert!(
+            seen_from_outside.get(private).is_none(),
+            "the frame sent to a seat must not carry a rival's {private}"
+        );
+    }
+    let seen_by_owner = live_city_json(
+        &game,
+        1,
+        &game.cities[&rival],
+        false,
+        &[centre].into_iter().collect(),
+    );
+    assert_eq!(seen_by_owner["pillaged_buildings"], json!(["library"]));
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .pillaged_buildings
+        .clear();
+    let repaired = live_city_json(
+        &game,
+        1,
+        &game.cities[&rival],
+        false,
+        &[centre].into_iter().collect(),
+    );
+    assert!(
+        repaired.get("pillaged_buildings").is_none(),
+        "an empty list costs every city every frame, so it is left out"
+    );
+}
+
 #[test]
 fn the_observation_says_whether_east_and_west_are_the_same_edge() {
     let arena = Game::new_with(crate::game::GameOptions {
