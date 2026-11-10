@@ -1028,8 +1028,8 @@ impl AdvancedAi {
         // seated. Taken first, it took the seat of an unwanted card that a
         // higher-ranked card (Satellite Broadcasts) then could not reach.
         let mut passes: Vec<(usize, &str)> = desired.iter().copied().enumerate().collect();
-        if let Some(at) = flower_power_card
-            .and_then(|card| passes.iter().position(|(_, wanted)| *wanted == card))
+        if let Some(at) =
+            flower_power_card.and_then(|card| passes.iter().position(|(_, wanted)| *wanted == card))
         {
             let last = passes.remove(at);
             passes.push(last);
