@@ -1079,9 +1079,7 @@ fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
         .filter(|unit| {
             unit.owner != pid
                 && g.is_at_war(pid, unit.owner)
-                && (!final_war
-                    || unit.owner == city.owner
-                    || g.same_team(city.owner, unit.owner))
+                && (!final_war || unit.owner == city.owner || g.same_team(city.owner, unit.owner))
                 && g.rules.units[unit.kind].class == "military"
                 && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                 && g.unit_visible_to(unit.id, pid)
