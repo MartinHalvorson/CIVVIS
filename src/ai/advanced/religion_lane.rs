@@ -685,6 +685,14 @@ impl AdvancedAi {
         } else {
             priorities
         };
+        // See `advanced/religion_seat_spends_the_bank.rs`: with the bank two
+        // Apostles deep, the corps caps no longer stop a spreader.
+        let deep_bank = self.religion_seat_bank_is_deep(g, pid, offensive, &religion);
+        let priorities: &[&str] = if deep_bank && !inquisitor_corps_short {
+            &["apostle", "missionary", "guru"]
+        } else {
+            priorities
+        };
         if apostle_led
             && !home_under_pressure
             && !match_point_defense
@@ -711,7 +719,7 @@ impl AdvancedAi {
                 "inquisitor" => inquisitors,
                 _ => 0,
             };
-            if current >= cap {
+            if current >= cap && !(deep_bank && matches!(*unit, "apostle" | "missionary")) {
                 continue;
             }
             // The ordinary buffer is useful while safely building toward a

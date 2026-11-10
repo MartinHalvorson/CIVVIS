@@ -819,7 +819,7 @@ impl Game {
                             && u.religion.is_some()
                             && other.religion != u.religion
                     });
-                    if rival {
+                    if rival && self.theological_target_open(pid, target) {
                         acts.push(Action::TheologicalAttack { unit: uid, target });
                     }
                 }
