@@ -1328,6 +1328,7 @@ pub(super) struct SeatRequest<'a> {
 /// invalid.
 pub(super) fn place_starts_and_finish(
     mut wm: WorldMap,
+    land: BTreeSet<Pos>,
     rules: &Rules,
     script: MapScript,
     seats: SeatRequest<'_>,

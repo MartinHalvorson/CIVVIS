@@ -2322,7 +2322,7 @@ pub fn generate_with_script_and_leader_starts(
         leader_starts,
         minor_starts,
     };
-    place_starts_and_finish(wm, rules, script, seats, rng)
+    place_starts_and_finish(wm, land, rules, script, seats, rng)
 }
 
 /// World Age, which the stock scripts pass to every elevation percentile.
