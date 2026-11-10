@@ -313,15 +313,23 @@ fn an_idle_spreader_walks_into_an_under_charted_rivals_ground() {
         .advanced_missionary_step(&mut off, 0, missionary, true));
     assert_eq!(off.units[&missionary].pos, start, "off: nothing to do");
 
+    let on_seat = seat(VictoryTarget::Religion, true);
+    let goal = on_seat
+        .religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true)
+        .expect("on: unexplored ground beside the rival's city is a goal");
+    assert!(!game.players[0].explored.contains(&goal));
+    assert!(
+        (1..=3).contains(&game.wdist(goal, site)),
+        "the goal is beside the known city"
+    );
+    assert!(game
+        .map
+        .get(goal)
+        .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile)));
     let mut on = game.clone();
-    assert!(
-        seat(VictoryTarget::Religion, true).advanced_missionary_step(&mut on, 0, missionary, true)
-    );
+    assert!(on_seat.advanced_missionary_step(&mut on, 0, missionary, true));
     let unit = &on.units[&missionary];
-    assert!(
-        on.wdist(unit.pos, site) < on.wdist(start, site),
-        "on: it closes on the rival's ground"
-    );
+    assert_ne!(unit.pos, start, "on: it sets out");
     assert_eq!(unit.charges, 3, "it keeps its charges");
 
     // Not for a seat aiming elsewhere, and not on the defensive.

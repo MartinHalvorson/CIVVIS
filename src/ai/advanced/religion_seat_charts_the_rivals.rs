@@ -171,11 +171,31 @@ impl AdvancedAi {
         religion: &str,
         offensive: bool,
     ) -> bool {
+        let Some(goal) = self.religion_seat_charting_goal(g, pid, uid, religion, offensive) else {
+            return false;
+        };
+        think!(self.journal(), Faith, Decision,
+            "{} spreader charts a rival's ground", religion;
+            "religion-seat-charts-the-rivals: nothing we know is left to convert and a met rival holds cities we have not seen; a religious unit crosses closed borders, so it walks {} tiles to unexplored ground beside them",
+            g.wdist(g.units[&uid].pos, goal));
+        self.religious_step_toward_range(g, pid, uid, goal, 0)
+    }
+
+    /// Where [`AdvancedAi::religion_seat_spreader_charts`] sends `uid`, if
+    /// anywhere.
+    pub(super) fn religion_seat_charting_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        religion: &str,
+        offensive: bool,
+    ) -> Option<Pos> {
         if !offensive
             || !self.religion_seat_charts_the_rivals_active(g, pid)
             || g.players[pid].religion.as_deref() != Some(religion)
         {
-            return false;
+            return None;
         }
         let origin = g.units[&uid].pos;
         let threats = self.religious_raider_threats(g, pid);
@@ -236,8 +256,7 @@ impl AdvancedAi {
             .filter(|position| g.route_step(uid, *position, 0).is_some())
             .take(CHARTING_ROUTE_TRIES)
             .collect();
-        let goal = near
-            .iter()
+        near.iter()
             .copied()
             .max_by_key(|position| {
                 (
@@ -250,15 +269,7 @@ impl AdvancedAi {
                 unlocated
                     .then(|| Self::missionary_expedition_goal(g, pid, uid, &threats))
                     .flatten()
-            });
-        let Some(goal) = goal else {
-            return false;
-        };
-        think!(self.journal(), Faith, Decision,
-            "{} spreader charts a rival's ground", religion;
-            "religion-seat-charts-the-rivals: nothing we know is left to convert and a met rival holds cities we have not seen; a religious unit crosses closed borders, so it walks {} tiles to unexplored ground beside them",
-            g.wdist(origin, goal));
-        self.religious_step_toward_range(g, pid, uid, goal, 0)
+            })
     }
 }
 
