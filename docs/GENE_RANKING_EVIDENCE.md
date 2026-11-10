@@ -216,6 +216,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `captives-come-home` | off (unmeasured) | Opt-in gene `captives-come-home`; see `advanced/captives_come_home.rs`. | — \| 2 |
 | `captives-come-home-2` | off (unmeasured) | Opt-in gene `captives-come-home-2` (version 2, carrying version 1); see `advanced/captives_come_home.rs`. | — \| 2 |
 | `capture-scar-reads-the-new-city` | off (unmeasured) | Opt-in gene `capture-scar-reads-the-new-city`; see `advanced/civilian_safety.rs` (`resolve_vanished_settlers`). | 1 \| 1 |
+| `chop-feeds-the-long-build` | off (unmeasured) | `chop-feeds-the-long-build`: a Builder clears a forest into a district, a wonder or a space-race project. | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
@@ -282,6 +283,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `gold-buys-the-backlog-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-backlog-builder`; see `advanced/gold_buys_the_backlog_builder.rs`. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |
+| `good-land-lifts-the-city-target` | off (unmeasured) | Opt-in gene `good-land-lifts-the-city-target`; see `advanced/good_land_lifts_the_city_target.rs`. | 1 \| 1 |
 | `government-reach-pays-the-switch` | off (unmeasured) | Opt-in gene `government-reach-pays-the-switch`; see `advanced/government_reach.rs`. | 1 \| 1 |
 | `group-steps-read-the-field` | off (unmeasured) | Opt-in gene `group-steps-read-the-field`; see `Self::group_steps_read_the_field`. | 1 \| 1 |
 | `guns-stay-out-of-reach-2` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so version one is turned off. | 1 \| 3 |

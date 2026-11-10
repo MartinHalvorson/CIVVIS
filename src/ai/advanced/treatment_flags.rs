@@ -116,6 +116,10 @@ impl AdvancedAi {
         /// takes a resource-priced melee unit whenever a city can start one.
         /// See `AdvancedAi::domination_spends_the_stock`.
         domination_spends_the_stock => enable_domination_spends_the_stock, disable_domination_spends_the_stock;
+        /// `chop-feeds-the-long-build`: a Builder clears a forest into a district,
+        /// a wonder or a space-race project. See
+        /// `advanced/chop_feeds_the_long_build.rs`.
+        chop_feeds_the_long_build => enable_chop_feeds_the_long_build, disable_chop_feeds_the_long_build;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -132,6 +136,9 @@ impl AdvancedAi {
         /// Opt-in gene `guru-walks-to-the-wounded`; see
         /// `advanced/guru_walks_to_the_wounded.rs`.
         guru_walks_to_the_wounded => enable_guru_walks_to_the_wounded, disable_guru_walks_to_the_wounded;
+        /// Opt-in gene `good-land-lifts-the-city-target`; see
+        /// `advanced/good_land_lifts_the_city_target.rs`.
+        good_land_lifts_the_city_target => enable_good_land_lifts_the_city_target, disable_good_land_lifts_the_city_target;
         // ---- append: l-o --------------------------------------------
         /// Opt-in gene `last-charge-joins-the-army`; see
         /// `advanced/apostle_army.rs`.
