@@ -55,8 +55,6 @@ pub mod game;
 pub mod hex;
 pub mod historical_scenarios;
 pub mod historical_terrain;
-pub mod lcs_knobs;
-pub mod lcs_probe;
 pub mod leader_roster;
 pub mod mapgen;
 pub mod mirror;

@@ -576,17 +576,14 @@ impl AdvancedAi {
         let threat_recovery = threatened_city.is_some()
             && !(self.recovery_needs_the_deficit
                 && my_power >= RECOVERY_THREAT_POWER_RATIO * recovery_opponent_power.max(1.0));
-        let final_war_presses =
-            g.plays_to_the_last_civ() && crate::lcs_knobs::get("norecovery") > 0.0;
-        let final_war_conquest =
-            g.plays_to_the_last_civ() && crate::lcs_knobs::get("conquest") > 0.0;
-        let (strategy, because) = if final_war_conquest {
+        // A final war has no later to recover for and no race left to deny:
+        // every civilization in it attacks. See `last_civ_standing`.
+        let (strategy, because) = if last_civ_standing::fights_the_final_war(g, pid) {
             (
                 GrandStrategy::Conquest,
                 "only the last civilization standing wins",
             )
         } else if at_war
-            && !final_war_presses
             && (threat_recovery
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
@@ -594,7 +591,7 @@ impl AdvancedAi {
                     && !science_targeted))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
-        } else if impossible_denial && !final_war_presses {
+        } else if impossible_denial {
             (
                 GrandStrategy::Recovery,
                 "holding the line before an impossible counter-campaign",
@@ -1435,6 +1432,8 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // A final war aims at the nearest rival city, whichever race the
+        // ranking above would still be countering. See `last_civ_standing`.
         let (target_player, target_city) = match self.final_war_objective(g, pid) {
             Some((rival, city)) => (Some(rival), Some(city)),
             None => (target_player, target_city),

@@ -3253,8 +3253,9 @@ impl AdvancedAi {
                                 if contact || forcing_focus {
                                     (ForcePosture::Engage, force_medoid)
                                 } else if !arena
-                                    && !(g.plays_to_the_last_civ()
-                                        && crate::lcs_knobs::get("nomuster") > 0.0)
+                                    // A final war's force does not wait to
+                                    // gather. See `last_civ_standing`.
+                                    && !super::last_civ_standing::fights_the_final_war(g, pid)
                                     && units.len() > 1
                                     && readiness + 1e-9 < self.base.w.muster_readiness
                                     && g.wdist(force_medoid, objective) > THREAT_RELIEF_RADIUS

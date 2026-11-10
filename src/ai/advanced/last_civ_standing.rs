@@ -1,6 +1,54 @@
-//! A world played on to its last civilization leaves every seat one lane: conquest.
+//! A world played on to its last civilization leaves every seat one lane:
+//! conquest, fought as a total war. Nothing but the survivor can end the
+//! world, so no seat falls back to a defensive plan or chases a victory race
+//! that is already decided: each aims at the nearest rival city, every idle
+//! city trains a soldier while the treasury carries the army, and a siege
+//! commits once half its train has arrived.
 
 use super::*;
+
+/// Land soldiers a seat wants per city once only the survivor can win. The
+/// ordinary Conquest target is two.
+pub(super) const FINAL_WAR_BODIES_PER_CITY: usize = 4;
+
+/// Turns of deficit the treasury must cover for the final war to keep arming
+/// on a negative income.
+pub(super) const FINAL_WAR_DEFICIT_RUNWAY: f64 = 20.0;
+
+/// Tiles a nearer city must beat the standing objective by before the
+/// campaign leaves it.
+pub(super) const FINAL_WAR_OBJECTIVE_SLACK: i32 = 3;
+
+/// Share of a train's strength on the staging ring at which its siege
+/// invests.
+pub(super) const FINAL_WAR_STAGED_SHARE: f64 = 0.5;
+
+/// Standard turns a siege stages in the final war before it invests whoever
+/// has arrived.
+pub(super) const FINAL_WAR_STAGE_PATIENCE: u32 = 8;
+
+/// Whether `pid` is a civilization fighting a world's final war: the world
+/// plays to its last civilization and this seat is one of them.
+pub(super) fn fights_the_final_war(g: &Game, pid: usize) -> bool {
+    g.plays_to_the_last_civ() && !g.players[pid].is_minor && !g.players[pid].is_barbarian
+}
+
+/// Whether a siege staged for `staged_for` turns, with `staged` of its
+/// train's `strength` on the staging ring, invests now in a final war. An
+/// ordinary war waits for the bill, the damage budget and a breaker; here
+/// the train that has arrived goes in, because no better day is coming.
+pub(super) fn final_war_siege_commits(
+    g: &Game,
+    pid: usize,
+    staged: f64,
+    strength: f64,
+    staged_for: u32,
+) -> bool {
+    fights_the_final_war(g, pid)
+        && strength > 0.0
+        && (staged >= FINAL_WAR_STAGED_SHARE * strength
+            || staged_for >= g.standard_duration(FINAL_WAR_STAGE_PATIENCE))
+}
 
 impl AdvancedAi {
     /// Once "one more turn" has made the survivor the only possible result,
@@ -16,32 +64,42 @@ impl AdvancedAi {
         }
     }
 
-    /// PROBE: the land army a seat wants in the final war.
-    pub(super) fn last_civ_army_target(
+    /// Whether the treasury carries `upkeep` more Gold a turn: income stays
+    /// at or above zero, or the bank covers the deficit for
+    /// [`FINAL_WAR_DEFICIT_RUNWAY`] turns.
+    fn final_war_treasury_carries(g: &Game, pid: usize, upkeep: f64) -> bool {
+        let player = &g.players[pid];
+        let net = player.gold_per_turn - upkeep;
+        net >= 0.0 || player.gold >= FINAL_WAR_DEFICIT_RUNWAY * -net
+    }
+
+    /// The land army a seat wants: the shipped target, raised in a final war
+    /// to [`FINAL_WAR_BODIES_PER_CITY`] a city while the treasury carries it.
+    pub(super) fn final_war_army_target(
         &self,
         g: &Game,
         pid: usize,
         city_count: usize,
         shipped: usize,
     ) -> usize {
-        let bodies = crate::lcs_knobs::get("bodies");
-        let player = &g.players[pid];
-        if bodies <= 0.0 || !g.plays_to_the_last_civ() || player.is_minor || player.is_barbarian {
+        if !fights_the_final_war(g, pid) || !Self::final_war_treasury_carries(g, pid, 0.0) {
             return shipped;
         }
-        if player.gold_per_turn < 0.0 && player.gold < 20.0 * -player.gold_per_turn {
-            return shipped;
-        }
-        shipped.max((bodies * city_count as f64).ceil() as usize)
+        shipped.max(FINAL_WAR_BODIES_PER_CITY * city_count)
     }
 
-    /// PROBE: every idle queue trains the soldier the scorer rates best.
+    /// In a final war every idle queue trains the land soldier the scorer
+    /// rates best, ahead of the governors, for as long as income (less the
+    /// upkeep of the soldiers already at the head of a queue) carries one
+    /// more. A queue at work is left alone.
+    ///
+    /// The governors arm to about two soldiers a city and then build for a
+    /// future this world does not have. Measured on the stock site world, 100
+    /// turns into extra time: 13 of the strongest empire's 18 queues stood
+    /// empty and the rest held wall repairs, a wonder and reactor
+    /// conversions, while its army idled at 43.
     pub(super) fn arm_for_the_final_war(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if crate::lcs_knobs::get("arm") <= 0.0 || !g.plays_to_the_last_civ() {
-            return;
-        }
-        let player = &g.players[pid];
-        if player.is_minor || player.is_barbarian {
+        if !fights_the_final_war(g, pid) {
             return;
         }
         let mut pending: f64 = g
@@ -80,23 +138,32 @@ impl AdvancedAi {
                 Item::Unit { unit } => g.rules.units[unit].maintenance,
                 _ => 0.0,
             };
-            let net = g.players[pid].gold_per_turn - pending - upkeep;
-            if net < 0.0 && g.players[pid].gold < 20.0 * -net {
+            if !Self::final_war_treasury_carries(g, pid, pending + upkeep) {
                 break;
             }
+            let name = g.cities[&cid].name.clone();
+            let what = Self::plain_item(&item);
             if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
                 pending += upkeep;
+                think!(self.journal(), Cities, Decision,
+                    "{name} trains {what} for the final war";
+                    "only the last civilization standing wins, so an idle queue arms; income carries {pending:.0} more Gold a turn of soldiers in training");
             }
         }
     }
 
-    /// PROBE: the nearest city of a living rival civilization, one we can
-    /// march to before one across water, kept while it stays among the nearest.
+    /// The final war's objective: the nearest city of a living rival
+    /// civilization, one we can march to before one across water, and the
+    /// standing objective for as long as nothing is nearer by more than
+    /// [`FINAL_WAR_OBJECTIVE_SLACK`]. `None` outside a final war.
+    ///
+    /// The planner otherwise keeps countering whoever leads a victory race,
+    /// and the race that ended the game reads 100% for the rest of it.
+    /// Measured on the stock site world: three empires each named the
+    /// science winner's capital, their trains 15 to 33 tiles from it, and
+    /// walked there a unit at a time ("0 of 16 units staged").
     pub(super) fn final_war_objective(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
-        if crate::lcs_knobs::get("objective") <= 0.0 || !g.plays_to_the_last_civ() {
-            return None;
-        }
-        if g.players[pid].is_minor || g.players[pid].is_barbarian {
+        if !fights_the_final_war(g, pid) {
             return None;
         }
         let ours: Vec<_> = g
@@ -127,16 +194,21 @@ impl AdvancedAi {
             ranked.push((u8::from(!land), reach, city.id, city.owner));
         }
         let best = ranked.iter().copied().min()?;
-        let kept =
-            self.plan
-                .as_ref()
-                .and_then(|plan| plan.target_city)
-                .and_then(|prior| {
-                    ranked.iter().copied().find(|entry| {
-                        entry.2 == prior && entry.0 == best.0 && entry.1 <= best.1 + 3
-                    })
-                });
+        let kept = self
+            .plan
+            .as_ref()
+            .and_then(|plan| plan.target_city)
+            .and_then(|prior| {
+                ranked.iter().copied().find(|entry| {
+                    entry.2 == prior
+                        && entry.0 == best.0
+                        && entry.1 <= best.1.saturating_add(FINAL_WAR_OBJECTIVE_SLACK)
+                })
+            });
         let (_, _, city, owner) = kept.unwrap_or(best);
         Some((owner, city))
     }
 }
+
+#[cfg(test)]
+mod tests;

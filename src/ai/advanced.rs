@@ -21928,7 +21928,8 @@ impl AdvancedAi {
             desired_military
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
-        let desired_military = self.last_civ_army_target(g, pid, city_count, desired_military);
+        // See `last_civ_standing`: a final war raises the land target.
+        let desired_military = self.final_war_army_target(g, pid, city_count, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
@@ -25845,6 +25846,7 @@ impl AdvancedAi {
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
         self.claim_religion_seat_faith_economy(g, pid, &plan);
+        // See `last_civ_standing`: in a final war every idle queue arms.
         self.arm_for_the_final_war(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
