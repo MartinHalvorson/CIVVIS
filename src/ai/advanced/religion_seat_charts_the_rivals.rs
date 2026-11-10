@@ -29,8 +29,10 @@
 //! - **Research.** While a living major is unmet, unlocated or under-charted
 //!   and the empire touches water, each technology on the way to Cartography
 //!   is worth [`CARTOGRAPHY_VALUE`] more
-//!   ([`AdvancedAi::religion_seat_cartography_value`]), so Cartography follows
-//!   Shipbuilding instead of trailing it by 28-47 turns.
+//!   ([`AdvancedAi::religion_seat_cartography_value`]). In Gathering Storm
+//!   that is Shipbuilding and the Currency line to Mathematics, then Buttress
+//!   (`TECH_CARTOGRAPHY` requires `TECH_BUTTRESS`, `Expansion2`), which the
+//!   live seats reached 28-47 turns after Shipbuilding.
 //!
 //! Off, for a seat aiming elsewhere, or before the founding, nothing changes.
 

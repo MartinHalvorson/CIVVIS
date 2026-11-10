@@ -158,14 +158,29 @@ fn the_way_to_cartography_is_worth_more_while_a_rival_is_under_charted() {
     let (mut game, sites) = founder(5);
     see(&mut game, &sites[..1]);
     let on = seat(VictoryTarget::Religion, true);
-    for tech in ["sailing", "shipbuilding", "cartography"] {
+    // Gathering Storm: Cartography needs Buttress, which needs Shipbuilding
+    // and Mathematics, so the Currency line is on the way as well.
+    for tech in [
+        "sailing",
+        "shipbuilding",
+        "currency",
+        "mathematics",
+        "buttress",
+        "cartography",
+    ] {
         assert_eq!(
             on.religion_seat_cartography_value(&game, 0, tech),
             CARTOGRAPHY_VALUE,
             "{tech}"
         );
     }
-    assert_eq!(on.religion_seat_cartography_value(&game, 0, "writing"), 0.0);
+    for tech in ["archery", "bronze_working", "celestial_navigation"] {
+        assert_eq!(
+            on.religion_seat_cartography_value(&game, 0, tech),
+            0.0,
+            "{tech}"
+        );
+    }
     assert_eq!(
         seat(VictoryTarget::Religion, false).religion_seat_cartography_value(
             &game,
