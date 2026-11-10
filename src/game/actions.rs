@@ -1525,8 +1525,9 @@ impl Game {
     /// Shipped bases: `Feature_Removes` (Forest 20 Production, Jungle 10
     /// Production + 10 Food, Marsh 20 Food) and `Resource_Harvests`, both read
     /// out of `data/*.json`. They scale by [`Self::builder_harvest_scale`],
-    /// Magnus' `harvest_pct` applies to removals and harvests alike, and the
-    /// host rounds the result down.
+    /// Magnus' `harvest_pct` applies to removals and harvests alike, Production
+    /// takes the production bonus of the item the owning city is building,
+    /// and the host rounds the result down.
     pub(crate) fn builder_operation_payout(
         &self,
         pid: usize,
@@ -1541,6 +1542,27 @@ impl Game {
         };
         let scale = self.builder_harvest_scale(pid)
             * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
+        // The host pays a clearing's Production at the production bonus of
+        // whatever the owning city is building. Measured on live Deity games,
+        // 2026-11-09/10: with no card a Forest paid exactly the plain rule (5
+        // of 5), and a Forest cleared into a Settler under Colonization paid
+        // 27 to 30 where the plain rule gives 19 to 20. Food and Gold carry no
+        // such bonus.
+        let item_bonus = self
+            .cities
+            .get(&cid)
+            .map_or(1.0, |city| {
+                self.item_prod_mult(pid, cid, city.queue.first())
+            })
+            .max(0.0);
+        let pay = |yield_type: &str, base: f64| {
+            let bonus = if yield_type == "production" {
+                item_bonus
+            } else {
+                1.0
+            };
+            (base * scale * bonus).floor()
+        };
         match operation {
             "chop_woods" | "chop_rainforest" | "clear_marsh" => tile
                 .feature
@@ -1549,7 +1571,7 @@ impl Game {
                 .map(|spec| {
                     spec.chop
                         .iter()
-                        .map(|(yield_type, base)| (yield_type.clone(), (base * scale).floor()))
+                        .map(|(yield_type, base)| (yield_type.clone(), pay(yield_type, *base)))
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -1558,7 +1580,12 @@ impl Game {
                 .as_deref()
                 .and_then(|resource| self.rules.resources.get(resource))
                 .and_then(|spec| spec.harvest.as_ref())
-                .map(|harvest| vec![(harvest.yield_type.clone(), (harvest.amount * scale).floor())])
+                .map(|harvest| {
+                    vec![(
+                        harvest.yield_type.clone(),
+                        pay(&harvest.yield_type, harvest.amount),
+                    )]
+                })
                 .unwrap_or_default(),
             _ => Vec::new(),
         }

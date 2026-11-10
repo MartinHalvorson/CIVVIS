@@ -37,6 +37,13 @@ fn a_religion_seat_that_lost_the_race_plays_science() {
     assert_eq!(ai.victory_target, Some(VictoryTarget::Religion), "off");
     ai.enable_religion_lane_hands_over();
     ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(
+        ai.victory_target,
+        Some(VictoryTarget::Religion),
+        "the first turn's reading only starts the wait"
+    );
+    g.turn += 1;
+    ai.hand_over_a_lost_religion_lane(&g, 0);
     assert_eq!(ai.victory_target, Some(VictoryTarget::Science));
 }
 
@@ -77,6 +84,13 @@ fn native_exhaustion_hands_over_before_the_last_rival_founds() {
     assert_eq!(ai.victory_target, Some(VictoryTarget::Religion), "flag off");
     ai.enable_religion_lane_hands_over();
     ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(
+        ai.victory_target,
+        Some(VictoryTarget::Religion),
+        "the first turn's reading only starts the wait"
+    );
+    g.turn += 1;
+    ai.hand_over_a_lost_religion_lane(&g, 0);
     assert_eq!(ai.victory_target, Some(VictoryTarget::Science));
 }
 
@@ -112,4 +126,34 @@ fn native_exhaustion_keeps_our_pending_prophet_or_founded_religion() {
         ai.hand_over_a_lost_religion_lane(&g, 0);
         assert_eq!(ai.victory_target, Some(VictoryTarget::Religion));
     }
+}
+
+/// Live t19: the race read lost for one frame as our own Prophet arrived, and
+/// the Prophet was pending the next turn.
+#[test]
+fn a_reading_gone_by_the_next_turn_keeps_the_lane() {
+    let (mut g, mut ai) = open_race();
+    ai.enable_religion_lane_hands_over();
+    close_the_race(&mut g);
+    ai.hand_over_a_lost_religion_lane(&g, 0);
+    ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(
+        ai.victory_target,
+        Some(VictoryTarget::Religion),
+        "a second frame of the same turn is not a later turn"
+    );
+    g.turn += 1;
+    g.players[0].prophet_pending = true;
+    ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(ai.victory_target, Some(VictoryTarget::Religion));
+    assert_eq!(ai.religion_race_lost_since, None, "the wait starts over");
+
+    // The next lost reading must wait a turn of its own.
+    g.turn += 1;
+    g.players[0].prophet_pending = false;
+    ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(ai.victory_target, Some(VictoryTarget::Religion));
+    g.turn += 1;
+    ai.hand_over_a_lost_religion_lane(&g, 0);
+    assert_eq!(ai.victory_target, Some(VictoryTarget::Science));
 }
