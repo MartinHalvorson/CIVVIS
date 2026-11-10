@@ -60,7 +60,7 @@ impl AdvancedAi {
         }
     }
 
-    fn governor_residence_age(&self, g: &Game, pid: usize, governor: &str) -> u32 {
+    pub(super) fn governor_residence_age(&self, g: &Game, pid: usize, governor: &str) -> u32 {
         let Some(state) = g.players[pid].governor_roster.get(governor) else {
             return 0;
         };
@@ -79,6 +79,25 @@ impl AdvancedAi {
         post.map_or(age, |post| {
             age.max(g.turn.saturating_sub(post.assignment_bound))
         })
+    }
+
+    /// Whether a relocation of `governor` was already requested this turn: an
+    /// asynchronous host assignment can still show the old post on another
+    /// frame of the same turn.
+    pub(super) fn governor_requested_this_turn(&self, g: &Game, governor: &str) -> bool {
+        self.live_governor_assignment_adapter
+            && self
+                .remembered_governor_posts
+                .get(governor)
+                .is_some_and(|post| post.last_request == Some(g.turn))
+    }
+
+    /// Record a relocation request of `governor` this turn; see
+    /// [`Self::governor_requested_this_turn`].
+    pub(super) fn note_governor_request(&mut self, g: &Game, governor: &str) {
+        if let Some(post) = self.remembered_governor_posts.get_mut(governor) {
+            post.last_request = Some(g.turn);
+        }
     }
 
     /// Enable this independently screenable governor relocation.
@@ -123,7 +142,7 @@ impl AdvancedAi {
         self.reyna_follows_revenue = false;
     }
 
-    fn governor_dividend_safe_city(
+    pub(super) fn governor_dividend_safe_city(
         &self,
         g: &Game,
         pid: usize,
@@ -508,10 +527,18 @@ impl AdvancedAi {
             || self.liang_follows_builders
             || self.reyna_follows_revenue
             || self.amani_follows_suzerainty;
-        if enabled && self.live_governor_assignment_adapter {
+        // `curator-sits-with-the-works` reads the same post clock.
+        let observed = enabled || self.curator_sits_with_the_works;
+        if observed && self.live_governor_assignment_adapter {
             self.observe_governor_posts(g, pid);
         } else {
             self.remembered_governor_posts.clear();
+        }
+        // `curator-sits-with-the-works`: every turn, at war or at peace, before
+        // the reviews below. See `advanced/curator_sits_with_the_works.rs`.
+        // Exact no-op while the gene is off.
+        if self.curator_follows_the_works(g, pid, plan) {
+            return;
         }
         if !enabled
             || self.base.minor
