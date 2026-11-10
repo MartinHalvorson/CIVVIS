@@ -5467,6 +5467,10 @@ pub const GENES: &[Gene] = &[
     // never reached a space project, so the district leg and the space leg
     // are priced separately. Opt-in.
     Gene { tag: "chop-feeds-the-space-race", field: "chop_feeds_the_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_space_race, disable: AdvancedAi::disable_chop_feeds_the_space_race },
+    // `chop-spares-the-worked-tile`: every chop errand prices a tile a
+    // citizen is working at nothing, so only idle land is cleared. Opt-in;
+    // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
+    Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -6742,6 +6742,9 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
+    /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
+    chop_spares_the_worked_tile: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

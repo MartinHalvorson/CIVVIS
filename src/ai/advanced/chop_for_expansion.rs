@@ -148,11 +148,43 @@ impl AdvancedAi {
         pos: Pos,
         operation: &str,
     ) -> f64 {
-        g.builder_operation_payout(pid, pos, operation)
+        let payout: f64 = g
+            .builder_operation_payout(pid, pos, operation)
             .into_iter()
             .filter(|(yield_type, _)| yield_type == "production")
             .map(|(_, amount)| amount)
-            .sum()
+            .sum();
+        // Asked only of a tile that would pay: the citizen plan is not free.
+        if payout > 0.0 && self.chop_spares(g, pos) {
+            return 0.0;
+        }
+        payout
+    }
+
+    /// `chop-spares-the-worked-tile`: whether the owning city's citizen plan
+    /// works `pos` now, so that clearing it would cost a city yield at once.
+    ///
+    /// Every chop errand prices its tiles through
+    /// [`Self::chop_production_payout`], which reads this first and prices a
+    /// spared tile at nothing, so the Settler errand, the long-build errand
+    /// and the Builder purchase all skip it without a rule of their own.
+    ///
+    /// Why: five paired Deity reads on 2026-11-10 put every chop errand at
+    /// flat or worse, with the loss arriving in the mid-game economy (cities
+    /// at turn 125 down 1.2, science down 15 to 25 by turn 150) after a small
+    /// early gain. A Forest pays 10 to 20 Production once on Online speed and
+    /// a worked Forest pays one or two every turn, so the errand loses on
+    /// exactly the tiles a small city is working; a Forest nobody works costs
+    /// nothing to clear today. The errands rank by payout and improvement
+    /// value and never asked which kind they were clearing.
+    ///
+    /// `false` with the gene off, before anything is read.
+    pub(super) fn chop_spares(&self, g: &Game, pos: Pos) -> bool {
+        self.chop_spares_the_worked_tile
+            && g.map
+                .get(pos)
+                .and_then(|tile| tile.owner_city)
+                .is_some_and(|cid| g.city_citizen_plan(cid).worked_tiles.contains(&pos))
     }
 
     /// What the Settler in this city still owes, or `None` when the city is
@@ -503,6 +535,60 @@ mod tests {
             None,
             "but Marsh pays Food and a Settler is bought with hammers"
         );
+    }
+
+    #[test]
+    fn chop_spares_the_worked_tile_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("chop-spares-the-worked-tile", |ai| {
+            ai.chop_spares_the_worked_tile
+        });
+    }
+
+    /// A Forest the citizen plan works is left standing, and one it does not
+    /// work is cleared, whichever the fixture's two citizens chose.
+    #[test]
+    fn a_worked_forest_is_spared_and_an_idle_one_is_cleared() {
+        let (mut g, mut ai, city, builder, wood) = fixture();
+        build_a_settler(&mut g, city);
+        ai.enable_chop_spares_the_worked_tile();
+        let worked = g.city_citizen_plan(city).worked_tiles.contains(&wood);
+        assert_eq!(ai.chop_spares(&g, wood), worked);
+        let step = ai.chop_for_expansion_step(&mut g, 0, builder, GrandStrategy::Expansion);
+        if worked {
+            assert_eq!(step, None, "the only Forest is worked: no errand");
+            assert_eq!(g.map.tiles[&wood].feature, Some(crate::name!("forest")));
+        } else {
+            assert_eq!(step, Some(true));
+            assert_eq!(
+                g.map.tiles[&wood].feature, None,
+                "the idle Forest is cleared"
+            );
+        }
+    }
+
+    /// A city with a citizen for every tile it owns works the Forest, so the
+    /// gene prices it at nothing; with the gene off the price is unchanged.
+    #[test]
+    fn a_fully_worked_city_keeps_its_forest() {
+        let (mut g, mut ai, city, builder, wood) = fixture();
+        build_a_settler(&mut g, city);
+        let owned = g.cities[&city].owned_tiles.len();
+        g.cities.get_mut(&city).unwrap().pop = owned as _;
+        assert!(
+            g.city_citizen_plan(city).worked_tiles.contains(&wood),
+            "fixture: every owned tile has a citizen"
+        );
+        let plain = ai.chop_production_payout(&g, 0, wood, "chop_woods");
+        assert!(plain > 0.0, "gene off: the worked Forest keeps its price");
+
+        ai.enable_chop_spares_the_worked_tile();
+        assert!(ai.chop_spares(&g, wood));
+        assert_eq!(ai.chop_production_payout(&g, 0, wood, "chop_woods"), 0.0);
+        assert_eq!(
+            ai.chop_for_expansion_step(&mut g, 0, builder, GrandStrategy::Expansion),
+            None
+        );
+        assert_eq!(g.map.tiles[&wood].feature, Some(crate::name!("forest")));
     }
 
     #[test]
