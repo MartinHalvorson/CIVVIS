@@ -8462,6 +8462,9 @@ pub struct AdvancedAi {
     /// Keep the Religion seat's nearest Holy City guard between casts.
     /// See `advanced/religion_seat_keeps_the_guard.rs`. Off by default.
     religion_seat_keeps_the_guard: bool,
+    /// `religion-lane-hands-over`: the turn the Prophet race first read as
+    /// lost, cleared when it reads open again.
+    religion_race_lost_since: Option<u32>,
     /// `religion-seat-takes-the-debater`: on a Religion seat an Apostle
     /// offered Debater takes it. See
     /// `advanced/religion_seat_takes_the_debater.rs`. Off by default.
