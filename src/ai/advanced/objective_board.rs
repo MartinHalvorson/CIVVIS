@@ -4236,6 +4236,63 @@ mod tests {
             .iter()
             .any(|req| req.kind == ObjectiveKind::Escort && req.count == 1));
     }
+
+    /// `siege-at-the-walls-dies-first`: a Catapult in reach of our capital
+    /// stands the Siege row down outside a Conquest plan, so the army stays
+    /// home; a Conquest plan keeps its siege, and off nothing changes.
+    #[test]
+    fn a_gun_at_our_walls_stands_the_siege_down() {
+        let mut g = flat_board(91_650, &[at(6, 8), at(30, 8)], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, at(30, 8));
+        let capital = g.cities[&city_of(&g, 0, at(6, 8))].pos;
+        for index in 0..6 {
+            spawn(&mut g, "warrior", 0, at(8 + index % 3, 7 + index / 3));
+        }
+        let gun_at = g
+            .wdisk(capital, 2)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, capital) == 2 && g.unit_ids_at(*pos).is_empty())
+            .min()
+            .expect("a free tile two from the capital");
+        spawn(&mut g, "catapult", 1, gun_at);
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..conquest(&g, Some(target))
+        };
+        let siege = |ai: AdvancedAi, plan: &StrategicPlan| {
+            let mut ai = ai;
+            ai.enable_objective_board();
+            ai.battlefront_observation = false;
+            ai.rebuild_force_groups(&g, 0, plan);
+            (
+                row(&ai, ObjectiveKey::Siege(target)).is_some(),
+                force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len()),
+            )
+        };
+        let gene = || {
+            let mut ai = AdvancedAi::new();
+            ai.enable_siege_at_the_walls_dies_first();
+            ai
+        };
+        assert!(siege(AdvancedAi::new(), &recovery).0, "off: the row stands");
+        assert_eq!(siege(gene(), &recovery), (false, 0), "on: it stands down");
+        assert!(
+            siege(gene(), &conquest(&g, Some(target))).0,
+            "a Conquest plan keeps its siege"
+        );
+        let mut quiet = g.clone();
+        let gun = quiet.unit_ids_at(gun_at)[0];
+        quiet.remove_unit(gun);
+        let mut ai = gene();
+        ai.enable_objective_board();
+        ai.battlefront_observation = false;
+        ai.rebuild_force_groups(&quiet, 0, &recovery);
+        assert!(
+            row(&ai, ObjectiveKey::Siege(target)).is_some(),
+            "no gun, no stand-down"
+        );
+    }
 }
 
 #[cfg(test)]
