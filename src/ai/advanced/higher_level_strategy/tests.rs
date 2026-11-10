@@ -9,6 +9,18 @@ fn board() -> (Game, AdvancedAi, StrategicPlan, u32) {
 fn board_with_players(players: usize) -> (Game, AdvancedAi, StrategicPlan, u32) {
     let mut g = Game::new(players, 32, 22, 71, 250, 0);
     g.game_speed = GameSpeed::Online;
+    // The rules under test are the investment planner's. Where this seed's
+    // Barbarians happen to land must not decide what the city is free to do.
+    let barbarians: Vec<u32> = g
+        .units
+        .iter()
+        .filter(|(_, unit)| g.players[unit.owner].is_barbarian)
+        .map(|(id, _)| *id)
+        .collect();
+    for id in barbarians {
+        g.remove_unit(id);
+    }
+    g.barb_pid = None;
     let settler = g
         .player_unit_ids(0)
         .into_iter()
