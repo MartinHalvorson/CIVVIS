@@ -5475,6 +5475,12 @@ pub const GENES: &[Gene] = &[
     // citizen is working at nothing, so only idle land is cleared. Opt-in;
     // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
     Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
+    // `cold-war-before-conservation`: a Culture target on a six-slot
+    // government researches only the road to Cold War until it is known, so
+    // Conservation, Class Struggle, Professional Sports and Cultural Heritage
+    // wait for the bands. Opt-in; see
+    // `advanced/cold_war_before_conservation.rs`.
+    Gene { tag: "cold-war-before-conservation", field: "cold_war_before_conservation", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_before_conservation, disable: AdvancedAi::disable_cold_war_before_conservation },
     // `culture-bank-opens-at-nationalism`: the Rock Band Faith bank opens at
     // Nationalism, and Faith buys only Writers, Artists and Musicians from
     // then on. Live Kristina 20261110T140731Z spent 1,370 Faith on three

@@ -129,6 +129,9 @@ impl AdvancedAi {
         /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
         /// is working now. See `AdvancedAi::chop_spares`.
         chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
+        /// `cold-war-before-conservation`: see
+        /// `advanced/cold_war_before_conservation.rs`.
+        cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
         /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
         culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
         /// `culture-road-earns-its-inspirations`: see

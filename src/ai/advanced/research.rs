@@ -1118,6 +1118,9 @@ impl AdvancedAi {
                 // temporary counterplan once it has six policy slots. Native
                 // 040449Z reached 121 Faith/turn but lost at 179 without Cold
                 // War after researching Class Struggle and then Suffrage.
+                // See `advanced/cold_war_before_conservation.rs`. No-op with
+                // the gene off.
+                _ if self.cold_war_first_goal(g, pid).is_some() => self.cold_war_first_goal(g, pid),
                 GrandStrategy::Culture
                     if self.culture_cold_war_window
                         && (plan.strategy == GrandStrategy::Culture

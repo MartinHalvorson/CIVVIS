@@ -6742,6 +6742,10 @@ pub struct AdvancedAi {
     /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
     /// project or the Spaceport and into nothing else. Opt-in.
     chop_feeds_the_space_race: bool,
+    /// `cold-war-before-conservation`: a Culture target on a six-slot
+    /// government takes only the road to Cold War until it is known. See
+    /// `advanced/cold_war_before_conservation.rs`. Opt-in.
+    cold_war_before_conservation: bool,
     /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
     /// is working now. See `AdvancedAi::chop_spares`. Opt-in.
     chop_spares_the_worked_tile: bool,
@@ -10824,6 +10828,9 @@ mod civilian_safety;
 /// Coastal city-site scoring genes: a Harbor-eligible coast baseline and a
 /// resource-aware version. See `advanced/coastal_sites.rs`.
 mod coastal_sites;
+/// `cold-war-before-conservation`: a Culture target takes only the road to
+/// Cold War. See `advanced/cold_war_before_conservation.rs`.
+mod cold_war_before_conservation;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.

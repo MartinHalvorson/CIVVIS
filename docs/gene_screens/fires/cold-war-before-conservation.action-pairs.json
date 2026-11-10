@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "cold-war-before-conservation",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Kristina (Sweden) Culture run civvis-20261110T140731Z at t83 (Military Tradition toward the ladder's Exploration, chosen the turn Monarchy was adopted, still on four slots: the gene correctly stays off and both arms agree) and t132 (Conservation, on Monarchy's six slots: the on arm takes Scorched Earth, 'the most valuable step toward cold war'). Each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from a tree carrying this branch's change (the sibling opt-in genes culture-bank-opens-at-nationalism and bands-draw-from-the-bar off in both arms). Both arms carry the run's requested genome; the on arm adds the gene; the off arm reproduces each live civic.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-cold-war-before-conservation.native-queries.tar.xz",
+    "sha256": "a38fab1366164c581597cdf647127543aaca4712d65a3dbe5d1ab8cebe6ceac2"
+  },
+  "members": [
+    "nq-coldwar/0000/result.json",
+    "nq-coldwar/0001/result.json"
+  ]
+}
