@@ -93,8 +93,8 @@ fn a_step_into_range(g: &Game, cid: u32) -> (Pos, Pos) {
 }
 
 #[test]
-fn the_live_seat_fires_a_siege_gun_after_it_moves_and_a_native_board_does_not() {
-    for (live, expect_fire) in [(false, false), (true, true)] {
+fn a_siege_gun_cannot_fire_after_it_moves_on_the_live_or_a_native_board() {
+    for live in [false, true] {
         let (mut g, cid) = walled_city();
         flatten(&mut g, cid);
         g.at_war.insert((0, 1));
@@ -115,21 +115,19 @@ fn the_live_seat_fires_a_siege_gun_after_it_moves_and_a_native_board_does_not() 
         let walls = g.cities[&cid].wall_hp;
         let target = g.cities[&cid].pos;
         let shot = g.apply(0, &Action::Ranged { unit: gun, target });
-        assert_eq!(shot.is_ok(), expect_fire, "live {live}: {shot:?}");
-        if expect_fire {
-            assert!(g.cities[&cid].wall_hp < walls, "the shot lands on the wall");
-        }
+        assert!(shot.is_err(), "live {live}: {shot:?}");
+        assert_eq!(g.cities[&cid].wall_hp, walls, "the wall is untouched");
     }
 }
 
 #[test]
-fn a_hostile_siege_gun_on_the_live_board_keeps_the_rule() {
+fn no_siege_gun_on_the_live_board_is_exempt_from_the_rule() {
     let (mut g, cid) = walled_city();
     mirrored(&mut g);
     let far = at_distance(&g, cid, 4);
     let ours = g.spawn_unit("catapult", 0, far[0]);
     let theirs = g.spawn_unit("catapult", 1, far[far.len() / 2]);
-    assert!(g.siege_may_attack_after_moving(&g.units[&ours]));
+    assert!(!g.siege_may_attack_after_moving(&g.units[&ours]));
     assert!(!g.siege_may_attack_after_moving(&g.units[&theirs]));
     let mut native = g.clone();
     native.host_observed = Arc::new(BTreeSet::new());
