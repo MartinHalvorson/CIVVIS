@@ -368,3 +368,60 @@ fn a_charted_rival_draws_no_walk() {
         .advanced_missionary_step(&mut game, 0, missionary, true));
     assert_eq!(game.units[&missionary].pos, start);
 }
+
+/// ★ The 073607Z shape: the corps has work, so nobody idles, and the rival
+/// stays unseen. One spreader in four charts instead: the one with the
+/// fewest charges left.
+#[test]
+fn the_most_spent_spreader_scouts_while_the_corps_works() {
+    let (mut game, spent, site) = charted_out();
+    // The known rival city is a target again, so no spreader is idle.
+    {
+        let cid = game.city_at(site).unwrap();
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 150.0;
+    }
+    let home = game.units[&spent].pos;
+    game.units.get_mut(&spent).unwrap().charges = 1;
+    let fresh: Vec<u32> = (0..3)
+        .map(|_| {
+            let uid = game.spawn_test_unit("missionary", 0, home);
+            let unit = game.units.get_mut(&uid).unwrap();
+            unit.religion = Some("Buddhism".to_string());
+            unit.charges = 3;
+            unit.hp = 100;
+            uid
+        })
+        .collect();
+    let on = seat(VictoryTarget::Religion, true);
+
+    // Four spreaders and one under-charted rival: one scout, the spent one.
+    let mut board = game.clone();
+    assert!(!on.religion_seat_scout_charts(&mut board, 0, fresh[0], "Buddhism", true));
+    assert_eq!(board.units[&fresh[0]].pos, home);
+    assert!(on.religion_seat_scout_charts(&mut board, 0, spent, "Buddhism", true));
+    assert_ne!(board.units[&spent].pos, home, "the scout sets out");
+    assert_eq!(board.units[&spent].charges, 1, "and keeps its charge");
+
+    // Not with the gene off, on the defensive, or for a seat aiming elsewhere.
+    let mut board = game.clone();
+    assert!(!seat(VictoryTarget::Religion, false)
+        .religion_seat_scout_charts(&mut board, 0, spent, "Buddhism", true));
+    assert!(!on.religion_seat_scout_charts(&mut board, 0, spent, "Buddhism", false));
+    assert!(!seat(VictoryTarget::Culture, true)
+        .religion_seat_scout_charts(&mut board, 0, spent, "Buddhism", true));
+
+    // A corps of three sends nobody.
+    let mut small = game.clone();
+    small.remove_unit(fresh[2]);
+    assert!(!on.religion_seat_scout_charts(&mut small, 0, spent, "Buddhism", true));
+
+    // A charted rival needs no scout.
+    let mut charted = game.clone();
+    std::sync::Arc::make_mut(&mut charted.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(1);
+    assert!(!on.religion_seat_scout_charts(&mut charted, 0, spent, "Buddhism", true));
+}
