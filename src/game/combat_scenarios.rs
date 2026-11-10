@@ -3755,6 +3755,46 @@ fn theological_combat_needs_the_movement_to_enter_the_plot() {
 }
 
 #[test]
+fn a_ranged_unit_stacked_on_a_city_center_cannot_fire() {
+    // Who else stands on the Archer's City Center, and whether it may fire.
+    let shot_offered = |mate: Option<&str>, in_city: bool| {
+        let (mut g, center, ring) = controlled_game(3173);
+        g.at_war.insert((0, 1));
+        if in_city {
+            g.found_city_for(0, center, None);
+        }
+        let archer = g.spawn_unit("archer", 0, center);
+        if let Some(kind) = mate {
+            g.spawn_unit(kind, 0, center);
+        }
+        let target = ring[0];
+        g.spawn_unit("warrior", 1, target);
+        let action = Action::Ranged {
+            unit: archer,
+            target,
+        };
+        let legal = g.legal_actions(0).contains(&action);
+        let applied = g.apply(0, &action).is_ok();
+        assert_eq!(legal, applied, "legal_actions and apply must agree");
+        legal
+    };
+
+    assert!(shot_offered(None, true), "alone in the city it fires");
+    assert!(
+        !shot_offered(Some("warrior"), true),
+        "a soldier shares the city"
+    );
+    assert!(
+        shot_offered(Some("builder"), true),
+        "a civilian is no obstacle"
+    );
+    assert!(
+        shot_offered(Some("warrior"), false),
+        "the refusal is a City Center's"
+    );
+}
+
+#[test]
 fn theological_combat_and_condemnation_change_nearby_pressure() {
     let (mut g, center, ring) = controlled_game(3163);
     g.at_war.clear();
