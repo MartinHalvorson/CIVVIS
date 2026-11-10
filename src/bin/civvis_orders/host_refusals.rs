@@ -280,18 +280,63 @@ impl HostMoveRefusals {
         let Some(to) = to else {
             return false;
         };
+        let cleared = self.chained_move_has_cleared(unit, to, state);
+        if cleared {
+            self.same_turn_chained_moves.remove(&(unit, to));
+        }
+        cleared
+    }
+
+    fn chained_move_has_cleared(
+        &self,
+        unit: i64,
+        to: (i32, i32),
+        state: &civvis::mirror::StateSnapshot,
+    ) -> bool {
         let Some(&from) = self.same_turn_chained_moves.get(&(unit, to)) else {
             return false;
         };
-        let unmoved = state
+        state
             .units
             .iter()
-            .any(|u| u.id == unit && (u.x, u.y) == from);
-        let clear = !state.units.iter().any(|u| u.id != unit && (u.x, u.y) == to);
-        if unmoved && clear {
-            self.same_turn_chained_moves.remove(&(unit, to));
+            .any(|u| u.id == unit && (u.x, u.y) == from)
+            && !state.units.iter().any(|u| u.id != unit && (u.x, u.y) == to)
+    }
+
+    /// Send again every chained move whose plot has cleared and whose unit has
+    /// no order in this frame. A replan frame often covers only the units near
+    /// new information, so the follower of a chain may never be proposed
+    /// again: on the first five games with the retry, 83 of 87 chained moves
+    /// still lost got no second order at all. Returns how many went out.
+    pub(super) fn resend_cleared_chained_moves(
+        &mut self,
+        orders: &mut Vec<Order>,
+        state: &civvis::mirror::StateSnapshot,
+    ) -> usize {
+        if state.frame == 0 {
+            return 0;
         }
-        unmoved && clear
+        let cleared: Vec<(i64, (i32, i32))> = self
+            .same_turn_chained_moves
+            .keys()
+            .copied()
+            .filter(|(unit, to)| {
+                !orders
+                    .iter()
+                    .any(|order| order.kind == "unit" && order.subject == Some(*unit))
+                    && self.chained_move_has_cleared(*unit, *to, state)
+            })
+            .collect();
+        for (unit, to) in &cleared {
+            self.same_turn_chained_moves.remove(&(*unit, *to));
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(*unit),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some(*to),
+            });
+        }
+        cleared.len()
     }
 
     /// Whether the postcondition verifier established that a failed exact
