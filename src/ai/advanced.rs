@@ -6753,6 +6753,11 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `culture-bank-opens-at-nationalism`: a Culture target holds its Rock
+    /// Band bank from Nationalism, not Ideology, and spends Faith on no Great
+    /// Person but a Writer, Artist or Musician from then on. See
+    /// `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_opens_at_nationalism: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9818,6 +9823,11 @@ pub struct AdvancedAi {
     sea_scout_claims_the_queue_2: bool,
     /// Rank Spy producers by native turns, sparing science on ties. Off by default.
     spies_price_the_science_head: bool,
+    /// `sweden-builds-open-air-museums`: Sweden's Builders price the
+    /// Open-Air Museum (2 Culture and 2 Tourism per terrain class of Sweden's
+    /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
+    /// default.
+    sweden_builds_open_air_museums: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11165,6 +11175,9 @@ mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
 mod band_plays_its_stage;
+/// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
+/// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
+mod bands_draw_from_the_bar;
 mod campus_above_sea;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
@@ -11298,6 +11311,9 @@ mod spy_civics_come_first;
 /// A Spy the host reports idle spends its order's patience. See
 /// `advanced/spy_patience_reads_the_host.rs`.
 mod spy_patience_reads_the_host;
+/// `sweden-builds-open-air-museums`: see
+/// `advanced/sweden_builds_open_air_museums.rs`.
+mod sweden_builds_open_air_museums;
 mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
@@ -16777,6 +16793,13 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
+                // See `advanced/culture_band_bank.rs`
+                // (`culture-bank-opens-at-nationalism`).
+                if currency == "faith"
+                    && self.culture_bank_bars_faith_great_person(g, pid, strategy, kind)
+                {
+                    continue;
+                }
                 let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0

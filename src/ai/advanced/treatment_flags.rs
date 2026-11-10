@@ -88,6 +88,8 @@ impl AdvancedAi {
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
+        /// `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`.
+        base.bands_draw_from_the_bar => enable_bands_draw_from_the_bar, disable_bands_draw_from_the_bar;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.
@@ -130,6 +132,8 @@ impl AdvancedAi {
         /// `cold-war-before-conservation`: see
         /// `advanced/cold_war_before_conservation.rs`.
         cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
+        /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
+        culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -209,6 +213,9 @@ impl AdvancedAi {
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `sweden-builds-open-air-museums`; see
+        /// `advanced/sweden_builds_open_air_museums.rs`.
+        sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
