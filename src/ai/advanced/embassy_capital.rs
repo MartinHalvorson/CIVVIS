@@ -33,7 +33,7 @@
 //! [`EMBASSY_CAPITAL_ASK_TURNS`] turns (the bridge's own per-target retry).
 //! The plan's target goes first: an Embassy is no friendship and no promise,
 //! so it leaves the war open. The stock cadence keeps everything else.
-use super::{Action, AdvancedAi, Game, VictoryTarget};
+use super::{Action, AdvancedAi, BasicAi, Game, VictoryTarget};
 
 /// Turns between two asks of the same rival: the bridge refuses a repeat
 /// inside its `PeaceRetryTurns` (5) window anyway.
@@ -75,8 +75,11 @@ impl AdvancedAi {
         target: Option<usize>,
     ) -> Vec<usize> {
         let science = self.embassy_capital_reads_the_racers(g);
-        if !(self.embassy_finds_the_capital || self.embassy_finds_the_capital_2)
-            || !(self.active_victory_target(g) == Some(VictoryTarget::Domination) || science)
+        let religion = self.religion_seat_reveals_the_capitals_active(g, pid);
+        if !(self.embassy_finds_the_capital || self.embassy_finds_the_capital_2 || religion)
+            || !(self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                || science
+                || religion)
             || !g.players[pid]
                 .civics
                 .contains(&crate::name!("diplomatic_service"))
@@ -98,6 +101,7 @@ impl AdvancedAi {
             })
             .map(|rival| rival.id)
             .filter(|rival| !Self::original_capital_known(g, pid, *rival))
+            .filter(|rival| !religion || !BasicAi::contact_fleet_city_known(g, pid, *rival))
             .filter(|rival| {
                 !g.diplomatic_mission_to(pid, *rival)
                     .is_some_and(|mission| mission.kind == "embassy")
@@ -182,6 +186,10 @@ impl AdvancedAi {
                 "Sending a Resident Embassy to {}", g.players[rival].civ;
                 "embassy-finds-the-capital-2: our Spies can reach only a city we have seen and we have never seen their capital; an Embassy reveals it; they know {} technologies and read {standing} toward us",
                 g.players[rival].techs.len());
+        } else if self.religion_seat_reveals_the_capitals_active(g, pid) {
+            crate::think!(self.journal(), Diplomacy, Decision,
+                "Sending a Resident Embassy to {}", g.players[rival].civ;
+                "religion-seat-reveals-the-capitals: our spreaders need a city to head for and we know none of theirs; an Embassy reveals the capital; they read {standing} toward us");
         } else {
             crate::think!(self.journal(), Diplomacy, Decision,
                 "Sending a Resident Embassy to {}", g.players[rival].civ;

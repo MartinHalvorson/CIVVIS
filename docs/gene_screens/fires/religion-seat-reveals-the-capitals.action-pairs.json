@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-reveals-the-capitals",
+  "scope": "Same exact-source verified arm64 candidate and sealed actual native Russia inputs; only this opt-in differs. All actual reads checked byte-for-byte. At125/0 only the on arm asks for a Resident Embassy to unlocated, Declared Friend Sweden4. The earlier100/0 frame lacks Diplomatic Service and the later168/0 frame already knows a Swedish city; their orders must match across arms. Resumed proposal activation only: not native execution, complete persistent-controller-history reproduction, early discovery or victory-rate proof.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religion-seat-reveals-the-capitals.native-queries.tar.xz",
+    "sha256": "937a14767254071f2bf5cbe1bcca8af9007dd72db78d834d6272bb40626f2e08"
+  },
+  "members": [
+    "native-queries/t100-frame0/result.json",
+    "native-queries/t125-frame0/result.json",
+    "native-queries/t168-frame0/result.json"
+  ]
+}

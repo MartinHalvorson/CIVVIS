@@ -62,16 +62,27 @@ pub(super) struct TheologicalThreat {
     every_blow: bool,
 }
 
-/// The difficulty and Intel strength the live host adds to a rival Apostle
-/// (+7 or more in 55 of 75 previews on 2026-11-09), as a factor on the blow
-/// the model reads.
-const HOST_EDGE: f64 = 1.3;
+/// A rival Apostle's blow at the 75th percentile, over the blow the model
+/// reads. Live, five games of 2026-11-10, full-health rival Apostles striking
+/// our full-health units: 53 on an Apostle where the model reads 30 (mean 39,
+/// 90th percentile 56), 63 on a Missionary where it reads 45. The host adds
+/// difficulty and Intel strength, and the model does not see a rival's
+/// Debater.
+const BLOW_AT_THE_QUARTILE: f64 = 1.75;
 
-/// How many blows on one unit of ours in one turn the corps plans for. Kills
-/// that took more than one attack took two or three; counting every rival in
-/// reach froze the corps instead (live 2026-11-10, one turn: 81 units held
-/// where 17 did without the rule, and 1 hunt where there were 5).
+/// How many blows on one unit of ours in one turn the corps plans for. Two
+/// such blows kill a full-health Apostle, so a tile two rival Apostles reach
+/// is unsafe for every unit of ours. The games played with this rule relaxed
+/// to the mean blow (2026-11-10 07:30Z to 08:30Z) lost 11, 12 and 16 units
+/// and converted 0 to 2 civs of 5; the four before it lost 0, 2, 9 and 13,
+/// won once and reached 3 of 5 once, with as many kills.
 const BLOWS_IN_A_TURN: usize = 2;
+
+/// How far past the modelled reach a pair of rivals is still counted. Three
+/// units traced on 2026-11-10 died at full health on the first tile the
+/// model called out of reach: it misses a rival's roads and rivals it has not
+/// seen.
+const REACH_MARGIN: i32 = 1;
 
 impl AdvancedAi {
     /// The visible rival Apostles and Inquisitors of another faith within
@@ -174,11 +185,12 @@ impl AdvancedAi {
     }
 
     /// `corps-comes-home-alive`: how many rivals can strike `ours` on `pos`
-    /// this turn, when the two heaviest blows together would kill it. Zero
-    /// with the gene off or when the unit survives them. 20 of 74 kills on
-    /// our corps in four games of 2026-11-09/10 took two or three attacks in
-    /// one turn, none of them lethal alone. A full-health Apostle survives
-    /// two rival Apostles and is not held; a Missionary does not and is.
+    /// this turn (within [`REACH_MARGIN`] of their modelled reach), when the
+    /// two heaviest blows together would kill it. Zero with the gene off or
+    /// when the unit survives them. 20 of 74 kills on our corps in four games
+    /// of 2026-11-09/10 took two or three attacks in one turn, none of them
+    /// lethal alone. One rival Apostle does not hold a full-health unit; two
+    /// hold any.
     fn every_blow_kills(g: &Game, ours: u32, pos: Pos, threats: &[TheologicalThreat]) -> usize {
         if !threats.iter().any(|threat| threat.every_blow) {
             return 0;
@@ -192,12 +204,12 @@ impl AdvancedAi {
                 threat
                     .strike_from
                     .iter()
-                    .any(|from| *from != pos && g.wdist(*from, pos) <= 1)
+                    .any(|from| *from != pos && g.wdist(*from, pos) <= 1 + REACH_MARGIN)
             })
             .filter_map(|threat| {
                 g.theological_exchange_preview_with_defender_at(threat.rival, ours, pos)
             })
-            .map(|(dealt, _, _)| dealt * HOST_EDGE)
+            .map(|(dealt, _, _)| dealt * BLOW_AT_THE_QUARTILE)
             .collect();
         blows.sort_by(|a, b| b.total_cmp(a));
         let heaviest: f64 = blows.iter().take(BLOWS_IN_A_TURN).sum();
