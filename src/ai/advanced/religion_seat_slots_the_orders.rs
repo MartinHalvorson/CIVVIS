@@ -9,6 +9,8 @@
 //! Earlier timed and emergency cards keep their rank; the existing solvency
 //! guard still protects amenities and upkeep. Closed host windows stay closed.
 //! Other typed slots cannot donate wanted cards through wildcard capacity.
+//! Scripture stays with Work Ethic: its adjacency also feeds Production,
+//! which makes that Faith card part of the Russian seat's industrial base.
 //!
 //! Shipped Base/Assets/Gameplay/Data/Policies.xml:179 assigns
 //! POLICY_RELIGIOUS_ORDERS to SLOT_ECONOMIC at CIVIC_REFORMED_CHURCH;
@@ -36,6 +38,14 @@ impl AdvancedAi {
         let Some(religion) = g.players[pid].religion.as_deref() else {
             return false;
         };
+        if current == "scripture"
+            && g.players[pid]
+                .religion_beliefs
+                .iter()
+                .any(|belief| belief == "work_ethic")
+        {
+            return false;
+        }
         if !g.units.values().any(|unit| {
             unit.owner == pid
                 && unit.kind == "apostle"

@@ -232,3 +232,61 @@ fn a_wanted_other_type_cannot_donate_its_wildcard_capacity() {
     assert_eq!(g.players[0].policies, before);
     assert!(!has(&g, "religious_orders"));
 }
+
+#[test]
+fn work_ethic_keeps_scriptures_faith_and_production() {
+    let (mut g, mut ai, _) = board();
+    ai.enable_religion_seat_slots_the_orders();
+    g.players[0].government = Some("chiefdom".into());
+    g.players[0].policies = ["retainers", "scripture"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    g.players[0].religion_beliefs = vec!["work_ethic".into()];
+    let city = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert("Buddhism".into(), 500.0);
+    let site = crate::game::install_test_district(&mut g, city, "holy_site");
+    let mountain = g
+        .nbrs(site)
+        .into_iter()
+        .find(|pos| *pos != g.cities[&city].pos)
+        .unwrap();
+    g.map.tiles.get_mut(&mountain).unwrap().terrain = crate::name!("mountain");
+    let with_scripture = g.city_yields(city);
+    let mut without_scripture = g.clone();
+    without_scripture
+        .apply(
+            0,
+            &Action::UnslotPolicy {
+                policy: crate::name!("scripture"),
+            },
+        )
+        .unwrap();
+    let lost = without_scripture.city_yields(city);
+    assert!(
+        lost.faith < with_scripture.faith,
+        "Scripture is paying Faith"
+    );
+    assert!(
+        lost.production < with_scripture.production,
+        "Work Ethic also pays Production"
+    );
+    let before = g.players[0].policies.clone();
+    let mut without_work_ethic = g.clone();
+    without_work_ethic.players[0].religion_beliefs.clear();
+    ai.strategic_policies(&mut without_work_ethic, 0, GrandStrategy::Religion);
+    assert!(
+        has(&without_work_ethic, "religious_orders"),
+        "the ordinary donor would fit"
+    );
+    assert!(!has(&without_work_ethic, "scripture"));
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
+    assert_eq!(
+        g.players[0].policies, before,
+        "Work Ethic's production card stays"
+    );
+}
