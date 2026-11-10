@@ -139,3 +139,89 @@ fn a_city_takes_the_plaza_when_the_capital_cannot() {
     place_plaza(&mut g, capital);
     assert!(on.plaza_item_for_seat(&g, 0, capital).is_none());
 }
+
+fn plan() -> StrategicPlan {
+    StrategicPlan {
+        strategy: crate::ai::advanced::GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: 0,
+        rush: false,
+    }
+}
+
+fn place(g: &mut Game, cid: u32, district: Name) {
+    let center = g.cities[&cid].pos;
+    let site = g.cities[&cid]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            let tile = &g.map.tiles[position];
+            *position != center
+                && tile.district.is_none()
+                && !g.rules.is_water(tile)
+                && g.rules.is_passable(tile)
+        })
+        .unwrap();
+    g.map.tiles.get_mut(&site).unwrap().district = Some(district);
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .districts
+        .insert(district, site);
+}
+
+fn head_is_plaza(g: &Game, cid: u32) -> bool {
+    matches!(g.cities[&cid].queue.first(), Some(Item::District { district, .. })
+        if g.district_family(*district) == "government_plaza")
+}
+
+#[test]
+fn the_plaza_claims_a_routine_queue_once_the_theater_stands() {
+    let (mut g, cid) = sweden(61_304);
+    g.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("builder"),
+    }];
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_kristina_builds_the_bibliotheque();
+
+    // No Theater Square yet: the culture seat's Theater comes first.
+    let mut early = g.clone();
+    on.claim_queue_for_kristinas_plaza(&mut early, 0, &plan());
+    assert!(!head_is_plaza(&early, cid));
+
+    place(&mut g, cid, crate::name!("theater_square"));
+    let mut untreated = g.clone();
+    off.claim_queue_for_kristinas_plaza(&mut untreated, 0, &plan());
+    assert!(!head_is_plaza(&untreated, cid), "off, nothing changes");
+
+    let mut claimed = g.clone();
+    on.claim_queue_for_kristinas_plaza(&mut claimed, 0, &plan());
+    assert!(
+        head_is_plaza(&claimed, cid),
+        "the Plaza goes ahead of the Builder"
+    );
+
+    // The Theater chain keeps its queue.
+    let mut amphitheater = g.clone();
+    amphitheater.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
+        building: crate::name!("amphitheater"),
+    }];
+    on.claim_queue_for_kristinas_plaza(&mut amphitheater, 0, &plan());
+    assert!(!head_is_plaza(&amphitheater, cid));
+
+    // A standing Plaza takes the Hall at the head of its queue.
+    let mut standing = g.clone();
+    place(&mut standing, cid, crate::name!("government_plaza"));
+    on.claim_queue_for_kristinas_plaza(&mut standing, 0, &plan());
+    assert_eq!(
+        standing.cities[&cid].queue.first(),
+        Some(&Item::Building {
+            building: crate::name!("ancestral_hall")
+        })
+    );
+}

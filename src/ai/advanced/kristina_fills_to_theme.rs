@@ -14,11 +14,13 @@
 //! full. The Queen's Bibliotheque (2 Writing, 2 Art, 2 Music) was never built.
 //!
 //! **The gene**, on Sweden's seat only:
-//! 1. A Writer, Artist or Musician the host reports without a slot asks for
-//!    the Queen's Bibliotheque before the stock chain (Amphitheater, Art
-//!    Museum, Broadcast Center), and for what makes it buildable (a Plaza, then
-//!    the Ancestral Hall): it is the empire's earliest Music slot and a
-//!    six-slot building that themes when full.
+//! 1. A Musician the host reports without a slot asks for the Queen's
+//!    Bibliotheque before the stock chain (Broadcast Center, which waits on
+//!    Radio), and for what makes it buildable (a Plaza, then the Ancestral
+//!    Hall); a Writer takes the Bibliotheque where it stands buildable, ahead
+//!    of an Amphitheater whose two slots never theme. An Artist keeps the Art
+//!    Museum, three slots that theme sooner. The Bibliotheque is the empire's
+//!    earliest Music slot and a six-slot building that themes when full.
 //! 2. A cultural person walking to an activation plot prefers the plot whose
 //!    3+-slot building is closest to full, and one standing able to activate
 //!    into a building that can never theme (the Palace, an Amphitheater)
@@ -156,13 +158,18 @@ impl BasicAi {
                 .is_some_and(|player| player.civ == "Sweden")
     }
 
-    /// The Bibliotheque, or the step that makes it buildable, for a Writer,
-    /// Artist or Musician with no slot: the Bibliotheque itself; else, in a
-    /// city whose Plaza has no tier-one building, the Ancestral Hall; else,
-    /// with no Plaza anywhere, a Plaza in this city. `None` leaves the stock
-    /// chain to answer (and is the answer once a Plaza building that excludes
-    /// the Bibliotheque stands); `Some(None)` means another city is the one to
-    /// build it, or already has it queued.
+    /// Sweden's slot for a cultural person the host reports without one.
+    ///
+    /// A Musician (whose only other slot, the Broadcast Center, waits on
+    /// Radio) gets the Bibliotheque or the step that makes it buildable: the
+    /// Bibliotheque itself; else, in a city whose Plaza has no tier-one
+    /// building, the Ancestral Hall; else, with no Plaza anywhere, a Plaza in
+    /// this city. A Writer gets the Bibliotheque where it is buildable (an
+    /// Amphitheater's two slots never theme). An Artist keeps the stock Art
+    /// Museum, a three-slot building that themes sooner. `None` leaves the
+    /// stock chain to answer (and is the answer once a Plaza building that
+    /// excludes the Bibliotheque stands); `Some(None)` means another city is
+    /// the one to build it, or already has it queued.
     pub(crate) fn kristina_slot_item(
         &self,
         g: &Game,
@@ -170,8 +177,15 @@ impl BasicAi {
         cid: u32,
         work: &str,
     ) -> Option<Option<Item>> {
-        if !self.kristina_fills_here(g, pid) || !matches!(work, "writing" | "art" | "music") {
+        if !self.kristina_fills_here(g, pid) {
             return None;
+        }
+        match work {
+            "music" => {}
+            "writing" => {
+                return Self::civ_building(g, pid, cid, "queens_bibliotheque").map(Some);
+            }
+            _ => return None,
         }
         let city_ids = g.player_city_ids(pid);
         let steps = [

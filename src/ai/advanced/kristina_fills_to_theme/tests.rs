@@ -59,7 +59,12 @@ fn a_starved_musician_asks_for_the_bibliotheque() {
         None,
         "not an artifact"
     );
-    for work in ["writing", "art", "music"] {
+    assert_eq!(
+        on.kristina_slot_item(&g, 0, cid, "art"),
+        None,
+        "an Artist keeps the Art Museum"
+    );
+    for work in ["writing", "music"] {
         assert_eq!(
             on.kristina_slot_item(&g, 0, cid, work),
             Some(Some(Item::Building {
@@ -141,7 +146,7 @@ fn a_starved_musician_builds_the_way_to_the_bibliotheque() {
     none.map.tiles.get_mut(&site).unwrap().district = None;
     none.cities.get_mut(&cid).unwrap().districts.remove(plaza);
     assert!(matches!(
-        on.kristina_slot_item(&none, 0, cid, "art"),
+        on.kristina_slot_item(&none, 0, cid, "music"),
         Some(Some(Item::District { district, .. })) if none.district_family(district) == "government_plaza"
     ));
 }

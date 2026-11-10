@@ -26123,6 +26123,10 @@ impl AdvancedAi {
             // `plaza-serves-the-scientist-3`: the Plaza district itself, once
             // the capital's Campus stands. Exact no-op while the gene is off.
             self.claim_queue_for_the_plaza_district(g, pid, &plan);
+            // `kristina-builds-the-bibliotheque`: Sweden's Plaza tier, else the
+            // Plaza itself, under the same displacement rule. Exact no-op while
+            // the gene is off. See `advanced/kristina_builds_the_bibliotheque.rs`.
+            self.claim_queue_for_kristinas_plaza(g, pid, &plan);
             // `space-people-call-the-projects`: the district projects that earn
             // a space-race person on offer. Exact no-op while the gene is off.
             self.claim_queues_for_the_space_people(g, pid, &plan);
