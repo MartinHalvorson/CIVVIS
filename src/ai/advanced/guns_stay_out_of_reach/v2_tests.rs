@@ -5,7 +5,7 @@ use crate::ai::advanced::VictoryTarget;
 /// A grassland field, our archer at (16, 10) and trebuchet at (16, 12), a
 /// Line Infantry at (20, 10) seen by a warrior of ours behind it, at war.
 fn fixture() -> (Game, AdvancedAi, u32, u32, u32) {
-    let mut g = Game::new_full(2, 40, 24, 377300, 500, 0, false);
+    let mut g = Game::new_full(2, 40, 24, 377301, 500, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

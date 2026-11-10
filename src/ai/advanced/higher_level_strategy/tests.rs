@@ -476,7 +476,7 @@ fn wide() -> AdvancedAi {
 
 /// A capital plus one other city, everything explored, both queues empty.
 fn two_cities() -> (Game, u32, u32) {
-    let mut g = Game::new(2, 32, 22, 71, 250, 0);
+    let mut g = Game::new(2, 32, 22, 73, 250, 0);
     g.game_speed = GameSpeed::Online;
     g.difficulty = "emperor".to_string();
     let settler = g

@@ -1826,6 +1826,82 @@ fn a_same_turn_replan_drops_stale_unit_replays_but_keeps_new_tactics() {
     assert_eq!(next_turn.len(), 1);
 }
 
+/// Unit 7 steps onto the plot unit 8 is leaving. The host drops 7's request
+/// while 8 still stands there, so the replan's repeat of it must go out.
+fn chained_move_frames() -> (civvis::mirror::StateSnapshot, HostMoveRefusals) {
+    let (_snapshot, mut state) = production_board();
+    state.turn = 42;
+    state.frame = 0;
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 3, 3)];
+    let mut refusals = HostMoveRefusals::default();
+    let mut ours = std::collections::BTreeMap::new();
+    let mut first = vec![
+        unit_order(8, "MOVE_TO", Some((4, 4))),
+        unit_order(7, "MOVE_TO", Some((3, 3))),
+    ];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut first, &state, &mut ours),
+        0
+    );
+    state.frame = 1;
+    (state, refusals)
+}
+
+fn placed_unit(id: i64, x: i32, y: i32) -> civvis::mirror::StateUnit {
+    civvis::mirror::StateUnit {
+        id,
+        kind: "UNIT_WARRIOR".to_string(),
+        x,
+        y,
+        ..civvis::mirror::StateUnit::default()
+    }
+}
+
+#[test]
+fn a_move_onto_a_plot_its_occupant_left_is_sent_again_once() {
+    let (mut state, mut refusals) = chained_move_frames();
+    let mut ours = std::collections::BTreeMap::new();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 4, 4)];
+    let mut replan = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut replan, &state, &mut ours),
+        0,
+        "the plot has cleared and the unit has not moved"
+    );
+    assert_eq!(replan.len(), 1);
+
+    state.frame = 2;
+    let mut again = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut again, &state, &mut ours),
+        1,
+        "one retry only"
+    );
+}
+
+#[test]
+fn a_chained_move_stays_a_replay_while_the_plot_is_taken_or_the_unit_went() {
+    let mut ours = std::collections::BTreeMap::new();
+
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 2), placed_unit(8, 3, 3)];
+    let mut occupied = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut occupied, &state, &mut ours),
+        1,
+        "the occupant is still there"
+    );
+
+    let (mut state, mut refusals) = chained_move_frames();
+    state.units = vec![placed_unit(7, 3, 3), placed_unit(8, 4, 4)];
+    let mut arrived = vec![unit_order(7, "MOVE_TO", Some((3, 3)))];
+    assert_eq!(
+        refusals.suppress_same_turn_replays(&mut arrived, &state, &mut ours),
+        1,
+        "the unit got there, so the frame is the ordinary stale replay"
+    );
+}
+
 #[test]
 fn an_explicitly_refused_build_releases_the_same_turn_queue_lease() {
     let (_, mut state) = production_board();
@@ -2902,7 +2978,7 @@ fn finishing_survival_policy_keeps_a_safe_reserve() {
 fn finishing_survival_policy_prices_the_whole_volley_after_its_kill() {
     let (snapshot, mut state) = local_barbarian_defense_board();
     state.units[0].hp = 30.0;
-    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 2, 250, 0);
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 13, 250, 0);
     let mut old = mirror.game.clone();
     let old_volley = finish_live_war_units(&mut old, 0, &mirror.civ6_of);
     assert!(old_volley.actions.len() > 1);
@@ -6754,6 +6830,99 @@ fn favor_is_bought_before_a_contested_session() {
     assert_eq!(
         append_favor_buy_order(true, &rich, &mut selling),
         Some("favor_buy_hold:selling")
+    );
+}
+
+/// ★ 091939Z's bank on 090948Z's treasury: 117 favor, 19 Gold at -4 a turn
+/// (under five turns of it), every rival past the vote hold. A drained
+/// treasury sells past the hold, off the cadence, down to twenty; a solvent
+/// one, or one facing a rival at twelve points, holds as before.
+#[test]
+fn a_drained_treasury_sells_its_favor_past_the_vote_hold() {
+    let rival = |player: usize, gold: f64, dvp: i64| StateRival {
+        player,
+        gold,
+        dvp: Some(dvp),
+        ..StateRival::default()
+    };
+    let held = StateSnapshot {
+        turn: 100,
+        favor: Some(117.0),
+        gold: 19,
+        gold_per_turn: Some(-4.0),
+        rivals: vec![rival(2, 900.0, 5), rival(3, 400.0, 6)],
+        ..StateSnapshot::default()
+    };
+    assert_ne!(held.turn % FAVOR_SALE_CADENCE, FAVOR_SALE_PHASE);
+    assert!(favor_banked_for_votes(&held));
+    let science = Some(("science", None));
+
+    // Solvent, the hold stands.
+    let mut solvent = held.clone();
+    solvent.gold_per_turn = Some(4.0);
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(science, &solvent, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    // A deficit the treasury covers for ten turns is not a drain.
+    let mut covered = held.clone();
+    covered.gold = 40;
+    assert_eq!(
+        append_favor_sale_order(science, &covered, &mut orders, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert!(orders.is_empty());
+
+    // Drained: 97 of the 117 go, to the richer rival, off the cadence.
+    assert_eq!(
+        append_favor_sale_order(science, &held, &mut orders, 2.0),
+        None
+    );
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].kind, "sell");
+    assert_eq!(orders[0].subject, Some(2));
+    assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=97"));
+    // And the planner's own favor quote is no longer struck.
+    let mut quoted = vec![Order {
+        kind: "sell",
+        subject: Some(2),
+        verb: Some("FAVOR=10".to_string()),
+        pos: Some((10, 0)),
+    }];
+    assert_eq!(hold_planner_favor_sales(science, &held, &mut quoted), 0);
+    assert_eq!(quoted.len(), 1);
+
+    // The reserve is twenty: 30 favor has too little above it to sell.
+    let mut thin = held.clone();
+    thin.favor = Some(30.0);
+    let mut none = Vec::new();
+    assert_eq!(
+        append_favor_sale_order(science, &thin, &mut none, 2.0),
+        Some("favor_hold:reserve")
+    );
+
+    // A rival at twelve points holds even a drained bank.
+    let mut match_point = held.clone();
+    match_point.rivals[1].dvp = Some(FAVOR_DRAIN_HOLD_DVP);
+    assert_eq!(
+        append_favor_sale_order(science, &match_point, &mut none, 2.0),
+        Some("favor_hold:contender")
+    );
+    assert_eq!(
+        hold_planner_favor_sales(science, &match_point, &mut quoted),
+        1
+    );
+
+    // A diplomatic racer keeps its bank whatever the treasury reads.
+    assert_eq!(
+        append_favor_sale_order(
+            Some(("diplomacy", Some("diplomatic"))),
+            &held,
+            &mut none,
+            2.0
+        ),
+        Some("favor_hold:diplomatic_lane")
     );
 }
 

@@ -1942,7 +1942,7 @@ fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
 #[test]
 fn a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_marches() {
     let build = || -> (Game, u32, u32, u32, Pos, Pos) {
-        let mut game = Game::new_full(2, 30, 20, 8_121, 120, 0, false);
+        let mut game = Game::new_full(2, 30, 20, 8_122, 120, 0, false);
         for pid in 0..2 {
             let settler = game
                 .player_unit_ids(pid)
@@ -2657,7 +2657,7 @@ fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
     let mut nearer = 0;
     let mut boards = 0;
     for seed in [
-        93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208,
+        93_204u64, 93_205, 93_206, 93_207, 93_208, 93_209, 93_210, 93_211,
     ] {
         let (mut game, home) = camp_bounty_board(seed);
         game.set_fog_memory(false);
@@ -3260,7 +3260,7 @@ fn a_barbarian_camp_two_tiles_away_changes_the_shipped_score_by_nothing() {
 /// inside the empire — 148.3 against 62.7 on this board.
 #[test]
 fn the_shipped_score_prefers_a_site_it_cannot_support() {
-    let mut game = Game::new(2, 60, 40, 6_301, 250, 0);
+    let mut game = Game::new(2, 60, 40, 6_302, 250, 0);
     game.found_city_for(0, (10, 20), None);
     let shipped = AdvancedAi::new();
 
@@ -3784,7 +3784,7 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
     // ceiling — a visible hostile within reach of the settler's next route
     // step — because that is the state the opening actually sits in.
     let held = |waited: u8, gene: bool| {
-        let (mut game, _capital, home) = empire_with_a_capital(71_601);
+        let (mut game, _capital, home) = empire_with_a_capital(71_605);
         game.turn = 20;
         let ring: Vec<Pos> = {
             let mut r: Vec<Pos> = game
@@ -4350,7 +4350,7 @@ fn a_settler_past_its_deadline_founds_within_reach_and_says_so() {
 
 #[test]
 fn the_walk_deadline_off_leaves_the_clock_and_the_step_alone() {
-    let (mut game, settler) = walk_deadline_board(93_204);
+    let (mut game, settler) = walk_deadline_board(93_206);
     let mut ai = AdvancedAi::new();
     let journal = crate::reasoning::Journal::recording();
     ai.attach_journal(journal.handle());
