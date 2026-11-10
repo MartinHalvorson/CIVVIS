@@ -1023,7 +1023,18 @@ impl AdvancedAi {
         // `solvent-or-hold`: each card kept this pass, and the first card it
         // kept out; journalled once after the pass.
         let mut solvency_kept: BTreeMap<Name, &str> = BTreeMap::new();
-        for (rank, card) in desired.iter().copied().enumerate() {
+        // `flower-power-in-the-dark`: the card keeps its rank but takes its
+        // seat last, from the card the plan ranks lowest once the others are
+        // seated. Taken first, it took the seat of an unwanted card that a
+        // higher-ranked card (Satellite Broadcasts) then could not reach.
+        let mut passes: Vec<(usize, &str)> = desired.iter().copied().enumerate().collect();
+        if let Some(at) = flower_power_card
+            .and_then(|card| passes.iter().position(|(_, wanted)| *wanted == card))
+        {
+            let last = passes.remove(at);
+            passes.push(last);
+        }
+        for (rank, card) in passes {
             if g.players[pid].policies.contains(&Name::new(card))
                 || !available.contains(&Name::new(card))
             {

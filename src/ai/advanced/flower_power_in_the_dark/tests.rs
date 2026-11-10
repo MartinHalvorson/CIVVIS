@@ -104,6 +104,31 @@ fn a_peaceful_dark_age_with_cold_war_slots_and_keeps_the_card() {
     assert!(lines(&ai, "Dropping").is_empty());
 }
 
+/// Live 164254Z t178: taken first, the card took an unwanted card's seat
+/// and Satellite Broadcasts, ranked above New Deal, lost its own. Taken
+/// last, the wanted card seats first and Flower Power takes the seat of the
+/// card the plan ranks lowest.
+#[test]
+fn the_card_seats_last_from_the_lowest_ranked_card() {
+    let (mut g, _) = board();
+    let player = &mut g.players[0];
+    for card in ["grand_opera", "symphonies"] {
+        player.policies.remove(&Name::new(card));
+    }
+    player.policies.insert(crate::name!("town_charters"));
+    player.policies.insert(crate::name!("new_deal"));
+    player.civics.insert(crate::name!("opera_ballet"));
+    let ai = seat(VictoryTarget::Culture, true, &g);
+    ai.strategic_policies(&mut g, 0, GrandStrategy::Culture);
+    for card in ["flower_power", "grand_opera", "satellite_broadcasts"] {
+        assert!(slotted(&g, card), "{card}: {:?}", g.players[0].policies);
+    }
+    assert!(!slotted(&g, "town_charters"));
+    assert!(!slotted(&g, "new_deal"));
+    let slot = lines(&ai, "Slotted flower power");
+    assert_eq!(slot, ["Slotted flower power over new deal | flower-power-in-the-dark: 1 Rock Band(s) in the field; concerts +50% Tourism, no war near our cities"]);
+}
+
 #[test]
 fn without_cold_war_the_card_is_refused() {
     let (mut g, _) = board();
