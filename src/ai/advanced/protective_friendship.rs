@@ -281,6 +281,11 @@ impl AdvancedAi {
         {
             return Some("friendship-spares-the-target: the campaign is aimed at them");
         }
+        // `first-capital-before-the-walls`: a declared friendship forbids the
+        // war the opening is for. `false` with the gene off.
+        if self.first_capital_spares_friendship(g, pid, other) {
+            return Some("first-capital-before-the-walls: their capital is the opening's target");
+        }
         // `friendship-only-with-the-stronger`: a weaker rival is a conquest to
         // make, not a war to forestall.
         if self.friendship_only_with_the_stronger

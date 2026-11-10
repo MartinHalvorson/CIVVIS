@@ -371,3 +371,37 @@ fn after_the_capital_falls_the_campaign_goes_on_at_any_rate() {
         }
     }
 }
+
+#[test]
+fn our_friendship_offer_spares_the_target_only_while_the_window_is_open() {
+    let mut game = board(&[at(6, 12), at(24, 12), at(6, 24)]);
+    meet_and_explore(&mut game, 1);
+    meet(&mut game, 2);
+    // Seat 2's capital is nearer but walled past what a Ram or Tower opens.
+    let walled = capital_of(&game, 2);
+    set_walls(&mut game, walled, 300);
+    assert!(!seat(false).first_capital_spares_friendship(&game, 0, 1));
+    let mut on = seat(true);
+    assert!(
+        on.first_capital_spares_friendship(&game, 0, 1),
+        "the target"
+    );
+    assert!(
+        !on.first_capital_spares_friendship(&game, 0, 2),
+        "a rival whose capital is not the target is not spared"
+    );
+    on.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        on.first_capital_spares_friendship(&game, 0, 1),
+        "the opening"
+    );
+    let mut late = seat(true);
+    game.turn = 63;
+    assert!(
+        !late.first_capital_spares_friendship(&game, 0, 1),
+        "past t63"
+    );
+    late.conquest_first_turn = Some(1);
+    late.maintain_conquest_opening(&mut game, 0);
+    assert!(late.conquest_opening.is_none());
+}

@@ -73,6 +73,11 @@
 //!    captured city, and the between-captures peace desk stays shut. It
 //!    still asks for terms when the whole force is gone.
 //!
+//! 8. **No friendship with the target**: our own declared-friendship offer
+//!    (`befriend-the-strongest`) is withheld from the rival whose capital
+//!    the opening stands on or would name, since a friendship forbids the
+//!    declaration while it lasts.
+//!
 //! Everything else (Recovery and a threatened city still hold the march,
 //! `one-war-at-a-time`, the treasury, the bill) is the shipped opening.
 //! Inert with the flag off, without `early-conquest-opening`, and on any
@@ -430,6 +435,32 @@ impl AdvancedAi {
             .get("siege_tower")
             .and_then(|spec| spec.tech)
             .is_some_and(|tech| g.players[pid].techs.contains(&tech))
+    }
+
+    /// Whether our own friendship offer to `other` is withheld: a declared
+    /// friendship forbids a war declaration while it lasts, and on live Deity
+    /// boards 3 of 13 charted land capitals within 20 tiles at t45-55 were
+    /// already Declared Friends of the seat (London, Aduatuca, Seoul). True
+    /// while an opening stands on `other`, or while none stands, the window
+    /// is open, and `other`'s capital is the target the scan would name.
+    /// `false` with the gene off.
+    pub(super) fn first_capital_spares_friendship(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+    ) -> bool {
+        if !self.first_capital_active() {
+            return false;
+        }
+        if let Some(opening) = self.conquest_opening.as_ref() {
+            return opening.target == other;
+        }
+        !self.conquest_closed
+            && g.turn < g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE)
+            && self
+                .first_capital_target(g, pid)
+                .is_some_and(|(rival, _)| rival == other)
     }
 
     /// Siege Towers we hold or have queued.
