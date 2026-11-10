@@ -4554,6 +4554,36 @@ function CivvisReligionState.visibleCity(pid, city)
 end
 -- END visible foreign city religion
 
+-- BEGIN city banner faith rows
+-- The rows of a city banner's religion list: each faith's followers, its
+-- pressure per turn, and the lifetime pressure its tooltip prints.
+-- DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950 builds them from
+-- `pCityReligion:GetReligionsInCity()` (`Followers`, `Pressure`) and
+-- `pCityReligion:GetTotalPressureOnCity(religion)`; :2090-2094 prints
+-- `LOC_CITY_BANNER_RELIGIOUS_PRESSURE` and
+-- `LOC_CITY_BANNER_FOLLOWER_PRESSURE_TOOLTIP`. A failed read is an unknown (nil),
+-- never an empty list.
+function CivvisReligionState.cityFaiths(city)
+	local rows = {};
+	local ok = pcall(function()
+		local cityReligion = city:GetReligion();
+		for _, entry in pairs(cityReligion:GetReligionsInCity()) do
+			local id = entry.Religion;
+			local row = type(id) == "number" and id >= 0 and GameInfo.Religions[id] or nil;
+			rows[#rows + 1] = {
+				religion = row ~= nil and row.ReligionType or nil,
+				followers = entry.Followers,
+				pressure = entry.Pressure,
+				per_turn = type(id) == "number" and id >= 0
+					and cityReligion:GetTotalPressureOnCity(id) or nil,
+			};
+		end
+	end);
+	if not ok then return nil; end
+	return rows;
+end
+-- END city banner faith rows
+
 local function cityNextReligion(city)
 	local id = try(function() return city:GetReligion():GetNextReligion(); end, -1);
 	if id == nil or id < 0 then return nil; end
@@ -8258,6 +8288,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- falling fast reads identically to a stable one, and the same is true of
 			-- conversion. This is the `loyalty_per_turn` lesson applied to faith.
 			religion = cityReligion(city),
+			faiths = CivvisReligionState.cityFaiths(city),
 			religion_next = cityNextReligion(city),
 			religion_turns = try(function()
 				return city:GetReligion():GetTurnsToNextReligion();
@@ -8863,6 +8894,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 						theirCities[#theirCities + 1] = {
 							religion_observed = religionObserved,
 							religion = majorityReligion,
+							faiths = religionObserved and CivvisReligionState.cityFaiths(city) or nil,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
@@ -9449,6 +9481,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 						theirCities[#theirCities + 1] = {
 							religion_observed = religionObserved,
 							religion = majorityReligion,
+							faiths = religionObserved and CivvisReligionState.cityFaiths(city) or nil,
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function() return Locale.Lookup(city:GetName()); end, ""),

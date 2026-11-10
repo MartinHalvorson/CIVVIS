@@ -24,6 +24,17 @@ def state(units: list[tuple[int, int, int]]) -> dict:
     return {"kind": "state", "units": [{"id": i, "x": x, "y": y} for i, x, y in units]}
 
 
+def order(kind: str, subject: int, verb: str = "FORTIFY", turn: int = 5, reason: str | None = None) -> dict:
+    row = {"kind": kind, "order_kind": "unit", "verb": verb, "subject": subject, "turn": turn}
+    return row if reason is None else {**row, "reason": reason}
+
+
+def strike(unit: int, length: int = 2, end: tuple[int, int] = (3, 4), kind: str = "UNIT_APOSTLE") -> dict:
+    return {"kind": "strike", "verb": "ATTACK", "turn": 5, "unit": unit, "x": 3, "y": 4, "unit_kind": kind,
+            "native_move_path_known": True, "native_move_path_length": length,
+            "native_move_path_this_turn_end": {"x": end[0], "y": end[1], "turn": 1}}
+
+
 def noop(unit: int, frm: list[int], want: list[int], why: str = "cannot_start") -> dict:
     return {"kind": "move_noop", "unit": unit, "from": frm, "want": want, "why": why}
 
@@ -63,18 +74,79 @@ class Reports(unittest.TestCase):
 
     def test_failures_give_a_rate_and_collapse_numbers_in_reasons(self):
         rows = [
-            {"kind": "order_verified", "order_kind": "unit", "verb": "FORTIFY"},
-            {"kind": "order_failed", "order_kind": "unit", "verb": "FORTIFY", "reason": "gone:12"},
-            {"kind": "order_failed", "order_kind": "unit", "verb": "FORTIFY", "reason": "gone:99"},
+            order("order_verified", 1),
+            order("order_failed", 2, reason="gone:12"),
+            order("order_failed", 3, reason="gone:99"),
         ]
         row = ev.failures([game(self.root, "a", rows)])[0]
         self.assertEqual((row["total"], row["failed"]), (3, 2))
         self.assertAlmostEqual(row["rate"], 2 / 3)
         self.assertEqual(row["reasons"], [("gone:N", 2)])
 
+    def test_a_retried_order_is_one_order(self):
+        rows = [order("order_failed", 1, reason="stuck") for _ in range(3)]
+        row = ev.failures([game(self.root, "a", rows)])[0]
+        self.assertEqual((row["total"], row["failed"]), (1, 1))
+        self.assertEqual(row["reasons"], [("stuck", 1)])
+
+    def test_an_order_that_fails_then_works_did_not_fail(self):
+        rows = [order("order_failed", 1, reason="stuck"), order("order_verified", 1)]
+        row = ev.failures([game(self.root, "a", rows)])[0]
+        self.assertEqual((row["total"], row["failed"], row["recovered"]), (1, 0, 1))
+        self.assertEqual(row["reasons"], [])
+
+    def test_the_same_order_next_turn_is_another_order(self):
+        rows = [order("order_failed", 1, turn=5, reason="stuck"), order("order_failed", 1, turn=6, reason="stuck")]
+        self.assertEqual(ev.failures([game(self.root, "a", rows)])[0]["failed"], 2)
+
+    def test_the_same_turn_in_another_log_is_another_order(self):
+        logs = [game(self.root, name, [order("order_failed", 1, reason="stuck")]) for name in ("a", "b")]
+        self.assertEqual(ev.failures(logs)[0]["failed"], 2)
+
+    def test_most_failures_come_first_whatever_the_rate(self):
+        rows = [order("order_failed", 1, verb="RARE", reason="x")]
+        rows += [order("order_failed", n, verb="COMMON", reason="x") for n in (2, 3)]
+        rows += [order("order_verified", n, verb="COMMON") for n in (4, 5, 6, 7)]
+        self.assertEqual([row["verb"] for row in ev.failures([game(self.root, "a", rows)])], ["COMMON", "RARE"])
+
+    def test_every_sitting_of_a_game_belongs_to_that_game(self):
+        names = ["civvis-20261110T024805Z", "civvis-20261110T024805Z-cont1", "civvis-20261110T024805Z-cont12"]
+        self.assertEqual({ev.game_of(Path("/runs") / name / "events.jsonl") for name in names},
+                         {"civvis-20261110T024805Z"})
+
     def test_a_verb_with_arguments_groups_under_its_head(self):
         rows = [{"kind": "order_verified", "order_kind": "unit", "verb": "IMPROVE:FARM"}]
         self.assertEqual(ev.failures([game(self.root, "a", rows)])[0]["verb"], "IMPROVE")
+
+    def test_a_strike_with_no_host_path_is_named(self):
+        rows = [strike(1, length=0), order("order_failed", 1, verb="ATTACK", reason="target_unharmed")]
+        table = ev.strike_paths([game(self.root, "a", rows)])
+        self.assertEqual(dict(table[("religious", "no_path")]), {"missed": 1})
+
+    def test_a_strike_reaching_its_target_lands(self):
+        rows = [strike(1, end=(3, 4), kind="UNIT_WARRIOR"), order("order_verified", 1, verb="ATTACK")]
+        table = ev.strike_paths([game(self.root, "a", rows)])
+        self.assertEqual(dict(table[("military", "reaches_target")]), {"landed": 1})
+
+    def test_a_path_ending_elsewhere_stops_short(self):
+        rows = [strike(1, end=(2, 4)), order("order_failed", 1, verb="ATTACK", reason="x")]
+        self.assertEqual(dict(ev.strike_paths([game(self.root, "a", rows)])[("religious", "stops_short")]), {"missed": 1})
+
+    def test_a_resent_strike_counts_once(self):
+        rows = [strike(1, length=0), strike(1, length=0), order("order_failed", 1, verb="ATTACK", reason="x")]
+        self.assertEqual(ev.strike_paths([game(self.root, "a", rows)])[("religious", "no_path")]["missed"], 1)
+
+    def test_a_retry_that_worked_is_a_landed_strike(self):
+        rows = [strike(1, end=(3, 4)), order("order_failed", 1, verb="ATTACK", reason="x"),
+                order("order_verified", 1, verb="ATTACK")]
+        self.assertEqual(dict(ev.strike_paths([game(self.root, "a", rows)])[("religious", "reaches_target")]), {"landed": 1})
+
+    def test_a_strike_with_no_verdict_is_not_guessed(self):
+        self.assertEqual(dict(ev.strike_paths([game(self.root, "a", [strike(1, length=0)])])), {})
+
+    def test_unread_path_data_is_unknown(self):
+        rows = [{**strike(1), "native_move_path_known": False}, order("order_verified", 1, verb="ATTACK")]
+        self.assertIn(("religious", "unknown"), ev.strike_paths([game(self.root, "a", rows)]))
 
     def test_a_noop_is_judged_by_the_next_state(self):
         rows = [

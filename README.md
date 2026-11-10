@@ -1,6 +1,6 @@
 # CIVVIS
 
-Design & watch AI simulations yourself, or try a single player CIVVIS.ai game at [civvis.ai](https://www.civvis.ai). Sill a work in progress but mostly operational.
+Design & watch Civ 6 AI simulations yourself, or try a single player game against CIVVIS AI at [civvis.ai](https://www.civvis.ai). Sill a work in progress but mostly operational.
 
 Highest Level Won by Victory Type:
 - Lv 8 - [Science](https://www.youtube.com/watch?v=Gu5cxEIGTuE), [Diplo](https://www.youtube.com/watch?v=CQQM2uk4AkA)

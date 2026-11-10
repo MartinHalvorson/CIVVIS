@@ -669,11 +669,12 @@ class SimulationWorldRotation(unittest.TestCase):
 const WORLD_SPIN_STORAGE_KEY = "spin", localStorage = {setItem() {}};
 let state = {}, SPEC = false, WORLD_SPIN = true;
 let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
-let cameraFollowManual = false, wraps = true;
+let cameraFollowManual = false, wraps = true, worldSpinPeriodMs = 36000;
 const REDUCED_MOTION_QUERY = {matches:false};
+const spinSpeedBar = null;
 function mapWrapsX() { return wraps; }
 const attributes = {};
-const spinButton = {title:"", setAttribute:(k,v) => attributes[k] = v};
+const spinButton = {title:"", setAttribute:(k,v) => attributes[k] = v, style:{setProperty() {}}};
 function expect(condition, message) { if (!condition) throw Error(message); }
 updateSpinButton();
 expect(!spinAvailable() && !spinRunning(), "player game rotates with saved spin enabled");
@@ -702,6 +703,62 @@ expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)
 
+    def test_the_speed_bar_runs_from_a_halt_to_one_turn_a_second(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        start = source.index("const WORLD_SPIN_SPEED_STORAGE_KEY")
+        speeds = source[start:source.index("\n", source.index("let worldSpinPeriodMs", start))]
+        start = source.index("function spinAvailable()")
+        block = source[start:source.index("function advanceWorldSpin(dt)", start)]
+        start = source.index("if (spinSpeedBar) {\n  spinSpeedBar.addEventListener")
+        wiring = source[start:source.index("\n}\n", start) + 3]
+        stubs = r'''
+const WORLD_SPIN_PERIOD_MS = 36000, WORLD_SPIN_STORAGE_KEY = "spin";
+const saved = new Map();
+const localStorage = {getItem:k => saved.has(k) ? saved.get(k) : null, setItem:(k,v) => saved.set(k, v)};
+let state = null, SPEC = true, WORLD_SPIN = true, wraps = true;
+let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null, cameraFollowManual = false;
+const REDUCED_MOTION_QUERY = {matches:false};
+function mapWrapsX() { return wraps; }
+const window = {addEventListener() {}};
+const heard = {};
+const spinSpeedBar = {value:"0", attributes:{}, setAttribute(k, v) { this.attributes[k] = v; },
+  addEventListener(name, listener) { heard[name] = listener; }};
+const spinSpeedPanel = {hidden:false, classList:{add() {}, remove() {}}};
+const spinButton = {title:"", setAttribute() {}, style:{setProperty() {}}};
+'''
+        scenarios = r'''
+function expect(condition, message) { if (!condition) throw Error(message); }
+function drag(...notches) { for (const n of notches) { spinSpeedBar.value = String(n); heard.input(); } heard.change(); }
+updateSpinButton();
+expect(worldSpinPeriodAt(WORLD_SPIN_DEFAULT_SPEED) === 36000, "the default notch is not today's pace");
+expect(Math.abs(worldSpinPeriodAt(WORLD_SPIN_TOP_SPEED) - 1000) < 1e-6, "the rabbit is not one turn a second");
+expect(worldSpinPeriodAt(1) > 36000, "the turtle is not slower than the default");
+expect(spinSpeedBar.value === "8", "the bar does not open at the default pace");
+drag(12, 20);
+expect(WORLD_SPIN && Math.abs(worldSpinPeriodMs - 1000) < 1e-6, "the top of the bar is not the top speed");
+expect(saved.get(WORLD_SPIN_SPEED_STORAGE_KEY) === "20", "the chosen speed is not remembered");
+expect(spinSpeedBar.attributes["aria-valuetext"] === "One full turn a second", "the bar does not read out its speed");
+drag(10, 4, 1, 0);
+expect(!WORLD_SPIN && spinSpeedBar.value === "0", "the very bottom does not halt the world");
+expect(worldSpinSpeed === 20 && saved.get(WORLD_SPIN_SPEED_STORAGE_KEY) === "20", "the way down to halt overwrote the speed");
+expect(spinSpeedBar.attributes["aria-valuetext"] === "Halted", "the bar does not read out a halt");
+setWorldSpin(true);
+expect(spinSpeedBar.value === "20" && worldSpinPeriodMs === worldSpinPeriodAt(20), "the button does not bring the speed back");
+stopWorldSpin();
+expect(spinSpeedBar.value === "0", "a hand on the world leaves the bar reading a speed");
+drag(3);
+expect(WORLD_SPIN && worldSpinSpeed === 3, "raising the bar from a halt does not turn the world");
+for (const value of ["0", "21", "1.5", "fast"]) {
+  saved.set(WORLD_SPIN_SPEED_STORAGE_KEY, value);
+  expect(savedWorldSpinSpeed() === WORLD_SPIN_DEFAULT_SPEED, "a bad saved speed was believed: " + value);
+}
+state = {view_player:1}; updateSpinButton();
+expect(spinSpeedPanel.hidden, "the bar offers a speed while the world is held for Watch as");
+'''
+        done = subprocess.run([NODE, "-e", stubs + speeds + block + wiring + scenarios],
+                              capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
 
 class PlanetEmpireNames(unittest.TestCase):
     """A civ's name is a spot on the ground that the camera only projects."""
@@ -721,6 +778,136 @@ class PlanetEmpireNames(unittest.TestCase):
         self.assertIn("planetProject(label.at, camera, scale, centerX, centerY)", painter)
         start = source.index("function animTick(now)")
         self.assertIn("planetEmpireLabelsSettling()", source[start:])
+
+    def test_names_are_the_top_of_the_map_under_only_what_flies(self):
+        source = self.source()
+        start = source.index("function drawPlanetMap()")
+        frame = source[start:source.index("\n}\n", start)]
+        for names in (frame.index("drawPlanetEmpireLabels(cx,"),
+                      frame.index("paintPlanetEmpireLabelLayer(")):
+            for below in ("drawCityIcon(cx", "drawCityNameplate(", "drawStrategicUnitCounter(",
+                          "drawPlanetBlasts("):
+                self.assertLess(frame.index(below), names, below)
+            self.assertLess(names, frame.index("drawPlanetSky("))
+        # The GPU path's own layer has to clear the map canvas, take no input
+        # away from it, and go when the names move back onto the canvas.
+        start = source.index("function paintPlanetEmpireLabelLayer(")
+        layer = source[start:source.index("\n}\n", start)]
+        self.assertIn("cv.after(canvas)", layer)
+        self.assertIn('canvas.style.zIndex = "1"', layer)
+        self.assertIn("gpu.canvas.style.cssText", layer)
+        self.assertIn('"pointer-events:none"', source)
+        self.assertIn('PLANET_GPU.labels.canvas.style.display = "none"', frame)
+        # That layer is above the rockets' canvas, so it is only safe while
+        # nothing is flying.
+        start = source.index("function planetGpuEligible(")
+        eligible = source[start:source.index("\n}\n", start)]
+        self.assertIn("activeSkyLaunches().length", eligible)
+
+    @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+    def test_a_launch_leaving_the_frame_leaves_its_name_waiting_at_the_edge(self):
+        source = self.source()
+        def between(first, last):
+            start = source.index(first)
+            return source[start:source.index(last, start)]
+        code = (between("function activeSkyLaunches(", "// What a launch is called on screen")
+                + between("// What a launch is called on screen", "// When a body stops being a marble")
+                + between("const SKY_NOSE_RATE", "// A body nobody could name is just a light."))
+        scenarios = r"""
+let T = 0, painted = [], panels = [];
+const performance = {now:() => T};
+const anim = {skyLaunches:[]};
+const nothing = () => {};
+const cx = {globalAlpha:1, save:nothing, restore:nothing, strokeText:nothing, beginPath:nothing,
+  moveTo:nothing, lineTo:nothing, stroke:nothing, arc:nothing, rect:nothing, clip:nothing,
+  fill:nothing, translate:nothing, rotate:nothing, scale:nothing,
+  measureText:text => ({width:text.length * 6}),
+  fillText(text, x, y) { painted.push({text, x, y, alpha:this.globalAlpha}); }};
+function civName() { return "Gran Colombia"; }
+function skyWidgetBoxes() { return panels; }
+function pcol() { return "#fff"; }
+function skySmooth(value) { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }
+function skyRocketGeometry() { return {length:12, halfWidth:2}; }
+function drawMissionRocket() {}
+function drawLaunchSmoke() {}
+function expect(condition, message) { if (!condition) throw Error(message); }
+const near = (a, b) => Math.abs(a - b) < .01;
+const STAGE = {left:0, top:0, right:800, bottom:500};
+function film(end, leaving = true) {
+  const start = {x:400, y:300};
+  return {start, end, entering:false, leaving, law:clock => clock,
+          pointAt:p => ({x:start.x + (end.x - start.x) * p, y:start.y + (end.y - start.y) * p})};
+}
+function flight(mission = "moon") {
+  const launch = {playerId:1, mission, t0:0, duration:1000, endsAt:1000};
+  anim.skyLaunches.push(launch);
+  return launch;
+}
+function paint(launch, route, now, stage = STAGE, pixel = 1) {
+  T = now; painted = [];
+  if (activeSkyLaunches(now).includes(launch))
+    drawLaunchFlight(launch, {id:1}, {rocket:"saturn_v"}, route, 4, now, pixel, stage);
+  return painted[painted.length - 1];
+}
+
+expect(skyLaunchLabel({playerId:1, mission:"moon"}) === "GRAN COLOMBIA – MOON", "no dash in the label");
+expect(skyLaunchLabel({playerId:1, mission:"expedition"}) === "GRAN COLOMBIA – EXOPLANET", "expedition label");
+
+// Out through the bottom: the name stops at the edge, inside the frame, readable.
+const down = flight(), exit = film({x:300, y:560});
+const flying = paint(down, exit, 950);
+expect(near(flying.alpha, .88), "the name faded with the rocket on the way out: " + flying.alpha);
+const first = paint(down, exit, 1050);
+expect(first && first.y <= 497 && near(first.alpha, .88), "name is not readable at the edge");
+expect(!skyLaunchInFlight(1, "moon", 1050), "a waiting name holds up the craft it carried");
+expect(activeSkyLaunches(1050).includes(down), "launch ended with its name");
+// A second or so, and it does not move, whatever the camera does to the route.
+const later = paint(down, film({x:600, y:560}), 2000);
+expect(later.x === first.x && later.y === first.y, "a waiting name slid along the edge");
+expect(near(later.alpha, .88), "name faded before its second was up: " + later.alpha);
+const going = paint(down, exit, 2150);
+expect(going.alpha < .88 && going.alpha > 0, "name did not fade at the end of its wait");
+expect(!paint(down, exit, 2300) && !anim.skyLaunches.length, "launch outstayed its pause");
+
+// Out through the top stops below the masthead's shadow.
+const up = flight();
+paint(up, film({x:300, y:-60}), 950);
+const top = paint(up, film({x:300, y:-60}), 1100);
+expect(top.y >= SKY_LABEL_TOP, "name sits in the masthead's shadow");
+anim.skyLaunches.length = 0;
+
+// Flights that stay in the picture are over when their film is.
+const landing = flight(), landed = film({x:100, y:100}, false);
+paint(landing, landed, 900);
+expect(!paint(landing, landed, 1000) && !anim.skyLaunches.length, "a landing got a pause");
+const hop = flight(), hopped = film({x:400, y:256});
+paint(hop, hopped, 900);
+expect(!paint(hop, hopped, 1000) && !anim.skyLaunches.length, "a hop inside the frame got a pause");
+
+// A panel over the spot, and a second name arriving there, both move it clear.
+panels = [{left:240, right:360, top:440, bottom:540}];
+const under = flight(), route = film({x:300, y:560});
+paint(under, route, 950);
+const clear = paint(under, route, 1100), half = cx.measureText(clear.text).width / 2 + 4;
+expect(clear.x + half <= 240.5 || clear.x - half >= 359.5 || clear.y <= 440.5, "name is under a panel");
+const twin = flight();
+paint(twin, route, 950);
+const other = paint(twin, route, 1100);
+expect(Math.abs(other.y - clear.y) >= 14 || Math.abs(other.x - clear.x) >= half * 2, "two names overprint");
+panels = []; anim.skyLaunches.length = 0;
+
+// A flat board's frame is centred and scaled, and the name stays on it.
+const scale = 2, board = {left:-800, right:800, top:-500, bottom:500};
+const flat = flight(), rise = {...film({x:0, y:-620}), start:{x:0, y:0}, pointAt:p => ({x:0, y:-620 * p})};
+paint(flat, rise, 950, board, scale);
+const onBoard = paint(flat, rise, 1100, board, scale);
+expect(near(onBoard.y, board.top + SKY_LABEL_TOP * scale), "board name is off its edge: " + onBoard.y);
+const zoomed = {left:-400, right:400, top:-250, bottom:250};
+const held = paint(flat, rise, 1300, zoomed, 1);
+expect(near(held.y, zoomed.top + SKY_LABEL_TOP), "board name did not keep its place on screen");
+"""
+        done = subprocess.run([NODE, "-e", code + scenarios], capture_output=True, text=True, timeout=15)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
     @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
     def test_a_name_is_fixed_to_the_ground_while_the_world_turns(self):

@@ -39,6 +39,19 @@ class UncaughtTests(unittest.TestCase):
         self.assertNotIn("await Promise.race", source)
 
 
+class MapCanvasTests(unittest.TestCase):
+    def test_the_painted_check_reads_the_map_canvas_by_id(self):
+        # The first canvas in the document became the WebGL surface under the
+        # map, which has no 2D context: every publish failed with -1 colours.
+        self.assertIn("document.getElementById('map')", verify.MAP_CANVAS_COLOURS_JS)
+        self.assertNotIn("querySelector('canvas')", verify.MAP_CANVAS_COLOURS_JS)
+
+    def test_the_viewer_still_names_its_map_canvas(self):
+        index = verify.pathlib.Path(verify.__file__).resolve().parent.parent
+        html = (index / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(html.count('<canvas id="map">'), 1)
+
+
 class MapDeliveryTests(unittest.TestCase):
     def test_current_lane_requires_a_patch(self):
         problems = verify.map_delivery_problems(

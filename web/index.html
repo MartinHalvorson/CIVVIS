@@ -1554,25 +1554,30 @@
     width: 132px; height: 30px; margin: 0; padding: 0;
     -webkit-appearance: none; appearance: none; background: transparent;
   }
-  #skyladder::-webkit-slider-runnable-track {
+  #skyladder::-webkit-slider-runnable-track,
+  #spin-speed-bar::-webkit-slider-runnable-track {
     height: 6px; border-radius: 3px; border: 1px solid #3c554c;
     background: linear-gradient(90deg, #0f1d19, #47775f);
   }
-  #skyladder::-moz-range-track {
+  #skyladder::-moz-range-track,
+  #spin-speed-bar::-moz-range-track {
     height: 6px; border-radius: 3px; border: 1px solid #3c554c;
     background: linear-gradient(90deg, #0f1d19, #47775f);
   }
-  #skyladder::-webkit-slider-thumb {
+  #skyladder::-webkit-slider-thumb,
+  #spin-speed-bar::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 12px; height: 18px; margin-top: -7px; border-radius: 4px;
     border: 1px solid #7a6533; background: linear-gradient(#f6e8b8, #d7b66a);
     box-shadow: 0 1px 4px #0008;
   }
-  #skyladder::-moz-range-thumb {
+  #skyladder::-moz-range-thumb,
+  #spin-speed-bar::-moz-range-thumb {
     width: 12px; height: 18px; border-radius: 4px;
     border: 1px solid #7a6533; background: linear-gradient(#f6e8b8, #d7b66a);
   }
-  #skyladder:focus-visible { outline: 2px solid #d7b66a; outline-offset: 3px; }
+  #skyladder:focus-visible,
+  #spin-speed-bar:focus-visible { outline: 2px solid #d7b66a; outline-offset: 3px; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
      label: the needle turns with the world and the dial stays put. A
      civilization that cannot yet find north has the dial and no needle. */
@@ -1597,9 +1602,9 @@
   }
   /* Its neighbour is the same kind of thing: an instrument rather than a
      label. The button is a small globe, and while the world is turning its
-     meridian sweeps at the world's own pace — one pass every thirty-six
-     seconds, the period the viewer is watching — so the control says what the
-     map is doing without being read. A held world holds its meridian still,
+     meridian sweeps at the world's own pace, whatever the bar above it is set
+     to, so the control says what the map is doing without being read. A held
+     world holds its meridian still,
      and the gold below says the same thing again for anyone who cannot see
      motion. */
   #spin { position: relative; cursor: pointer; }
@@ -1622,7 +1627,7 @@
     border: 1px solid currentColor; opacity: .75; transform: scaleX(.45);
   }
   #spin[aria-pressed="true"]:not(:disabled) #spin-globe::after {
-    animation: spinMeridian 36s ease-in-out infinite;
+    animation: spinMeridian var(--world-spin-period, 36s) ease-in-out infinite;
   }
   @keyframes spinMeridian {
     0%, 100% { transform: scaleX(1); }
@@ -1632,6 +1637,42 @@
   /* A world with no axis to turn about is not a world that has been stopped,
      so a disabled control drops the lit state as well as the motion. */
   #spin:disabled { cursor: default; opacity: .5; }
+  #spin-wrap { position: relative; flex: 0 0 34px; width: 34px; height: 34px; }
+  #zoomctl #spin { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  /* The speed bar: a volume slider for the turn. It opens over the button and
+     stays open while the pointer is on either, and the marks stand beside the
+     positions they name, rabbit at the top, turtle low down, halt at the very
+     bottom. The rotated range keeps one set of track styles with the sky bar. */
+  #spin-speed {
+    position: absolute; left: 50%; bottom: calc(100% + 12px); z-index: 2;
+    width: 58px; height: 184px; margin-left: -29px;
+    border-radius: 12px; background: #090b0def; border: 1px solid #41484c;
+    box-shadow: 0 12px 26px #0006;
+    opacity: 0; pointer-events: none;
+  }
+  #spin-speed[hidden] { display: none; }
+  /* The gap between button and bar still counts as being on the control. */
+  #spin-speed::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 14px;
+  }
+  /* Closed by opacity rather than display: Tab has to be able to land on a
+     bar that only opens once something in here has the focus. */
+  #spin-wrap:hover #spin-speed,
+  #spin-wrap:has(:focus-visible) #spin-speed,
+  #spin-speed.held { opacity: 1; pointer-events: auto; }
+  #spin-speed-bar {
+    position: absolute; left: -62px; top: 82px; width: 164px; height: 18px;
+    margin: 0; padding: 0; transform: rotate(-90deg); touch-action: none;
+    -webkit-appearance: none; appearance: none; background: transparent;
+    cursor: pointer;
+  }
+  .spin-speed-mark {
+    position: absolute; left: 31px; width: 22px; height: 16px;
+    font-size: 14px; line-height: 16px; text-align: center; pointer-events: none;
+  }
+  .spin-speed-mark[data-mark="fast"] { top: 7px; }
+  .spin-speed-mark[data-mark="slow"] { top: 142px; }
+  .spin-speed-mark[data-mark="halt"] { top: 159px; font-size: 11px; color: #d7b66a; }
   @media (prefers-reduced-motion: reduce) {
     #spin #spin-globe::after { animation: none; }
   }
@@ -2262,6 +2303,12 @@
     width: 100%;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
   }
+  /* One more turn says on a smaller second line what it will play to. */
+  .winner-again-note {
+    display: block; margin-top: 3px;
+    font-size: var(--type-label); letter-spacing: .01em; opacity: .85;
+    text-wrap: balance;
+  }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;
@@ -2665,32 +2712,81 @@
   .war-loss-specialty-mark { margin-right: 3px; color: var(--gold-bright); text-shadow: 0 0 6px #d7b66a88; }
   .war-loss-side:last-child .war-loss-specialty-mark { order: 2; margin-right: 0; margin-left: 3px; }
   .war-loss-none { color: var(--faint); font-style: italic; }
-  .politics-list { display: grid; gap: 10px; }
-  .politics-heading {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-    padding-bottom: 3px; border-bottom: 1px solid var(--line);
-    color: var(--gold); font-size: var(--type-label); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  /* Civ VI's standard light green and blue: COLOR_STANDARD_GREEN_LT and
+     COLOR_STANDARD_BLUE_LT in the game's PlayerStandardColors.xml. */
+  /* One row and one column per civilization, inside its own scroller so the
+     deck keeps its width. Where the deck pins its labels the scroller is held
+     to the reading window between them, because a box any taller would hand
+     vertical scrolling to the deck and the column names would scroll away with
+     the top of the section. */
+  #politicssec .sec { padding: 10px 8px; }
+  .politics-list {
+    --politics-friend: #79e077; --politics-alliance: #74a3f3; --politics-war: #e58a7a;
+    --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px;
+    position: relative; overflow: auto; max-width: 100%; max-height: 220px;
+    overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
-  .politics-heading.war { color: #e58a7a; }
-  .politics-heading small { color: var(--faint); font-size: inherit; font-weight: 600; letter-spacing: 0; }
-  .politics-row {
-    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px;
-    padding: 4px 0; border-bottom: 1px solid #29413b66; font-size: var(--type-secondary);
+  /* The window less the scroller's bottom inset and this section's own padding. */
+  #side.deck-stops .politics-list { max-height: calc(var(--deck-window) - 43px); }
+  .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
+  .politics-matrix th, .politics-matrix td { padding: 0; }
+  .politics-matrix tbody td, .politics-matrix thead th {
+    min-width: var(--politics-cell); text-align: center;
+    border-right: 1px solid #29413b66; border-bottom: 1px solid #29413b66;
   }
-  .politics-pair { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; color: var(--text); font-weight: 650; }
-  .politics-civ { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; }
+  .politics-matrix tbody td { height: var(--politics-cell); }
+  .politics-matrix tbody td.self { background: #ffffff0d; }
+  .politics-matrix tbody tr:hover td:not(.self), .politics-matrix col.politics-crossed { background: #ffffff0a; }
+  /* Both rails are opaque so that what scrolls under them cannot show through. */
+  .politics-matrix thead th, .politics-matrix tbody th, .politics-legend { position: sticky; background: var(--politics-ground); }
+  .politics-matrix thead th { top: 0; z-index: 2; vertical-align: bottom; padding: 3px 0; box-shadow: 0 1px 0 var(--line); }
+  .politics-matrix tbody th { left: 0; z-index: 1; text-align: left; font-weight: 650; box-shadow: 1px 0 0 var(--line); }
+  .politics-matrix tbody tr:hover th, .politics-matrix thead th.politics-crossed { background: var(--politics-lit); }
+  .politics-matrix tbody th > span {
+    display: flex; align-items: center; gap: 4px; max-width: 96px; padding-right: 6px;
+  }
+  .politics-matrix thead th > span {
+    display: inline-flex; align-items: center; gap: 4px; font-weight: 650;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+  }
+  .politics-legend {
+    top: 0; left: 0; z-index: 3; vertical-align: bottom; padding: 0 6px 3px 0; box-shadow: 1px 1px 0 var(--line);
+    color: var(--muted); font-size: var(--type-label); text-align: left; white-space: nowrap;
+  }
+  .politics-legend > span { display: flex; align-items: center; gap: 4px; min-height: 14px; }
+  .politics-matrix .war-entity-link { overflow: hidden; color: var(--text); font-weight: inherit; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+  .politics-matrix .war-entity-link:hover, .politics-matrix .war-entity-link:focus-visible { text-decoration: underline; }
   .politics-chip {
-    flex: 0 0 auto; align-self: center; box-sizing: border-box; width: 9px; height: 9px;
+    flex: 0 0 auto; box-sizing: border-box; width: 9px; height: 9px;
     border: 1.5px solid; border-radius: 50%;
   }
-  .politics-civ .war-entity-link { text-decoration: none; }
-  .politics-civ .war-entity-link:hover, .politics-civ .war-entity-link:focus-visible { text-decoration: underline; }
-  .politics-joiner { color: var(--faint); font-weight: 500; }
-  .politics-row.alliance .politics-joiner { color: var(--gold); }
-  .politics-row.war .politics-joiner { color: #e58a7a; font-style: italic; }
-  .politics-note { margin-left: auto; color: var(--muted); font-size: var(--type-label); white-space: nowrap; }
-  .politics-none { padding: 4px 0 0; color: var(--faint); font-size: var(--type-secondary); font-style: italic; }
-  .politics-caveat { padding: 4px 0 0; color: var(--faint); font-size: var(--type-label); }
+  .politics-mark {
+    position: relative; isolation: isolate; display: inline-grid; place-items: center; flex: 0 0 auto;
+    width: 14px; height: 14px; vertical-align: middle;
+    color: #08110f; font-size: 9px; font-style: normal; font-weight: 800; line-height: 1;
+  }
+  .politics-mark::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; background: var(--mark-color);
+    -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat;
+  }
+  .politics-mark.war {
+    --mark-color: var(--politics-war);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2.5 2.5 12 12M13.5 2.5 4 12M9.5 13.5l4-4M2.5 9.5l4 4'/%3E%3C/svg%3E");
+  }
+  .politics-mark.alliance {
+    --mark-color: var(--politics-alliance);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 .8 14.2 3v5c0 3.7-2.7 6.1-6.2 7.2C4.5 14.1 1.8 11.7 1.8 8V3z'/%3E%3C/svg%3E");
+  }
+  .politics-mark.friendship {
+    --mark-color: var(--politics-friend);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 14.6S1 10.3 1 5.4A3.8 3.8 0 0 1 8 3.4a3.8 3.8 0 0 1 7 2c0 4.9-7 9.2-7 9.2z'/%3E%3C/svg%3E");
+  }
+  .politics-mark.team {
+    --mark-color: var(--politics-alliance);
+    --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m8 .9 2.2 4.6 5 .7-3.6 3.5.9 5L8 12.3 3.5 14.7l.9-5L.8 6.2l5-.7z'/%3E%3C/svg%3E");
+  }
+  .politics-none { color: var(--faint); font-size: var(--type-secondary); font-style: italic; }
+  .politics-caveat { padding: 6px 0 0; color: var(--faint); font-size: var(--type-label); }
   .war-moments { padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; }
   .war-moment { display: grid; grid-template-columns: 34px 1fr; gap: 6px; color: #cad5cf; font-size: var(--type-label); }
   .war-moment em { color: var(--faint); font-style: normal; font-weight: 800; letter-spacing: .04em; }
@@ -5297,6 +5393,21 @@
     background: linear-gradient(180deg, #f3d995, #c9a24f);
   }
   #fd-intro-go:hover, #fd-intro-go:focus-visible { filter: brightness(1.08); outline: 2px solid #fff3cf; outline-offset: 2px; }
+  /* What single player is, said at the start of each new game. Above the main
+     menu too, because a game begun from there opens its leader intro at once:
+     the player acknowledges this and finds the intro waiting underneath. */
+  #solo-notice {
+    position: fixed; inset: 0; z-index: 9100; display: grid; place-items: center;
+    padding: 16px; background: #050b09b8;
+  }
+  #solo-notice[hidden] { display: none; }
+  .solo-notice-card {
+    box-sizing: border-box; width: min(520px, 100%); max-height: 100%; overflow: auto;
+    padding: clamp(16px, 3vmin, 26px); color: var(--text);
+    border: 1px solid #9f8050; border-radius: 18px;
+    background: radial-gradient(circle at 25% 0, #3a3024f8, #091310fc 62%);
+    box-shadow: 0 32px 120px #000f, inset 0 1px #ffffff17;
+  }
   /* Payoffs: what a turn delivered, across the top and clear of the panels. */
   #moments {
     /* Above the map's panels and under the screens (14 and up): a banner over
@@ -5418,7 +5529,7 @@
     body.civ6-frame #ubar .ubar-head { position: sticky; left: 0; margin-bottom: 5px; }
     body.civ6-frame #ubar > button { display: inline-block; margin: 0 4px 0 0; padding: 7px 9px; }
     body.civ6-frame .minimap-frame, body.civ6-frame #mapareaset, body.civ6-frame #compass,
-    body.civ6-frame #spin, body.civ6-frame #paneltoggle, body.civ6-frame .civtop-era { display: none; }
+    body.civ6-frame #spin-wrap, body.civ6-frame #paneltoggle, body.civ6-frame .civtop-era { display: none; }
     body.civ6-frame #map-controls-dock { bottom: 158px; right: auto; width: auto; }
     body.civ6-frame #notify { bottom: 158px; }
     body.civ6-frame #lens-picker { bottom: 208px; width: min(270px, calc(100% - 24px)); }
@@ -5464,6 +5575,15 @@
 </head>
 <body aria-busy="false">
 <div id="moments" aria-live="polite"></div>
+<div id="solo-notice" hidden>
+  <section class="solo-notice-card" role="dialog" aria-modal="true" aria-labelledby="solo-notice-title">
+    <div class="capture-kicker">Heads up</div>
+    <div class="capture-title" id="solo-notice-title">Single player is very questionable right now</div>
+    <p class="capture-copy">I haven't really played much of it myself yet. Feel free to give it a shot, but just a warning: it isn't really polished at all.</p>
+    <p class="capture-copy">Auto-play N turns is probably the most interesting bit of the single-player experience at the moment. It's at the top of the left panel: pick how many turns and press the button.</p>
+    <div class="capture-actions"><button id="solo-notice-ack" class="primary" type="button">Ack</button></div>
+  </section>
+</div>
 <div id="frontdoor" role="dialog" aria-modal="true" aria-label="CIVVIS main menu" hidden>
   <section class="fd-menu" id="fd-menu">
     <header>
@@ -5577,7 +5697,16 @@
           title="Map lenses" aria-label="Map lenses">◎</button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-        <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
+        <div id="spin-wrap">
+          <button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn"><span id="spin-globe"></span></button>
+          <div id="spin-speed" role="group" aria-label="How fast the world turns">
+            <input id="spin-speed-bar" type="range" min="0" max="20" step="1" value="0"
+              aria-label="World turning speed">
+            <span class="spin-speed-mark" data-mark="fast" aria-hidden="true">&#x1F407;</span>
+            <span class="spin-speed-mark" data-mark="slow" aria-hidden="true">&#x1F422;</span>
+            <span class="spin-speed-mark" data-mark="halt" aria-hidden="true">&#x25A0;</span>
+          </div>
+        </div>
         <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
       </div>
       <div id="skynav" hidden role="group" aria-label="Sky controls">
@@ -6057,9 +6186,8 @@
         </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
-          <option value="single">Single player</option>
+          <option value="single">Single player - WIP</option>
           <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
-          <option disabled>Multiplayer · later</option>
         </select></label>
         <div id="civ6-status">
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
@@ -6360,13 +6488,16 @@
       <button class="primary" id="setup-start" type="button" hidden>Start new game</button>
       </div>
     </details>
-    <details class="sidebar-section" id="politicssec" data-section="world-politics" open name="deck-section">
+    <!-- The key is new so that readers whose browsers saved this section open while
+         it opened by default also start with it collapsed. -->
+    <details class="sidebar-section" id="politicssec" data-section="world-politics-v2" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚖</span><span>World politics</span></span>
         <span class="section-meta"><span class="event-scope" id="politicsscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec">
         <div id="worldpolitics" class="politics-list"></div>
+        <div id="politicscaveat" class="politics-caveat" hidden>Civ VI reports pacts for our own seat only, so rival pacts are not shown.</div>
       </div>
     </details>
 
