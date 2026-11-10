@@ -670,6 +670,9 @@ mod national_park_tests;
 mod belief_runtime_tests;
 
 #[cfg(test)]
+mod religion_belief_count_tests;
+
+#[cfg(test)]
 mod governor_runtime_tests;
 
 #[cfg(test)]

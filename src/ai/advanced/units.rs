@@ -327,7 +327,7 @@ impl AdvancedAi {
         // `apostle-evangelizes-unspent`: the host refuses an Apostle that has
         // spent a charge. See `advanced/apostle_evangelizes_unspent.rs`.
         if unit.kind == "apostle"
-            && g.players[pid].religion_beliefs.len() < 4
+            && g.religion_belief_count(pid) < 4
             && self.apostle_may_evangelize(g, uid)
         {
             let objective = if g.has_ability(pid, "taxis") {
