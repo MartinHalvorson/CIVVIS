@@ -5492,6 +5492,15 @@ pub const GENES: &[Gene] = &[
     // A Culture seat's culture claims pass it at peace. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-seat-builds-past-the-deterrent", field: "culture_seat_builds_past_the_deterrent", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_builds_past_the_deterrent, disable: AdvancedAi::disable_culture_seat_builds_past_the_deterrent },
+    // Live Deity Kristina 11-10: no Artifact dug before t182 in six games with a
+    // median four own Antiquity Sites; one Museum, an Archaeologist behind the
+    // claims, a digger that idled beside a site. Carries
+    // `culture-digs-one-museum`. Opt-in; see `advanced/culture_digs_every_site.rs`.
+    Gene { tag: "culture-digs-every-site", field: "culture_digs_every_site", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_every_site, disable: AdvancedAi::disable_culture_digs_every_site },
+    // Live Deity Kristina 11-10: Pingala held Curator in a city with no Great
+    // Works for 30-55 turns while 3-5 stood elsewhere. Opt-in; see
+    // `advanced/curator_sits_with_the_works.rs`.
+    Gene { tag: "curator-sits-with-the-works", field: "curator_sits_with_the_works", kind: Kind::OptIn, enable: AdvancedAi::enable_curator_sits_with_the_works, disable: AdvancedAi::disable_curator_sits_with_the_works },
     // `culture-faith-site-per-theater`: one Holy Site per Theater city, Faith
     // claims up to twenty a city, and Astrology once a Theater stands. Live
     // Deity Kristina 11-10 held 0-2 Holy Sites and 0-15 Faith a turn at t100,
@@ -5538,6 +5547,11 @@ pub const GENES: &[Gene] = &[
     // Kristina Deity 11-10: a Great Musician idled 40 turns and an Artist 27
     // with no slot. See `advanced/kristina_fills_to_theme.rs`.
     Gene { tag: "kristina-fills-to-theme", field: "kristina_fills_to_theme", kind: Kind::OptIn, enable: AdvancedAi::enable_kristina_fills_to_theme, disable: AdvancedAi::disable_kristina_fills_to_theme },
+    // Live Deity Kristina 11-10: three placed works sold to rivals, a Writing in
+    // the Palace while Amphitheaters stood empty and a Musician idled 55 turns,
+    // Artists idle for want of a Museum. Opt-in; see
+    // `advanced/great_works_never_wait.rs`.
+    Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // ---- append: l-o ------------------------------------------------
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
