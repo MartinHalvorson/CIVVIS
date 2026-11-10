@@ -94,11 +94,12 @@ impl AdvancedAi {
     /// more. A queue at work is left alone.
     ///
     /// The governors arm to about two soldiers a city and then build for a
-    /// future this world does not have. Measured on the stock site world, 100
-    /// turns into extra time: 13 of the strongest empire's 18 queues stood
-    /// empty and the rest held wall repairs, a wonder and reactor
-    /// conversions, while its army idled at 43.
-    pub(super) fn arm_for_the_final_war(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+    /// future this world does not have. Measured on the stock site world
+    /// before this claim: 96 turns into extra time (seed 14) the strongest
+    /// empire banked 3,117 Gold at +1,260 a turn with 19 of its 27 queues
+    /// converting reactors, and 146 turns in (seed 23) 21 of an empire's 24
+    /// queues stood empty.
+    pub(super) fn arm_for_the_final_war(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !fights_the_final_war(g, pid) {
             return;
         }
@@ -159,9 +160,11 @@ impl AdvancedAi {
     ///
     /// The planner otherwise keeps countering whoever leads a victory race,
     /// and the race that ended the game reads 100% for the rest of it.
-    /// Measured on the stock site world: three empires each named the
-    /// science winner's capital, their trains 15 to 33 tiles from it, and
-    /// walked there a unit at a time ("0 of 16 units staged").
+    /// Measured on the stock site world (seed 22): all three rivals of the
+    /// Science winner named the same one of its cities, and a siege read
+    /// "0 of 16 units staged" with a unit of its train 33 tiles out; on seed
+    /// 14 the strongest empire's 24-unit train stood 15 to 28 tiles from its
+    /// objective.
     pub(super) fn final_war_objective(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         if !fights_the_final_war(g, pid) {
             return None;
