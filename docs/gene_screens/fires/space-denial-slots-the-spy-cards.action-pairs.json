@@ -1,0 +1,24 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "space-denial-slots-the-spy-cards",
+  "scope": "One frozen unoptimized ci-profile civvis_orders built from this branch (fc3712de8b), run on six live Deity Kristina runs of 2026-11-10 (14:40-17:55Z, all lost to a rival Science Victory t182-198), each events.jsonl cut before the second state frame of the turn so the host's free policy window is open (13 turns t129-172), with the run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. 12 of 13 policy decks change: the on arm seats Machiavellianism (and Cryptography once Cold War is known) where the off arm, like the live game, seats Merchant Confederation, Gunboat Diplomacy or an unwanted card; every culture card (Aesthetics, Heritage Tourism, Satellite Broadcasts, Sports Media, Online Communities, Collective Activism) stays seated. 164254Z t132 is unchanged (no racer the spy network answers yet). Proposed decks only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-space-denial-slots-the-spy-cards.native-queries.tar.xz",
+    "sha256": "3be8cdd15413f51cb7fa34063e0ac61786d59024a49981449a47ecf5d03713bf"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json",
+    "native-queries/0006/result.json",
+    "native-queries/0007/result.json",
+    "native-queries/0008/result.json",
+    "native-queries/0009/result.json",
+    "native-queries/0010/result.json",
+    "native-queries/0011/result.json",
+    "native-queries/0012/result.json"
+  ]
+}

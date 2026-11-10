@@ -727,11 +727,31 @@ impl Game {
 
     /// The complete territory gate shared by immediate movement, future route
     /// segments, and displacement when a temporary grant ends.
+    ///
+    /// A Rock Band is shut out of land closed to bands before anything else
+    /// is asked: Music Censorship holds at war and under Open Borders alike.
+    /// It used to be checked only on the step itself, so a route planned
+    /// straight through a censoring rival and the band froze at its border.
     pub(super) fn unit_has_territory_access(&self, unit: &Unit, territory_owner: usize) -> bool {
-        territory_owner == unit.owner
-            || self.unit_ignores_closed_borders(unit)
+        if territory_owner == unit.owner {
+            return true;
+        }
+        if unit.kind == "rock_band" && self.bars_foreign_rock_bands(territory_owner, unit.owner) {
+            return false;
+        }
+        self.unit_ignores_closed_borders(unit)
             || self.is_at_war(unit.owner, territory_owner)
             || self.has_open_borders(unit.owner, territory_owner)
+    }
+
+    /// Whether `host` keeps `owner`'s Rock Bands out of its land: its own
+    /// Music Censorship, or on a live mirror the host's word for it
+    /// ([`Game::rock_band_barred_hosts`]), since the export never shows a
+    /// rival's policies.
+    pub(crate) fn bars_foreign_rock_bands(&self, host: usize, owner: usize) -> bool {
+        host != owner
+            && (self.policy_effect(host, "block_foreign_rock_bands") > 0.0
+                || self.rock_band_barred_hosts.contains(&(owner, host)))
     }
 
     /// Whether this unit may take a one-hex step onto `pos` **and finish
@@ -914,17 +934,8 @@ impl Game {
             return Entry::Blocked;
         }
         let spec = &self.rules.units[u.kind];
-        if u.kind == "rock_band"
-            && self.map.tiles[&pos]
-                .owner_city
-                .and_then(|city| self.cities.get(&city))
-                .is_some_and(|city| {
-                    city.owner != u.owner
-                        && self.policy_effect(city.owner, "block_foreign_rock_bands") > 0.0
-                })
-        {
-            return Entry::Blocked;
-        }
+        // Music Censorship is part of the territory gate below, so the route
+        // planner and this step can no longer disagree about it.
         match self.territory_owner_at(pos) {
             // The owner is on the board, so ordinary diplomacy is authoritative.
             Some(owner) => {
