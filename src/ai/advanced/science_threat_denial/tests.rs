@@ -1320,3 +1320,152 @@ fn an_idle_spy_outside_every_threat_moves_to_the_leaders_pad() {
     let (city, _, _, other) = stays_or_moves(leader_reader(), true);
     assert_eq!(city, Some(other), "a spy in a threat's city stays");
 }
+
+/// A real declaration is otherwise legal, affordable and able to reach its pad.
+fn religion_denial_fixture(target: VictoryTarget) -> (Game, AdvancedAi, Pos) {
+    let mut ai = AdvancedAi::targeting(target);
+    ai.enable_science_denial_war();
+    let (mut g, pad) = war_ready_board(&mut ai);
+    let staging = g
+        .wdisk(pad, 2)
+        .into_iter()
+        .find(|pos| {
+            g.wdist(*pos, pad) == 2
+                && g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile))
+                && g.city_at(*pos).is_none()
+        })
+        .expect("fixture has a reachable staging tile");
+    g.spawn_test_unit("warrior", 0, staging);
+    g.spawn_test_unit("warrior", 0, staging);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).extend([(0, 454.0), (1, 1236.0)]);
+    (g, ai, pad)
+}
+
+#[test]
+fn religion_denial_edge_is_opt_in_in_both_controllers() {
+    opt_in_off_in_both_controllers("religion-denial-needs-the-edge", |ai| {
+        ai.religion_denial_needs_the_edge
+    });
+}
+
+#[test]
+fn religion_denial_edge_holds_the_weak_native_case_at_the_actual_declaration() {
+    let (mut g, mut off, _) = religion_denial_fixture(VictoryTarget::Religion);
+    let mut control = g.clone();
+    assert!(off.science_denial_war_diplomacy(&mut control, 0));
+    assert!(
+        control.is_at_war(0, 1),
+        "control opens the otherwise legal war"
+    );
+    let mut on = AdvancedAi::targeting(VictoryTarget::Religion);
+    on.enable_science_denial_war();
+    on.enable_religion_denial_needs_the_edge();
+    assert!(!on.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    assert_eq!(on.denial_war, None);
+    assert_eq!(g.players[0].counters.get("denial_wars"), None);
+}
+
+#[test]
+fn religion_denial_edge_opens_at_the_existing_launcher_threshold() {
+    for (ours, opens) in [(119.99, false), (120.0, true), (120.01, true)] {
+        let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+        std::sync::Arc::make_mut(&mut g.observed_military_power).extend([(0, ours), (1, 100.0)]);
+        ai.enable_religion_denial_needs_the_edge();
+        assert_eq!(
+            ai.science_denial_war_diplomacy(&mut g, 0),
+            opens,
+            "power {ours}"
+        );
+        assert_eq!(g.is_at_war(0, 1), opens);
+    }
+}
+
+#[test]
+fn religion_denial_edge_leaves_the_other_targets_declarations_alone() {
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Domination,
+    ] {
+        let (mut g, mut ai, _) = religion_denial_fixture(target);
+        ai.enable_religion_denial_needs_the_edge();
+        assert!(
+            ai.science_denial_war_diplomacy(&mut g, 0),
+            "target {target:?}"
+        );
+        assert!(g.is_at_war(0, 1));
+    }
+}
+
+#[test]
+fn religion_denial_edge_reads_recent_steady_power_until_it_expires() {
+    let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(1, 100.0);
+    ai.enable_religion_denial_needs_the_edge();
+    ai.enable_prey_reads_a_steady_power();
+    ai.rival_power_seen.insert(1, vec![(g.turn - 1, 1236.0)]);
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    g.turn += super::super::one_war::PREY_POWER_MEMORY_TURNS;
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+}
+
+#[test]
+fn religion_denial_edge_keeps_affordability_and_pad_reach_guards() {
+    let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 2000.0);
+    ai.enable_religion_denial_needs_the_edge();
+    ai.enable_war_needs_a_treasury();
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -50.0;
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+    g.players[0].gold = 5000.0;
+    g.players[0].gold_per_turn = 100.0;
+    for uid in g.player_unit_ids(0) {
+        g.remove_unit(uid);
+    }
+    assert!(
+        !ai.science_denial_war_diplomacy(&mut g, 0),
+        "power on the ribbon is no raider at the pad"
+    );
+    assert!(!g.is_at_war(0, 1));
+}
+
+#[test]
+fn religion_denial_edge_keeps_the_finish_horizon_and_own_finish_guards() {
+    let (mut g, mut ai, _) = religion_denial_fixture(VictoryTarget::Religion);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 2000.0);
+    ai.enable_religion_denial_needs_the_edge();
+    let theirs = g.player_city_ids(1)[0];
+    bank_space_progress(&mut g, 1, theirs, 0.0);
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0), "far finish");
+    bank_space_progress(&mut g, 1, theirs, 1.0);
+    let ours = g.player_city_ids(0)[0];
+    bank_space_progress(&mut g, 0, ours, 1.0);
+    assert!(
+        !ai.science_denial_war_diplomacy(&mut g, 0),
+        "our finish is already paid"
+    );
+    assert!(!g.is_at_war(0, 1));
+}
+
+#[test]
+fn religion_denial_edge_keeps_existing_war_maintenance() {
+    let (mut g, mut ai, pad) = religion_denial_fixture(VictoryTarget::Religion);
+    assert!(ai.science_denial_war_diplomacy(&mut g, 0));
+    let war = ai.denial_war;
+    ai.enable_religion_denial_needs_the_edge();
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert_eq!(
+        ai.denial_war, war,
+        "a weak army does not erase the running war"
+    );
+    assert!(g.is_at_war(0, 1));
+    g.turn += g.standard_duration(RAID_PEACE_EARLIEST);
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+    assert!(!ai.science_denial_war_diplomacy(&mut g, 0));
+    assert!(ai.peace_offers.contains(&1), "paid raid still offers peace");
+}
