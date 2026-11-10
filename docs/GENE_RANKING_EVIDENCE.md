@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
+| `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
 | `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 2 |
 | `barbarian-research-prices-the-field` | off (unmeasured) | Research parity compares wounded land units against field targets. | 1 \| 1 |
@@ -253,6 +254,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
+| `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |
 | `diplo-match-point-beelines-the-points` | off (unmeasured) | `diplo-match-point-beelines-the-points`. | 1 \| 1 |

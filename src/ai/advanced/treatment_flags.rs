@@ -100,6 +100,9 @@ impl AdvancedAi {
         /// Opt-in gene `kristina-fills-to-theme`; see
         /// `advanced/kristina_fills_to_theme.rs`.
         base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
+        /// Opt-in gene `band-plays-what-it-can-reach`; see
+        /// `advanced/band_plays_what_it_can_reach.rs`.
+        base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -158,6 +161,9 @@ impl AdvancedAi {
         /// `culture-gold-buys-the-shrines`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_gold_buys_the_shrines => enable_culture_gold_buys_the_shrines, disable_culture_gold_buys_the_shrines;
+        /// `denial-war-needs-the-lane-edge`: see
+        /// `advanced/denial_war_needs_the_lane_edge.rs`.
+        denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
