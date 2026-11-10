@@ -8325,6 +8325,10 @@ pub struct AdvancedAi {
     /// The exploring gene's memory of each Missionary: its fog goal and the
     /// turns it has spent.
     missionary_explore: RefCell<BTreeMap<u32, missionary_field::MissionaryExplore>>,
+    /// The unexplored tile each charting spreader is walking to, kept until
+    /// it is seen or cannot be reached. See
+    /// `advanced/religion_seat_charts_the_rivals.rs`.
+    charting_goals: RefCell<BTreeMap<u32, Pos>>,
     /// A religious unit steps out of, and never steps into, the tiles a
     /// visible barbarian raider can reach next turn. Opt-in gene
     /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
@@ -11800,6 +11804,7 @@ impl AdvancedAi {
         self.builder_targets.clear();
         self.builder_avoid.clear();
         self.forget_missionary_explore();
+        self.charting_goals.get_mut().clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
         self.amphibious_train = None;
@@ -11870,6 +11875,11 @@ impl AdvancedAi {
             .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
             .collect();
         self.remap_missionary_explore(map);
+        let charting = self.charting_goals.get_mut();
+        *charting = charting
+            .iter()
+            .filter_map(|(uid, goal)| map.get(uid).map(|new| (*new, *goal)))
+            .collect();
         self.settler_stalls = self
             .settler_stalls
             .iter()
