@@ -38,14 +38,20 @@ impl Game {
                     .unwrap_or(0.0)
             })
             .sum::<f64>();
-        // The Harbor test first: it reads this city's own districts, where
-        // `grants_city_state_unique_bonus` scans every player. Both are pure
-        // predicates of `&self`, so `&&` gives the same answer either way and
-        // the common no-Harbor city now pays for neither.
-        if self.city_has_active_district_family(city, crate::name!("harbor"))
-            && self.grants_city_state_unique_bonus(city.owner, "Cardiff")
-        {
-            renewable += 2.0;
+        // Cardiff: `ADJUST_FREE_POWER` 2 for its Suzerain, one row each for the
+        // Lighthouse, the Shipyard and the Seaport. The buildings are counted
+        // first: they read this city alone, where
+        // `grants_city_state_unique_bonus` scans every player.
+        let harbor_buildings = [
+            crate::name!("lighthouse"),
+            crate::name!("shipyard"),
+            crate::name!("seaport"),
+        ]
+        .into_iter()
+        .filter(|building| self.city_has_active_building_family(city, *building))
+        .count();
+        if harbor_buildings > 0 && self.grants_city_state_unique_bonus(city.owner, "Cardiff") {
+            renewable += 2.0 * harbor_buildings as f64;
         }
         for position in &city.owned_tiles {
             let tile = &self.map.tiles[position];

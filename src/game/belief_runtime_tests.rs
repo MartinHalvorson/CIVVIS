@@ -604,6 +604,7 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     game.cities.get_mut(&struck).unwrap().wall_hp = 100;
     let city_name = game.cities[&struck].name.clone();
     let defender = game.spawn_test_unit("warrior", 1, target);
+    game.install_test_silo(launch);
 
     let strike = Action::WmdStrike {
         city: launch,
@@ -683,7 +684,7 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     assert_eq!(record.attacker, 0);
     assert_eq!(record.target, target);
     assert!(record.thermonuclear);
-    assert_eq!(record.platform, "city");
+    assert_eq!(record.platform, "missile_silo");
     assert_eq!(record.launched_from, game.cities[&launch].pos);
     assert_eq!(record.blast_radius, spec.blast_radius);
     assert_eq!(record.units_destroyed, vaporized);
@@ -782,6 +783,139 @@ fn a_nuclear_submarine_carries_a_device_past_its_launch_city_reach() {
     );
 }
 
+/// Launches are silos and carriers. A city center was never one: the shipped
+/// game's only city launch is aimed from a silo's plot.
+#[test]
+fn a_city_center_is_not_a_launch_site() {
+    let (mut game, cities) = game_with_capitals(91_802);
+    let (launch, struck) = (cities[0], cities[1]);
+    let target = game.cities[&struck].pos;
+    game.at_war.insert(pair(0, 1));
+    game.players[0]
+        .counters
+        .insert("project_effect:thermonuclear_devices".to_string(), 1);
+    for position in game.wdisk(target, 2) {
+        game.players[0].explored.insert(position);
+    }
+    let strike = Action::WmdStrike {
+        city: launch,
+        target,
+        thermonuclear: true,
+    };
+    assert!(!game.legal_actions(0).contains(&strike));
+    assert_eq!(
+        game.apply(0, &strike),
+        Err("target out of ICBM range".to_string())
+    );
+
+    game.install_test_silo(launch);
+    assert!(game.legal_actions(0).contains(&strike));
+    assert!(game.apply(0, &strike).is_ok());
+    assert_eq!(game.nuclear_strikes[0].platform, "missile_silo");
+}
+
+/// A bomber drops the device, so it reaches as far as it can fly rather than
+/// the silo's 12 or 15, and the launch costs it the turn's attack.
+#[test]
+fn bombers_and_jet_bombers_deliver_a_device_as_far_as_they_fly() {
+    for (kind, reach) in [("bomber", 10), ("jet_bomber", 15)] {
+        let (mut game, cities) = game_with_capitals(91_803);
+        let launch = cities[0];
+        // Open ground: nothing in the blast, so range is the only question.
+        let quiet = |game: &Game, position: Pos| {
+            game.wdisk(position, 1).into_iter().all(|tile| {
+                game.unit_ids_at(tile).is_empty()
+                    && game.city_at(tile).is_none()
+                    && game.defending_district_at(tile).is_none()
+            })
+        };
+        let (target, base, too_far) = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|target| quiet(&game, *target))
+            .find_map(|target| {
+                let at = |distance: i32| {
+                    game.map
+                        .tiles
+                        .keys()
+                        .copied()
+                        .find(|tile| game.wdist(*tile, target) == distance)
+                };
+                Some((target, at(reach)?, at(reach + 1)?))
+            })
+            .expect("a 24x16 map has tiles at both distances");
+        game.players[0].explored.insert(target);
+        game.players[0]
+            .counters
+            .insert("project_effect:nuclear_devices".to_string(), 2);
+        let strike = Action::WmdStrike {
+            city: launch,
+            target,
+            thermonuclear: false,
+        };
+
+        let short = game.spawn_test_unit(kind, 0, too_far);
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "{kind} one tile beyond its own range"
+        );
+        game.remove_unit(short);
+
+        let carrier = game.spawn_test_unit(kind, 0, base);
+        assert!(game.apply(0, &strike).is_ok(), "{kind} at its own range");
+        let record = game.nuclear_strikes.last().expect("the strike is recorded");
+        assert_eq!(record.platform, kind);
+        assert_eq!(record.launched_from, base);
+        assert_eq!(
+            game.players[0].counters["project_effect:nuclear_devices"],
+            1
+        );
+        assert_eq!(
+            game.units[&carrier].attacks_left, 0,
+            "{kind} spent its attack"
+        );
+
+        // One attack, one device, even with another in the stockpile.
+        assert_eq!(
+            game.apply(0, &strike),
+            Err("target out of ICBM range".to_string()),
+            "{kind} has no attack left"
+        );
+    }
+}
+
+/// The AI's only path to a launch is `legal_actions`, so a carrier has to be
+/// offered there. Being merely legal through `apply` would leave it idle.
+#[test]
+fn a_bomber_in_range_puts_the_strike_on_the_menu() {
+    let (mut game, cities) = game_with_capitals(91_802);
+    let (launch, struck) = (cities[0], cities[1]);
+    let target = game.cities[&struck].pos;
+    game.at_war.insert(pair(0, 1));
+    game.players[0].explored.insert(target);
+    game.players[0]
+        .counters
+        .insert("project_effect:nuclear_devices".to_string(), 1);
+    let strike = Action::WmdStrike {
+        city: launch,
+        target,
+        thermonuclear: false,
+    };
+    assert!(!game.legal_actions(0).contains(&strike));
+    let base = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|tile| game.wdist(*tile, target) == 5)
+        .expect("a tile five away");
+    game.spawn_test_unit("bomber", 0, base);
+    assert!(game.legal_actions(0).contains(&strike));
+}
+
 /// A reloaded game has to remember the war it is in the middle of. The
 /// ledger is a new field on a long-lived save format, so the round trip is
 /// the thing that proves the `serde` plumbing on all four sides — struct,
@@ -798,6 +932,7 @@ fn the_strike_ledger_survives_a_save_round_trip() {
         "fixture capitals must sit within ICBM range ({distance})"
     );
     game.at_war.insert(pair(0, 1));
+    game.install_test_silo(launch);
     game.players[0]
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);
@@ -1627,7 +1762,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
     assert!((game.city_yields(cities[0]).gold - baseline_route_gold - 6.0).abs() < 1e-9);
 }
 
-/// Civ VI grants a majority religion only above half of a city's Citizens,
+/// Civ VI grants a majority religion only from half of a city's Citizens,
 /// and atheist/pantheon Pressure competes for those Citizens. Without it a
 /// trickle of passive Pressure flipped cities outright, which cascaded
 /// into Religious victories long before missionaries had done any work.
@@ -1640,29 +1775,33 @@ fn atheist_pressure_gates_the_majority_religion() {
     game.cities.get_mut(&target).unwrap().pressure.clear();
     assert_eq!(game.cities[&target].atheist_pressure, 50.0);
 
-    // Passive Pressure that merely clears the old flat threshold now buys
-    // exactly half the city, which is not a majority.
+    // Half the Citizens on less Pressure than the religionless half is not
+    // a majority (live: Sedeinga 80 v 100, Jerusalem 148 v 200).
     game.cities
         .get_mut(&target)
         .unwrap()
         .pressure
-        .insert(religion.clone(), 50.0);
+        .insert(religion.clone(), 49.0);
     assert_eq!(game.city_religion(&game.cities[&target]), None);
     assert_eq!(
         game.religious_followers_in_city(&game.cities[&target], &religion),
         2.0
     );
 
-    // One more point of Pressure carries the majority.
-    game.cities
-        .get_mut(&target)
-        .unwrap()
-        .pressure
-        .insert(religion.clone(), 51.0);
-    assert_eq!(
-        game.city_religion(&game.cities[&target]),
-        Some(religion.as_str())
-    );
+    // Level with them it is one (live: Sedeinga 100 v 100, t32 of
+    // civvis-20261110T031523Z), and so is anything past it.
+    for pressure in [50.0, 51.0] {
+        game.cities
+            .get_mut(&target)
+            .unwrap()
+            .pressure
+            .insert(religion.clone(), pressure);
+        assert_eq!(
+            game.city_religion(&game.cities[&target]),
+            Some(religion.as_str()),
+            "{pressure}"
+        );
+    }
 
     // Growth reinforces whichever side already holds the city: the new
     // Citizen joins the majority faith, and the atheist pool otherwise.
@@ -1675,6 +1814,129 @@ fn atheist_pressure_gates_the_majority_religion() {
     let atheists = game.cities[&target].atheist_pressure;
     game.apply_growth_pressure(target);
     assert_eq!(game.cities[&target].atheist_pressure, atheists + 50.0);
+}
+
+/// The host's own banner rows, live Deity game civvis-20261110T031523Z
+/// (`CityBannerManager.lua:1938-1950`): Citizens are seated by the
+/// largest-remainder method, and the faith with the most of them is the
+/// majority from half the city up. Each row here is a city-turn the host
+/// showed: Pressure by row, the followers it listed and its
+/// `GetMajorityReligion()`.
+#[test]
+fn followers_and_majorities_match_the_rows_the_host_showed() {
+    let (mut game, cities) = game_with_capitals(91_764);
+    let city = cities[1];
+    // (Citizens, religionless Pressure, [(faith, Pressure, followers)],
+    //  religionless followers, majority)
+    type Row = (
+        i32,
+        f64,
+        &'static [(&'static str, f64, f64)],
+        i32,
+        Option<&'static str>,
+    );
+    let shown: &[Row] = &[
+        // Sedeinga t31 and t32: one of two Citizens each.
+        (2, 100.0, &[("Buddhism", 80.0, 1.0)], 1, None),
+        (2, 100.0, &[("Buddhism", 100.0, 1.0)], 1, Some("Buddhism")),
+        // Astrakhan t33: two faiths level on followers, the greater Pressure.
+        (
+            2,
+            50.0,
+            &[("Buddhism", 294.0, 1.0), ("Orthodoxy", 90.0, 1.0)],
+            0,
+            Some("Buddhism"),
+        ),
+        // Jerusalem t36 and t39: two of four either side of the religionless.
+        (4, 200.0, &[("Buddhism", 148.0, 2.0)], 2, None),
+        (
+            4,
+            200.0,
+            &[("Buddhism", 202.0, 2.0), ("Hinduism", 24.0, 0.0)],
+            2,
+            Some("Buddhism"),
+        ),
+        // Meroe t39: three of six on 55.7% of the Pressure.
+        (
+            6,
+            350.0,
+            &[("Buddhism", 470.0, 3.0), ("Hinduism", 24.0, 0.0)],
+            3,
+            Some("Buddhism"),
+        ),
+        // Solikamsk t46: 52.6% of the Pressure seats one Citizen of three.
+        (
+            3,
+            100.0,
+            &[("Buddhism", 198.0, 1.0), ("Hinduism", 78.0, 1.0)],
+            1,
+            None,
+        ),
+        // Jerusalem t45: two of five is short of half.
+        (
+            5,
+            200.0,
+            &[
+                ("Buddhism", 242.0, 2.0),
+                ("Hinduism", 74.0, 1.0),
+                ("Orthodoxy", 10.0, 0.0),
+            ],
+            2,
+            None,
+        ),
+        // Kumasi t48: three rows of two.
+        (
+            6,
+            300.0,
+            &[("Buddhism", 256.0, 2.0), ("Orthodoxy", 308.0, 2.0)],
+            2,
+            None,
+        ),
+        // Jerusalem t48: the leader has two of five.
+        (
+            5,
+            200.0,
+            &[
+                ("Buddhism", 174.0, 1.0),
+                ("Hinduism", 428.0, 1.0),
+                ("Orthodoxy", 609.0, 2.0),
+            ],
+            1,
+            None,
+        ),
+    ];
+    for (pop, atheist, faiths, atheists, majority) in shown {
+        {
+            let live = game.cities.get_mut(&city).unwrap();
+            live.pop = *pop;
+            live.atheist_pressure = *atheist;
+            live.pressure.clear();
+            for (faith, pressure, _) in faiths.iter() {
+                live.pressure.insert(faith.to_string(), *pressure);
+            }
+        }
+        let live = &game.cities[&city];
+        let mut seated = 0.0;
+        for (faith, _, followers) in faiths.iter() {
+            assert_eq!(
+                game.religious_followers_in_city(live, faith),
+                *followers,
+                "{faith} of {pop} at {faiths:?}"
+            );
+            seated += followers;
+        }
+        assert_eq!(
+            seated + f64::from(*atheists),
+            f64::from(*pop),
+            "every Citizen is seated"
+        );
+        assert_eq!(game.city_religion(live), *majority, "{pop} at {faiths:?}");
+    }
+    // A faith with no Pressure in the city has no followers there.
+    assert_eq!(
+        game.religious_followers_in_city(&game.cities[&city], "Taoism"),
+        0.0
+    );
 }
 
 /// A Trade Route carries religion in both directions but not equally:

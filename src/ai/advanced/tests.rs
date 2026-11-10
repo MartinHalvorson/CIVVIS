@@ -2819,6 +2819,7 @@ fn nuclear_war_fixture() -> (Game, u32, u32, u32, Pos) {
     game.players[0].explored.insert(fortress);
     game.players[0].explored.insert(spaceport_site);
     game.world_era = 4;
+    game.install_test_silo(launch_city);
     (game, launch_city, fortress_city, spaceport_city, spaceport)
 }
 
@@ -3841,6 +3842,7 @@ fn a_besieged_empire_spends_its_device_to_break_the_siege() {
         .counters
         .insert("project_effect:thermonuclear_devices".to_string(), 1);
     game.players[0].explored.insert(target);
+    game.install_test_silo(game.player_city_ids(0)[0]);
     game.cities.get_mut(&target_city).unwrap().wall_hp = 300;
     // The empire is losing this war: Recovery posture, not Conquest. The
     // doctrine used to stand down here, which meant the 72% of late-game
@@ -6042,7 +6044,13 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     let city = game.player_city_ids(0)[0];
     game.players[0].religion = Some("Planned Faith".to_string());
-    game.players[0].religion_beliefs = vec!["work_ethic".to_string(), "tithe".to_string()];
+    // Native mirrors retain the pantheon as well as the two founding beliefs.
+    game.players[0].pantheon = Some("divine_spark".to_string());
+    game.players[0].religion_beliefs = vec![
+        "divine_spark".to_string(),
+        "work_ethic".to_string(),
+        "tithe".to_string(),
+    ];
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
 
     let first = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
@@ -6055,7 +6063,8 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     let second = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
     game.units.get_mut(&second).unwrap().religion = Some("Planned Faith".to_string());
     assert!(ai.advanced_religious_step(&mut game, 0, second, false));
-    assert_eq!(game.players[0].religion_beliefs.len(), 4);
+    assert_eq!(game.religion_belief_count(0), 4);
+    assert_eq!(game.players[0].religion_beliefs.len(), 5);
     assert_eq!(
         game.players[0]
             .religion_beliefs

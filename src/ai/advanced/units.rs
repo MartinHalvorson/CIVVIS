@@ -138,6 +138,19 @@ impl AdvancedAi {
         if let Some(acted) = self.religious_unit_evades_apostles(g, pid, uid) {
             return acted;
         }
+        // `corps-comes-home-alive`: a wounded unit walks to a Holy Site of
+        // ours and heals there. See `advanced/apostle_army.rs`.
+        if let Some(acted) = self.wounded_preacher_goes_home(g, pid, uid) {
+            return acted;
+        }
+        // `last-charge-joins-the-army`: the kept charge hunts or scouts and
+        // never reaches the spread below.
+        if let Some(acted) = self
+            .army_apostle_step(g, pid, uid)
+            .or_else(|| self.scout_missionary_step(g, pid, uid))
+        {
+            return acted;
+        }
         if self.religious_unit_holds_to_heal(g, pid, uid) {
             return false;
         }
@@ -174,6 +187,8 @@ impl AdvancedAi {
         // `counterweight-flips-the-small-towns`: against the faith holding
         // our cities, the smallest town first. `None` off.
         let small_town_threat = self.small_town_threat(g, pid, &religion);
+        // See `advanced/religion_seat_counts_the_pressure.rs`. Empty off.
+        let pressure_plan = self.religion_seat_pressure_plan(g, pid, uid, &religion);
         let mut targets: Vec<(bool, i32, std::cmp::Reverse<u32>, Pos)> = g
             .cities
             .values()
@@ -206,6 +221,7 @@ impl AdvancedAi {
                     + swing / 10
                     // See `advanced/religion_seat_flips_the_cheapest.rs`.
                     + self.religion_seat_flip_adjustment(g, pid, city, &religion)
+                    + pressure_plan.get(&city.id).copied().unwrap_or(0)
                     + Self::religious_veto_target_bonus(pid, city, veto.as_ref(), held)
                     + Self::small_town_target_adjustment(
                         g,
@@ -284,6 +300,10 @@ impl AdvancedAi {
         if let Some(acted) = self.religious_unit_evades_apostles(g, pid, uid) {
             return acted;
         }
+        // `corps-comes-home-alive`: see `advanced/apostle_army.rs`.
+        if let Some(acted) = self.wounded_preacher_goes_home(g, pid, uid) {
+            return acted;
+        }
         let unit = g.units[&uid].clone();
         let religion = unit
             .religion
@@ -327,7 +347,7 @@ impl AdvancedAi {
         // `apostle-evangelizes-unspent`: the host refuses an Apostle that has
         // spent a charge. See `advanced/apostle_evangelizes_unspent.rs`.
         if unit.kind == "apostle"
-            && g.players[pid].religion_beliefs.len() < 4
+            && g.religion_belief_count(pid) < 4
             && self.apostle_may_evangelize(g, uid)
         {
             let objective = if g.has_ability(pid, "taxis") {
@@ -432,6 +452,12 @@ impl AdvancedAi {
 
         if inquisitor_holding {
             return false;
+        }
+
+        // `last-charge-joins-the-army`: an Apostle on its kept charge, or a
+        // Debater with prey in sight, hunts before anything is spread.
+        if let Some(acted) = self.army_apostle_step(g, pid, uid) {
+            return acted;
         }
 
         // The same hold, after the fight rather than before it: a unit already

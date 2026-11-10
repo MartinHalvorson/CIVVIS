@@ -1,6 +1,7 @@
 use super::*;
 use crate::ai::{AdvancedAi, BasicAi, GrandStrategy};
 use crate::name::Name;
+use crate::setup::GameSpeed;
 
 fn game_with_capitals(players: usize, seed: u64) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(players, 28, 18, seed, 300, 0, false);
@@ -630,7 +631,18 @@ fn carthage_mohenjo_daro_and_auckland_modify_their_native_systems() {
     game.players[carthage].civ = "Auckland".to_string();
     let ancient = game.player_tile_yields(0, water, &game.map.tiles[&water]);
     assert_close(ancient.production, baseline.production + 1.0);
+    // `REQUIREMENT_PLAYER_ERA_AT_LEAST`: the world moving on is not enough.
     game.world_era = 4;
+    let world_only = game.player_tile_yields(0, water, &game.map.tiles[&water]);
+    assert_close(world_only.production, baseline.production + 1.0);
+    let industrial_tech = game
+        .rules
+        .techs
+        .iter()
+        .find(|(_, spec)| spec.era == 4)
+        .map(|(name, _)| *name)
+        .expect("the tree has an Industrial technology");
+    game.players[0].techs.insert(industrial_tech);
     let industrial = game.player_tile_yields(0, water, &game.map.tiles[&water]);
     assert_close(industrial.production, baseline.production + 2.0);
 }
@@ -1435,51 +1447,208 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
 }
 
 #[test]
-fn preslav_arms_only_cavalry_and_only_on_the_high_ground() {
+fn preslav_pays_loyalty_for_each_line_of_encampment_building() {
+    // Both expansions' RemoveData delete the Base kit (+5 cavalry on hills).
     let (mut game, cities) = game_with_capitals(2, 89_011);
+    let city = cities[0];
     let preslav = add_city_state(&mut game, "Preslav");
-    let centre = game.cities[&cities[0]].pos;
-    let hill = game
-        .nbrs(centre)
-        .into_iter()
-        .find(|pos| {
-            game.map
-                .get(*pos)
-                .is_some_and(|tile| !game.rules.is_water(tile))
-        })
-        .unwrap();
-    game.map.tiles.get_mut(&hill).unwrap().hills = true;
-    game.map.tiles.get_mut(&centre).unwrap().hills = false;
+    let build = |game: &mut Game, building: Name| {
+        game.cities.get_mut(&city).unwrap().buildings.push(building);
+    };
+    let baseline = game.loyalty_change_for_city(0, city).delta;
 
-    let horseman = game.spawn_unit("horseman", 0, hill);
-    let warrior = game.spawn_unit("warrior", 0, centre);
-    let cavalry_flat = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    let footman = {
-        let unit = game.units[&warrior].clone();
-        game.unit_unembarked_strength(&unit)
-    };
+    build(&mut game, crate::name!("barracks"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline);
     make_suzerain(&mut game, 0, preslav);
-    let cavalry_hill = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 2.0);
+
+    // A Barracks and a Stable are one `TEST_ANY` row.
+    build(&mut game, crate::name!("stable"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 2.0);
+    build(&mut game, crate::name!("armory"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 4.0);
+    build(&mut game, crate::name!("military_academy"));
+    assert_close(game.loyalty_change_for_city(0, city).delta, baseline + 6.0);
+}
+
+#[test]
+fn a_city_state_runs_the_shipped_default_kit() {
+    // `MINOR_CIV_DEFAULT_TRAIT` in Leaders.xml.
+    let (mut game, cities) = game_with_capitals(2, 89_012);
+    let city = cities[1];
+    let minor = add_city_state(&mut game, "Geneva");
+    let unit = |unit: Name| Item::Unit { unit };
+    let building = |building: Name| Item::Building { building };
+
+    let builder = game.item_prod_mult(minor, city, Some(&unit(crate::name!("builder"))));
+    assert_close(builder, 3.0);
+    for walls in [
+        crate::name!("walls"),
+        crate::name!("medieval_walls"),
+        crate::name!("renaissance_walls"),
+    ] {
+        assert_close(
+            game.item_prod_mult(minor, city, Some(&building(walls))),
+            3.0,
+        );
+    }
+    let monument = game.item_prod_mult(minor, city, Some(&building(crate::name!("monument"))));
+    assert_close(monument, 1.0);
+
+    // Military units only while it holds fewer than 10 of them.
+    let warrior = unit(crate::name!("warrior"));
+    assert_close(game.item_prod_mult(minor, city, Some(&warrior)), 3.0);
+    let sites: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| game.city_at(*position).is_none())
+        .take(10)
+        .collect();
+    for site in sites {
+        game.spawn_unit("warrior", minor, site);
+    }
+    assert_close(game.item_prod_mult(minor, city, Some(&warrior)), 1.0);
+
+    // Upgrades cost a city-state no Gold; a major still pays.
+    assert_eq!(game.upgrade_costs(minor, 100.0, 5.0), (0.0, 5.0));
+    assert_eq!(game.upgrade_costs(0, 100.0, 5.0), (100.0, 5.0));
+
+    // And its cities make half the Production.
+    let major = game.city_yields(city).production;
+    assert!(major > 0.0);
+    game.players[1].is_minor = true;
+    let halved = game.city_yields(city).production;
+    assert!(
+        (halved - major * 0.5).abs() < 0.51,
+        "{major} Production as a major, {halved} as a city-state"
+    );
+}
+
+#[test]
+fn cardiff_pays_power_for_each_harbor_building() {
+    let (mut game, cities) = game_with_capitals(2, 89_051);
+    let city = cities[0];
+    install_district(&mut game, city, "harbor");
+    let cardiff = add_city_state(&mut game, "Cardiff");
+    let unbonused = game.city_renewable_power(&game.cities[&city]);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("lighthouse"));
+    assert_close(game.city_renewable_power(&game.cities[&city]), unbonused);
+    make_suzerain(&mut game, 0, cardiff);
+    assert_close(
+        game.city_renewable_power(&game.cities[&city]),
+        unbonused + 2.0,
+    );
+    for (building, expected) in [
+        (crate::name!("shipyard"), 4.0),
+        (crate::name!("seaport"), 6.0),
+    ] {
+        game.cities.get_mut(&city).unwrap().buildings.push(building);
+        assert_close(
+            game.city_renewable_power(&game.cities[&city]),
+            unbonused + expected,
+        );
+    }
+}
+
+#[test]
+fn holy_cities_press_four_times_and_jerusalem_makes_every_holy_site_one() {
+    let (mut game, cities) = game_with_capitals(2, 89_052);
+    let (source, target) = (cities[0], cities[1]);
+    let beside = game.nbrs(game.cities[&source].pos)[0];
+    game.cities.get_mut(&target).unwrap().pos = beside;
+    let faith = "test_faith".to_string();
+    game.players[0].religion = Some(faith.clone());
+    game.cities
+        .get_mut(&source)
+        .unwrap()
+        .pressure
+        .insert(faith.clone(), 100.0);
+    let gained = |game: &mut Game| {
+        let read = |game: &Game| {
+            game.cities[&target]
+                .pressure
+                .get(&faith)
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let before = read(game);
+        game.process_pressure(1);
+        read(game) - before
     };
-    assert_close(cavalry_hill, cavalry_flat + 5.0);
-    // A melee unit gets nothing, hill or not.
-    let footman_after = {
-        let unit = game.units[&warrior].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    assert_close(footman_after, footman);
-    // And the cavalry loses it the moment it steps off the hill.
-    game.map.tiles.get_mut(&hill).unwrap().hills = false;
-    let cavalry_off = {
-        let unit = game.units[&horseman].clone();
-        game.unit_unembarked_strength(&unit)
-    };
-    assert_close(cavalry_off, cavalry_flat);
+    assert_close(gained(&mut game), 1.0);
+    game.players[0].holy_city = Some(source);
+    assert_close(gained(&mut game), 4.0);
+    game.players[0].holy_city = None;
+    install_district(&mut game, source, "holy_site");
+    assert_close(gained(&mut game), 2.0);
+    let jerusalem = add_city_state(&mut game, "Jerusalem");
+    make_suzerain(&mut game, 0, jerusalem);
+    assert_close(gained(&mut game), 8.0);
+}
+
+#[test]
+fn a_levy_follows_the_game_speed_and_sumerias_discount() {
+    let (mut game, _) = game_with_capitals(2, 89_053);
+    let minor = add_city_state(&mut game, "Geneva");
+    make_suzerain(&mut game, 0, minor);
+    let site = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.city_at(*position).is_none())
+        .unwrap();
+    game.spawn_unit("warrior", minor, site);
+    let standard = game.levy_cost(0, minor).unwrap();
+    game.game_speed = GameSpeed::Online;
+    let online = game.levy_cost(0, minor).unwrap();
+    assert_close(online, game.game_speed.scale(standard));
+    assert!(online < standard);
+    game.players[0].civ = "Sumeria".to_string();
+    assert_close(game.levy_cost(0, minor).unwrap(), online * 0.5);
+}
+
+#[test]
+fn tamars_envoys_count_double_at_a_city_state_of_her_faith() {
+    let (mut game, _) = game_with_capitals(2, 89_054);
+    let minor = add_city_state(&mut game, "Geneva");
+    let site = game
+        .map
+        .tiles
+        .iter()
+        .find(|(position, tile)| {
+            !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && game.city_at(**position).is_none()
+                && game.unit_ids_at(**position).is_empty()
+        })
+        .map(|(position, _)| *position)
+        .unwrap();
+    let city = game.found_city_for(minor, site, None);
+    game.record_contact(0, minor);
+    // Meeting a city-state grants the first-discovery Envoy; this test counts
+    // only the ones sent below.
+    game.players[0].envoys.clear();
+    let faith = "test_faith".to_string();
+    game.players[0].civ = "Georgia".to_string();
+    game.players[0].religion = Some(faith.clone());
+    game.players[0].envoys_free = 2;
+
+    game.do_send_envoy(0, minor).unwrap();
+    assert_eq!(game.raw_envoys_at(0, minor), 1);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .pressure
+        .insert(faith, 100.0);
+    game.do_send_envoy(0, minor).unwrap();
+    assert_eq!(game.raw_envoys_at(0, minor), 3);
 }
 
 #[test]
@@ -1694,4 +1863,67 @@ fn envoy_and_tributary_policy_income_is_the_players_not_the_capitals() {
     assert!((with_raj.gold - before_raj.gold - 4.0).abs() < 1e-9);
     // And the per-turn extras every reader adds carry it.
     assert!((game.player_yield_extras(0).science - with_raj.science).abs() < 1e-9);
+}
+
+#[test]
+fn wolin_pays_the_great_person_of_the_killers_own_class() {
+    // `ABILITY_WOLIN_LAND_UNITS` and `ABILITY_WOLIN_NAVAL_UNITS` hang the
+    // points on the unit that made the kill, 25% of the victim's strength.
+    let (mut game, cities) = game_with_capitals(2, 89_120);
+    let minor = add_city_state(&mut game, "Wolin");
+    make_suzerain(&mut game, 0, minor);
+    let id = game.spawn_test_unit("warrior", 1, game.cities[&cities[1]].pos);
+    let warrior = game.units[&id].clone();
+    let mut galley = warrior.clone();
+    galley.kind = crate::name!("galley");
+    let points = |game: &Game, kind: &str| game.players[0].gpp.get(kind).copied().unwrap_or(0.0);
+
+    // A land unit that sinks a ship earns General points.
+    game.record_kill(0, Some("warrior"), &galley);
+    assert_close(
+        points(&game, "general"),
+        game.game_speed
+            .scale(game.rules.units["galley"].strength * 0.25),
+    );
+    assert_close(points(&game, "admiral"), 0.0);
+
+    // And a ship that kills a land unit earns Admiral points.
+    game.players[0].gpp.clear();
+    game.record_kill(0, Some("galley"), &warrior);
+    assert_close(
+        points(&game, "admiral"),
+        game.game_speed
+            .scale(game.rules.units["warrior"].strength * 0.25),
+    );
+    assert_close(points(&game, "general"), 0.0);
+
+    // Aircraft, carriers and the Giant Death Robot are on neither list.
+    game.players[0].gpp.clear();
+    for killer in ["biplane", "aircraft_carrier", "giant_death_robot"] {
+        game.record_kill(0, Some(killer), &warrior);
+    }
+    assert_close(points(&game, "general"), 0.0);
+    assert_close(points(&game, "admiral"), 0.0);
+}
+
+#[test]
+fn bandar_brunei_pays_again_for_the_owners_foreign_trading_posts() {
+    // `MINOR_CIV_JAKARTA_TRADING_POST_BONUS`: 1 Gold per post in a foreign
+    // city on the route, on top of the shipped `TRADING_POST_GOLD_IN_FOREIGN_CITY`.
+    let (mut game, cities) = game_with_capitals(3, 89_121);
+    let minor = add_city_state(&mut game, "Bandar Brunei");
+    let post = format!("trading_post_city:{}", cities[1]);
+
+    // Someone else's post in the destination pays this route nothing.
+    game.players[2].counters.insert(post.clone(), 1);
+    make_suzerain(&mut game, 0, minor);
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 0.0);
+
+    // The owner's own post pays the base Gold and Brunei's again.
+    game.players[0].counters.insert(post, 1);
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 2.0);
+
+    // Without the Suzerain bonus only the base Gold is left.
+    game.players[minor].civ = "Hattusa".to_string();
+    assert_close(game.trading_post_route_gold(0, cities[0], cities[1]), 1.0);
 }

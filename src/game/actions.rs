@@ -1407,32 +1407,45 @@ impl Game {
             || tile.district_foundation.is_some()
             || tile.wonder.is_some()
             || self.city_at(pos).is_some()
+            // The host will not clear or harvest under an improvement. Across
+            // 70 live logs (2026-11-10), all 81 orders to chop or clear an
+            // improved tile failed (43 of them forests under Lumber Mills),
+            // as did 32 of 33 harvests. Each one spent a planned Builder turn.
+            || tile.improvement.is_some()
         {
             return vec![];
         }
+        // The host refuses REMOVE_FEATURE and HARVEST_RESOURCE on a tile that
+        // carries an improvement. Live Deity census, 2026-11-09: 75 of 75
+        // accepted clearings stood on unimproved ground, and 55 of 64 refusals
+        // on a Lumber Mill, Plantation, Camp, Mine, Quarry or Farm.
+        let improved = tile.improvement.is_some();
         let mut operations = Vec::new();
         match tile.feature.as_deref() {
             Some("forest")
-                if self.tree_effect(pid, "chop_woods") > 0.0
+                if !improved
+                    && self.tree_effect(pid, "chop_woods") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "forest") =>
             {
                 operations.push("chop_woods".to_string())
             }
             Some("jungle")
-                if self.tree_effect(pid, "chop_rainforest") > 0.0
+                if !improved
+                    && self.tree_effect(pid, "chop_rainforest") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "jungle") =>
             {
                 operations.push("chop_rainforest".to_string())
             }
             Some("marsh")
-                if self.tree_effect(pid, "clear_marsh") > 0.0
+                if !improved
+                    && self.tree_effect(pid, "clear_marsh") > 0.0
                     && !self.congress_effect_active("deforestation_treaty", "B", "marsh") =>
             {
                 operations.push("clear_marsh".to_string())
             }
             _ => {}
         }
-        if let Some(resource) = tile.resource.as_deref() {
+        if let Some(resource) = tile.resource.as_deref().filter(|_| !improved) {
             // Only the resources with a shipped Resource_Harvests row can be
             // harvested, each from its own technology on.
             if let Some(harvest) = self
@@ -1465,6 +1478,32 @@ impl Game {
         operations
     }
 
+    /// How far a feature removal or a harvest has grown past its shipped base.
+    ///
+    /// Measured on the host (Deity, Online speed, 2026-11-09, the owning
+    /// city's production progress either side of 48 accepted Forest
+    /// clearings): the city received `base × game speed × (1 + 9 × progress)`,
+    /// where `progress` is the share of every technology and civic this
+    /// player has completed. A Forest paid 14 Production with 7 of them
+    /// done, 15 with 8 or 9 and 19 with 14 or 15. The world era is not part of
+    /// it, and neither is the farther-advanced single tree that district costs
+    /// read ([`Self::game_progress_ratio`]).
+    pub(crate) fn builder_harvest_scale(&self, pid: usize) -> f64 {
+        let player = &self.players[pid];
+        let completed = player
+            .techs
+            .iter()
+            .filter(|technology| self.rules.techs.contains_key(technology))
+            .count()
+            + player
+                .civics
+                .iter()
+                .filter(|civic| self.rules.civics.contains_key(civic))
+                .count();
+        let all = (self.rules.techs.len() + self.rules.civics.len()).max(1);
+        self.game_speed.scale(1.0) * (1.0 + 9.0 * completed as f64 / all as f64)
+    }
+
     /// What [`Self::do_builder_operation`] would pay for `operation` on `pos`,
     /// as `(yield type, amount)` rows.
     ///
@@ -1475,8 +1514,9 @@ impl Game {
     ///
     /// Shipped bases: `Feature_Removes` (Forest 20 Production, Jungle 10
     /// Production + 10 Food, Marsh 20 Food) and `Resource_Harvests`, both read
-    /// out of `data/*.json`. They scale with the world era, and Magnus'
-    /// `harvest_pct` applies to removals and harvests alike.
+    /// out of `data/*.json`. They scale by [`Self::builder_harvest_scale`],
+    /// Magnus' `harvest_pct` applies to removals and harvests alike, and the
+    /// host rounds the result down.
     pub(crate) fn builder_operation_payout(
         &self,
         pid: usize,
@@ -1489,7 +1529,7 @@ impl Game {
         let Some(cid) = tile.owner_city else {
             return Vec::new();
         };
-        let scale = (self.world_era as f64 + 1.0)
+        let scale = self.builder_harvest_scale(pid)
             * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
         match operation {
             "chop_woods" | "chop_rainforest" | "clear_marsh" => tile
@@ -1499,7 +1539,7 @@ impl Game {
                 .map(|spec| {
                     spec.chop
                         .iter()
-                        .map(|(yield_type, base)| (yield_type.clone(), base * scale))
+                        .map(|(yield_type, base)| (yield_type.clone(), (base * scale).floor()))
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -1508,7 +1548,7 @@ impl Game {
                 .as_deref()
                 .and_then(|resource| self.rules.resources.get(resource))
                 .and_then(|spec| spec.harvest.as_ref())
-                .map(|harvest| vec![(harvest.yield_type.clone(), harvest.amount * scale)])
+                .map(|harvest| vec![(harvest.yield_type.clone(), (harvest.amount * scale).floor())])
                 .unwrap_or_default(),
             _ => Vec::new(),
         }
@@ -2411,7 +2451,19 @@ impl Game {
                     .get_mut(&host_city)
                     .unwrap()
                     .pressure
-                    .insert(religion, competing + 1.0);
+                    .insert(religion.clone(), competing + 1.0);
+                // Followers are whole Citizens, so one point past the rest
+                // can still seat fewer than half of them when the rest is
+                // split over several rows. Out-press them by the city's size
+                // and every split leaves this faith at least half.
+                if self.city_religion(&self.cities[&host_city]) != Some(religion.as_str()) {
+                    let size = f64::from(self.cities[&host_city].pop.max(1));
+                    self.cities
+                        .get_mut(&host_city)
+                        .unwrap()
+                        .pressure
+                        .insert(religion, competing * size + 1.0);
+                }
             }
         }
         if converts_religion {
@@ -4554,10 +4606,21 @@ impl Game {
     /// narrow leader-preference score for backwards-compatible AI callers;
     /// this is the wider state a diplomacy screen needs.
     pub fn relationship_opinion(&self, observer: usize, subject: usize) -> f64 {
+        self.relationship_opinion_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    fn relationship_opinion_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> f64 {
         if observer == subject || observer >= self.players.len() || subject >= self.players.len() {
             return 0.0;
         }
-        let mut opinion = self.agenda_opinion(observer, subject);
+        let mut opinion = self.agenda_opinion_reading(observer, subject, read);
         opinion -= self.players[observer]
             .grievances
             .get(&subject)
@@ -4592,6 +4655,42 @@ impl Game {
     /// relationship ledger; the named treaty and conflict states take
     /// precedence exactly as they do in the Civ VI ribbon.
     pub fn relationship_state(&self, observer: usize, subject: usize) -> &'static str {
+        self.relationship_state_reading(observer, subject, &mut |pid, measure| {
+            self.agenda_measure(pid, measure)
+        })
+    }
+
+    /// `relationship_state` from each of `civs` toward each of them, in order.
+    /// Agendas compare a civilization with the whole world, so scoring every
+    /// pair directly would be cubic in civilizations; each comparison's raw
+    /// measure is worked out once here instead.
+    pub fn relationship_states_among(&self, civs: &[usize]) -> Vec<Vec<&'static str>> {
+        let mut measured: Vec<(String, Vec<Option<f64>>)> = Vec::new();
+        let mut read = |pid: usize, measure: &str| {
+            let index = measured
+                .iter()
+                .position(|(name, _)| name == measure)
+                .unwrap_or_else(|| {
+                    measured.push((measure.to_string(), vec![None; self.players.len()]));
+                    measured.len() - 1
+                });
+            *measured[index].1[pid].get_or_insert_with(|| self.agenda_measure(pid, measure))
+        };
+        civs.iter()
+            .map(|&observer| {
+                civs.iter()
+                    .map(|&subject| self.relationship_state_reading(observer, subject, &mut read))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn relationship_state_reading(
+        &self,
+        observer: usize,
+        subject: usize,
+        read: &mut dyn FnMut(usize, &str) -> f64,
+    ) -> &'static str {
         if self.is_at_war(observer, subject) {
             "war"
         } else if self.are_allied(observer, subject) {
@@ -4605,12 +4704,15 @@ impl Game {
                 .is_some_and(|until| *until > self.turn)
         }) {
             "denounced"
-        } else if self.relationship_opinion(observer, subject) >= 15.0 {
-            "friendly"
-        } else if self.relationship_opinion(observer, subject) <= -15.0 {
-            "unfriendly"
         } else {
-            "neutral"
+            let opinion = self.relationship_opinion_reading(observer, subject, read);
+            if opinion >= 15.0 {
+                "friendly"
+            } else if opinion <= -15.0 {
+                "unfriendly"
+            } else {
+                "neutral"
+            }
         }
     }
 

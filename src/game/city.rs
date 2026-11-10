@@ -1360,7 +1360,9 @@ impl Game {
             });
 
         if is_coast_or_lake && self.grants_city_state_unique_bonus(pid, "Auckland") {
-            yields.production += if self.world_era >= 4 { 2.0 } else { 1.0 };
+            // `REQUIRES_PLAYER_IS_INDUSTRIAL_ERA` is
+            // `REQUIREMENT_PLAYER_ERA_AT_LEAST`: the suzerain's own era.
+            yields.production += if self.player_era(pid) >= 4 { 2.0 } else { 1.0 };
         }
 
         if !tile.pillaged && tile.improvement.is_none() && tile.feature.is_some() {
@@ -2464,6 +2466,11 @@ impl Game {
         pct.science += band;
         pct.culture += band;
         pct.faith += band;
+        // `MINOR_CIV_PRODUCTION_PENALTY`: a city-state's cities carry -50%
+        // Production in the same additive sum.
+        if self.players[city.owner].is_minor && !self.players[city.owner].is_barbarian {
+            pct.production -= 50.0;
+        }
         if self.grants_city_state_unique_bonus(city.owner, "Geneva")
             && !self.at_war_with_any_civilization(city.owner)
         {

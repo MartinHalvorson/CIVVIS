@@ -132,3 +132,49 @@ fn a_head_finishing_this_turn_keeps_the_queue() {
     );
     assert!(ai.first_shrine_choice(&g, 0, &plan).is_none());
 }
+
+fn soldier_at_the_head(g: &mut Game, home: u32) {
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+}
+
+/// Live t24: the Shrine took the queue from a Slinger chosen against nearby
+/// barbarians.
+#[test]
+fn a_soldier_keeps_its_queue_with_hostiles_in_reach() {
+    let (mut g, ai, home) = founder(VictoryTarget::Religion);
+    soldier_at_the_head(&mut g, home);
+    let barbarian = g
+        .players
+        .iter()
+        .position(|player| player.is_barbarian)
+        .expect("fixture: the barbarian seat");
+    let pos = g.cities[&home].pos;
+    let near = g
+        .wdisk(pos, 2)
+        .into_iter()
+        .find(|at| {
+            g.wdist(*at, pos) == 2
+                && g.map
+                    .get(*at)
+                    .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+        })
+        .expect("fixture: a dry tile two away");
+    g.spawn_unit("warrior", barbarian, near);
+    assert!(
+        ai.hint_city_in_reach_of_war(&g, 0, home),
+        "fixture: in reach"
+    );
+    let plan = plan_for(&g, &ai);
+    assert!(ai.first_shrine_choice(&g, 0, &plan).is_none());
+}
+
+#[test]
+fn a_soldier_gives_way_in_a_quiet_city() {
+    let (mut g, ai, home) = founder(VictoryTarget::Religion);
+    soldier_at_the_head(&mut g, home);
+    assert!(!ai.hint_city_in_reach_of_war(&g, 0, home), "fixture: quiet");
+    let plan = plan_for(&g, &ai);
+    assert!(ai.first_shrine_choice(&g, 0, &plan).is_some());
+}

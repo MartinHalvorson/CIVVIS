@@ -2304,3 +2304,55 @@ The engine before this change measures v46's **19,571 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v48 (2026-11-09) — City-states run their shipped default kit
+
+#4906 gives every city-state `MINOR_CIV_DEFAULT_TRAIT`: half Production
+overall, +200% toward Builders, toward walls, and toward military units while
+it has fewer than ten, and free Gold upgrades. Preslav's cavalry kit is gone,
+as `RemoveData` deletes it, and it pays +2 Loyalty per Encampment line instead.
+The Foreign Ministry bonus now covers every Suzerain city-state unit. Every
+controller, `AdvancedAi::legacy()` included, now plays beside these city-states.
+
+The engine before this change measures v47's **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The corrected engine measures **18,765 decisions /
+`0xaa6b_4e3a_f767_b9e9`**. The legacy planning configuration and the five
+
+## v49 (2026-11-09) — City-state kits and Holy City pressure
+
+#4914 corrects nine rules against the shipped rows. Every religion's Holy City
+exerts four times the pressure (`RELIGION_SPREAD_HOLY_CITY_PRESSURE_MULTIPLIER`),
+and Jerusalem makes each Holy Site count as one. Cardiff pays Power per harbor
+building, levy prices follow game speed, Sumeria levies at half price, and
+Tamar's Envoys count double at a city-state of her faith. Wolin pays Great
+General or Admiral points by the killer's class, Auckland reads the suzerain's
+own era, and Bandar Brunei pays per owned Trading Post on the route. Every
+controller, `AdvancedAi::legacy()` included, now plays under these rules.
+
+The engine before this change measures v48's **18,765 decisions /
+`0xaa6b_4e3a_f767_b9e9`**. The corrected engine measures **18,828 decisions /
+`0xd90f_0e2b_1eab_6f7a`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
+
+## v50 (2026-11-10) — city majorities and followers follow the rows the host shows
+
+A rules correction in `src/game/religion.rs`, read off the city banner rows a
+live Deity game exported (civvis-20261110T031523Z, 1,493 city-turns;
+`DLC/Expansion2/UI/CityBanners/CityBannerManager.lua:1938-1950`). Civ VI seats
+every Citizen among a city's faiths and its religionless Citizens by the
+largest-remainder split of `Population * Pressure / total Pressure`, and the
+faith with the most followers is the majority from half the Citizens up
+(exactly half only when the religionless half does not out-press it). CIVVIS
+rounded each faith's followers on its own and asked for more than half of all
+Pressure: it agreed with the host's `GetMajorityReligion()` on 1,363 of those
+city-turns and the corrected rule on all 1,493. Every controller,
+`AdvancedAi::legacy()` included, now plays under the corrected majorities.
+
+The engine before this change measures v49's **18,828 decisions /
+`0xd90f_0e2b_1eab_6f7a`**. The corrected engine measures **18,801 decisions /
+`0xcedd_2626_df03_b554`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
