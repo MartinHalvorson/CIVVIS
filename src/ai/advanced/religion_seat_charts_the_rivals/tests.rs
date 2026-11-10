@@ -213,3 +213,158 @@ fn the_way_to_cartography_is_worth_more_while_a_rival_is_under_charted() {
         0.0
     );
 }
+
+/// A founder whose every known city already follows its faith, beside a
+/// rival the host says holds five cities of which it has seen one. Everything
+/// is explored except the ground within three tiles of that city. Returns
+/// the game, the Missionary and the rival city's tile.
+fn charted_out() -> (Game, u32, Pos) {
+    let mut refusals = Vec::new();
+    for seed in 0..80u64 {
+        let mut game = Game::new_full(2, 40, 24, 912_700 + seed, 250, 0, false);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(uid);
+        }
+        game.current = 0;
+        let mut land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && tile.owner_city.is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        land.sort();
+        let Some(home) = land.first().copied() else {
+            continue;
+        };
+        let home_city = game.place_city(0, home, None);
+        let missionary = game.spawn_test_unit("missionary", 0, home);
+        {
+            let unit = game.units.get_mut(&missionary).unwrap();
+            unit.religion = Some("Buddhism".to_string());
+            unit.charges = 3;
+            unit.hp = 100;
+        }
+        let Some(site) = land.iter().copied().find(|pos| {
+            (10..=16).contains(&game.wdist(*pos, home))
+                && game.route_step(missionary, *pos, 1).is_some()
+        }) else {
+            refusals.push(format!("{seed}: no rival site on a road from home"));
+            continue;
+        };
+        let rival_city = game.place_city(1, site, None);
+        for cid in [home_city, rival_city] {
+            let city = game.cities.get_mut(&cid).unwrap();
+            city.atheist_pressure = 0.0;
+            city.pressure.clear();
+            city.pressure.insert("Buddhism".to_string(), 100.0);
+        }
+        game.players[0].religion = Some("Buddhism".to_string());
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+            .entry(1)
+            .or_default()
+            .city_count = Some(5);
+        let every: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        game.players[0].explored.extend(every);
+        let fog: Vec<Pos> = game
+            .wdisk(site, 3)
+            .into_iter()
+            .filter(|pos| *pos != site)
+            .collect();
+        let dry_fog = fog
+            .iter()
+            .filter(|pos| {
+                game.map
+                    .get(**pos)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .count();
+        if dry_fog < 3 {
+            refusals.push(format!("{seed}: {dry_fog} dry tiles beside the rival city"));
+            continue;
+        }
+        for pos in fog {
+            game.players[0].explored.remove(&pos);
+        }
+        game.turn = 90;
+        return (game, missionary, site);
+    }
+    panic!("fixture: no seed gave a founder a road to a rival city: {refusals:?}");
+}
+
+/// ★ The 054430Z shape: nothing the seat knows is left to convert and the
+/// rival holds four cities it has never seen. Off, the spreader stands; on,
+/// it walks toward the unexplored ground beside the one city it knows, and
+/// keeps its charges.
+#[test]
+fn an_idle_spreader_walks_into_an_under_charted_rivals_ground() {
+    let (game, missionary, site) = charted_out();
+    assert!(BasicAi::rival_is_under_charted(&game, 0, 1));
+
+    let mut off = game.clone();
+    let start = off.units[&missionary].pos;
+    assert!(!seat(VictoryTarget::Religion, false)
+        .advanced_missionary_step(&mut off, 0, missionary, true));
+    assert_eq!(off.units[&missionary].pos, start, "off: nothing to do");
+
+    let on_seat = seat(VictoryTarget::Religion, true);
+    let goal = on_seat
+        .religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true)
+        .expect("on: unexplored ground beside the rival's city is a goal");
+    assert!(!game.players[0].explored.contains(&goal));
+    assert!(
+        (1..=3).contains(&game.wdist(goal, site)),
+        "the goal is beside the known city"
+    );
+    assert!(game
+        .map
+        .get(goal)
+        .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile)));
+    let mut on = game.clone();
+    assert!(on_seat.advanced_missionary_step(&mut on, 0, missionary, true));
+    let unit = &on.units[&missionary];
+    assert_ne!(unit.pos, start, "on: it sets out");
+    assert_eq!(unit.charges, 3, "it keeps its charges");
+
+    // Not for a seat aiming elsewhere, and not on the defensive.
+    let mut elsewhere = game.clone();
+    assert!(
+        !seat(VictoryTarget::Culture, true).advanced_missionary_step(
+            &mut elsewhere,
+            0,
+            missionary,
+            true
+        )
+    );
+    let mut defensive = game.clone();
+    assert!(
+        !seat(VictoryTarget::Religion, true).advanced_missionary_step(
+            &mut defensive,
+            0,
+            missionary,
+            false
+        )
+    );
+}
+
+/// Once the rival is charted the spreader stands again: the walk is for
+/// finding cities, not for wandering.
+#[test]
+fn a_charted_rival_draws_no_walk() {
+    let (mut game, missionary, _) = charted_out();
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(1);
+    assert!(!BasicAi::rival_is_under_charted(&game, 0, 1));
+    let start = game.units[&missionary].pos;
+    assert!(!seat(VictoryTarget::Religion, true)
+        .advanced_missionary_step(&mut game, 0, missionary, true));
+    assert_eq!(game.units[&missionary].pos, start);
+}

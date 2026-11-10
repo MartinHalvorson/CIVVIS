@@ -110,7 +110,7 @@ impl AdvancedAi {
     /// Whether a religious unit standing on `pos` could be condemned before
     /// its next turn. An own city and a tile under a friendly military unit
     /// are refuges; see the module header.
-    fn religious_tile_in_reach(
+    pub(super) fn religious_tile_in_reach(
         g: &Game,
         pid: usize,
         pos: Pos,
