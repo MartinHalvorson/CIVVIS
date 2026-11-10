@@ -206,6 +206,9 @@ impl AdvancedAi {
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
         // ---- append: s-s --------------------------------------------
+        /// Opt-in gene `sweden-builds-open-air-museums`; see
+        /// `advanced/sweden_builds_open_air_museums.rs`.
+        sweden_builds_open_air_museums => enable_sweden_builds_open_air_museums, disable_sweden_builds_open_air_museums;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

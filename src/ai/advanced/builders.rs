@@ -97,6 +97,10 @@ impl AdvancedAi {
                 + spec.effects.get("appeal_tourism").copied().unwrap_or(0.0) * appeal;
             value += tourism * 35.0;
         }
+        // `sweden-builds-open-air-museums`: the museum's Culture and Tourism,
+        // which its spec does not carry. Zero with the gene off. See
+        // `advanced/sweden_builds_open_air_museums.rs`.
+        value += self.open_air_museum_value(g, pos, improvement, strategy);
         if let Some(resource) = &tile.resource {
             // Only the improvement that actually works the resource connects
             // it. A Farm on an Iron hill was scoring the same premium as the

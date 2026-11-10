@@ -5567,6 +5567,10 @@ pub const GENES: &[Gene] = &[
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
     // ---- append: s-s ------------------------------------------------
+    // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
+    // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
+    // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
+    Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
