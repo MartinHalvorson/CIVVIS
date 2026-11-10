@@ -5650,6 +5650,10 @@ pub const GENES: &[Gene] = &[
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
     // +48 Tourism a turn). See `advanced/sweden_builds_open_air_museums.rs`.
     Gene { tag: "sweden-builds-open-air-museums", field: "sweden_builds_open_air_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_sweden_builds_open_air_museums, disable: AdvancedAi::disable_sweden_builds_open_air_museums },
+    // Kristina Deity 11-10: 10 rival Science wins t168-198; Machiavellianism
+    // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
+    // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
+    Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

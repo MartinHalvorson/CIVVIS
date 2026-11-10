@@ -9883,6 +9883,10 @@ pub struct AdvancedAi {
     /// city centres). See `advanced/sweden_builds_open_air_museums.rs`. Off by
     /// default.
     sweden_builds_open_air_museums: bool,
+    /// `space-denial-slots-the-spy-cards`: a Culture or Domination seat whose
+    /// spies answer a space race slots Machiavellianism and Cryptography. See
+    /// `advanced/space_denial_spy_cards.rs`. Off by default.
+    space_denial_slots_the_spy_cards: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11370,6 +11374,8 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+/// `space-denial-slots-the-spy-cards`: see `advanced/space_denial_spy_cards.rs`.
+mod space_denial_spy_cards;
 /// `space-people-call-the-projects`: see
 /// `advanced/space_people_call_the_projects.rs`.
 mod space_people_call_the_projects;
