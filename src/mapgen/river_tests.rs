@@ -2494,7 +2494,7 @@ fn the_silk_road_is_passable_end_to_end() {
             .iter()
             .find(|size| size.id == size_id)
             .unwrap();
-        let mut rng = Rng::new(crate::rng::fixture_seed("SILKROAD", 31_337));
+        let mut rng = Rng::new(31_338);
         let (world, _) = generate_with_script(
             &rules,
             size.width,
@@ -5507,59 +5507,4 @@ fn large_lake_budgets_follow_each_stock_script() {
         assert_eq!(large_lake_budget(script, 4), four, "{script:?} on four");
         assert_eq!(large_lake_budget(script, 5), five, "{script:?} on five");
     }
-}
-
-/// TEMPORARY: finds a seed for every fixture the map refresh redrew.
-#[test]
-fn temp_seed_search() {
-    use std::collections::VecDeque;
-    use std::process::{Command, Stdio};
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
-    const SITES: &[(&str, u64, &[&str])] = &[
-    ("SILKROAD", 31337, &["mapgen::river_tests::the_silk_road_is_passable_end_to_end"]),
-    ];
-    let exe = std::env::current_exe().expect("test binary");
-    let queue = Mutex::new(SITES.iter().collect::<VecDeque<_>>());
-    let found = Mutex::new(Vec::<String>::new());
-    let budget = Duration::from_secs(420);
-    std::thread::scope(|scope| {
-        for _ in 0..6 {
-            scope.spawn(|| loop {
-                let Some((key, base, tests)) = queue.lock().unwrap().pop_front() else {
-                    return;
-                };
-                let started = Instant::now();
-                let mut answer = None;
-                let mut tried = 0u64;
-                for offset in 1..=80u64 {
-                    if started.elapsed() > budget {
-                        break;
-                    }
-                    tried = offset;
-                    let seed = base + offset;
-                    let passes = tests.iter().all(|test| {
-                        Command::new(&exe)
-                            .args(["--exact", test, "--test-threads=1"])
-                            .env(format!("CIVVIS_FIXTURE_SEED_{key}"), seed.to_string())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status()
-                            .is_ok_and(|status| status.success())
-                    });
-                    if passes {
-                        answer = Some(seed);
-                        break;
-                    }
-                }
-                found.lock().unwrap().push(format!(
-                    "SEEDFOUND {key} {} tried {tried} of {} tests in {}s",
-                    answer.map_or("NONE".to_string(), |seed| seed.to_string()),
-                    tests.len(),
-                    started.elapsed().as_secs(),
-                ));
-            });
-        }
-    });
-    panic!("\n{}", found.lock().unwrap().join("\n"));
 }
