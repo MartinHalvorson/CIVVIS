@@ -2819,7 +2819,15 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
     assert!(player_hud.contains("const overview = playerHudOverview();"));
     assert!(player_hud.contains("hudTurnPlate()"));
     assert!(player_hud.contains("state.players"));
-    assert!(player_hud.contains("playerHudStats(p,"));
+    assert!(player_hud.contains("playerHudStandings();"));
+    let standings = EMBEDDED_INDEX
+        .split_once("function playerHudStandings() {")
+        .expect("HUD standings")
+        .1
+        .split_once("\nfunction drawPlayerHud() {")
+        .expect("end of HUD standings")
+        .0;
+    assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
     assert!(player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
@@ -7345,7 +7353,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
-        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics\" open name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v2\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10044,7 +10052,7 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
-fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
+fn world_politics_sits_under_game_setup_and_starts_collapsed() {
     let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
     let politics = EMBEDDED_INDEX
         .find("id=\"politicssec\"")
@@ -10054,24 +10062,16 @@ fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
         .expect("AI strategy");
     assert!(setup < politics && politics < strategy);
     assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
-    // It is the only section open in the markup: the deck is one accordion.
+    // No section of the deck opens by itself.
     assert_eq!(
         EMBEDDED_INDEX
             .matches(" open name=\"deck-section\">")
             .count(),
-        1
+        0
     );
-    // A reader meets it open once, whichever section they had left open, and
-    // from then on what they chose is what is saved.
-    let init = EMBEDDED_INDEX
-        .split("function initSidebarSections() {")
-        .nth(1)
-        .and_then(|tail| tail.split("initSidebarSections();").next())
-        .expect("section setup");
-    assert!(init.contains(
-        "section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section)"
-    ));
-    assert!(init.contains("if (firstMeeting && section !== firstMeeting) open = false;"));
+    // Browsers saved the old key as open while the section opened by default,
+    // and a saved value beats the markup, so the old key must not come back.
+    assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics\""));
     // A battlefield has no politics, and the section hands over its room.
     assert!(EMBEDDED_INDEX.contains("body.watching-tactics #politicssec,"));
     assert!(EMBEDDED_INDEX.contains("document.getElementById(\"politicssec\")?.open ||"));
@@ -10091,6 +10091,60 @@ fn world_politics_sits_under_game_setup_and_is_the_section_the_deck_opens_on() {
     assert!(
         EMBEDDED_INDEX.contains("else if (section.id === \"politicssec\") drawWorldPolitics();")
     );
+}
+
+#[test]
+fn world_politics_reads_in_masthead_order_and_can_watch_one_civ() {
+    // One reading of the standings serves the table and the panel, and
+    // re-sorting the table re-sorts the panel.
+    assert!(EMBEDDED_INDEX.contains(
+        "const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();"
+    ));
+    let toggle = EMBEDDED_INDEX
+        .split("function togglePlayerHudSort(key) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function playerHudSortHead").next())
+        .expect("sort toggle");
+    assert!(toggle.contains("drawWorldPolitics();"));
+
+    let panel = EMBEDDED_INDEX
+        .split("function drawWorldPolitics() {")
+        .nth(1)
+        .and_then(|tail| tail.split("function drawWarLog").next())
+        .expect("World politics panel");
+    assert!(panel.contains("playerHudStandings().majors.map((p, index) => [p.id, index])"));
+    assert!(panel.contains("worldPoliticsOrdered(bonds, position)"));
+    assert!(panel.contains("worldPoliticsOrdered(wars, position)"));
+
+    // The higher civilization is named first, and rows run down it, then the
+    // lower one.
+    let ordered = EMBEDDED_INDEX
+        .split("function worldPoliticsOrdered(pairs, position) {")
+        .nth(1)
+        .and_then(|tail| tail.split("function syncPoliticsSeat").next())
+        .expect("pair order");
+    assert!(ordered.contains("at(pair.second) < at(pair.first)"));
+    assert!(ordered.contains("at(a.first) - at(b.first) || at(a.second) - at(b.second)"));
+
+    // The filter sits above the list, inside the section.
+    let section = EMBEDDED_INDEX
+        .split("id=\"politicssec\"")
+        .nth(1)
+        .and_then(|tail| tail.split("</details>").next())
+        .expect("World politics section");
+    let filter = section
+        .find("<select id=\"politicsplayer\"")
+        .expect("filter");
+    let list = section.find("id=\"worldpolitics\"").expect("list");
+    assert!(filter < list);
+
+    // Each group folds, and the fold outlives the turn's rebuild.
+    assert!(EMBEDDED_INDEX.contains("data-politics-group=\"${group}\""));
+    assert!(EMBEDDED_INDEX.contains("addEventListener(\"toggle\", rememberPoliticsFold, true)"));
+
+    // Friends and alliances wear Civ VI's own green and blue.
+    assert!(EMBEDDED_INDEX.contains("--politics-friend: #79e077;"));
+    assert!(EMBEDDED_INDEX.contains("--politics-alliance: #74a3f3;"));
 }
 
 #[test]

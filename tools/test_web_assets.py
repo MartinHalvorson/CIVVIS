@@ -722,6 +722,31 @@ class PlanetEmpireNames(unittest.TestCase):
         start = source.index("function animTick(now)")
         self.assertIn("planetEmpireLabelsSettling()", source[start:])
 
+    def test_names_are_the_top_of_the_map_under_only_what_flies(self):
+        source = self.source()
+        start = source.index("function drawPlanetMap()")
+        frame = source[start:source.index("\n}\n", start)]
+        for names in (frame.index("drawPlanetEmpireLabels(cx,"),
+                      frame.index("paintPlanetEmpireLabelLayer(")):
+            for below in ("drawCityIcon(cx", "drawCityNameplate(", "drawStrategicUnitCounter(",
+                          "drawPlanetBlasts("):
+                self.assertLess(frame.index(below), names, below)
+            self.assertLess(names, frame.index("drawPlanetSky("))
+        # The GPU path's own layer has to clear the map canvas, take no input
+        # away from it, and go when the names move back onto the canvas.
+        start = source.index("function paintPlanetEmpireLabelLayer(")
+        layer = source[start:source.index("\n}\n", start)]
+        self.assertIn("cv.after(canvas)", layer)
+        self.assertIn('canvas.style.zIndex = "1"', layer)
+        self.assertIn("gpu.canvas.style.cssText", layer)
+        self.assertIn('"pointer-events:none"', source)
+        self.assertIn('PLANET_GPU.labels.canvas.style.display = "none"', frame)
+        # That layer is above the rockets' canvas, so it is only safe while
+        # nothing is flying.
+        start = source.index("function planetGpuEligible(")
+        eligible = source[start:source.index("\n}\n", start)]
+        self.assertIn("activeSkyLaunches().length", eligible)
+
     @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
     def test_a_name_is_fixed_to_the_ground_while_the_world_turns(self):
         source = self.source()
