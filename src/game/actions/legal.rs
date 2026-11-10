@@ -872,7 +872,7 @@ impl Game {
             if u.kind == "apostle"
                 && u.moves_left > 0.0
                 && u.religion == p.religion
-                && p.religion_beliefs.len() < 4
+                && self.religion_belief_count(pid) < 4
             {
                 let taken = |belief: &str| {
                     self.players.iter().any(|player| {

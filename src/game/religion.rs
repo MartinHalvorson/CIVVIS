@@ -82,6 +82,19 @@ impl Game {
         self.players.iter().filter(|p| p.religion.is_some()).count()
     }
 
+    /// The four religion beliefs exclude the pantheon. The native mirror
+    /// retains the pantheon in `religion_beliefs` for its effects, whereas
+    /// founding in the simulator replaces that list with the founding pair.
+    /// ReligionScreen.lua:12,1262 counts four entries in `religion.Beliefs`
+    /// and displays the pantheon separately (:1022).
+    pub(crate) fn religion_belief_count(&self, pid: usize) -> usize {
+        self.players[pid]
+            .religion_beliefs
+            .iter()
+            .filter(|belief| !self.rules.beliefs.pantheon.contains_key(*belief))
+            .count()
+    }
+
     pub(super) fn pantheon_effect(&self, pid: usize, effect: &str) -> f64 {
         self.players[pid]
             .pantheon
@@ -102,20 +115,111 @@ impl Game {
             + city.atheist_pressure.max(0.0)
     }
 
-    /// A city's majority religion: the faith followed by more than half of its
-    /// Citizens. Citizens are split by Pressure share, so this is the faith
-    /// holding more than half of all Pressure — atheist Pressure counted.
-    /// Below that share the city simply has no majority religion.
+    /// Citizens following one row of the city's religion list: a faith by
+    /// name, or with `None` the Citizens following no religion.
+    ///
+    /// Civ VI seats every Citizen. Each row's quota is `Population * Pressure
+    /// / Sum of all Religious and Atheist Pressures`; every row takes the
+    /// whole part of its quota and the Citizens left over go one each to the
+    /// largest fractional parts (the largest-remainder method). Read off the
+    /// banner rows of live Deity game civvis-20261110T031523Z
+    /// (`CityBannerManager.lua:1938-1950`, `GetReligionsInCity()`): 1,489 of
+    /// 1,493 city-turns, where rounding each row on its own gave a city of 3
+    /// Citizens at quotas 1.58, 0.80 and 0.62 two followers of the first faith
+    /// and the host showed one each. A tied remainder goes to the greater
+    /// Pressure, then to a faith ahead of the religionless row.
+    fn city_row_followers(&self, city: &City, row: Option<&str>) -> i32 {
+        let pop = city.pop.max(0);
+        let total = self.city_total_pressure(city);
+        if pop == 0 || total <= f64::EPSILON {
+            return 0;
+        }
+        let atheist = city.atheist_pressure.max(0.0);
+        let rows = || {
+            city.pressure
+                .iter()
+                .filter(|(_, pressure)| **pressure > 0.0)
+                .map(|(name, pressure)| (Some(name.as_str()), *pressure))
+                .chain((atheist > 0.0).then_some((None, atheist)))
+                .enumerate()
+        };
+        let quota = |pressure: f64| {
+            let quota = pop as f64 * pressure / total;
+            (quota.floor(), quota - quota.floor())
+        };
+        let mut seated = 0.0;
+        let mut target = None;
+        for (index, (name, pressure)) in rows() {
+            let (whole, part) = quota(pressure);
+            seated += whole;
+            if name == row {
+                target = Some((index, pressure, whole, part));
+            }
+        }
+        let Some((index, pressure, whole, part)) = target else {
+            return 0;
+        };
+        let left = pop as f64 - seated;
+        let ahead = rows()
+            .filter(|(other, (_, other_pressure))| {
+                let (_, other_part) = quota(*other_pressure);
+                other_part > part
+                    || (other_part == part
+                        && (*other_pressure > pressure
+                            || (*other_pressure == pressure && *other < index)))
+            })
+            .count() as f64;
+        (whole + f64::from(ahead < left)) as i32
+    }
+
+    /// A city's majority religion: the faith with the most followers, when
+    /// they are more than half of its Citizens, or exactly half with the
+    /// religionless Citizens not out-pressing it.
+    ///
+    /// Followers are whole Citizens ([`Game::city_row_followers`]), so this is
+    /// not "more than half of all Pressure". Against the host's own
+    /// `GetMajorityReligion()` on 1,493 city-turns of live Deity game
+    /// civvis-20261110T031523Z this rule agreed on every one and the Pressure
+    /// share rule on 1,363: a city of 3 at 52.6% of the Pressure had one
+    /// follower of three and no majority; cities of 2, 4 and 6 at exactly half
+    /// their Citizens held one whenever the faith's Pressure was at least the
+    /// religionless row's (100 v 100, 202 v 200, 470 v 350) and none below it
+    /// (80 v 100, 148 v 200).
+    ///
+    /// The faith with the most Pressure is the faith with the most followers:
+    /// quotas rise with Pressure and a remainder seat never lifts a row past
+    /// one with a larger quota.
     pub fn city_religion<'a>(&self, city: &'a City) -> Option<&'a str> {
         let total = self.city_total_pressure(city);
         if total <= f64::EPSILON {
             return None;
         }
-        city.pressure
+        let (name, pressure) = city
+            .pressure
             .iter()
-            .filter(|(_, v)| **v > 0.0 && **v * 2.0 > total)
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap().then(b.0.cmp(a.0)))
-            .map(|(r, _)| r.as_str())
+            .filter(|(_, v)| **v > 0.0)
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap().then(b.0.cmp(a.0)))?;
+        let pop = city.pop.max(0);
+        if pop == 0 {
+            // No Citizens to seat: keep the Pressure share reading.
+            return (*pressure * 2.0 > total).then_some(name.as_str());
+        }
+        // The whole part of the quota settles most cities without seating
+        // anyone: already past half, or unable to reach half with one more.
+        let whole = (pop as f64 * *pressure / total).floor() as i32;
+        if whole * 2 > pop {
+            return Some(name.as_str());
+        }
+        if (whole + 1) * 2 < pop {
+            return None;
+        }
+        let followers = self.city_row_followers(city, Some(name.as_str()));
+        if followers * 2 > pop {
+            return Some(name.as_str());
+        }
+        let tied_and_out_pressed =
+            city.atheist_pressure > *pressure && self.city_row_followers(city, None) == followers;
+        (followers * 2 == pop && !tied_and_out_pressed).then_some(name.as_str())
     }
 
     pub(super) fn religion_founder(&self, religion: &str) -> Option<usize> {
@@ -155,18 +259,15 @@ impl Game {
     }
 
     /// The map stores religious pressure rather than a separate follower
-    /// roster. Divide population proportionally among the represented faiths,
-    /// matching Civ VI's `Population * Pressure / Sum of all Religious and
-    /// Atheist Pressures`, rounded to the nearest Citizen.
+    /// roster. Citizens are seated among the represented faiths and the
+    /// religionless by Civ VI's largest-remainder split of `Population *
+    /// Pressure / Sum of all Religious and Atheist Pressures`; see
+    /// [`Game::city_row_followers`].
     pub(super) fn religious_followers_in_city(&self, city: &City, religion: &str) -> f64 {
-        let total = self.city_total_pressure(city);
-        if total <= f64::EPSILON {
+        if city.pressure.get(religion).copied().unwrap_or(0.0) <= 0.0 {
             return 0.0;
         }
-        let pressure = city.pressure.get(religion).copied().unwrap_or(0.0).max(0.0);
-        (city.pop.max(0) as f64 * pressure / total)
-            .round()
-            .clamp(0.0, city.pop.max(0) as f64)
+        f64::from(self.city_row_followers(city, Some(religion)))
     }
 
     pub(super) fn founder_belief_yields(&self, pid: usize) -> Yields {
@@ -911,7 +1012,7 @@ impl Game {
         if apostle.kind != "apostle"
             || apostle.moves_left <= 0.0
             || apostle.religion != self.players[pid].religion
-            || self.players[pid].religion_beliefs.len() >= 4
+            || self.religion_belief_count(pid) >= 4
         {
             return Err("Apostle cannot evangelize another belief".into());
         }
@@ -939,7 +1040,7 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].religion_beliefs.push(belief.to_string());
-        if self.players[pid].religion_beliefs.len() == 4 {
+        if self.religion_belief_count(pid) == 4 {
             self.first_historic_moment(
                 pid,
                 "religion_fully_developed",

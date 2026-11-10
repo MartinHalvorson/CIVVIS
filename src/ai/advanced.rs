@@ -6733,6 +6733,11 @@ pub struct AdvancedAi {
     /// or Iron stand at the stockpile cap (civvis-20261109T024657Z,
     /// 050249Z, 054003Z and 071914Z). Opt-in.
     domination_spends_the_stock: bool,
+    /// `chop-feeds-the-long-build`: a Builder clears a feature or harvests a
+    /// resource into a district or wonder its city needs many turns for, or
+    /// into a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
+    /// Opt-in.
+    chop_feeds_the_long_build: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7815,6 +7820,11 @@ pub struct AdvancedAi {
     /// stood at 360-478, and no war opened until turn 151. The same window
     /// came in 4 of 5 Gran Colombia games of 2026-11-09. Opt-in.
     gutted_rival_passes_the_edge: bool,
+    /// `good-land-lifts-the-city-target`: the plan's city target rises above
+    /// the shared ten, to at most twelve, by one city for each good seat the
+    /// empire can hold, while a city founded now still repays. See
+    /// `advanced/good_land_lifts_the_city_target.rs`. Off by default.
+    good_land_lifts_the_city_target: bool,
     // ---- append: l-o ------------------------------------------------
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
@@ -10788,6 +10798,9 @@ mod boost_planner;
 /// `builder-prices-travel-in-turns`: a Builder prices a walk in the turns it
 /// costs, not in hexes. See `advanced/builder_travel_turns.rs`.
 mod builder_travel_turns;
+/// `chop-feeds-the-long-build`: a Builder clears a forest into a district, a
+/// wonder or a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
+mod chop_feeds_the_long_build;
 /// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
 /// has always modelled feature removal and harvesting; nothing ever asked for
 /// one. See `advanced/chop_for_expansion.rs`.
@@ -11160,6 +11173,10 @@ mod gold_buys_the_opening_builder;
 /// `advanced/gold_buys_the_production_tile.rs`.
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
+/// `good-land-lifts-the-city-target`: the city target rises to at most twelve
+/// for good seats the empire can hold. See
+/// `advanced/good_land_lifts_the_city_target.rs`.
+mod good_land_lifts_the_city_target;
 mod granary_claims_the_bound_queue;
 /// `group-steps-read-the-field`: the group step reads the danger field. See
 /// `advanced/group_steps_read_the_field.rs`.
@@ -21966,6 +21983,8 @@ impl AdvancedAi {
             desired_military
         };
         let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
+        // See `last_civ_standing`: a final war raises the land target.
+        let desired_military = self.final_war_army_target(g, pid, city_count, desired_military);
         // ★★★★ EVERY WALKER GETS A GUARD AND EVERY CLAIM A GARRISON. See
         // `land_grab`: the peacetime land army wants one body per city plus
         // one per Settler in flight, so a wider pipeline never marches alone
@@ -25897,6 +25916,8 @@ impl AdvancedAi {
         // ahead of the ordinary claims, then more Holy Sites. See
         // `advanced/religion_seat_fields_apostles.rs`.
         self.claim_religion_seat_faith_economy(g, pid, &plan);
+        // See `last_civ_standing`: in a final war every idle queue arms.
+        self.arm_for_the_final_war(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
