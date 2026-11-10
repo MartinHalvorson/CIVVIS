@@ -1355,14 +1355,7 @@ impl AdvancedAi {
                 ForcePosture::Advance
             } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
-            } else if !arena
-                // A world played on to its last civilization has nothing left
-                // to gather for, and an army fed from every city at once never
-                // reads as assembled: 15 to 19 units sat at 0% for 150 turns.
-                && !g.plays_to_the_last_civ()
-                && units.len() > 1
-                && readiness + 1e-9 < self.base.w.muster_readiness
-            {
+            } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
                 ForcePosture::Muster
             } else {
                 ForcePosture::Advance

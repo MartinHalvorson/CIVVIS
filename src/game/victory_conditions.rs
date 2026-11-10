@@ -453,7 +453,9 @@ fn one_more_turn_plays_on_until_one_civ_remains() {
         assert!(game.is_at_war(first, second), "{first} and {second} at war");
         assert!(game.wars.contains_key(&(first, second)), "war is on record");
         assert!(game.peace_available_at(first, second).is_some());
-        assert!(game.apply(first, &Action::MakePeace { player: second }).is_err());
+        assert!(game
+            .apply(first, &Action::MakePeace { player: second })
+            .is_err());
     }
     assert!(!game.are_friends(0, 1));
     assert!(!game.has_defensive_pact(1, 2));
@@ -469,7 +471,10 @@ fn one_more_turn_plays_on_until_one_civ_remains() {
     game.current = 2;
     game.do_end_turn();
     assert!(game.turn > game.max_turns);
-    assert_eq!(game.winner, None, "the old cap manufactures no score result");
+    assert_eq!(
+        game.winner, None,
+        "the old cap manufactures no score result"
+    );
 
     // Two left is still a war.
     wipe_out(&mut game, 2);
