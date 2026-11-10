@@ -258,7 +258,7 @@ impl AdvancedAi {
                     ))
                 })
                 .collect();
-            open.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+            open.sort_by_key(|row| (row.0, row.1));
             for (rank, (_, cid, rows)) in open.iter().enumerate() {
                 let city = &g.cities[cid];
                 let shipped = if self.religion_seat_flips_the_cheapest {
