@@ -140,9 +140,18 @@ impl AdvancedAi {
         cold_war_before_conservation => enable_cold_war_before_conservation, disable_cold_war_before_conservation;
         /// `culture-bank-opens-at-nationalism`: see `advanced/culture_band_bank.rs`.
         culture_bank_opens_at_nationalism => enable_culture_bank_opens_at_nationalism, disable_culture_bank_opens_at_nationalism;
+        /// `culture-road-earns-its-inspirations`: see
+        /// `advanced/culture_road_inspirations.rs`.
+        culture_road_earns_its_inspirations => enable_culture_road_earns_its_inspirations, disable_culture_road_earns_its_inspirations;
         /// `culture-seat-builds-past-the-deterrent`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_seat_builds_past_the_deterrent => enable_culture_seat_builds_past_the_deterrent, disable_culture_seat_builds_past_the_deterrent;
+        /// Opt-in gene `culture-digs-every-site`; see
+        /// `advanced/culture_digs_every_site.rs`.
+        culture_digs_every_site => enable_culture_digs_every_site, disable_culture_digs_every_site;
+        /// Opt-in gene `curator-sits-with-the-works`; see
+        /// `advanced/curator_sits_with_the_works.rs`.
+        curator_sits_with_the_works => enable_curator_sits_with_the_works, disable_curator_sits_with_the_works;
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
@@ -165,6 +174,9 @@ impl AdvancedAi {
         /// Opt-in gene `good-land-lifts-the-city-target`; see
         /// `advanced/good_land_lifts_the_city_target.rs`.
         good_land_lifts_the_city_target => enable_good_land_lifts_the_city_target, disable_good_land_lifts_the_city_target;
+        /// Opt-in gene `great-works-never-wait`; see
+        /// `advanced/great_works_never_wait.rs`.
+        great_works_never_wait => enable_great_works_never_wait, disable_great_works_never_wait;
         // ---- append: l-o --------------------------------------------
         /// Opt-in gene `last-charge-joins-the-army`; see
         /// `advanced/apostle_army.rs`.

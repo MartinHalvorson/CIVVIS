@@ -19,6 +19,14 @@ impl Game {
         if !self.can_house_additional_great_work(pid, "artifact") {
             return Vec::new();
         }
+        self.excavation_sites_ignoring_slots(pid)
+    }
+
+    /// `excavation_sites` without its empty-Artifact-slot gate: every site
+    /// `pid` could dig if a slot stood empty. A planner asking how many
+    /// Archaeological Museums the land would fill reads this
+    /// (`culture-digs-every-site`).
+    pub(crate) fn excavation_sites_ignoring_slots(&self, pid: usize) -> Vec<(Pos, String)> {
         self.map
             .tiles
             .keys()
