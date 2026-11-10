@@ -130,7 +130,7 @@
    "bonus": "preslav",
    "implemented": true,
    "shipped": true,
-   "effect": "Your light and heavy cavalry units have +5 Strength when fighting on hill tiles."
+   "effect": "You receive +2 Loyalty per turn in cities for each Encampment district building."
   },
   {
    "name": "Antananarivo",

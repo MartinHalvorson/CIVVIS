@@ -3317,6 +3317,24 @@ const RESPONSIVE_TYPE_ROOT_SELECTOR = [
 const responsiveTypeRoots = new Set();
 const responsiveTextRange = document.createRange();
 let responsiveTypeFrame = 0;
+// What the fitter last settled for an element: the rule and the words it
+// fitted, the size it wrote, and the boxes that size left standing. A running
+// simulation changes a handful of figures a turn in panels that hold a hundred
+// and fifty fitted runs; an element whose words, look and boxes are all as the
+// last fit left them keeps its size without being measured again.
+//
+// That shortcut is taken only on the path that follows a change of content.
+// A root whose own size or tracks changed is fitted from nothing, exactly as
+// before, and so is every root once its content has been still for a second
+// and at least every four seconds while it has not — so what a resting page
+// shows is always the full pass's answer, never a remembered one.
+const responsiveTypeFits = new WeakMap();
+const responsiveTypeWholeRoots = new Set();
+const responsiveTypeWholeAt = new WeakMap();
+const responsiveTypeSettling = new Set();
+let responsiveTypeSettleTimer = 0;
+const RESPONSIVE_TYPE_WHOLE_EVERY_MS = 4000;
+const RESPONSIVE_TYPE_SETTLE_MS = 1000;
 
 function responsiveTypeBand(root, width) {
   if (root.id === "playerhud") return width < 760 ? "compact" : width >= 1250 ? "roomy" : "standard";
@@ -3347,6 +3365,7 @@ function syncResponsiveTypeBox(root, width, height) {
 function scheduleResponsiveType(root) {
   if (!root?.isConnected) return;
   responsiveTypeRoots.add(root);
+  responsiveTypeWholeRoots.add(root);
   if (!responsiveTypeFrame) responsiveTypeFrame = requestAnimationFrame(fitResponsiveType);
 }
 
@@ -3378,29 +3397,43 @@ function responsiveTextTargets(root) {
   return targets;
 }
 
+// The boxes a fitted size leaves behind: the element's own, the run inside it,
+// and the parent it is measured against. Read only while every size is written
+// and no layout is owed, so asking costs nothing the next paint would not.
+function responsiveFitBox(element) {
+  const parent = element.parentElement;
+  return `${element.clientWidth},${element.clientHeight},${element.scrollWidth},` +
+    `${element.scrollHeight},${parent?.clientWidth},${parent?.clientHeight}`;
+}
+
+function responsiveFitHolds(element, rule) {
+  const fit = responsiveTypeFits.get(element);
+  return Boolean(fit) && fit.rule === rule && fit.text === element.textContent &&
+    fit.look === element.className && fit.css === element.style.fontSize &&
+    fit.clipped === (element.dataset.fitClipped === "true") &&
+    fit.box === responsiveFitBox(element);
+}
+
 // All maximum-size writes happen before the first read, and every fitted write
 // happens after the last read. That batching keeps a 12-player update to two
 // layouts instead of forcing one layout per cell.
-function fitResponsiveType() {
-  responsiveTypeFrame = 0;
-  const targets = new Map();
-  for (const root of responsiveTypeRoots) {
-    if (!root.isConnected) continue;
-    for (const [element, rule] of responsiveTextTargets(root)) targets.set(element, rule);
-  }
-  responsiveTypeRoots.clear();
+function responsiveFit(elements, targets) {
   // Read the run as it sets at full size: a cell clipped on the last pass is
   // unclipped for this one, so a rule whose clipped look changes its own
   // layout is measured against its natural run rather than against itself.
-  for (const [element, rule] of targets) {
-    element.style.fontSize = `${rule.max}px`;
+  for (const element of elements) {
+    element.style.fontSize = `${targets.get(element).max}px`;
     delete element.dataset.fitClipped;
   }
   const fitted = [];
-  for (const [element, rule] of targets) {
-    if (!element.isConnected || !element.textContent.trim()) continue;
+  for (const element of elements) {
+    const rule = targets.get(element);
     const width = element.clientWidth, height = element.clientHeight;
-    if (width < 1 || height < 1) continue;
+    // Nothing to measure: it stays at the ceiling, as it always has.
+    if (!element.isConnected || !element.textContent.trim() || width < 1 || height < 1) {
+      fitted.push({element, rule, size:rule.max, clipped:false});
+      continue;
+    }
     const parentStyle = rule.parentWidth && element.parentElement
       ? getComputedStyle(element.parentElement) : null;
     const availableWidth = parentStyle
@@ -3435,13 +3468,72 @@ function fitResponsiveType() {
       ? availableHeight / element.scrollHeight * .985 : 1;
     const ideal = rule.max * Math.min(1, widthFit, heightFit);
     const size = Math.max(rule.min, Math.floor(ideal * 4) / 4);
-    fitted.push({element, size, clipped:size === rule.min && ideal < rule.min});
+    fitted.push({element, rule, size, clipped:size === rule.min && ideal < rule.min});
   }
-  for (const {element, size, clipped} of fitted) {
+  for (const {element, rule, size, clipped} of fitted) {
     element.style.fontSize = `${size}px`;
     if (clipped) element.dataset.fitClipped = "true";
     else delete element.dataset.fitClipped;
+    responsiveTypeFits.set(element, {rule, text:element.textContent, look:element.className,
+                                     css:element.style.fontSize, clipped, box:null});
   }
+}
+
+function fitResponsiveType() {
+  responsiveTypeFrame = 0;
+  const now = performance.now();
+  const targets = new Map(), whole = new Set();
+  for (const root of responsiveTypeRoots) {
+    if (!root.isConnected) continue;
+    const fromNothing = responsiveTypeWholeRoots.has(root) ||
+      now - (responsiveTypeWholeAt.get(root) ?? -Infinity) >= RESPONSIVE_TYPE_WHOLE_EVERY_MS;
+    if (fromNothing) {
+      responsiveTypeWholeAt.set(root, now);
+      responsiveTypeSettling.delete(root);
+    } else {
+      responsiveTypeSettling.add(root);
+    }
+    for (const [element, rule] of responsiveTextTargets(root)) {
+      targets.set(element, rule);
+      if (fromNothing) whole.add(element);
+    }
+  }
+  responsiveTypeRoots.clear();
+  responsiveTypeWholeRoots.clear();
+  // Reads only until the first fit, so the one layout they ask for is the one
+  // the changed content owed the page anyway.
+  let stale = [];
+  for (const [element, rule] of targets)
+    if (whole.has(element) || !responsiveFitHolds(element, rule)) stale.push(element);
+  // A fit can move the boxes beside it, so with every size written the boxes
+  // are read back: a fresh fit records what it left, and a kept one whose room
+  // changed under it is fitted in turn. Three rounds bound a layout that will
+  // not settle; anything still moving then is fitted on the next pass.
+  for (let round = 0; stale.length && round < 3; round++) {
+    responsiveFit(stale, targets);
+    const fresh = new Set(stale);
+    stale = [];
+    for (const element of targets.keys()) {
+      const fit = responsiveTypeFits.get(element);
+      if (!fit) continue;
+      const box = responsiveFitBox(element);
+      if (fresh.has(element)) fit.box = box;
+      else if (fit.box !== box) stale.push(element);
+    }
+  }
+  if (responsiveTypeSettling.size) {
+    clearTimeout(responsiveTypeSettleTimer);
+    responsiveTypeSettleTimer = setTimeout(settleResponsiveType, RESPONSIVE_TYPE_SETTLE_MS);
+  }
+}
+
+// The content has been still for a moment: fit what changed since the last
+// full pass from nothing, so nothing on a resting page stands on a memory.
+function settleResponsiveType() {
+  responsiveTypeSettleTimer = 0;
+  const roots = [...responsiveTypeSettling];
+  responsiveTypeSettling.clear();
+  for (const root of roots) scheduleResponsiveType(root);
 }
 
 const responsiveTypeSizeObserver = typeof ResizeObserver === "function"
@@ -8632,7 +8724,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const oneMoreTurn = st.last_civ_standing === null || st.last_civ_standing === undefined
         ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
             onclick="playOnPastVictory('last_civ_standing', false)"
-            title="Keep this world playing until only one civilization remains.">One more turn</button>`
+            title="Keep this world playing until only one civilization remains.">One more turn<span class="winner-again-note">(play until the last Civ standing)</span></button>`
         : ``;
       const winnerActions = SPEC
         ? `${oneMoreTurn}
@@ -27650,20 +27742,34 @@ let hudHtml = "", victoryHudHtml = "";
 const HUD_PATCH_KEEPS = new Set(["hidden", "style", "data-fit-clipped"]);
 const hudPatchKey = node => node.getAttribute?.("data-key") ?? null;
 
+// The standings run this over every node they hold on every turn, so it asks
+// for names rather than attribute objects, and sweeps for something to take
+// off only a node that holds more than its markup names.
 function patchHudAttributes(live, fresh) {
-  for (const {name} of [...live.attributes])
-    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
-  for (const {name, value} of fresh.attributes)
+  const named = fresh.getAttributeNames();
+  for (const name of named) {
+    const value = fresh.getAttribute(name);
     if (live.getAttribute(name) !== value) live.setAttribute(name, value);
+  }
+  const held = live.getAttributeNames();
+  if (held.length === named.length) return;
+  for (const name of held)
+    if (!fresh.hasAttribute(name) && !HUD_PATCH_KEEPS.has(name)) live.removeAttribute(name);
 }
 
 function patchHudChildren(live, fresh) {
-  const keyed = new Map();
-  for (const node of live.childNodes)
-    if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+  // Most of what is patched carries no keys at all; the index of the ones that
+  // do is built when the first keyed node asks for it.
+  let keyed = null;
   let cursor = live.firstChild;
-  for (const want of [...fresh.childNodes]) {
+  for (let want = fresh.firstChild, next; want; want = next) {
+    next = want.nextSibling;
     const key = hudPatchKey(want);
+    if (key !== null && !keyed) {
+      keyed = new Map();
+      for (const node of live.childNodes)
+        if (hudPatchKey(node) !== null) keyed.set(hudPatchKey(node), node);
+    }
     const held = key === null ? cursor : keyed.get(key);
     if (!held || held.nodeName !== want.nodeName || hudPatchKey(held) !== key) {
       live.insertBefore(want, cursor);
@@ -27674,6 +27780,7 @@ function patchHudChildren(live, fresh) {
     if (held.nodeType === Node.ELEMENT_NODE) {
       patchHudAttributes(held, want);
       patchHudChildren(held, want);
+      if (held.nodeName === "SELECT") patchHudSelect(held);
     } else if (held.nodeValue !== want.nodeValue) {
       held.nodeValue = want.nodeValue;
     }
@@ -27683,6 +27790,16 @@ function patchHudChildren(live, fresh) {
     cursor = cursor.nextSibling;
     spent.remove();
   }
+}
+
+// A select shows what its options' `selected` properties say, and once it has
+// been picked from those stop following the attribute a patch writes. New
+// markup would have opened on the option it marks, so a patched one is put
+// there: a pace changed from the deck still reads true on the turn plate.
+function patchHudSelect(select) {
+  if (!select.options.length) return;
+  const marked = [...select.options].findIndex(option => option.hasAttribute("selected"));
+  if (select.selectedIndex !== Math.max(0, marked)) select.selectedIndex = Math.max(0, marked);
 }
 
 function patchHudMarkup(root, markup) {
@@ -28052,11 +28169,17 @@ function drawPlayerHud() {
     return;
   }
   hudHtml = html;
-  hud.innerHTML = html;
+  // The standings change a few figures a turn. Writing them as new markup made
+  // the browser build, style and lay out all five hundred of its boxes again
+  // on every turn, and gave the type fitter a hundred runs it had never seen;
+  // patched in place, the rows that did not change are not touched at all, and
+  // a press, a hover or the keyboard's place in the table outlives the turn.
+  patchHudMarkup(hud, html);
   syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon && playerScroll) playerRibbon.scrollTop = playerScroll;
-  // innerHTML replaced the elements the observer was watching.
+  // The first paint, or a table rebuilt around a new structure, puts new
+  // elements where the observer's were.
   observePlayerRibbon();
   syncPlayerLockPins();
   // Not only the bars: a column can *arrive* between two frames — the turn the
@@ -28068,8 +28191,8 @@ function drawPlayerHud() {
   syncHudColumnRoster();
   const playerStandings = hud.querySelector(".player-standings");
   if (playerStandings && playerScrollLeft) playerStandings.scrollLeft = playerScrollLeft;
-  // innerHTML also replaced the plate seam; restamp its live automatic or
-  // preferred width and accessibility range.
+  // The patch strips what the markup does not name, the plate seam's range
+  // among it; restamp its live automatic or preferred width and that range.
   syncTurnPlateWidth();
   // The very first paint had no table to measure, and nothing else would ask
   // again until the panel changed size.
@@ -28270,7 +28393,12 @@ function syncPlayerLockPins() {
   const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
   if (!ribbon) return;
   const cards = [...ribbon.children].filter(child => child.classList.contains("diplomacy-card"));
+  // Only a card that carries a pin is written to: the rows outlive the turn
+  // now, and clearing a pin that is not there still asked the browser to style
+  // every row again on every turn.
   for (const card of cards) {
+    if (!card.classList.contains("pinned") && !card.style.getPropertyValue("--pin-head") &&
+        !card.style.getPropertyValue("--pin-tail")) continue;
     card.classList.remove("pinned");
     card.style.removeProperty("--pin-head");
     card.style.removeProperty("--pin-tail");
@@ -28362,7 +28490,7 @@ function focusHudCity(cityId) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
-// The table's rows live inside a scroller that innerHTML replaces, and a
+// The table's rows live inside a scroller that a rebuilt table replaces, and a
 // scroll event does not bubble, so this listens through the capture phase.
 hudRibbon.addEventListener("scroll", event => {
   if (event.target.classList?.contains("diplomacy-ribbon")) schedulePlayerHudWindowRefill();

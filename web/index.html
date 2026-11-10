@@ -2262,6 +2262,12 @@
     width: 100%;
     border-color: color-mix(in srgb, var(--winner-color, #d7b66a) 55%, #4a635a);
   }
+  /* One more turn says on a smaller second line what it will play to. */
+  .winner-again-note {
+    display: block; margin-top: 3px;
+    font-size: var(--type-label); letter-spacing: .01em; opacity: .85;
+    text-wrap: balance;
+  }
   #tip {
     position: fixed; z-index: 30; display: none; max-width: 290px; padding: 10px 13px;
     color: var(--text); border: 1px solid #4a635a; border-radius: 11px;

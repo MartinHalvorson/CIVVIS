@@ -2304,3 +2304,19 @@ The engine before this change measures v46's **19,571 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v48 (2026-11-09) — City-states run their shipped default kit
+
+#4906 gives every city-state `MINOR_CIV_DEFAULT_TRAIT`: half Production
+overall, +200% toward Builders, toward walls, and toward military units while
+it has fewer than ten, and free Gold upgrades. Preslav's cavalry kit is gone,
+as `RemoveData` deletes it, and it pays +2 Loyalty per Encampment line instead.
+The Foreign Ministry bonus now covers every Suzerain city-state unit. Every
+controller, `AdvancedAi::legacy()` included, now plays beside these city-states.
+
+The engine before this change measures v47's **19,002 decisions /
+`0xcbc8_700a_0df7_10f5`**. The corrected engine measures **18,765 decisions /
+`0xaa6b_4e3a_f767_b9e9`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.

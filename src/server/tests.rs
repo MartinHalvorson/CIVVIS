@@ -2829,7 +2829,10 @@ fn browser_renders_each_delivered_state_as_one_complete_frame() {
         .0;
     assert!(standings.contains("playerHudStats(p,"));
     assert!(player_hud.contains("patchHudMarkup(victoryHud, overview);"));
-    assert!(player_hud.contains("hud.innerHTML = html;"));
+    // The standings are patched in place like the tracker: new markup every
+    // turn rebuilt and re-fitted the whole table to change a few figures.
+    assert!(player_hud.contains("patchHudMarkup(hud, html);"));
+    assert!(!player_hud.contains("hud.innerHTML = html;"));
     // A seat somebody is playing is named after the player this game
     // registered for them, and it is preferred over any agent handle: a
     // person is never one of the entrants on the leaderboard.
@@ -12645,7 +12648,7 @@ fn browser_stops_asking_for_turns_after_any_terminal_result() {
     assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
     assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
     assert!(EMBEDDED_INDEX.contains(
-        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn</button>"
+        "onclick=\"playOnPastVictory('last_civ_standing', false)\"\n            title=\"Keep this world playing until only one civilization remains.\">One more turn<span class=\"winner-again-note\">(play until the last Civ standing)</span></button>"
     ));
     // A result that already left one civilization has nothing to play on to.
     assert!(EMBEDDED_INDEX.contains("const oneMoreTurn = st.last_civ_standing === null"));
