@@ -26401,20 +26401,17 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religion_prophet_queue;
-/// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
-/// see `advanced/religion_seat_fields_apostles.rs`.
-mod religion_seat_fields_apostles;
-/// `religion-seat-flips-the-cheapest`: see
 /// `religion-seat-charts-the-rivals`: see
 /// `advanced/religion_seat_charts_the_rivals.rs`.
 mod religion_seat_charts_the_rivals;
+/// `religion-seat-fields-apostles` and `religion-seat-takes-the-faith-beliefs`:
+/// see `advanced/religion_seat_fields_apostles.rs`.
+mod religion_seat_fields_apostles;
 /// `religion-seat-first-shrine`: see `advanced/religion_seat_first_shrine.rs`.
 mod religion_seat_first_shrine;
+/// `religion-seat-flips-the-cheapest`: see
 /// `advanced/religion_seat_flips_the_cheapest.rs`.
 mod religion_seat_flips_the_cheapest;
-/// `religion-seat-spends-the-bank`: see
-/// `advanced/religion_seat_spends_the_bank.rs`.
-mod religion_seat_spends_the_bank;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
 /// `religion-seat-guards-the-race`: see
@@ -26423,6 +26420,9 @@ mod religion_seat_guards_the_race;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
+/// `religion-seat-spends-the-bank`: see
+/// `advanced/religion_seat_spends_the_bank.rs`.
+mod religion_seat_spends_the_bank;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
