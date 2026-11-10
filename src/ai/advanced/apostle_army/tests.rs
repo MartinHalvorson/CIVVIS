@@ -196,6 +196,37 @@ fn two_rivals_in_reach_make_a_tile_unsafe_together() {
 }
 
 #[test]
+fn a_unit_refused_every_step_runs_for_home() {
+    let (mut g, _, site, _) = field();
+    let ours = spawn(&mut g, "missionary", 0, (16, 8), 50, 3);
+    spawn(&mut g, "apostle", 1, (18, 8), 100, 3);
+    spawn(&mut g, "apostle", 1, (18, 9), 100, 3);
+    let mut pressing = AdvancedAi::targeting(VictoryTarget::Religion);
+    pressing.enable_spreader_steps_out_of_the_apostle();
+    pressing.enable_religion_seat_presses_the_campaign();
+    let before = g.wdist(g.units[&ours].pos, site);
+    assert!(!pressing.preacher_runs_for_home(&mut g, 0, ours));
+    assert_eq!(g.wdist(g.units[&ours].pos, site), before, "gene off");
+    let mut careful = pressing.clone();
+    careful.enable_corps_comes_home_alive();
+    assert!(careful.preacher_runs_for_home(&mut g, 0, ours));
+    // The unit loop calls again while the unit has movement left.
+    for _ in 0..6 {
+        careful.preacher_runs_for_home(&mut g, 0, ours);
+    }
+    assert!(g.wdist(g.units[&ours].pos, site) < before);
+    assert_eq!(g.units[&ours].charges, 3);
+}
+
+#[test]
+fn a_unit_with_nowhere_better_stays() {
+    let (mut g, _, site, _) = field();
+    let ours = spawn(&mut g, "missionary", 0, site, 50, 3);
+    assert!(!home_alive().preacher_runs_for_home(&mut g, 0, ours));
+    assert_eq!(g.units[&ours].pos, site);
+}
+
+#[test]
 fn an_apostle_on_its_last_charge_is_kept_and_hunts() {
     let (mut g, _, _, _) = field();
     let hunter = spawn(&mut g, "apostle", 0, (16, 8), 100, 1);

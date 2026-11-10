@@ -321,7 +321,8 @@ impl AdvancedAi {
             Some((reaching, _, position)) if reaching < current_reaching => {
                 Some(self.base.path_move(g, pid, uid, position))
             }
-            _ => Some(false),
+            // `corps-comes-home-alive`: see `preacher_runs_for_home`.
+            _ => Some(self.preacher_runs_for_home(g, pid, uid)),
         }
     }
 

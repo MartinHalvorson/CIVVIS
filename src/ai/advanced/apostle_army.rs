@@ -146,7 +146,66 @@ impl AdvancedAi {
             "{} {} walks home to heal", kind.as_str(), uid;
             "corps-comes-home-alive: {} hit points; 68 of 74 units rival Apostles killed were at {} or less, and each death hands the rival faith 250 pressure around it", hp, RETREAT_FLOOR;
             site);
-        Some(self.religious_step_toward_range(g, pid, uid, site, 1))
+        let stepped = self.religious_step_toward_range(g, pid, uid, site, 1);
+        Some(stepped || self.preacher_runs_for_home(g, pid, uid))
+    }
+
+    /// `corps-comes-home-alive`: with no safe step left, a religious unit
+    /// still does not stand and wait for the blow. It takes this turn's
+    /// reachable tile the fewest rivals reach, nearest our healing ring (or
+    /// our nearest city when no ring heals), if that betters where it is.
+    /// Live, 2026-11-09: two Apostles at 46 and 51 hit points, each with two
+    /// rivals in reach, were refused every step and held in the open.
+    pub(super) fn preacher_runs_for_home(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if !self.corps_comes_home_alive {
+            return false;
+        }
+        let Some((current, moves)) = g.units.get(&uid).map(|unit| (unit.pos, unit.moves_left))
+        else {
+            return false;
+        };
+        if moves <= 0.0 {
+            return false;
+        }
+        let Some(home) = Self::nearest_healing_site(g, pid, uid).or_else(|| {
+            g.player_city_ids(pid)
+                .into_iter()
+                .map(|city| g.cities[&city].pos)
+                .min_by_key(|pos| (g.wdist(current, *pos), *pos))
+        }) else {
+            return false;
+        };
+        let threats = self.theological_threats(g, pid, uid);
+        let rank = |pos: Pos| {
+            (
+                Self::theological_threats_reaching(g, uid, pos, &threats),
+                g.wdist(pos, home),
+            )
+        };
+        let here = rank(current);
+        let Some((there, goal)) = g
+            .reachable(uid)
+            .into_iter()
+            .map(|pos| (rank(pos), pos))
+            .min()
+        else {
+            return false;
+        };
+        if there >= here {
+            return false;
+        }
+        let Some(next) = g
+            .route_step(uid, goal, 0)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return false;
+        };
+        let kind = g.units[&uid].kind;
+        think!(self.journal(), Faith, Decision,
+            "{} {} runs for home", kind.as_str(), uid;
+            "corps-comes-home-alive: no step is safe, {} rivals reach it here and {} where it is going, and standing still is the one sure way to be found", here.0, there.0;
+            goal);
+        self.base.path_move(g, pid, uid, next)
     }
 
     /// `corps-comes-home-alive`: whether `uid` passes up a fight that reads
