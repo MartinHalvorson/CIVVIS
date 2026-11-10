@@ -6736,6 +6736,10 @@ pub struct AdvancedAi {
     /// `faith-strike-wipes-the-spreaders`: the turn each rival was last
     /// struck.
     faith_strike_last: BTreeMap<usize, u32>,
+    /// `faith-strike-at-a-quiet-parity`: the strike may go at parity when the
+    /// rival's army is away from our cities. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_at_a_quiet_parity: bool,
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
     embassy_finds_the_capital_2: bool,

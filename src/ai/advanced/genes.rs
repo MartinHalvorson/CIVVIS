@@ -5466,6 +5466,10 @@ pub const GENES: &[Gene] = &[
     // condemned on the turn it is declared. Unpriced, off. See
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-wipes-the-spreaders", field: "faith_strike_wipes_the_spreaders", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_wipes_the_spreaders, disable: AdvancedAi::disable_faith_strike_wipes_the_spreaders },
+    // A heretic strike over the faith war's edge may still go at parity when
+    // the rival's army is away from our cities. Needs the strike gene. Unpriced,
+    // off. See `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-at-a-quiet-parity", field: "faith_strike_at_a_quiet_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_at_a_quiet_parity, disable: AdvancedAi::disable_faith_strike_at_a_quiet_parity },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
