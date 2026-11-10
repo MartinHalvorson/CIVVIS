@@ -124,6 +124,9 @@ impl AdvancedAi {
         /// `chop-feeds-the-long-build` alone. See
         /// `advanced/chop_feeds_the_long_build.rs`.
         chop_feeds_the_space_race => enable_chop_feeds_the_space_race, disable_chop_feeds_the_space_race;
+        /// `chop-spares-the-worked-tile`: no chop errand clears a tile a citizen
+        /// is working now. See `AdvancedAi::chop_spares`.
+        chop_spares_the_worked_tile => enable_chop_spares_the_worked_tile, disable_chop_spares_the_worked_tile;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -193,6 +196,9 @@ impl AdvancedAi {
         /// Opt-in gene `religion-seat-takes-the-debater`; see
         /// `advanced/religion_seat_takes_the_debater.rs`.
         religion_seat_takes_the_debater => enable_religion_seat_takes_the_debater, disable_religion_seat_takes_the_debater;
+        /// Opt-in gene `religion-seat-spares-the-launcher`; see
+        /// `advanced/religion_seat_spares_the_launcher.rs`.
+        religion_seat_spares_the_launcher => enable_religion_seat_spares_the_launcher, disable_religion_seat_spares_the_launcher;
         /// See `advanced/religion_seat_charts_the_rivals.rs`.
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.

@@ -5467,6 +5467,10 @@ pub const GENES: &[Gene] = &[
     // never reached a space project, so the district leg and the space leg
     // are priced separately. Opt-in.
     Gene { tag: "chop-feeds-the-space-race", field: "chop_feeds_the_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_space_race, disable: AdvancedAi::disable_chop_feeds_the_space_race },
+    // `chop-spares-the-worked-tile`: every chop errand prices a tile a
+    // citizen is working at nothing, so only idle land is cleared. Opt-in;
+    // see `AdvancedAi::chop_spares` in `advanced/chop_for_expansion.rs`.
+    Gene { tag: "chop-spares-the-worked-tile", field: "chop_spares_the_worked_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_spares_the_worked_tile, disable: AdvancedAi::disable_chop_spares_the_worked_tile },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5551,6 +5555,9 @@ pub const GENES: &[Gene] = &[
     // Live 11-09: Apostles offered Debater that took it averaged 0.94 kills and
     // 2.79 spreads; those offered it that took another 0.07 and 1.22.
     Gene { tag: "religion-seat-takes-the-debater", field: "religion_seat_takes_the_debater", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_takes_the_debater, disable: AdvancedAi::disable_religion_seat_takes_the_debater },
+    // A Religion seat that owns a religion opens no war to deny a space
+    // race. See `advanced/religion_seat_spares_the_launcher.rs`.
+    Gene { tag: "religion-seat-spares-the-launcher", field: "religion_seat_spares_the_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spares_the_launcher, disable: AdvancedAi::disable_religion_seat_spares_the_launcher },
     // A Religion-target founder keeps charting until it knows a majority of
     // every rival's cities, and takes Cartography sooner. See
     // `advanced/religion_seat_charts_the_rivals.rs`.

@@ -405,10 +405,14 @@ impl AdvancedAi {
         if here <= stop_range {
             return Some(false);
         }
+        // `corps-comes-home-alive`: nor into the reach of a soldier at war
+        // with us, who condemns the unit. Empty with that gene off.
+        let soldiers = self.condemners_near(g, pid, uid);
         let route = g
             .route_step(uid, target, stop_range)
             .filter(|next| g.can_move(uid, *next))
-            .filter(|next| Self::theological_tile_is_safe(g, uid, *next, &threats));
+            .filter(|next| Self::theological_tile_is_safe(g, uid, *next, &threats))
+            .filter(|next| !Self::religious_tile_in_reach(g, pid, *next, &soldiers));
         if let Some(next) = route {
             return Some(self.base.path_move(g, pid, uid, next));
         }
@@ -417,6 +421,7 @@ impl AdvancedAi {
             .into_iter()
             .filter(|position| g.can_move(uid, *position))
             .filter(|position| Self::theological_tile_is_safe(g, uid, *position, &threats))
+            .filter(|position| !Self::religious_tile_in_reach(g, pid, *position, &soldiers))
             .map(|position| (g.wdist(position, target), position))
             .filter(|(distance, _)| *distance < here)
             .min();

@@ -74,6 +74,10 @@ const SCOUT_CEILING: usize = 3;
 /// A city of ours needing support this close takes the last charge.
 const LOCAL_EMERGENCY: i32 = 6;
 
+/// How far from a religious unit a soldier at war with us is read. A unit
+/// takes one step at a time, and no land soldier's turn carries it farther.
+const CONDEMNER_RADIUS: i32 = 8;
+
 /// Turns between searches for fog once a search has found none.
 const SCOUT_SEARCH_REST: u32 = 5;
 
@@ -186,8 +190,10 @@ impl AdvancedAi {
             return false;
         };
         let threats = self.theological_threats(g, pid, uid);
+        let soldiers = self.condemners_near(g, pid, uid);
         let rank = |pos: Pos| {
             (
+                Self::religious_tile_in_reach(g, pid, pos, &soldiers),
                 Self::theological_threats_reaching(g, uid, pos, &threats),
                 g.wdist(pos, home),
             )
@@ -291,6 +297,54 @@ impl AdvancedAi {
                 && Self::city_needs_religious_support(g, pid, city, religion)
         });
         !emergency && Self::last_charge_roster(g, pid, unit.kind.as_str(), ceiling).contains(&uid)
+    }
+
+    /// `corps-comes-home-alive`: the visible land soldiers at war with us
+    /// within [`CONDEMNER_RADIUS`] of `uid`, each with the tiles it can stand
+    /// on before our unit moves again. A soldier that enters a religious
+    /// unit's tile condemns it, and the unit's faith loses pressure in the
+    /// cities around. Barbarians are `religious_raider_threats`' to read.
+    /// Empty with the gene off.
+    ///
+    /// Live Russia 102036Z (2026-11-10): the Khmer were at war with us from
+    /// turn 132 to the end at 176 and 23 religious units of ours vanished in
+    /// or beside their land holding two or more charges, against 6 lost to
+    /// theological combat. 100022Z lost 7 that way beside Sumer in 35 turns.
+    pub(super) fn condemners_near(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Vec<BarbarianCaptureThreat> {
+        if !self.corps_comes_home_alive {
+            return Vec::new();
+        }
+        let Some(origin) = g.units.get(&uid).map(|unit| unit.pos) else {
+            return Vec::new();
+        };
+        g.units
+            .values()
+            .filter(|soldier| {
+                soldier.owner != pid
+                    && Some(soldier.owner) != g.barb_pid
+                    && soldier.hp > 0
+                    && g.wdist(origin, soldier.pos) <= CONDEMNER_RADIUS
+                    && g.is_at_war(pid, soldier.owner)
+                    && self.battlefront_unit_visible(g, pid, soldier.id)
+            })
+            .filter(|soldier| {
+                let spec = &g.rules.units[soldier.kind];
+                spec.class == "military" && !matches!(spec.domain.as_deref(), Some("air" | "sea"))
+            })
+            .map(|soldier| {
+                let mut capture_tiles = g.threat_reach(soldier.id);
+                capture_tiles.push(soldier.pos);
+                BarbarianCaptureThreat {
+                    capture_tiles,
+                    sea: false,
+                }
+            })
+            .collect()
     }
 
     /// Whether `pos` lies in the land of a player at war with `pid`, where
