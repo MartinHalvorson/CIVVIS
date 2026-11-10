@@ -10160,7 +10160,11 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     let key = EMBEDDED_INDEX
         .find("<div id=\"politicskey\" class=\"politics-key\" hidden></div>")
         .expect("key");
-    assert!(key < EMBEDDED_INDEX.find("<div id=\"worldpolitics\"").expect("table"));
+    assert!(
+        key < EMBEDDED_INDEX
+            .find("<div id=\"worldpolitics\"")
+            .expect("table")
+    );
     assert!(matrix.contains("<td class=\"politics-corner\"></td>"));
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
