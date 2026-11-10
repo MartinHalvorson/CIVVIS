@@ -160,7 +160,8 @@ impl AdvancedAi {
     fn culture_faith_passes_the_head(g: &Game, pid: usize, cid: u32, head: &Item) -> bool {
         let remaining =
             g.item_cost_for_city(pid, cid, head) - g.item_invested_production(cid, head);
-        if !(remaining > 2.0 * g.city_yields(cid).production.max(0.5)) {
+        let room = 2.0 * g.city_yields(cid).production.max(0.5);
+        if remaining.is_nan() || remaining <= room {
             return false;
         }
         match head {
