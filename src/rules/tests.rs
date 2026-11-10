@@ -377,6 +377,40 @@ fn gathering_storm_unique_rows_match_the_installed_database() {
     assert_eq!(llanero.replaces, Some(crate::name!("cavalry")));
     assert_eq!(llanero.upgrade_to, Some(crate::name!("helicopter")));
 
+    // Macedon and Persia's unique units DO cost strategics under Gathering
+    // Storm. The base rows in `DLC/Macedonia_Persia/Data/
+    // Macedonia_Persia_GameplayData.xml` carry no `StrategicResource`, but
+    // `Macedonia_Persia_Expansion2.xml` sets it (`<Update>` on `Units`: Iron
+    // for the Hypaspist and the Immortal, Horses for the Hetairoi) and prices
+    // it in `Units_XP2` (`ResourceCost` 5, 10 and 10). Reading only the base
+    // file, or only `Expansion2_Units.xml`, says they are free; they are not.
+    for (unit, resource, cost) in [
+        ("hypaspist", "iron", 5.0),
+        ("hetairoi", "horses", 10.0),
+        ("immortal", "iron", 10.0),
+    ] {
+        let spec = &rules.units[unit];
+        assert_eq!(
+            (spec.requires_resource, spec.resource_cost),
+            (Some(crate::name::Name::from(resource)), cost),
+            "{unit}"
+        );
+    }
+    let hypaspist = &rules.units["hypaspist"];
+    assert_eq!(
+        (hypaspist.cost, hypaspist.moves, hypaspist.strength),
+        (100.0, 2.0, 38.0)
+    );
+    assert_eq!(hypaspist.unique_to.as_deref(), Some("Macedon"));
+    assert_eq!(hypaspist.replaces, Some(crate::name!("swordsman")));
+    let hetairoi = &rules.units["hetairoi"];
+    assert_eq!(
+        (hetairoi.cost, hetairoi.moves, hetairoi.strength),
+        (100.0, 4.0, 36.0)
+    );
+    assert_eq!(hetairoi.unique_to.as_deref(), Some("Macedon"));
+    assert_eq!(hetairoi.replaces, Some(crate::name!("horseman")));
+
     let prasat = &rules.buildings["prasat"];
     assert_eq!(prasat.yields.faith, 6.0);
     assert_eq!(prasat.great_work_slots["relic"], 1);

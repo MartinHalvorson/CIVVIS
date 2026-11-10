@@ -1358,6 +1358,11 @@ pub struct BasicAi {
     /// each turn by the advanced agent; false for standalone controllers.
     /// See `advanced/religion_seat_charts_the_rivals.rs`.
     pub(crate) charts_rival_majorities: bool,
+    /// A lane's charting gene acts for this seat this turn, so the contact
+    /// gap stays open (`domination-charts-every-capital`: a rival's original
+    /// capital is uncharted). Set each turn by the advanced agent; false for
+    /// standalone controllers. See `advanced/domination_charts_every_capital.rs`.
+    pub(crate) lane_charting_gap: bool,
     /// Do not enter the finite Great Prophet race at all.
     ///
     /// `pursue_religion` alone is NOT this flag. It gates missionary purchases
@@ -2122,6 +2127,21 @@ pub struct BasicAi {
     /// stood on the only stage it could have played. Off by default; opt-in
     /// gene. See `advanced/band_plays_what_it_can_reach.rs`.
     pub(crate) band_plays_what_it_can_reach: bool,
+    /// `bands-wait-at-the-door`: a Rock Band with no stage it can reach waits
+    /// on the near side of the border of the closed rival it would most like
+    /// to play (the Culture bar holder first, then by the stage), on the
+    /// open tile nearest that rival's best stage, instead of at home or
+    /// wherever it stopped. Off by default; opt-in gene. See
+    /// `advanced/bands_wait_at_the_door.rs`.
+    pub(crate) bands_wait_at_the_door: bool,
+    /// `band-plays-at-level-three`: a Rock Band below level 3 plays first
+    /// where its performance level (band level plus the stage's promotion
+    /// levels) reaches 3, when such a stage is open within four turns; the
+    /// promotion chooser takes the promotion that lifts the most open,
+    /// reachable stages to level 3. Breakup odds are 45% at level 1 and 25%
+    /// at level 3; today's live concerts died 51% at level 1 and 8% at 3.
+    /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
+    pub(crate) band_plays_at_level_three: bool,
     /// `band-plays-what-it-can-reach`: each band's trip this turn, keyed by
     /// [`BasicAi::band_memory_key`]: the turn, the tile it stood on when it
     /// first moved that turn, and the venue it set out for.
@@ -2251,6 +2271,11 @@ pub struct BasicAi {
     /// the frozen native controllers, enabled by the Civilization VI bridge.
     /// See `loyalty_emergency`.
     loyalty_rate_alarm: bool,
+    /// `culture-keeps-pingala-home`: set each turn by `AdvancedAi` on a
+    /// Culture seat with the gene on. A seated Pingala answers a Loyalty
+    /// emergency only in a city flipping within this many turns. `None`
+    /// leaves every Governor free, the stock rule.
+    pub(crate) pingala_loyalty_runway: Option<f64>,
     /// Record every tactical step through `path_move` instead of applying it
     /// raw, so a unit stepped a second time in the same turn cannot walk back
     /// onto the tile it just left.
@@ -2692,6 +2717,12 @@ pub struct BasicAi {
     /// Entrant `live_without_barbarian_ranged_answer`; treatment
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
+    /// `city-strike-takes-the-gun`: the city loop's "walls fire at raiders in
+    /// range" pass, which fires each City Center at the first hostile tile in
+    /// disk order, stands aside, and every city and Encampment strike is
+    /// priced by the advanced command phase instead. Set each turn by
+    /// `AdvancedAi` only while its command phase runs; false everywhere else.
+    pub(crate) city_strikes_left_to_the_planner: bool,
     /// `siege-preempts-the-queue`: a raider on a city's doorstep is answered
     /// with a body before anything else is built, bought when no defender
     /// exists, and a recon unit is not a defender. Read by
@@ -2812,6 +2843,11 @@ pub struct BasicAi {
     /// while fewer stand. Lent by the Advanced gene to a Culture seat's
     /// delegated call; zero (off) by default.
     pub(crate) dig_museums_wanted: usize,
+    /// `curator-sits-with-the-works`: while a Culture seat's Pingala holds
+    /// Curator, `reassign_governor_for_loyalty` sends another Governor to a
+    /// loyalty emergency whenever one can go, instead of pulling Pingala off
+    /// the works. Set by `AdvancedAi` each turn; false (off) by default.
+    pub(crate) curator_keeps_his_seat: bool,
     /// `religion-seat-takes-the-faith-beliefs`: the founding tries the
     /// Faith-scaling founder beliefs first. Set each turn by the Advanced
     /// gene for a Religion-target seat; off by default.
@@ -3834,6 +3870,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            lane_charting_gap: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -3892,6 +3929,8 @@ impl BasicAi {
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
+            bands_wait_at_the_door: false,
+            band_plays_at_level_three: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -3906,6 +3945,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
@@ -3957,6 +3997,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -3972,6 +4013,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -4279,6 +4321,7 @@ impl BasicAi {
             pursue_religion: true,
             bank_faith_for_apostle: false,
             charts_rival_majorities: false,
+            lane_charting_gap: false,
             skip_prophet_race: false,
             enter_prophet_race: false,
             prophet_race_takes_a_district_slot: false,
@@ -4337,6 +4380,8 @@ impl BasicAi {
             band_plays_its_stage: false,
             bands_draw_from_the_bar: false,
             band_plays_what_it_can_reach: false,
+            bands_wait_at_the_door: false,
+            band_plays_at_level_three: false,
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -4351,6 +4396,7 @@ impl BasicAi {
             come_ashore: false,
             barbarian_settler_capture: false,
             loyalty_rate_alarm: false,
+            pingala_loyalty_runway: None,
             recorded_tactical_step: false,
             live_motion_turn_accounting: false,
             whole_turn_backtrack_guard: false,
@@ -4402,6 +4448,7 @@ impl BasicAi {
             no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
+            city_strikes_left_to_the_planner: false,
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
@@ -4417,6 +4464,7 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             dig_museums_wanted: 0,
+            curator_keeps_his_seat: false,
             founder_takes_the_faith_beliefs: false,
             preserve_culture_resort_sites: false,
             deck_prices_growth: false,
@@ -5759,7 +5807,12 @@ impl BasicAi {
         // once after the city loop: rebuilding the complete action list for
         // every city also enumerates production, deals, Congress votes, and
         // every unit move, which becomes quadratic in a developed empire.
+        // `city-strike-takes-the-gun`: both passes stand aside for the
+        // advanced command phase, which prices every strike.
         for cid in &city_ids {
+            if self.city_strikes_left_to_the_planner {
+                break;
+            }
             if g.city_can_strike(&g.cities[cid]) {
                 let cpos = g.cities[cid].pos;
                 for pos in g.wdisk(cpos, 2) {
@@ -5781,10 +5834,12 @@ impl BasicAi {
             }
         }
         loop {
-            if !city_ids.iter().any(|cid| {
-                g.defending_districts(&g.cities[cid])
-                    .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
-            }) {
+            if self.city_strikes_left_to_the_planner
+                || !city_ids.iter().any(|cid| {
+                    g.defending_districts(&g.cities[cid])
+                        .any(|district| g.defending_district_can_strike(&g.cities[cid], &district))
+                })
+            {
                 break;
             }
             let strike = g
@@ -7598,10 +7653,32 @@ impl BasicAi {
         let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
             return false;
         };
-        let can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
-        if self.band_plays_what_it_can_reach {
-            return self.rock_band_reachable_step(g, pid, uid, here, can_perform_here);
+        let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
+        if can_perform_here && self.band_plays_at_level_three {
+            // `band-plays-at-level-three`: no lower-level show while a
+            // higher-level stage is on the tour.
+            let ranked = self.rock_band_ranked_venues(g, pid, uid);
+            can_perform_here = Self::rock_band_may_play_here(g, pid, uid, here, &ranked);
         }
+        let acted = if self.band_plays_what_it_can_reach {
+            self.rock_band_reachable_step(g, pid, uid, here, can_perform_here)
+        } else {
+            self.rock_band_tour_step(g, pid, uid, here, can_perform_here)
+        };
+        // `bands-wait-at-the-door`: nothing to play or walk to, so wait where
+        // the land is most likely to open.
+        acted || (self.bands_wait_at_the_door && self.rock_band_door_step(g, pid, uid, here))
+    }
+
+    /// The stock tour: walk toward the best venue, or play here.
+    fn rock_band_tour_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        here: Pos,
+        can_perform_here: bool,
+    ) -> bool {
         // Passing through a legal venue must not abandon the better tour the
         // same scorer selected on the approach. Native 111731Z's Album Cover
         // Art band stopped at a Theater with a legal matching Wonder one hex
@@ -7622,6 +7699,15 @@ impl BasicAi {
     /// the seat plays (`bands-draw-from-the-bar`, `band-plays-its-stage`, or
     /// the stock tour).
     fn rock_band_ranked_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        let ranked = self.rock_band_scored_venues(g, pid, uid);
+        if self.band_plays_at_level_three {
+            Self::rock_band_level_three_first(g, pid, uid, ranked)
+        } else {
+            ranked
+        }
+    }
+
+    fn rock_band_scored_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
         if self.bands_draw_from_the_bar {
             Self::rock_band_career_ranking(g, uid, |position| {
                 g.rock_concert_bar_value(pid, uid, position)

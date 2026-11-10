@@ -5449,6 +5449,14 @@ pub const GENES: &[Gene] = &[
     // trip the host walked nowhere turns it to another host. Opt-in; see
     // `advanced/band_plays_what_it_can_reach.rs`.
     Gene { tag: "band-plays-what-it-can-reach", field: "band_plays_what_it_can_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_what_it_can_reach, disable: AdvancedAi::disable_band_plays_what_it_can_reach },
+    // A Rock Band with nothing it can play waits at the border of the closed
+    // land it most wants, so it plays the turn that land reopens. Opt-in; see
+    // `advanced/bands_wait_at_the_door.rs`.
+    Gene { tag: "bands-wait-at-the-door", field: "bands_wait_at_the_door", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_wait_at_the_door, disable: AdvancedAi::disable_bands_wait_at_the_door },
+    // A Rock Band below level 3 plays first where its performance level
+    // reaches 3, and takes the promotion that lifts the most open stages
+    // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5534,15 +5542,43 @@ pub const GENES: &[Gene] = &[
     // that inspires a near road civic first. Opt-in; see
     // `advanced/culture_road_inspirations.rs`.
     Gene { tag: "culture-road-earns-its-inspirations", field: "culture_road_earns_its_inspirations", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_earns_its_inspirations, disable: AdvancedAi::disable_culture_road_earns_its_inspirations },
+    // `culture-faith-site-per-theater-2`: version one, and the Faith sources
+    // are claimed in parallel, one per Theater city. Live Deity Kristina
+    // 20261110T183027Z under version one built one source at a time (Holy
+    // Site t60, Shrine t69, Temple t92, next Holy Site t121) and made 12
+    // Faith a turn at t100. Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-2", field: "culture_faith_site_per_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_2, disable: AdvancedAi::disable_culture_faith_site_per_theater_2 },
     // Live Deity Kristina 11-10: 13 science-denial wars at 0.04-0.88 of the
     // target's power took 13 of our cities and delayed no launch. Off
     // Domination the war needs the launcher counter's edge and spares a
     // friend. Opt-in; see `advanced/denial_war_needs_the_lane_edge.rs`.
     Gene { tag: "denial-war-needs-the-lane-edge", field: "denial_war_needs_the_lane_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_war_needs_the_lane_edge, disable: AdvancedAi::disable_denial_war_needs_the_lane_edge },
+    // `culture-keeps-pingala-home`: a Culture target's seated Pingala answers a
+    // Loyalty emergency only in a city flipping within twelve standard turns.
+    // Live Kristina 11-10: 9 of 20 Pingala moves went to a city 3+ citizens
+    // smaller; four of the first five carriers of the Pingala-first gene lost
+    // her to a two-citizen border city within 25 turns of her appointment.
+    // Opt-in; see `advanced/culture_pingala_first.rs`.
+    Gene { tag: "culture-keeps-pingala-home", field: "culture_keeps_pingala_home", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_pingala_home, disable: AdvancedAi::disable_culture_keeps_pingala_home },
     // `culture-road-builds-its-triggers`: a Culture seat lays the Farms and
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
     Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // Kristina Deity 11-10: the delegated city loop fired each wall at the
+    // first hostile in disk order before the command phase priced anything;
+    // a gun stood in reach of a walled city that struck elsewhere on 19 of 26
+    // unhit gun-turns with siege-at-the-walls-dies-first armed. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "city-strike-takes-the-gun", field: "city_strike_takes_the_gun", kind: Kind::OptIn, enable: AdvancedAi::enable_city_strike_takes_the_gun, disable: AdvancedAi::disable_city_strike_takes_the_gun },
+    // `domination-charts-every-capital`: a Domination seat keeps charting
+    // until every rival's original capital is seen, and takes Cartography
+    // sooner. Opt-in; see `advanced/domination_charts_every_capital.rs`.
+    Gene { tag: "domination-charts-every-capital", field: "domination_charts_every_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_charts_every_capital, disable: AdvancedAi::disable_domination_charts_every_capital },
+    // `domination-target-gets-its-breaker`: the Domination lane owns a Ram,
+    // Tower or gun matched to its target's walls before it declares, and
+    // keeps one with every siege. Opt-in; see
+    // `advanced/domination_target_gets_its_breaker.rs`.
+    Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
     // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
@@ -5568,6 +5604,15 @@ pub const GENES: &[Gene] = &[
     // A Culture seat slots it at peace while it holds or can buy a Rock Band.
     // Opt-in; see `advanced/flower_power_in_the_dark.rs`.
     Gene { tag: "flower-power-in-the-dark", field: "flower_power_in_the_dark", kind: Kind::OptIn, enable: AdvancedAi::enable_flower_power_in_the_dark, disable: AdvancedAi::disable_flower_power_in_the_dark },
+    // Deity domination: 0 early-conquest openings in 72 surviving Deity runs
+    // (183 refusals for the 10-tile reach, 118 for the stand-down; naming
+    // closes at t40 Online) while 38 of 40 rival capitals stood at walls of
+    // 100 or less at t50. A Domination seat opens on the nearest walkable
+    // rival capital within 20 tiles while its walls are Ancient or none,
+    // melee-led, guards left home, standing down when the walls outgrow its
+    // Ram or Siege Tower. Opt-in;
+    // see `advanced/first_capital_before_the_walls.rs`.
+    Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5673,6 +5718,10 @@ pub const GENES: &[Gene] = &[
     // on the menu every turn from t120 in 9 games, never slotted; 8 of 32
     // Disrupts on the winner landed. See `advanced/space_denial_spy_cards.rs`.
     Gene { tag: "space-denial-slots-the-spy-cards", field: "space_denial_slots_the_spy_cards", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_slots_the_spy_cards, disable: AdvancedAi::disable_space_denial_slots_the_spy_cards },
+    // Kristina Deity 11-10: the host offered Rocket Scientist (Disrupt as if 2
+    // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
+    // none. See `advanced/space_denial_rocket_scientist.rs`.
+    Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

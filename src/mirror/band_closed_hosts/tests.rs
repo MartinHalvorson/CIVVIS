@@ -9,6 +9,10 @@ use crate::Pos;
 /// land (host player 3) beyond Ethiopia. Rows 30 and below belong to nobody,
 /// so a walk around Ethiopia exists.
 fn fixture(offered: &str, second_wonder: bool) -> (Snapshot, StateSnapshot) {
+    fixture_named(offered, second_wonder, "LOC_UNIT_ROCK_BAND_NAME")
+}
+
+fn fixture_named(offered: &str, second_wonder: bool, name: &str) -> (Snapshot, StateSnapshot) {
     let state = crate::mirror::state_from_json(&format!(
         r#"{{
             "turn":158,
@@ -16,7 +20,7 @@ fn fixture(offered: &str, second_wonder: bool) -> (Snapshot, StateSnapshot) {
             "units":[
                 {{"id":5701638,"kind":"UNIT_ROCK_BAND","x":9,"y":15,"hp":100,"moves":4,
                   "max_moves":4,"promotions":["PROMOTION_ALBUM_COVER_ART"],
-                  "rock_band_level":1,"concert_plots":{offered}}}
+                  "rock_band_level":1,"rock_band_name":"{name}","concert_plots":{offered}}}
             ],
             "rivals":[
                 {{"player":2,"civ":"CIVILIZATION_ETHIOPIA",
@@ -175,4 +179,20 @@ fn a_rival_with_a_single_wonder_plot_is_not_judged() {
     let (snapshot, state) = fixture(r#"[{"x":32,"y":15}]"#, false);
     let live = LiveMirror::new(&snapshot, &state, 3, 1, 250, 0);
     assert!(live.game.rock_band_barred_hosts.is_empty());
+}
+
+#[test]
+fn a_named_band_offered_nothing_reads_every_wonder_holder_closed() {
+    // Live 20261110T192354Z t155-t172: named bands, no stage offered
+    // anywhere. Both rivals holding wonders have closed their land.
+    let (snapshot, state) = fixture_named("[]", true, "Civvis Band 5701638");
+    let live = LiveMirror::new(&snapshot, &state, 3, 1, 250, 0);
+    let ethiopia = seat_of_city(&live.game, 18, 15);
+    let rome = seat_of_city(&live.game, 38, 15);
+    assert_eq!(
+        live.game.rock_band_barred_hosts,
+        [(0, ethiopia)].into_iter().collect(),
+        "Rome holds one wonder plot here, too few to judge"
+    );
+    assert!(!live.game.bars_foreign_rock_bands(rome, 0));
 }

@@ -89,6 +89,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_bound_granaries(g, pid, plan);
         }
+        // `domination-target-gets-its-breaker`: the Domination target's
+        // Ram, Tower or gun, after the Settler, Monument and Granary and
+        // ahead of the deterrent, which otherwise takes every idle queue a
+        // breaker could have. Exact no-op while the gene is off. See
+        // `advanced/domination_target_gets_its_breaker.rs`.
+        let _ = self.claim_domination_breaker(g, pid, plan);
         // `near-rival-deterrence`: a land unit while a neighbour at peace
         // out-guns us, after the floor's Settler and ahead of the Prophet
         // race and the routine claims. Exact no-op while the gene is off.

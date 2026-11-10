@@ -794,7 +794,7 @@ fn online_opening_seen_four_turns_before_deadline_gets_time_to_assemble() {
     let mut ai = opened(&mut game);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert_eq!(game.standard_duration(CONQUEST_COMMIT_DEADLINE), 40);
-    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 56);
+    assert_eq!(AdvancedAi::new().conquest_commit_due(&game, opening), 56);
 
     game.turn = 40;
     ai.maintain_conquest_opening(&mut game, 0);
@@ -814,14 +814,14 @@ fn online_opening_named_before_second_city_gets_time_to_build_its_force() {
     let mut ai = opened(&mut game);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert_eq!(opening.preparing_since, None);
-    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);
+    assert_eq!(AdvancedAi::new().conquest_commit_due(&game, opening), 40);
 
     game.turn = 25;
     game.found_city_for(0, at(6, 17), None);
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert_eq!(opening.preparing_since, Some(25));
-    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 45);
+    assert_eq!(AdvancedAi::new().conquest_commit_due(&game, opening), 45);
 
     game.turn = 40;
     ai.maintain_conquest_opening(&mut game, 0);
@@ -865,7 +865,7 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
         (CONQUEST_APPROACHING_SHARE..CONQUEST_ASSEMBLY_SHARE).contains(&share),
         "the column is approaching, not assembled: {share}"
     );
-    assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);
+    assert_eq!(AdvancedAi::new().conquest_commit_due(&game, opening), 40);
 
     game.turn = 40;
     ai.maintain_conquest_opening(&mut game, 0);
@@ -878,7 +878,7 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
     game.turn = 41;
     ai.maintain_conquest_opening(&mut game, 0);
     assert_eq!(
-        AdvancedAi::conquest_commit_due(&game, ai.conquest_opening.as_ref().unwrap()),
+        AdvancedAi::new().conquest_commit_due(&game, ai.conquest_opening.as_ref().unwrap()),
         48,
         "the extension stays granted when the formation changes"
     );

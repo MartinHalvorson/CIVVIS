@@ -103,6 +103,12 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-what-it-can-reach`; see
         /// `advanced/band_plays_what_it_can_reach.rs`.
         base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
+        /// Opt-in gene `bands-wait-at-the-door`; see
+        /// `advanced/bands_wait_at_the_door.rs`.
+        base.bands_wait_at_the_door => enable_bands_wait_at_the_door, disable_bands_wait_at_the_door;
+        /// Opt-in gene `band-plays-at-level-three`; see
+        /// `advanced/band_plays_at_level_three.rs`.
+        base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -158,6 +164,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater => enable_culture_faith_site_per_theater, disable_culture_faith_site_per_theater;
+        /// `culture-faith-site-per-theater-2`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_2 => enable_culture_faith_site_per_theater_2, disable_culture_faith_site_per_theater_2;
         /// `culture-road-builds-its-triggers`: see
         /// `advanced/culture_road_triggers.rs`.
         culture_road_builds_its_triggers => enable_culture_road_builds_its_triggers, disable_culture_road_builds_its_triggers;
@@ -176,6 +185,18 @@ impl AdvancedAi {
         /// `culture-road-takes-the-unique-first`: see
         /// `advanced/culture_unique_first.rs`.
         culture_road_takes_the_unique_first => enable_culture_road_takes_the_unique_first, disable_culture_road_takes_the_unique_first;
+        /// Opt-in gene `city-strike-takes-the-gun`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        city_strike_takes_the_gun => enable_city_strike_takes_the_gun, disable_city_strike_takes_the_gun;
+        /// `domination-charts-every-capital`: see
+        /// `advanced/domination_charts_every_capital.rs`.
+        domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
+        /// `domination-target-gets-its-breaker`: see
+        /// `advanced/domination_target_gets_its_breaker.rs`.
+        domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;
+        /// `culture-keeps-pingala-home`: see
+        /// `advanced/culture_pingala_first.rs`.
+        culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -185,6 +206,9 @@ impl AdvancedAi {
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
         /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
         flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
+        /// `first-capital-before-the-walls`: see
+        /// `advanced/first_capital_before_the_walls.rs`.
+        first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -269,6 +293,9 @@ impl AdvancedAi {
         /// Opt-in gene `space-denial-slots-the-spy-cards`; see
         /// `advanced/space_denial_spy_cards.rs`.
         space_denial_slots_the_spy_cards => enable_space_denial_slots_the_spy_cards, disable_space_denial_slots_the_spy_cards;
+        /// Opt-in gene `space-denial-promotes-the-rocket-scientist`; see
+        /// `advanced/space_denial_rocket_scientist.rs`.
+        space_denial_promotes_the_rocket_scientist => enable_space_denial_promotes_the_rocket_scientist, disable_space_denial_promotes_the_rocket_scientist;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
