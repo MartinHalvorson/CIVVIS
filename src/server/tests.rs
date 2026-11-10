@@ -5671,25 +5671,22 @@ fn browser_orders_controls_interface_setup_and_logs() {
     }
     assert!(EMBEDDED_INDEX.contains("victory_conditions: victoryConditions"));
     // The modes in the order they are offered: the AI-only simulation this
-    // engine exists for, then the human seat, then the one that is still
-    // "later". Single player is no longer "later" and is the only mode
-    // that offers a leader and a difficulty.
+    // engine exists for, then the human seat, marked as work in progress and
+    // the only mode that offers a leader and a difficulty. Multiplayer is not
+    // listed at all for now.
     assert!(
         EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
     );
-    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
+    assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player - WIP</option>"));
     assert!(!EMBEDDED_INDEX.contains("Single player · later"));
-    assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
+    assert!(!EMBEDDED_INDEX.contains("Multiplayer · later"));
     let ai_sim_mode = EMBEDDED_INDEX
         .find("AI-only simulation")
         .expect("ai sim mode");
     let single_mode = EMBEDDED_INDEX
-        .find("<option value=\"single\">Single player</option>")
+        .find("<option value=\"single\">Single player - WIP</option>")
         .expect("single player mode");
-    let multiplayer_mode = EMBEDDED_INDEX
-        .find("Multiplayer · later")
-        .expect("multiplayer mode");
-    assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
+    assert!(ai_sim_mode < single_mode);
     // A world already on screen sets the mode select, so the panel beside a
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
