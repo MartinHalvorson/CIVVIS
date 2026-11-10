@@ -88,6 +88,8 @@ impl AdvancedAi {
         /// `band-plays-its-stage`: Rock Bands take the promotions and tours that
         /// keep them alive, because album sales compound over a band's career.
         base.band_plays_its_stage => enable_band_plays_its_stage, disable_band_plays_its_stage;
+        /// `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`.
+        base.bands_draw_from_the_bar => enable_bands_draw_from_the_bar, disable_bands_draw_from_the_bar;
         barbarian_research_prices_the_field => enable_barbarian_research_prices_the_field, disable_barbarian_research_prices_the_field;
         /// `acropolis-before-the-deterrent`: see
         /// `advanced/acropolis_before_the_deterrent.rs`.

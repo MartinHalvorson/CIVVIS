@@ -2331,6 +2331,61 @@ impl Game {
         )
     }
 
+    /// `bands-draw-from-the-bar`: the concert's expected Tourism weighted by
+    /// [`rock_concert_bar_factor`](Self::rock_concert_bar_factor), plus the
+    /// rest of the band's career unweighted, since the band's later concerts
+    /// are played wherever it goes next.
+    pub(crate) fn rock_concert_bar_value(
+        &self,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+    ) -> Option<f64> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
+            return None;
+        }
+        let read = self.rock_concert_read(pid, unit, position)?;
+        Some(
+            read.base
+                * read.expected_multiplier
+                * read.nearby_factor
+                * self.rock_concert_bar_factor(pid, read.host)
+                + read.survival * self.rock_band_stage_future(unit),
+        )
+    }
+
+    /// How much of the Culture race a visitor from `host` closes, from 1 to 2.
+    /// The bar is the largest domestic count among our living rivals, and a
+    /// visitor comes out of its host's domestic count. Drawn from a rival
+    /// within `max(10, 5% of the bar)` of the bar it lowers the bar as well as
+    /// raising our count: 2. Drawn from a rival at or below our own visitors it
+    /// only raises our count: 1. Between those, the share of the way from our
+    /// visitors up to the bar. With no bar left to close, every host is 1.
+    pub(crate) fn rock_concert_bar_factor(&self, pid: usize, host: usize) -> f64 {
+        if host == pid || self.players[host].is_minor || self.players[host].is_barbarian {
+            return 1.0;
+        }
+        let bar = self
+            .players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .map(|rival| self.domestic_tourists(rival.id))
+            .max()
+            .unwrap_or(0) as f64;
+        let ours = self.foreign_tourists(pid).max(0) as f64;
+        if bar <= ours {
+            return 1.0;
+        }
+        let domestic = self.domestic_tourists(host).max(0) as f64;
+        if domestic >= bar - (0.05 * bar).max(10.0) {
+            return 2.0;
+        }
+        1.0 + ((domestic - ours) / (bar - ours)).clamp(0.0, 1.0)
+    }
+
     /// A visitor always adds one to our count. Taken from the civilization
     /// holding the Culture bar, it also comes out of that rival's domestic
     /// tourists, so the same concert closes the gap twice. Live, one game drew

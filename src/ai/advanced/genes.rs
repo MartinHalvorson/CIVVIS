@@ -5441,6 +5441,10 @@ pub const GENES: &[Gene] = &[
     // An Apostle that has spent a charge stops asking to Evangelize, which
     // the host refuses. See `advanced/apostle_evangelizes_unspent.rs`.
     Gene { tag: "apostle-evangelizes-unspent", field: "apostle_evangelizes_unspent", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_evangelizes_unspent, disable: AdvancedAi::disable_apostle_evangelizes_unspent },
+    // A Rock Band's concert is weighted by how much of the Culture race it
+    // closes: a visitor from the bar holder lowers the bar too. Opt-in; see
+    // `advanced/bands_draw_from_the_bar.rs`.
+    Gene { tag: "bands-draw-from-the-bar", field: "bands_draw_from_the_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_bands_draw_from_the_bar, disable: AdvancedAi::disable_bands_draw_from_the_bar },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
