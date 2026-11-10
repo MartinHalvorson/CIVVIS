@@ -96,9 +96,7 @@ impl AdvancedAi {
         self.culture_bank_opens_at_nationalism
             && !self.lane_lost
             && self.active_victory_target(g) == Some(VictoryTarget::Culture)
-            && g.players[pid]
-                .civics
-                .contains(&crate::name!("nationalism"))
+            && g.players[pid].civics.contains(&crate::name!("nationalism"))
             && (strategy == GrandStrategy::Recovery
                 || !matches!(kind, "writer" | "artist" | "musician"))
     }
@@ -289,30 +287,15 @@ mod tests {
         let mut g = board();
         let ai = nationalism_seat();
         for kind in ["scientist", "engineer", "merchant", "artist"] {
-            assert!(!ai.culture_bank_bars_faith_great_person(
-                &g,
-                0,
-                GrandStrategy::Culture,
-                kind
-            ));
+            assert!(!ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
         }
         known(&mut g, "nationalism");
         for kind in ["scientist", "engineer", "merchant", "general", "prophet"] {
             assert!(ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
         }
         for kind in ["writer", "artist", "musician"] {
-            assert!(!ai.culture_bank_bars_faith_great_person(
-                &g,
-                0,
-                GrandStrategy::Culture,
-                kind
-            ));
-            assert!(ai.culture_bank_bars_faith_great_person(
-                &g,
-                0,
-                GrandStrategy::Recovery,
-                kind
-            ));
+            assert!(!ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Culture, kind));
+            assert!(ai.culture_bank_bars_faith_great_person(&g, 0, GrandStrategy::Recovery, kind));
         }
         // Off, a released lane, or another target bars nothing.
         let off = AdvancedAi::targeting(VictoryTarget::Culture);
