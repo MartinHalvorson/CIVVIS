@@ -29301,9 +29301,10 @@ function settleSoloRankings() {
   toggleRankingsReport(chosen === "1", false);
 }
 
-// The map already holds the turn controls. Keep setup and simulator tools in
-// the deck, opened from the menu when needed. Unlike the old rankings key,
-// this preference was only written by a person, so existing choices survive.
+// A played game opens with the deck showing, because auto-play lives there.
+// A phone keeps the map: the deck would float over all of it, and below 640px
+// the button that hides it is gone. Unlike the old rankings key, this
+// preference was only written by a person, so existing choices survive.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
 let soloDeckSettled = false;
 function settleSoloDeck() {
@@ -29311,8 +29312,25 @@ function settleSoloDeck() {
   soloDeckSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
-  togglePanel(chosen !== "open", false);
+  togglePanel(chosen ? chosen === "closed" : window.matchMedia("(max-width: 720px)").matches, false);
 }
+
+// The published site says plainly what single player is whenever a new game
+// starts. Turn 1 of a world not yet announced is what makes it new, so a save
+// resumed mid-game stays quiet. Clearing the seed once the game has moved on
+// lets a replay of the same seed count as new as well.
+let soloNoticeSeed = null;
+function soloNoticeOpen() { return !document.getElementById("solo-notice").hidden; }
+function settleSoloNotice() {
+  if (state.turn !== 1) { soloNoticeSeed = null; return; }
+  if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;
+  soloNoticeSeed = state.seed;
+  document.getElementById("solo-notice").hidden = false;
+  document.getElementById("solo-notice-ack").focus();
+}
+document.getElementById("solo-notice-ack").onclick = () => {
+  document.getElementById("solo-notice").hidden = true;
+};
 
 function drawSoloHud() {
   const solo = playingSolo();
@@ -29334,6 +29352,7 @@ function drawSoloHud() {
   }
   settleSoloRankings();
   settleSoloDeck();
+  settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
 }
@@ -37726,7 +37745,7 @@ function closeTopmostScreen() {
 }
 // A visible screen keeps global action keys out of its controls.
 function screenHoldsKeyboard() {
-  return anyScreenOpen();
+  return anyScreenOpen() || soloNoticeOpen();
 }
 document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // Hand your own seat to one of our strategies for a stretch of turns. Useful
