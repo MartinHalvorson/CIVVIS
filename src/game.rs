@@ -9096,6 +9096,7 @@ impl Game {
             let Some(pos) = g.city_state_site(*pos, &major_spawns) else {
                 continue;
             };
+            g.map.tiles.get_mut(&pos).unwrap().improvement = None;
             let pid = g.players.len();
             let name = seating[pid - num_players].clone();
             g.players.push(Player::new(pid, &name, true));
@@ -9222,7 +9223,12 @@ impl Game {
             .filter(|tile| {
                 !self.rules.is_water(tile)
                     && self.rules.is_passable(tile)
-                    && tile.improvement.is_none()
+                    // A Tribal Village yields to a seat: villages fall after
+                    // the starts, and this relocation runs after the villages.
+                    && tile
+                        .improvement
+                        .as_deref()
+                        .is_none_or(|improvement| improvement == "goody_hut")
                     && tile.owner_city.is_none()
                     && clear(tile.pos)
             })
