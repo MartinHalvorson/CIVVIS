@@ -52,6 +52,8 @@ function drawOpenedSidebarSection(section) {
   if (section.id === "strategysec") drawReasoning();
   else if (section.id === "eventsec") drawEvents();
   else if (section.id === "politicssec") drawWorldPolitics();
+  // On a deck too short to pin its labels the table would open below the fold.
+  if (section.id === "politicssec") section.scrollIntoView({ block: "nearest" });
 }
 function closeOtherSidebarSections(section) {
   for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
@@ -32703,10 +32705,10 @@ function releaseWatchedWar() {
 const WORLD_POLITICS_MARKS = [
   ["alliance", "Alliance"], ["team", "Team"], ["friendship", "Friends"],
   ["friendly", "Friendly"], ["neutral", "Neutral"], ["unfriendly", "Unfriendly"],
-  ["denounced", "Denounced"], ["war", "War"],
+  ["denounced", "Denounced"], ["war", "War"], ["unmet", "Not met"],
 ];
 const WORLD_POLITICS_LABELS = new Map(WORLD_POLITICS_MARKS);
-const WORLD_POLITICS_ATTITUDES = { F: "friendly", N: "neutral", U: "unfriendly", D: "denounced" };
+const WORLD_POLITICS_ATTITUDES = { F: "friendly", N: "neutral", U: "unfriendly", D: "denounced", "?": "unmet" };
 function worldPoliticsMark(kind, level = "") {
   return `<i class="politics-mark ${kind}" role="img" aria-label="${WORLD_POLITICS_LABELS.get(kind)}">${level}</i>`;
 }
@@ -32734,7 +32736,7 @@ function worldPoliticsKey(bonds) {
   const marks = WORLD_POLITICS_MARKS
     .filter(([kind]) => kind !== "team" || bonds.some(bond => bond.kind === "team"))
     .map(([kind, name]) => `<span>${worldPoliticsMark(kind)}${name}</span>`).join("");
-  return `${marks}<span class="politics-key-note">A face is how the row's leader sees the column's.</span>`;
+  return `${marks}<span class="politics-key-note">A face is the row's view of the column.</span>`;
 }
 function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   const ties = new Map();
@@ -32756,7 +32758,8 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
       if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
       const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
       if (!kind) return `<td></td>`;
-      const text = `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
+      const text = kind === "unmet" ? `${row.civ} and ${column.civ} have not met`
+        : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
       return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
     return `<tr><th scope="row"><span>${label(row.id)}</span></th>${cells}</tr>`;
