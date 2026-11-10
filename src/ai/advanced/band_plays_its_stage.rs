@@ -121,7 +121,11 @@ fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Op
             continue;
         };
         let reaches = base + bonus as i32 >= super::band_plays_at_level_three::LEVEL_THREE;
-        let key = (reaches, if reaches { stages } else { bonus * stages }, bonus);
+        let key = (
+            reaches,
+            if reaches { stages } else { bonus * stages },
+            bonus,
+        );
         if best.as_ref().is_none_or(|(held, held_name)| {
             key > *held || (key == *held && name.as_str() < held_name.as_str())
         }) {
