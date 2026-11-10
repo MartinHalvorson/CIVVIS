@@ -693,7 +693,7 @@ mod tests {
         ];
         let app = include_str!("../web/assets/app.js");
         for kind in KINDS {
-            let waived = NO_BROWSER_CONTROL.iter().any(|(name, _)| name == kind);
+            let waived = NO_BROWSER_CONTROL.iter().any(|(name, _)| *name == kind);
             let drawn = app.contains(&format!("\"{kind}\""));
             assert!(
                 drawn || waived,
