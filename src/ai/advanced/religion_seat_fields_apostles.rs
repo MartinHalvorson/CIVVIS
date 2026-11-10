@@ -680,7 +680,7 @@ impl AdvancedAi {
         let target = g
             .nbrs(unit.pos)
             .into_iter()
-            .filter(|position| g.theological_target_open(pid, *position))
+            .filter(|position| g.theological_target_open(uid, *position))
             .filter(|position| self.theology_fight_is_winnable(g, uid, *position))
             .filter_map(|position| {
                 g.unit_ids_at(position)

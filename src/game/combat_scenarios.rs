@@ -3729,6 +3729,32 @@ fn theological_combat_cannot_reach_into_a_rival_city() {
 }
 
 #[test]
+fn theological_combat_needs_the_movement_to_enter_the_plot() {
+    let fight_offered = |moves: f64, hills: bool| {
+        let (mut g, center, ring) = controlled_game(3172);
+        g.at_war.clear();
+        g.players[0].religion = Some("A".to_string());
+        g.players[1].religion = Some("B".to_string());
+        g.map.tiles.get_mut(&center).unwrap().hills = hills;
+        let apostle = g.spawn_unit("apostle", 0, ring[0]);
+        g.spawn_unit("apostle", 1, center);
+        g.units.get_mut(&apostle).unwrap().moves_left = moves;
+        let action = Action::TheologicalAttack {
+            unit: apostle,
+            target: center,
+        };
+        let legal = g.legal_actions(0).contains(&action);
+        let applied = g.apply(0, &action).is_ok();
+        assert_eq!(legal, applied, "legal_actions and apply must agree");
+        legal
+    };
+
+    assert!(fight_offered(1.0, false), "one move enters open ground");
+    assert!(!fight_offered(1.0, true), "one move does not enter Hills");
+    assert!(fight_offered(2.0, true), "two moves do");
+}
+
+#[test]
 fn theological_combat_and_condemnation_change_nearby_pressure() {
     let (mut g, center, ring) = controlled_game(3163);
     g.at_war.clear();
