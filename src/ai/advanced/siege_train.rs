@@ -88,7 +88,6 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use super::last_civ_standing::{fights_the_final_war, final_war_siege_commits};
 use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
@@ -1067,19 +1066,14 @@ fn unit_power(g: &Game, uid: u32) -> f64 {
     effective_strength(g.unit_strength(unit, true), unit.hp)
 }
 
-/// What the city asks of the force that takes it. In a final war every
-/// civilization is at war with every other, so a rival's army beside the
-/// city is another besieger: only the owner's soldiers (and its team's) are
-/// billed as the defence, or three trains would each wait on the other two.
+/// What the city asks of the force that takes it.
 fn siege_bill(g: &Game, pid: usize, city: &CityView) -> f64 {
-    let final_war = fights_the_final_war(g, pid);
     let defenders: f64 = g
         .units
         .values()
         .filter(|unit| {
             unit.owner != pid
                 && g.is_at_war(pid, unit.owner)
-                && (!final_war || unit.owner == city.owner || g.same_team(city.owner, unit.owner))
                 && g.rules.units[unit.kind].class == "military"
                 && g.rules.units[unit.kind].domain.as_deref() != Some("air")
                 && g.unit_visible_to(unit.id, pid)
@@ -2901,8 +2895,6 @@ impl AdvancedAi {
         self.reserved_units
             .retain(|uid| g.units.get(uid).is_some_and(|unit| unit.owner == pid));
         let arena = g.is_arena();
-        // See `last_civ_standing`: a final war's train commits.
-        let final_war = fights_the_final_war(g, pid);
         let force = self.siege_force(g, pid, &city, plan, group);
         let strength: f64 = force.iter().map(|uid| unit_power(g, *uid)).sum();
         let staged: f64 = force
@@ -3088,8 +3080,7 @@ impl AdvancedAi {
             let weak_target = self.weak_target_skips_the_muster
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
-            let ready =
-                dying || walls_answered || committed || weak_target || restored || final_war;
+            let ready = dying || walls_answered || committed || weak_target || restored;
             // `siege-shortfall-claims-the-projects`: a held train whose whole
             // force is short of the bill asks the cities for soldiers.
             self.note_siege_shortfall(cid, turn, !ready && strength < bill);
@@ -3194,7 +3185,7 @@ impl AdvancedAi {
             // budget even while the nominal force still covers the bill.
             // Regroup for breach support instead of remaining in Reduce with
             // no attack that can finish before the force is exhausted.
-            let invested = stage != SiegeStage::Stage && !arena && !final_war;
+            let invested = stage != SiegeStage::Stage && !arena;
             // `siege-holds-a-breach`: a wall already a quarter down is a
             // running assault; only a deep shortfall abandons it.
             let held_breach = self.siege_holds_a_breach
@@ -3233,16 +3224,9 @@ impl AdvancedAi {
                     // rest of the train fills distant staging posts. Keep
                     // the whole-force bill and positive-damage gate, but let
                     // a healthy, reachable capturer exploit that breach.
-                    if (((arena && gathered) || staged >= bill || breach_taker.is_some())
+                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
                         && (damage_entry_ready || opens_walls || grind)
-                        && !no_breaker)
-                        || final_war_siege_commits(
-                            g,
-                            pid,
-                            staged,
-                            strength,
-                            turn.saturating_sub(record.entered),
-                        )
+                        && !no_breaker
                     {
                         stage = SiegeStage::Invest;
                     }
@@ -6835,9 +6819,6 @@ mod capture_hold;
 
 #[cfg(test)]
 mod entry_tests;
-
-#[cfg(test)]
-mod final_war_tests;
 
 #[cfg(test)]
 mod road_queue_tests;

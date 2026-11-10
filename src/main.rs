@@ -818,6 +818,14 @@ fn main() {
         "selfplay" => selfplay_command(args),
         "evolve" => evolve_command(args),
         "play" => play_command(args),
+        // PROBE ONLY, never committed.
+        "lcs-probe" => civvis::lcs_probe::run(
+            arg(&args, "--seed", 19) as u64,
+            arg(&args, "--extra", 300) as u32,
+            arg(&args, "--wall", 600) as u64,
+            arg(&args, "--dumps", 0) as u32,
+            |line| println!("{line}"),
+        ),
         "pedia" => pedia_command(args),
         "validate" => validate_command(args),
         _ => print_usage(),

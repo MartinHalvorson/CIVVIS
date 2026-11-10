@@ -574,8 +574,8 @@ the result screen has two choices:
   until only one civilization remains. Every other victory is ignored, every
   civilization left is at war with every other, peace is refused, and every AI
   plays for conquest as a total war: none falls back to a defensive plan, each
-  aims at the nearest rival city, every idle city trains soldiers while its
-  income carries them, and a siege commits once half its army has arrived.
+  aims at the nearest rival city, and every idle city trains soldiers, one
+  siege gun or bomber to four of them, while its income carries them.
   City-states and Free Cities do not count, and a team left together counts as
   one. **Restart sim** still ends it early. The button is
   not offered when one civilization is already left.
