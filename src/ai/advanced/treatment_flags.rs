@@ -193,6 +193,9 @@ impl AdvancedAi {
         /// Opt-in gene `religion-seat-takes-the-debater`; see
         /// `advanced/religion_seat_takes_the_debater.rs`.
         religion_seat_takes_the_debater => enable_religion_seat_takes_the_debater, disable_religion_seat_takes_the_debater;
+        /// Opt-in gene `religion-seat-spares-the-launcher`; see
+        /// `advanced/religion_seat_spares_the_launcher.rs`.
+        religion_seat_spares_the_launcher => enable_religion_seat_spares_the_launcher, disable_religion_seat_spares_the_launcher;
         /// See `advanced/religion_seat_charts_the_rivals.rs`.
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.
