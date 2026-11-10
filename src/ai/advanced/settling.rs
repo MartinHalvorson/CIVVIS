@@ -1515,6 +1515,9 @@ impl AdvancedAi {
         // stopped rather than exposing it.
         if afloat && !self.settler_sea_guards.contains_key(&uid) {
             let taken = self.all_reserved_civilian_guards();
+            // `religion-seat-charts-the-rivals`: the founder's one charting
+            // ship keeps charting. `None` with the gene off.
+            let charting_ship = self.religion_seat_charting_ship(g, pid);
             let sea_guard = g
                 .player_unit_ids(pid)
                 .into_iter()
@@ -1522,6 +1525,7 @@ impl AdvancedAi {
                     let unit = &g.units[candidate];
                     unit.linked_to.is_none()
                         && !taken.contains(candidate)
+                        && charting_ship != Some(*candidate)
                         && Self::guard_matches_escort_layer(g, unit, true)
                         && (!self.settler_guard_holds_on()
                             || (unit.hp >= STACKED_GUARD_MIN_HP

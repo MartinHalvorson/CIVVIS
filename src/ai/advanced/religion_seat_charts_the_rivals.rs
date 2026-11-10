@@ -55,6 +55,18 @@
 //!     may lay the hull down
 //!     ([`AdvancedAi::religion_seat_hull_before_cartography`]); Cartography
 //!     gives every ship already afloat the Ocean.
+//!   - *It is an eye, not a soldier.* civvis-20261110T123943Z floated its
+//!     Galley at t77, eleven turns before Cartography, and met its last two
+//!     rivals at t112 and t144: the journal has that one ship in sea task
+//!     forces on 198 lines between t77 and t133 (the reserve 127, a
+//!     Settler's escort 50, Destroy missions 21) and it never sailed more
+//!     than 32 tiles from the capital. civvis-20261110T112233Z lost its only
+//!     ship at t110 striking for a Destroy mission at 0.8 local strength.
+//!     The first unlinked warship of ours with water still to chart
+//!     ([`AdvancedAi::religion_seat_charting_ship`]) is left out of the
+//!     objective board's pool and is not bound as a Settler's naval guard,
+//!     so the sea scout's turn has it. One ship: the rest of the fleet
+//!     fights as before, and an embarked Settler waits for another hull.
 //! - **Spreaders.** A Scout cannot enter a rival's closed borders and a
 //!   religious unit can. In civvis-20261110T054430Z, with the gap and the
 //!   research parts armed, the seat bought fifteen Apostles between t75 and
@@ -210,6 +222,26 @@ impl AdvancedAi {
     ) -> bool {
         self.religion_seat_charts_the_rivals_active(g, pid)
             && self.naval_eye_commitment(g, pid, cid, plan, item)
+    }
+
+    /// The seat's charting ship: the first unlinked warship of ours with open
+    /// water still to chart, while the gene acts for the seat and the contact
+    /// gap is open. The objective board and the Settler's naval guard leave
+    /// it alone. `None` otherwise. See the module.
+    pub(super) fn religion_seat_charting_ship(&self, g: &Game, pid: usize) -> Option<u32> {
+        if !self.religion_seat_charts_the_rivals_active(g, pid)
+            || !self.base.contact_gap_open(g, pid)
+        {
+            return None;
+        }
+        g.player_unit_ids(pid).into_iter().find(|uid| {
+            let unit = &g.units[uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && spec.domain.as_deref() == Some("sea")
+                && unit.linked_to.is_none()
+                && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
+        })
     }
 
     /// Whether the sea scout's queue claim may lay a hull down before a ship
