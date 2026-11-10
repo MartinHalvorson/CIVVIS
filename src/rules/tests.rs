@@ -339,21 +339,11 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // visibility and Genghis-only cavalry strength in the combat code; the
     // native Kublai Bombard preview confirms +12 intel separately from +4
     // difficulty. Older ledgers retain the pre-correction rules fingerprint.
-<<<<<<< HEAD
-    // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
-||||||| ac74e7f23a
-=======
     // Moved again by Preslav's description, now its shipped Loyalty bonus.
->>>>>>> origin/main
+    // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-<<<<<<< HEAD
         "fnv1a64:570ca822572284b3"
-||||||| ac74e7f23a
-        "fnv1a64:14ea36e072881139"
-=======
-        "fnv1a64:4f356b21194cade0"
->>>>>>> origin/main
     );
 }
 
