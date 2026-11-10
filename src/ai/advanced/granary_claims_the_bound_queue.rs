@@ -157,7 +157,9 @@ impl AdvancedAi {
             }
             match &head {
                 Some(item) => {
-                    if !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war) {
+                    if self.charting_hull_holds(g, pid, cid, plan, item)
+                        || !Self::bound_granary_may_defer(g, pid, cid, item, at_major_war)
+                    {
                         continue;
                     }
                 }

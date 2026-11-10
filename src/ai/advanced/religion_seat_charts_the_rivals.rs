@@ -34,6 +34,27 @@
 //!   (`TECH_CARTOGRAPHY` requires `TECH_BUTTRESS`, `Expansion2`), which the
 //!   live seats reached 28-47 turns after Shipbuilding.
 //!
+//! - **The hull.** The seat's last rivals are overseas, and the turn it
+//!   meets them bounds the turn it can win: civvis-20261110T112233Z met its
+//!   last three at t130-142 and lost at t193 holding four of five majors,
+//!   its corps one to three tiles from the fifth's cities. Two rules:
+//!   - *It keeps the head.* `sea-scout-claims-the-queue` lays the hull down
+//!     and other queue claims take the head back. Over today's 17 long live
+//!     games the journal has 73 such lines (Campus slot 29, bound Granary
+//!     25, Campus building 7, backlog Builder 6, producer Industrial Zone
+//!     5, Aqueduct 1); civvis-20261110T100022Z knew Cartography at t89,
+//!     claimed at t91, t95, t97 and t101, lost the head 15 times and
+//!     floated its first ship at t107. Those six claims now leave the
+//!     committed hull alone ([`AdvancedAi::charting_hull_holds`], the
+//!     `contact-fleet` commitment for this seat): one city, the hull that
+//!     finishes soonest, until a ship of ours is charting.
+//!   - *A technology early.* The claim waits for a ship that can cross
+//!     Ocean, which is the turn Cartography lands, so the ship is a build
+//!     behind. With Buttress known (`TECH_CARTOGRAPHY` requires
+//!     `TECH_BUTTRESS`; 7 to 13 turns apart in four live games) the claim
+//!     may lay the hull down
+//!     ([`AdvancedAi::religion_seat_hull_before_cartography`]); Cartography
+//!     gives every ship already afloat the Ocean.
 //! - **Spreaders.** A Scout cannot enter a rival's closed borders and a
 //!   religious unit can. In civvis-20261110T054430Z, with the gap and the
 //!   research parts armed, the seat bought fifteen Apostles between t75 and
@@ -173,6 +194,30 @@ impl AdvancedAi {
         self.religion_seat_charts_the_rivals
             && self.active_victory_target(g) == Some(VictoryTarget::Religion)
             && g.players[pid].religion.is_some()
+    }
+
+    /// Whether the hull at the head of `cid` is this seat's committed contact
+    /// ship, which other queue claims leave to finish: the gene acts for the
+    /// seat and `contact-fleet` holds the hull
+    /// ([`Self::naval_eye_commitment`]). See the module.
+    pub(super) fn charting_hull_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        self.religion_seat_charts_the_rivals_active(g, pid)
+            && self.naval_eye_commitment(g, pid, cid, plan, item)
+    }
+
+    /// Whether the sea scout's queue claim may lay a hull down before a ship
+    /// can cross Ocean: the gene acts for this seat and Buttress, the last
+    /// technology before Cartography, is known. See the module.
+    pub(super) fn religion_seat_hull_before_cartography(&self, g: &Game, pid: usize) -> bool {
+        self.religion_seat_charts_the_rivals_active(g, pid)
+            && g.players[pid].techs.contains(&crate::name!("buttress"))
     }
 
     /// What the gene adds to `tech` in the research score: zero, or

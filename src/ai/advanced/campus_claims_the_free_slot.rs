@@ -443,6 +443,8 @@ impl AdvancedAi {
                         Some("bound Granary claim")
                     } else if self.idle_route_trader_holds(g, pid, cid, plan, item) {
                         Some("idle-route Trader claim")
+                    } else if self.charting_hull_holds(g, pid, cid, plan, item) {
+                        Some("Religion founder's contact hull")
                     } else if self.backlog_builder_holds(g, pid, cid, plan, item) {
                         Some("backlog Builder claim")
                     } else if self.capped_aqueduct_holds(g, pid, cid, plan, item) {
