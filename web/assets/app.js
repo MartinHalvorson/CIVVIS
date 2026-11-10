@@ -17715,15 +17715,18 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
 function activeSkyLaunches(now = performance.now()) {
   for (let index = anim.skyLaunches.length - 1; index >= 0; index--) {
     const launch = anim.skyLaunches[index];
-    const endsAt = launch.endsAt ?? launch.t0 + launch.duration;
+    const endsAt = (launch.endsAt ?? launch.t0 + launch.duration) + (launch.labelPause || 0);
     if (now >= endsAt)
       anim.skyLaunches.splice(index, 1);
   }
   return anim.skyLaunches;
 }
+// A rocket that has gone and left only its name waiting at the edge of the frame
+// is no longer in flight, so whatever it was carrying can appear on time.
 function skyLaunchInFlight(playerId, mission, now = performance.now()) {
   return activeSkyLaunches(now).some(launch =>
-    launch.playerId === playerId && launch.mission === mission);
+    launch.playerId === playerId && launch.mission === mission &&
+    now < launch.t0 + launch.duration);
 }
 // How much of a civilization's standing craft is out of its rocket: none for
 // most of the flight, then all of it, which is also what a craft with no launch
@@ -17745,13 +17748,47 @@ function skySatelliteDeployed(playerId, now) {
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
   const goal = launch.mission === "expedition" ? "exoplanet" : launch.mission;
-  return `${civName(launch.playerId)} ${goal}`.toUpperCase();
+  return `${civName(launch.playerId)} – ${goal}`.toUpperCase();
+}
+// A rocket is at its fastest as it leaves the picture and would take its name
+// with it in a blink. The name stays at the edge for this long after the rocket
+// has gone, the last stretch of it fading: the viewer's last chance to read
+// whose launch that was.
+const SKY_LABEL_PAUSE = 1300, SKY_LABEL_PAUSE_FADE = 300;
+// As high as a name goes, in pixels down to its baseline. The masthead's shadow
+// falls across the top of the frame and greys out anything sitting in it.
+const SKY_LABEL_TOP = 40;
+// Where a waiting name stands: the nearest place to the edge it reached that is
+// inside the frame, out from under the panels and off any other waiting name.
+// Settled once and kept in pixels from the frame's corner, so a turning world or
+// a panned board cannot slide it along the edge while it waits.
+function skyLaunchLabelRest(launch, x, y, half, stage, pixel) {
+  if (launch.labelRest) return launch.labelRest;
+  const from = {x:(x - stage.left) / pixel, y:(y - stage.top) / pixel};
+  const wide = half / pixel, tall = 14;
+  const width = (stage.right - stage.left) / pixel, height = (stage.bottom - stage.top) / pixel;
+  const taken = [...skyWidgetBoxes(),
+    ...anim.skyLaunches.flatMap(other => other.labelRest ? [other.labelRest.box] : [])];
+  const open = (left, base) => left - wide > -.5 && left + wide < width + .5 &&
+    base > SKY_LABEL_TOP - .5 && base < height + .5 &&
+    !taken.some(box => left + wide > box.left && left - wide < box.right &&
+                       base > box.top && base - tall < box.bottom);
+  let best = from, nearest = Infinity;
+  for (const left of [from.x, ...taken.flatMap(box => [box.left - wide, box.right + wide])]) {
+    for (const base of [from.y, ...taken.flatMap(box => [box.top, box.bottom + tall])]) {
+      const away = Math.hypot(left - from.x, base - from.y);
+      if (away < nearest && open(left, base)) { best = {x:left, y:base}; nearest = away; }
+    }
+  }
+  launch.labelRest = {...best, box:{left:best.x - wide, right:best.x + wide,
+                                    top:best.y - tall, bottom:best.y}};
+  return launch.labelRest;
 }
 // `stage` is the frame in the caller's coordinates. A name long enough to say
 // Gran Colombia would otherwise lose its ends whenever a rocket flies near the
-// side of the picture, and a rocket leaving through the top would take the
-// whole label with it first.
-function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1) {
+// side of the picture, and a rocket leaving through the top or the bottom would
+// take the whole label with it first.
+function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false) {
   const label = skyLaunchLabel(launch);
   cx.save();
   cx.globalAlpha = alpha;
@@ -17759,9 +17796,13 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1) {
   cx.textAlign = "center"; cx.textBaseline = "bottom";
   cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel;
   const half = cx.measureText(label).width / 2 + 4 * pixel;
-  const placed = stage.right - stage.left > half * 2
+  let placed = stage.right - stage.left > half * 2
     ? Math.max(stage.left + half, Math.min(stage.right - half, x)) : x;
-  const high = Math.max(stage.top + 14 * pixel, y);
+  let high = Math.max(stage.top + SKY_LABEL_TOP * pixel, Math.min(stage.bottom - 3 * pixel, y));
+  if (waiting) {
+    const rest = skyLaunchLabelRest(launch, placed, high, half, stage, pixel);
+    placed = stage.left + rest.x * pixel; high = stage.top + rest.y * pixel;
+  }
   cx.strokeText(label, placed, high);
   cx.fillStyle = "#e9f4f5"; cx.fillText(label, placed, high);
   cx.restore();
@@ -21227,6 +21268,20 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
+  const lift = Math.max(size * 1.8, rocket.halfWidth + 6 * pixel);
+  // A flight that goes out through the frame leaves its name waiting at the edge.
+  // `leaving` alone is not that: from far out a rocket can hop a few pixels and
+  // end in the middle of the picture, and there is no edge for it to wait at.
+  if (film.leaving && (end.x < stage.left || end.x > stage.right ||
+                       end.y < stage.top || end.y > stage.bottom))
+    launch.labelPause = SKY_LABEL_PAUSE;
+  if (launch.labelPause && clock >= 1) {
+    const left = launch.t0 + launch.duration + launch.labelPause - now;
+    if (!unseen(at))
+      drawSkyLaunchLabel(launch, at.x, at.y - lift, .88 * Math.min(1, left / SKY_LABEL_PAUSE_FADE),
+                         stage, pixel, true);
+    return;
+  }
   const pad = pointAt(0);
   cx.save();
   // The exhaust hangs where it was left and thins as it ages. It is laid down on
@@ -21287,8 +21342,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   cx.restore();
 
   if (!unseen(at))
-    drawSkyLaunchLabel(launch, at.x, at.y - Math.max(size * 1.8, rocket.halfWidth + 6 * pixel),
-                       .88 * fade, stage, pixel);
+    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel);
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
