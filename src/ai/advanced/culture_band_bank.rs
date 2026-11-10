@@ -111,8 +111,8 @@ impl AdvancedAi {
     /// The counterweight buys ignore the band bank: live Deity Online Kristina
     /// 2026-11-10 bought 21 Missionaries (about 85 Faith each) from
     /// Nationalism on in 5 of 8 games (2, 3, 4, 5 and 7, three of the seven
-    /// after Cold War), while 171451Z reached Cold War at t143 with about 200
-    /// Faith and bought its first 300-Faith band at t160. One of 294 Pericles
+    /// after Cold War), while 171451Z reached Cold War at t143 with 156 Faith
+    /// and bought its first 300-Faith band at t161. One of 294 Pericles
     /// and Kristina ladder games from 11-06 to 11-10 ended in a rival's
     /// Religious victory (179 to a rival's Science). False with the gene off
     /// or for another target.
