@@ -4,17 +4,19 @@ const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
 const SIDEBAR_WIDTH_STORAGE_KEY = "civvis-sidebar-width-v1";
 const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
 const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
-// `?map=gpu` opts this page into drawing the whole known globe's ground on the
-// GPU (`drawPlanetGpuMap`). Without it nothing below changes. Declared at the
-// top for the same load-order reason as PLANET_GPU below.
+// The whole known globe's ground is drawn on the GPU (`drawPlanetGpuMap`)
+// wherever a real graphics processor answers. `?map=canvas` keeps the Canvas
+// painter, for a comparison or for a machine that draws the other one wrong.
+// Declared at the top for the same load-order reason as PLANET_GPU below.
 const PLANET_GPU_MAP = (() => {
-  try { return new URLSearchParams(location.search).get("map") === "gpu"; }
-  catch (_) { return false; }
+  try { return new URLSearchParams(location.search).get("map") !== "canvas"; }
+  catch (_) { return true; }
 })();
-// What the opt-in path did, for anyone measuring it: frames it presented,
-// whole and partial bakes, sprites painted, and why it last stood down.
-const PLANET_GPU_MAP_STATS = {frames:0, fullBakes:0, faceBakes:0, markPaints:0,
-                              bakeMs:0, lineMs:0, markMs:0, declined:""};
+// What that path did, for anyone measuring it: frames it presented (and how
+// many of them left the ink to the Canvas), whole and partial bakes, sprites
+// painted, and why it last stood down.
+const PLANET_GPU_MAP_STATS = {frames:0, nearFrames:0, fullBakes:0, faceBakes:0, markPaints:0,
+                              bakeMs:0, lineMs:0, markMs:0, declined:"", near:""};
 // The planet renderer's GPU surface lives with the rest of that fast path far
 // below, but its binding must execute before ANY top-level call above it can
 // reach `syncPlanetGpuCanvas` — `applySavedHudLayouts()` gets there via
@@ -72,11 +74,6 @@ function initSidebarSections() {
   // sections; the first in reading order keeps its place and the rest close,
   // and the store is rewritten so the next load agrees with what was shown.
   let opened = false;
-  // A section that opens by default and that this reader has never seen is
-  // the one thing the deck opens on, once. After that their own choice is the
-  // saved one, as it is for every other section.
-  const firstMeeting = [...document.querySelectorAll(SIDEBAR_SECTIONS)].find(section =>
-    section.open && !Object.prototype.hasOwnProperty.call(saved, section.dataset.section));
   // The lens dock is a fixed panel at the deck's lower edge now, so it needs
   // no scroll-into-view choreography — only the same saved disclosure state
   // as the scrolling sections above it.
@@ -93,7 +90,6 @@ function initSidebarSections() {
       open = !!saved["ai-reasoning"];
     }
     if (section.classList.contains("sidebar-section")) {
-      if (firstMeeting && section !== firstMeeting) open = false;
       if (open && opened) open = false;
       if (open) opened = true;
     }
@@ -2590,7 +2586,11 @@ function togglePlayerHudSort(key) {
       : playerHudSortDefaultDirection(key),
   };
   savePlayerHudSort();
-  if (state) drawPlayerHud();
+  if (state) {
+    drawPlayerHud();
+    // World politics lists its pairs in this table's order.
+    drawWorldPolitics();
+  }
 }
 
 function playerHudSortHead(key, label, title, classes = "", attrs = "") {
@@ -7470,6 +7470,13 @@ function restoreLogFilters(key, defaults) {
 reasonFilters = restoreLogFilters(REASON_FILTER_KEY, reasonFilters);
 warFilters = restoreLogFilters(WAR_FILTER_KEY, warFilters);
 eventFilters = restoreLogFilters(EVENT_FILTER_KEY, eventFilters);
+// The civilization World politics is narrowed to lasts one world, for the same
+// reason as the dossier's seat below: a new world reseats every civilization.
+// Which of its groups are folded says nothing about any seat, so that is kept.
+const POLITICS_FOLD_KEY = "civvis-politics-folded-v1";
+let politicsSeat = "all";
+let politicsSeatWorld = null;
+let politicsFolded = restoreLogFilters(POLITICS_FOLD_KEY, {bonds: false, wars: false});
 // Which seat the AI strategy dossier is speaking for, and the world that choice
 // belongs to. It scopes both the active plan and its decision factors, so a
 // reader never has to reconcile a plan for one civilization with a log for
@@ -14723,42 +14730,58 @@ function planetGpuSoftwareRenderer(gl) {
 function createPlanetGpu() {
   if (PLANET_GPU?.failed) return null;
   if (PLANET_GPU?.gl) return PLANET_GPU;
-  const canvas = document.createElement("canvas");
-  canvas.id = "planet-gpu-surface";
-  canvas.setAttribute("aria-hidden", "true");
-  canvas.style.cssText = [
-    "position:absolute", "z-index:0", "pointer-events:none",
-    "left:var(--map-area-left)", "top:var(--map-area-top)",
-    "width:var(--map-area-width)", "height:var(--map-area-height)",
-    "display:none",
-  ].join(";");
-  // The regular map stays above this canvas and owns all input.  Putting the
-  // accelerated surface directly beneath it means browser compositing can keep
-  // presenting it while the 2D canvas is waiting for the next full turn paint.
-  area.insertBefore(canvas, cv);
+  const surface = () => {
+    const made = document.createElement("canvas");
+    made.id = "planet-gpu-surface";
+    made.setAttribute("aria-hidden", "true");
+    made.style.cssText = [
+      "position:absolute", "z-index:0", "pointer-events:none",
+      "left:var(--map-area-left)", "top:var(--map-area-top)",
+      "width:var(--map-area-width)", "height:var(--map-area-height)",
+      "display:none",
+    ].join(";");
+    // The regular map stays above this canvas and owns all input.  Putting the
+    // accelerated surface directly beneath it means browser compositing can keep
+    // presenting it while the 2D canvas is waiting for the next full turn paint.
+    area.insertBefore(made, cv);
+    return made;
+  };
+  let canvas = surface();
   let gl = null;
-  try {
-    // The opt-in whole-globe path needs WebGL 2 (instancing, flat varyings,
-    // texture LOD) and a real graphics processor: a software rasterizer would
-    // be slower than the Canvas painter it replaces, so the browser is asked to
-    // refuse rather than emulate. It also presents in step with the 2D ink
-    // above it, which a desynchronized surface does not promise.
-    gl = PLANET_GPU_MAP
-      ? canvas.getContext("webgl2", {
+  if (PLANET_GPU_MAP) {
+    try {
+      // The whole-globe path needs WebGL 2 (instancing, flat varyings, texture
+      // LOD) and a real graphics processor: a software rasterizer would be
+      // slower than the Canvas painter it replaces, so the browser is asked to
+      // refuse rather than emulate. It also presents in step with the 2D ink
+      // above it, which a desynchronized surface does not promise.
+      gl = canvas.getContext("webgl2", {
         alpha: false, antialias: true, depth: true, stencil: false,
         preserveDrawingBuffer: false, desynchronized: false,
         powerPreference: "high-performance", failIfMajorPerformanceCaveat: true,
-      })
-      : canvas.getContext("webgl", {
+      });
+    } catch (_) {}
+    // Chrome can hand out a software rasterizer without flagging the caveat (a
+    // SwiftShader forced on the command line does): name it and refuse it the
+    // same way. A canvas keeps the first kind of context it was given, so the
+    // refusal starts again on a new one.
+    if (gl && planetGpuSoftwareRenderer(gl)) {
+      canvas.remove();
+      canvas = surface();
+      gl = null;
+    }
+  }
+  if (!gl) {
+    // No whole-globe path here. The narrow globe-scale surface keeps the
+    // WebGL 1 context it has always asked for, on any machine that grants one.
+    try {
+      gl = canvas.getContext("webgl", {
         alpha: false, antialias: true, depth: true, stencil: false,
         preserveDrawingBuffer: false, desynchronized: true,
         powerPreference: "high-performance",
       });
-  } catch (_) {}
-  // Chrome can hand out a software rasterizer without flagging the caveat (a
-  // SwiftShader forced on the command line does): name it and refuse it the
-  // same way.
-  if (gl && PLANET_GPU_MAP && planetGpuSoftwareRenderer(gl)) gl = null;
+    } catch (_) {}
+  }
   if (!gl) {
     canvas.remove();
     PLANET_GPU = {failed:true};
@@ -14796,6 +14819,9 @@ function createPlanetGpu() {
     event.preventDefault();
     gpu.lost = true;
     planetGpuHide();
+    // The Canvas above held only the ink while this surface held the ground.
+    // A still world would otherwise wait for its next turn to get it back.
+    requestAnimationFrame(() => { if (state) draw(); });
   });
   canvas.addEventListener("webglcontextrestored", () => {
     // A restored context starts empty.  Falling back for this session is safer
@@ -15147,6 +15173,7 @@ uniform samplerCube uLines;
 uniform sampler2D uMarks;
 uniform float uMarkSlot;
 uniform float uMarkAtlas;
+uniform float uInk;
 out vec4 fragColor;
 // The bake stores each face equi-angularly: its texel for a direction sits at
 // 4/pi * atan of that direction's ordinary cube-map coordinate.
@@ -15166,7 +15193,7 @@ void main() {
   // Trilinear filtering of a bake barely denser than the screen blends in
   // the next level down and softens every stroke; bias toward the sharper
   // level and keep the mip chain for the foreshortened limb.
-  vec4 ink = texture(uLines, equiangular(n), -1.);
+  vec4 ink = texture(uLines, equiangular(n), -1.) * uInk;
   colour = colour * (1. - ink.a) + ink.rgb;
   vec4 mark = texture(uMarks, vMarkUv / uMarkAtlas, -1.);
   vec2 inside = vMarkUv - vMarkSlot.xy;
@@ -15281,7 +15308,7 @@ function planetGpuMapResources(gpu) {
   const ground = planetGpuMapProgram(gl, PLANET_GPU_MAP_GROUND_VS, PLANET_GPU_MAP_GROUND_FS,
     groundAttributes, ["uOut", "uRight", "uUp", "uCenter", "uViewport", "uRadius", "uRadiusCss",
                        "uBleed", "uMarksOn", "uMarkTexels", "uMarkSlot", "uMarkInradius", "uMarkAtlas",
-                       "uLines", "uMarks"]);
+                       "uInk", "uLines", "uMarks"]);
   const ocean = planetGpuMapProgram(gl, PLANET_GPU_MAP_OCEAN_VS, PLANET_GPU_MAP_OCEAN_FS,
     ["aCorner"], ["uCenter", "uViewport", "uRadius", "uStops"]);
   if (!ground || !ocean) return null;
@@ -15321,6 +15348,11 @@ function planetGpuMapResources(gpu) {
   gl.bindVertexArray(null);
 
   const lines = planetGpuMapTexture(gl, gl.TEXTURE_CUBE_MAP);
+  // A frame can come before any bake (a page opened zoomed in): six empty
+  // texels keep the sampler complete until one does.
+  for (let face = 0; face < 6; face++)
+    gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, gl.RGBA, 1, 1, 0, gl.RGBA,
+                  gl.UNSIGNED_BYTE, new Uint8Array(4));
   const marks = planetGpuMapTexture(gl, gl.TEXTURE_2D);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
                 new Uint8Array(4));
@@ -15811,24 +15843,50 @@ function planetGpuMapMarks(gl, map, frame) {
   // for asking.
   if (marks && marks.signature === signature && planetGpuMapSettling(map)) slot = marks.asked;
   if (marks && marks.signature === signature && marks.asked === slot &&
-      marks.state === state && marks.visible === frame.visible) return "";
+      marks.state === state && marks.visible === frame.visible &&
+      (!marks.stage || planetGpuMapStageHolds(marks.stage, frame))) return "";
   const started = performance.now();
-  const {wanted, context} = planetGpuMapMarkKeys(frame);
+  // Every mark on the map, worked out once per state.
+  let keys = map.markKeys;
+  if (!keys || keys.state !== state || keys.visible !== frame.visible ||
+      keys.signature !== signature) {
+    keys = map.markKeys = {state, visible:frame.visible, signature,
+                           ...planetGpuMapMarkKeys(frame)};
+    for (const item of keys.wanted)
+      item.center = map.cells[map.cellIndex.get(item.tileKey)]?.center || null;
+  }
+  const context = keys.context;
+  let wanted = keys.wanted;
+  // The largest sprite, up to the one asked for, at which a texture holds
+  // `count` marks with room to spare: an exact square of slots, not the next
+  // power of two, which wasted most of the texture it reserved.
+  const fit = count => {
+    const side = Math.ceil(Math.sqrt(count * 1.3 + 16));
+    for (let size = slot; size >= 16; size /= 2)
+      if (side * size <= map.maxTexture) return {size, atlas:side * size, capacity:side * side};
+    return null;
+  };
+  let plan = fit(wanted.length), stage = null;
+  if (plan && plan.size < slot) {
+    // A crowded map zoomed in asks for more than one texture holds. Only part
+    // of it is on the stage then: keep those marks, and a margin round them,
+    // at the size asked, instead of every mark on the globe at half of it.
+    const around = planetGpuMapStage(frame);
+    const near = wanted.filter(item => item.center && planetGpuMapOnStage(around, item.center));
+    const nearPlan = fit(near.length);
+    if (nearPlan && nearPlan.size > plan.size) { wanted = near; plan = nearPlan; stage = around; }
+  }
+  if (!plan) return "too many marks for one atlas";
   if (!marks || marks.signature !== signature || marks.asked !== slot ||
-      wanted.length > marks.capacity) {
-    let size = slot, atlas = 0;
-    for (; size >= 16; size /= 2) {
-      const side = Math.ceil(Math.sqrt(wanted.length * 1.3 + 16));
-      atlas = Math.max(size, 2 ** Math.ceil(Math.log2(side * size)));
-      if (atlas <= map.maxTexture) break;
-    }
-    if (size < 16) return "too many marks for one atlas";
-    map.markCanvas.width = atlas;
-    map.markCanvas.height = atlas;
-    marks = map.marks_ = {signature, asked:slot, slot:size, atlas, capacity:(atlas / size) ** 2,
+      marks.slot !== plan.size || wanted.length > marks.capacity) {
+    map.markCanvas.width = plan.atlas;
+    map.markCanvas.height = plan.atlas;
+    marks = map.marks_ = {signature, asked:slot, slot:plan.size, atlas:plan.atlas,
+                          capacity:plan.capacity,
                           context:map.markContext, slotOf:new Map(), keyOf:new Map(),
                           free:[], next:0, serial:(marks?.serial || 0) + 1, fresh:true};
   }
+  marks.stage = stage;
   const seen = new Set();
   const paintedSlots = [];
   for (const item of wanted) {
@@ -15887,6 +15945,33 @@ function planetGpuMapMarks(gl, map, frame) {
   return "";
 }
 
+// The stage as the camera has it now, and how far a mark may stand outside it
+// and still be kept: a quarter of the stage, so the camera can turn that far
+// before the marks are chosen again, and a cell's own size beyond that.
+function planetGpuMapStage(frame) {
+  const pad = Math.max(MAPW, MAPH) * .25;
+  const cell = Math.max(48, frame.radius * 4 / Math.max(1, PLANET?.frequency || 1));
+  return {right:[...frame.basis.right], up:[...frame.basis.up], out:[...frame.basis.out],
+          radius:frame.radius, centerX:frame.centerX, centerY:frame.centerY, pad, reach:pad + cell};
+}
+function planetGpuMapOnStage(stage, center) {
+  if (dot3(center, stage.out) <= -.03) return false;
+  const x = stage.centerX + dot3(center, stage.right) * stage.radius;
+  if (x < -stage.reach || x > MAPW + stage.reach) return false;
+  const y = stage.centerY - dot3(center, stage.up) * stage.radius;
+  return y >= -stage.reach && y <= MAPH + stage.reach;
+}
+// No point of the globe has moved further across the screen than this since
+// the stage was taken: the turn of each axis, the zoom and the pan, added up.
+function planetGpuMapStageHolds(stage, frame) {
+  const turned = name => Math.hypot(frame.basis[name][0] - stage[name][0],
+                                    frame.basis[name][1] - stage[name][1],
+                                    frame.basis[name][2] - stage[name][2]);
+  return frame.radius * Math.max(turned("right"), turned("up")) +
+    Math.abs(frame.radius - stage.radius) + Math.abs(frame.centerX - stage.centerX) +
+    Math.abs(frame.centerY - stage.centerY) <= stage.pad;
+}
+
 // The per-state half of the instances: ground colour, whether it is known,
 // and where its mark sits in the atlas.
 const PLANET_GPU_GROUND_RGB = new WeakMap();
@@ -15932,15 +16017,19 @@ function planetGpuMapDeclines(camera) {
   // A hundred-seat world has its own tuned path (the narrow surface and the
   // ink-only frame); this one has not been measured at that size.
   if (planetIsHuge()) return "huge world";
+  // A lens repaints the ground itself. Everything else a reader can switch on
+  // (a selection, a search, yields, tacks, flags, intel, a detonation) is ink
+  // over unchanged ground, and the Canvas above draws it there.
   if (mapLens) return "lens";
-  if (sel || selCity) return "selection";
-  if (tacks.length) return "tacks";
-  if (mapSearchQuery || mapSearchCivId) return "search";
-  if (SHOW_YIELDS) return "yields";
-  if (state.arena_flags?.length) return "arena flags";
-  if (anim.blasts.length) return "detonation";
-  if (unitIntelLayers().length) return "unit intel";
   return "";
+}
+
+// The overlays that walk every cell of the frame to find their own. Without
+// one, the ink above the GPU's ground asks for a handful of cells by key.
+function planetGpuMapOverlayWalksCells() {
+  return !!((sel && ((sel.reachable || []).length || (state.legal_actions || []).length)) ||
+    SHOW_YIELDS || state.arena_flags?.length || anim.blasts.length ||
+    mapSearchMatches().size || unitIntelLayers().length);
 }
 
 function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spectator) {
@@ -15957,12 +16046,13 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
   const map = planetGpuMapResources(gpu);
   if (!map) return false;
   const {gl} = gpu;
-  const frame = {scale, radius, visible, spectator};
+  const basis = planetViewBasis(camera);
+  const frame = {scale, radius, visible, spectator, centerX, centerY, basis};
   planetGpuMapGeometry(gl, map);
-  const linesDeclined = planetGpuMapBakeLines(gl, map, frame);
-  if (linesDeclined) { PLANET_GPU_MAP_STATS.declined = linesDeclined; return false; }
-  const marksDeclined = planetGpuMapMarks(gl, map, frame);
-  if (marksDeclined) { PLANET_GPU_MAP_STATS.declined = marksDeclined; return false; }
+  // Zoomed past what a bake can hold, the cells are few and large: the GPU
+  // still lays the ground under them, and the Canvas inks the ones on the
+  // stage with its own painters at full sharpness.
+  const near = planetGpuMapBakeLines(gl, map, frame) || planetGpuMapMarks(gl, map, frame);
   planetGpuMapInstances(gl, map, frame);
   if (gpu.mapChecked !== map.bake || gpu.mapCheckedMarks !== map.marks_) {
     // A browser can accept a context and still refuse a large texture. Ask
@@ -15977,7 +16067,6 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
     }
   }
 
-  const basis = planetViewBasis(camera);
   const centerPx = [centerX * DPR, (MAPH - centerY) * DPR];
   gl.viewport(0, 0, gpu.width, gpu.height);
   gl.disable(gl.SCISSOR_TEST);
@@ -16014,7 +16103,8 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
   gl.uniform1f(ground.at.uRadius, radius * DPR);
   gl.uniform1f(ground.at.uRadiusCss, radius);
   gl.uniform1f(ground.at.uBleed, .8 * DPR);
-  gl.uniform1f(ground.at.uMarksOn, marks ? 1 : 0);
+  gl.uniform1f(ground.at.uMarksOn, marks && !near ? 1 : 0);
+  gl.uniform1f(ground.at.uInk, near ? 0 : 1);
   gl.uniform1f(ground.at.uMarkTexels, marks ? marks.slot / (2 * PLANET_GPU_MAP_MARK_HALF) : 1);
   gl.uniform1f(ground.at.uMarkSlot, marks ? marks.slot : 1);
   gl.uniform1f(ground.at.uMarkAtlas, marks ? marks.atlas : 1);
@@ -16031,23 +16121,92 @@ function drawPlanetGpuMap(camera, scale, radius, centerX, centerY, visible, spec
   // The narrow surface path keeps a scissored clear between its own frames.
   gpu.needsFullClear = true;
   gpu.surfaceRect = null;
+  if (!gpu.mapProbed && !planetGpuMapProbe(gpu, centerPx)) {
+    gpu.map = null;
+    planetGpuHide();
+    PLANET_GPU_MAP_STATS.declined = "blank frame";
+    return false;
+  }
   gpu.canvas.style.display = "block";
   PLANET_GPU_MAP_STATS.frames++;
+  if (near) PLANET_GPU_MAP_STATS.nearFrames++;
   PLANET_GPU_MAP_STATS.declined = "";
-  return true;
+  PLANET_GPU_MAP_STATS.near = near;
+  return near ? "near" : "baked";
+}
+
+// A driver can accept every call and still draw nothing. The middle of the
+// disc is ocean or ground on every globe and never black, so the first frame
+// with it on the canvas is read back once: all black there retires this path
+// for the session and the Canvas painter draws the frame instead.
+function planetGpuMapProbe(gpu, centerPx) {
+  const {gl} = gpu;
+  const side = 16;
+  const x = Math.round(centerPx[0]) - side / 2, y = Math.round(centerPx[1]) - side / 2;
+  // Not on the canvas yet (a camera out among the planets): ask again later.
+  if (x < 0 || y < 0 || x + side > gpu.width || y + side > gpu.height) return true;
+  gpu.mapProbed = true;
+  const pixels = new Uint8Array(side * side * 4);
+  gl.readPixels(x, y, side, side, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  for (let at = 0; at < pixels.length; at += 4)
+    if (pixels[at] || pixels[at + 1] || pixels[at + 2]) return true;
+  return false;
+}
+
+// The cells of a frame whose ink the Canvas draws itself: those on the stage,
+// and every cell of a natural wonder, which is placed by all of them whether
+// they are on the stage or not.
+function planetGpuMapNearCells(map, camera, scale, centerX, centerY) {
+  // planetCells projects every corner of every cell facing the viewer before
+  // it can ask whether the cell is on the stage. Zoomed in, nearly none are:
+  // place each centre first, which is three products, and project the rest of
+  // a cell only when its centre lands within a cell and a half of the frame.
+  const basis = planetViewBasis(camera);
+  const radius = camera.radius * scale;
+  const slack = Math.max(48, radius * 4 / Math.max(1, PLANET?.frequency || 1));
+  const reach = slack * 1.5;
+  const [rx, ry, rz] = basis.right, [ux, uy, uz] = basis.up, [ox, oy, oz] = basis.out;
+  const cells = [];
+  const wonders = planetGpuMapWonderKeys(map);
+  for (let index = 0; index < map.cells.length; index++) {
+    const [x, y, z] = map.cells[index].center;
+    if (x * ox + y * oy + z * oz <= -.03) continue;
+    const tileKey = map.cellKeys[index];
+    const wonder = wonders.has(tileKey);
+    if (!wonder) {
+      const sx = centerX + (x * rx + y * ry + z * rz) * radius;
+      if (sx < -reach || sx > MAPW + reach) continue;
+      const sy = centerY - (x * ux + y * uy + z * uz) * radius;
+      if (sy < -reach || sy > MAPH + reach) continue;
+    }
+    const tile = TMAP.get(tileKey);
+    const entry = tile && planetCellEntry(tile, camera, scale, centerX, centerY, -.03,
+                                          wonder ? null : slack);
+    if (entry) cells.push(entry);
+  }
+  cells.sort((a, b) => a.center.z - b.center.z);
+  return cells;
 }
 
 // The cells the 2D ink above the GPU ground iterates over: natural wonders
 // and the edge of sight. Everything else it needs it looks up by key,
 // projected on demand; empire labels stand on their own ground spots.
+// Where the natural wonders stand, which changes only when the state does.
+function planetGpuMapWonderKeys(map) {
+  if (map.wonderKeys?.state === state) return map.wonderKeys.keys;
+  const keys = new Set();
+  for (const tile of state.map.tiles)
+    if (isNaturalWonder(tile.feature)) keys.add(key(tile.pos));
+  map.wonderKeys = {state, keys};
+  return keys;
+}
+
 function planetGpuMapOverlayKeys(map, radius, visible, spectator) {
   const perimeter = !spectator && radius >= SKY_MARKERS;
   const cached = map.overlayKeys;
   if (cached && cached.state === state && cached.perimeter === perimeter &&
       cached.visible === visible && cached.spectator === spectator) return cached.keys;
-  const keys = new Set();
-  for (const tile of state.map.tiles)
-    if (isNaturalWonder(tile.feature)) keys.add(key(tile.pos));
+  const keys = new Set(planetGpuMapWonderKeys(map));
   if (perimeter) {
     for (const tileKey of visible) {
       const cell = PLANET.cells.get(tileKey);
@@ -17556,15 +17715,18 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
 function activeSkyLaunches(now = performance.now()) {
   for (let index = anim.skyLaunches.length - 1; index >= 0; index--) {
     const launch = anim.skyLaunches[index];
-    const endsAt = launch.endsAt ?? launch.t0 + launch.duration;
+    const endsAt = (launch.endsAt ?? launch.t0 + launch.duration) + (launch.labelPause || 0);
     if (now >= endsAt)
       anim.skyLaunches.splice(index, 1);
   }
   return anim.skyLaunches;
 }
+// A rocket that has gone and left only its name waiting at the edge of the frame
+// is no longer in flight, so whatever it was carrying can appear on time.
 function skyLaunchInFlight(playerId, mission, now = performance.now()) {
   return activeSkyLaunches(now).some(launch =>
-    launch.playerId === playerId && launch.mission === mission);
+    launch.playerId === playerId && launch.mission === mission &&
+    now < launch.t0 + launch.duration);
 }
 // How much of a civilization's standing craft is out of its rocket: none for
 // most of the flight, then all of it, which is also what a craft with no launch
@@ -17586,13 +17748,47 @@ function skySatelliteDeployed(playerId, now) {
 // What a launch is called on screen: whose it is, then where it is going.
 function skyLaunchLabel(launch) {
   const goal = launch.mission === "expedition" ? "exoplanet" : launch.mission;
-  return `${civName(launch.playerId)} ${goal}`.toUpperCase();
+  return `${civName(launch.playerId)} – ${goal}`.toUpperCase();
+}
+// A rocket is at its fastest as it leaves the picture and would take its name
+// with it in a blink. The name stays at the edge for this long after the rocket
+// has gone, the last stretch of it fading: the viewer's last chance to read
+// whose launch that was.
+const SKY_LABEL_PAUSE = 1300, SKY_LABEL_PAUSE_FADE = 300;
+// As high as a name goes, in pixels down to its baseline. The masthead's shadow
+// falls across the top of the frame and greys out anything sitting in it.
+const SKY_LABEL_TOP = 40;
+// Where a waiting name stands: the nearest place to the edge it reached that is
+// inside the frame, out from under the panels and off any other waiting name.
+// Settled once and kept in pixels from the frame's corner, so a turning world or
+// a panned board cannot slide it along the edge while it waits.
+function skyLaunchLabelRest(launch, x, y, half, stage, pixel) {
+  if (launch.labelRest) return launch.labelRest;
+  const from = {x:(x - stage.left) / pixel, y:(y - stage.top) / pixel};
+  const wide = half / pixel, tall = 14;
+  const width = (stage.right - stage.left) / pixel, height = (stage.bottom - stage.top) / pixel;
+  const taken = [...skyWidgetBoxes(),
+    ...anim.skyLaunches.flatMap(other => other.labelRest ? [other.labelRest.box] : [])];
+  const open = (left, base) => left - wide > -.5 && left + wide < width + .5 &&
+    base > SKY_LABEL_TOP - .5 && base < height + .5 &&
+    !taken.some(box => left + wide > box.left && left - wide < box.right &&
+                       base > box.top && base - tall < box.bottom);
+  let best = from, nearest = Infinity;
+  for (const left of [from.x, ...taken.flatMap(box => [box.left - wide, box.right + wide])]) {
+    for (const base of [from.y, ...taken.flatMap(box => [box.top, box.bottom + tall])]) {
+      const away = Math.hypot(left - from.x, base - from.y);
+      if (away < nearest && open(left, base)) { best = {x:left, y:base}; nearest = away; }
+    }
+  }
+  launch.labelRest = {...best, box:{left:best.x - wide, right:best.x + wide,
+                                    top:best.y - tall, bottom:best.y}};
+  return launch.labelRest;
 }
 // `stage` is the frame in the caller's coordinates. A name long enough to say
 // Gran Colombia would otherwise lose its ends whenever a rocket flies near the
-// side of the picture, and a rocket leaving through the top would take the
-// whole label with it first.
-function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1) {
+// side of the picture, and a rocket leaving through the top or the bottom would
+// take the whole label with it first.
+function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false) {
   const label = skyLaunchLabel(launch);
   cx.save();
   cx.globalAlpha = alpha;
@@ -17600,9 +17796,13 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1) {
   cx.textAlign = "center"; cx.textBaseline = "bottom";
   cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel;
   const half = cx.measureText(label).width / 2 + 4 * pixel;
-  const placed = stage.right - stage.left > half * 2
+  let placed = stage.right - stage.left > half * 2
     ? Math.max(stage.left + half, Math.min(stage.right - half, x)) : x;
-  const high = Math.max(stage.top + 14 * pixel, y);
+  let high = Math.max(stage.top + SKY_LABEL_TOP * pixel, Math.min(stage.bottom - 3 * pixel, y));
+  if (waiting) {
+    const rest = skyLaunchLabelRest(launch, placed, high, half, stage, pixel);
+    placed = stage.left + rest.x * pixel; high = stage.top + rest.y * pixel;
+  }
   cx.strokeText(label, placed, high);
   cx.fillStyle = "#e9f4f5"; cx.fillText(label, placed, high);
   cx.restore();
@@ -21068,6 +21268,20 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   const rocket = skyRocketGeometry(flight.rocket, size);
   const unseen = point => !!limb && point.z < 0 &&
     Math.hypot(point.x - limb.x, point.y - limb.y) < limb.r;
+  const lift = Math.max(size * 1.8, rocket.halfWidth + 6 * pixel);
+  // A flight that goes out through the frame leaves its name waiting at the edge.
+  // `leaving` alone is not that: from far out a rocket can hop a few pixels and
+  // end in the middle of the picture, and there is no edge for it to wait at.
+  if (film.leaving && (end.x < stage.left || end.x > stage.right ||
+                       end.y < stage.top || end.y > stage.bottom))
+    launch.labelPause = SKY_LABEL_PAUSE;
+  if (launch.labelPause && clock >= 1) {
+    const left = launch.t0 + launch.duration + launch.labelPause - now;
+    if (!unseen(at))
+      drawSkyLaunchLabel(launch, at.x, at.y - lift, .88 * Math.min(1, left / SKY_LABEL_PAUSE_FADE),
+                         stage, pixel, true);
+    return;
+  }
   const pad = pointAt(0);
   cx.save();
   // The exhaust hangs where it was left and thins as it ages. It is laid down on
@@ -21128,8 +21342,7 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   cx.restore();
 
   if (!unseen(at))
-    drawSkyLaunchLabel(launch, at.x, at.y - Math.max(size * 1.8, rocket.halfWidth + 6 * pixel),
-                       .88 * fade, stage, pixel);
+    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel);
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -21730,6 +21943,12 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fill();
   }
 
+  drawPlanetGroundInk(cells, scale, radius, visible, spectator, empire);
+}
+
+// What goes over the fills. The GPU globe zoomed past its bake has laid the
+// fills already and asks the Canvas for only this.
+function drawPlanetGroundInk(cells, scale, radius, visible, spectator, empire) {
   // Volcanic Soil is ground rather than an icon. Like the flat strategic map,
   // it goes on top of its terrain but below territory, the survey grid, and
   // every piece of constructed or natural detail.
@@ -22858,8 +23077,10 @@ function drawPlanetEmpireLabels(context, camera, scale, radius, centerX, centerY
 // While the GPU turns the ground on every display refresh, the Canvas above it
 // is repainted only as often as its cost allows, so a name painted there stands
 // still for a few frames and then catches up. Names get a small layer of their
-// own, just above the ground and below the Canvas ink, that keeps the ground's
-// time. Cities and armies still sit on top of them, as they always have.
+// own that keeps the ground's time. It sits above the Canvas, so a name is the
+// top of the map, over every city and army. A flight still has to cross over
+// it, and does: `planetGpuEligible` stands this path down while anything is in
+// the air, and the names then go on the Canvas underneath the sky.
 function paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY) {
   const gpu = PLANET_GPU;
   if (!gpu.labels) {
@@ -22867,7 +23088,8 @@ function paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY) {
     canvas.id = "planet-empire-labels";
     canvas.setAttribute("aria-hidden", "true");
     canvas.style.cssText = gpu.canvas.style.cssText;
-    gpu.canvas.after(canvas);
+    canvas.style.zIndex = "1";
+    cv.after(canvas);
     gpu.labels = {canvas, context:canvas.getContext("2d")};
   }
   const {canvas, context} = gpu.labels;
@@ -24018,10 +24240,12 @@ function drawPlanetMap() {
   // picture; the disc behind it is two fills either way and costs nothing.
   const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
-  // `?map=gpu`: the whole ground of a known globe is drawn by the graphics
-  // processor and this canvas carries only the ink above it.
-  const gpuMap = PLANET_GPU_MAP && earthInFrame &&
+  // The ground of a known globe is drawn by the graphics processor and this
+  // canvas carries the ink above it: all of the ink once the view is zoomed
+  // past the GPU's bake (`gpuMap` without `gpuInk`), the sparse ink otherwise.
+  const gpuMode = PLANET_GPU_MAP && earthInFrame &&
     drawPlanetGpuMap(camera, scale, radius, centerX, centerY, turnVisible, spectator);
+  const gpuMap = !!gpuMode, gpuInk = gpuMode === "baked";
   if (PLANET_GPU) PLANET_GPU.mapActive = gpuMap;
   // At globe scale WebGL owns the opaque terrain surface while Canvas 2D keeps
   // its established strategic ink above it.  The overlay remains available
@@ -24115,8 +24339,10 @@ function drawPlanetMap() {
   // The GPU globe has already drawn every cell's ground; the ink above it
   // iterates only the cells that carry some, and finds the rest by key.
   const cells = !earthInFrame ? []
-    : gpuMap ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius,
-                                        visible, spectator)
+    : gpuInk && !planetGpuMapOverlayWalksCells()
+      ? planetGpuMapOverlayCells(camera, scale, centerX, centerY, radius, visible, spectator)
+    : gpuInk ? planetCells(camera, scale, centerX, centerY)
+    : gpuMap ? planetGpuMapNearCells(PLANET_GPU.map, camera, scale, centerX, centerY)
     : planetCells(camera, scale, centerX, centerY, undefined,
                   inkOnly ? planetInkTiles() : state.map.tiles,
                   planetIsHuge() && !gpuSurface);
@@ -24126,7 +24352,9 @@ function drawPlanetMap() {
   if (gpuMap) { PLANET_HIT_FRAME.inkOnly = true; PLANET_HIT_FRAME.onDemand = true; }
   if (!gpuSurface && !gpuMap)
     drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
-  if (!gpuMap) {
+  else if (gpuMap && !gpuInk)
+    drawPlanetGroundInk(cells, scale, radius, turnVisible, spectator, false);
+  if (!gpuInk) {
     // A route is ground infrastructure on the globe too: draw it before the
     // frontier ribbon and before every terrain landmark that shares its tile.
     drawPlanetStrategicRoads(cells, turnVisible, spectator);
@@ -24142,7 +24370,7 @@ function drawPlanetMap() {
   // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
   // yields therefore use the same authored vocabulary as the flat board.
   if (scale > PLANET_STRATEGIC_DETAIL_SCALE) {
-    if (gpuMap) drawPlanetNaturalWonders(cells, turnVisible, spectator);
+    if (gpuInk) drawPlanetNaturalWonders(cells, turnVisible, spectator);
     else drawPlanetStrategicTerrain(cells, turnVisible, spectator);
   }
 
@@ -24193,12 +24421,6 @@ function drawPlanetMap() {
   // The selected unit's movement: range perimeter, then per-seam arrows.
   if (radius >= SKY_MARKERS)
     drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
-  // At the same scale where major-city names leave the globe, replace the
-  // settlement vocabulary with cartographic empire names. This is deliberately
-  // before the city/icon pass so close markers remain readable over the label
-  // if the two levels meet during a zoom animation.
-  if (gpuSurface) paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
-  else drawPlanetEmpireLabels(cx, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -24330,6 +24552,16 @@ function drawPlanetMap() {
     cx.strokeStyle = "rgba(196,235,255,.48)";
     cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
     cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
+  }
+  // At the same scale where major-city names leave the globe, cartographic
+  // empire names replace them. They are the top of the map, over every city,
+  // army and marker on the ground, and only what is flying goes over them,
+  // which is why the sky comes next.
+  if (gpuSurface) paintPlanetEmpireLabelLayer(camera, radius, centerX, centerY);
+  else {
+    // That layer is above this canvas, so a stale one would cover it.
+    if (PLANET_GPU?.labels) PLANET_GPU.labels.canvas.style.display = "none";
+    drawPlanetEmpireLabels(cx, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   }
   cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
@@ -27414,6 +27646,22 @@ function patchHudMarkup(root, markup) {
   patchHudChildren(root, next.content);
 }
 
+// The major civilizations in the order the masthead lists them, under whatever
+// sort its reader has chosen. World politics reads this same list, so the two
+// panels cannot disagree about who comes first.
+function playerHudStandings() {
+  // Rank remains the score standing even when the visible rows are sorted by
+  // another fact, so a #2 badge never starts meaning "second alphabetically".
+  const scoreRankedMajors = state.players
+    .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
+  const statsByPlayer = new Map(scoreRankedMajors.map(p =>
+    [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
+  return {scoreRankedMajors, majors, rankById, statsByPlayer};
+}
+
 function drawPlayerHud() {
   const hud = document.getElementById("playerhud");
   const victoryHud = document.getElementById("victoryhud");
@@ -27452,15 +27700,7 @@ function drawPlayerHud() {
   // so it stands out of the standings at a glance (operator 2026-10-30).
   const focusSeatId = SPEC ? state.view_player : state.player;
   const focusSeat = Number.isInteger(focusSeatId) ? focusSeatId : null;
-  // Rank remains the score standing even when the visible rows are sorted by
-  // another fact, so a #2 badge never starts meaning "second alphabetically".
-  const scoreRankedMajors = state.players
-    .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
-    .sort((a, b) => b.score - a.score || a.id - b.id);
-  const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(scoreRankedMajors.map(p =>
-    [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
+  const {scoreRankedMajors, majors, rankById, statsByPlayer} = playerHudStandings();
   // The one open city list belongs to a seat in this table, or to nobody.
   if (hudOpenCityList !== null && !majors.some(p => p.id === hudOpenCityList))
     hudOpenCityList = null;
@@ -29135,9 +29375,10 @@ function settleSoloRankings() {
   toggleRankingsReport(chosen === "1", false);
 }
 
-// The map already holds the turn controls. Keep setup and simulator tools in
-// the deck, opened from the menu when needed. Unlike the old rankings key,
-// this preference was only written by a person, so existing choices survive.
+// A played game opens with the deck showing, because auto-play lives there.
+// A phone keeps the map: the deck would float over all of it, and below 640px
+// the button that hides it is gone. Unlike the old rankings key, this
+// preference was only written by a person, so existing choices survive.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
 let soloDeckSettled = false;
 function settleSoloDeck() {
@@ -29145,8 +29386,25 @@ function settleSoloDeck() {
   soloDeckSettled = true;
   let chosen = null;
   try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
-  togglePanel(chosen !== "open", false);
+  togglePanel(chosen ? chosen === "closed" : window.matchMedia("(max-width: 720px)").matches, false);
 }
+
+// The published site says plainly what single player is whenever a new game
+// starts. Turn 1 of a world not yet announced is what makes it new, so a save
+// resumed mid-game stays quiet. Clearing the seed once the game has moved on
+// lets a replay of the same seed count as new as well.
+let soloNoticeSeed = null;
+function soloNoticeOpen() { return !document.getElementById("solo-notice").hidden; }
+function settleSoloNotice() {
+  if (state.turn !== 1) { soloNoticeSeed = null; return; }
+  if (!window.CIVVIS_PUBLISHED_BUILD || state.seed === soloNoticeSeed) return;
+  soloNoticeSeed = state.seed;
+  document.getElementById("solo-notice").hidden = false;
+  document.getElementById("solo-notice-ack").focus();
+}
+document.getElementById("solo-notice-ack").onclick = () => {
+  document.getElementById("solo-notice").hidden = true;
+};
 
 function drawSoloHud() {
   const solo = playingSolo();
@@ -29168,6 +29426,7 @@ function drawSoloHud() {
   }
   settleSoloRankings();
   settleSoloDeck();
+  settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
 }
@@ -32186,29 +32445,81 @@ function worldPoliticsWarRow(war) {
     `${worldPoliticsPair(war.first, war.second, "vs")}` +
     `${note ? `<span class="politics-note">${note}</span>` : ""}</div>`;
 }
-function worldPoliticsGroup(heading, tone, rows, none) {
-  return `<div class="politics-group"><div class="politics-heading${tone ? ` ${tone}` : ""}">` +
-    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</div>` +
-    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</div>`;
+function worldPoliticsGroup(group, heading, tone, rows, none) {
+  return `<details class="politics-group" data-politics-group="${group}"${politicsFolded[group] ? "" : " open"}>` +
+    `<summary class="politics-heading${tone ? ` ${tone}` : ""}">` +
+    `<span>${heading}</span>${rows.length ? `<small>${rows.length}</small>` : ""}</summary>` +
+    (rows.length ? rows.join("") : `<div class="politics-none">${none}</div>`) + `</details>`;
+}
+// The list is rebuilt every turn, so a group's fold has to outlive its element.
+// A <details> also announces itself when it is built open, hence the comparison.
+function rememberPoliticsFold(event) {
+  const group = event.target.dataset?.politicsGroup;
+  if (!group || politicsFolded[group] === !event.target.open) return;
+  politicsFolded[group] = !event.target.open;
+  try { localStorage.setItem(POLITICS_FOLD_KEY, JSON.stringify(politicsFolded)); }
+  catch (e) { /* a browser refusing storage still folds for this page */ }
+}
+// Pairs follow the masthead. Whoever stands higher in it is named first, and
+// the rows run down the higher civilization and then the lower one, so the top
+// row belongs to the first and second seats if they have a tie at all.
+function worldPoliticsOrdered(pairs, position) {
+  // A seat the masthead does not list still needs a place: after those it does.
+  const at = id => position.get(id) ?? position.size + id;
+  return pairs
+    .map(pair => at(pair.second) < at(pair.first)
+      ? {...pair, first: pair.second, second: pair.first}
+      : pair)
+    .sort((a, b) => at(a.first) - at(b.first) || at(a.second) - at(b.second));
+}
+// Any living civilization the masthead lists can be watched alone. The menu
+// runs by seat so it holds still while the standings move under it.
+function syncPoliticsSeat() {
+  if (politicsSeatWorld !== state.seed) {
+    politicsSeatWorld = state.seed;
+    politicsSeat = "all";
+  }
+  const living = state.players
+    .filter(p => !p.is_minor && !p.is_barbarian && p.alive && metPlayer(p))
+    .map(p => p.id);
+  politicsSeat = syncCivFilterOptions(document.getElementById("politicsplayer"),
+    logSeatsOrdered(living), "All civilizations", politicsSeat);
+  return politicsSeat === "all" ? null : Number(politicsSeat);
+}
+function setPoliticsSeat(value) {
+  politicsSeat = value;
+  if (state) drawWorldPolitics();
 }
 function drawWorldPolitics() {
   const list = document.getElementById("worldpolitics");
   const scope = document.getElementById("politicsscope");
   if (!list || !state) return;
   const politics = state.world_politics || {};
-  const bonds = Array.isArray(politics.bonds) ? politics.bonds : [];
-  const wars = Array.isArray(politics.wars) ? politics.wars : [];
+  const seat = syncPoliticsSeat();
+  const concerned = pair => seat === null || pair.first === seat || pair.second === seat;
+  const allWars = Array.isArray(politics.wars) ? politics.wars : [];
+  const wars = allWars.filter(concerned);
+  const warWord = `war${allWars.length === 1 ? "" : "s"}`;
   // The label has room for little beside the section's own name.
   scope.textContent = wars.length ? `⚔ ${wars.length}` : "";
-  scope.title = wars.length ? `${wars.length} war${wars.length === 1 ? "" : "s"} in progress` : "";
+  scope.title = !wars.length ? ""
+    : seat === null ? `${wars.length} ${warWord} in progress`
+    : `${logSeatName(seat)} is in ${wars.length} of ${allWars.length} ${warWord} in progress`;
   if (inClosedSidebarSection(list)) return;
-  const signature = `${state.seed}|${state.turn}|${JSON.stringify(politics)}`;
+  const position = new Map(playerHudStandings().majors.map((p, index) => [p.id, index]));
+  const signature = `${state.seed}|${state.turn}|${seat}|${[...position.keys()]}|${JSON.stringify(politics)}`;
   if (list.dataset.signature === signature) return;
   list.dataset.signature = signature;
+  const bonds = (Array.isArray(politics.bonds) ? politics.bonds : []).filter(concerned);
+  // "No wars" alone is a claim about the world, which a filtered list cannot make.
+  const whose = seat === null ? "" : ` for ${escapeAttr(logSeatName(seat))}`;
   list.innerHTML =
-    worldPoliticsGroup("Alliances &amp; friendships", "", bonds.map(worldPoliticsBondRow),
-      "No alliances or friendships.") +
-    worldPoliticsGroup("At war", "war", wars.map(worldPoliticsWarRow), "No civilizations at war.") +
+    worldPoliticsGroup("bonds", "Alliances &amp; friendships", "",
+      worldPoliticsOrdered(bonds, position).map(worldPoliticsBondRow),
+      `No alliances or friendships${whose}.`) +
+    worldPoliticsGroup("wars", "At war", "war",
+      worldPoliticsOrdered(wars, position).map(worldPoliticsWarRow),
+      seat === null ? "No civilizations at war." : `No wars${whose}.`) +
     (politics.partial
       ? `<div class="politics-caveat">Civ VI reports pacts for our own seat only, so rival pacts are not listed.</div>`
       : "");
@@ -37560,7 +37871,7 @@ function closeTopmostScreen() {
 }
 // A visible screen keeps global action keys out of its controls.
 function screenHoldsKeyboard() {
-  return anyScreenOpen();
+  return anyScreenOpen() || soloNoticeOpen();
 }
 document.getElementById("endturn").onclick = ev => advanceTurn(ev.shiftKey);
 // Hand your own seat to one of our strategies for a stretch of turns. Useful
@@ -37761,6 +38072,12 @@ document.getElementById("tradebtn").onclick = () => openTrade();
 {
   const seat = document.getElementById("strategyplayer");
   seat.onchange = () => setStrategySeat(seat.value);
+}
+{
+  const seat = document.getElementById("politicsplayer");
+  seat.onchange = () => setPoliticsSeat(seat.value);
+  // A toggle does not bubble, so the list catches its groups' on the way down.
+  document.getElementById("worldpolitics").addEventListener("toggle", rememberPoliticsFold, true);
 }
 {
   const player = document.getElementById("warplayer");

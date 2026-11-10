@@ -233,20 +233,36 @@ impl Game {
         }
     }
 
-    /// The Apocalypse pack's meteor showers: about six strikes per game
-    /// (the shipped Moderate frequency; Minimal 3 / Light 4 / Heavy 10 /
-    /// Hyperreal 15), each hitting one open hex of the shipped strike
-    /// terrains outside anyone's territory (Severity 1, Hexes 1,
-    /// AvoidTerritory) and leaving the meteor goody site for the first
-    /// unit in. Strikes draw from a turn-keyed stream so they never
-    /// perturb the main RNG sequence, and any shortfall is forced in
-    /// before the turn limit.
+    /// How many meteor showers this game expects, from
+    /// `RandomEvent_Frequencies` in `GranColombia_Maya_Expansion2.xml`:
+    /// Light 4, Moderate 6, Heavy 10, Hyperreal 15. CIVVIS's lowest intensity
+    /// is its own "no disasters", so it has none (the game's Minimal row is
+    /// 3). The Apocalypse mode installs `REALISM_SETTING_MEGADISASTERS`, whose
+    /// row in `GranColombia_Maya_RandomEvents_MODE.xml` is 20.
+    fn meteor_showers_per_game(&self) -> u32 {
+        if !Self::script_disaster_allowed(self.map_script, "meteor_shower") {
+            return 0;
+        }
+        if self.game_mode("apocalypse") {
+            return 20;
+        }
+        [0, 4, 6, 10, 15][self.disaster_intensity() as usize]
+    }
+
+    /// Meteor showers: each hits one open hex of the shipped strike terrains
+    /// outside anyone's territory (Severity 1, Hexes 1, AvoidTerritory) and
+    /// leaves the meteor goody site for the first unit in. Strikes draw from
+    /// a turn-keyed stream so they never perturb the main RNG sequence, and
+    /// any shortfall is forced in before the turn limit.
+    ///
+    /// They are not a game mode. `GranColombia_Maya.modinfo` loads these rows
+    /// under the `GranColombiaMaya_Expansion2` criteria, which any Gathering
+    /// Storm game meets; only the `*_MODE.xml` files wait on
+    /// `GAMEMODE_APOCALYPSE`. Live games with every mode verified off have
+    /// Meteor Sites on the board.
     pub(super) fn process_meteors(&mut self) {
-        const PER_GAME: u32 = 6;
-        // Meteor showers arrived with the New Frontier Pass' Apocalypse mode,
-        // not with Gathering Storm. A stock lobby — and every tournament one,
-        // which disables all game modes — sees none.
-        if !self.game_mode("apocalypse") || self.meteor_strikes >= PER_GAME || self.max_turns == 0 {
+        let per_game = self.meteor_showers_per_game();
+        if self.meteor_strikes >= per_game || self.max_turns == 0 {
             return;
         }
         let mut rng = Rng::new(
@@ -255,14 +271,17 @@ impl Game {
                     .wrapping_add((self.turn as u64) << 8)
                     .wrapping_add(self.meteor_strikes as u64),
         );
-        let remaining = (PER_GAME - self.meteor_strikes) as u64;
+        let remaining = (per_game - self.meteor_strikes) as u64;
         let due = u64::from(self.max_turns.saturating_sub(self.turn)) <= remaining
-            || (rng.below(self.max_turns as usize) as u32) < PER_GAME;
+            || (rng.below(self.max_turns as usize) as u32) < per_game;
         if !due {
             return;
         }
         // Open land on the shipped strike list, kept clear of anything
-        // already standing so camp and hut bookkeeping stays whole.
+        // already standing so camp and hut bookkeeping stays whole. The
+        // features are the ones live sites were seen on: Floodplains and
+        // Oasis are there although `Improvement_ValidFeatures` lists only
+        // Forest, Jungle and Marsh, so the event does not consult that table.
         let candidates: Vec<Pos> = self
             .map
             .tiles
@@ -275,10 +294,18 @@ impl Game {
                     && tile.district.is_none()
                     && tile.wonder.is_none()
                     && tile.improvement.is_none()
-                    && tile
-                        .feature
-                        .as_deref()
-                        .is_none_or(|feature| matches!(feature, "forest" | "jungle" | "marsh"))
+                    && tile.feature.as_deref().is_none_or(|feature| {
+                        matches!(
+                            feature,
+                            "forest"
+                                | "jungle"
+                                | "marsh"
+                                | "floodplains"
+                                | "grassland_floodplains"
+                                | "plains_floodplains"
+                                | "oasis"
+                        )
+                    })
             })
             .map(|(position, _)| *position)
             .collect();
