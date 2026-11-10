@@ -2188,12 +2188,20 @@ It reports zero unwaived keys across 629, with five waived in
 `tools/inert_waivers.json` for consumption the string join cannot see. Run it
 after any refactor that moves yield code.
 
-**Eighth wave (the meteor):** the Apocalypse pack's meteor shower lands in
-the engine, **behind its game-mode checkbox** (`--game-modes apocalypse`;
-Secret Societies is the other one CIVVIS models). New Frontier modes are
-off in a stock lobby and in every tournament lobby, so the baseline
-ruleset sees none of this — about six strikes per game (the shipped Moderate frequency)
-on the shipped strike terrains outside anyone's territory, each leaving
+**Eighth wave (the meteor):** the meteor shower lands in the engine. It is
+**not** a game mode, although this section said so until 2026-11-09:
+`GranColombia_Maya.modinfo` loads `GranColombia_Maya_Expansion2.xml` under
+the `GranColombiaMaya_Expansion2` criteria, which any Gathering Storm game
+meets, and only the `*_MODE.xml` files wait on `GAMEMODE_APOCALYPSE`. In the
+live lane, with every mode verified off, 42 of 110 games showed Meteor Sites:
+68 sites, all on unowned land. The export carries only plots the seat has
+revealed, so that is a floor; one game showed six by turn 165. A game expects
+4, 6, 10 or 15 showers at disaster intensity 1 to 4 (Light, Moderate, Heavy,
+Hyperreal; intensity 0 is CIVVIS's own "no disasters") and 20 under the
+Apocalypse mode, on the shipped strike terrains outside anyone's territory.
+Live sites also sat on Floodplains and an Oasis, which
+`Improvement_ValidFeatures` does not list, so the event does not consult it.
+Each strike leaves
 the `METEOR_GOODIES` site whose one-entry table grants the most advanced
 Heavy Cavalry the finder can field, in their nearest city, exempt from
 resource upkeep (the shipped refund modifier). The tribal-village roll
