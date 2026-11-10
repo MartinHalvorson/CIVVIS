@@ -1085,10 +1085,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
 /// but the host's export has never named a pact between two rivals. `partial`
 /// says so, so that a viewer does not read an empty list as a world without
 /// alliances.
+///
+/// `attitudes` adds what each leader makes of each other one, which unlike a
+/// pact can differ between the two sides of a pair.
 fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
     let mut alliances = Vec::new();
     let mut friendships = Vec::new();
     let mut wars = Vec::new();
+    let mut attitudes = json!({"civs": [], "rows": []});
     if !g.is_arena() {
         let majors: Vec<usize> = g
             .players
@@ -1097,6 +1101,7 @@ fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
             .filter(|p| omniscient || g.has_met(pid, p.id))
             .map(|p| p.id)
             .collect();
+        attitudes = world_politics_attitudes(g, majors.clone());
         for (index, &first) in majors.iter().enumerate() {
             for &second in &majors[index + 1..] {
                 if g.rivals_at_war(first, second) {
@@ -1138,8 +1143,56 @@ fn world_politics_json(g: &Game, pid: usize, omniscient: bool) -> Value {
             .into_iter()
             .map(|(since, first, second)| json!({"first": first, "second": second, "since": since}))
             .collect::<Vec<_>>(),
+        "attitudes": attitudes,
         "partial": !g.observed_leader_types.is_empty(),
     })
+}
+
+/// One string for each of `civs` and one letter for each cell, this being the
+/// largest table in the panel: `F`riendly, `N`eutral, `U`nfriendly or
+/// `D`enounced, for what that row's leader makes of that column's. A `-` is the
+/// civilization itself, a pair already named among the bonds or wars, or a
+/// state nobody knows.
+///
+/// Civilization VI gives a mirrored game one state per rival, the one it holds
+/// toward our seat, so that state fills both of that pair's cells and every
+/// pair of rivals stays unknown. The local ledger would otherwise invent them.
+fn world_politics_attitudes(g: &Game, civs: Vec<usize>) -> Value {
+    let letter = |state: &str| match state {
+        "friendly" => 'F',
+        "neutral" => 'N',
+        "unfriendly" => 'U',
+        "denounced" => 'D',
+        _ => '-',
+    };
+    let rows: Vec<String> = if g.observed_leader_types.is_empty() {
+        g.relationship_states_among(&civs)
+            .into_iter()
+            .enumerate()
+            .map(|(row, states)| {
+                states
+                    .into_iter()
+                    .enumerate()
+                    .map(|(column, state)| if row == column { '-' } else { letter(state) })
+                    .collect()
+            })
+            .collect()
+    } else {
+        civs.iter()
+            .map(|&row| {
+                civs.iter()
+                    .map(|&column| match (row, column) {
+                        (0, rival) | (rival, 0) if rival != 0 => g.players[rival]
+                            .observed_diplomatic_state
+                            .get(&0)
+                            .map_or('-', |state| letter(&state.to_ascii_lowercase())),
+                        _ => '-',
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    json!({"civs": civs, "rows": rows})
 }
 
 /// Every conflict in progress, longest-running first, followed by the most
