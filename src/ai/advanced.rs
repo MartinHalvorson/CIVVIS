@@ -6738,6 +6738,10 @@ pub struct AdvancedAi {
     /// into a space-race project. See `advanced/chop_feeds_the_long_build.rs`.
     /// Opt-in.
     chop_feeds_the_long_build: bool,
+    /// `chop-feeds-the-space-race`: the space-race leg of
+    /// `chop-feeds-the-long-build` alone. A Builder clears into a space-race
+    /// project or the Spaceport and into nothing else. Opt-in.
+    chop_feeds_the_space_race: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8478,6 +8482,9 @@ pub struct AdvancedAi {
     /// beelines Reformed Church after Theology. See
     /// `advanced/religion_seat_reformed_church.rs`. Off by default.
     religion_seat_reaches_reformed_church: bool,
+    /// A Religion-target founder sends an Embassy to a rival with no known
+    /// city. See `religion_seat_reveals_the_capitals`. Opt-in, off by default.
+    religion_seat_reveals_the_capitals: bool,
     /// Require the launcher counter's military edge for a Religion seat's
     /// separate science-denial declaration. Opt-in; see `religion_denial_needs_the_edge`.
     religion_denial_needs_the_edge: bool,
@@ -26501,6 +26508,8 @@ mod religion_seat_keeps_the_guard;
 /// `religion-seat-reaches-reformed-church`: see
 /// `advanced/religion_seat_reformed_church.rs`.
 mod religion_seat_reformed_church;
+/// An Embassy locates an otherwise unlocated rival for the religious corps.
+mod religion_seat_reveals_the_capitals;
 /// An active founder corps can use its first available policy window.
 mod religion_seat_slots_the_orders;
 /// `religion-seat-spends-the-bank`: see

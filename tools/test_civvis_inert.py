@@ -52,7 +52,8 @@ class ProductionSources(unittest.TestCase):
     def test_every_shape_of_test_code_is_dropped(self):
         found = self.sources(
             {
-                "lib.rs": 'mod shipped;\n#[cfg(test)]\nmod declared;\n',
+                "lib.rs": 'mod shipped;\n#[cfg(test)]\nmod declared;\n#[cfg(test)]\n#[path = "elsewhere/pathed.rs"]\nmod pathed;\n',
+                "elsewhere/pathed.rs": 'name!("g");\n',
                 "shipped.rs": 'name!("a");\n#[cfg(test)]\nmod inner {\n    name!("b");\n}\n',
                 "declared.rs": 'name!("c");\n',
                 "game/tests.rs": 'name!("d");\n',

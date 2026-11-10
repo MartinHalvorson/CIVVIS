@@ -197,3 +197,65 @@ fn a_clearing_pays_by_progress_and_game_speed_not_by_world_era() {
     game.players[0].techs.extend(techs);
     assert_eq!(forest(&game), (200.0 * speed).floor(), "everything learned");
 }
+
+/// Measured on the host: a Forest cleared into a Settler under Colonization
+/// paid 27 to 30 Production where the plain rule gives 19 to 20, and exactly
+/// the plain rule with no card. Food carries no such bonus.
+#[test]
+fn a_clearing_is_paid_at_the_queue_items_production_bonus() {
+    let (mut game, _, site, _) = fixture();
+    game.map.tiles.get_mut(&site).unwrap().resource = None;
+    let city = game.map.tiles[&site].owner_city.unwrap();
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    game.cities.get_mut(&city).unwrap().queue = vec![settler.clone()];
+    let production = |game: &Game, operation: &str| -> f64 {
+        game.builder_operation_payout(0, site, operation)
+            .into_iter()
+            .filter(|(yield_type, _)| yield_type == "production")
+            .map(|(_, amount)| amount)
+            .sum()
+    };
+    let scale = game.builder_harvest_scale(0);
+
+    game.players[0].policies.remove(&Name::new("colonization"));
+    let plain = game.item_prod_mult(0, city, Some(&settler));
+    assert_eq!(
+        production(&game, "chop_woods"),
+        (20.0 * scale * plain).floor()
+    );
+
+    game.players[0].policies.insert(Name::new("colonization"));
+    let carded = game.item_prod_mult(0, city, Some(&settler));
+    assert!(
+        (carded - plain - 0.5).abs() < 1e-9,
+        "Colonization is +50% toward Settlers"
+    );
+    assert_eq!(
+        production(&game, "chop_woods"),
+        (20.0 * scale * carded).floor()
+    );
+    assert!(production(&game, "chop_woods") > (20.0 * scale * plain).floor());
+
+    // The same card does nothing for a Monument in the queue.
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    let other = game.item_prod_mult(0, city, Some(&monument));
+    game.cities.get_mut(&city).unwrap().queue = vec![monument];
+    assert_eq!(
+        production(&game, "chop_woods"),
+        (20.0 * scale * other).floor()
+    );
+
+    // Food is never multiplied: a Marsh pays its plain 20, scaled.
+    game.cities.get_mut(&city).unwrap().queue = vec![settler];
+    game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("marsh"));
+    let food: f64 = game
+        .builder_operation_payout(0, site, "clear_marsh")
+        .into_iter()
+        .map(|(_, amount)| amount)
+        .sum();
+    assert_eq!(food, (20.0 * scale).floor());
+}

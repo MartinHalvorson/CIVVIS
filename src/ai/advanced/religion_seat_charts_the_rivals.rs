@@ -48,6 +48,14 @@
 //!   the long expedition `missionary-last-charge-explores-2` gives a
 //!   last-charge Missionary. It keeps its charges; the next city it reveals
 //!   is a target the turn it appears.
+//! - **Scouts.** A corps that always has work never idles: in
+//!   civvis-20261110T073607Z 60 of 102 spread charges went to our own cities
+//!   under a neighbour's pressure, and at t157 the seat knew 0 of Australia's
+//!   9 cities, 2 of France's 16, 2 of England's 8 and 4 of Brazil's 9. So
+//!   while a met rival is under-charted, one spreader for each such rival, up
+//!   to one in every [`SCOUT_SHARE`] of the corps, charts before it spreads
+//!   ([`AdvancedAi::religion_seat_scout_charts`]): the spreaders with the
+//!   fewest charges left, whose next spread is worth least.
 //!
 //! Off, for a seat aiming elsewhere, or before the founding, nothing changes.
 
@@ -65,6 +73,9 @@ pub(super) const CHARTING_RADIUS: i32 = 9;
 /// The nearest unexplored tiles tried for a route, of which the one that
 /// reveals the most is taken.
 const CHARTING_ROUTE_TRIES: usize = 6;
+
+/// One spreader in this many may be a scout. A corps of three sends none.
+pub(super) const SCOUT_SHARE: usize = 4;
 
 /// Added to a technology on the way to Cartography. The shipped water goal
 /// pays 150-230 for the same step when it applies (`research_value`).
@@ -179,6 +190,48 @@ impl AdvancedAi {
             "religion-seat-charts-the-rivals: nothing we know is left to convert and a met rival holds cities we have not seen; a religious unit crosses closed borders, so it walks {} tiles to unexplored ground beside them",
             g.wdist(g.units[&uid].pos, goal));
         self.religious_step_toward_range(g, pid, uid, goal, 0)
+    }
+
+    /// Whether `uid` is one of the corps' scouts this turn and has ground to
+    /// chart, in which case it walks there instead of spreading. The scouts
+    /// are the spreaders of our faith with the fewest charges left (then the
+    /// oldest), one for each met rival still under-charted, capped at one in
+    /// every [`SCOUT_SHARE`] of the corps.
+    pub(super) fn religion_seat_scout_charts(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        religion: &str,
+        offensive: bool,
+    ) -> bool {
+        if !offensive
+            || !self.religion_seat_charts_the_rivals_active(g, pid)
+            || g.players[pid].religion.as_deref() != Some(religion)
+        {
+            return false;
+        }
+        let under_charted = BasicAi::under_charted_majors(g, pid);
+        if under_charted == 0 {
+            return false;
+        }
+        let mut corps: Vec<(i32, u32)> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && matches!(unit.kind.as_str(), "missionary" | "apostle")
+                    && unit.charges > 0
+                    && unit.religion.as_deref() == Some(religion)
+            })
+            .map(|unit| (unit.charges, unit.id))
+            .collect();
+        corps.sort();
+        let scouts = under_charted.min(corps.len() / SCOUT_SHARE);
+        if !corps.iter().take(scouts).any(|(_, id)| *id == uid) {
+            return false;
+        }
+        self.religion_seat_spreader_charts(g, pid, uid, religion, offensive)
     }
 
     /// Where [`AdvancedAi::religion_seat_spreader_charts`] sends `uid`, if

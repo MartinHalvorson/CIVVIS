@@ -5461,6 +5461,12 @@ pub const GENES: &[Gene] = &[
     // or wonder its city needs many turns for, or into a space-race project.
     // Opt-in; see `advanced/chop_feeds_the_long_build.rs`.
     Gene { tag: "chop-feeds-the-long-build", field: "chop_feeds_the_long_build", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_long_build, disable: AdvancedAi::disable_chop_feeds_the_long_build },
+    // `chop-feeds-the-space-race`: the space-race leg of the gene above on
+    // its own. The paired Deity read of the whole gene (20 seeds, 2026-11-10)
+    // was flat on share and 8% down on science at turn 100, and its seats
+    // never reached a space project, so the district leg and the space leg
+    // are priced separately. Opt-in.
+    Gene { tag: "chop-feeds-the-space-race", field: "chop_feeds_the_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_feeds_the_space_race, disable: AdvancedAi::disable_chop_feeds_the_space_race },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5500,6 +5506,7 @@ pub const GENES: &[Gene] = &[
     // ---- append: p-r ------------------------------------------------
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
     Gene { tag: "religion-seat-reaches-reformed-church", field: "religion_seat_reaches_reformed_church", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reaches_reformed_church, disable: AdvancedAi::disable_religion_seat_reaches_reformed_church },
+    Gene { tag: "religion-seat-reveals-the-capitals", field: "religion_seat_reveals_the_capitals", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_reveals_the_capitals, disable: AdvancedAi::disable_religion_seat_reveals_the_capitals },
     Gene { tag: "religion-denial-needs-the-edge", field: "religion_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_denial_needs_the_edge, disable: AdvancedAi::disable_religion_denial_needs_the_edge },
     Gene { tag: "religion-seat-slots-the-orders", field: "religion_seat_slots_the_orders", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_slots_the_orders, disable: AdvancedAi::disable_religion_seat_slots_the_orders },
     Gene { tag: "religion-seat-keeps-the-guard", field: "religion_seat_keeps_the_guard", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_keeps_the_guard, disable: AdvancedAi::disable_religion_seat_keeps_the_guard },

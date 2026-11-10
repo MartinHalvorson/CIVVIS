@@ -120,6 +120,10 @@ impl AdvancedAi {
         /// a wonder or a space-race project. See
         /// `advanced/chop_feeds_the_long_build.rs`.
         chop_feeds_the_long_build => enable_chop_feeds_the_long_build, disable_chop_feeds_the_long_build;
+        /// `chop-feeds-the-space-race`: the space-race leg of
+        /// `chop-feeds-the-long-build` alone. See
+        /// `advanced/chop_feeds_the_long_build.rs`.
+        chop_feeds_the_space_race => enable_chop_feeds_the_space_race, disable_chop_feeds_the_space_race;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -162,6 +166,8 @@ impl AdvancedAi {
         religion_seat_earns_its_prophet => enable_religion_seat_earns_its_prophet, disable_religion_seat_earns_its_prophet;
         /// See `advanced/religion_seat_reformed_church.rs`.
         religion_seat_reaches_reformed_church => enable_religion_seat_reaches_reformed_church, disable_religion_seat_reaches_reformed_church;
+        /// See `advanced/religion_seat_reveals_the_capitals.rs`.
+        religion_seat_reveals_the_capitals => enable_religion_seat_reveals_the_capitals, disable_religion_seat_reveals_the_capitals;
         /// See `advanced/religion_denial_needs_the_edge.rs`.
         religion_denial_needs_the_edge => enable_religion_denial_needs_the_edge, disable_religion_denial_needs_the_edge;
         /// Slot Religious Orders over a lower-ranked ordinary Economic card.

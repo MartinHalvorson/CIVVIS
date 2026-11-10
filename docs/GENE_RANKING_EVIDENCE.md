@@ -217,6 +217,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `captives-come-home-2` | off (unmeasured) | Opt-in gene `captives-come-home-2` (version 2, carrying version 1); see `advanced/captives_come_home.rs`. | — \| 2 |
 | `capture-scar-reads-the-new-city` | off (unmeasured) | Opt-in gene `capture-scar-reads-the-new-city`; see `advanced/civilian_safety.rs` (`resolve_vanished_settlers`). | 1 \| 1 |
 | `chop-feeds-the-long-build` | off (unmeasured) | `chop-feeds-the-long-build`: a Builder clears a forest into a district, a wonder or a space-race project. | 1 \| 1 |
+| `chop-feeds-the-space-race` | off (unmeasured) | `chop-feeds-the-space-race`: the space-race leg of `chop-feeds-the-long-build` alone. | 1 \| 1 |
 | `city-state-harvest` | off (unmeasured) | Aim a bounded Conquest window at a soft city-state city beside the empire. | 1 \| 1 |
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `corps-comes-home-alive` | off (unmeasured) | Opt-in gene `corps-comes-home-alive`; see `advanced/apostle_army.rs`. | 1 \| 1 |
@@ -358,6 +359,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-presses-the-campaign` | off (unmeasured) | `religion-seat-presses-the-campaign`: a Religion-target founder's corps yields only to a killing blow, and its Apostles take a winnable fight before they step away. | 1 \| 1 |
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
+| `religion-seat-reveals-the-capitals` | off (unmeasured) | A Religion-target founder sends an Embassy to a rival with no known city. | 1 \| 1 |
 | `religion-seat-slots-the-orders` | off (unmeasured) | Slot Religious Orders over a lower-ranked ordinary Economic card. | 1 \| 1 |
 | `religion-seat-spends-the-bank` | off (unmeasured) | `religion-seat-spends-the-bank`: a Religion-target founder's corps caps stop binding once the bank holds two Apostles. | 1 \| 1 |
 | `religion-seat-takes-the-debater` | off (unmeasured) | Opt-in gene `religion-seat-takes-the-debater`; see `advanced/religion_seat_takes_the_debater.rs`. | 1 \| 1 |

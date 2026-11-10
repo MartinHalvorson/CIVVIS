@@ -67,6 +67,141 @@ fn on() -> AdvancedAi {
     ai
 }
 
+fn religion_founder() -> Game {
+    let mut g = board();
+    g.players[0].religion = Some("Buddhism".to_string());
+    g.players[0].explored.clear();
+    g
+}
+
+fn religion_on() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+    ai.enable_religion_seat_reveals_the_capitals();
+    ai
+}
+
+fn knows_rival(g: &mut Game, rival: usize) {
+    let city = g
+        .cities
+        .values()
+        .find(|city| city.owner == rival)
+        .unwrap()
+        .pos;
+    g.players[0].explored.insert(city);
+}
+
+#[test]
+fn religion_embassy_is_opt_in_and_registered() {
+    assert!(!AdvancedAi::new().religion_seat_reveals_the_capitals);
+    let gene = super::super::genes::GENES
+        .iter()
+        .find(|gene| gene.tag == "religion-seat-reveals-the-capitals")
+        .unwrap();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+    (gene.enable)(&mut ai);
+    assert!(ai.religion_seat_reveals_the_capitals);
+    (gene.disable)(&mut ai);
+    assert!(!ai.religion_seat_reveals_the_capitals);
+}
+
+#[test]
+fn religion_embassy_locates_the_native_shaped_missing_partner() {
+    let mut g = religion_founder();
+    knows_rival(&mut g, 1);
+    attitude(&mut g, 2, "DECLARED_FRIEND");
+    g.players[0].gold = 179.0;
+    let mut off = AdvancedAi::targeting(VictoryTarget::Religion);
+    assert!(!off.embassy_finds_the_capital_step(&mut g, 0, Some(1)));
+    let mut ai = religion_on();
+    assert_eq!(ai.embassy_capital_candidates(&g, 0, Some(1)), vec![2]);
+    assert!(ai.embassy_finds_the_capital_step(&mut g, 0, Some(1)));
+    assert!(embassy(&g, 2) && !embassy(&g, 1));
+    assert_eq!(g.players[0].gold, 154.0);
+}
+
+#[test]
+fn religion_embassy_waits_for_founding_and_diplomatic_service() {
+    for missing_founder in [true, false] {
+        let mut g = religion_founder();
+        if missing_founder {
+            g.players[0].religion = None;
+        } else {
+            g.players[0].civics.remove(&name!("diplomatic_service"));
+        }
+        assert!(religion_on()
+            .embassy_capital_candidates(&g, 0, None)
+            .is_empty());
+    }
+}
+
+#[test]
+fn religion_embassy_leaves_already_located_rivals_to_the_cadence() {
+    let mut g = religion_founder();
+    knows_rival(&mut g, 1);
+    knows_rival(&mut g, 2);
+    let mut ai = religion_on();
+    assert!(ai.embassy_capital_candidates(&g, 0, None).is_empty());
+    assert!(!ai.embassy_finds_the_capital_step(&mut g, 0, None));
+    assert_eq!(g.players[0].gold, 300.0);
+}
+
+#[test]
+fn religion_embassy_keeps_the_standing_and_peace_guards() {
+    for state in ["UNFRIENDLY", "DENOUNCED", "FRIENDLY"] {
+        let mut g = religion_founder();
+        knows_rival(&mut g, 1);
+        attitude(&mut g, 2, state);
+        if state == "FRIENDLY" {
+            g.at_war.insert((0, 2));
+        }
+        assert!(religion_on()
+            .embassy_capital_candidates(&g, 0, None)
+            .is_empty());
+    }
+}
+
+#[test]
+fn religion_embassy_keeps_the_treasury_and_retry_guards() {
+    let mut g = religion_founder();
+    knows_rival(&mut g, 1);
+    let mut ai = religion_on();
+    g.players[0].gold = 0.0;
+    assert!(!ai.embassy_finds_the_capital_step(&mut g, 0, None));
+    assert!(!embassy(&g, 2));
+    g.players[0].gold = 300.0;
+    ai.embassy_capital_asks.insert(2, g.turn);
+    assert!(!ai.embassy_finds_the_capital_step(&mut g, 0, None));
+    g.turn += EMBASSY_CAPITAL_ASK_TURNS;
+    assert!(ai.embassy_finds_the_capital_step(&mut g, 0, None));
+    assert!(!ai.embassy_finds_the_capital_step(&mut g, 0, None));
+}
+
+#[test]
+fn religion_embassy_preserves_other_victory_targets() {
+    for target in [
+        VictoryTarget::Domination,
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+    ] {
+        let g = religion_founder();
+        let mut ai = AdvancedAi::targeting(target);
+        ai.disable_embassy_finds_the_capital();
+        ai.disable_embassy_finds_the_capital_2();
+        ai.enable_religion_seat_reveals_the_capitals();
+        assert!(ai.embassy_capital_candidates(&g, 0, None).is_empty());
+    }
+    for target in [VictoryTarget::Domination, VictoryTarget::Science] {
+        let g = religion_founder();
+        let mut ai = AdvancedAi::targeting(target);
+        ai.enable_embassy_finds_the_capital();
+        ai.enable_embassy_finds_the_capital_2();
+        let before = ai.embassy_capital_candidates(&g, 0, None);
+        assert!(!before.is_empty());
+        ai.enable_religion_seat_reveals_the_capitals();
+        assert_eq!(ai.embassy_capital_candidates(&g, 0, None), before);
+    }
+}
+
 #[test]
 fn the_gene_ships_off_and_is_registered() {
     assert!(!AdvancedAi::new().embassy_finds_the_capital);
