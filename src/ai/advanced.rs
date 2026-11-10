@@ -6749,6 +6749,11 @@ pub struct AdvancedAi {
     /// it is seen or cannot be reached. See
     /// `advanced/religion_seat_charts_the_rivals.rs`.
     charting_goals: RefCell<BTreeMap<u32, Pos>>,
+    /// `culture-bank-opens-at-nationalism`: a Culture target holds its Rock
+    /// Band bank from Nationalism, not Ideology, and spends Faith on no Great
+    /// Person but a Writer, Artist or Musician from then on. See
+    /// `advanced/culture_band_bank.rs`. Opt-in.
+    culture_bank_opens_at_nationalism: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -16770,6 +16775,13 @@ impl AdvancedAi {
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),
             ] {
+                // See `advanced/culture_band_bank.rs`
+                // (`culture-bank-opens-at-nationalism`).
+                if currency == "faith"
+                    && self.culture_bank_bars_faith_great_person(g, pid, strategy, kind)
+                {
+                    continue;
+                }
                 let ordinary_limit = if age_closing.is_some() || (currency == "faith" && idle_faith)
                 {
                     1.0
