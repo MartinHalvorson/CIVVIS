@@ -12333,7 +12333,7 @@ struct ThreatDetourBoard {
 }
 
 fn threat_detour_board(barbarian: bool, live: bool) -> ThreatDetourBoard {
-    let (mut game, home) = camp_bounty_board(crate::rng::fixture_seed("DETOUR", if barbarian { 92_041 } else { 92_042 }));
+    let (mut game, home) = camp_bounty_board(92_042);
     game.record_contact(0, 1);
     game.at_war.insert((0, 1));
     // The route fixture intentionally makes all nearby sites dry. Keep

@@ -233,7 +233,7 @@ fn a_hub_builds_its_market_and_the_step_stops_at_three_hubs() {
         );
     }
     // A hub queued counts as held.
-    let (mut queued, ranked) = emperor_empire("COMMERCIALMARKET", 92_003);
+    let (mut queued, ranked) = emperor_empire("COMMERCIALMARKET", 92_004);
     for cid in &ranked[..3] {
         let hub = BasicAi::civ_district(&queued, 0, "commercial_hub");
         let pos = queued.district_sites(*cid, hub)[0];

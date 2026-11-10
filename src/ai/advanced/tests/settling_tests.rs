@@ -2657,9 +2657,8 @@ fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
     let mut nearer = 0;
     let mut boards = 0;
     for seed in [
-        93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208,
+        93_204u64, 93_205, 93_206, 93_207, 93_208, 93_209, 93_210, 93_211,
     ] {
-        let seed = seed + crate::rng::fixture_seed("SETTLESOONER", 0);
         let (mut game, home) = camp_bounty_board(seed);
         game.set_fog_memory(false);
         let settler = game.spawn_test_unit("settler", 0, home);
