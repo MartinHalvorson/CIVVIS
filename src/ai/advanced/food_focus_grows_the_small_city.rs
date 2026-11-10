@@ -38,6 +38,29 @@
 //! city's focus when a Settler starts. A stalled city (zero surplus) keeps
 //! #4003's focus.
 //!
+//! **Version three (in place): the capital is the pump for the whole
+//! opening.** Version two reads the queue head, and the capital trains a
+//! Scout on turn 1. Russia Deity, Online, 16 live games of 2026-11-10: the
+//! capital took the focus on turn 1 in 8 and held it for 4 to 57 of its
+//! first 59 turns.
+//! - Two held it 51 and 57 turns while `civvis_orders` asked for its release
+//!   22 and 24 times. The host's own allocation at the housing cap ran
+//!   negative Food, so the agent restored the focus each time
+//!   (`food_release_would_starve`, `CivvisCitizenGrowth.read`).
+//! - civvis-20261110T115325Z, turn 16, five citizens against six Housing, in
+//!   two frames of one turn: focused, tiles of (Food, Production) (2,1) x4
+//!   and (3,0) x2 for 5 Production and +4 Food; released, (1,2) x3, (1,3)
+//!   and (2,1) x2 for 11 Production and -2 Food. Its release was verified at
+//!   turn 52 and the city's Production went from 7 to 16. It ordered its
+//!   first Settler at turn 44 and held one city at turn 50.
+//! - Worked-tile Production at turn 20 was 5.5 in the 4 capitals holding the
+//!   focus against 7.6 in the 9 without it, for 4.5 citizens against 4.0.
+//!   Thirteen games is a small sample; the two frames are the mechanism.
+//!
+//! So through turn 60 (`CAPITAL_PUMP_UNTIL`) the capital is treated as
+//! training a Settler: no widened request, and a growing focus is released.
+//! A capital stalled at zero surplus keeps #4003's focus.
+//!
 //! Off, `civvis_orders` asks exactly what it did before.
 
 use super::*;
