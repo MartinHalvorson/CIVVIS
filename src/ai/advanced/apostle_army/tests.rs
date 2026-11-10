@@ -196,6 +196,26 @@ fn two_rivals_in_reach_make_a_tile_unsafe_together() {
 }
 
 #[test]
+fn a_healthy_apostle_is_not_held_by_a_pack() {
+    let (mut g, _, _, _) = field();
+    let ours = spawn(&mut g, "apostle", 0, (16, 8), 100, 3);
+    for at in [(18, 7), (18, 8), (18, 9)] {
+        spawn(&mut g, "apostle", 1, at, 100, 3);
+    }
+    let mut careful = AdvancedAi::targeting(VictoryTarget::Religion);
+    careful.enable_spreader_steps_out_of_the_apostle();
+    careful.enable_religion_seat_presses_the_campaign();
+    careful.enable_corps_comes_home_alive();
+    let reaching = |g: &Game| {
+        let threats = careful.theological_threats(g, 0, ours);
+        AdvancedAi::theological_threats_reaching(g, ours, g.units[&ours].pos, &threats)
+    };
+    assert_eq!(reaching(&g), 0, "two blows do not kill an Apostle at 100");
+    g.units.get_mut(&ours).unwrap().hp = 60;
+    assert!(reaching(&g) >= 2, "two blows kill it at 60");
+}
+
+#[test]
 fn a_unit_refused_every_step_runs_for_home() {
     let (mut g, _, site, _) = field();
     let ours = spawn(&mut g, "missionary", 0, (16, 8), 50, 3);

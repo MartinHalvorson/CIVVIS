@@ -52,54 +52,54 @@ fn world_digest(world: &WorldMap, spawns: &[Pos]) -> u64 {
 /// Hoisted out of the test so `every_rolled_map_script_has_a_pinned_world`
 /// can check the coverage of this very table rather than a copy of it.
 const PLATFORM_WORLD_CASES: [(u64, MapTopology, MapScript, u64); 30] = [
-    (1013, GLOBE, MapScript::Continents, 0xea69_d8c9_78c9_37d5),
-    (1037, GLOBE, MapScript::Continents, 0x62af_c4f3_e3ca_e62d),
-    (4242, GLOBE, MapScript::Continents, 0x862d_3621_3709_9632),
-    (31337, GLOBE, MapScript::Continents, 0x67ca_377f_e3c0_a0c3),
-    (777, FLAT, MapScript::Continents, 0x74bb_31f1_8a07_85b5),
-    (4242, FLAT, MapScript::Continents, 0x1372_9640_e654_940f),
+    (1013, GLOBE, MapScript::Continents, 0xb3ea_398d_068c_462e),
+    (1037, GLOBE, MapScript::Continents, 0x4b66_e7c7_c8aa_0eb6),
+    (4242, GLOBE, MapScript::Continents, 0x5529_3b85_315c_39d5),
+    (31337, GLOBE, MapScript::Continents, 0x7f50_3d0c_8101_2ede),
+    (777, FLAT, MapScript::Continents, 0x8749_ca17_5272_c792),
+    (4242, FLAT, MapScript::Continents, 0x50f2_51a3_45a9_b8ad),
     // The default script, on the topology the CLI also defaults to.
     // Seeds 1013 and 31337 are the two that demonstrably moved when the
     // seam geometry stopped calling the platform's trig.
-    (1013, GLOBE, MapScript::TeninsBall, 0xc602_acaf_77ab_c55d),
-    (31337, GLOBE, MapScript::TeninsBall, 0x5bfe_42ef_86d1_ad66),
-    (4242, GLOBE, MapScript::TeninsBall, 0x57cc_e70a_852f_ee4c),
-    (777, FLAT, MapScript::TeninsBall, 0xff78_2010_3972_2ed8),
+    (1013, GLOBE, MapScript::TeninsBall, 0x815d_8656_6b58_4760),
+    (31337, GLOBE, MapScript::TeninsBall, 0x387b_9958_ae0d_dc44),
+    (4242, GLOBE, MapScript::TeninsBall, 0x79ed_de7d_4b70_865c),
+    (777, FLAT, MapScript::TeninsBall, 0xeca8_894f_6efd_be3f),
     // Every other script that rolls ground from a seed. Ten of the
     // twelve were unpinned until `every_rolled_map_script_has_a_pinned_world`
     // went looking, so a platform-trig call in any of them could not have
     // failed anything. A globe row carries the geometry the rule is about;
     // the flat row is the control that flat generation did not move.
-    (1013, GLOBE, MapScript::LandOnly, 0x4b0e_12e0_65f4_9496),
-    (777, FLAT, MapScript::LandOnly, 0xf2df_569e_4ba0_af30),
-    (1013, GLOBE, MapScript::Lakes, 0x7c43_e4fe_623e_ec59),
-    (777, FLAT, MapScript::Lakes, 0x2bb3_30ce_dfd5_1a2e),
-    (1013, GLOBE, MapScript::InlandSea, 0x33d5_9381_cb5f_6cd0),
-    (777, FLAT, MapScript::InlandSea, 0x2370_4672_c656_04e9),
-    (1013, GLOBE, MapScript::GrandCanals, 0x98d6_a99c_07fd_d00b),
-    (777, FLAT, MapScript::GrandCanals, 0x814b_e768_d684_c5ed),
+    (1013, GLOBE, MapScript::LandOnly, 0x2db0_4643_36eb_546b),
+    (777, FLAT, MapScript::LandOnly, 0xae77_bd91_3075_22dc),
+    (1013, GLOBE, MapScript::Lakes, 0x0062_582c_84b0_731a),
+    (777, FLAT, MapScript::Lakes, 0xe3a9_4fc6_e3c2_d089),
+    (1013, GLOBE, MapScript::InlandSea, 0x1c87_b3c1_b22c_6f7b),
+    (777, FLAT, MapScript::InlandSea, 0x12e2_a345_7c20_d7c5),
+    (1013, GLOBE, MapScript::GrandCanals, 0x1e4c_aa24_d02a_92fe),
+    (777, FLAT, MapScript::GrandCanals, 0x36c3_67b2_78be_1e33),
     (
         1013,
         GLOBE,
         MapScript::GrandCanalsTwo,
-        0x285d_29d2_3d43_901a,
+        0x755f_a9ed_25f7_d8ed,
     ),
-    (777, FLAT, MapScript::GrandCanalsTwo, 0xaed8_876f_8d24_1977),
-    (1013, GLOBE, MapScript::Pangaea, 0x5202_9742_b17b_8f9c),
-    (777, FLAT, MapScript::Pangaea, 0xe0cd_5773_b902_66fa),
+    (777, FLAT, MapScript::GrandCanalsTwo, 0x09a9_1aec_0849_85b4),
+    (1013, GLOBE, MapScript::Pangaea, 0x8c10_44be_87d4_3176),
+    (777, FLAT, MapScript::Pangaea, 0xb861_964d_6a0c_4f58),
     (
         1013,
         GLOBE,
         MapScript::SmallContinents,
-        0x2bbe_76f9_e9d5_8c9e,
+        0x7fee_1e76_5a93_a5c5,
     ),
-    (777, FLAT, MapScript::SmallContinents, 0x849c_2e4c_cb4c_6e84),
-    (1013, GLOBE, MapScript::Fjords, 0x9296_7493_3fa9_97a6),
-    (777, FLAT, MapScript::Fjords, 0x37a3_b234_b3fe_5d29),
-    (1013, GLOBE, MapScript::Islands, 0xda42_4f31_5db6_85cf),
-    (777, FLAT, MapScript::Islands, 0xef3b_4e6f_76a7_8034),
-    (1013, GLOBE, MapScript::WaterWorld, 0x8db5_cde1_ca2e_0a7c),
-    (777, FLAT, MapScript::WaterWorld, 0xc6ed_239b_3894_14ef),
+    (777, FLAT, MapScript::SmallContinents, 0x2172_8dcc_33a5_37e1),
+    (1013, GLOBE, MapScript::Fjords, 0xa8d5_9de0_4c59_4c3d),
+    (777, FLAT, MapScript::Fjords, 0xa976_aefc_69e7_7c12),
+    (1013, GLOBE, MapScript::Islands, 0x0943_aba6_be2c_401a),
+    (777, FLAT, MapScript::Islands, 0xd6ae_ae03_f0df_2fc9),
+    (1013, GLOBE, MapScript::WaterWorld, 0xfec9_f0a6_3fad_b9ae),
+    (777, FLAT, MapScript::WaterWorld, 0x7136_80f1_f549_1469),
 ];
 
 /// The digest every platform must agree on, per seed and shape.
@@ -4291,9 +4291,9 @@ fn stock_map_profiles_produce_spread_and_complete_spawn_sets() {
 #[test]
 fn starts_keep_the_shipped_standoff_from_natural_wonders() {
     // START_DISTANCE_MINOR_NATURAL_WONDER 3 and
-    // START_DISTANCE_MAJOR_NATURAL_WONDER 2. Majors already satisfied
-    // theirs because Natural Wonder tiles are not candidates at all;
-    // city-states did not, landing inside 3 about one time in eighteen.
+    // START_DISTANCE_MAJOR_NATURAL_WONDER 2. `__NaturalWonderBuffer` walks
+    // every plot within that range, so a wonder at exactly the distance
+    // refuses the site as well.
     let rules = Rules::embedded();
     for seed in 0..6u64 {
         let mut rng = Rng::new(61_000 + seed);
@@ -4324,11 +4324,85 @@ fn starts_keep_the_shipped_standoff_from_natural_wonders() {
                 START_DISTANCE_MINOR_NATURAL_WONDER
             };
             assert!(
-                nearest >= floor,
-                "seed {seed}: start {index} sits {nearest} from a Natural Wonder, inside {floor}"
+                nearest > floor,
+                "seed {seed}: start {index} sits {nearest} from a Natural Wonder, within {floor}"
             );
         }
     }
+}
+
+#[test]
+fn tribal_villages_stand_where_the_shipped_script_puts_them() {
+    // `CanPlaceGoodyAt` and `AddGoodies`. In 47 live games, 193 villages:
+    // none on a resource, 34 on a river, none within 2 of another.
+    let rules = Rules::embedded();
+    let village = rules
+        .improvements
+        .get(&crate::name!("goody_hut"))
+        .expect("the Tribal Village is in the rules");
+    let mut on_a_river = 0;
+    for seed in 0..6u64 {
+        let mut rng = Rng::new(63_000 + seed);
+        let (wm, spawns) = generate_with_script(
+            &rules,
+            84,
+            54,
+            8,
+            12,
+            4,
+            4,
+            MapScript::Continents,
+            MapTopology::Flat,
+            POLED,
+            &mut rng,
+        );
+        let villages: Vec<Pos> = wm
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.improvement.as_deref() == Some("goody_hut"))
+            .map(|(position, _)| *position)
+            .collect();
+        let plots = wm.tiles.len();
+        assert!(
+            villages.len() <= plots / 128 + 1,
+            "seed {seed}: {} villages on {plots} plots",
+            villages.len()
+        );
+        assert!(
+            villages.len() >= plots / 128 * 6 / 10,
+            "seed {seed}: only {} villages on {plots} plots",
+            villages.len()
+        );
+        for (index, position) in villages.iter().enumerate() {
+            let tile = &wm.tiles[position];
+            assert!(tile.resource.is_none(), "seed {seed}: on a resource");
+            assert!(
+                village.terrain.contains(&tile.terrain),
+                "seed {seed}: on {}",
+                tile.terrain
+            );
+            assert!(
+                tile.feature
+                    .is_none_or(|feature| village.feature.contains(&feature)),
+                "seed {seed}: on {:?}",
+                tile.feature
+            );
+            for start in &spawns {
+                assert!(
+                    wm.distance(*position, *start) > 3,
+                    "seed {seed}: a village within 3 of a start"
+                );
+            }
+            for other in &villages[index + 1..] {
+                assert!(
+                    wm.distance(*position, *other) > 2,
+                    "seed {seed}: two villages within 2 of each other"
+                );
+            }
+            on_a_river += usize::from(tile.has_river());
+        }
+    }
+    assert!(on_a_river > 0, "no village stood on a river in six worlds");
 }
 
 /// `__MinorMajorCivBuffer` rejects a city-state site within

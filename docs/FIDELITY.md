@@ -867,6 +867,36 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
+## Closed: Tribal Villages and the wonder buffer
+
+Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-09.
+
+`__NaturalWonderBuffer` refuses a site with a wonder within
+`START_DISTANCE_MAJOR_NATURAL_WONDER` 2 or `START_DISTANCE_MINOR_NATURAL_WONDER`
+3, that distance included. CIVVIS allowed a wonder at exactly that distance. The
+shipped buffer is skipped under the Legendary Start setting. CIVVIS has no such
+setting, so the buffer always applies.
+
+Two more differences are confirmed and still open, because each redraws every
+seeded world and so belongs with the other map rules in one refresh. Marsh and
+Woods roll against 300 here and 450 in Expansion2's `FeatureGenerator.lua`. Lakes
+spread past one plot should number `4n` on Lakes, `ceil(1.5n)` on Pangaea, `n` on
+Continents and Small Continents, and `ceil(n/2)` on Inland Sea and Island Plates,
+where `n` is the `Maps.Continents` column.
+
+**Tribal Villages** now follow `AddGoodies` and `CanPlaceGoodyAt` in
+`MapUtilities.lua`, run last as the scripts run them. CIVVIS had rolled 2.5% of
+land before resources and starts existed, and refused rivers.
+
+| Rule | Shipped | Live (193 villages, 47 games, revealed plots) |
+|---|---|---|
+| Density | `TilesPerGoody` 128 over every plot walked, water included, then a coin flip | a floor only, the export is revealed plots |
+| No resource | `plot:GetResourceType() ~= NO_RESOURCE` refuses | 0 on a resource |
+| Features | `Improvement_ValidFeatures`: Woods, Rainforest, Marsh, the three Floodplains | those, plus 1 on Volcanic Soil an eruption left later |
+| Rivers | no rule | 34 on a river |
+| Other villages | `GoodyRange` 3, walking `dx` and `dy` from -3 to 2, so some plots at 3 are not checked | nearest neighbour never under 3, 14 at exactly 3 against 60 at 4 |
+| Starts | `dx` and `dy` from -3 to 3 with a range of 4, every start plot | not censused |
+
 ## Closed: major start spacing
 
 `START_DISTANCE_MAJOR_CIVILIZATION` is **12** with `START_DISTANCE_RANGE_MAJOR`

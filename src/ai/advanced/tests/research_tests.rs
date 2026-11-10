@@ -1463,7 +1463,7 @@ fn research_prices_the_node_that_retires_the_army_already_in_the_field() {
 
 #[test]
 fn advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap() {
-    let mut game = Game::new_full(1, 24, 16, 91_503, 120, 0, true);
+    let mut game = Game::new_full(1, 24, 16, 91_504, 120, 0, true);
     game.current = 0;
     let settler = game
         .player_unit_ids(0)

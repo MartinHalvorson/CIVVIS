@@ -3280,6 +3280,8 @@ fn the_shipped_score_prefers_a_site_it_cannot_support() {
         charged < stranded,
         "the isolation is priced ({charged} vs {stranded})"
     );
+    // A camp beside either site would be a different charge from isolation.
+    game.barb_camps.clear();
     assert!(
         ai.defensibility(&game, 0, (40, 20)) == ai.defensibility(&game, 0, (24, 20)),
         "and the charge stops growing past its cap, so this is a tiebreak on \
@@ -4841,7 +4843,7 @@ fn a_stalled_settler_never_takes_a_site_under_the_deadlines_value_floor() {
         SETTLER_WALK_DEADLINE_STEP_MARGIN, SETTLER_WALK_DEADLINE_VALUE_SHARE,
     };
     let mut checked = false;
-    for seed in 93_410..93_440u64 {
+    for seed in 93_410..93_560u64 {
         let (mut game, settler) = walk_deadline_board(seed);
         let mut ai = AdvancedAi::new();
         ai.enable_stalled_settler_takes_a_safe_site();

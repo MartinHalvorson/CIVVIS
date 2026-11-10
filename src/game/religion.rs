@@ -867,16 +867,19 @@ impl Game {
         ))
     }
 
-    /// Whether `pid`'s religious unit can start a fight against a unit on `target`.
+    /// Whether this Apostle or Inquisitor can start a fight against a unit on
+    /// `target`.
     ///
     /// Civ VI has no religious strike of its own. A fight is a melee attack,
-    /// so the attacker has to be able to path onto the plot, and it cannot path
-    /// onto a rival's City Center. Across 60 live logs (2026-11-10), 77 Apostle
-    /// attacks were aimed at a rival City Center: the host offered a path for 1,
-    /// and the other 76 did nothing and spent the unit's turn.
-    pub(crate) fn theological_target_open(&self, pid: usize, target: Pos) -> bool {
+    /// so the attacker has to be able to path onto the plot this turn. Across
+    /// live logs (2026-11-10), 77 attacks aimed at a rival City Center got a
+    /// path once, and none of 41 adjacent attacks by a unit short of the
+    /// movement to enter the plot landed. Each one spent the unit's turn.
+    pub(crate) fn theological_target_open(&self, uid: u32, target: Pos) -> bool {
+        let owner = self.units[&uid].owner;
         self.city_at(target)
-            .is_none_or(|city| self.cities[&city].owner == pid)
+            .is_none_or(|city| self.cities[&city].owner == owner)
+            && self.can_pay_melee_entry(uid, target)
     }
 
     pub(super) fn do_theological_attack(
@@ -893,8 +896,8 @@ impl Game {
         if self.wdist(attacker.pos, target) != 1 {
             return Err("target not adjacent".into());
         }
-        if !self.theological_target_open(pid, target) {
-            return Err("target stands in a rival city".into());
+        if !self.theological_target_open(uid, target) {
+            return Err("attacker cannot enter that plot".into());
         }
         let attacker_religion = attacker
             .religion
