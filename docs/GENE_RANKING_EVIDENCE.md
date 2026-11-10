@@ -352,6 +352,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-races-the-prophet` | off (unmeasured) | `religion-seat-races-the-prophet`: a Religion-target seat that has not founded takes any queue for its Holy Site and then runs Prayers. | 1 \| 1 |
 | `religion-seat-reaches-reformed-church` | off (unmeasured) | `religion-seat-reaches-reformed-church`: a Religion-target founder beelines Reformed Church after Theology. | 1 \| 1 |
 | `religion-seat-slots-the-orders` | off (unmeasured) | Slot Religious Orders over a lower-ranked ordinary Economic card. | 1 \| 1 |
+| `religion-seat-takes-the-debater` | off (unmeasured) | Opt-in gene `religion-seat-takes-the-debater`; see `advanced/religion_seat_takes_the_debater.rs`. | 1 \| 1 |
 | `religion-seat-takes-the-faith-beliefs` | off (unmeasured) | `religion-seat-takes-the-faith-beliefs`: a Religion-target seat founds on the Faith-scaling founder beliefs first. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `revealed-launch-tech-takes-the-slot` | off (unmeasured) | Replace an obsolete native research path with a revealed launch milestone. | 1 \| 1 |
