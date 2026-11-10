@@ -132,6 +132,19 @@ fn a_unit_in_the_ring_finishes_healing_before_it_leaves() {
 }
 
 #[test]
+fn an_inquisitor_in_the_ring_keeps_working_above_the_floor() {
+    let (mut g, _, site, _) = field();
+    let inquisitor = spawn(&mut g, "inquisitor", 0, site, 75, 3);
+    let ai = home_alive();
+    assert_eq!(ai.wounded_preacher_goes_home(&mut g, 0, inquisitor), None);
+    g.units.get_mut(&inquisitor).unwrap().hp = 50;
+    assert_eq!(
+        ai.wounded_preacher_goes_home(&mut g, 0, inquisitor),
+        Some(false)
+    );
+}
+
+#[test]
 fn a_guru_with_a_heal_left_heals_itself_instead() {
     let (mut g, _, _, _) = field();
     let guru = spawn(&mut g, "guru", 0, (16, 8), 40, 2);

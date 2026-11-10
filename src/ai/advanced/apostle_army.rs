@@ -14,7 +14,8 @@
 //!
 //! - a religious unit at [`RETREAT_FLOOR`] or less walks to the nearest Holy
 //!   Site of ours and stands in its ring until it is back to [`HEALED`];
-//! - a unit already in such a ring below [`HEALED`] finishes healing first;
+//! - a unit already in such a ring below [`HEALED`] finishes healing first
+//!   (an Inquisitor only at [`RETREAT_FLOOR`] or less, since it works there);
 //! - a fight is started only when ours survives the blow back at the top of
 //!   the roll, and a unit at [`RETREAT_FLOOR`] or less takes only a kill;
 //! - a tile is unsafe when every rival that can strike it this turn would
@@ -120,7 +121,10 @@ impl AdvancedAi {
             return None;
         }
         let healing_here = g.unit_heal_rate(uid) > 0;
-        if unit.hp > RETREAT_FLOOR && !healing_here {
+        // An Inquisitor works at home, where the ring is: holding it there
+        // above the floor would keep it from the heresy it was bought for.
+        let stays_to_finish = healing_here && unit.kind != "inquisitor";
+        if unit.hp > RETREAT_FLOOR && !stays_to_finish {
             return None;
         }
         let religion = unit
