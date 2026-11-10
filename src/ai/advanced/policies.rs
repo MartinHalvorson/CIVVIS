@@ -1606,9 +1606,7 @@ impl AdvancedAi {
                 }
             }
 
-            if let Some(promotion) =
-                self.preferred_governor_promotion(g, pid, strategy, primary)
-            {
+            if let Some(promotion) = self.preferred_governor_promotion(g, pid, strategy, primary) {
                 if g.apply(
                     pid,
                     &Action::PromoteGovernor {
