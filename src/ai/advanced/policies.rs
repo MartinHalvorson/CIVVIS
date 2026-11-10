@@ -1518,13 +1518,16 @@ impl AdvancedAi {
         governor: &str,
     ) -> Option<String> {
         let available = g.available_governor_promotions(pid, governor);
-        // `curator-sits-with-the-works`: a Culture seat's Pingala keeps the
-        // Culture order whatever the plan, never takes Space Initiative, and
-        // takes Curator once the works stand. `None` with the gene off.
-        self.curator_promotion_order(g, governor)
-            .unwrap_or_else(|| Self::governor_promotion_priority(strategy, governor))
+        // `curator-sits-with-the-works`: once a Culture seat holds the works,
+        // Curator is Pingala's next promotion. The stock order otherwise.
+        if governor == "pingala"
+            && self.curator_comes_next(g, pid)
+            && available.iter().any(|candidate| *candidate == "curator")
+        {
+            return Some("curator".to_string());
+        }
+        Self::governor_promotion_priority(strategy, governor)
             .iter()
-            .filter(|promotion| !self.curator_withholds_promotion(g, pid, governor, promotion))
             .find(|promotion| available.iter().any(|candidate| candidate == **promotion))
             .map(|promotion| (*promotion).to_string())
     }

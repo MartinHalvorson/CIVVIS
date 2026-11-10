@@ -94,12 +94,16 @@ fn a_waiting_artist_gets_an_art_museum() {
 }
 
 #[test]
-fn an_open_slot_a_writer_or_the_gene_off_claims_nothing() {
+fn no_waiting_artist_a_writer_or_the_gene_off_claims_nothing() {
     let (ai, mut g, cities) = fixture(true, "artist");
-    g.players[0].live_open_great_work_slots = Some(["any".to_string()].into_iter().collect());
+    g.players[0].live_great_person_activation_needs[0].required_great_work =
+        Some("artifact".into());
     let plan = ai.assess(&g, 0);
     ai.claim_great_work_slot_building(&mut g, 0, &plan);
-    assert!(all_idle(&g, &cities), "the Palace slot is open");
+    assert!(
+        all_idle(&g, &cities),
+        "a person waiting on an Artifact, not a slot"
+    );
 
     let (ai, mut g, cities) = fixture(true, "writer");
     let plan = ai.assess(&g, 0);

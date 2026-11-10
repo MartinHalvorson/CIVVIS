@@ -187,11 +187,10 @@ impl AdvancedAi {
         // `advanced/culture_digs_every_site.rs`.
         self.claim_dig_archaeologist(g, pid, plan);
         // `great-works-never-wait`: a waiting Artist's or Musician's slot
-        // building. Exact no-op while the gene is off. See
+        // building, likewise while the war holds the economy's claims.
+        // Exact no-op while the gene is off. See
         // `advanced/great_works_never_wait.rs`.
-        if !war_holds {
-            self.claim_great_work_slot_building(g, pid, plan);
-        }
+        self.claim_great_work_slot_building(g, pid, plan);
         // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
         // Diplomacy seat. Exact no-op while the gene is off. See
         // `advanced/diplo_statue_harbor.rs`.

@@ -28,14 +28,16 @@
 //!   `civvis_orders/great_works_never_wait.rs`
 //!   ([`AdvancedAi::writers_skip_the_palace`]).
 //! - **A slot for the waiting person.** While the host reports an Artist or
-//!   Musician that cannot reach any slot, and no slot of its kind is open,
-//!   the Theater city that builds the slot building soonest (an Art Museum
-//!   for Art, a Broadcast Center for Music once Radio allows it) puts it at
-//!   the head of its queue over a deferrable head, within
-//!   [`SLOT_BUILDING_MAX_STANDARD`] standard turns. A threatened or freshly
-//!   attacked city keeps its queue; the claim stands aside while
-//!   `threatened-war-holds-the-claims` holds the economy's claims; the
-//!   governor's rescoring leaves the claimed building alone
+//!   Musician that cannot reach any slot, the Theater city that builds the
+//!   slot building soonest (an Art Museum for Art, a Broadcast Center for
+//!   Music once Radio allows it) puts it at the head of its queue over a
+//!   deferrable head, within [`SLOT_BUILDING_MAX_STANDARD`] standard turns.
+//!   A threatened or freshly attacked city keeps its queue, and so does a
+//!   military unit at war (`culture_theater_may_defer`). The claim runs
+//!   while `threatened-war-holds-the-claims` holds the economy's claims: on
+//!   the live seat the person waits through the Recovery plan (140731Z t140
+//!   and 161648Z-cont2 t124 were both held). The governor's rescoring leaves
+//!   the claimed building alone
 //!   ([`AdvancedAi::great_work_slot_building_holds`]).
 //!
 //! No civilization is assumed: Kristina's theming is
@@ -79,21 +81,18 @@ impl AdvancedAi {
     }
 
     /// The `(work kind, building family)` pairs a waiting Artist or Musician
-    /// needs: the host reports the person unable to reach any slot, and no
-    /// slot of the kind (nor an any-kind slot) is open.
+    /// needs: the host reports the person unable to reach any slot
+    /// (`StateGreatPerson::slot_starved`). The host's verdict is the
+    /// authority; the mirror's own open-slot list is not consulted.
     pub(super) fn starved_slot_buildings(
         g: &Game,
         pid: usize,
     ) -> BTreeSet<(&'static str, &'static str)> {
-        let open = g.players[pid].live_open_great_work_slots.as_ref();
         g.players[pid]
             .live_great_person_activation_needs
             .iter()
             .filter(|need| need.required_great_work.is_none())
             .filter_map(|need| slot_building_for(&need.kind))
-            .filter(|(work, _)| {
-                open.is_none_or(|slots| !slots.contains(*work) && !slots.contains("any"))
-            })
             .collect()
     }
 

@@ -6769,9 +6769,9 @@ pub struct AdvancedAi {
     /// it cannot reach. Carries `culture-digs-one-museum`. See
     /// `advanced/culture_digs_every_site.rs`. Off by default.
     culture_digs_every_site: bool,
-    /// `curator-sits-with-the-works`: a Culture seat's Pingala takes Curator
-    /// once four Writing, Art or Music works stand, and sits in the city
-    /// holding the most of them. See
+    /// `curator-sits-with-the-works`: once a Culture seat holds four Writing,
+    /// Art or Music works, Curator is Pingala's next promotion, and a Pingala
+    /// holding it sits in the city holding the most of them. See
     /// `advanced/curator_sits_with_the_works.rs`. Off by default.
     curator_sits_with_the_works: bool,
     /// `culture-digs-every-site`: sites an Archaeologist failed to step

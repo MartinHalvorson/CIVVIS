@@ -147,35 +147,47 @@ fn no_curator_another_governor_or_another_target_stays_put() {
 }
 
 #[test]
-fn curator_waits_for_four_works_and_space_initiative_never_comes() {
+fn curator_comes_next_only_once_four_works_stand() {
+    // Three works: the stock Recovery order stands (Space Initiative before
+    // Curator), and no early Curator is taken.
     let (mut g, ai, plan, old, new) = board(&["connoisseur", "researcher", "grants"], [1, 2]);
     g.players[0]
         .counters
         .insert("district_governor_titles".into(), 10);
-    assert!(ai.curator_withholds_promotion(&g, 0, "pingala", "curator"));
-    assert!(ai.curator_withholds_promotion(&g, 0, "pingala", "space_initiative"));
-    assert!(!ai.curator_withholds_promotion(&g, 0, "magnus", "space_initiative"));
+    assert!(!ai.curator_comes_next(&g, 0));
     assert_eq!(
-        ai.preferred_governor_promotion(&g, 0, plan.strategy, "pingala"),
-        None,
-        "three works: neither Curator nor Space Initiative"
+        ai.preferred_governor_promotion(&g, 0, plan.strategy, "pingala")
+            .as_deref(),
+        Some("space_initiative"),
+        "three works: the stock order"
     );
     assert!(!ai.promote_the_curator(&mut g, 0));
 
+    // Four works: Curator is next, and a title in hand takes it first.
     house(&mut g, old, 2);
     house(&mut g, new, 2);
-    assert!(!ai.curator_withholds_promotion(&g, 0, "pingala", "curator"));
+    assert!(ai.curator_comes_next(&g, 0));
     assert_eq!(
         ai.preferred_governor_promotion(&g, 0, plan.strategy, "pingala")
             .as_deref(),
         Some("curator")
+    );
+    assert_eq!(
+        ai.preferred_governor_promotion(&g, 0, plan.strategy, "magnus"),
+        AdvancedAi::targeting(VictoryTarget::Culture).preferred_governor_promotion(
+            &g,
+            0,
+            plan.strategy,
+            "magnus"
+        ),
+        "another governor keeps the stock order"
     );
     assert!(ai.promote_the_curator(&mut g, 0));
     assert!(g.players[0].governor_roster["pingala"]
         .promotions
         .contains("curator"));
 
-    // Off, the Recovery plan's order stands: Space Initiative before Curator.
+    // Off, the Recovery plan's order stands with the works too.
     let (mut g, _, plan, _, _) = board(&["connoisseur", "researcher", "grants"], [3, 3]);
     g.players[0]
         .counters

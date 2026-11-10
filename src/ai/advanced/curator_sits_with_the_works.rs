@@ -10,19 +10,17 @@
 //!   3 each.
 //! - 152217Z: Curator from about t93, Pingala in Göteborg with 0 works at
 //!   t125 and t150, while Stockholm held 5 (a full Art Museum among them).
-//! - In both games Pingala then also took Space Initiative, which a Culture
-//!   seat never uses.
 //! `relocate_governors_for_dividends` never moves a Pingala who holds Curator
-//! (and does not run at war or under the Recovery plan at all), and Pingala's
-//! promotion order follows the plan's strategy, so under Recovery Space
-//! Initiative comes before Curator.
+//! (and does not run at war or under the Recovery plan at all), and under
+//! the Recovery plan, which this seat plays from about t150, Pingala's
+//! promotion order puts Space Initiative before Curator.
 //!
 //! **What the gene does**, for a seat whose active victory target is Culture:
-//! - **Promotions.** Pingala's order is Connoisseur, Researcher, Grants and
-//!   then Curator, whatever the plan; Curator waits until the empire holds
-//!   [`CURATOR_MIN_WORKS`] Writing, Art or Music works, and Space Initiative
-//!   is never taken. With a title in hand, Curator open and the works
-//!   standing, Pingala takes it before any other title is spent.
+//! - **Promotions.** Nothing changes before the empire holds
+//!   [`CURATOR_MIN_WORKS`] Writing, Art or Music works: which governor is
+//!   appointed, where, and every promotion keep the stock order. From then
+//!   on Curator is Pingala's next promotion whenever it is open, and with a
+//!   title in hand it is taken before any other title is spent.
 //! - **The post.** Every turn, at war or at peace, a Pingala holding Curator
 //!   moves to the city of ours that holds the most Writing, Art and Music
 //!   works, when that city holds at least [`CURATOR_MARGIN_WORKS`] more than
@@ -74,45 +72,18 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// Whether this gene withholds `promotion` from `governor` now: Space
-    /// Initiative always, and Curator until [`CURATOR_MIN_WORKS`] works
-    /// stand. False with the gene off, for another target or governor.
-    pub(super) fn curator_withholds_promotion(
-        &self,
-        g: &Game,
-        pid: usize,
-        governor: &str,
-        promotion: &str,
-    ) -> bool {
-        if governor != "pingala" || !self.curator_seat_active(g) {
-            return false;
-        }
-        match promotion {
-            "space_initiative" => true,
-            "curator" => {
-                Self::curated_works_by_city(g, pid).values().sum::<usize>() < CURATOR_MIN_WORKS
-            }
-            _ => false,
-        }
-    }
-
-    /// Pingala's promotion order under this gene, whatever the plan. `None`
-    /// with the gene off, for another target or governor.
-    pub(super) fn curator_promotion_order(
-        &self,
-        g: &Game,
-        governor: &str,
-    ) -> Option<&'static [&'static str]> {
-        (governor == "pingala" && self.curator_seat_active(g))
-            .then_some(&["connoisseur", "researcher", "grants", "curator"][..])
+    /// Whether the empire holds the works that make Curator Pingala's next
+    /// promotion. False with the gene off or for another target.
+    pub(super) fn curator_comes_next(&self, g: &Game, pid: usize) -> bool {
+        self.curator_seat_active(g)
+            && Self::curated_works_by_city(g, pid).values().sum::<usize>() >= CURATOR_MIN_WORKS
     }
 
     /// See the module: with a title in hand, Pingala takes Curator first once
     /// the works stand. True when the promotion was applied.
     pub(super) fn promote_the_curator(&self, g: &mut Game, pid: usize) -> bool {
-        if !self.curator_seat_active(g)
-            || g.governor_titles_available(pid) == 0
-            || self.curator_withholds_promotion(g, pid, "pingala", "curator")
+        if g.governor_titles_available(pid) == 0
+            || !self.curator_comes_next(g, pid)
             || !g
                 .available_governor_promotions(pid, "pingala")
                 .iter()

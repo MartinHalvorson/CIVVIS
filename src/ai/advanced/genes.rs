@@ -5498,8 +5498,8 @@ pub const GENES: &[Gene] = &[
     // `culture-digs-one-museum`. Opt-in; see `advanced/culture_digs_every_site.rs`.
     Gene { tag: "culture-digs-every-site", field: "culture_digs_every_site", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_every_site, disable: AdvancedAi::disable_culture_digs_every_site },
     // Live Deity Kristina 11-10: Pingala held Curator in a city with no Great
-    // Works for 30-55 turns while 3-5 stood elsewhere, and took Space Initiative.
-    // Opt-in; see `advanced/curator_sits_with_the_works.rs`.
+    // Works for 30-55 turns while 3-5 stood elsewhere. Opt-in; see
+    // `advanced/curator_sits_with_the_works.rs`.
     Gene { tag: "curator-sits-with-the-works", field: "curator_sits_with_the_works", kind: Kind::OptIn, enable: AdvancedAi::enable_curator_sits_with_the_works, disable: AdvancedAi::disable_curator_sits_with_the_works },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
