@@ -3694,6 +3694,41 @@ fn naval_raider_promotions_apply_strength_and_victory_gold() {
 }
 
 #[test]
+fn theological_combat_cannot_reach_into_a_rival_city() {
+    // Who owns a city on the rival Apostle's plot, if anyone, and whether the
+    // fight is then offered and accepted.
+    let fight_offered = |city_owner: Option<usize>| {
+        let (mut g, center, ring) = controlled_game(3171);
+        g.at_war.clear();
+        g.players[0].religion = Some("A".to_string());
+        g.players[1].religion = Some("B".to_string());
+        if let Some(owner) = city_owner {
+            g.found_city_for(owner, center, None);
+        }
+        let apostle = g.spawn_unit("apostle", 0, ring[0]);
+        g.spawn_unit("apostle", 1, center);
+        let action = Action::TheologicalAttack {
+            unit: apostle,
+            target: center,
+        };
+        let legal = g.legal_actions(0).contains(&action);
+        let applied = g.apply(0, &action).is_ok();
+        assert_eq!(legal, applied, "legal_actions and apply must agree");
+        legal
+    };
+
+    assert!(fight_offered(None), "open ground is a fight");
+    assert!(
+        fight_offered(Some(0)),
+        "a heretic in our own city is a fight"
+    );
+    assert!(
+        !fight_offered(Some(1)),
+        "the host has no path into a rival City Center"
+    );
+}
+
+#[test]
 fn theological_combat_and_condemnation_change_nearby_pressure() {
     let (mut g, center, ring) = controlled_game(3163);
     g.at_war.clear();
