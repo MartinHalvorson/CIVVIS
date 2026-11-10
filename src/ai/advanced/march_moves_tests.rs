@@ -4,7 +4,7 @@ use super::*;
 /// of our `kind` standing `distance` tiles west of the rival's city with a
 /// full turn of movement.
 fn fixture(kind: &str, distance: i32) -> (Game, AdvancedAi, StrategicPlan, u32, ForceGroup) {
-    let mut g = Game::new_full(2, 52, 30, 374_400, 250, 0, false);
+    let mut g = Game::new_full(2, 52, 30, crate::rng::fixture_seed("AUTO_10", 374_400), 250, 0, false);
     g.clear_mirror_cities();
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);

@@ -1977,7 +1977,7 @@ pub fn generate_with_script_and_leader_starts(
     // volcanoes and mountains follow the seams between them. Keep the planning
     // on a clone: the legacy main-stream draw stays at its original point
     // below, so unrelated seeded geography does not reroll.
-    let stamps_continents = stamps_continents_before_relief(script);
+    let stamps_continents = stamps_continents_before_relief(script, width, height);
     if stamps_continents {
         let mut continent_rng = rng.clone();
         assign_continents(&mut wm, &land, num_continents, &mut continent_rng);
@@ -2030,10 +2030,12 @@ pub fn generate_with_script_and_leader_starts(
         } else {
             land.len() as f64 / f64::from((8 - stock_world_age(script)) * 50)
         };
+        let seams = stamped_seams(&wm, stamps_continents);
         add_terrain_from_continents(
             &mut wm,
             &land,
             &mut mountain_terrain,
+            &seams,
             desired_volcanoes,
             rng,
         );
@@ -2240,7 +2242,8 @@ pub fn generate_with_script_and_leader_starts(
         } else {
             open_land as f64 / LAND_PER_FISSURE
         };
-        add_geothermal_fissures(&mut wm, &land, desired_fissures, rng);
+        let seams = stamped_seams(&wm, stamps_continents);
+        add_geothermal_fissures(&mut wm, &land, &seams, desired_fissures, rng);
     }
 
     // --- resources. The battlefield places none — no lottery, no strategic
@@ -2456,17 +2459,29 @@ struct TectonicProfile {
 /// The stock scripts this generator mirrors, which all call
 /// `TerrainBuilder.StampContinents` and then `AddTerrainFromContinents`. CIVVIS's
 /// own world types have no shipped seam rules, so they get volcanoes on lone
-/// mountains only.
-fn stamps_continents_before_relief(script: MapScript) -> bool {
-    matches!(
-        script,
-        MapScript::Continents
-            | MapScript::SmallContinents
-            | MapScript::Pangaea
-            | MapScript::Islands
-            | MapScript::Lakes
-            | MapScript::InlandSea
-    )
+/// mountains only. Neither does a board under the smallest shipped map, Duel
+/// at 44x26: a seam there can swallow the land the seats need.
+fn stamps_continents_before_relief(script: MapScript, width: i32, height: i32) -> bool {
+    width * height >= 44 * 26
+        && matches!(
+            script,
+            MapScript::Continents
+                | MapScript::SmallContinents
+                | MapScript::Pangaea
+                | MapScript::Islands
+                | MapScript::Lakes
+                | MapScript::InlandSea
+        )
+}
+
+/// The seams of a world whose continents are stamped, and none otherwise. A
+/// fixed-geography world carries real continents, but its ranges are real too.
+fn stamped_seams(wm: &WorldMap, stamps_continents: bool) -> BTreeMap<Pos, i32> {
+    if stamps_continents {
+        continent_seams(wm)
+    } else {
+        BTreeMap::new()
+    }
 }
 
 /// The `world_age_normal` each stock script declares. Only Island Plates
@@ -2539,10 +2554,10 @@ fn add_terrain_from_continents(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
     mountain_terrain: &mut BTreeMap<Pos, Name>,
+    seams: &BTreeMap<Pos, i32>,
     desired_volcanoes: f64,
     rng: &mut Rng,
 ) {
-    let seams = continent_seams(wm);
     let desired_near_seams = desired_volcanoes * 2.0 / 3.0;
     // Counted over every plot, the water included.
     let plots_per_volcano = seams.len() as f64 / desired_near_seams.max(f64::MIN_POSITIVE);
@@ -2653,13 +2668,13 @@ fn raise_mountain(wm: &mut WorldMap, mountain_terrain: &mut BTreeMap<Pos, Name>,
 fn add_geothermal_fissures(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
+    seams: &BTreeMap<Pos, i32>,
     desired_fissures: f64,
     rng: &mut Rng,
 ) {
     if desired_fissures <= 0.0 {
         return;
     }
-    let seams = continent_seams(wm);
     let mut placed = 0usize;
     for near_seam in [true, false] {
         if placed as f64 >= desired_fissures {

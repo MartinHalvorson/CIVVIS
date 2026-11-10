@@ -2490,7 +2490,7 @@ fn parallel_settlers_open_a_second_pipeline_slot() {
 
 #[test]
 fn settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_sites() {
-    let mut game = Game::new_full(1, 30, 18, 8_124, 160, 0, false);
+    let mut game = Game::new_full(1, 30, 18, crate::rng::fixture_seed("AUTO_23", 8_124), 160, 0, false);
     let opening_settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -6624,7 +6624,7 @@ fn a_congress_dvp_jump_does_not_retask_an_active_domination_siege() {
 /// against 23 of the two-hop shape the shipped guard already covers.
 #[test]
 fn the_whole_turn_guard_refuses_a_three_hop_loop_that_the_shipped_one_allows() {
-    let mut game = Game::new(2, 24, 16, 79, 80, 0);
+    let mut game = Game::new(2, 24, 16, crate::rng::fixture_seed("AUTO_22", 79), 80, 0);
     let [a, b, c] = hex_triangle(&game).expect("fixture offers three adjacent open land tiles");
 
     for (guard, expected) in [(false, true), (true, false)] {
@@ -10326,7 +10326,7 @@ fn live_bridge_and_each_new_withhold_arm_change_the_host_controls() {
 /// held the premium is gone and the Iron wins again.
 #[test]
 fn the_builder_opens_the_empires_first_luxury_before_the_iron() {
-    let (mut game, capital, home) = empire_with_a_capital(43_000_001);
+    let (mut game, capital, home) = empire_with_a_capital(crate::rng::fixture_seed("AUTO_21", 43_000_001));
     for tech in ["irrigation", "mining", "bronze_working"] {
         game.players[0].techs.insert(Name::new(tech));
     }

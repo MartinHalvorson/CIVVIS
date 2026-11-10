@@ -5509,52 +5509,96 @@ fn large_lake_budgets_follow_each_stock_script() {
     }
 }
 
-/// TEMPORARY census: land, open land, mountains, volcanoes, fissures per script.
+/// TEMPORARY: finds a seed for every fixture the map refresh redrew.
 #[test]
-fn temp_tectonic_census() {
-    let rules = Rules::embedded();
-    let mut report = String::new();
-    for (name, script) in [
-        ("continents", MapScript::Continents),
-        ("small", MapScript::SmallContinents),
-        ("pangaea", MapScript::Pangaea),
-        ("islands", MapScript::Islands),
-        ("lakes", MapScript::Lakes),
-        ("inland", MapScript::InlandSea),
-    ] {
-        let (mut land, mut mountains, mut volcanoes, mut fissures, mut seam_volcanoes) =
-            (0usize, 0usize, 0usize, 0usize, 0usize);
-        let (mut hills, mut marshes, mut woods, mut lake_plots) = (0usize, 0usize, 0usize, 0usize);
-        for seed in 0..10 {
-            let mut rng = Rng::new(80_700 + seed);
-            let (world, _) = generate_with_script(
-                &rules, 84, 54, 8, 10, 4, 4, script, FLAT, POLED, &mut rng,
-            );
-            for (position, tile) in &world.tiles {
-                if tile.terrain == "lake" {
-                    lake_plots += 1;
+fn temp_seed_search() {
+    use std::collections::VecDeque;
+    use std::process::{Command, Stdio};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    const SITES: &[(&str, u64, &[&str])] = &[
+    ("AUTO_0", 936301, &["ai::advanced::air_surge::heretic_hunt::tests::a_spreader_near_home_is_hunted_and_condemned", "ai::advanced::air_surge::heretic_hunt::tests::no_hunt_at_peace_far_from_home_out_of_reach_or_off_the_lane"]),
+    ("AUTO_1", 936301, &["ai::advanced::band_hunt::tests::version_two_hunts_with_melee_bodies_only", "ai::advanced::band_hunt::tests::a_band_in_reach_is_run_down", "ai::advanced::band_hunt::tests::no_kill_off_the_gene_at_peace_out_of_reach_reserved_escorted_or_on_the_ring", "ai::advanced::band_hunt::tests::version_two_hunts_in_the_military_pass"]),
+    ("AUTO_2", 95107, &["ai::advanced::campus_claims_the_free_slot::tests::version_two_claims_every_eligible_city_from_two_citizens"]),
+    ("CAPITALCAMPUS", 91771, &["ai::advanced::capital_campus_claim::tests::the_idle_capital_queues_its_campus_then_its_library", "ai::advanced::capital_campus_claim::tests::the_capital_keeps_its_settler_its_defence_and_the_race", "ai::advanced::capital_campus_claim::tests::the_plaza_goes_to_another_city_while_the_capital_builds_its_campus"]),
+    ("AUTO_4", 372100, &["ai::advanced::faith_strike::tests::a_rival_at_parity_with_its_army_away_is_struck", "ai::advanced::faith_strike::tests::a_rival_is_not_struck_twice_inside_the_cooldown", "ai::advanced::faith_strike::tests::a_rival_scout_near_our_cities_does_not_break_the_quiet", "ai::advanced::faith_strike::tests::the_diplomacy_step_opens_the_strike", "ai::advanced::faith_strike::tests::three_missionaries_in_reach_draw_the_war_and_die_that_turn", "ai::advanced::faith_strike::tests::a_faith_that_does_not_touch_us_is_no_reason", "ai::advanced::faith_strike::tests::a_rival_soldier_near_our_cities_breaks_the_quiet", "ai::advanced::faith_strike::tests::a_rival_stronger_than_us_is_left_alone_however_quiet", "ai::advanced::faith_strike::tests::a_stronger_founder_is_left_alone", "ai::advanced::faith_strike::tests::an_apostle_and_a_missionary_are_worth_a_strike", "ai::advanced::faith_strike::tests::off_nothing_changes", "ai::advanced::faith_strike::tests::one_soldier_cannot_condemn_three", "ai::advanced::faith_strike::tests::parity_is_not_enough_without_the_gene", "ai::advanced::faith_strike::tests::the_match_moves_a_soldier_to_free_the_apostle", "ai::advanced::faith_strike::tests::two_missionaries_wait_for_a_better_turn"]),
+    ("AUTO_5", 936015, &["ai::advanced::growth_farm_tests::a_weak_housing_bound_city_farms_even_against_the_foundation_bonus", "ai::advanced::growth_farm_tests::a_city_with_room_and_food_keeps_its_mine", "ai::advanced::growth_farm_tests::a_housing_bound_city_farms_the_flat_before_mining_the_hill", "ai::advanced::growth_farm_tests::growth_prices_the_farm_2_is_off_by_default_and_reversible", "ai::advanced::growth_farm_tests::growth_prices_the_farm_is_off_by_default_and_reversible", "ai::advanced::growth_farm_tests::the_food_premium_is_the_grown_citizens_priced_as_production", "ai::advanced::growth_farm_tests::the_food_premium_stops_without_room_in_a_large_city_and_on_foreign_land", "ai::advanced::growth_farm_tests::the_premium_prices_housing_and_food_by_the_constants", "ai::advanced::growth_farm_tests::version_two_prices_a_growing_citys_food_where_version_one_pays_nothing", "ai::advanced::growth_farm_tests::version_two_prices_housing_before_the_cap"]),
+    ("AUTO_6", 377300, &["ai::advanced::guns_stay_out_of_reach::v2_tests::version_three_frees_the_defenders_and_keeps_the_veto_for_the_rest", "ai::advanced::guns_stay_out_of_reach::v2_tests::version_two_carries_the_guns", "ai::advanced::guns_stay_out_of_reach::v2_tests::a_hostile_killed_this_frame_no_longer_vetoes", "ai::advanced::guns_stay_out_of_reach::v2_tests::a_planned_unit_and_a_weak_hostile_are_left_alone", "ai::advanced::guns_stay_out_of_reach::v2_tests::a_unit_inside_the_reach_may_only_step_to_a_lighter_blow", "ai::advanced::guns_stay_out_of_reach::v2_tests::an_archer_does_not_step_where_one_blow_destroys_it"]),
+    ("AUTO_7", 71, &["ai::advanced::higher_level_strategy::tests::a_capital_busy_with_a_district_is_busy_too_and_an_idle_one_is_not", "ai::advanced::higher_level_strategy::tests::a_busy_capital_hands_the_settler_to_the_best_other_city", "ai::advanced::higher_level_strategy::tests::the_cadence_admits_at_most_two_walkers_and_only_behind_a_busy_capital", "ai::advanced::higher_level_strategy::tests::the_cadence_pauses_when_no_safe_site_is_left"]),
+    ("AUTO_8", 71, &["ai::advanced::higher_level_strategy::queued_yield_tests::catchup_v3_adds_only_the_yield_missing_from_queued_investment", "ai::advanced::higher_level_strategy::queued_yield_tests::catchup_v3_does_not_credit_a_building_behind_unrelated_work", "ai::advanced::higher_level_strategy::queued_yield_tests::catchup_v3_does_not_wait_for_an_answer_due_after_the_useful_window", "ai::advanced::higher_level_strategy::queued_yield_tests::builder_recovery_needs_local_work_and_no_existing_builder", "ai::advanced::higher_level_strategy::queued_yield_tests::builder_v2_needs_three_distinct_jobs_not_three_improvement_choices", "ai::advanced::higher_level_strategy::queued_yield_tests::culture_debt_issues_one_legal_order_and_stops_at_parity", "ai::advanced::higher_level_strategy::queued_yield_tests::culture_v2_does_not_chase_a_single_specialist", "ai::advanced::higher_level_strategy::queued_yield_tests::expansion_requires_pace_and_a_real_site_and_stops_with_a_walker", "ai::advanced::higher_level_strategy::queued_yield_tests::expansion_v2_rejects_late_or_population_poor_launches", "ai::advanced::higher_level_strategy::queued_yield_tests::research_catchup_completes_an_existing_campus", "ai::advanced::higher_level_strategy::queued_yield_tests::research_v2_preserves_the_spaceport_city_between_launches", "ai::advanced::higher_level_strategy::queued_yield_tests::reservations_respect_threat_commitment_recovery_and_clock", "ai::advanced::higher_level_strategy::queued_yield_tests::trade_catchup_needs_filled_capacity_and_low_income", "ai::advanced::higher_level_strategy::queued_yield_tests::trade_v2_budgets_the_building_and_trader_before_route_income"]),
+    ("AUTO_9", 92409, &["ai::advanced::lane_delegates_production::tests::the_gene_moves_an_assigned_lane_and_leaves_an_unassigned_seat_alone", "ai::advanced::lane_delegates_production::tests::version_two_keeps_delegating_after_the_clock"]),
+    ("AUTO_10", 374400, &["ai::advanced::march_moves_tests::the_walk_ends_on_the_staging_ring_not_inside_it", "ai::advanced::march_moves_tests::a_reinforcement_walks_as_far_as_its_movement_reaches_under_the_gene", "ai::advanced::march_moves_tests::the_reach_list_is_nearest_first_then_most_movement_left"]),
+    ("PROPHETSITE", 62068, &["ai::advanced::prophet_site::tests::the_site_skips_a_held_or_threatened_city", "ai::advanced::prophet_site::tests::a_held_prophet_puts_its_holy_site_first", "ai::advanced::prophet_site::tests::an_exhausted_prophet_class_closes_the_race", "ai::advanced::prophet_site::tests::revelation_waits_for_its_holy_site_and_the_race_queues_it"]),
+    ("AUTO_12", 95340, &["ai::advanced::science_campus_before_repeat_settler::tests::midgame_settler_claim_also_respects_the_first_city_campus_commitment", "ai::advanced::science_campus_before_repeat_settler::tests::commitment_survives_zero_progress_and_native_repricing_without_a_walker", "ai::advanced::science_campus_before_repeat_settler::tests::commitment_yields_to_new_defensive_or_victory_priorities", "ai::advanced::science_campus_before_repeat_settler::tests::exception_requires_native_quotes_pipeline_and_safe_science_plan", "ai::advanced::science_campus_before_repeat_settler::tests::short_native_campus_precedes_repeated_settler_without_losing_paid_work", "ai::advanced::science_campus_before_repeat_settler::tests::standalone_gene_does_not_enable_ordinary_campus_claims"]),
+    ("AUTO_13", 91775, &["ai::advanced::settler_never_idles::tests::the_sieve_keeps_the_forecast_for_plots_outside_the_rivals_sphere"]),
+    ("AUTO_14", 91301, &["ai::advanced::settler_never_idles::walk_price_tests::an_older_exhausted_settler_prices_the_remaining_walk"]),
+    ("AUTO_15", 71031, &["ai::advanced::siege_train::air_tests::a_bare_encampment_beside_our_city_does_not_outrank_the_walls_under_the_gene", "ai::advanced::siege_train::air_tests::a_bomber_opens_the_siege_walls_before_a_distant_kill_only_under_the_gene", "ai::advanced::siege_train::air_tests::a_siege_whose_train_is_far_off_leaves_the_ordinary_choice", "ai::advanced::siege_train::air_tests::without_a_walled_siege_the_ordinary_choice_stands", "ai::advanced::siege_train::air_tests::a_hostile_beside_our_city_still_comes_before_the_walls", "ai::advanced::siege_train::air_tests::a_soldier_in_the_encampment_beside_our_city_still_takes_the_guard_slot"]),
+    ("AUTO_16", 941125, &["ai::advanced::tests::a_faster_second_airfield_can_deliver_the_launch_wing_sooner"]),
+    ("AUTO_17", 79099, &["ai::advanced::tests::colonization_earns_its_slot_2_weighs_the_builder_cards_too"]),
+    ("AUTO_18", 71022, &["ai::advanced::tests::threatened_city_does_not_peel_a_defender_for_civilian_rescue"]),
+    ("AUTO_19", 91480, &["ai::advanced::tests::advanced_settlers_wait_out_a_visible_hostile_capture_envelope"]),
+    ("AUTO_20", 71001, &["ai::advanced::tests::up_to_two_eligible_ships_on_an_unexplored_sea_are_the_empires_explorers"]),
+    ("AUTO_21", 43000001, &["ai::advanced::tests::battle_planner_tests::the_builder_opens_the_empires_first_luxury_before_the_iron"]),
+    ("AUTO_22", 79, &["ai::advanced::tests::battle_planner_tests::the_whole_turn_guard_refuses_a_three_hop_loop_that_the_shipped_one_allows"]),
+    ("AUTO_23", 8124, &["ai::advanced::tests::battle_planner_tests::settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_sites"]),
+    ("AUTO_24", 941111, &["ai::advanced::tests::objective_board_tests::a_surge_appointed_into_a_running_war_arms_without_declaring"]),
+    ("AUTO_25", 91504, &["ai::advanced::tests::research_tests::advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap"]),
+    ("AUTO_26", 71122, &["ai::advanced::tests::research_tests::boosted_bargain_v2_breaks_only_a_close_unforced_fallback"]),
+    ("AUTO_27", 93204, &["ai::advanced::tests::settling_tests::the_walk_deadline_off_leaves_the_clock_and_the_step_alone"]),
+    ("AUTO_28", 71601, &["ai::advanced::tests::settling_tests::a_settler_stops_waiting_for_a_guard_that_is_not_coming"]),
+    ("AUTO_29", 6301, &["ai::advanced::tests::settling_tests::the_shipped_score_prefers_a_site_it_cannot_support"]),
+    ("AUTO_30", 8121, &["ai::advanced::tests::settling_tests::a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_marches"]),
+    ("AUTO_31", 91119, &["ai::advanced::victory_conversion::tests::first_band_uses_a_known_reachable_venue_and_a_real_purchase_city", "ai::advanced::victory_conversion::tests::a_single_gun_does_not_hide_a_losing_wall_damage_budget", "ai::advanced::victory_conversion::tests::all_genes_respect_recovery_and_other_victory_targets", "ai::advanced::victory_conversion::tests::capital_router_needs_a_known_reachable_objective_and_keeps_the_opponent", "ai::advanced::victory_conversion::tests::capture_hold_uses_time_to_revolt_and_prioritizes_victor_and_repairs", "ai::advanced::victory_conversion::tests::completion_gene_prices_a_filled_building_above_an_empty_one", "ai::advanced::victory_conversion::tests::deadline_cuts_late_settlers_but_preserves_emergency_defense", "ai::advanced::victory_conversion::tests::faith_reservation_requires_a_reachable_opportunity_and_releases_for_purchase", "ai::advanced::victory_conversion::tests::land_reservation_precedes_unlock_and_never_changes_real_terrain", "ai::advanced::victory_conversion::tests::live_housing_preview_sees_a_blocked_creator_without_mutating_the_snapshot", "ai::advanced::victory_conversion::tests::reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline", "ai::advanced::victory_conversion::tests::siege_budget_does_not_credit_melee_that_will_hold_outside_strong_walls", "ai::advanced::victory_conversion::tests::siege_budget_rejects_an_archer_only_train_and_accepts_a_capable_force", "ai::advanced::victory_conversion::tests::staged_siege_can_budget_a_last_seen_city_outside_current_sight", "ai::advanced::victory_conversion::tests::tourism_payback_values_housing_that_activates_owned_works", "ai::advanced::victory_conversion::tests::upgrade_window_reserves_a_package_and_never_declares_before_it_is_ready", "ai::advanced::victory_conversion::tests::work_deal_preview_values_a_real_transfer_without_executing_it"]),
+    ("CAMPUSHUB", 92107, &["ai::campus_buildings::tests::a_second_commercial_hub_gives_its_slot_to_the_university"]),
+    ("COMMERCIALMARKET", 92003, &["ai::commercial_hub::tests::a_hub_builds_its_market_and_the_step_stops_at_three_hubs"]),
+    ("AUTO_34", 3750000, &["ai::player::tests::fog_honest_seats_lose_almost_no_production_to_refused_orders"]),
+    ("SPACEPORT", 324006, &["ai::tests::one_queued_spaceport_reserves_the_empire_launch_site"]),
+    ("AUTO_36", 37107, &["ai::tests::an_archer_steps_once_and_shoots_in_the_same_turn"]),
+    ("CAPITALCAMPUS", 91802, &["ai::tests::the_capital_opens_its_campus_before_the_next_settler"]),
+    ("AUTO_38", 4242, &["game::disaster_tests::the_eruption_lottery_draws_a_volcanic_natural_wonder", "game::disaster_tests::a_drought_holds_its_tiles_then_lifts_on_schedule", "game::disaster_tests::a_higher_intensity_activates_more_volcanoes_and_fires_more_often", "game::disaster_tests::a_meteor_lands_on_every_feature_a_live_site_was_seen_on", "game::disaster_tests::a_meteor_stays_off_tundra_and_off_a_volcano", "game::disaster_tests::a_save_written_before_disasters_loads_at_the_default_intensity", "game::disaster_tests::a_storm_drifts_for_three_turns_and_then_dissipates", "game::disaster_tests::a_volcanic_natural_wonder_erupts_and_leaves_its_own_volcanic_soil", "game::disaster_tests::a_warming_world_is_a_stormier_one", "game::disaster_tests::an_eruption_damages_the_ring_and_leaves_volcanic_soil", "game::disaster_tests::an_eruption_does_not_bury_the_rest_of_its_own_natural_wonder", "game::disaster_tests::an_eruption_keeps_volcanic_soil_off_mountains_and_every_kind_of_water", "game::disaster_tests::an_eruption_leaves_production_fertility_and_not_only_food", "game::disaster_tests::disaster_population_loss_seats_a_targeted_native_aid_request", "game::disaster_tests::disaster_state_survives_a_save", "game::disaster_tests::eruption_soil_obeys_replacement_and_built_site_rules", "game::disaster_tests::every_disaster_covers_the_tile_count_its_hexes_column_ships", "game::disaster_tests::high_intensity_makes_most_volcanic_natural_wonders_active_cones", "game::disaster_tests::intensity_zero_leaves_every_volcano_dormant_and_fires_nothing", "game::disaster_tests::meteors_fall_with_every_game_mode_off_at_the_shipped_counts", "game::disaster_tests::production_fertility_is_rolled_apart_from_food_fertility", "game::disaster_tests::the_apocalypse_mode_raises_the_showers_to_its_megadisasters_row", "game::disaster_tests::the_default_intensity_is_the_middle_of_the_five_settings", "game::disaster_tests::the_shipped_fertility_table_is_what_the_ruleset_carries", "game::disaster_tests::the_top_two_intensities_widen_the_eruption_to_two_rings", "game::disaster_tests::unclaimed_ground_still_pays_the_fertility_a_disaster_left_on_it"]),
+    ("AUTO_39", 41000, &["strategic::tests::a_shorter_review_period_reaches_the_search_more_often"]),
+    ];
+    let exe = std::env::current_exe().expect("test binary");
+    let queue = Mutex::new(SITES.iter().collect::<VecDeque<_>>());
+    let found = Mutex::new(Vec::<String>::new());
+    let budget = Duration::from_secs(420);
+    std::thread::scope(|scope| {
+        for _ in 0..6 {
+            scope.spawn(|| loop {
+                let Some((key, base, tests)) = queue.lock().unwrap().pop_front() else {
+                    return;
+                };
+                let started = Instant::now();
+                let mut answer = None;
+                let mut tried = 0u64;
+                for offset in 1..=80u64 {
+                    if started.elapsed() > budget {
+                        break;
+                    }
+                    tried = offset;
+                    let seed = base + offset;
+                    let passes = tests.iter().all(|test| {
+                        Command::new(&exe)
+                            .args(["--exact", test, "--test-threads=1"])
+                            .env(format!("CIVVIS_FIXTURE_SEED_{key}"), seed.to_string())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .is_ok_and(|status| status.success())
+                    });
+                    if passes {
+                        answer = Some(seed);
+                        break;
+                    }
                 }
-                if rules.is_water(tile) {
-                    continue;
-                }
-                land += 1;
-                mountains += usize::from(tile.terrain == "mountain");
-                hills += usize::from(tile.hills);
-                marshes += usize::from(tile.feature.as_deref() == Some("marsh"));
-                woods += usize::from(tile.feature.as_deref() == Some("forest"));
-                if tile.feature.as_deref() == Some("volcano") {
-                    volcanoes += 1;
-                    seam_volcanoes +=
-                        usize::from(second_continent_distance(&world, *position).is_some());
-                }
-                fissures += usize::from(tile.feature.as_deref() == Some("geothermal_fissure"));
-            }
+                found.lock().unwrap().push(format!(
+                    "SEEDFOUND {key} {} tried {tried} of {} tests in {}s",
+                    answer.map_or("NONE".to_string(), |seed| seed.to_string()),
+                    tests.len(),
+                    started.elapsed().as_secs(),
+                ));
+            });
         }
-        report.push_str(&format!(
-            "\nCENSUS {name}: land {land} mountains {mountains} hills {hills} volcanoes \
-             {volcanoes} (seam {seam_volcanoes}) fissures {fissures} marsh {marshes} woods \
-             {woods} lake_plots {lake_plots}"
-        ));
-    }
-    panic!("{report}");
+    });
+    panic!("\n{}", found.lock().unwrap().join("\n"));
 }

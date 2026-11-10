@@ -3,7 +3,7 @@ use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 use crate::ai::advanced::{GrandStrategy, VictoryTarget};
 
 fn fixture() -> (Game, AdvancedAi, u32) {
-    let mut g = Game::new_full(2, 40, 24, 936301, 650, 0, false);
+    let mut g = Game::new_full(2, 40, 24, crate::rng::fixture_seed("AUTO_1", 936301), 650, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }

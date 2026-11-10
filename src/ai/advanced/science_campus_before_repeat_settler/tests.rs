@@ -12,7 +12,7 @@ fn settler() -> Item {
 /// Native quotes and pipeline shape from Indonesia003458Z40/1;
 /// the terrain and remaining board are a model fixture, not a native replay.
 fn board() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
-    let mut g = Game::new_full(2, 36, 20, 95_340, 250, 0, false);
+    let mut g = Game::new_full(2, 36, 20, crate::rng::fixture_seed("AUTO_12", 95_340), 250, 0, false);
     g.units.clear();
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");

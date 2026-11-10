@@ -190,7 +190,7 @@ fn boosted_bargain_v2_does_not_interrupt_a_forced_lane_goal() {
 /// value and finishes in one turn.
 #[test]
 fn boosted_bargain_v2_breaks_only_a_close_unforced_fallback() {
-    let (mut game, city, _) = empire_with_a_capital(71_122);
+    let (mut game, city, _) = empire_with_a_capital(crate::rng::fixture_seed("AUTO_26", 71_122));
     game.cities.get_mut(&city).expect("capital").pop = 60;
     game.players[0].research = None;
     game.players[0]
@@ -1463,7 +1463,7 @@ fn research_prices_the_node_that_retires_the_army_already_in_the_field() {
 
 #[test]
 fn advanced_research_protects_a_science_lane_from_a_nearby_barbarian_quality_gap() {
-    let mut game = Game::new_full(1, 24, 16, 91_504, 120, 0, true);
+    let mut game = Game::new_full(1, 24, 16, crate::rng::fixture_seed("AUTO_25", 91_504), 120, 0, true);
     game.current = 0;
     let settler = game
         .player_unit_ids(0)

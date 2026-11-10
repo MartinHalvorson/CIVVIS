@@ -10142,7 +10142,7 @@ fn a_refused_shot_no_longer_shadows_the_legal_one() {
 /// turn.
 #[test]
 fn an_archer_steps_once_and_shoots_in_the_same_turn() {
-    let mut g = Game::new_full(2, 24, 16, 37_107, 30, 0, false);
+    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("AUTO_36", 37_107), 30, 0, false);
     for unit in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(unit);
     }
