@@ -415,7 +415,7 @@ fn soldier_reach(g: &Game, soldier: u32) -> Vec<Pos> {
 #[test]
 fn a_religious_unit_leaves_the_reach_of_a_soldier_at_war() {
     let (mut g, _, _, _) = field();
-    g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    g.at_war.insert((0, 1));
     let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
     let soldier = g.spawn_unit("warrior", 1, (21, 8));
     let ai = home_alive();
@@ -431,7 +431,7 @@ fn a_religious_unit_leaves_the_reach_of_a_soldier_at_war() {
     );
     // Off, the soldier is not read at all.
     let (mut g, _, _, _) = field();
-    g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    g.at_war.insert((0, 1));
     let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
     g.spawn_unit("warrior", 1, (21, 8));
     let off = AdvancedAi::targeting(VictoryTarget::Religion);
@@ -451,7 +451,7 @@ fn a_soldier_at_peace_is_no_threat() {
 #[test]
 fn the_march_never_enters_a_soldiers_reach() {
     let (mut g, _, _, abroad) = field();
-    g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    g.at_war.insert((0, 1));
     let apostle = spawn(&mut g, "apostle", 0, (16, 8), 100, 3);
     let soldier = g.spawn_unit("warrior", 1, (21, 8));
     let target = g.cities[&abroad].pos;
@@ -475,7 +475,7 @@ fn the_march_never_enters_a_soldiers_reach() {
 #[test]
 fn a_tile_under_our_own_soldier_is_a_refuge() {
     let (mut g, _, _, _) = field();
-    g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+    g.at_war.insert((0, 1));
     let apostle = spawn(&mut g, "apostle", 0, (20, 8), 100, 3);
     g.spawn_unit("warrior", 0, (20, 8));
     g.spawn_unit("warrior", 1, (21, 8));
