@@ -115,7 +115,8 @@ mod tests {
 
     fn picks(ai: &AdvancedAi, g: &Game, strategy: GrandStrategy) -> Option<String> {
         let mut g = g.clone();
-        ai.advanced_research(&mut g, 0, &plan(&g, strategy));
+        let plan = plan(&g, strategy);
+        ai.advanced_research(&mut g, 0, &plan);
         g.players[0].civic.as_deref().map(str::to_string)
     }
 
