@@ -51,7 +51,7 @@ impl AdvancedAi {
         DENIAL_SPY_CARDS
             .into_iter()
             .filter(|card| {
-                let name = Name::new(*card);
+                let name = Name::new(card);
                 g.rules.policies.contains_key(&name)
                     && (g.players[pid].policies.contains(&name) || available.contains(&name))
             })
@@ -88,7 +88,7 @@ impl AdvancedAi {
                     && !Self::denial_spy_card_spares(g, card)
                     && g.rules
                         .policies
-                        .get(*card)
+                        .get(card)
                         .is_some_and(|spec| spec.slot == "diplomatic")
             })
             .unwrap_or(desired.len());
