@@ -71,6 +71,19 @@
 //! - **It does not touch the Settler errand.** `chop-for-expansion` runs first
 //!   and is unchanged; either gene works without the other.
 //!
+//! ## What the first paired read said, and the second gene
+//!
+//! Twenty Deity seeds against the live genome, with and without the gene
+//! (2026-11-10): no win in either arm, score share flat, and science 8% lower
+//! at turn 100 (z -2.3), fading by turn 150. Every game ended near turn 163 on
+//! a rival's victory, so no seat reached a space project and the space-race
+//! leg was never exercised. The district and wonder leg therefore reads as no
+//! help at best, and the two legs need separate prices.
+//!
+//! `chop-feeds-the-space-race` is the space-race leg alone: with only that
+//! gene on, a district or wonder is never a long build and nothing is cleared
+//! for one. Either gene works without the other.
+//!
 //! ⚠ The gene is off by default and inert while off:
 //! [`AdvancedAi::chop_feeds_the_long_build_step`] returns `None` before
 //! reading anything, so a game plays byte-identically.
@@ -139,6 +152,10 @@ impl AdvancedAi {
             Item::Wonder { .. } => false,
             _ => return None,
         };
+        // `chop-feeds-the-space-race` runs the space-race leg alone.
+        if !space_race && !self.chop_feeds_the_long_build {
+            return None;
+        }
         let remaining = g.item_cost_for_city(pid, cid, item) - city.production;
         let per_turn = g.city_yields(cid).production;
         if remaining <= per_turn {
@@ -251,7 +268,7 @@ impl AdvancedAi {
         uid: u32,
         strategy: GrandStrategy,
     ) -> Option<bool> {
-        if !self.chop_feeds_the_long_build {
+        if !self.chop_feeds_the_long_build && !self.chop_feeds_the_space_race {
             return None;
         }
         let from = g.units.get(&uid)?.pos;
@@ -369,6 +386,36 @@ mod tests {
         opt_in_off_in_both_controllers("chop-feeds-the-long-build", |ai| {
             ai.chop_feeds_the_long_build
         });
+    }
+
+    #[test]
+    fn chop_feeds_the_space_race_is_a_native_opt_in_off_in_both_controllers() {
+        opt_in_off_in_both_controllers("chop-feeds-the-space-race", |ai| {
+            ai.chop_feeds_the_space_race
+        });
+    }
+
+    /// The space-race gene alone clears for a project and for nothing else.
+    #[test]
+    fn the_space_race_gene_alone_ignores_a_district() {
+        let (mut g, mut ai, city, builder, wood) = fixture();
+        ai.disable_chop_feeds_the_long_build();
+        ai.enable_chop_feeds_the_space_race();
+
+        build(&mut g, city, campus(), 10_000.0);
+        assert_eq!(ai.chop_long_build(&g, 0, city), None);
+        assert_eq!(
+            ai.chop_feeds_the_long_build_step(&mut g, 0, builder, GrandStrategy::Science),
+            None
+        );
+        assert_eq!(g.map.tiles[&wood].feature, Some(crate::name!("forest")));
+
+        build(&mut g, city, satellite(), 10_000.0);
+        assert_eq!(
+            ai.chop_feeds_the_long_build_step(&mut g, 0, builder, GrandStrategy::Science),
+            Some(true)
+        );
+        assert_eq!(g.map.tiles[&wood].feature, None, "the Forest is cleared");
     }
 
     #[test]
