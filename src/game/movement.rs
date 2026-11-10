@@ -70,13 +70,24 @@ impl Game {
         if let Some(cached) = self.query_memo.air_patrols.borrow().as_ref() {
             return Arc::clone(cached);
         }
-        let patrols: AirPatrols = Arc::new(
-            self.units
-                .values()
-                .filter(|unit| unit.air_patrol)
-                .filter_map(|unit| unit.air_patrol_pos.map(|pos| (unit.owner, pos)))
-                .collect(),
-        );
+        let roster = self.units.vision_epoch();
+        let stable = self.query_memo.air_patrols_stable.borrow();
+        let reusable = stable
+            .as_ref()
+            .filter(|(epoch, _)| *epoch == roster)
+            .map(|(_, patrols)| Arc::clone(patrols));
+        drop(stable);
+        let patrols: AirPatrols = reusable.unwrap_or_else(|| {
+            let built: AirPatrols = Arc::new(
+                self.units
+                    .values()
+                    .filter(|unit| unit.air_patrol)
+                    .filter_map(|unit| unit.air_patrol_pos.map(|pos| (unit.owner, pos)))
+                    .collect(),
+            );
+            *self.query_memo.air_patrols_stable.borrow_mut() = Some((roster, Arc::clone(&built)));
+            built
+        });
         if self.query_memo.yields.borrow().is_some() {
             *self.query_memo.air_patrols.borrow_mut() = Some(Arc::clone(&patrols));
         }

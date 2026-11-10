@@ -536,7 +536,7 @@ fn science_victory_points_cross_the_live_bridge_for_every_race() {
     let fallback = mirror.game.victory_races(0, 0);
     assert_eq!(
         fallback.exoplanet_distance_target,
-        crate::game::EXOPLANET_DESTINATION
+        mirror.game.exoplanet_destination()
     );
     assert_eq!(
         fallback.exoplanet_speed, 1.0,

@@ -91,4 +91,32 @@ assert(native.operation_failure:find("probe_threw[p4r]:", 1, true) == 1 and stat
 state, native = run("normal", "occupied")
 assert(native.operation_failure == nil and state.calls == 0,
     "other classifier outcomes incur no extra native query")
+
+-- A queue's watch re-reads the same stuck leg every tick; it is named once.
+do
+    local state = { calls = 0, emitted = {}, fallbacks = 0 }
+    local why = "no_path"
+    local env = setmetatable({
+        cfg = { MoveFallback = true },
+        emit = function(kind, payload) state.emitted[#state.emitted + 1] = { kind, payload } end,
+        unitTypeName = function() return "UNIT_ARCHER" end,
+    }, { __index = _G })
+    env.CivvisBoard = {
+        moveAttempts = {}, stats = { move_noop = 0 },
+        classifyNoop = function() return why end,
+        noopEvidence = function() state.calls = state.calls + 1; return {} end,
+        fallbackStep = function() state.fallbacks = state.fallbacks + 1; return nil end,
+    }
+    local body = assert(source:match("(CivvisBoard%.moveNoop = function.-\nend;)"))
+    local chunk = assert(loadstring(body)); setfenv(chunk, env); chunk()
+    local board, entry = env.CivvisBoard, { expect = { x = 8, y = 9 }, wait = 9 }
+    assert(board.moveNoop({}, 0, 7, {}, entry, 40, 6, 9, 3) == false)
+    assert(#state.emitted == 1 and entry.noop_no_path == true, "no route is named and recorded")
+    for _ = 1, 20 do board.moveNoop({}, 0, 7, {}, entry, 40, 6, 9, 3) end
+    assert(#state.emitted == 1 and state.calls == 1 and board.stats.move_noop == 1,
+        "a repeated answer is neither probed again, counted nor reported")
+    why = "occupied"
+    board.moveNoop({}, 0, 7, {}, entry, 40, 6, 9, 3)
+    assert(#state.emitted == 2 and state.emitted[2][2].why == "occupied", "a new answer is news")
+end
 print("native move refusal detail checks passed")
