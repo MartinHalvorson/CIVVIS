@@ -6910,7 +6910,7 @@ fn unfounded_empire_reserves_only_one_holy_site_for_the_prophet_race() {
         1,
         24,
         16,
-        crate::rng::fixture_seed("HOLYSITE", 91_773),
+        crate::rng::fixture_seed("HOLYSITE", 91_774),
         120,
         0,
         false,

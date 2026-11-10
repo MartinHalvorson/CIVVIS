@@ -7035,7 +7035,6 @@ def _play(args: argparse.Namespace) -> int:
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
-    events.close()
     mirror_beat.set()
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
@@ -7072,6 +7071,11 @@ def _play(args: argparse.Namespace) -> int:
               flush=True)
         time.sleep(OPERATOR_RETIRE_SETTLE_S)
     end_mark("held")
+    # After the hold: `hold_native_victory` records the movie's callbacks and the
+    # `victory_presentation_complete` receipt the publisher requires. Closed
+    # before it, the first win to reach that code (civvis-20261110T065910Z)
+    # raised `I/O operation on closed file` and lost both.
+    events.close()
     # No rescue may click into a game that is being quit (`DesktopRescueQueue`).
     desktop_rescues.close(30.0)
     game_stopped = False

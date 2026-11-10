@@ -2356,3 +2356,38 @@ The engine before this change measures v49's **18,828 decisions /
 anchor profiles are unchanged. The anchor is still pinned to the same five
 profiles. This re-pin records a rules boundary and does not establish stronger
 play.
+
+## v51 (2026-11-10) — Tribal Villages follow AddGoodies and starts keep the wonder buffer
+
+#4904 moves two map rules onto the shipped scripts. `AddGoodies` now places the
+Tribal Villages last, one per 128 plots walked on a coin flip, off resources and
+clear of every start by `GoodyRange` 3. A start site now refuses a Natural Wonder
+at exactly the buffer distance, as `__NaturalWonderBuffer` does. Live games back
+the village rule: 193 villages in 47 games, none on a resource and none nearer
+than 3 to another. Terrain is unchanged, but villages and the camps that avoid
+them moved. Every controller, `AdvancedAi::legacy()` included, now plays on
+these worlds.
+
+The engine before this change measures v50's **18,801 decisions /
+`0xcedd_2626_df03_b554`**. The corrected engine measures **18,921 decisions /
+`0xc0d7_2582_ba49_717e`**. The legacy planning configuration and the five
+anchor profiles are unchanged. The anchor is still pinned to the same five
+profiles. This re-pin records a rules boundary and does not establish stronger
+play.
+
+## v52 (2026-11-10) — a Builder works on bare ground
+
+A rules correction in `Game::valid_improvements` (`src/game/city.rs`). The
+simulator let a Builder build over a different improvement, and the host
+refuses it: across 101 live logs, 98 such orders failed and 7 worked
+(`docs/eval/2026-09-22-strategic-improvement-replacement.md` found the same
+refusal). An improved tile now offers nothing, except the improvement that
+connects a strategic deposit the current one does not, which the agent performs
+as `REMOVE_IMPROVEMENT` and then the build. Every controller,
+`AdvancedAi::legacy()` included, now plays under the corrected offer.
+
+The engine before this change measures **18,921 decisions /
+`0xc0d7_2582_ba49_717e`**. The corrected engine measures **18,761 decisions /
+`0x9604_d47e_0940_3530`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

@@ -1,0 +1,16 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "religion-seat-charts-the-rivals",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 5 boards of one live Deity Russia Religious-target game (civvis-20261110T054430Z at t90, t100, t110, t125, t140), each the run's events.jsonl cut at frame 0 of the turn. The game bought fifteen Apostles between t75 and t150 and sent no spread order in those turns: every rival city it knew already followed its faith while it had seen 3 of Rome's 10 cities, 1 of Byzantium's 8 and none of Arabia's 8 at t110. Both arms run one frozen civvis_orders --resumed built from the branch (e056d7402d) with the run's own requested genome less this gene, which the live run carried in its earlier two-part form; the on arm adds --with religion-seat-charts-the-rivals. Orders differ on 5 of 5 boards: 3, 4, 3, 7 and 5 religious units that have no move order in the off arm are ordered toward unexplored ground beside the rivals' known cities in the on arm.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-religion-seat-charts-the-rivals-spreaders.native-queries.tar.xz",
+  "sha256": "5f0419342f31d4dc14d6ec31b7e13b57b1f57cb3a5d41c678d3702eee875bb13"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json"
+ ]
+}

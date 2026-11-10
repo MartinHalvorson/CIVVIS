@@ -275,7 +275,9 @@ impl AdvancedAi {
                 return true;
             }
         }
-        false
+        // `religion-seat-charts-the-rivals`: nothing in sight to convert, so
+        // walk into an under-charted rival's ground. False off.
+        self.religion_seat_spreader_charts(g, pid, uid, &religion, offensive)
     }
 
     pub(super) fn advanced_religious_step(
