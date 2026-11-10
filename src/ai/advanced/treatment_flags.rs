@@ -100,6 +100,9 @@ impl AdvancedAi {
         /// Opt-in gene `kristina-fills-to-theme`; see
         /// `advanced/kristina_fills_to_theme.rs`.
         base.kristina_fills_to_theme => enable_kristina_fills_to_theme, disable_kristina_fills_to_theme;
+        /// Opt-in gene `band-plays-what-it-can-reach`; see
+        /// `advanced/band_plays_what_it_can_reach.rs`.
+        base.band_plays_what_it_can_reach => enable_band_plays_what_it_can_reach, disable_band_plays_what_it_can_reach;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -158,6 +161,9 @@ impl AdvancedAi {
         /// `culture-seat-appoints-pingala-first`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_seat_appoints_pingala_first => enable_culture_seat_appoints_pingala_first, disable_culture_seat_appoints_pingala_first;
+        /// `denial-war-needs-the-lane-edge`: see
+        /// `advanced/denial_war_needs_the_lane_edge.rs`.
+        denial_war_needs_the_lane_edge => enable_denial_war_needs_the_lane_edge, disable_denial_war_needs_the_lane_edge;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -165,6 +171,8 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-at-a-quiet-parity`; see
         /// `AdvancedAi::faith_strike_at_a_quiet_parity`.
         faith_strike_at_a_quiet_parity => enable_faith_strike_at_a_quiet_parity, disable_faith_strike_at_a_quiet_parity;
+        /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
+        flower_power_in_the_dark => enable_flower_power_in_the_dark, disable_flower_power_in_the_dark;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
