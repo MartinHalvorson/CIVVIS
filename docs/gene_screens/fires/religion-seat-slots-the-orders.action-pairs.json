@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-slots-the-orders",
+  "scope": "Same candidate binary and immutable actual native Russia reads; only this bit differs. Resumed one-shot proposal activation, not execution, full-history reproduction or strength. All actual query reads were checked against sealed input bytes. t84 uses the final original read because the original native request replanned during its read sequence.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-religion-slots-the-orders.native-queries.tar.xz",
+    "sha256": "3d0412cf105f7b3cde033a05f52bb0ca3eefdafb71a0b5e9bd7867a75652036b"
+  },
+  "members": [
+    "native-queries/t84/result.json",
+    "native-queries/t89/result.json",
+    "native-queries/t92/result.json",
+    "native-queries/t98/result.json"
+  ]
+}
