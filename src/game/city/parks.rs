@@ -111,7 +111,6 @@ impl Game {
         }
         if let Some(owner) = owner {
             appeal += self.empire_wonder_effect(owner, "empire_appeal") as i32;
-            appeal += self.empire_wonder_effect(owner, "empire_tile_appeal") as i32;
         }
         if let Some(city) = tile
             .owner_city

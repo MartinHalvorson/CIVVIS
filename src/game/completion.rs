@@ -826,7 +826,6 @@ impl Game {
         if spec.domain.as_deref().is_none() && spec.class == "military" {
             xp_pct += self.city_building_effect(city, "all_land_unit_xp_pct");
         }
-        let starting_xp = self.city_building_effect(city, "unit_starting_xp") as i64;
         let cavalry_movement = if spec.cavalry {
             self.city_building_effect(city, "cavalry_movement")
         } else {
@@ -848,7 +847,6 @@ impl Game {
         let unit = self.units.get_mut(&uid).unwrap();
         if spec.earns_xp {
             unit.xp_bonus_pct += xp_pct;
-            unit.xp += starting_xp;
         }
         if spec.earns_xp && (embrasure_promotion || allied_promotion) {
             // A free promotion is represented by exactly enough XP to expose
