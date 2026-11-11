@@ -170,8 +170,25 @@
   },
   "archive": {
     "path": "docs/eval/2026-11-11-scouts-do-not-fill-the-conquest-force.native-queries.tar.xz",
-    "bytes": 70360,
-    "sha256": "f3ca077199687fc1ebf183de3bab8d622348aefcebfa5217bc6caa03f021a891"
+    "bytes": 70936,
+    "sha256": "c21185fd7df696c832172bd3dab652cf9c3236af0940d3724c42a3ddf90d35eb"
   },
-  "strength_scope": "Development correctness evidence. Native Domination win-rate improvement remains unverified."
+  "strength_scope": "Development correctness evidence. Native Domination win-rate improvement remains unverified.",
+  "integrated_validation": {
+    "source_commit": "64af26a510460dd0837779ef6a039a5a28fa58a4",
+    "main_merge": "c08d3f1385ae2fc94921736594f854a1071b6450",
+    "first_capital_tests": 47,
+    "early_conquest_tests": 79,
+    "failures": 0,
+    "profile": "ci, opt-level0, 16codegen, debug assertions on",
+    "scope": "Includes stricter strike guards #5078; force membership test now proves all six real bodies fit despite closer Scouts, independently of declaration vetoes."
+  },
+  "initial_required_ci": {
+    "head": "80db94c8f17c711159c58ea7dcf1fb754c8b9372",
+    "all_checks": "SUCCESS",
+    "cargo_run": 42980732522,
+    "rust_tests_passed": 8272,
+    "rust_tests_skipped": 53,
+    "scope": "Before integrating #5078. Final integrated head must pass its own required CI."
+  }
 }
