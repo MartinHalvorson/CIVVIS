@@ -25,9 +25,18 @@
   ],
   "combined_patch_sha256": "d7ca9eae3154c92ed57c5f1e34a7ea15dc0cd1dabae814ae88f9424f91319862",
   "ai_rules_and_toolchain_blobs_unchanged": true,
-  "web_qualification_run": null,
-  "native_qualification_run": null,
+  "web_qualification_run": 43019908623,
+  "native_qualification_run": 43019913478,
   "full_game_results": null,
   "promotion_run": null,
-  "notes": "Source snapshot contains only already-merged performance patches. Main keeps its newer AI changes. Promotion requires exact public-baseline gameplay/save parity and measured full-game gains."
+  "notes": "Source snapshot contains only already-merged performance patches. Main keeps its newer AI changes. Promotion requires exact public-baseline gameplay/save parity and measured full-game gains.",
+  "quality_qualification_run": 43019917896,
+  "native_requested_tests": {
+    "lib": [
+      "game",
+      "idmap",
+      "name"
+    ]
+  },
+  "native_requested_toolchain": "1.99.1"
 }
