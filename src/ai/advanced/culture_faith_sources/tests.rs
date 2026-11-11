@@ -703,3 +703,206 @@ fn braves_the_barbarians_claims_beside_a_barbarian() {
         "on: the Barbarians no longer hold the claim"
     );
 }
+
+/// The specialty district families `cid`'s menu offers.
+fn menu_families(g: &Game, cid: u32) -> Vec<Name> {
+    g.producible_items(0, cid)
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::District { district, .. } if g.rules.districts[district].specialty => {
+                Some(g.district_family(district))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The cities with a Holy Site plot and a Campus on the menu; the small
+/// fixture territories leave some without.
+fn ready_cities(g: &Game, cities: &[u32]) -> Vec<u32> {
+    cities
+        .iter()
+        .copied()
+        .filter(|cid| {
+            BasicAi::first_district_item(g, 0, *cid, "holy_site").is_some()
+                && menu_families(g, *cid).contains(&crate::name!("campus"))
+        })
+        .collect()
+}
+
+#[test]
+fn version_three_keeps_the_last_slot_for_the_holy_site() {
+    let (mut g, mut ai, _, cities) = fixture(3);
+    let ready = ready_cities(&g, &cities);
+    assert!(ready.len() >= 2, "the fixture has two ready cities");
+    let (kept, open) = (ready[0], ready[1]);
+    // Population four: two slots, the Theater Square in one.
+    g.cities.get_mut(&kept).unwrap().pop = 4;
+    assert!(
+        menu_families(&g, kept).contains(&crate::name!("campus")),
+        "the fixture offers a Campus beside the Theater Square"
+    );
+    ai.enable_culture_faith_site_per_theater_2();
+    assert!(
+        ai.culture_faith_hold_the_slots(&mut g, 0).is_none(),
+        "version two holds nothing"
+    );
+    ai.disable_culture_faith_site_per_theater_2();
+    ai.enable_culture_faith_site_per_theater_3();
+    let before = Arc::clone(&g.blocked_districts);
+    let held = ai.culture_faith_hold_the_slots(&mut g, 0);
+    assert!(held.is_some(), "the one-slot Theater city keeps it");
+    let menu = menu_families(&g, kept);
+    assert!(
+        menu.contains(&crate::name!("holy_site")),
+        "the Holy Site stays on the menu: {menu:?}"
+    );
+    assert!(
+        menu.iter().all(|family| *family == "holy_site"),
+        "every other specialty district stands down: {menu:?}"
+    );
+    assert!(
+        menu_families(&g, open).contains(&crate::name!("campus")),
+        "a city with two free slots keeps its Campus"
+    );
+    AdvancedAi::culture_faith_release_the_slots(&mut g, held);
+    assert!(Arc::ptr_eq(&before, &g.blocked_districts));
+    assert!(menu_families(&g, kept).contains(&crate::name!("campus")));
+}
+
+#[test]
+fn version_three_releases_the_slot_once_the_holy_site_is_laid() {
+    let (mut g, mut ai, _, cities) = fixture(3);
+    let kept = ready_cities(&g, &cities)[0];
+    g.cities.get_mut(&kept).unwrap().pop = 4;
+    ai.enable_culture_faith_site_per_theater_3();
+    let site = BasicAi::first_district_item(&g, 0, kept, "holy_site").expect("a Holy Site plot");
+    g.apply(
+        0,
+        &Action::Produce {
+            city: kept,
+            item: site,
+        },
+    )
+    .unwrap();
+    assert!(
+        !ai.culture_faith_keeps_the_slot(&g, 0, kept),
+        "the Holy Site's foundation fills the slot"
+    );
+}
+
+#[test]
+fn version_three_keeps_the_slot_before_astrology() {
+    let (mut g, mut ai, _, cities) = fixture(3);
+    let kept = ready_cities(&g, &cities)[0];
+    g.cities.get_mut(&kept).unwrap().pop = 4;
+    g.players[0].techs.remove(&crate::name!("astrology"));
+    ai.enable_culture_faith_site_per_theater_3();
+    assert!(ai.culture_faith_keeps_the_slot(&g, 0, kept));
+    let held = ai.culture_faith_hold_the_slots(&mut g, 0);
+    assert!(
+        !menu_families(&g, kept).contains(&crate::name!("campus")),
+        "the Campus waits for the Holy Site"
+    );
+    AdvancedAi::culture_faith_release_the_slots(&mut g, held);
+}
+
+#[test]
+fn version_three_lifts_the_site_cap_and_the_faith_ceiling() {
+    let (mut g, mut ai, _, _) = fixture(7);
+    ai.enable_culture_faith_site_per_theater_2();
+    assert_eq!(ai.culture_faith_source_budget(&g, 0), Some(6));
+    ai.disable_culture_faith_site_per_theater_2();
+    ai.enable_culture_faith_site_per_theater_3();
+    assert_eq!(
+        ai.culture_faith_source_budget(&g, 0),
+        Some(7),
+        "a site for every Theater city"
+    );
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        0,
+        Yields {
+            faith: 170.0,
+            ..Default::default()
+        },
+    );
+    assert!(ai.culture_faith_source_budget(&g, 0).is_some());
+    ai.disable_culture_faith_site_per_theater_3();
+    ai.enable_culture_faith_site_per_theater_2();
+    assert!(
+        ai.culture_faith_source_budget(&g, 0).is_none(),
+        "version two stops at 140 for seven cities"
+    );
+    ai.disable_culture_faith_site_per_theater_2();
+    ai.enable_culture_faith_site_per_theater_3();
+    Arc::make_mut(&mut g.observed_yield_adjustments).insert(
+        0,
+        Yields {
+            faith: 280.0,
+            ..Default::default()
+        },
+    );
+    assert!(
+        ai.culture_faith_source_budget(&g, 0).is_none(),
+        "forty a city"
+    );
+}
+
+#[test]
+fn version_three_takes_astrology_first_and_carries_version_two() {
+    let (mut g, mut ai, plan, _) = fixture(4);
+    g.players[0].techs.remove(&crate::name!("astrology"));
+    ai.enable_culture_faith_site_per_theater_2();
+    assert!(ai.culture_faith_astrology_due(&g, 0));
+    assert!(!ai.culture_faith_astrology_first(&g, 0), "version two only");
+    ai.disable_culture_faith_site_per_theater_2();
+    ai.enable_culture_faith_site_per_theater_3();
+    assert!(ai.culture_faith_astrology_first(&g, 0));
+    g.players[0].techs.insert(crate::name!("astrology"));
+    assert!(!ai.culture_faith_astrology_first(&g, 0));
+    let mut claimed = Vec::new();
+    while let Some(city) = claim(&mut g, &ai, &plan) {
+        assert!(!claimed.contains(&city), "one source per city at a time");
+        claimed.push(city);
+    }
+    assert!(claimed.len() >= 2, "the parallel claim: {claimed:?}");
+}
+
+#[test]
+fn version_three_keeps_the_slot_through_an_attack() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    let kept = ready_cities(&g, &cities)[0];
+    let turn = g.turn;
+    let city = g.cities.get_mut(&kept).unwrap();
+    city.pop = 4;
+    city.last_attacked = turn;
+    ai.enable_culture_faith_site_per_theater_3();
+    assert!(ai.culture_faith_keeps_the_slot(&g, 0, kept));
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan)
+            .is_none_or(|(city, _, _)| city != kept),
+        "the claim itself still waits out the attack"
+    );
+}
+
+#[test]
+fn version_three_claims_every_theater_city_in_one_pass() {
+    let (mut g, mut ai, plan, _) = fixture(4);
+    ai.enable_culture_faith_site_per_theater_3();
+    let mut expected = Vec::new();
+    let mut board = g.clone();
+    while let Some(city) = claim(&mut board, &ai, &plan) {
+        expected.push(city);
+    }
+    assert!(expected.len() >= 2, "the fixture has two sources to claim");
+    ai.claim_culture_faith_source(&mut g, 0, &plan);
+    for city in expected {
+        assert!(
+            g.cities[&city]
+                .queue
+                .first()
+                .is_some_and(|item| AdvancedAi::culture_faith_item(&g, item)),
+            "city {city} claimed its source in the same pass"
+        );
+    }
+}

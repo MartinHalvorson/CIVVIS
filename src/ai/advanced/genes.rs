@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A city under fire opens the Rock Band bank to the defence only: the
+    // Great Person pass still leaves it. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "band-bank-bars-people-under-fire", field: "band_bank_bars_people_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_band_bank_bars_people_under_fire, disable: AdvancedAi::disable_band_bank_bars_people_under_fire },
     // A Rock Band's two-level promotion wins its first pick only where three
     // such stages are open: one Entertainment Complex or Water Park is a
     // concert or two at level 3 and a career at level 1. Opt-in; see
@@ -5615,6 +5619,13 @@ pub const GENES: &[Gene] = &[
     // 1,331 sat with a near-done Monument behind another head. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "culture-seat-monuments-2", field: "culture_seat_monuments_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments_2, disable: AdvancedAi::disable_culture_seat_monuments_2 },
+    // `culture-faith-site-per-theater-3`: version two without the caps of six
+    // Holy Sites and 160 Faith, a Theater city's last free district slot kept
+    // for its Holy Site, and Astrology ahead of the production technologies.
+    // Live Pericles 232642Z put a Diplomatic Quarter, a Commercial Hub and two
+    // Industrial Zones in those slots; the Holy Sites came 16-68 turns later.
+    // Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-3", field: "culture_faith_site_per_theater_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_3, disable: AdvancedAi::disable_culture_faith_site_per_theater_3 },
     // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
     // lets the culture claims pass the near-rival deterrent only while our
     // power is at least half the near neighbour's. Opt-in; see
@@ -5650,6 +5661,12 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Live Deity Pericles 11-10: heretic strikes at t127 (232642Z), t130
+    // (204138Z) and t133 (220038Z) opened 29-32-turn wars on the neighbours
+    // whose land held our Rock Bands' stages. A Culture seat holds the strike
+    // once Cold War is known or its band bank is open, and ends a strike war
+    // then as soon as the host signs. Opt-in; see `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-spares-the-stages", field: "faith_strike_spares_the_stages", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_spares_the_stages, disable: AdvancedAi::disable_faith_strike_spares_the_stages },
     // Pericles Deity 11-10 (234227Z): Field Cannons took Athens (82% of its
     // last eight turns' damage) while the city struck others 27 times; they
     // were 59 of 383 gun-turns before t130 and no siege-class gun. See
@@ -5769,6 +5786,10 @@ pub const GENES: &[Gene] = &[
     // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
     // none. See `advanced/space_denial_rocket_scientist.rs`.
     Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
+    // Deity 11-10, 28 games t2-80: the stall limit counted decision frames (2-3
+    // a live turn), so one held turn, or a Settler that ended its move short,
+    // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
+    Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
