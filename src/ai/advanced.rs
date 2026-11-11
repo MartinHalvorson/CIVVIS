@@ -26153,7 +26153,11 @@ impl AdvancedAi {
             // `domination-target-gets-its-breaker`: the Domination target's
             // breaker, when the war or the declaration waits on it. Exact
             // no-op while the gene is off.
-            if !self.buy_domination_breaker(g, pid, &plan) {
+            // `city-state-before-the-first-capital`: the stepping stone's Ram
+            // under `breaker-bought-for-the-siege`. `false` with it off.
+            if !self.buy_domination_breaker(g, pid, &plan)
+                && !self.city_state_stone_breaker_purchase(g, pid)
+            {
                 self.siege_breaker_purchase(g, pid);
             }
         }

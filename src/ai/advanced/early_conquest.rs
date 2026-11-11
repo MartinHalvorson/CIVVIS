@@ -707,9 +707,13 @@ impl AdvancedAi {
     /// has a real target and can reserve production, it gets a minimum
     /// preparation window. A near-assembled force may receive one fixed,
     /// bounded extension at that deadline.
-    fn conquest_commit_due(&self, g: &Game, opening: &ConquestOpening) -> u32 {
-        let base = Self::conquest_commit_base(g, opening, self.conquest_preparation(g));
-        base.max(opening.grace_until.unwrap_or(base))
+    pub(super) fn conquest_commit_due(&self, g: &Game, opening: &ConquestOpening) -> u32 {
+        let base = Self::conquest_commit_base(g, opening, self.conquest_preparation(g))
+            .max(self.city_state_stone_commit_floor(g));
+        let due = base.max(opening.grace_until.unwrap_or(base));
+        // `city-state-before-the-first-capital`: the clock holds a stone whose
+        // force is still being raised or walking. `due` with the gene off.
+        self.city_state_stone_commit_hold(g, due)
     }
 
     /// Whether the reservation is open at all: the gene is on, an opening
@@ -768,7 +772,7 @@ impl AdvancedAi {
     }
 
     /// Wall breakers the empire holds or has queued anywhere.
-    fn conquest_breakers_held(g: &Game, pid: usize) -> usize {
+    pub(super) fn conquest_breakers_held(g: &Game, pid: usize) -> usize {
         let breaker = |kind: &str| matches!(kind, "battering_ram" | "siege_tower");
         let standing = g
             .units
@@ -843,7 +847,10 @@ impl AdvancedAi {
         {
             return 0.0;
         }
-        CONQUEST_RESERVATION_BASE
+        // `city-state-before-the-first-capital`: the stepping stone's walls
+        // are known from its naming, so its Ram goes ahead of the bodies.
+        // Zero with the gene off.
+        CONQUEST_RESERVATION_BASE + self.city_state_stone_breaker_lead()
     }
 
     /// A body the strike force's ranged half counts: a land, non-siege
@@ -1073,12 +1080,17 @@ impl AdvancedAi {
         ) {
             return false;
         }
-        let mut best: Option<(f64, Item)> = None;
+        // `city-state-before-the-first-capital`: the stepping stone's Ram is
+        // claimed ahead of every body (its walls are known from the naming).
+        // Never with the gene off.
+        let breaker_first = self.city_state_stone_breaker_lead() > 0.0;
+        let mut best: Option<((bool, f64), Item)> = None;
         for item in g.producible_items(pid, cid) {
             let Item::Unit { unit } = &item else { continue };
+            let breaker = self.conquest_breaker_value(g, pid, cid, unit.as_str()) > 0.0;
             if self.conquest_reservation(g, pid, cid, &g.rules.units[unit], &counts, threatened)
                 <= 0.0
-                && self.conquest_breaker_value(g, pid, cid, unit.as_str()) <= 0.0
+                && !breaker
             {
                 continue;
             }
@@ -1086,11 +1098,14 @@ impl AdvancedAi {
             // vetoes. A reservation does not license an obsolete or insolvent
             // build that the strategic governor would refuse.
             let value = self.production_value(g, pid, cid, &item, plan, &counts);
+            let key = (breaker_first && breaker, value);
             if value.is_finite()
                 && value > -1_000.0
-                && best.as_ref().is_none_or(|(old, _)| value > *old)
+                && best
+                    .as_ref()
+                    .is_none_or(|(old, _)| (key.0 && !old.0) || (key.0 == old.0 && key.1 > old.1))
             {
-                best = Some((value, item));
+                best = Some((key, item));
             }
         }
         let Some((_, item)) = best else { return false };
@@ -1607,8 +1622,10 @@ impl AdvancedAi {
         self.conquest_revalidate_rally(g, pid);
         let preparation = self.conquest_preparation(g);
         let reserved = self.conquest_force_size();
+        // `city-state-before-the-first-capital`: zero with the gene off.
+        let floor = self.city_state_stone_commit_floor(g);
         if let Some(opening) = self.conquest_opening.as_mut() {
-            let base = Self::conquest_commit_base(g, opening, preparation);
+            let base = Self::conquest_commit_base(g, opening, preparation).max(floor);
             if opening.grace_until.is_none()
                 && opening.assembled.is_none()
                 && g.turn >= base
@@ -1729,14 +1746,18 @@ impl AdvancedAi {
                     return;
                 }
                 if let Some(assembled) = opening.assembled {
+                    // `city-state-before-the-first-capital`: not while the
+                    // stone's bill is covered and only a breaker that is
+                    // coming is missing. `false` with the gene off.
                     if g.turn.saturating_sub(assembled)
                         >= g.standard_duration(CONQUEST_ABANDON_TURNS)
+                        && !self.city_state_stone_waits_for_its_breaker(g, pid, opening)
                     {
-                        self.conquest_release(
-                            g,
+                        let why = self.city_state_stone_patience_reason(g, pid).unwrap_or(
                             "the force has stood at the rally for the whole patience window \
                              without covering the city's bill",
                         );
+                        self.conquest_release(g, why);
                         return;
                     }
                 }
