@@ -61,6 +61,32 @@
 //! war with us within 30 turns only about one time in five, so this war is
 //! a new one, which is why parity stays a bar and every other gate holds.
 //!
+//! ## `faith-strike-spares-the-stages`
+//!
+//! **Why (live Deity Online Pericles, 2026-11-10).** A Culture seat wins with
+//! Rock Bands, and a band cannot play in the land of a civ we are at war
+//! with. Three strikes came in the band phase and each war ran about thirty
+//! turns: civvis-20261110T232642Z struck India at t127, three turns after
+//! Cold War (29 turns of war; 113 of the game's 208 band-turns fell inside
+//! it, while India held 15-23 legal concert plots 5-10 tiles from our cities
+//! whenever we were at peace, and the first eight bands walked 10+ turns to
+//! the Mapuche overseas); 220038Z struck France at t133 (32+ turns, 51
+//! band-turns, our cities 8 to 5); 204138Z struck Egypt at t130 (31 turns,
+//! one city lost). The first already knew Cold War; the other two had the
+//! band bank open (`culture_band_bank`, Nationalism known at t128 in both).
+//!
+//! **What the gene does.** On a seat whose live target is Culture, once Cold
+//! War is known or the band bank is open, the strike is held ("Holding the
+//! heretic strike on X | faith-strike-spares-the-stages: ..."), and a war the
+//! strike opened is ended as soon as the host's minimum term allows: the
+//! faith war's exit offers peace without waiting for the spreaders to leave,
+//! and it no longer refuses peace while a city of ours is being converted.
+//! A war the plan targets, an urgent victory threat, and every other war and
+//! gate are unchanged. In those three games the seat already offered peace
+//! from three to six turns into the war on other grounds and the host did not
+//! sign for 29 turns or more, so holding the declaration is what saves the
+//! stages; the exit only fills the turns when no other clause offers.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -201,6 +227,34 @@ impl AdvancedAi {
         })
     }
 
+    /// `faith-strike-spares-the-stages`: whether a live Culture target's band
+    /// economy has begun: Cold War is known, or the band bank is open
+    /// (`culture_band_bank`). `false` with the gene off.
+    fn faith_strike_stages_live(&self, g: &Game, pid: usize) -> bool {
+        self.faith_strike_spares_the_stages
+            && !self.lane_lost
+            && self.active_victory_target(g) == Some(VictoryTarget::Culture)
+            && (g.players[pid].civics.contains(&crate::name!("cold_war"))
+                || self.culture_band_bank(g, pid) > 0.0)
+    }
+
+    /// `faith-strike-spares-the-stages`: whether the faith war on record with
+    /// `rival` is a heretic strike's war that now ends as soon as the host
+    /// signs: the strike opened it and the band economy has begun. `false`
+    /// with the gene off.
+    pub(crate) fn faith_strike_war_spares_the_stages(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        self.faith_strike_spares_the_stages
+            && self.faith_war_before_the_flip_war.is_some_and(|war| {
+                war.rival == rival && self.faith_strike_last.get(&rival) == Some(&war.opened)
+            })
+            && self.faith_strike_stages_live(g, pid)
+    }
+
     /// The first gate that holds a strike on `rival`, as a gate key and its
     /// journal reason; `None` when every gate is clear.
     fn faith_strike_gate(
@@ -211,6 +265,17 @@ impl AdvancedAi {
     ) -> Option<(&'static str, String)> {
         if !self.campaign_target_legal(g, pid, rival) {
             return Some(("legal", "not a legal target".to_string()));
+        }
+        if self.faith_strike_stages_live(g, pid) {
+            let live = if g.players[pid].civics.contains(&crate::name!("cold_war")) {
+                "Cold War is known"
+            } else {
+                "the band bank is open"
+            };
+            return Some((
+                "stages",
+                format!("{live}, and its land holds the stages our Rock Bands play"),
+            ));
         }
         if let Some(last) = self.faith_strike_last.get(&rival) {
             let ago = g.turn.saturating_sub(*last);
@@ -358,9 +423,14 @@ impl AdvancedAi {
             return;
         }
         self.faith_war_held_noted.insert(rival, (g.turn, gate));
+        let tag = if gate == "stages" {
+            "faith-strike-spares-the-stages"
+        } else {
+            "faith-strike-wipes-the-spreaders"
+        };
         think!(self.journal(), Military, Detail,
                "Holding the heretic strike on {}", g.players[rival].civ;
-               "faith-strike-wipes-the-spreaders: {reason}");
+               "{tag}: {reason}");
     }
 
     /// `faith-strike-wipes-the-spreaders`: declare on the rival whose

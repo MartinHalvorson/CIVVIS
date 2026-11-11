@@ -109,6 +109,12 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-at-level-three`; see
         /// `advanced/band_plays_at_level_three.rs`.
         base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-bank-bars-people-under-fire`; see
+        /// `advanced/culture_band_bank.rs`.
+        band_bank_bars_people_under_fire => enable_band_bank_bars_people_under_fire, disable_band_bank_bars_people_under_fire;
+        /// Opt-in gene `band-stage-needs-three-venues`; see
+        /// `advanced/band_plays_its_stage.rs`.
+        band_stage_needs_three_venues => enable_band_stage_needs_three_venues, disable_band_stage_needs_three_venues;
         /// Opt-in gene `band-stall-bars-no-host`; see
         /// `advanced/band_stall_bars_no_host.rs`.
         base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
@@ -212,6 +218,9 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `culture-faith-site-per-theater-3`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -224,6 +233,12 @@ impl AdvancedAi {
         /// `first-capital-before-the-walls`: see
         /// `advanced/first_capital_before_the_walls.rs`.
         first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// Opt-in `faith-strike-spares-the-stages`; see
+        /// `AdvancedAi::faith_strike_spares_the_stages`.
+        faith_strike_spares_the_stages => enable_faith_strike_spares_the_stages, disable_faith_strike_spares_the_stages;
+        /// Opt-in gene `every-shooter-at-the-walls`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
         /// `friendship-outlasts-the-gated-race`: see
         /// `advanced/friendship_outlasts_the_gated_race.rs`.
         friendship_outlasts_the_gated_race => enable_friendship_outlasts_the_gated_race, disable_friendship_outlasts_the_gated_race;
@@ -317,6 +332,9 @@ impl AdvancedAi {
         /// Opt-in gene `space-denial-promotes-the-rocket-scientist`; see
         /// `advanced/space_denial_rocket_scientist.rs`.
         space_denial_promotes_the_rocket_scientist => enable_space_denial_promotes_the_rocket_scientist, disable_space_denial_promotes_the_rocket_scientist;
+        /// Opt-in gene `settler-stall-counts-turns`; see
+        /// `advanced/settler_stall_counts_turns.rs`.
+        settler_stall_counts_turns => enable_settler_stall_counts_turns, disable_settler_stall_counts_turns;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
