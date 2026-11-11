@@ -2951,7 +2951,8 @@ const GUN_RESOURCE_BUY_CADENCE: u32 = 3;
 const GUN_RESOURCE_BUY_PHASE: u32 = 2;
 const GUN_RESOURCE_BUY_GOLD_RESERVE: i64 = 60;
 const GUN_RESOURCE_BUY_INCOME_FLOOR: f64 = 4.0;
-const GUN_RESOURCE_BUY_CEILING_MIN: i32 = 30;
+const GUN_RESOURCE_BUY_CEILING_MIN: i32 =
+    civvis::ai::AdvancedAi::NATIVE_RESOURCE_CASH_QUOTE_MINIMUM;
 const GUN_RESOURCE_BUY_CEILING_MAX: i32 = 900;
 /// `aluminum-ask-tops-up-gold`: the Gold a unit of the air wing's Aluminum
 /// ask may cost on top of its barter, the most the host's counter is let to
