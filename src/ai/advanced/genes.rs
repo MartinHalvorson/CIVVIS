@@ -5702,6 +5702,16 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Live Deity Macedon civvis-20261111T040704Z named the Cree capital at
+    // t16 and never declared: the reservation waited for the third city
+    // (t29), the campaign was re-aimed at Tyre (t36, t44), an interception
+    // war stopped the staging (t46), and only two of six bodies ever stood at
+    // the rally while the capital read defence 18-28 and the Cree army 104
+    // against our 226 (t40). Over 109 live Deity games a rival city within
+    // 12 tiles stood unwalled at defence 25 or less in 75, an original
+    // capital in 25. The opening keeps its window and strikes through it.
+    // Opt-in; see `advanced/first_capital_strikes_the_open_window.rs`.
+    Gene { tag: "first-capital-strikes-the-open-window", field: "first_capital_strikes_the_open_window", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_strikes_the_open_window, disable: AdvancedAi::disable_first_capital_strikes_the_open_window },
     // Live Deity Macedon, Tiny Pangaea, Online (040245Z): Washington was
     // charted at t11, 12 tiles out behind no walls, and refused at every
     // note from t12 to t62 as "no charted land walk reaches their capital":

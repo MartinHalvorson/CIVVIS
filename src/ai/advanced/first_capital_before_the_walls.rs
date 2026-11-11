@@ -177,7 +177,9 @@ impl AdvancedAi {
         if self.city_state_stone_stands() {
             super::city_state_before_the_first_capital::STONE_CITIES
         } else if self.first_capital_active() {
-            FIRST_CAPITAL_SETTLER_CITIES
+            // `first-capital-strikes-the-open-window`: two on a soft capital.
+            self.first_capital_soft_settler_cities()
+                .unwrap_or(FIRST_CAPITAL_SETTLER_CITIES)
         } else {
             super::early_conquest::CONQUEST_FIRST_SETTLER_CITIES
         }
@@ -235,6 +237,12 @@ impl AdvancedAi {
         }
         if !g.has_met(pid, rival) || !self.campaign_target_legal(g, pid, rival) {
             return Err("not met or not a legal target");
+        }
+        // `first-capital-strikes-the-open-window`: a capital whose owner we
+        // already fight belongs to the ordinary war; naming it only to release
+        // it the same frame looped nine times in live 063232Z (t53-58).
+        if self.first_capital_strikes_active() && g.is_at_war(pid, rival) {
+            return Err("we are already at war with them; the ordinary war owns their capital");
         }
         let Some(city) = Self::first_capital_of(g, rival) else {
             return Err("they no longer hold their original capital");

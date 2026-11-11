@@ -257,6 +257,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-fears-the-tech-lead`; see
         /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
         faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
+        /// `first-capital-strikes-the-open-window`: see
+        /// `advanced/first_capital_strikes_the_open_window.rs`.
+        first_capital_strikes_the_open_window => enable_first_capital_strikes_the_open_window, disable_first_capital_strikes_the_open_window;
         /// Opt-in `faith-war-on-a-small-world`; see
         /// `AdvancedAi::faith_war_on_a_small_world`.
         faith_war_on_a_small_world => enable_faith_war_on_a_small_world, disable_faith_war_on_a_small_world;

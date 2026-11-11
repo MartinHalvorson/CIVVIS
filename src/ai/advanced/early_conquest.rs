@@ -672,7 +672,11 @@ impl AdvancedAi {
 
     /// The original deadline plus `preparation` turns after reservation opens
     /// (see `AdvancedAi::conquest_preparation`).
-    fn conquest_commit_base(g: &Game, opening: &ConquestOpening, preparation: u32) -> u32 {
+    pub(super) fn conquest_commit_base(
+        g: &Game,
+        opening: &ConquestOpening,
+        preparation: u32,
+    ) -> u32 {
         g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
@@ -1237,15 +1241,23 @@ impl AdvancedAi {
         if !self.early_conquest_opening
             || plan.strategy == GrandStrategy::Recovery
             || plan.threatened_city.is_some()
-            || g.players
-                .iter()
-                .any(|other| other.id != pid && !other.is_barbarian && g.is_at_war(pid, other.id))
+            || g.players.iter().any(|other| {
+                other.id != pid
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+                    // `first-capital-strikes-the-open-window`: a home faith
+                    // war does not stop the march. `true` with the gene off.
+                    && self.first_capital_war_stops_staging(g, pid, other.id)
+            })
         {
             return None;
         }
         let opening = self.conquest_opening.as_ref()?;
+        // `first-capital-strikes-the-open-window`: the breaker walks with the
+        // force. `false` with the gene off.
+        let breaker = self.first_capital_breaker_walks(g, pid, uid);
         if opening.declared.is_some()
-            || !opening.force.contains(&uid)
+            || !(opening.force.contains(&uid) || breaker)
             || (opening.assembled.is_none() && g.turn >= self.conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
@@ -1607,6 +1619,8 @@ impl AdvancedAi {
         if self.conquest_first_turn.is_none() {
             self.conquest_first_turn = Some(g.turn);
         }
+        // `first-capital-strikes-the-open-window`: see that module.
+        self.first_capital_read_the_softness(g);
         self.conquest_count_losses(g);
         // `city-state-before-the-first-capital`: re-read the stepping stone
         // from its tile and close it on a capture, a refused war or a
@@ -1636,6 +1650,10 @@ impl AdvancedAi {
                 );
             }
         }
+        // `first-capital-strikes-the-open-window`: the deadline does not
+        // release an opening whose army was held away or whose bill is
+        // covered. No-op with the gene off.
+        self.first_capital_window_grace(g, pid);
         // A war the target opened on us before we declared is still this
         // opening's war: adopt it rather than keep waiting for an assembly
         // that the fighting has overtaken.
@@ -2148,6 +2166,17 @@ impl AdvancedAi {
         {
             opening.assembled = Some(g.turn);
         }
+        // `first-capital-strikes-the-open-window`: the bodies at the rally
+        // that cover the bill are an assembled force. No-op with it off.
+        let go = self.conquest_opening.as_ref().is_some_and(|opening| {
+            opening.assembled.is_none()
+                && self.first_capital_open_window_go(g, pid, opening).is_some()
+        });
+        if go {
+            if let Some(opening) = self.conquest_opening.as_mut() {
+                opening.assembled = Some(g.turn);
+            }
+        }
     }
 
     /// ⭐ The declaration, and the peace that closes the campaign.
@@ -2174,14 +2203,18 @@ impl AdvancedAi {
             self.conquest_peace(g, pid, &opening);
             return false;
         }
-        if opening.assembled.is_none() {
+        // `first-capital-strikes-the-open-window`: the bodies at the rally
+        // cover the bill; the share rule below is the fallback. `None` with
+        // the gene off. See `advanced/first_capital_strikes_the_open_window.rs`.
+        let go = self.first_capital_open_window_go(g, pid, &opening);
+        if opening.assembled.is_none() && go.is_none() {
             return false;
         }
         let share = self.conquest_share(g, &opening);
-        if share < CONQUEST_ASSEMBLY_SHARE {
+        if share < CONQUEST_ASSEMBLY_SHARE && go.is_none() {
             return false;
         }
-        if !self.conquest_preview_takes_the_city(g, pid, &opening) {
+        if go.is_none() && !self.conquest_preview_takes_the_city(g, pid, &opening) {
             think!(self.journal(), Military, Detail,
                    "Holding the conquest force at the rally";
                    "{:.0}% of the force is up, but the city's bill is not covered yet",
@@ -2195,6 +2228,15 @@ impl AdvancedAi {
             think!(self.journal(), Military, Detail,
                    "Holding the conquest force at the rally";
                    "city-state before the first capital: the bill is covered; {why}");
+            return false;
+        }
+        // `first-capital-strikes-the-open-window`: no strike into a city that
+        // outclasses the bodies at the rally, whichever rule assembled them.
+        // `None` with the gene off.
+        if let Some(why) = self.first_capital_outclassed(g, pid, &opening) {
+            think!(self.journal(), Military, Detail,
+                   "Holding the conquest force at the rally";
+                   "first capital before the walls: {why}");
             return false;
         }
         if !self.campaign_target_legal(g, pid, opening.target) {
@@ -2250,6 +2292,9 @@ impl AdvancedAi {
                        "walls {}, {} bodies in the force, production parity not asked",
                        g.city_max_wall_hp(city), opening.force.len());
             }
+        }
+        if let Some(go) = go.as_ref() {
+            self.first_capital_journal_the_go(g, pid, &opening, go);
         }
         if stone {
             self.city_state_stone_declared(g, pid);

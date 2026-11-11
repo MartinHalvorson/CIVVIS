@@ -7664,6 +7664,16 @@ pub struct AdvancedAi {
     /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
     /// default.
     friendship_outlasts_the_gated_race: bool,
+    /// `first-capital-strikes-the-open-window`: the first-capital opening
+    /// keeps its force and the campaign through its window, declares when
+    /// the bodies at the rally cover the bill, opens its reservation at two
+    /// cities on a soft capital, and is not released at the deadline while
+    /// its army was held away. See
+    /// `advanced/first_capital_strikes_the_open_window.rs`. Off by default.
+    first_capital_strikes_the_open_window: bool,
+    /// `first-capital-strikes-the-open-window`: whether the named capital
+    /// read soft at the start of this turn. Always `false` with the gene off.
+    first_capital_soft_now: bool,
     /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
     /// `first-capital-before-the-walls` counts uncharted ground as land in
     /// its walk to the target capital, and the nearest free scout charts the
@@ -11764,6 +11774,10 @@ mod threatened_war_holds_the_claims;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `first-capital-strikes-the-open-window`: the first-capital opening keeps
+/// its window and strikes through it. One opt-in gene; see
+/// `advanced/first_capital_strikes_the_open_window.rs`.
+mod first_capital_strikes_the_open_window;
 /// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
 /// with one landmass, for the first capital's walk. One opt-in gene; see
 /// `advanced/first_capital_walks_the_one_landmass.rs`.
