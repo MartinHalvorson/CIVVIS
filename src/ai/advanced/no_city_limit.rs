@@ -483,6 +483,20 @@ impl AdvancedAi {
             .any(|soldier| g.wdist(*soldier, city) <= NO_CITY_LIMIT_WAR_CITY_TILES)
     }
 
+    /// The city target a published plan report shows (`plan_report`, the
+    /// site's "Cities N · wants M" row): the plan's own, or the lifted
+    /// settlement target when the gene counted more on the plan's turn. No
+    /// decision reads it; without it a major holding eighteen cities would
+    /// read "wants 10".
+    pub(super) fn reported_city_target(&self, plan: &StrategicPlan) -> usize {
+        let noted = self.no_city_limit_target.get();
+        if self.no_city_limit && noted.turn == plan.assessed_turn {
+            plan.desired_cities.max(noted.cities)
+        } else {
+            plan.desired_cities
+        }
+    }
+
     /// Whether `cid` may train a Settler while the plan names a threatened
     /// city: not that city, and not one within
     /// [`NO_CITY_LIMIT_FRONT_TILES`] of it.

@@ -2,7 +2,8 @@
 # GitHub's Ubuntu images route APT through a mirror list that can prefer
 # azure.archive.ubuntu.com.  When that mirror stalls, a plain apt-get update
 # consumes the whole short control-mod gate.  Prefer Canonical's archive and
-# keep each network operation bounded so a transient outage can be retried.
+# keep each network operation bounded. If it fails, try the kernel.org
+# Ubuntu mirror before returning to Canonical on the final attempt.
 set -euo pipefail
 
 if (( $# == 0 )); then
@@ -18,20 +19,25 @@ apt_options=(
   -o Acquire::https::Timeout=10
 )
 
-prefer_canonical_ubuntu_archive() {
-  local mirror_list=/etc/apt/apt-mirrors.txt
+prefer_ubuntu_archive() {
+  local mirror_host=$1
+  local mirror_list=${CIVVIS_APT_MIRROR_LIST:-/etc/apt/apt-mirrors.txt}
 
-  # Ubuntu's mirror+file configuration reads this list at update time.  The
-  # runner can keep an HTTP entry alongside a working HTTPS fallback; apt then
-  # returns failure for the HTTP timeout even though the HTTPS index is valid.
-  # Use one canonical HTTPS entry so --error-on=any reports a real outage.
-  if [[ -f "$mirror_list" ]] && sudo grep -Eq \
-      'azure\.archive\.ubuntu\.com|http://archive\.ubuntu\.com' "$mirror_list"; then
-    echo "Using the HTTPS archive.ubuntu.com mirror."
-    sudo sed -i \
-      -e 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' \
-      -e 's#http://archive\.ubuntu\.com#https://archive.ubuntu.com#g' \
-      "$mirror_list"
+  # Keep signed Ubuntu indexes and unrelated mirrors intact. A retry must
+  # change the endpoint when Canonical's archive cannot be resolved, rather
+  # than repeat the same failed DNS lookup on every attempt.
+  if [[ -f "$mirror_list" ]]; then
+    echo "Using the HTTPS ${mirror_host} Ubuntu mirror."
+    sudo python3 - "$mirror_list" "$mirror_host" <<'PYTHON'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+pattern = r"https?://(?:azure\.archive\.ubuntu\.com|archive\.ubuntu\.com|mirrors\.edge\.kernel\.org)/ubuntu(?=/|\s|$)"
+path.write_text(re.sub(pattern, "https://" + sys.argv[2] + "/ubuntu", text))
+PYTHON
   fi
 }
 
@@ -61,9 +67,10 @@ update_apt_indexes() {
   run_apt update
 }
 
-prefer_canonical_ubuntu_archive
+ubuntu_archives=(archive.ubuntu.com mirrors.edge.kernel.org archive.ubuntu.com)
 
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+  prefer_ubuntu_archive "${ubuntu_archives[attempt - 1]}"
   echo "APT install attempt ${attempt}/${max_attempts}: $*"
   if update_apt_indexes && \
       run_apt install --no-install-recommends -y "$@"; then

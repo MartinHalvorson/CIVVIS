@@ -73,8 +73,7 @@ jobs:
           restore-keys: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-
       - name: Install the normal publishing tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends binaryen brotli
+          bash .github/scripts/install-apt-packages.sh binaryen brotli
           python3 -m pip install --quiet --disable-pip-version-check pillow
           rustc --version
           wasm-opt --version
