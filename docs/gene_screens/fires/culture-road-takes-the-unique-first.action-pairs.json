@@ -1,0 +1,24 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "culture-road-takes-the-unique-first",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Kristina (Sweden) Culture runs 192354Z (t91, t96, t103, t117), 193814Z (t96, t109, t127), 185626Z (t107, t132), 164254Z (t109), 181911Z (t122) and 173750Z (t97, t99), each cut at its turn first state export and queried with --resumed on a ci-profile civvis_orders built from this branch (8e490a72). Both arms carry the run requested genome; the on arm adds the gene. On the seven civic turns the off arm reproduces the live Mercantilism, Colonialism, Natural History or Civil Engineering and the on arm takes the step toward Nationalism (Diplomatic Service; Nationalism itself at 192354Z t117). On 181911Z t122 and 173750Z t97/t99 the on arm queues a Builder for the Open-Air Museum; elsewhere the existing backlog Builder or a home war leaves it unchanged.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-culture-road-takes-the-unique-first.native-queries.tar.xz",
+    "sha256": "9e744476d4583a4af1b4c684b89ab199e871976b0bdfde96681d00930624624a"
+  },
+  "members": [
+    "nq-unique/0000/result.json",
+    "nq-unique/0001/result.json",
+    "nq-unique/0002/result.json",
+    "nq-unique/0003/result.json",
+    "nq-unique/0004/result.json",
+    "nq-unique/0005/result.json",
+    "nq-unique/0006/result.json",
+    "nq-unique/0007/result.json",
+    "nq-unique/0008/result.json",
+    "nq-unique/0009/result.json",
+    "nq-unique/0010/result.json",
+    "nq-unique/0011/result.json",
+    "nq-unique/0012/result.json"
+  ]
+}
