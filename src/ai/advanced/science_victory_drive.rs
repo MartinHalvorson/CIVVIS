@@ -352,6 +352,8 @@ impl AdvancedAi {
     /// (`observed_yield_adjustments`), which is how the mirror itself derives
     /// the number it was shown.
     pub fn empire_science(g: &Game, pid: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let cities: f64 = g
             .player_city_ids(pid)
             .into_iter()

@@ -70,6 +70,8 @@ impl AdvancedAi {
     }
 
     pub(super) fn useful_luxury_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.connect_the_luxury_2 {
             return None;
         }

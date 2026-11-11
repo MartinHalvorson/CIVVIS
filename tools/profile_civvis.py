@@ -247,6 +247,11 @@ def demangle(symbol: str, rustfilt: Optional[str] = None) -> str:
     return "::".join(parts) if parts else symbol
 
 
+#: The source spot `sample` appends to a row when the binary carries line
+#: tables: a file name and a line, after the bracketed address.
+ROW_SPOT = re.compile(r"(?<=\])\s+(\S+:\d+)\s*$")
+
+
 def clean(raw: str) -> str:
     """Strip `sample`'s per-row decoration down to a symbol name.
 
@@ -254,7 +259,13 @@ def clean(raw: str) -> str:
     a sample landed on, which matters when reading one leaf and is pure noise
     when aggregating a table.
     """
-    text = re.sub(r"\s+\(in [^)]*\)", "", raw)
+    # ⚠ A build with line tables gets one more column: `sample` appends the
+    # source spot, `… + 241652  [0x1035c439c]  advanced.rs:26690`. Left on, it
+    # makes every call site of a function a different "symbol", and the
+    # inclusive table reports `take_turn_inner` at the share of its largest
+    # single site — 29% for a function that was 89% of the thread.
+    text = ROW_SPOT.sub("", raw)
+    text = re.sub(r"\s+\(in [^)]*\)", "", text)
     text = re.sub(r"\s*\[[0-9a-fx,.]+\]", "", text)
     text = re.sub(r"\s*\+\s*[\d,.]+(?=\s|$)", "", text)
     text = re.sub(r"\s+load address.*$", "", text)
@@ -287,7 +298,7 @@ def shorten(name: str, width: int = 74) -> str:
 
 #: The return address `sample` prints at the end of a row: `+ 256684
 #: [0x1016e76d8]`, or a comma-separated run of them on a leaf row.
-ROW_ADDRESS = re.compile(r"\[(0x[0-9a-f]+)[0-9a-fx,.]*\]\s*$")
+ROW_ADDRESS = re.compile(r"\[(0x[0-9a-f]+)[0-9a-fx,.]*\](?:\s+\S+:\d+)?\s*$")
 
 #: Where the sampled binary was mapped, which `atos` needs to undo the slide.
 LOAD_ADDRESS = re.compile(r"^Load Address:\s+(0x[0-9a-f]+)", re.MULTILINE)
@@ -304,7 +315,8 @@ LINE_TABLE_ENV = {"CARGO_PROFILE_CI_DEBUG": "line-tables-only",
 
 
 def call_sites(text: str, pattern: str,
-               rustfilt: Optional[str] = None) -> List[Tuple[str, int, str]]:
+               rustfilt: Optional[str] = None,
+               spots: Optional[Dict[str, str]] = None) -> List[Tuple[str, int, str]]:
     """Where inside the symbols matching `pattern` the samples are.
 
     ⚠ A SYMBOL TABLE STOPS AT THE FUNCTION, AND THE FUNCTION THAT MATTERS IS
@@ -321,6 +333,10 @@ def call_sites(text: str, pattern: str,
     tables, turns each address into the source line and the chain of inlined
     functions it came through. The callee is the row directly beneath, which
     is what that site called.
+
+    A build with line tables has `sample` print the source spot on the row
+    itself; `spots`, when given, is filled with those by address, so the
+    report needs `atos` only for the inlined chain.
     """
     wanted = re.compile(pattern)
     lines = text.splitlines()
@@ -346,6 +362,9 @@ def call_sites(text: str, pattern: str,
         if not address or not wanted.search(names[symbol]):
             continue
         counts[address.group(1)] += count
+        spot = ROW_SPOT.search(raw)
+        if spot and spots is not None:
+            spots[address.group(1)] = spot.group(1)
         if at + 1 < len(rows) and rows[at + 1][0] > depth:
             below = clean(rows[at + 1][2])
             callees.setdefault(address.group(1),
@@ -374,7 +393,8 @@ def source_lines(binary: Path, load_address: str, address: str) -> List[str]:
 def report_lines(text: str, pattern: str, binary: Optional[Path], total: int,
                  top: int, rustfilt: Optional[str] = None,
                  out=sys.stdout, resolve=source_lines) -> None:
-    sites = call_sites(text, pattern, rustfilt)
+    printed: Dict[str, str] = {}
+    sites = call_sites(text, pattern, rustfilt, printed)
     print("\n== LINES INSIDE /%s/  (share of the busiest thread; an address is "
           "a call site, and the arrow is what it called)" % pattern, file=out)
     if not sites:
@@ -382,7 +402,7 @@ def report_lines(text: str, pattern: str, binary: Optional[Path], total: int,
         return
     load = LOAD_ADDRESS.search(text)
     can_resolve = binary is not None and binary.exists() and load is not None
-    if not can_resolve:
+    if not can_resolve and not printed:
         print("        (addresses only: name the sampled binary with --binary, "
               "built with --line-tables, to read them as source lines)", file=out)
     for address, count, callee in sites[:top]:
@@ -394,9 +414,19 @@ def report_lines(text: str, pattern: str, binary: Optional[Path], total: int,
         if spots:
             # `atos` answers innermost first. A reader wants the line in the
             # matched function, which is the outermost, and the chain after.
-            print("%7.2f%%  %s%s" % (share, spots[-1], arrow), file=out)
+            outer = spots[-1]
+            if outer.endswith(":0") and address in printed:
+                # `atos` gives line 0 for code the compiler attributes to no
+                # line; the row's own spot is the better reading of the two.
+                outer = printed[address]
+            print("%7.2f%%  %s%s" % (share, outer, arrow), file=out)
             if len(spots) > 1:
                 print("             inlined: %s" % " < ".join(spots[:-1]), file=out)
+        elif address in printed:
+            # What `sample` printed on the row: the innermost frame's line,
+            # which for an inlined pass is a line of the pass, not of the
+            # function that swallowed it. `--binary` adds the rest.
+            print("%7.2f%%  %s%s" % (share, printed[address], arrow), file=out)
         else:
             print("%7.2f%%  %s%s" % (share, address, arrow), file=out)
 

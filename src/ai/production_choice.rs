@@ -561,6 +561,8 @@ impl BasicAi {
         melee: usize,
         ranged: usize,
     ) -> Option<Item> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         // Repairs restore yields and unlock every building/project in the
         // damaged district, so they outrank adding new infrastructure. Basic
         // and city-state governors previously ignored `Item::Repair`
@@ -1896,6 +1898,8 @@ impl BasicAi {
     /// `None` when the race is closed or no city can build one within
     /// `FIRST_CAMPUS_MAX_TURNS`.
     pub(super) fn race_site_city(&self, g: &Game, pid: usize) -> Option<(u32, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.race_open_without_a_site(g, pid) {
             return None;
         }
@@ -2092,6 +2096,8 @@ impl BasicAi {
     /// reaching `INDUSTRIAL_HUB_MIN_REACH`, the city whose best zone site
     /// would reach the most (then the more productive) opens one there.
     pub(crate) fn industrial_hub_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let range = g
             .rules
             .buildings
@@ -2335,6 +2341,8 @@ impl BasicAi {
     /// lands in `observed_yield_adjustments`, so the cities alone would read
     /// every rival at about zero. Empty on a native board.
     pub(crate) fn seat_culture_per_turn(g: &Game, seat: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(seat)
             .into_iter()
             .map(|city| g.city_yields(city).culture)
@@ -2347,6 +2355,8 @@ impl BasicAi {
     /// Whether the empire's Culture trails `CULTURE_DEFENSE_RATIO` of the
     /// strongest living rival major's.
     pub(crate) fn culture_trails_the_field(g: &Game, pid: usize) -> bool {
+        // One memo for every seat's sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let best = g
             .players
             .iter()
@@ -2696,6 +2706,8 @@ impl BasicAi {
     /// `FIRST_CAMPUS_MAX_TURNS` (an Arena in a standing Entertainment
     /// Complex, a Stupa, ...); ties to the name.
     fn cheap_amenity_building(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.rules
             .buildings
             .iter()
