@@ -2448,6 +2448,11 @@ struct RouteScratch {
     movement_seen: Vec<bool>,
     movement_score: Vec<f64>,
     movement_stopped: Vec<bool>,
+    /// The formation and board stay fixed throughout one movement flood.
+    /// An arrival can improve a tile repeatedly; its ZOC answer cannot.
+    /// Reset with `movement_touched` before the next flood, even for another
+    /// unit or after direct board edits between read-only queries.
+    movement_zoc: Vec<Option<bool>>,
 }
 
 impl Clone for RouteScratch {
@@ -12337,8 +12342,12 @@ impl Game {
     /// game. Both questions — whether, and where — are answered from one
     /// lookup rather than from two of the same one.
     fn established_governor_at(&self, pid: usize, governor: &str) -> Option<u32> {
-        let state = self.players.get(pid)?.governor_roster.get(governor)?;
-        let spec = self.rules.governors.get(governor)?;
+        let (governor_name, state) = self
+            .players
+            .get(pid)?
+            .governor_roster
+            .get_key_value(governor)?;
+        let spec = self.rules.governors.get_interned(*governor_name)?;
         let city_id = state.city?;
         let city = self.cities.get(&city_id)?;
         // Capturing or razing a Governor's city displaces that Governor. Amani
@@ -13653,6 +13662,8 @@ mod approach_arrival_tests;
 
 #[cfg(test)]
 mod movement_rule_tests;
+#[cfg(test)]
+mod movement_zoc_memo_tests;
 
 #[cfg(test)]
 mod victory_conditions;
