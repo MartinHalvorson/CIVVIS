@@ -104,6 +104,8 @@ fn a_gold_purchase_charges_its_quote_and_moves_no_other_gold() {
     for board in played_boards() {
         for pid in majors(&board) {
             let mut rich = board.clone();
+            // A menu is listed only for the seat whose turn it is.
+            rich.current = pid;
             rich.players[pid].gold = 50_000.0;
             let bank = rich.players[pid].gold;
             for action in rich.legal_purchase_actions(pid) {
@@ -145,6 +147,7 @@ fn the_price_first_refusal_agrees_with_the_full_score() {
         for pid in majors(&board) {
             for bank in [60.0, 180.0, 420.0, 950.0, 2_600.0] {
                 let mut game = board.clone();
+                game.current = pid;
                 game.players[pid].gold = bank;
                 let plan = ai.assess(&game, pid);
                 let counts = ai.counts(&game, pid);
@@ -188,4 +191,39 @@ fn the_price_first_refusal_agrees_with_the_full_score() {
     assert!(compared >= 200, "fixture: only {compared} comparisons");
     assert!(priced_out > 0, "fixture: nothing was ever priced out");
     assert!(priced_out < compared, "fixture: everything was priced out");
+}
+
+/// The plots-only menu `BasicAi::buy_gold_plot` shops from is the whole
+/// menu's plots, in the whole menu's order.
+#[test]
+fn the_plot_menu_is_the_plots_of_the_whole_menu() {
+    let mut plots = 0;
+    for board in played_boards() {
+        for pid in majors(&board) {
+            for bank in [0.0, 90.0, 400.0, 50_000.0] {
+                let mut game = board.clone();
+                game.current = pid;
+                game.players[pid].gold = bank;
+                let of_the_whole_menu: Vec<Action> = game
+                    .legal_purchase_actions(pid)
+                    .into_iter()
+                    .filter(|action| matches!(action, Action::BuyPlot { .. }))
+                    .collect();
+                assert_eq!(
+                    game.legal_plot_purchases(pid),
+                    of_the_whole_menu,
+                    "turn {} seat {pid} with {bank} Gold",
+                    board.turn
+                );
+                for action in &of_the_whole_menu {
+                    let Action::BuyPlot { cost, .. } = action else {
+                        unreachable!()
+                    };
+                    assert!(*cost >= 0.0, "no plot pays its buyer: {action:?}");
+                }
+                plots += of_the_whole_menu.len();
+            }
+        }
+    }
+    assert!(plots >= 50, "fixture: only {plots} plots were on a menu");
 }
