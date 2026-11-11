@@ -1639,6 +1639,95 @@ fn simulation_cannot_advance_from_delivery_without_a_paint_acknowledgement() {
     http_post(port, "/pace", "{\"paused\":true}");
 }
 
+/// Pressing Restart must not leave the stepper waiting on the world it
+/// replaced.
+///
+/// The stepper holds every finished frame until each attached page has
+/// painted it. `/new` needs only the session lock, so at Lightning it lands
+/// inside that wait as often as not, and the page then paints the *new*
+/// world — which is not the frame the stepper asked about. Asking again
+/// every second kept that page attached, so the wait never ended and the
+/// restarted world sat on turn 1 for as long as the tab stayed open.
+/// Measured against a native server and the real page before this: 0 turns
+/// in 40 seconds, on a new seed and on a replay of the same seed alike.
+///
+/// Both are played here, because only a new seed could be told apart from
+/// the old world by its frame; a replay needs the world itself counted.
+#[test]
+fn a_restart_does_not_leave_the_stepper_waiting_on_the_replaced_world() {
+    for (first_seed, replay) in [(20_261_111_u64, false), (20_261_113, true)] {
+        let port = exhibition(first_seed);
+        let viewer = "restarting-page";
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause before attaching");
+        std::thread::sleep(Duration::from_millis(300));
+        let first: Value = serde_json::from_str(
+            &http_get(port, &format!("/state?painted=&viewer={viewer}")).expect("a first state"),
+        )
+        .expect("state is JSON");
+        http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("set unlimited pace");
+
+        // Acknowledge the first frame and take the one after it — then never
+        // say that one was painted. The stepper is now holding it for this
+        // page, which is where a restart pressed at Lightning finds it.
+        let held: Value = serde_json::from_str(
+            &http_get(port, &next_painted_state(viewer, &first)).expect("the next state"),
+        )
+        .expect("state is JSON");
+        assert_eq!(
+            held["turn"].as_u64(),
+            first["turn"].as_u64().map(|turn| turn + 1),
+            "the stepper should be one frame ahead of what this page has painted"
+        );
+
+        let seed = if replay { first_seed } else { first_seed + 1 };
+        let fresh: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/new",
+                &json!({"seed": seed, "force": true, "paused": false}).to_string(),
+            )
+            .expect("the restart is answered"),
+        )
+        .expect("the new world is JSON");
+        assert_eq!(fresh["error"], Value::Null);
+        assert_eq!(fresh["seed"], json!(seed));
+        assert_eq!(fresh["turn"], json!(1));
+
+        // What the page does next. It has painted the reply to `/new`, its
+        // tile base is still the old world's, and the first answer is the
+        // new world whole.
+        let opening: Value = serde_json::from_str(
+            &http_get(
+                port,
+                &format!(
+                    "/state?painted=1&world={seed}&finished=0&frame={}&viewer={viewer}\
+                         &have={}:{}:0:{}",
+                    fresh["frame_sequence"], held["seed"], held["turn"], held["frame_sequence"],
+                ),
+            )
+            .expect("the new world's opening state"),
+        )
+        .expect("state is JSON");
+        assert_eq!(opening["seed"], json!(seed));
+        assert_eq!(opening["turn"], json!(1));
+
+        // Then it acknowledges that frame and asks for the one after it. A
+        // stepper still parked on the old world answers with turn 1 again
+        // when the long poll gives up; a free one has played turn 2.
+        let next: Value = serde_json::from_str(
+            &http_get(port, &next_painted_state(viewer, &opening)).expect("the turn after it"),
+        )
+        .expect("state is JSON");
+        assert_eq!(next["seed"], json!(seed));
+        assert_eq!(
+            next["turn"],
+            json!(2),
+            "the restarted world never left its opening turn (replay of the same seed: {replay})"
+        );
+        http_post(port, "/pace", "{\"paused\":true}");
+    }
+}
+
 /// The socket path, not only the helper that decides its policy: at Blitz
 /// each response is the state immediately after the seat named by the
 /// preceding response's `current` field acted. The sequence advances by
