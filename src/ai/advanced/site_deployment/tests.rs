@@ -37,11 +37,15 @@ fn the_site_player_carries_its_list_on_the_authoritative_board() {
         !site.uses_player_observation(),
         "a site major plans on the authoritative board"
     );
-    assert!(site.each_civ_draws_its_width);
+    assert!(site.no_city_limit);
+    assert!(
+        !site.each_civ_draws_its_width,
+        "the draw left the list and is an opt-in again"
+    );
     let mut native = AdvancedAi::new();
     native.enable_native_deployment();
     assert!(
-        !native.each_civ_draws_its_width,
+        !native.no_city_limit,
         "the deployment genome itself is unchanged by the site's list"
     );
 }
