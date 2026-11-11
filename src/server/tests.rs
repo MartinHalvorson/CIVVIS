@@ -127,6 +127,24 @@ fn both_map_renderers_draw_the_one_city_plate() {
 }
 
 #[test]
+fn a_players_own_city_plates_count_the_turns() {
+    // Civilization VI's banner says how many turns until the city grows and
+    // until its build finishes. The one plate both renderers draw now does,
+    // on the played seat's cities only: a watched world keeps public plates.
+    let plate = EMBEDDED_APP_JS
+        .split_once("function drawCityNameplate(c, x, y, S) {")
+        .expect("the city plate")
+        .1
+        .split_once("\nfunction settlementSpread(")
+        .expect("end of the city plate")
+        .0;
+    assert!(plate.contains("const counted = !SPEC && c.owner === 0 && Boolean(c.yields);"));
+    assert!(plate.contains("Math.ceil((c.growth_need - c.food) / surplus)"));
+    assert!(plate.contains("turnsFor(c.queue_cost, c.yields.production || 0, c.production || 0)"));
+    assert_eq!(plate.matches("bannerTurns(").count(), 2);
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
