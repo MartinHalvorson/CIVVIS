@@ -149,19 +149,34 @@ impl AdvancedAi {
             && self.victory_target == Some(VictoryTarget::Domination)
     }
 
-    /// The reserved force as `(ranged, melee)`.
+    /// The reserved force as `(ranged, melee)`. The stepping stone of
+    /// `city-state-before-the-first-capital` reserves its own.
     pub(super) fn conquest_quota(&self) -> (usize, usize) {
-        if self.first_capital_active() {
+        if self.city_state_stone_stands() {
+            (
+                super::city_state_before_the_first_capital::STONE_RANGED,
+                super::city_state_before_the_first_capital::STONE_MELEE,
+            )
+        } else if self.first_capital_active() {
             (FIRST_CAPITAL_RANGED, FIRST_CAPITAL_MELEE)
         } else {
             (CONQUEST_RANGED, CONQUEST_MELEE)
         }
     }
 
+    /// The bodies in the reserved force: the shipped six, or the stepping
+    /// stone's five.
+    pub(super) fn conquest_force_size(&self) -> usize {
+        let (ranged, melee) = self.conquest_quota();
+        ranged + melee
+    }
+
     /// The cities the empire holds before the capital's production is
     /// reserved and its Settlers deferred.
     pub(super) fn conquest_first_settler_cities(&self) -> usize {
-        if self.first_capital_active() {
+        if self.city_state_stone_stands() {
+            super::city_state_before_the_first_capital::STONE_CITIES
+        } else if self.first_capital_active() {
             FIRST_CAPITAL_SETTLER_CITIES
         } else {
             super::early_conquest::CONQUEST_FIRST_SETTLER_CITIES
@@ -177,9 +192,10 @@ impl AdvancedAi {
         }
     }
 
-    /// The preparation window, in turns at this game's speed.
+    /// The preparation window, in turns at this game's speed. The stepping
+    /// stone keeps the shipped window.
     pub(super) fn conquest_preparation(&self, g: &Game) -> u32 {
-        g.standard_duration(if self.first_capital_active() {
+        g.standard_duration(if self.first_capital_active() && !self.city_state_stone_stands() {
             FIRST_CAPITAL_PREPARATION_TURNS
         } else {
             super::early_conquest::CONQUEST_MIN_PREPARATION_TURNS
@@ -363,10 +379,11 @@ impl AdvancedAi {
     /// Each of our cities' guard: the field-army body (a land shooter or
     /// melee body) on or beside it, nearest first, a shooter before a melee
     /// body, then the lower id. One body guards one city. Empty with the
-    /// gene off.
+    /// gene off (and under `city-state-before-the-first-capital`'s stepping
+    /// stone too).
     pub(super) fn first_capital_home_guards(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
         let mut guards = BTreeSet::new();
-        if !self.first_capital_active() {
+        if !self.first_capital_active() && !self.city_state_stone_stands() {
             return guards;
         }
         let escorts = self.all_reserved_civilian_guards();
@@ -422,9 +439,10 @@ impl AdvancedAi {
             .saturating_sub(counts.scouts)
             .saturating_sub(melee_guards);
         let ranged = counts.ranged.saturating_sub(ranged_guards);
+        let (want_ranged, want_melee) = self.conquest_quota();
         (
-            FIRST_CAPITAL_RANGED.saturating_sub(ranged),
-            FIRST_CAPITAL_MELEE.saturating_sub(melee),
+            want_ranged.saturating_sub(ranged),
+            want_melee.saturating_sub(melee),
         )
     }
 
@@ -453,7 +471,13 @@ impl AdvancedAi {
         if !self.first_capital_active() {
             return false;
         }
-        if let Some(opening) = self.conquest_opening.as_ref() {
+        // `city-state-before-the-first-capital`: the stepping stone is not
+        // the capital opening; the capital it precedes is still spared.
+        if let Some(opening) = self
+            .conquest_opening
+            .as_ref()
+            .filter(|_| !self.city_state_stone_stands())
+        {
             return opening.target == other;
         }
         !self.conquest_closed

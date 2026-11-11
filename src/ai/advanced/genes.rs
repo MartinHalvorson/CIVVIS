@@ -5627,6 +5627,14 @@ pub const GENES: &[Gene] = &[
     // power is at least half the near neighbour's. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
+    // `city-state-before-the-first-capital`: a Domination seat's early
+    // conquest opening takes one nearby, unsuzerained city-state behind at
+    // most Ancient Walls (3 melee, 2 shooters, a Battering Ram) before, and
+    // without spending, the opening on a rival capital. Live Deity: a
+    // city-state stood within 12 tiles in ~90% of 110 games, walls 100 and
+    // about four Warriors at t30-50, no suzerain in 64% at t40. Opt-in; see
+    // `advanced/city_state_before_the_first_capital.rs`.
+    Gene { tag: "city-state-before-the-first-capital", field: "city_state_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_before_the_first_capital, disable: AdvancedAi::disable_city_state_before_the_first_capital },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

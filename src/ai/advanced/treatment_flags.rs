@@ -224,6 +224,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater-3`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
+        /// `city-state-before-the-first-capital`: a Domination seat's early
+        /// conquest opening takes one nearby city-state before the first capital.
+        city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

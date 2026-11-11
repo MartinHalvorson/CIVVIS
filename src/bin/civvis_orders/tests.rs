@@ -934,7 +934,7 @@ fn an_affordable_direct_city_state_war_peaces_before_envoys() {
     };
     let mut proposed = Vec::new();
     assert_eq!(
-        queue_city_state_envoy_reclaim(&mut proposed, &state),
+        queue_city_state_envoy_reclaim(&mut proposed, &state, None),
         Some((9, 4)),
         "four held envoys raise our one to five and take Geneva"
     );
@@ -959,7 +959,7 @@ fn an_affordable_direct_city_state_war_peaces_before_envoys() {
     state.turn = 59;
     let mut retry = Vec::new();
     assert_eq!(
-        queue_city_state_envoy_reclaim(&mut retry, &state),
+        queue_city_state_envoy_reclaim(&mut retry, &state, None),
         Some((9, 4))
     );
     let (sent, deferred) = defer_host_peace_retries(retry, &state, &mut retries);
@@ -1038,7 +1038,7 @@ fn city_state_envoy_reclaim_skips_derived_wars_and_short_pools() {
     };
     let mut proposed = Vec::new();
     assert_eq!(
-        queue_city_state_envoy_reclaim(&mut proposed, &state),
+        queue_city_state_envoy_reclaim(&mut proposed, &state, None),
         None,
         "do not end a war when the pool still cannot win the city-state"
     );
@@ -1047,11 +1047,79 @@ fn city_state_envoy_reclaim_skips_derived_wars_and_short_pools() {
     state.envoys_free = Some(4);
     state.rivals[0].at_war = true;
     assert_eq!(
-        queue_city_state_envoy_reclaim(&mut proposed, &state),
+        queue_city_state_envoy_reclaim(&mut proposed, &state, None),
         None,
         "a city-state follows its hostile Suzerain; direct peace would not unlock envoys"
     );
     assert!(proposed.is_empty());
+}
+
+/// `city-state-before-the-first-capital`: the city-state the early conquest
+/// opening declared on is never traded back for Envoys while the opening
+/// stands, even with the pool to take its suzerainty; any other direct
+/// city-state war still is.
+#[test]
+fn the_conquest_openings_city_state_war_is_not_reclaimed_for_envoys() {
+    // The opening's city, in the mirror's axial coordinates.
+    let opening_tile = (14, 12);
+    let (x, y) = civvis::hex::axial_to_offset(opening_tile.0, opening_tile.1);
+    let minor = |player: usize, civ: &str, city: Option<(i32, i32)>| StateMinor {
+        player,
+        civ: civ.to_string(),
+        at_war: true,
+        envoys: 0,
+        most_envoys: 0,
+        cities: city
+            .map(|(x, y)| {
+                vec![StateCity {
+                    x,
+                    y,
+                    ..StateCity::default()
+                }]
+            })
+            .unwrap_or_default(),
+        ..StateMinor::default()
+    };
+    let mut state = StateSnapshot {
+        turn: 41,
+        envoys_free: Some(6),
+        minors: vec![
+            minor(9, "CIVILIZATION_GENEVA", Some((x, y))),
+            minor(10, "CIVILIZATION_HATTUSA", Some((x + 5, y))),
+        ],
+        ..StateSnapshot::default()
+    };
+    let spared = city_state_opening_host_minor(&state, opening_tile);
+    assert_eq!(spared, Some(9), "the opening's tile names Geneva");
+
+    let mut proposed = Vec::new();
+    assert_eq!(
+        queue_city_state_envoy_reclaim(&mut proposed, &state, spared),
+        Some((10, 3)),
+        "the other direct city-state war is still reclaimed"
+    );
+    assert!(
+        proposed
+            .iter()
+            .all(|order| !(order.kind == "peace" && order.subject == Some(9))),
+        "no peace for the opening's own target"
+    );
+
+    // With only the opening's target at war, nothing is reclaimed at all.
+    state.minors.truncate(1);
+    let mut proposed = Vec::new();
+    assert_eq!(
+        queue_city_state_envoy_reclaim(&mut proposed, &state, spared),
+        None
+    );
+    assert!(proposed.is_empty());
+    // Off (no opening), the shipped reclaim makes that peace.
+    assert_eq!(
+        queue_city_state_envoy_reclaim(&mut proposed, &state, None),
+        Some((9, 3))
+    );
+    assert_eq!(proposed[0].kind, "peace");
+    assert_eq!(proposed[0].subject, Some(9));
 }
 
 #[test]

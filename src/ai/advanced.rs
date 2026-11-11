@@ -6881,6 +6881,19 @@ pub struct AdvancedAi {
     /// Holy Site, and Astrology ahead of the production technologies. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater_3: bool,
+    /// `city-state-before-the-first-capital`: a Domination seat's early
+    /// conquest opening takes one nearby, unsuzerained city-state behind at
+    /// most Ancient Walls before, and without spending, the opening on a
+    /// rival capital. See `advanced/city_state_before_the_first_capital.rs`.
+    /// Opt-in.
+    city_state_before_the_first_capital: bool,
+    /// The stepping stone the opening stands on, by tile and civilization.
+    /// Written only while `city_state_before_the_first_capital` plays.
+    city_state_stone: Option<city_state_before_the_first_capital::CityStateStone>,
+    /// Whether this game has named its one stepping stone.
+    city_state_stone_named: bool,
+    /// The turn the last "none named" note was journalled.
+    city_state_stone_noted: Option<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11228,6 +11241,9 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
+/// `city-state-before-the-first-capital`: see
+/// `advanced/city_state_before_the_first_capital.rs`.
+mod city_state_before_the_first_capital;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
@@ -25467,6 +25483,11 @@ impl AdvancedAi {
                     -100_000.0
                 };
             }
+            // `city-state-before-the-first-capital`: the stepping stone is
+            // kept. `false` with the gene off.
+            if matches!(action, Action::KeepCity { .. }) && self.city_state_stone_keeps(city.pos) {
+                value += city_state_before_the_first_capital::STONE_KEEP_VALUE;
+            }
             let nearest_core = before
                 .cities
                 .values()
@@ -25960,11 +25981,14 @@ impl AdvancedAi {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
+            // `city-state-before-the-first-capital`: no-op with the gene off.
+            self.apply_city_state_stone_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
+            self.apply_city_state_stone_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
