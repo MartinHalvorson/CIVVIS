@@ -237,7 +237,9 @@ fn play(options: &Options, plan: &Plan) -> Value {
 }
 
 /// Log lines this run's settings can be rated with. A table played at another
-/// size or length, or against another reference, is a different instrument.
+/// size or length is a different instrument, and so is a rung table whose
+/// rivals were another reference agent. A pool table never seats the
+/// reference as such, so it survives a change of reference.
 fn read_log(options: &Options) -> Vec<Value> {
     let Ok(body) = std::fs::read_to_string(&options.log) else {
         return Vec::new();
@@ -247,7 +249,7 @@ fn read_log(options: &Options) -> Vec<Value> {
         .filter(|line| {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
-                && line["reference"].as_str() == Some(CIV6_REFERENCE)
+                && (line["kind"] == "pool" || line["reference"].as_str() == Some(CIV6_REFERENCE))
         })
         .collect()
 }
@@ -278,7 +280,9 @@ fn publish(options: &Options) {
             continue;
         };
         // An agent that has since left the roster takes its tables with it.
-        if seats.len() != options.players || winner >= seats.len() || !seats.iter().all(|s| known(s))
+        if seats.len() != options.players
+            || winner >= seats.len()
+            || !seats.iter().all(|s| known(s))
         {
             continue;
         }
@@ -295,7 +299,9 @@ fn publish(options: &Options) {
         tables.push(Table { seats, winner });
     }
     let Some(&anchor) = index.get(CIV6_REFERENCE) else {
-        eprintln!("no rated table seats the reference agent {CIV6_REFERENCE} yet; nothing published");
+        eprintln!(
+            "no rated table seats the reference agent {CIV6_REFERENCE} yet; nothing published"
+        );
         return;
     };
     let elo = strategies::fit(index.len(), &tables);
@@ -326,7 +332,10 @@ fn publish(options: &Options) {
     }
     // Prince's rivals are the reference agent with nothing added: one entrant
     // under two names.
-    ratings.insert(strategies::rung_key(PRINCE), ratings[CIV6_REFERENCE].clone());
+    ratings.insert(
+        strategies::rung_key(PRINCE),
+        ratings[CIV6_REFERENCE].clone(),
+    );
     let file = json!({
         "protocol": 1,
         "prince_elo": PRINCE_ELO,
@@ -350,7 +359,10 @@ fn publish(options: &Options) {
             .total_cmp(&a.1["elo"].as_f64().unwrap_or(0.0))
     });
     println!("{} rated tables -> {}", tables.len(), options.out);
-    println!("{:<18} {:>6} {:>5} {:>6} {:>5}", "entrant", "elo", "sd", "tables", "wins");
+    println!(
+        "{:<18} {:>6} {:>5} {:>6} {:>5}",
+        "entrant", "elo", "sd", "tables", "wins"
+    );
     for (key, row) in rows {
         println!(
             "{:<18} {:>6.0} {:>5.0} {:>6} {:>5}",

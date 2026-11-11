@@ -410,7 +410,11 @@ mod tests {
         let mut handles = BTreeSet::new();
         for row in ROSTER {
             assert!(ids.insert(row.id), "duplicate id {}", row.id);
-            assert!(handles.insert(row.handle), "duplicate handle {}", row.handle);
+            assert!(
+                handles.insert(row.handle),
+                "duplicate handle {}",
+                row.handle
+            );
             for tag in row.genes {
                 assert!(crate::ai::gene(tag).is_some(), "{}: no gene {tag}", row.id);
             }
