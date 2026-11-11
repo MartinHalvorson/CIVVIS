@@ -914,6 +914,19 @@ fn site_bench_command(args: Vec<String>) {
         .collect::<Vec<_>>()
         .join(" ");
     println!("[major seats, player id and seconds: {seats} | minors]");
+    // A fact about the game, so it is in the report's hash: how many of the
+    // city-states are still on the board. The majors are in the standings;
+    // this is what says whether a change was paid for by the small seats.
+    let game = &report.session.game;
+    let city_states = game.players.iter().filter(|player| player.is_minor);
+    let standing = city_states
+        .clone()
+        .filter(|player| player.alive && !game.player_city_ids(player.id).is_empty())
+        .count();
+    println!(
+        "checkpoint city-states: {standing} of {} standing",
+        city_states.count()
+    );
     for checkpoint in &report.checkpoints {
         println!(
             "checkpoint {}: save {:016x}, document {:016x}",

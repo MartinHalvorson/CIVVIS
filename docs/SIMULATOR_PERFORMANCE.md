@@ -195,6 +195,18 @@ passes recomputing the same empire-wide numbers.
 
 ### The browser build's own profile: ordered maps, not string compares
 
+⚠ **The 39.7% below is the wrong build's number.** It was read from a module
+built without LTO and without `wasm-opt`, because that was the build with
+function names. #5081 then named the frames of the *published* module from
+Binaryen's own function map, and #5088 replayed those profiles: ordered maps
+are **8% to 10%** of the engine a visitor runs, not two fifths. Without
+link-time inlining every small tree method keeps its own frame and its own
+call overhead; the optimizer folds most of that away. The direction held —
+`memcmp` is not the browser's problem, the tree walks are a real cost — and
+the size did not. Read the table as the shape of an unoptimized build, and
+size a lever from the published module's profile (`tools/site_wasm_profile.py
+--symbols DIR --wasm FILE`).
+
 The native table above put `memcmp` at 9.6% of self time, and an obvious next
 guess was that WebAssembly pays more for it: there is no wide compare to lean
 on there. The module's own profile says otherwise, and says the native table
@@ -234,6 +246,56 @@ fix but a choice of container to revisit: units and cities by dense id with
 their ids kept in order (the walks are in id order and the saves depend on
 it), and the `Name`-keyed sets and maps indexed by `Name::id`. Neither is
 attempted here. Both are play-identical by construction and both are large.
+
+### The same day, on the published engine
+
+The front page was promoted to a build carrying #5063, #5065 and #5067. The
+two published modules, driven by `tools/site_wasm_frames.mjs --split` on seed
+7 to the end of the game (turn 178), one run each on a host at load 15:
+
+| Published module | Frames, whole game | Turns 101-150, a frame |
+| --- | ---: | ---: |
+| `9092f9c72`, before | 44.87 s | 359 ms |
+| `cc6647d83`, after | 40.18 s | 299 ms |
+
+About 10% of a whole game and 17% of its late turns, on the optimized module:
+less than the 16% the same change measured on a native runner, as the
+optimizer had already taken some of what the change removes.
+
+### Where a site game goes now, by line
+
+`tools/profile_civvis.py --site --lines` on `main` at `2c24af430c` (after
+#5053, #5063, #5065, #5074, #5086), seed 7, 21 s of CPU across turns 35 to
+165. Inclusive share of the stepping thread:
+
+| | Share |
+| --- | ---: |
+| the unit phase (`advanced_units`) | 43.6% |
+| ... builders | 12.1% |
+| ... military units of the majors | 15.1% |
+| ... settlers | 7.9% |
+| `Game::city_yields` (was 38%) | 17.8% |
+| city-states and barbarians (`BasicAi::take_turn`) | 11.9% |
+| `Game::apply`, the end and start of turns included | 11.9% |
+| `movement_risk_frame_for_group` | 10.2% |
+
+Inside `take_turn_inner`, by the line that called (none of these has a frame
+of its own in a symbol profile):
+
+| Line | Share | Calls |
+| --- | ---: | --- |
+| `advanced.rs:26394` | 6.6% | `advanced_gold_spending`: every legal purchase scored every turn, a `speculative_clone` for each that survives the first cut |
+| `advanced.rs:26754` | 4.7% | `culture_budgeted_base_cities` → `BasicAi::cities` |
+| `advanced.rs:26612` | 4.4% | `run_idle_queue_claims`, 4.2% of it `backlog_builder_claim_candidate` (#5093's subject) |
+| `advanced.rs:26592` | 3.2% | `science_spaceport_production`, 2.8% of it reading the race on its first line (fixed in #5099) |
+| `advanced.rs:26335` | 2.6% | `research_with_government`, 2.1% of it `revise_policy_deck` |
+| `advanced.rs:26097` | 2.5% | `victory_focus`, the turn's own reading |
+
+And in the unit phase: `builder_step_toward_job` 5.7% (a risk-aware route
+for every Builder every turn), `worthwhile_improvements` 5.1%,
+`best_settler_target_cached` 4.2%, and for the city-states `healing_step`
+5.3% and `tactical_step` 3.4%. `retreat_step` spends 3.8% of the thread at
+one line, fetching `enemy_attack_envelopes`.
 
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
