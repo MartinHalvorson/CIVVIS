@@ -5613,6 +5613,11 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Pericles Deity 11-10 (234227Z): Field Cannons took Athens (82% of its
+    // last eight turns' damage) while the city struck others 27 times; they
+    // were 59 of 383 gun-turns before t130 and no siege-class gun. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

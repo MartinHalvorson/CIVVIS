@@ -7586,6 +7586,11 @@ pub struct AdvancedAi {
     /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
     /// Off by default.
     first_capital_before_the_walls: bool,
+    /// `every-shooter-at-the-walls`: every hostile land shooter in reach of our
+    /// walls is a wall threat priced by the city damage its next blow would do,
+    /// and an escort may shoot one. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    every_shooter_at_the_walls: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See

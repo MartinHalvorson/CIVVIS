@@ -1305,7 +1305,7 @@ impl AdvancedAi {
             && plan.strategy != GrandStrategy::Conquest
             && g.units.values().any(|unit| {
                 self.observed(g, pid, visible, unit)
-                    && super::siege_at_the_walls_dies_first::threatens_our_walls(g, pid, unit.id)
+                    && self.wall_threat_scale(g, pid, unit.id) > 0.0
             });
         if walls_hold && !siege_cities.is_empty() {
             think!(self.journal(), Military, Decision,
