@@ -104,7 +104,8 @@ fn a_linked_peers_zone_of_control_lock_is_read_the_same_both_ways() {
     for board in played_boards() {
         for uid in fighters(&board).into_iter().take(24) {
             let leader = board.units[&uid].clone();
-            if board.rules.units[leader.kind].domain.as_deref() != Some("land")
+            // A land unit's domain is unnamed in the rules; sea and air are.
+            if board.rules.units[leader.kind].domain.is_some()
                 || leader.linked_to.is_some()
                 || board
                     .map
