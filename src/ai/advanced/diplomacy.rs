@@ -3279,15 +3279,17 @@ impl AdvancedAi {
             // `racer-keeps-the-spies`: …unless it stands in a racer's city
             // that is no longer the leader's, running only a Listening Post
             // or Gain Sources. Never taken with the gene off.
+            // `spare-spies-take-the-next-pad`: …nor out of the next racer's
+            // pad city, where that gene keeps it. Never with the gene off.
             if self.spy_mission_patience
                 && self.spy_orders_until.contains_key(&spy_id)
-                && !Self::racer_spy_moves_on(
+                && (!Self::racer_spy_moves_on(
                     g,
                     spy_id,
                     racer_spy_leader,
                     &racer_spy_racers,
                     self.racer_spy_search(),
-                )
+                ) || self.spare_spy_keeps(g, pid, spy_id, racer_spy_leader, &racer_spy_racers))
             {
                 continue;
             }
@@ -3521,6 +3523,45 @@ impl AdvancedAi {
             let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
                 Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
             });
+            // `spare-spies-take-the-next-pad`: with every known pad city of
+            // the leader held, a spare Spy takes the next racer's free pad
+            // city, and one standing in it stays. `None` with the gene off.
+            // See `advanced/spare_spies_take_the_next_pad.rs`.
+            let spare = self.spare_spy_post(
+                g,
+                pid,
+                spy_id,
+                racer_spy_leader,
+                &racer_spy_racers,
+                &legal,
+            );
+            if let Some(spare_spies_take_the_next_pad::SparePost::Go(post)) = spare {
+                if let Some(action) = legal.iter().find(
+                    |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
+                ) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("spare_spy_posts".to_string())
+                            .or_insert(0) += 1;
+                        let city_name = g.cities[&post].name.clone();
+                        let racer = g.players[g.cities[&post].owner].civ.to_string();
+                        let leader = racer_spy_leader
+                            .map_or_else(String::new, |leader| g.players[leader].civ.to_string());
+                        think!(self.journal(), Military, Decision,
+                               "A spare Spy goes to {racer}'s Spaceport city {city_name}";
+                               "spare-spies-take-the-next-pad: a Spy of ours already holds \
+                                every Spaceport city of {leader} we know, so this one takes \
+                                the next racer's pad instead of searching");
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
+            let spare_stays = spare == Some(spare_spies_take_the_next_pad::SparePost::Stay);
             // `spies-steal-the-lead`: a Science aim posts to a Campus city.
             if let Some(post) = Self::racer_spy_post_for(
                 g,
@@ -3533,7 +3574,9 @@ impl AdvancedAi {
                 self.racer_spy_search(),
                 self.spies_steal_the_lead_on(plan),
                 &self.steal_dry_cities,
-            ) {
+            )
+            .filter(|_| !spare_stays)
+            {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
                 ) {

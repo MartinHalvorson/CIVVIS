@@ -5746,6 +5746,11 @@ pub const GENES: &[Gene] = &[
     // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
     // none. See `advanced/space_denial_rocket_scientist.rs`.
     Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
+    // `spare-spies-take-the-next-pad`: on a Culture or Domination seat, once
+    // a Spy holds every Spaceport city of the leading racer we know, a further
+    // Spy takes the next racer's free pad city instead of searching. Opt-in;
+    // see `advanced/spare_spies_take_the_next_pad.rs`.
+    Gene { tag: "spare-spies-take-the-next-pad", field: "spare_spies_take_the_next_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_spare_spies_take_the_next_pad, disable: AdvancedAi::disable_spare_spies_take_the_next_pad },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

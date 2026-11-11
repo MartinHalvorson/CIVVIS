@@ -9960,6 +9960,11 @@ pub struct AdvancedAi {
     /// the kill plan, the ladder and the city strike. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     siege_at_the_walls_dies_first: bool,
+    /// `spare-spies-take-the-next-pad`: on a Culture or Domination seat, once
+    /// a Spy holds every Spaceport city of the leading racer we know, a
+    /// further Spy takes the next racer's free pad city instead of searching.
+    /// See `advanced/spare_spies_take_the_next_pad.rs`. Opt-in.
+    spare_spies_take_the_next_pad: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11482,6 +11487,9 @@ mod spaceport_above_sea;
 /// The Science lane's launch sites: how many Spaceports it wants, which cities
 /// carry them, and what those cities build. See `advanced/spaceports.rs`.
 mod spaceports;
+/// `spare-spies-take-the-next-pad`: see
+/// `advanced/spare_spies_take_the_next_pad.rs`.
+mod spare_spies_take_the_next_pad;
 mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
