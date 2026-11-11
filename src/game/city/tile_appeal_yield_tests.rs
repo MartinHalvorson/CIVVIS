@@ -41,7 +41,7 @@ fn zero_appeal_bonuses_do_not_request_appeal() {
 fn custom_appeal_bonuses_preserve_each_yield_and_negative_appeal_floor() {
     let (mut game, pos) = unowned_mine();
     for appeal in [-4, 0, 3, 7] {
-        game.observed_appeal.insert(pos, appeal);
+        Arc::make_mut(&mut game.observed_appeal).insert(pos, appeal);
         set_coefficients(&mut game, [0.0; 4]);
         let base = game.player_tile_yields(0, pos, &game.map.tiles[&pos]);
         for coefficients in [
@@ -78,7 +78,7 @@ fn custom_appeal_bonuses_preserve_each_yield_and_negative_appeal_floor() {
 #[test]
 fn pillaged_improvements_do_not_pay_appeal_bonuses() {
     let (mut game, pos) = unowned_mine();
-    game.observed_appeal.insert(pos, 7);
+    Arc::make_mut(&mut game.observed_appeal).insert(pos, 7);
     game.map.tiles.get_mut(&pos).unwrap().pillaged = true;
     let base = game.player_tile_yields(0, pos, &game.map.tiles[&pos]);
     set_coefficients(&mut game, [50.0, 75.0, 1.0, 2.0]);
