@@ -1,0 +1,295 @@
+//! TEMPORARY CI scaffold, removed before ship: the `siege_replay` arms for
+//! `first-capital-strikes-the-open-window` on the live boards, played on the
+//! CI runner because this host parks compilers. The report is the panic text.
+
+use crate::ai::advanced::AdvancedAi;
+use crate::ai::{Ai, VictoryTarget};
+use crate::game::{Action, Game};
+use std::collections::BTreeSet;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+const TAG: &str = "first-capital-strikes-the-open-window";
+const NEEDLES: &[&str] = &[
+    "first capital",
+    "conquest",
+    "declaring war",
+    "campaign aimed",
+    "countering",
+    "interception",
+    "holding off war",
+    "grand strategy",
+    "reserves",
+];
+
+fn scaffold(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/ai/advanced/first_capital_strikes_the_open_window/scaffold")
+        .join(name)
+}
+
+fn unpacked(name: &str) -> PathBuf {
+    let out = std::env::temp_dir().join(format!("open-window-{}-{name}.jsonl", std::process::id()));
+    if !out.exists() {
+        let data = std::process::Command::new("gzip")
+            .arg("-dc")
+            .arg(scaffold(&format!("{name}.jsonl.gz")))
+            .output()
+            .expect("gzip");
+        std::fs::write(&out, data.stdout).unwrap();
+    }
+    out
+}
+
+fn base(name: &str, turn: u32) -> Game {
+    let events = unpacked(name);
+    let snapshot = crate::mirror::snapshot_from_events_at(&events, Some(turn)).unwrap();
+    let state = crate::mirror::state_from_events(&events, Some(turn)).unwrap();
+    let players = if state.seat.players > 0 {
+        state.seat.players
+    } else {
+        4
+    };
+    let max_turns = if state.seat.max_turns > 0 {
+        state.seat.max_turns as u32
+    } else {
+        250
+    };
+    crate::mirror::rebuild_from_state(&snapshot, &state, players, 1, max_turns, 6).game
+}
+
+fn military(g: &Game, pid: usize) -> usize {
+    g.units
+        .values()
+        .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].class == "military")
+        .count()
+}
+
+struct Job {
+    board: &'static str,
+    target: &'static str,
+    turn: u32,
+    on: bool,
+    seed: u64,
+    turns: u32,
+}
+
+fn play(job: &Job, genome: &[String]) -> String {
+    let mut g = base(job.board, job.turn);
+    let (target_pos, owner) = {
+        let city = g
+            .cities
+            .values()
+            .find(|city| city.name.to_lowercase() == job.target.to_lowercase())
+            .expect("target city");
+        (city.pos, city.owner)
+    };
+    let head = {
+        let city = g
+            .cities
+            .values()
+            .find(|city| city.pos == target_pos)
+            .unwrap();
+        format!(
+            "{} t{}: {} owner {} walls {}/{} hp {} strength {:.0}; our military {} power {:.0} against theirs {:.0}; cities {}",
+            job.board,
+            g.turn,
+            city.name,
+            owner,
+            city.wall_hp,
+            g.city_max_wall_hp(city),
+            city.hp,
+            g.city_strength(city.id),
+            military(&g, 0),
+            g.military_power(0),
+            g.military_power(owner),
+            g.player_city_ids(0).len()
+        )
+    };
+    g.rng = crate::rng::Rng::new(9_100 + job.seed);
+    let start = g.turn;
+    g.max_turns = g.max_turns.max(start + job.turns + 1);
+    let journal = crate::reasoning::Journal::recording();
+    let mut forced: Vec<&str> = genome.iter().map(String::as_str).collect();
+    if job.on {
+        forced.push(TAG);
+    }
+    let mut ais: Vec<Box<dyn Ai>> = Vec::new();
+    for pid in 0..g.players.len() {
+        if pid == 0 {
+            let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+            ai.enable_live_bridge_universe();
+            ai.apply_gene_ledger_with_forced_live(&forced);
+            assert_eq!(ai.first_capital_strikes_the_open_window, job.on);
+            assert!(ai.first_capital_before_the_walls && ai.early_conquest_opening);
+            if job.seed == 0 {
+                ai.attach_journal(journal.handle());
+            }
+            ais.push(Box::new(ai));
+        } else {
+            ais.push(Box::new(AdvancedAi::new()));
+        }
+    }
+    let units_at_start = military(&g, 0);
+    let ours: BTreeSet<(i32, i32)> = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 0)
+        .map(|city| city.pos)
+        .collect();
+    let theirs: BTreeSet<(i32, i32)> = g
+        .cities
+        .values()
+        .filter(|city| city.owner == owner)
+        .map(|city| city.pos)
+        .collect();
+    let (mut war, mut taken, mut walls_down, mut min_hp) = (None, None, None, i32::MAX);
+    while g.winner.is_none() && g.turn < start + job.turns {
+        let pid = g.current;
+        ais[pid].take_turn(&mut g, pid);
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &Action::EndTurn);
+        }
+        if war.is_none() && g.is_at_war(0, owner) {
+            war = Some(g.turn);
+        }
+        match g.cities.values().find(|city| city.pos == target_pos) {
+            Some(city) => {
+                min_hp = min_hp.min(city.hp);
+                if city.wall_hp <= 0 && walls_down.is_none() {
+                    walls_down = Some(g.turn);
+                }
+                if city.owner == 0 && taken.is_none() {
+                    taken = Some(g.turn);
+                }
+            }
+            None => {
+                if taken.is_none() {
+                    taken = Some(g.turn);
+                }
+            }
+        }
+    }
+    let owner_taken = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 0 && theirs.contains(&city.pos))
+        .count();
+    let lost = ours
+        .iter()
+        .filter(|pos| g.city_at(**pos).is_none_or(|cid| g.cities[&cid].owner != 0))
+        .count();
+    let other_wars: Vec<usize> = (1..g.players.len())
+        .filter(|rival| {
+            *rival != owner && g.is_at_war(0, *rival) && !g.players[*rival].is_barbarian
+        })
+        .collect();
+    let fmt = |turn: Option<u32>| turn.map_or("-".to_string(), |t| format!("t{t}"));
+    let mut out = format!(
+        "ROW|{}|t{}|{}|seed {}|war {}|taken {}|walls down {}|min hp {}|owner cities taken {}|units lost {}|our cities lost {}|other wars at end {:?}|end t{}\n",
+        job.board,
+        job.turn,
+        if job.on { "on" } else { "off" },
+        job.seed,
+        fmt(war),
+        fmt(taken),
+        fmt(walls_down),
+        min_hp,
+        owner_taken,
+        units_at_start.saturating_sub(military(&g, 0)),
+        lost,
+        other_wars,
+        g.turn
+    );
+    if job.seed == 0 {
+        out.push_str(&format!("HEAD|{head}\n"));
+        let mut lines = 0;
+        for thought in journal.since(0).thoughts {
+            let headline = thought.headline.to_lowercase();
+            if thought.player != 0 || !NEEDLES.iter().any(|needle| headline.contains(needle)) {
+                continue;
+            }
+            if headline.starts_with("policy portfolio") || headline.starts_with("adopting") {
+                continue;
+            }
+            let detail: String = thought.detail.chars().take(200).collect();
+            out.push_str(&format!(
+                "WHY|{} t{} {}|  t{} {} | {}\n",
+                job.board,
+                job.turn,
+                if job.on { "on" } else { "off" },
+                thought.turn,
+                thought.headline,
+                detail
+            ));
+            lines += 1;
+            if lines >= 90 {
+                break;
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn scaffold_open_window_replays() {
+    let genome: Vec<String> = std::fs::read_to_string(scaffold("genome.txt"))
+        .unwrap()
+        .split(',')
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+    let mut jobs = Vec::new();
+    for turn in [30, 34, 38, 42] {
+        for on in [false, true] {
+            for seed in 0..6 {
+                jobs.push(Job {
+                    board: "040704Z",
+                    target: "Mikisiw-Wacîhk",
+                    turn,
+                    on,
+                    seed,
+                    turns: 28,
+                });
+            }
+        }
+    }
+    for on in [false, true] {
+        for seed in 0..4 {
+            jobs.push(Job {
+                board: "040245Z",
+                target: "Washington",
+                turn: 24,
+                on,
+                seed,
+                turns: 28,
+            });
+        }
+    }
+    let next = AtomicUsize::new(0);
+    let results: Mutex<Vec<(usize, String)>> = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, Ordering::SeqCst);
+                let Some(job) = jobs.get(index) else {
+                    break;
+                };
+                let text =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| play(job, &genome)))
+                        .unwrap_or_else(|_| {
+                            format!(
+                                "ROW|{}|t{}|{}|seed {}|PANICKED\n",
+                                job.board, job.turn, job.on, job.seed
+                            )
+                        });
+                results.lock().unwrap().push((index, text));
+            });
+        }
+    });
+    let mut results = results.into_inner().unwrap();
+    results.sort();
+    let report: String = results.into_iter().map(|(_, text)| text).collect();
+    panic!("OPEN-WINDOW-REPORT-BEGIN\n{report}OPEN-WINDOW-REPORT-END");
+}

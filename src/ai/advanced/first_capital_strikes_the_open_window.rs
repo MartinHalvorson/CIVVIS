@@ -517,3 +517,7 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+// TEMPORARY CI scaffold; removed before ship.
+#[cfg(test)]
+mod replay_scaffold;
