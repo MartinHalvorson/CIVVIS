@@ -2,14 +2,9 @@
 """Read a node CPU profile of the browser engine: where WebAssembly spends a site game.
 
 `tools/profile_civvis.py` profiles the native build, and the native build is
-not what a visitor runs. The published module is the same Rust compiled for
-`wasm32`, and the two do not agree about what is expensive. On 2026-11-11 the
-native profile of a site game put `memcmp` at 9.6% of self time and the ordered
-maps well below it; the module's own profile put **39.7% of self time inside
-`BTreeMap` and `BTreeSet`** and `memcmp` at 0.4%, because the comparison is
-inlined into the tree search there and a tree walk is a chain of bounds-checked
-loads with no wide compare to lean on. A lever chosen from the native table
-would have been the wrong one.
+not what a visitor runs. Profile the optimized browser module itself: its
+inlining, container costs and memory operations can differ substantially
+from native code or a diagnostic module built without LTO.
 
 By hand only: use the exact published module and its matching
 `civvis-wasm-symbols` build artifact. The reader verifies the module and map
@@ -154,10 +149,31 @@ def held_and_asked(symbol: str) -> str:
     return "%-8s %s" % (asked, "/".join(held) if held else "a primitive key")
 
 
+def is_ordered_map(symbol: str) -> bool:
+    """Distinguish map machinery from a gameplay method's map type argument.
+
+    In the optimized module, `SpecMap<BTreeMap<String, GoodyRewardSpec>>`
+    names one shared `SpecMap::position` implementation. Its lookup does not
+    execute the BTreeMap it holds. In an actual ordered-map symbol, the tree
+    namespace precedes any gameplay key/value type; in this counterexample
+    the gameplay namespace comes first. Keep the same rule for readable
+    names and the length-prefixed Rust names emitted by Binaryen.
+    """
+    if not ORDERED_MAP.search(symbol):
+        return False
+    parts = identifiers(symbol) or re.findall(r"[A-Za-z_][A-Za-z_0-9]*", symbol)
+    for part in parts:
+        if part in {"btree", "LeafOrInternal", "BTreeMap", "BTreeSet"}:
+            return True
+        if part in {"civvis", "specmap", "SpecMap"}:
+            return False
+    return True
+
+
 def ordered_maps(totals: Counter[str]) -> Counter[str]:
     by_kind: Counter[str] = collections.Counter()
     for symbol, spent in totals.items():
-        if ORDERED_MAP.search(symbol):
+        if is_ordered_map(symbol):
             by_kind[held_and_asked(symbol)] += spent
     return by_kind
 
@@ -193,8 +209,9 @@ def report(totals: Counter[str], top: int = 30, out=sys.stdout) -> None:
 
     print("\n== ROLL-UPS  (self time; a per-function table hides these)", file=out)
     for label, pattern in ROLLUPS:
+        matches = is_ordered_map if pattern is ORDERED_MAP else pattern.search
         spent = sum(value for symbol, value in totals.items()
-                    if pattern.search(symbol))
+                    if matches(symbol))
         print("%7.2f%%  %s" % (share(spent), label), file=out)
 
     print("\n== ORDERED MAPS, BY WHAT THEY HOLD AND WHAT WAS ASKED", file=out)
