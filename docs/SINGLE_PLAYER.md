@@ -108,7 +108,7 @@ the action from the UI without a debugger.
 | Turn loop | `end_turn` | yes — blockers, notifications, unit cycling |
 | Unit orders | `move`, `move_to`, `attack`, `ranged`, `fortify`, `promote`, `upgrade`, `improve`, `pillage`, `repair_improvement`, air ops, religious ops | yes — contextual unit bar |
 | Research | `research`, `civic` | yes — cards and both trees |
-| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — the city's panels on the map, with prices on purchases, a production queue the page keeps, and a yield focus (`POST /city-focus`) |
+| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — the city's panels on the map, with prices on purchases, a production queue the page keeps, a yield focus (`POST /city-focus`) and citizens placed by hand (`POST /city-citizen`) |
 | Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
 | Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
 | Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, naming the person on offer and why they cannot be claimed |
@@ -124,8 +124,8 @@ the action from the UI without a debugger.
 | Auto-play | `POST /autoplay` | yes — a built-in agent and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player. What is left in the city is placing individual citizens by
-hand, which the engine has no action for.
+value to a player. What is left in the city is assigning specialists to
+district slots by hand; the governor does that.
 
 ## The arrangement
 
@@ -564,8 +564,16 @@ favour it, again to disfavour it, again to leave it to the governor. The
 governor is the engine's own (`citizen_strategy`); `POST /city-focus` writes
 the seat's wish into the same per-city directive an agent writes, and the
 citizens are reassigned at once. A focus tilts appetites and cannot starve a
-city. Individual citizens still cannot be placed by hand: the engine has no
-action for that.
+city.
+
+**Placing a citizen.** Manage citizens, on the city panel, shows the city's
+land with a citizen on every worked tile. Pressing a tile places a citizen
+there and keeps them there (a white ring marks it); pressing it again
+releases them. The engine seats placed citizens first and its governor
+arranges everyone else around them (`Player::citizen_locks`, written only by
+`POST /city-citizen`). A placed citizen is not moved even to cover
+consumption, as in Civilization VI, and a city cannot have more placed than
+it has citizens. Specialists in districts are still the governor's to assign.
 
 ## Endings
 

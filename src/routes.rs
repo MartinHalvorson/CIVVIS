@@ -687,6 +687,74 @@ pub fn city_focus(session: &mut Session, parsed: &Value) -> Value {
     out
 }
 
+/// `POST /city-citizen` — place one of the played seat's citizens on a tile
+/// by hand, or take the placement off.
+///
+/// Civilization VI's Manage Citizens: a player presses a tile to lock a
+/// citizen there and the governor places everyone else around it. The engine
+/// holds the placements in `Player::citizen_locks`; this is the only thing
+/// that writes them. A tile has to be one the city could work, and a city
+/// cannot have more citizens placed than it has citizens.
+pub fn city_citizen(session: &mut Session, parsed: &Value) -> Value {
+    if session.params.spectate {
+        return json!({"error": "a watched game has no seat to place a citizen from"});
+    }
+    let owned = parsed["city"]
+        .as_u64()
+        .map(|city| city as u32)
+        .filter(|city| {
+            session
+                .game
+                .cities
+                .get(city)
+                .is_some_and(|held| held.owner == 0)
+        });
+    let Some(city) = owned else {
+        return json!({"error": "not your city"});
+    };
+    let pos = parsed["pos"]
+        .as_array()
+        .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+    let Some(pos) = pos else {
+        return json!({"error": "a citizen is placed on a tile"});
+    };
+    if parsed["lock"].as_bool().unwrap_or(true) {
+        let (workable, citizens) = {
+            let held = &session.game.cities[&city];
+            let open_ground = session.game.map.get(pos).is_some_and(|tile| {
+                tile.district.is_none()
+                    && tile.district_foundation.is_none()
+                    && tile.wonder.is_none()
+            });
+            (
+                pos != held.pos && held.owned_tiles.contains(&pos) && open_ground,
+                held.pop.max(0) as usize,
+            )
+        };
+        if !workable {
+            return json!({"error": "that tile cannot be worked by this city"});
+        }
+        let placed = session.game.players[0]
+            .citizen_locks
+            .entry(city)
+            .or_default();
+        if !placed.contains(&pos) && placed.len() >= citizens {
+            return json!({"error": "every citizen of this city is already placed"});
+        }
+        placed.insert(pos);
+    } else if let Some(placed) = session.game.players[0].citizen_locks.get_mut(&city) {
+        placed.remove(&pos);
+        if placed.is_empty() {
+            session.game.players[0].citizen_locks.remove(&city);
+        }
+    }
+    // A governor setting, written without an action.
+    session.game.board_written();
+    let mut out = session.state();
+    out["error"] = Value::Null;
+    out
+}
+
 /// `POST /forecast` — what a blow would do, before it is struck.
 ///
 /// Read-only, and it answers only for a strike the seat could order right now

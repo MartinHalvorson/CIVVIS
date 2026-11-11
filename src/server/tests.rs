@@ -14165,7 +14165,7 @@ fn a_selected_city_shows_what_its_land_yields() {
         tiles.contains("if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);")
     );
     assert!(EMBEDDED_APP_JS
-        .contains("return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());"));
+        .contains("return !SPEC && Boolean((sitePick && (sitePick.plots || sitePick.citizens)) || cityScreenOpen());"));
     // Both maps read it, and the yield icons being on still shows everything.
     assert_eq!(
         EMBEDDED_APP_JS
@@ -16175,6 +16175,124 @@ fn a_city_keeps_a_queue_the_page_reissues() {
     let routes = include_str!("../routes.rs");
     assert!(routes.contains("const FOCUS_FAVOURED: f64 = 4.0;"));
     assert!(routes.contains("const FOCUS_DISFAVOURED: f64 = -1.0;"));
+}
+
+/// Civilization VI's Manage Citizens: a player presses a tile and a citizen
+/// works it until told otherwise. Placing a citizen was the last thing a
+/// person could do in a city there and not here.
+#[test]
+fn a_played_seat_places_a_citizen_by_hand() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, center) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+    session.game.cities.get_mut(&city).unwrap().pop = 2;
+    session.game.board_written();
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+    let before = citizens(&session.state());
+    assert_eq!(before["locked"], json!([]));
+    let worked = before["worked_tiles"]
+        .as_array()
+        .expect("worked tiles")
+        .clone();
+    assert_eq!(worked.len(), 2);
+
+    // Three tiles the city owns and the governor left unworked.
+    let spare: Vec<(i32, i32)> = session.game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && !worked.contains(&json!([pos.0, pos.1])))
+        .filter(|pos| {
+            session
+                .game
+                .map
+                .get(*pos)
+                .is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
+        })
+        .take(3)
+        .collect();
+    assert_eq!(spare.len(), 3, "a new city owns more land than it works");
+    let ask = |session: &mut Session, pos: (i32, i32), lock: bool| {
+        crate::routes::city_citizen(
+            session,
+            &json!({"city": city, "pos": [pos.0, pos.1], "lock": lock}),
+        )
+    };
+
+    // Placed: the citizen works that tile, and the page is told it was placed.
+    let placed = ask(&mut session, spare[0], true);
+    assert!(placed["error"].is_null(), "{}", placed["error"]);
+    let after = citizens(&placed);
+    assert_eq!(after["locked"], json!([[spare[0].0, spare[0].1]]));
+    let now_worked = after["worked_tiles"].as_array().expect("worked tiles");
+    assert!(now_worked.contains(&json!([spare[0].0, spare[0].1])));
+    assert_eq!(
+        now_worked.len(),
+        2,
+        "placing moves a citizen, it does not add one"
+    );
+
+    // Two citizens, so a second may be placed and a third may not.
+    assert!(ask(&mut session, spare[1], true)["error"].is_null());
+    assert!(ask(&mut session, spare[2], true)["error"].is_string());
+    // Nor on the city's own tile, nor on land that is not the city's.
+    assert!(ask(&mut session, center, true)["error"].is_string());
+    assert!(ask(&mut session, (4_000, 4_000), true)["error"].is_string());
+
+    // Released, the governor has the citizens back, to the tile.
+    ask(&mut session, spare[0], false);
+    let released = ask(&mut session, spare[1], false);
+    assert_eq!(citizens(&released)["locked"], json!([]));
+    assert_eq!(citizens(&released)["worked_tiles"], before["worked_tiles"]);
+    assert!(session.game.players[0].citizen_locks.is_empty());
+
+    // Both front ends answer it, and the browser build routes it to the engine.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-citizen\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/city-citizen\""));
+
+    // The page: a mode on the map that stays up, marks who works what, and
+    // only appears for a server that says which citizens are placed.
+    assert!(EMBEDDED_APP_JS
+        .contains("if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }"));
+    assert!(EMBEDDED_APP_JS.contains("(city.citizens && Array.isArray(city.citizens.locked)"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "body: JSON.stringify({city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))})"
+    ));
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("    markCitizenPick(site, ")
+            .count(),
+        2
+    );
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15

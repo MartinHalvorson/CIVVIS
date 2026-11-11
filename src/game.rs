@@ -5130,6 +5130,16 @@ pub struct Player {
     /// because the governor only ever looks up cities that exist.
     #[serde(default)]
     pub city_directives: BTreeMap<u32, CityDirective>,
+    /// Tiles a seat has placed a citizen on by hand, keyed by city id.
+    ///
+    /// Civilization VI lets a player lock a citizen to a tile; the governor
+    /// then places everyone else around it. A locked citizen is seated first
+    /// and no later pass moves it, including the one that covers consumption:
+    /// a player who locks a city into starving has been obeyed, as in that
+    /// game. Empty is the shipped behaviour, which is every AI seat and every
+    /// old save. Nothing in the engine writes this.
+    #[serde(default)]
+    pub citizen_locks: BTreeMap<u32, BTreeSet<Pos>>,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -5505,6 +5515,7 @@ impl Player {
             bankruptcy_amenity_penalty: 0,
             citizen_food_bias: 0.0,
             city_directives: BTreeMap::new(),
+            citizen_locks: BTreeMap::new(),
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -8654,6 +8665,7 @@ impl Game {
         for player in self.players.iter_mut() {
             player.remembered_cities.clear();
             player.city_directives.clear();
+            player.citizen_locks.clear();
         }
     }
 
@@ -8718,6 +8730,7 @@ impl Game {
         Arc::make_mut(&mut self.observed_city_specialists).remove(&cid);
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
+            player.citizen_locks.remove(&cid);
         }
         *self.query_memo.city_ids.borrow_mut() = None;
     }

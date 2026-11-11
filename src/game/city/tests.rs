@@ -141,6 +141,83 @@ fn provision_settlers_keep_the_ordinary_growth_appetite() {
 
 /// `CitizenJobKey` replaced the formatted text the citizen plan broke ties on.
 /// Its derived order must be that text's order, or a tie resolves differently.
+/// Civilization VI lets a player lock a citizen to a tile. The governor seats
+/// that citizen first and places everyone else around it, and no later pass
+/// moves it, including the one that covers consumption.
+#[test]
+fn a_citizen_placed_by_hand_stays_where_it_was_put() {
+    let (mut game, city) = settler_city();
+    game.cities.get_mut(&city).unwrap().queue.clear();
+    let before = game.city_citizen_plan(city);
+    assert_eq!(before.worked_tiles.len(), 3);
+    // A tile the governor did not choose, and would not: the poorest it owns.
+    let center = game.cities[&city].pos;
+    let mut spare: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|pos| *pos != center && !before.worked_tiles.contains(pos))
+        .filter(|pos| {
+            let tile = &game.map.tiles[pos];
+            tile.district.is_none() && tile.wonder.is_none()
+        })
+        .collect();
+    spare.sort_by(|a, b| {
+        let value = |pos: &Pos| game.workable_tile_yields(*pos).total();
+        value(a).partial_cmp(&value(b)).unwrap().then(a.cmp(b))
+    });
+    let placed = *spare.first().expect("a tile the governor left unworked");
+
+    // Nothing placed is the shipped plan, to the tile.
+    game.players[0].citizen_locks.insert(city, BTreeSet::new());
+    assert_eq!(game.city_citizen_plan(city), before);
+
+    game.players[0]
+        .citizen_locks
+        .entry(city)
+        .or_default()
+        .insert(placed);
+    game.board_written();
+    let held = game.city_citizen_plan(city);
+    assert!(held.worked_tiles.contains(&placed), "{held:?}");
+    assert_eq!(held.worked_tiles.len(), before.worked_tiles.len());
+
+    // Favouring anything else does not pull the placed citizen off its tile.
+    game.players[0].city_directives.insert(
+        city,
+        CityDirective {
+            emphasis: Yields {
+                food: 4.0,
+                production: 4.0,
+                ..Yields::default()
+            },
+            ..CityDirective::default()
+        },
+    );
+    game.board_written();
+    assert!(game.city_citizen_plan(city).worked_tiles.contains(&placed));
+    game.players[0].city_directives.clear();
+
+    // More placed than there are citizens: the first few are seated and the
+    // governor has nobody left to place.
+    let all: BTreeSet<Pos> = spare
+        .iter()
+        .copied()
+        .chain(before.worked_tiles.iter().copied())
+        .collect();
+    assert!(all.len() > 3);
+    game.players[0].citizen_locks.insert(city, all.clone());
+    game.board_written();
+    let full = game.city_citizen_plan(city);
+    assert_eq!(full.worked_tiles.len(), 3);
+    assert!(full.worked_tiles.iter().all(|pos| all.contains(pos)));
+
+    // Taken off again, the governor's own plan comes back exactly.
+    game.players[0].citizen_locks.remove(&city);
+    game.board_written();
+    assert_eq!(game.city_citizen_plan(city), before);
+}
+
 #[test]
 fn citizen_job_keys_order_exactly_as_their_text_did() {
     let values = [
