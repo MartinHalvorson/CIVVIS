@@ -1099,3 +1099,48 @@ fn the_force_grows_to_what_the_city_asks_for() {
         AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
     assert!(bodies > STONE_MELEE_MAX, "{bodies}");
 }
+
+/// Gold buys the stone's missing melee bodies: one a turn, the Warrior the
+/// capital would train, and nothing once the reserved bodies stand, without
+/// the Gold, or with the gene off.
+#[test]
+fn gold_buys_a_missing_melee_body_for_the_stone() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    game.players[0].gold = 2_000.0;
+    game.players[0].gold_per_turn = 10.0;
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.city_state_stone_stands());
+    let warriors = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind.as_str() == "warrior")
+            .count()
+    };
+
+    // The gene off: no stone, nothing bought.
+    let mut off = game.clone();
+    let mut plain = seat(false);
+    plain.maintain_conquest_opening(&mut off, 0);
+    assert!(!plain.city_state_stone_body_purchase(&mut off, 0));
+    assert_eq!(warriors(&off), 0);
+
+    // An empty treasury buys nothing.
+    let mut poor = game.clone();
+    poor.players[0].gold = 0.0;
+    assert!(!ai.clone().city_state_stone_body_purchase(&mut poor, 0));
+    assert_eq!(warriors(&poor), 0);
+
+    assert!(ai.city_state_stone_body_purchase(&mut game, 0));
+    assert_eq!(warriors(&game), 1, "a Warrior was bought");
+    assert!(game.players[0].gold < 2_000.0, "and paid for");
+
+    // The reserved bodies all stand: nothing more is bought.
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let held = warriors(&game);
+    assert!(!ai.city_state_stone_body_purchase(&mut game, 0));
+    assert_eq!(warriors(&game), held);
+}

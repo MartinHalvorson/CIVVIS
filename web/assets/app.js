@@ -30229,12 +30229,22 @@ function drawSoloHud() {
 // here, so a leader is their civilization's monogram in the two colours its
 // borders and units wear on the map, which is how a player tells them apart
 // anyway. The mark in the corner is the stance, said in full by the tooltip.
+// An alliance is a record (its kind, level, points and end), not a name.
+// Both readers below printed it through `titleCase`, which takes a string:
+// the diplomacy screen threw when opened beside an ally, and the ribbon, which
+// is drawn with every frame, stopped the whole page drawing the turn an
+// alliance was signed.
+function allianceWord(player) {
+  const held = player.alliance;
+  const kind = held && typeof held === "object" ? held.kind : held;
+  return typeof kind === "string" && kind ? `${titleCase(kind)} ally` : "Ally";
+}
 function ribbonStance(player) {
   const relationship = player.their_relationship || player.relationship || "neutral";
   if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
   if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
   if (player.allied)
-    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+    return {tone: "friend", word: allianceWord(player), mark: "★"};
   if (player.friend || relationship === "declared_friend")
     return {tone: "friend", word: "Friend", mark: "♥"};
   if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
@@ -30246,6 +30256,21 @@ function ribbonStance(player) {
 let leaderRibbonHtml = null;
 function drawLeaderRibbon() {
   const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  try { html = leaderRibbonMarkup(); }
+  catch (error) {
+    // The ribbon rides a frame that has the whole turn to draw. A leader it
+    // cannot describe costs the ribbon, never the frame.
+    console.error("leader ribbon", error);
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+function leaderRibbonMarkup() {
   let html = "";
   if (state && playingSolo()) {
     const leaders = state.players.filter(player => player.alive && !player.is_minor &&
@@ -30266,12 +30291,7 @@ function drawLeaderRibbon() {
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
   }
-  // The HUD is redrawn on every observation; the ribbon changes a few times
-  // a game, and rebuilding it under a pointer would drop the hover each time.
-  if (html === leaderRibbonHtml) return;
-  leaderRibbonHtml = html;
-  ribbon.innerHTML = html;
-  ribbon.hidden = !html;
+  return html;
 }
 // The ribbon opens the same diplomacy screen the hook does, on the leader
 // that was pressed.
@@ -30972,7 +30992,7 @@ function drawDiplomacy() {
       const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
-        : player.allied ? `${titleCase(player.alliance || "")} ally`
+        : player.allied ? allianceWord(player)
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
         : relationship === "denounced" ? "Denounced"
@@ -31240,6 +31260,10 @@ function cityAct(action, label, cls = "", title = "") {
 // What kind of thing an Item is, in the order Civ 6's production list shows
 // them. Districts before buildings because a building usually waits on one.
 function itemCategory(item) {
+  // A repair leads the list, as it does in Civ 6: a pillaged district pays
+  // nothing until it is mended. A corporation's product is a city project.
+  if (item.repair) return "Repairs";
+  if (item.product) return "Projects";
   if (item.unit) return "Units";
   if (item.district) return "Districts";
   if (item.wonder) return "Wonders";
@@ -31254,6 +31278,8 @@ function itemKey(item) {
     : item.district ? `district:${item.district}`
     : item.wonder ? `wonder:${item.wonder}`
     : item.project ? `project:${item.project}`
+    : item.repair ? `repair:${item.repair}:${item.pos}`
+    : item.product ? `product:${item.product}`
     : `building:${item.building}`;
 }
 // The ruleset carries no prose for units, buildings or districts, so say what
@@ -31282,6 +31308,8 @@ function itemNote(item) {
     if (spec.requires_resource) parts.push(`needs ${titleCase(spec.requires_resource)}`);
     return parts.join(" · ");
   }
+  if (item.repair) return "Pillaged. It pays nothing until it is mended.";
+  if (item.product) return "A product of this city's corporation.";
   if (item.project) {
     const spec = RULES.projects[item.project];
     return spec && spec.repeatable ? "Repeatable." : "";
@@ -31303,6 +31331,7 @@ function itemNote(item) {
   return parts.join(" · ");
 }
 function turnsFor(cost, perTurn, banked = 0) {
+  if (!Number.isFinite(cost)) return Infinity;
   const left = Math.max(0, cost - banked);
   if (left <= 0) return 1;
   return perTurn > 0 ? Math.ceil(left / perTurn) : Infinity;
@@ -31591,7 +31620,7 @@ function drawCityScreen() {
     tab !== "faith" || buys.some(action => paidIn(action) === "faith"));
   if (!tabs.some(([tab]) => tab === cityBuildTab)) cityBuildTab = "production";
   const purchasing = cityBuildTab !== "production";
-  const order = ["Districts", "Buildings", "Wonders", "Units", "Projects"];
+  const order = ["Repairs", "Districts", "Buildings", "Wonders", "Units", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
   build += `<div class="build-head"><div class="build-title">` +
@@ -31639,8 +31668,10 @@ function drawCityScreen() {
     listed += group.length;
     const priced = entry => purchasing
       ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
-      : itemCost(entry.item);
-    group.sort((a, b) => priced(a) - priced(b));
+      : entry.sites.length ? orderCost(entry.sites[0]) : itemCost(entry.item);
+    // An order with no stated cost sorts last instead of scrambling the rest.
+    const ranked = entry => Number.isFinite(priced(entry)) ? priced(entry) : Infinity;
+    group.sort((a, b) => ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));
     // Civilization VI lists a building under the district it stands in, so
     // the Library is found under Campus and not somewhere in a list of
     // prices. The City Center's own come first, then each district in the
@@ -31681,7 +31712,7 @@ function drawCityScreen() {
             title: price === undefined ? `Pay ${titleCase(cityBuildTab)} for it outright`
               : `Pay ${Math.round(price)} ${titleCase(cityBuildTab)} for it outright`});
         }
-        const cost = itemCost(entry.item);
+        const cost = orderCost(entry.sites[0]);
         const isCurrent = itemKey(entry.item) === currentKey;
         const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
         // One site: a plain order. Several: the choice is made on the map,
@@ -31937,7 +31968,18 @@ function hook(id, fn) {
   const el = document.getElementById(id);
   if (el) el.onchange = () => { if (el.value) fn(el.value); };
 }
+// The engine offers two orders the ruleset has no row for: mending what was
+// pillaged, and a corporation's product. Every reader of an Item below used to
+// assume one of the five it lists, and the city could not be opened while
+// either was on offer.
+function repairedThing(it) {
+  if (it.repair !== "district") return titleCase(it.repair);
+  const tile = it.pos ? TMAP.get(key(it.pos)) : null;
+  return tile && tile.district ? titleCase(tile.district) : "District";
+}
 function itemName(it) {
+  if (it.repair) return `repair ${repairedThing(it)}`;
+  if (it.product) return `${it.product} product`;
   if (it.unit && it.formation) {
     return (it.unit + " " + formationName(it.unit, it.formation)).replaceAll("_", " ");
   }
@@ -31948,6 +31990,8 @@ function itemPlainName(it) {
   return titleCase(it.wonder || it.district || itemName(it));
 }
 function prodGlyph(it) {
+  if (it.repair) return "🛠";
+  if (it.product) return "▣";
   if (it.building) return BLDG_ICON[it.building] || "🏛";
   if (it.wonder) return "★";
   if (it.project) return "🛠";
@@ -31955,13 +31999,26 @@ function prodGlyph(it) {
 }
 function itemCost(it) {
   if (!RULES) return "?";
-  let standard;
-  if (it.unit) standard = RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2 : 1.5) : 1);
-  else if (it.building) standard = RULES.buildings[it.building].cost;
-  else if (it.wonder) standard = RULES.wonders[it.wonder].cost;
-  else if (it.project) standard = RULES.projects[it.project].cost;
-  else standard = RULES.districts[it.district].cost;
+  // A repair costs a quarter of what it mends and a product a flat 500
+  // (`Game::base_item_cost`). A name the ruleset does not know has no cost
+  // the page can state, and says so with NaN rather than by throwing.
+  const mended = it.repair
+    ? it.repair === "district" ? RULES.districts[TMAP.get(key(it.pos || []))?.district]
+      : RULES.buildings[it.repair]
+    : null;
+  const spec = it.unit ? RULES.units[it.unit] : it.building ? RULES.buildings[it.building]
+    : it.wonder ? RULES.wonders[it.wonder] : it.project ? RULES.projects[it.project]
+    : it.district ? RULES.districts[it.district] : null;
+  const standard = it.repair ? (mended ? mended.cost * .25 : NaN)
+    : it.product ? 500
+    : spec ? spec.cost * (it.unit && it.formation ? (it.formation >= 2 ? 2 : 1.5) : 1) : NaN;
   return standard * gameSpeedPercent() / 100;
+}
+// What an offered order costs: the engine's own quote where it sends one (it
+// does for what the ruleset does not list), the ruleset's figure otherwise.
+function orderCost(action) {
+  return Number.isFinite(Number(action && action.cost)) && action.cost > 0
+    ? Number(action.cost) : itemCost(action.item);
 }
 function formationName(unit, formation) {
   const naval = RULES?.units?.[unit]?.domain === "sea";
@@ -38588,16 +38645,22 @@ function actionOptionsFor(next) {
       if (!seen.has(key)) seen.set(key, {item: action.item, sites: []});
       seen.get(key).sites.push(action);
     }
-    const entries = [...seen.values()].sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    // A repair leads, as it does in the city's own list; the rest by cost,
+    // with anything of no stated cost last.
+    const ranked = entry => entry.item.repair ? -1
+      : Number.isFinite(orderCost(entry.sites[0])) ? orderCost(entry.sites[0]) : Infinity;
+    const entries = [...seen.values()].sort((a, b) =>
+      ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));
     return entries.slice(0, ACTION_OPTION_CAP).map(entry => {
       const key = itemKey(entry.item);
-      const cost = itemCost(entry.item);
+      const cost = orderCost(entry.sites[0]);
       const turns = turnsFor(cost, perTurn, 0);
       const several = entry.sites.length > 1;
       const name = itemPlainName(entry.item);
       return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
         name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
-        note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
+        note: `${Number.isFinite(cost) ? `${Math.round(cost)} ⚙ · ` : ""}` +
+          `${turns === Infinity ? "—" : `${turns}t`}`,
         onclick: several ? `beginSitePick(${cityId},${JSON.stringify(key)})`
           : `send(${JSON.stringify(entry.sites[0])})`,
         title: several ? "Several tiles could take it — choose one on the map"
