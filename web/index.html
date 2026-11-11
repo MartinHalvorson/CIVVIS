@@ -2288,6 +2288,20 @@
     border-radius: 10px; background: #0c1815; border: 1px solid #26372f;
   }
   .city-yield b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+  /* A yield that can be favoured is a button wearing the same plate. */
+  button.city-yield {
+    position: relative; margin: 0; color: inherit; font: inherit; letter-spacing: 0;
+    text-transform: none; box-shadow: none; cursor: pointer;
+  }
+  button.city-yield:hover { transform: none; border-color: var(--gold); background: #17261f; }
+  .city-yield.favoured { border-color: var(--gold); background: #1b241b; }
+  .city-yield.disfavoured { border-color: #6b3f3c; }
+  .city-yield.disfavoured .city-yield-icon, .city-yield.disfavoured b { opacity: .5; }
+  .city-focus-mark {
+    position: absolute; top: 2px; right: 4px; font: 800 11px/1 system-ui, sans-serif;
+    font-style: normal; color: var(--gold-bright);
+  }
+  .city-yield.disfavoured .city-focus-mark { color: #f08b82; }
   .city-yield span { color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
   .city-group { margin-top: 14px; }
   .city-group-head {
@@ -2326,6 +2340,15 @@
   }
   button.build-item { cursor: pointer; }
   button.build-item:hover { transform: none; border-color: var(--gold); background: #17261f; }
+  .build-item.queued { cursor: default; }
+  .build-unqueue { margin: 0; padding: 3px 7px; font-size: var(--type-small); }
+  .build-queue-mode {
+    width: 100%; margin: 6px 0 0; padding: 6px 9px; text-align: left; text-transform: none;
+    letter-spacing: 0; font-size: var(--type-secondary); color: var(--muted);
+    border: 1px dashed #2c4239; background: none; box-shadow: none;
+  }
+  .build-queue-mode small { margin-left: 8px; font-weight: 600; opacity: .8; }
+  .build-queue-mode[aria-pressed="true"] { color: var(--gold-bright); border: 1px solid var(--gold); background: #1b241b; }
   .build-sub {
     margin: 5px 2px 0; color: var(--muted); font-size: var(--type-label); font-weight: 850;
     letter-spacing: .07em; text-transform: uppercase;

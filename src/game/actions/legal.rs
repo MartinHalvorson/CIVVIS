@@ -177,24 +177,7 @@ impl Game {
     ) -> (Vec<Action>, Vec<Action>) {
         let p = &self.players[pid];
         let mut purchases = Vec::new();
-        let mut plots = self
-            .wdisk(self.cities[&cid].pos, 3)
-            .into_iter()
-            .filter_map(|position| {
-                self.plot_purchase_cost(pid, cid, position)
-                    .map(|cost| (position, cost))
-            })
-            .collect::<Vec<_>>();
-        plots.sort_unstable_by_key(|(position, _)| *position);
-        for (pos, cost) in plots {
-            if p.gold + f64::EPSILON >= cost {
-                purchases.push(Action::BuyPlot {
-                    city: cid,
-                    pos,
-                    cost,
-                });
-            }
-        }
+        self.push_legal_plot_purchases(pid, cid, &mut purchases);
 
         // A purchase menu does not need the complete production catalog. The
         // building and unit purchase quotes repeat the same `can_produce`
@@ -358,6 +341,48 @@ impl Game {
     /// Purchase-only projection of
     /// `legal_actions_within(PURCHASES | EMPIRE)`, in identical relative
     /// order and under one query-memo scope.
+    /// The plots one city may buy, by position: the head of that city's
+    /// block of the purchase menu.
+    fn push_legal_plot_purchases(&self, pid: usize, cid: u32, purchases: &mut Vec<Action>) {
+        let gold = self.players[pid].gold;
+        let mut plots = self
+            .wdisk(self.cities[&cid].pos, 3)
+            .into_iter()
+            .filter_map(|position| {
+                self.plot_purchase_cost(pid, cid, position)
+                    .map(|cost| (position, cost))
+            })
+            .collect::<Vec<_>>();
+        plots.sort_unstable_by_key(|(position, _)| *position);
+        for (pos, cost) in plots {
+            if gold + f64::EPSILON >= cost {
+                purchases.push(Action::BuyPlot {
+                    city: cid,
+                    pos,
+                    cost,
+                });
+            }
+        }
+    }
+
+    /// The plots on [`Self::legal_purchase_actions`], in the order it lists
+    /// them, without the rest of the menu.
+    ///
+    /// A caller that shops only for land was listing every unit, building
+    /// and district every city could buy, each with a `can_produce` and a
+    /// price, to keep the plots and drop the rest. The plots are the head of
+    /// each city's block and no other block holds one, so walking the cities
+    /// in the menu's order and taking only that head gives the same plots in
+    /// the same order.
+    pub(crate) fn legal_plot_purchases(&self, pid: usize) -> Vec<Action> {
+        let _memo = self.query_memo();
+        let mut plots = Vec::new();
+        for cid in self.purchase_action_city_ids(pid) {
+            self.push_legal_plot_purchases(pid, cid, &mut plots);
+        }
+        plots
+    }
+
     pub(crate) fn legal_purchase_actions(&self, pid: usize) -> Vec<Action> {
         let city_ids = self.purchase_action_city_ids(pid);
         let memo = self.query_memo();

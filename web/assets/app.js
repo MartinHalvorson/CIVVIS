@@ -8948,7 +8948,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
-    unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
+    unitOrders.clear(); cityQueues.clear(); noticeLog = []; noticeDismissed.clear();
     loopTurn = null; noticeSeenTurn = 0;
   }
   openTurnIfNew();
@@ -30229,12 +30229,22 @@ function drawSoloHud() {
 // here, so a leader is their civilization's monogram in the two colours its
 // borders and units wear on the map, which is how a player tells them apart
 // anyway. The mark in the corner is the stance, said in full by the tooltip.
+// An alliance is a record (its kind, level, points and end), not a name.
+// Both readers below printed it through `titleCase`, which takes a string:
+// the diplomacy screen threw when opened beside an ally, and the ribbon, which
+// is drawn with every frame, stopped the whole page drawing the turn an
+// alliance was signed.
+function allianceWord(player) {
+  const held = player.alliance;
+  const kind = held && typeof held === "object" ? held.kind : held;
+  return typeof kind === "string" && kind ? `${titleCase(kind)} ally` : "Ally";
+}
 function ribbonStance(player) {
   const relationship = player.their_relationship || player.relationship || "neutral";
   if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
   if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
   if (player.allied)
-    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+    return {tone: "friend", word: allianceWord(player), mark: "★"};
   if (player.friend || relationship === "declared_friend")
     return {tone: "friend", word: "Friend", mark: "♥"};
   if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
@@ -30246,6 +30256,21 @@ function ribbonStance(player) {
 let leaderRibbonHtml = null;
 function drawLeaderRibbon() {
   const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  try { html = leaderRibbonMarkup(); }
+  catch (error) {
+    // The ribbon rides a frame that has the whole turn to draw. A leader it
+    // cannot describe costs the ribbon, never the frame.
+    console.error("leader ribbon", error);
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+function leaderRibbonMarkup() {
   let html = "";
   if (state && playingSolo()) {
     const leaders = state.players.filter(player => player.alive && !player.is_minor &&
@@ -30266,12 +30291,7 @@ function drawLeaderRibbon() {
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
   }
-  // The HUD is redrawn on every observation; the ribbon changes a few times
-  // a game, and rebuilding it under a pointer would drop the hover each time.
-  if (html === leaderRibbonHtml) return;
-  leaderRibbonHtml = html;
-  ribbon.innerHTML = html;
-  ribbon.hidden = !html;
+  return html;
 }
 // The ribbon opens the same diplomacy screen the hook does, on the leader
 // that was pressed.
@@ -30972,7 +30992,7 @@ function drawDiplomacy() {
       const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
-        : player.allied ? `${titleCase(player.alliance || "")} ally`
+        : player.allied ? allianceWord(player)
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
         : relationship === "denounced" ? "Denounced"
@@ -31149,6 +31169,14 @@ function cancelSitePick() {
 function chooseSite(pos) {
   const action = sitePick.sites.get(key(pos));
   if (!action) return;
+  if (sitePick.queue) {
+    // Chosen for the queue: the order keeps its tile and waits its turn, and
+    // the city comes back up to be given the next thing.
+    const cityId = sitePick.cityId;
+    endSitePick();
+    queueCityItem(cityId, action).then(() => openCityScreen(cityId));
+    return;
+  }
   if (!sitePick.plots) { endSitePick(); send(action); return; }
   // A border is usually pushed more than one tile, so buying land stays up
   // and re-prices what the treasury can still afford, as Civ 6's mode does.
@@ -31232,6 +31260,10 @@ function cityAct(action, label, cls = "", title = "") {
 // What kind of thing an Item is, in the order Civ 6's production list shows
 // them. Districts before buildings because a building usually waits on one.
 function itemCategory(item) {
+  // A repair leads the list, as it does in Civ 6: a pillaged district pays
+  // nothing until it is mended. A corporation's product is a city project.
+  if (item.repair) return "Repairs";
+  if (item.product) return "Projects";
   if (item.unit) return "Units";
   if (item.district) return "Districts";
   if (item.wonder) return "Wonders";
@@ -31246,6 +31278,8 @@ function itemKey(item) {
     : item.district ? `district:${item.district}`
     : item.wonder ? `wonder:${item.wonder}`
     : item.project ? `project:${item.project}`
+    : item.repair ? `repair:${item.repair}:${item.pos}`
+    : item.product ? `product:${item.product}`
     : `building:${item.building}`;
 }
 // The ruleset carries no prose for units, buildings or districts, so say what
@@ -31274,6 +31308,8 @@ function itemNote(item) {
     if (spec.requires_resource) parts.push(`needs ${titleCase(spec.requires_resource)}`);
     return parts.join(" · ");
   }
+  if (item.repair) return "Pillaged. It pays nothing until it is mended.";
+  if (item.product) return "A product of this city's corporation.";
   if (item.project) {
     const spec = RULES.projects[item.project];
     return spec && spec.repeatable ? "Repeatable." : "";
@@ -31295,10 +31331,124 @@ function itemNote(item) {
   return parts.join(" · ");
 }
 function turnsFor(cost, perTurn, banked = 0) {
+  if (!Number.isFinite(cost)) return Infinity;
   const left = Math.max(0, cost - banked);
   if (left <= 0) return 1;
   return perTurn > 0 ? Math.ceil(left / perTurn) : Infinity;
 }
+// ------------------------------------------------------ the production queue
+// Civilization VI lets a city be told what to build after what it is
+// building. The engine holds one item per city (`do_produce` replaces the
+// queue), so the rest of the list is a standing order the client keeps,
+// exactly as a travel order is: when a city comes up idle at the top of a
+// turn, the next thing on its list that the engine still offers is ordered
+// for it. Nothing here decides what is legal; a queued item the engine no
+// longer offers is dropped and the one after it is tried.
+const cityQueues = new Map(); // city id -> [{key, name, action}]
+const CITY_QUEUES_KEY = "civvis-city-queues-v1";
+let cityQueueMode = false;
+function cityQueueFor(cityId) { return cityQueues.get(cityId) || []; }
+function toggleCityQueueMode() { cityQueueMode = !cityQueueMode; drawCityScreen(); }
+// The list belongs to one game. It is kept beside the browser's saves so a
+// reload does not forget it, and a different world never inherits it.
+function saveCityQueues() {
+  try {
+    localStorage.setItem(CITY_QUEUES_KEY, JSON.stringify(
+      {seed: state ? state.seed : null, queues: [...cityQueues.entries()]}));
+  } catch (_) {}
+}
+function restoreCityQueues() {
+  cityQueues.clear();
+  try {
+    const held = JSON.parse(localStorage.getItem(CITY_QUEUES_KEY) || "null");
+    if (!held || !state || held.seed !== state.seed || !Array.isArray(held.queues)) return;
+    for (const [cityId, items] of held.queues)
+      if (Array.isArray(items) && items.length) cityQueues.set(Number(cityId), items);
+  } catch (_) {}
+}
+// An idle city starts on it at once: the head of a queue is what is being
+// built. Anything else waits behind what the city already has.
+async function queueCityItem(cityId, action) {
+  const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city) return;
+  if (!(city.queue && city.queue.length)) await send(action);
+  else {
+    cityQueues.set(cityId, cityQueueFor(cityId).concat(
+      [{key: itemKey(action.item), name: itemPlainName(action.item), action}]));
+    saveCityQueues();
+  }
+  if (cityScreenOpen()) drawCityScreen();
+}
+function unqueueCityItem(cityId, index) {
+  const held = cityQueueFor(cityId).slice();
+  held.splice(index, 1);
+  if (held.length) cityQueues.set(cityId, held); else cityQueues.delete(cityId);
+  saveCityQueues();
+  drawCityScreen();
+}
+// A row is an order, or with the queue on (or Shift held) an order for later.
+function orderFromCity(event, action) {
+  if (cityQueueMode || (event && event.shiftKey)) queueCityItem(action.city, action);
+  else sendFromCity(action);
+}
+function pickSiteFromCity(event, cityId, itemId) {
+  const queueing = cityQueueMode || Boolean(event && event.shiftKey);
+  beginSitePick(cityId, itemId);
+  if (sitePick && queueing) sitePick.queue = true;
+}
+// At the top of a turn every idle city takes the next thing on its list. The
+// exact order is used when the engine still offers it, so a district keeps
+// the tile it was given; an item with one remaining site takes that one.
+async function resumeCityQueues() {
+  if (!state || SPEC) return;
+  let changed = false;
+  for (const cityId of [...cityQueues.keys()].sort((first, second) => first - second)) {
+    const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+    if (!city) { cityQueues.delete(cityId); changed = true; continue; }
+    if (city.queue && city.queue.length) continue;
+    const held = cityQueueFor(cityId).slice();
+    while (held.length) {
+      const next = held.shift();
+      changed = true;
+      const offered = state.legal_actions.filter(action => action.type === "produce" &&
+        action.city === cityId && itemKey(action.item) === next.key);
+      const order = offered.find(action =>
+        JSON.stringify(action.item) === JSON.stringify(next.action.item)) ||
+        (offered.length === 1 ? offered[0] : null);
+      if (!order) continue;
+      try {
+        render(await fetchJSON("/action", {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({action: order})}));
+      } catch (error) { held.unshift(next); }
+      break;
+    }
+    if (held.length) cityQueues.set(cityId, held); else cityQueues.delete(cityId);
+  }
+  if (!changed) return;
+  saveCityQueues();
+  if (cityScreenOpen()) drawCityScreen();
+  drawTurnLoop();
+}
+// Civilization VI's city panel: press a yield to favour it, again to
+// disfavour it, again to leave it to the governor. The governor is the
+// engine's; this only tells it what the city is for.
+let cityFocusPending = false;
+async function cycleCityFocus(cityId, kind) {
+  if (SPEC || turnAdvancePending || cityFocusPending) return;
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  const lean = Number(city?.citizens?.emphasis?.[kind]) || 0;
+  cityFocusPending = true;
+  try {
+    const next = await fetchJSON("/city-focus", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})});
+    if (next && !next.error && Array.isArray(next.cities)) render(next);
+  } catch (error) {
+    // A server without the route leaves the focus where it was.
+  } finally { cityFocusPending = false; }
+}
+
 // Which page of the production panel is showing. Civilization VI keeps what a
 // city can build and what the treasury can buy outright as tabs on one panel
 // (ProductionPanel.xml), so a purchase is never mistaken for an order.
@@ -31341,10 +31491,26 @@ function drawCityScreen() {
 
   // The six yields wear Civilization VI's own signs, off the sheet the map
   // draws, over the coloured disc that survives a sheet that did not load.
-  const yieldChip = kind =>
-    `<div class="city-yield" title="${titleCase(kind)} per turn">` +
-    `<i class="city-yield-icon" style="--cell:${CIV6_YIELD_ICON_INDEX.get(kind)};--fill:${YPIP[kind]}"></i>` +
-    `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span></div>`;
+  // Each yield is also its focus, as on Civilization VI's city panel: press
+  // to favour it, again to disfavour it, again to leave it to the governor.
+  // A server that does not say what the focus is has none to set, and the
+  // yields stay plain figures.
+  const emphasis = city.citizens && city.citizens.emphasis;
+  const yieldChip = kind => {
+    const body =
+      `<i class="city-yield-icon" style="--cell:${CIV6_YIELD_ICON_INDEX.get(kind)};--fill:${YPIP[kind]}"></i>` +
+      `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span>`;
+    if (!emphasis)
+      return `<div class="city-yield" title="${titleCase(kind)} per turn">${body}</div>`;
+    const lean = Number(emphasis[kind]) || 0;
+    const stance = lean > 0 ? "favoured" : lean < 0 ? "disfavoured" : "";
+    return `<button type="button" class="city-yield ${stance}" aria-pressed="${stance ? "true" : "false"}" ` +
+      `title="${titleCase(kind)} per turn. ${stance
+        ? `${titleCase(stance)}: citizens ${lean > 0 ? "work for it first" : "avoid working for it"}. `
+        : ""}Press to ${lean > 0 ? "disfavour it" : lean < 0 ? "leave it to the governor" : "favour it"}." ` +
+      `onclick='cycleCityFocus(${city.id},"${kind}")'>${body}` +
+      (stance ? `<em class="city-focus-mark">${lean > 0 ? "✓" : "✕"}</em>` : "") + `</button>`;
+  };
   const meter = (label, note, bar) =>
     `<div class="city-meter"><div class="row"><span class="small">${label}</span>` +
     `<b>${note}</b></div>${bar}</div>`;
@@ -31454,7 +31620,7 @@ function drawCityScreen() {
     tab !== "faith" || buys.some(action => paidIn(action) === "faith"));
   if (!tabs.some(([tab]) => tab === cityBuildTab)) cityBuildTab = "production";
   const purchasing = cityBuildTab !== "production";
-  const order = ["Districts", "Buildings", "Wonders", "Units", "Projects"];
+  const order = ["Repairs", "Districts", "Buildings", "Wonders", "Units", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
   build += `<div class="build-head"><div class="build-title">` +
@@ -31478,6 +31644,21 @@ function drawCityScreen() {
     build += `<div class="city-group"><div class="city-group-head">Producing<span>nothing</span></div>` +
       `<div class="empty-state">${Math.round(banked)} ⚙ banked and waiting for an order.</div></div>`;
   }
+  if (!purchasing) {
+    const queued = cityQueueFor(city.id);
+    build += `<div class="city-group"><div class="city-group-head">Queue` +
+      `<span>${queued.length ? `${queued.length} to follow` : "empty"}</span></div>` +
+      (queued.length ? `<div class="build-list">` + queued.map((held, index) =>
+        `<div class="build-item queued"><span class="build-glyph">${index + 1}</span>` +
+        `<span class="build-text"><span class="build-name">${escapeAttr(held.name)}</span></span>` +
+        `<button type="button" class="build-unqueue" title="Take it off the queue" ` +
+        `aria-label="Take ${escapeAttr(held.name)} off the queue" ` +
+        `onclick="unqueueCityItem(${city.id},${index})">✕</button></div>`).join("") + `</div>` : "") +
+      `<button type="button" class="build-queue-mode" aria-pressed="${cityQueueMode}" ` +
+      `title="While this is on, a row is added after what the city is building instead of replacing it. Shift-click does the same for one row." ` +
+      `onclick="toggleCityQueueMode()">☰ ${cityQueueMode
+        ? "Adding to the queue" : "Add to queue"}<small>or Shift-click a row</small></button></div>`;
+  }
   let listed = 0;
   for (const category of order) {
     const group = [...entries.values()].filter(entry => entry.category === category &&
@@ -31487,8 +31668,10 @@ function drawCityScreen() {
     listed += group.length;
     const priced = entry => purchasing
       ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
-      : itemCost(entry.item);
-    group.sort((a, b) => priced(a) - priced(b));
+      : entry.sites.length ? orderCost(entry.sites[0]) : itemCost(entry.item);
+    // An order with no stated cost sorts last instead of scrambling the rest.
+    const ranked = entry => Number.isFinite(priced(entry)) ? priced(entry) : Infinity;
+    group.sort((a, b) => ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));
     // Civilization VI lists a building under the district it stands in, so
     // the Library is found under Campus and not somewhere in a list of
     // prices. The City Center's own come first, then each district in the
@@ -31529,7 +31712,7 @@ function drawCityScreen() {
             title: price === undefined ? `Pay ${titleCase(cityBuildTab)} for it outright`
               : `Pay ${Math.round(price)} ${titleCase(cityBuildTab)} for it outright`});
         }
-        const cost = itemCost(entry.item);
+        const cost = orderCost(entry.sites[0]);
         const isCurrent = itemKey(entry.item) === currentKey;
         const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
         // One site: a plain order. Several: the choice is made on the map,
@@ -31540,10 +31723,11 @@ function drawCityScreen() {
             (note || ""),
           cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +
             `<small>${Math.round(cost)} ⚙</small>`,
-          onclick: several ? `beginSitePick(${city.id},${itemId})`
-            : `sendFromCity(${JSON.stringify(entry.sites[0])})`,
+          onclick: several ? `pickSiteFromCity(event,${city.id},${itemId})`
+            : `orderFromCity(event,${JSON.stringify(entry.sites[0])})`,
           title: several ? "See where it could go and what each tile would give"
-            : isCurrent ? "Already in production" : `Produce ${name}`});
+            : isCurrent ? "Already in production"
+            : cityQueueMode ? `Add ${name} to the queue` : `Produce ${name}`});
       }).join("") + `</div></div>`;
   }
   if (!listed) {
@@ -31784,7 +31968,18 @@ function hook(id, fn) {
   const el = document.getElementById(id);
   if (el) el.onchange = () => { if (el.value) fn(el.value); };
 }
+// The engine offers two orders the ruleset has no row for: mending what was
+// pillaged, and a corporation's product. Every reader of an Item below used to
+// assume one of the five it lists, and the city could not be opened while
+// either was on offer.
+function repairedThing(it) {
+  if (it.repair !== "district") return titleCase(it.repair);
+  const tile = it.pos ? TMAP.get(key(it.pos)) : null;
+  return tile && tile.district ? titleCase(tile.district) : "District";
+}
 function itemName(it) {
+  if (it.repair) return `repair ${repairedThing(it)}`;
+  if (it.product) return `${it.product} product`;
   if (it.unit && it.formation) {
     return (it.unit + " " + formationName(it.unit, it.formation)).replaceAll("_", " ");
   }
@@ -31795,6 +31990,8 @@ function itemPlainName(it) {
   return titleCase(it.wonder || it.district || itemName(it));
 }
 function prodGlyph(it) {
+  if (it.repair) return "🛠";
+  if (it.product) return "▣";
   if (it.building) return BLDG_ICON[it.building] || "🏛";
   if (it.wonder) return "★";
   if (it.project) return "🛠";
@@ -31802,13 +31999,26 @@ function prodGlyph(it) {
 }
 function itemCost(it) {
   if (!RULES) return "?";
-  let standard;
-  if (it.unit) standard = RULES.units[it.unit].cost * (it.formation ? (it.formation >= 2 ? 2 : 1.5) : 1);
-  else if (it.building) standard = RULES.buildings[it.building].cost;
-  else if (it.wonder) standard = RULES.wonders[it.wonder].cost;
-  else if (it.project) standard = RULES.projects[it.project].cost;
-  else standard = RULES.districts[it.district].cost;
+  // A repair costs a quarter of what it mends and a product a flat 500
+  // (`Game::base_item_cost`). A name the ruleset does not know has no cost
+  // the page can state, and says so with NaN rather than by throwing.
+  const mended = it.repair
+    ? it.repair === "district" ? RULES.districts[TMAP.get(key(it.pos || []))?.district]
+      : RULES.buildings[it.repair]
+    : null;
+  const spec = it.unit ? RULES.units[it.unit] : it.building ? RULES.buildings[it.building]
+    : it.wonder ? RULES.wonders[it.wonder] : it.project ? RULES.projects[it.project]
+    : it.district ? RULES.districts[it.district] : null;
+  const standard = it.repair ? (mended ? mended.cost * .25 : NaN)
+    : it.product ? 500
+    : spec ? spec.cost * (it.unit && it.formation ? (it.formation >= 2 ? 2 : 1.5) : 1) : NaN;
   return standard * gameSpeedPercent() / 100;
+}
+// What an offered order costs: the engine's own quote where it sends one (it
+// does for what the ruleset does not list), the ruleset's figure otherwise.
+function orderCost(action) {
+  return Number.isFinite(Number(action && action.cost)) && action.cost > 0
+    ? Number(action.cost) : itemCost(action.item);
 }
 function formationName(unit, formation) {
   const naval = RULES?.units?.[unit]?.domain === "sea";
@@ -38435,16 +38645,22 @@ function actionOptionsFor(next) {
       if (!seen.has(key)) seen.set(key, {item: action.item, sites: []});
       seen.get(key).sites.push(action);
     }
-    const entries = [...seen.values()].sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    // A repair leads, as it does in the city's own list; the rest by cost,
+    // with anything of no stated cost last.
+    const ranked = entry => entry.item.repair ? -1
+      : Number.isFinite(orderCost(entry.sites[0])) ? orderCost(entry.sites[0]) : Infinity;
+    const entries = [...seen.values()].sort((a, b) =>
+      ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));
     return entries.slice(0, ACTION_OPTION_CAP).map(entry => {
       const key = itemKey(entry.item);
-      const cost = itemCost(entry.item);
+      const cost = orderCost(entry.sites[0]);
       const turns = turnsFor(cost, perTurn, 0);
       const several = entry.sites.length > 1;
       const name = itemPlainName(entry.item);
       return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
         name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
-        note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
+        note: `${Number.isFinite(cost) ? `${Math.round(cost)} ⚙ · ` : ""}` +
+          `${turns === Infinity ? "—" : `${turns}t`}`,
         onclick: several ? `beginSitePick(${cityId},${JSON.stringify(key)})`
           : `send(${JSON.stringify(entry.sites[0])})`,
         title: several ? "Several tiles could take it — choose one on the map"
@@ -38573,7 +38789,9 @@ function openTurnIfNew() {
   if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
   drawTurnLoop();
+  if (first) restoreCityQueues();
   resumeAllTravel();
+  resumeCityQueues();
   if (!sel && !selCity) advanceToNextActionUnit(true);
   // After this tick: a turn opens inside the End Turn request, and `send`
   // refuses anything else until that request has finished.

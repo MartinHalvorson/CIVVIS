@@ -940,6 +940,102 @@ impl AdvancedAi {
         true
     }
 
+    /// `city-state-before-the-first-capital`: before the war, while a
+    /// reserved melee body of the stone's force is still missing, buy one
+    /// for Gold above the purchase upkeep floor: the strongest melee-class
+    /// body a city of ours within the purchase reach of the rally can train
+    /// (the class the Ram serves), in the nearest such city. One a turn,
+    /// ahead of the peaceful purchases. True when one was bought; `false`
+    /// with the gene off, without a stone, and once the war is open.
+    ///
+    /// The capital alone trains the force, about a Warrior every two turns
+    /// once the Ram is done. Live Deity Gran Colombia
+    /// `civvis-20261111T175804Z` named Geneva at turn 17 and stood five
+    /// Warriors at the rally from turn 31, one short of finishing the city
+    /// (327 in blows against 360); a suzerain took Geneva at 37. Over those
+    /// turns the treasury bought a Trader (90 Gold, turn 26) and a Builder
+    /// (80 Gold, turn 35).
+    pub(super) fn city_state_stone_body_purchase(&mut self, g: &mut Game, pid: usize) -> bool {
+        if !self.city_state_stone_stands() {
+            return false;
+        }
+        let Some(opening) = self.conquest_opening.clone() else {
+            return false;
+        };
+        if opening.declared.is_some() {
+            return false;
+        }
+        let counts = self.counts(g, pid);
+        let (_, missing) = self.first_capital_shortfall(g, pid, &counts);
+        if missing == 0 {
+            return false;
+        }
+        let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0);
+        if budget <= 0.0 {
+            return false;
+        }
+        // (strength, distance to the rally, city, unit, price): strongest
+        // first, then the nearest city, then the lowest id.
+        let mut offer: Option<(f64, i32, u32, Name, f64)> = None;
+        for cid in g.player_city_ids(pid) {
+            let reach = g.wdist(g.cities[&cid].pos, opening.rally);
+            if reach > STONE_BREAKER_PURCHASE_REACH {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let crate::game::Item::Unit { unit } = &item else {
+                    continue;
+                };
+                let spec = &g.rules.units[unit];
+                if spec.promotion_class != "melee"
+                    || !Self::conquest_melee_body(spec)
+                    || g.purchase_is_blocked(cid, &item)
+                {
+                    continue;
+                }
+                let Some(price) = g.unit_purchase_cost(pid, cid, unit.as_str(), "gold") else {
+                    continue;
+                };
+                if price > budget + 1e-9 {
+                    continue;
+                }
+                let better = offer.as_ref().is_none_or(|best| {
+                    spec.strength > best.0 + 1e-9
+                        || ((spec.strength - best.0).abs() <= 1e-9
+                            && (reach, cid) < (best.1, best.2))
+                });
+                if better {
+                    offer = Some((spec.strength, reach, cid, *unit, price));
+                }
+            }
+        }
+        let Some((_, _, cid, unit, price)) = offer else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Buy {
+                city: cid,
+                unit,
+                formation: 0,
+                currency: "gold".into(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        Self::city_state_stone_count(g, pid, "body_bought");
+        if let Some(target) = g.cities.get(&opening.city) {
+            think!(self.journal(), Military, Decision,
+                   "{} buys a {} for {}", g.cities[&cid].name, unit.as_str(), target.name;
+                   "city-state before the first capital: {} melee bod{} of the force still \
+                    missing; {:.0} Gold",
+                   missing, if missing == 1 { "y" } else { "ies" }, price);
+        }
+        true
+    }
+
     /// The stone's commit clock floor: its own naming deadline (50 on
     /// Online), under the shipped approach grace. Zero with no stone.
     pub(super) fn city_state_stone_commit_floor(&self, g: &Game) -> u32 {
