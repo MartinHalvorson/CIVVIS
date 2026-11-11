@@ -70,6 +70,8 @@ impl BasicAi {
     /// `true` with the gene off, once any pad is committed, or when no city
     /// can place one.
     pub(crate) fn first_pad_city_allowed(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.first_pad_in_the_forge || self.minor || self.barb {
             return true;
         }

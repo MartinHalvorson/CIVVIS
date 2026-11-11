@@ -2188,6 +2188,8 @@ impl AdvancedAi {
         objective: Option<Pos>,
         whole: f64,
     ) -> Option<FrontProduction> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let ours: Vec<Pos> = g
             .player_city_ids(pid)
             .into_iter()

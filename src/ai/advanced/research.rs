@@ -1598,6 +1598,8 @@ impl AdvancedAi {
         pid: usize,
         available: &[Name],
     ) -> Option<&'static str> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first {
             return None;
         }
@@ -1641,6 +1643,8 @@ impl AdvancedAi {
         available: &[Name],
         ordinary: &Name,
     ) -> Option<Name> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first_2 {
             return None;
         }
@@ -1706,6 +1710,8 @@ impl AdvancedAi {
         lane_target: Option<&str>,
         ordinary: Option<&Name>,
     ) -> Option<Name> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first_3 {
             return None;
         }

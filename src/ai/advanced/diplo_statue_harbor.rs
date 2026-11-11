@@ -147,6 +147,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item, f64)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.diplo_seat_statue_harbor
             || !self.statue_harbor_seat(g)
             || !Self::statue_still_open(g)

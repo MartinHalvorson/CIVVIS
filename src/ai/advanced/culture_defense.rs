@@ -76,6 +76,9 @@ impl AdvancedAi {
                         Some(crate::game::Item::Unit { unit }) if unit == "settler")
                 })
                 .count();
+        // Choosing the city is a read: one memo for the whole sweep, dropped
+        // before the claim below writes. See `Game::query_memo`.
+        let memo = g.query_memo();
         let mut best = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
@@ -123,6 +126,7 @@ impl AdvancedAi {
                 best = Some((production, cid, item));
             }
         }
+        drop(memo);
         let Some((_, cid, item)) = best else {
             return;
         };
