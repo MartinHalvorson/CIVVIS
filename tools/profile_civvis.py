@@ -247,6 +247,11 @@ def demangle(symbol: str, rustfilt: Optional[str] = None) -> str:
     return "::".join(parts) if parts else symbol
 
 
+#: The source spot `sample` appends to a row when the binary carries line
+#: tables: a file name and a line, after the bracketed address.
+ROW_SPOT = re.compile(r"(?<=\])\s+(\S+:\d+)\s*$")
+
+
 def clean(raw: str) -> str:
     """Strip `sample`'s per-row decoration down to a symbol name.
 
@@ -254,7 +259,13 @@ def clean(raw: str) -> str:
     a sample landed on, which matters when reading one leaf and is pure noise
     when aggregating a table.
     """
-    text = re.sub(r"\s+\(in [^)]*\)", "", raw)
+    # ⚠ A build with line tables gets one more column: `sample` appends the
+    # source spot, `… + 241652  [0x1035c439c]  advanced.rs:26690`. Left on, it
+    # makes every call site of a function a different "symbol", and the
+    # inclusive table reports `take_turn_inner` at the share of its largest
+    # single site — 29% for a function that was 89% of the thread.
+    text = ROW_SPOT.sub("", raw)
+    text = re.sub(r"\s+\(in [^)]*\)", "", text)
     text = re.sub(r"\s*\[[0-9a-fx,.]+\]", "", text)
     text = re.sub(r"\s*\+\s*[\d,.]+(?=\s|$)", "", text)
     text = re.sub(r"\s+load address.*$", "", text)
@@ -284,6 +295,141 @@ def shorten(name: str, width: int = 74) -> str:
 # --------------------------------------------------------------------------
 # Parsing
 # --------------------------------------------------------------------------
+
+#: The return address `sample` prints at the end of a row: `+ 256684
+#: [0x1016e76d8]`, or a comma-separated run of them on a leaf row.
+ROW_ADDRESS = re.compile(r"\[(0x[0-9a-f]+)[0-9a-fx,.]*\](?:\s+\S+:\d+)?\s*$")
+
+#: Where the sampled binary was mapped, which `atos` needs to undo the slide.
+LOAD_ADDRESS = re.compile(r"^Load Address:\s+(0x[0-9a-f]+)", re.MULTILINE)
+
+#: The `(file.rs:123)` at the end of an `atos` line.
+SOURCE_SPOT = re.compile(r"\(([^()]+:\d+)\)\s*$")
+
+#: What makes `--lines` readable: line tables, and nothing heavier. They are
+#: an environment override so the `ci` profile in `Cargo.toml` — the one the
+#: merge gate builds — is not touched; `packed` leaves a `.dSYM` beside the
+#: binary, which is where `atos` looks.
+LINE_TABLE_ENV = {"CARGO_PROFILE_CI_DEBUG": "line-tables-only",
+                  "CARGO_PROFILE_CI_SPLIT_DEBUGINFO": "packed"}
+
+
+def call_sites(text: str, pattern: str,
+               rustfilt: Optional[str] = None,
+               spots: Optional[Dict[str, str]] = None) -> List[Tuple[str, int, str]]:
+    """Where inside the symbols matching `pattern` the samples are.
+
+    ⚠ A SYMBOL TABLE STOPS AT THE FUNCTION, AND THE FUNCTION THAT MATTERS IS
+    ONE FUNCTION. `AdvancedAi::take_turn_inner` is the largest body in the
+    crate and nearly nine tenths of a site game inclusive; most of the passes
+    it runs are inlined into it, so the call graph shows `take_turn_inner`
+    calling `city_yields` and cannot say which of its passes asked.
+    `--parents` has the same blind spot: an inlined caller has no frame.
+
+    `sample` does record it, one level down. Every row carries the address the
+    frame will return to, so a function with forty call sites appears as forty
+    rows, each with its own count. This sums rows by address and returns
+    `(address, samples, callee)` in descending order; `atos`, given line
+    tables, turns each address into the source line and the chain of inlined
+    functions it came through. The callee is the row directly beneath, which
+    is what that site called.
+
+    A build with line tables has `sample` print the source spot on the row
+    itself; `spots`, when given, is filled with those by address, so the
+    report needs `atos` only for the inlined chain.
+    """
+    wanted = re.compile(pattern)
+    lines = text.splitlines()
+    try:
+        start = lines.index("Call graph:") + 1
+    except ValueError:
+        return []
+    rows = []
+    for line in lines[start:]:
+        if line.startswith("Total number in stack"):
+            break
+        found = CALL_LINE.match(line)
+        if found:
+            rows.append((len(found.group(1)), int(found.group(2)), found.group(3)))
+    counts: collections.Counter = collections.Counter()
+    callees: Dict[str, collections.Counter] = {}
+    names: Dict[str, str] = {}
+    for at, (depth, count, raw) in enumerate(rows):
+        symbol = clean(raw)
+        if symbol not in names:
+            names[symbol] = demangle(symbol, rustfilt)
+        address = ROW_ADDRESS.search(raw)
+        if not address or not wanted.search(names[symbol]):
+            continue
+        counts[address.group(1)] += count
+        spot = ROW_SPOT.search(raw)
+        if spot and spots is not None:
+            spots[address.group(1)] = spot.group(1)
+        if at + 1 < len(rows) and rows[at + 1][0] > depth:
+            below = clean(rows[at + 1][2])
+            callees.setdefault(address.group(1),
+                               collections.Counter())[below] += rows[at + 1][1]
+    out = []
+    for address, count in counts.most_common():
+        below = callees.get(address)
+        callee = demangle(below.most_common(1)[0][0], rustfilt) if below else ""
+        out.append((address, count, callee))
+    return out
+
+
+def source_lines(binary: Path, load_address: str, address: str) -> List[str]:
+    """`atos -i` for one address: the innermost inlined frame first.
+
+    One address per call, deliberately. With `-i` a single address answers
+    with several lines, and nothing in the output says where one address's
+    frames stop and the next one's begin.
+    """
+    done = subprocess.run(
+        ["/usr/bin/atos", "-o", str(binary), "-l", load_address, "-i", address],
+        capture_output=True, text=True)
+    return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+
+
+def report_lines(text: str, pattern: str, binary: Optional[Path], total: int,
+                 top: int, rustfilt: Optional[str] = None,
+                 out=sys.stdout, resolve=source_lines) -> None:
+    printed: Dict[str, str] = {}
+    sites = call_sites(text, pattern, rustfilt, printed)
+    print("\n== LINES INSIDE /%s/  (share of the busiest thread; an address is "
+          "a call site, and the arrow is what it called)" % pattern, file=out)
+    if not sites:
+        print("        (no row matched)", file=out)
+        return
+    load = LOAD_ADDRESS.search(text)
+    can_resolve = binary is not None and binary.exists() and load is not None
+    if not can_resolve and not printed:
+        print("        (addresses only: name the sampled binary with --binary, "
+              "built with --line-tables, to read them as source lines)", file=out)
+    for address, count, callee in sites[:top]:
+        share = 100.0 * count / total if total else 0.0
+        arrow = "  -> %s" % shorten(callee, 60) if callee else ""
+        frames = resolve(binary, load.group(1), address) if can_resolve else []
+        found = [SOURCE_SPOT.search(frame) for frame in frames]
+        spots = [spot.group(1) for spot in found if spot]
+        if spots:
+            # `atos` answers innermost first. A reader wants the line in the
+            # matched function, which is the outermost, and the chain after.
+            outer = spots[-1]
+            if outer.endswith(":0") and address in printed:
+                # `atos` gives line 0 for code the compiler attributes to no
+                # line; the row's own spot is the better reading of the two.
+                outer = printed[address]
+            print("%7.2f%%  %s%s" % (share, outer, arrow), file=out)
+            if len(spots) > 1:
+                print("             inlined: %s" % " < ".join(spots[:-1]), file=out)
+        elif address in printed:
+            # What `sample` printed on the row: the innermost frame's line,
+            # which for an inlined pass is a line of the pass, not of the
+            # function that swallowed it. `--binary` adds the rest.
+            print("%7.2f%%  %s%s" % (share, printed[address], arrow), file=out)
+        else:
+            print("%7.2f%%  %s%s" % (share, address, arrow), file=out)
+
 
 class Profile:
     """One `sample` report, parsed into per-thread call trees.
@@ -636,9 +782,15 @@ def screen_shape(repo: Path = REPO) -> Dict[str, str]:
     }
 
 
-def build(repo: Path, quiet: bool = False) -> Path:
-    """Build `civvis` into the profiling target directory, folding disabled."""
+def build(repo: Path, quiet: bool = False, line_tables: bool = False) -> Path:
+    """Build `civvis` into the profiling target directory, folding disabled.
+
+    `line_tables` adds what `--lines` reads. It changes no generated code, and
+    it is a different build fingerprint, so the first one recompiles the crate.
+    """
     env = dict(os.environ)
+    if line_tables:
+        env.update(LINE_TABLE_ENV)
     existing = env.get("RUSTFLAGS", "").strip()
     env["RUSTFLAGS"] = (existing + " " + NO_FOLD_RUSTFLAGS).strip()
     command = ["cargo", "build", "--profile", "ci", "--bin", "civvis",
@@ -665,6 +817,22 @@ def simulate_command(binary: Path, seed: int, turns: int,
     for flag, value in shape.items():
         command += ["--" + flag, str(value)]
     return command
+
+
+def site_command(binary: Path, seed: int, turns: int) -> List[str]:
+    """`--site`: the world civvis.ai plays, a page frame at a time.
+
+    ⚠ The screen's shape is where the fleet's compute goes and it is not what
+    a browser runs. `simulate` seats the stock agent at every chair and writes
+    no state document; the site seats the deployment genome at the majors,
+    `BasicAi` at the city-states, and builds the page's document after every
+    round. On 2026-11-11 the two profiles disagreed about the largest entry:
+    `city_yields` was 38% inclusive on the site's world, and the document a
+    fifth of a whole game, neither of which a `simulate` profile shows at that
+    size. `civvis site-bench` is that frame loop on a native build.
+    """
+    return [str(binary), "site-bench", "--seed", str(seed),
+            "--turns", str(turns)]
 
 
 def sample_process(pid: int, seconds: int, out_file: Path) -> None:
@@ -705,6 +873,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--out", type=Path, default=None,
                         help="where to write the raw sample (default: a "
                              "temporary file beside the report)")
+    parser.add_argument("--lines", metavar="REGEX",
+                        help="also print the hottest addresses inside symbols "
+                             "matching REGEX as source lines: which call site "
+                             "of a function that is mostly inlined passes "
+                             "(`take_turn_inner`) spent the time")
+    parser.add_argument("--line-tables", action="store_true",
+                        help="build with line tables so --lines can name "
+                             "source lines (a separate build fingerprint: the "
+                             "first one recompiles the crate)")
+    parser.add_argument("--binary", type=Path, default=None,
+                        help="the binary a --read or --attach sample came "
+                             "from, for --lines")
+    parser.add_argument("--site", action="store_true",
+                        help="profile the world civvis.ai plays (`civvis "
+                             "site-bench`: deployment genome, city-states on "
+                             "BasicAi, a state document every frame) instead "
+                             "of the gene screen's")
     parser.add_argument("--no-build", action="store_true",
                         help="use the existing %s binary" % PROFILE_TARGET)
     parser.add_argument("--quiet-build", action="store_true")
@@ -713,9 +898,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     rustfilt = shutil.which("rustfilt")
 
     if args.read:
-        profile = Profile(args.read.read_text(errors="replace"), rustfilt)
+        text = args.read.read_text(errors="replace")
+        profile = Profile(text, rustfilt)
         profile.check_is_this_program()
         report(profile, args.top, args.parents)
+        if args.lines:
+            report_lines(text, args.lines, args.binary, profile.total,
+                         args.top, rustfilt)
         return 0
 
     out_file = args.out or Path(
@@ -727,11 +916,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sample_process(args.attach, args.seconds, out_file)
     else:
         binary = (REPO / PROFILE_TARGET / "ci" / "civvis") if args.no_build \
-            else build(REPO, args.quiet_build)
+            else build(REPO, args.quiet_build, args.line_tables)
         if not binary.exists():
             raise SystemExit("%s does not exist; drop --no-build" % binary)
-        shape = screen_shape()
-        command = simulate_command(binary, args.seed, args.turns, shape)
+        command = (site_command(binary, args.seed, args.turns) if args.site
+                   else simulate_command(binary, args.seed, args.turns,
+                                         screen_shape()))
         print("$ %s\n  load %.2f at start" % (" ".join(command), load_average()),
               file=sys.stderr)
         started = time.time()
@@ -746,9 +936,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               % (time.time() - started, running.returncode, load_average()),
               file=sys.stderr)
 
-    profile = Profile(out_file.read_text(errors="replace"), rustfilt)
+    text = out_file.read_text(errors="replace")
+    profile = Profile(text, rustfilt)
     profile.check_is_this_program()
     report(profile, args.top, args.parents)
+    if args.lines:
+        report_lines(text, args.lines,
+                     args.binary or (None if args.attach else binary),
+                     profile.total, args.top, rustfilt)
     print("\nraw sample: %s" % out_file, file=sys.stderr)
     return 0
 

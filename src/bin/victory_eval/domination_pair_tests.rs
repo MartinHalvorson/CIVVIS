@@ -16,6 +16,7 @@ fn args(extra: &[&str]) -> Vec<String> {
 #[test]
 fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     for extra in [
+        vec!["--profile", "unknown-profile"],
         vec!["--target", "science"],
         vec!["--difficulty", "unknown-rung"],
         vec!["--max-turns", "30"],
@@ -39,12 +40,91 @@ fn explicit_profile_overrides_and_unknown_policies_are_rejected() {
     assert_eq!(valid.max_turns, 250, "the natural clock unless shortened");
     let short = parse(&args(&["--max-turns", "160"])).unwrap();
     assert_eq!(short.max_turns, 160);
-    assert_eq!(options(1, None, short.max_turns).max_turns, 160);
+    assert_eq!(
+        options(1, None, short.max_turns, ProbeProfile::default()).max_turns,
+        160
+    );
+}
+
+#[test]
+fn macedon_continents_profile_matches_the_level_eight_verification_seat() {
+    let config = parse(&args(&["--profile", "macedon-continents"])).unwrap();
+    assert_eq!(config.difficulty, Some("deity"));
+    let setup = options(
+        37_140_007,
+        config.difficulty,
+        config.max_turns,
+        config.setup,
+    );
+    assert_eq!(
+        (setup.players, setup.width, setup.height, setup.city_states),
+        (6, 74, 46, 9)
+    );
+    assert_eq!(setup.map_script, MapScript::Continents);
+    let game = Game::new_with(setup.clone());
+    assert_eq!(game.players[0].civ, "Macedon");
+    assert_eq!(game.barbarian_difficulty, "deity");
+    assert_eq!(game.handicap_yield_pct(0).science, 0.0);
+    for pid in 1..6 {
+        assert_eq!(game.handicap_yield_pct(pid).science, 32.0);
+        assert_eq!(game.handicap_combat_strength(pid), 4.0);
+    }
+    assert_eq!(
+        serde_json::to_vec(&game).unwrap(),
+        serde_json::to_vec(&Game::new_with(setup)).unwrap()
+    );
+    let report = profile(
+        37_140_007,
+        config.difficulty,
+        config.max_turns,
+        config.setup,
+    );
+    assert_eq!(report["players"], 6);
+    assert_eq!(report["civs"], serde_json::json!(["Macedon"]));
+    assert_eq!(report["map"], "Continents");
+    assert_eq!(report["difficulty"], "deity");
+    assert_eq!(report["speed"], "online");
+    assert_eq!(report["max_turns"], 250);
+    let override_level = parse(&args(&[
+        "--profile",
+        "macedon-continents",
+        "--difficulty",
+        "immortal",
+    ]))
+    .unwrap();
+    assert_eq!(override_level.difficulty, Some("immortal"));
+}
+
+#[test]
+fn supplied_bundle_is_validated_and_replaces_the_compiled_bundle() {
+    let path = std::env::temp_dir().join(format!("domination-bundle-{}.txt", std::process::id()));
+    std::fs::write(
+        &path,
+        "siege-is-progress-3,\n siege-buys-the-gun-resource\n",
+    )
+    .unwrap();
+    let input = args(&["--force-file", path.to_str().unwrap()]);
+    let config = parse(&input).unwrap();
+    assert_eq!(
+        config.forced,
+        ["siege-is-progress-3", "siege-buys-the-gun-resource"]
+    );
+    let game = Game::new_with(options(37_140_008, None, 250, ProbeProfile::default()));
+    for enabled in [false, true] {
+        let ais = fleet(&game, config.policy, enabled, &config.forced);
+        assert!(ais[0].siege_buys_the_gun_resource_enabled());
+    }
+    for bad in ["no-such-gene", " ,\n"] {
+        std::fs::write(&path, bad).unwrap();
+        assert!(parse(&input).is_err());
+    }
+    std::fs::remove_file(&path).unwrap();
+    assert!(parse(&input).is_err());
 }
 
 #[test]
 fn focal_identity_and_handicap_match_the_fixed_king_profile() {
-    let game = Game::new_with(options(37140000, None, 250));
+    let game = Game::new_with(options(37140000, None, 250, ProbeProfile::default()));
     assert_eq!(game.players[0].civ, "Gran Colombia");
     assert_eq!((game.map.width, game.map.height), (60, 38));
     assert!(game.is_handicap_exempt(0));
@@ -53,7 +133,7 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
         assert!(!game.is_handicap_exempt(pid));
         assert!(game.handicap_yield_pct(pid).science > 0.0);
     }
-    let p = profile(37140000, None, 250);
+    let p = profile(37140000, None, 250, ProbeProfile::default());
     assert_eq!(p["players"], 4);
     assert_eq!(
         (p["width"].as_i64(), p["height"].as_i64()),
@@ -78,8 +158,18 @@ fn focal_identity_and_handicap_match_the_fixed_king_profile() {
 
 fn advanced_handicap(difficulty: &str, science: f64, production: f64, strength: f64, army: usize) {
     let config = parse(&args(&["--difficulty", difficulty])).unwrap();
-    let game = Game::new_with(options(37_140_006, config.difficulty, config.max_turns));
-    let recorded = profile(37_140_006, config.difficulty, config.max_turns);
+    let game = Game::new_with(options(
+        37_140_006,
+        config.difficulty,
+        config.max_turns,
+        ProbeProfile::default(),
+    ));
+    let recorded = profile(
+        37_140_006,
+        config.difficulty,
+        config.max_turns,
+        ProbeProfile::default(),
+    );
     assert_eq!(game.difficulty, difficulty);
     assert_eq!(game.barbarian_difficulty, difficulty);
     assert_eq!(recorded["difficulty"], difficulty);
@@ -127,8 +217,8 @@ fn deity_probe_records_and_applies_asymmetric_level_eight_handicaps() {
 
 #[test]
 fn same_seed_seats_and_world_are_identical_before_policy_application() {
-    let off = Game::new_with(options(37140001, None, 250));
-    let on = Game::new_with(options(37140001, None, 250));
+    let off = Game::new_with(options(37140001, None, 250, ProbeProfile::default()));
+    let on = Game::new_with(options(37140001, None, 250, ProbeProfile::default()));
     assert_eq!(
         serde_json::to_vec(&off).unwrap(),
         serde_json::to_vec(&on).unwrap()
@@ -146,9 +236,9 @@ fn only_the_focal_seat_receives_the_policy_callback() {
         enable: |ai| *ai = AdvancedAi::targeting(VictoryTarget::Science),
         disable: |ai| *ai = AdvancedAi::targeting(VictoryTarget::Domination),
     };
-    let game = Game::new_with(options(37140002, None, 250));
-    let off = fleet(&game, &policy, false);
-    let on = fleet(&game, &policy, true);
+    let game = Game::new_with(options(37140002, None, 250, ProbeProfile::default()));
+    let off = fleet(&game, &policy, false, &parse(&args(&[])).unwrap().forced);
+    let on = fleet(&game, &policy, true, &parse(&args(&[])).unwrap().forced);
     assert_eq!(off[0].victory_target(), Some(VictoryTarget::Domination));
     assert_eq!(on[0].victory_target(), Some(VictoryTarget::Science));
     for pid in 1..off.len() {
@@ -159,9 +249,14 @@ fn only_the_focal_seat_receives_the_policy_callback() {
 
 #[test]
 fn real_policy_keeps_domination_and_adaptive_rival_assignments() {
-    let game = Game::new_with(options(37140003, None, 250));
+    let game = Game::new_with(options(37140003, None, 250, ProbeProfile::default()));
     for enabled in [false, true] {
-        let ais = fleet(&game, gene("siege-is-progress-3").unwrap(), enabled);
+        let ais = fleet(
+            &game,
+            gene("siege-is-progress-3").unwrap(),
+            enabled,
+            &parse(&args(&[])).unwrap().forced,
+        );
         assert_eq!(ais[0].victory_target(), Some(VictoryTarget::Domination));
         assert!(ais[1..].iter().all(|ai| ai.victory_target().is_none()));
     }
@@ -189,7 +284,7 @@ fn an_existing_result_file_is_preserved_before_any_game_runs() {
 
 #[test]
 fn conquest_observer_separates_defense_major_attacks_and_minor_attacks() {
-    let mut game = Game::new_with(options(37140004, None, 250));
+    let mut game = Game::new_with(options(37140004, None, 250, ProbeProfile::default()));
     let minor = game
         .players
         .iter()
@@ -234,7 +329,7 @@ fn conquest_observer_separates_defense_major_attacks_and_minor_attacks() {
 
 #[test]
 fn conquest_observer_distinguishes_capitals_from_minors_and_tracks_losses() {
-    let mut game = Game::new_with(options(37140005, None, 250));
+    let mut game = Game::new_with(options(37140005, None, 250, ProbeProfile::default()));
     let minor_city = game
         .cities
         .values()
@@ -295,8 +390,18 @@ fn explicit_native_rung_reaches_player_and_barbarian_rules_and_provenance() {
     for difficulty in ["prince", "king", "emperor", "immortal"] {
         let config = parse(&args(&["--difficulty", difficulty])).unwrap();
         assert_eq!(config.difficulty, Some(difficulty));
-        let game = Game::new_with(options(37860000, config.difficulty, config.max_turns));
-        let report = profile(37860000, config.difficulty, config.max_turns);
+        let game = Game::new_with(options(
+            37860000,
+            config.difficulty,
+            config.max_turns,
+            ProbeProfile::default(),
+        ));
+        let report = profile(
+            37860000,
+            config.difficulty,
+            config.max_turns,
+            ProbeProfile::default(),
+        );
         assert_eq!(report["difficulty"], difficulty);
         assert_eq!(report["barbarian_difficulty"], difficulty);
         assert_eq!(game.barbarian_difficulty, difficulty);

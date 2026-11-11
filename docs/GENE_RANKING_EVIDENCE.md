@@ -262,7 +262,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
-| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
+| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | — \| 2 |
+| `culture-seat-monuments-2` | off (unmeasured) | `culture-seat-monuments-2`: see `advanced/culture_monuments.rs`. | — \| 2 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
 | `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
@@ -273,6 +274,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
+| `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 1 |
 | `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |
@@ -297,6 +299,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
 | `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
+| `faith-strike-fears-the-tech-lead` | off (unmeasured) | Opt-in `faith-strike-fears-the-tech-lead`; see `AdvancedAi::faith_strike_fears_the_tech_lead`. | 1 \| 1 |
 | `faith-strike-spares-the-stages` | off (unmeasured) | Opt-in `faith-strike-spares-the-stages`; see `AdvancedAi::faith_strike_spares_the_stages`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
@@ -314,6 +317,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
 | `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
+| `friendship-outlasts-the-gated-race` | off (unmeasured) | `friendship-outlasts-the-gated-race`: see `advanced/friendship_outlasts_the_gated_race.rs`. | 1 \| 1 |
 | `friendship-refuses-the-racer` | off (unmeasured) | Opt-in gene `friendship-refuses-the-racer`; see `Self::friendship_refuses_the_racer`. | 1 \| 1 |
 | `friendship-spares-the-converter` | off (unmeasured) | Offer no friendship to the founder whose faith we must fight. | 1 \| 1 |
 | `garrison-before-the-surprise` | off (unmeasured) | Opt-in gene `garrison-before-the-surprise`; see `BasicAi::garrison_before_the_surprise`. | 1 \| 1 |
@@ -458,7 +462,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
 | `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
+| `tribute-warms-the-neighbour` | off (unmeasured) | Opt-in gene `tribute-warms-the-neighbour`; see `advanced/tribute_warms_the_neighbour.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
+| `unique-unit-closes-the-dark-age` | off (unmeasured) | `unique-unit-closes-the-dark-age`: see `advanced/unique_unit_closes_the_age.rs`. | 1 \| 1 |
 | `universities-before-the-forge` | off (unmeasured) | Opt-in Science University priority before industrial claims. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |

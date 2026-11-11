@@ -179,6 +179,7 @@ class MirrorCheckTest(unittest.TestCase):
                     "city_count": 7, "population": 49, "food": 76, "production": 43,
                     "wonder_count": 5, "suzerain_count": 2,
                     "nuclear_devices": 4, "thermonuclear_devices": 1,
+                    "unit_count": 23, "military_unit_count": 17,
                 },
             }],
         }
@@ -195,6 +196,7 @@ class MirrorCheckTest(unittest.TestCase):
              "government": "fascism", "age": "heroic",
              "cities": 7, "population": 49, "wonder_count": 5, "suzerain_count": 2,
              "nuclear_devices": 4, "thermonuclear_devices": 1,
+             "unit_count": 23, "military_unit_count": 17,
              "tourism_per_turn": 61.0,
              "yields": {"food": 76.0, "production": 43.0, "science": 41.5,
                         "culture": 23.0, "faith": 19.0},
@@ -216,6 +218,14 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.public_fact_mismatches(state, board)[0],
         )
         board["players"][1]["population"] = 49
+        # The UNIT column: a rival's whole roster as the host counted it, not
+        # the handful of its units the seat can see on the board.
+        board["players"][1]["unit_count"] = 4
+        self.assertIn(
+            "seat 1 unit_count Civ6=23",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][1]["unit_count"] = 23
         board["players"][1]["victories"]["science"]["techs"] = 52
         self.assertIn(
             "seat 1 techs Civ6=53",

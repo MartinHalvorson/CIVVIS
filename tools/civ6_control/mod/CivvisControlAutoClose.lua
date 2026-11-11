@@ -372,6 +372,7 @@ end
 -- DiplomacySelections FIRST_MEET_VISIT_RECIPIENT offers hospitality at THEIR
 -- city; NEAR_INITIATOR offers OUR city and NO_MANS offers mutual disclosure.
 local firstMeetChoice = nil;
+local firstMeetText = nil;
 local firstMeetAnswered = false;
 local dialogueObserved = false;
 local dialogueChoice = nil;
@@ -420,7 +421,7 @@ end
 if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
     local stockApply = ApplyStatement;
     ApplyStatement = function(handler, statementType, subType, toPlayer, statement)
-        firstMeetChoice = nil;
+        firstMeetChoice, firstMeetText = nil, nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
         -- Shipped ApplyStatement passes the response subtype and actors to
@@ -471,16 +472,28 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             dialogueCallback = handler.OnSelectionButtonClicked;
             return;
         end
+        -- A Domination seat trades capitals: its opening needs the nearest
+        -- rival capital charted, and a rival's closed borders keep a scout out
+        -- (live Macedon met a same-land rival at t30 and first saw its capital,
+        -- 24 tiles away, at t97). DiplomacySelections FIRST_MEET_NO_MANS answers
+        -- the greeting with CHOICE_POSITIVE LOC_DIPLO_CHOICE_NO_MANS_POSITIVE;
+        -- FIRST_MEET_NO_MANS_INFO_EXCHANGE then offers CHOICE_POSITIVE
+        -- LOC_DIPLO_CHOICE_FIRST_MEET_EXCHANGE_INFO ("Exchanging information on
+        -- our capitals"). Both are taken only with the baked `VictoryLane`; any
+        -- other lane, or none, keeps the capital private.
+        local shareCapital = cfg.VictoryLane == "domination";
         for _, selection in ipairs(parsed.Selections or {}) do
             if not selection.IsDisabled then
                 -- Greeting their nearby scout reveals nothing; the follow-up
-                -- invitation is accepted. All exchanges and our invitation exit.
+                -- invitation is accepted. Our invitation always exits.
                 local safePositive = selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_VISIT"
-                    or selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_NEAR_RECIPIENT_POSITIVE";
+                    or selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_NEAR_RECIPIENT_POSITIVE"
+                    or (shareCapital and (selection.Text == "LOC_DIPLO_CHOICE_NO_MANS_POSITIVE"
+                        or selection.Text == "LOC_DIPLO_CHOICE_FIRST_MEET_EXCHANGE_INFO"));
                 if selection.Key == "CHOICE_EXIT" and firstMeetChoice == nil then
-                    firstMeetChoice = selection.Key;
+                    firstMeetChoice, firstMeetText = selection.Key, selection.Text;
                 elseif selection.Key == "CHOICE_POSITIVE" and safePositive then
-                    firstMeetChoice = selection.Key;
+                    firstMeetChoice, firstMeetText = selection.Key, selection.Text;
                 end
             end
         end
@@ -709,9 +722,12 @@ local function endScreen(attempt)
             -- install the next statement through ApplyStatement.
             firstMeetAnswered = true;
             local choice = firstMeetChoice;
+            -- Name the statement and the chosen line before dispatch replaces them.
+            local context = dialogueContext .. ',"text":' .. responseString(firstMeetText);
             local ok = pcall(function() OnSelectConversationDiplomacyStatement(choice); end);
             if not ok then firstMeetAnswered = false; end
-            report("first_meet_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+            report("first_meet_choice", string.format(',"choice":"%s","sent":%s%s',
+                choice, tostring(ok), context));
             return ok;
         end
         -- A dispatched response can leave the context visible. Let Firaxis
@@ -1060,7 +1076,7 @@ else
 	-- session and may have been armed before the view becomes visible.
 	local function resetShownAttemptState()
 		dialogueFadeExpired = false;
-        firstMeetChoice = nil;
+        firstMeetChoice, firstMeetText = nil, nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
         dialogueContext = "";

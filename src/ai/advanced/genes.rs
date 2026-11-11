@@ -5615,6 +5615,14 @@ pub const GENES: &[Gene] = &[
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
     Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-seat-monuments-2`: version one, and the war holds the
+    // Monument claim only in a threatened city, while a Monument three Online
+    // turns from done (or half built) goes first. Live Deity Culture seats
+    // 11-10: a non-capital city waited a median 48 turns for its Monument;
+    // the war gates held 1,147 Monument-less city-turns empire-wide, and
+    // 1,331 sat with a near-done Monument behind another head. Opt-in; see
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments-2", field: "culture_seat_monuments_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments_2, disable: AdvancedAi::disable_culture_seat_monuments_2 },
     // `culture-faith-site-per-theater-3`: version two without the caps of six
     // Holy Sites and 160 Faith, a Theater city's last free district slot kept
     // for its Holy Site, and Astrology ahead of the production technologies.
@@ -5635,6 +5643,11 @@ pub const GENES: &[Gene] = &[
     // about four Warriors at t30-50, no suzerain in 64% at t40. Opt-in; see
     // `advanced/city_state_before_the_first_capital.rs`.
     Gene { tag: "city-state-before-the-first-capital", field: "city_state_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_before_the_first_capital, disable: AdvancedAi::disable_city_state_before_the_first_capital },
+    // `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    // Spy for every free slot from its first slot, side by side, in the
+    // cities that finish one soonest. Opt-in; see
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot", field: "denial_spies_fill_every_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot, disable: AdvancedAi::disable_denial_spies_fill_every_slot },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5676,6 +5689,19 @@ pub const GENES: &[Gene] = &[
     // were 59 of 383 gun-turns before t130 and no siege-class gun. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
+    // Live Deity Kristina 11-10: `friendship-ends-at-the-race` ended 26
+    // friendships; 202929Z dropped Georgia at 352 power against 383, and
+    // Georgia declared on us 11 turns later. While the denial gate would
+    // refuse the war, the lapsed racer is renewed. Opt-in; see
+    // `advanced/friendship_outlasts_the_gated_race.rs`.
+    Gene { tag: "friendship-outlasts-the-gated-race", field: "friendship_outlasts_the_gated_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_outlasts_the_gated_race, disable: AdvancedAi::disable_friendship_outlasts_the_gated_race },
+    // Live Deity Culture seats, 25 games from 2026-11-10 20:00Z: the only
+    // wars the seat declared were 8 heretic strikes; 3 of 7 targets declared
+    // on us later and two of those wars were fatal (201752Z struck Sumeria at
+    // t95 at 42 techs to our 19; 214026Z the Aztecs at t115 at 45 to 29). A
+    // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
+    // `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5799,6 +5825,18 @@ pub const GENES: &[Gene] = &[
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
     // reading leaves out, so 40 of 64 matched fights were losing exchanges.
     Gene { tag: "theology-fights-count-the-host-edge", field: "theology_fights_count_the_host_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_count_the_host_edge, disable: AdvancedAi::disable_theology_fights_count_the_host_edge },
+    // Deity Culture 11-10: the nearest neighbour read Unfriendly from the turn
+    // after contact in 24 of 24 games and the first attacker never reached
+    // Friendly; `tribute-buys-the-friendship` held on its 100-Gold reserve.
+    // See `advanced/tribute_warms_the_neighbour.rs`.
+    Gene { tag: "tribute-warms-the-neighbour", field: "tribute_warms_the_neighbour", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_warms_the_neighbour, disable: AdvancedAi::disable_tribute_warms_the_neighbour },
+    // `unique-unit-closes-the-dark-age`: one to four Era Score short of a
+    // Normal Age, research the unique unit's unlock and train or buy the
+    // first one (+4) before the era closes. Live Deity Online 11-10: 30 of 49
+    // seats entered the Classical era Dark, 24 of them four or less short; the
+    // first Hoplite came at t31-59 in every Pericles game. Opt-in; see
+    // `advanced/unique_unit_closes_the_age.rs`.
+    Gene { tag: "unique-unit-closes-the-dark-age", field: "unique_unit_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_closes_the_dark_age, disable: AdvancedAi::disable_unique_unit_closes_the_dark_age },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══

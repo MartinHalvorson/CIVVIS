@@ -6881,6 +6881,16 @@ pub struct AdvancedAi {
     /// Holy Site, and Astrology ahead of the production technologies. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater_3: bool,
+    /// `culture-seat-monuments-2`: version one, and a war holds the Monument
+    /// claim only for a city that is itself threatened, while a near-done
+    /// Monument goes before the city's other heads. See
+    /// `advanced/culture_monuments.rs`. Opt-in.
+    culture_seat_monuments_2: bool,
+    /// `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    /// Spy for every free slot from its first slot, side by side, in the
+    /// cities that finish one soonest. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot: bool,
     /// `city-state-before-the-first-capital`: a Domination seat's early
     /// conquest opening takes one nearby, unsuzerained city-state behind at
     /// most Ancient Walls before, and without spending, the opening on a
@@ -7645,6 +7655,15 @@ pub struct AdvancedAi {
     /// strike war then as soon as the host signs. See
     /// `advanced/faith_strike.rs`. Opt-in.
     faith_strike_spares_the_stages: bool,
+    /// `faith-strike-fears-the-tech-lead`: a Culture seat strikes no rival
+    /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_fears_the_tech_lead: bool,
+    /// `friendship-outlasts-the-gated-race`: a lapsed friend racing to win is
+    /// renewed while `denial-war-needs-the-lane-edge` would refuse the war on
+    /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
+    /// default.
+    friendship_outlasts_the_gated_race: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10407,6 +10426,15 @@ pub struct AdvancedAi {
     /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
     /// default.
     tribute_buys_the_friendship: bool,
+    /// `unique-unit-closes-the-dark-age`: a seat one to four Era Score short
+    /// of a Normal Age researches and trains or buys its first unique unit
+    /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
+    /// Opt-in.
+    unique_unit_closes_the_dark_age: bool,
+    /// `tribute-warms-the-neighbour`: the live bridge gifts Gold to the
+    /// nearest stronger neighbour until it can be asked for a friendship.
+    /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
+    tribute_warms_the_neighbour: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10776,6 +10804,9 @@ mod age_closer;
 mod domination_research_commitment;
 /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
 mod flower_power_in_the_dark;
+/// `friendship-outlasts-the-gated-race`: see
+/// `advanced/friendship_outlasts_the_gated_race.rs`.
+mod friendship_outlasts_the_gated_race;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;
@@ -11167,6 +11198,7 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -11560,6 +11592,9 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+/// `tribute-warms-the-neighbour`: see
+/// `advanced/tribute_warms_the_neighbour.rs`.
+mod tribute_warms_the_neighbour;
 mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11570,6 +11605,9 @@ mod culture_defense;
 mod decisive_window;
 /// `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`.
 mod denial_charts_the_racer;
+/// `denial-spies-fill-every-slot`: see
+/// `advanced/denial_spies_fill_every_slot.rs`.
+mod denial_spies_fill_every_slot;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
@@ -26597,6 +26635,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `unique-unit-closes-the-dark-age`: the first unique unit before
+        // the era closes, when it turns a Dark Age Normal. Exact no-op while
+        // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
+        self.claim_unique_unit_for_the_age(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
