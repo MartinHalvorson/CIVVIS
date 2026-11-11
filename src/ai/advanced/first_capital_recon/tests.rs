@@ -265,31 +265,50 @@ fn the_next_expansion_settler_waits_for_the_missing_second_land_eye() {
 }
 
 #[test]
-fn the_capitals_monument_waits_for_the_missing_second_land_eye() {
-    let (mut base, plan, capital) = campus_competition();
-    let production = base.city_yields(capital).production;
-    std::sync::Arc::make_mut(&mut base.observed_city_yield_adjustments)
-        .get_mut(&capital)
-        .unwrap()
-        .production += 5.0 - production;
-    let scout = Item::Unit {
-        unit: crate::name!("scout"),
-    };
-    for on in [false, true] {
-        let mut g = base.clone();
-        let mut ai = seat(on);
-        ai.enable_capital_monument_after_the_second_city();
-        assert!(ai.capital_monument_item(&g, 0, capital, &plan).is_some());
-        g.apply(
-            0,
-            &Action::Produce {
-                city: capital,
-                item: scout.clone(),
-            },
-        )
-        .unwrap();
-        ai.claim_capital_monument(&mut g, 0, &plan);
-        assert_eq!(g.cities[&capital].queue.first() == Some(&scout), on);
+fn routine_capital_claims_wait_for_the_missing_second_land_eye() {
+    for claim in ["monument", "campus"] {
+        let (mut base, plan, capital) = campus_competition();
+        let production = base.city_yields(capital).production;
+        std::sync::Arc::make_mut(&mut base.observed_city_yield_adjustments)
+            .get_mut(&capital)
+            .unwrap()
+            .production += 8.0 - production;
+        for cid in base.player_city_ids(0) {
+            if cid != capital {
+                base.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
+                    building: crate::name!("walls"),
+                }];
+            }
+        }
+        let scout = Item::Unit {
+            unit: crate::name!("scout"),
+        };
+        for on in [false, true] {
+            let mut g = base.clone();
+            let mut ai = seat(on);
+            ai.enable_capital_monument_after_the_second_city();
+            ai.enable_campus_claims_the_free_slot();
+            assert!(ai.capital_monument_item(&g, 0, capital, &plan).is_some());
+            assert!(BasicAi::first_campus_item(&g, 0, capital).is_some());
+            g.apply(
+                0,
+                &Action::Produce {
+                    city: capital,
+                    item: scout.clone(),
+                },
+            )
+            .unwrap();
+            if claim == "monument" {
+                ai.claim_capital_monument(&mut g, 0, &plan);
+            } else {
+                ai.claim_free_slot_campus(&mut g, 0, &plan);
+            }
+            assert_eq!(
+                g.cities[&capital].queue.first() == Some(&scout),
+                on,
+                "{claim}"
+            );
+        }
     }
 }
 
