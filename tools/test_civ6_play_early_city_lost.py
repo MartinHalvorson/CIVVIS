@@ -9,6 +9,7 @@ CIVVIS_RESTART_ON_EARLY_CITY_LOST turns it on.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import sys
@@ -321,6 +322,156 @@ class CityDeficitReading(unittest.TestCase):
                 path.write_text(text)
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(civ6_play.city_deficit_policy(path), expected, text)
+
+
+# A city-state's capital we took: founded by minor 12, which `minors` names.
+CITY_STATE = {"id": 80000, "name": "Geneva", "capital": False, "original_capital": True,
+              "original_owner": 12}
+
+
+def capital_record(turn, *cities, minors=(12,), **extra) -> dict:
+    return {"kind": "state", "ctx": "agent", "turn": turn, "cities": list(cities),
+            "minors": [{"player": player} for player in minors], **extra}
+
+
+class DominationNoCapitalReading(unittest.TestCase):
+    """Operator 2026-11-10: retire a Domination game holding no rival original capital."""
+
+    def read(self, records, from_turn=100):
+        state: dict = {}
+        return [civ6_play.domination_no_capital_reading(state, record, from_turn)
+                for record in records]
+
+    def test_fires_after_three_turns_with_none_held(self):
+        results = self.read([capital_record(t, CAPITAL, SECOND) for t in (100, 101, 102)])
+        self.assertEqual(results[:2], [None, None])
+        self.assertEqual(results[2], {"rule": "domination_no_capital", "turn": 102,
+                                      "since": 100, "from_turn": 100, "turns": 3,
+                                      "cities": 2, "fires": True})
+
+    def test_after_the_turn_it_still_fires(self):
+        results = self.read([capital_record(t, CAPITAL) for t in (140, 141, 142)])
+        self.assertEqual(results[2]["since"], 140)
+
+    def test_before_the_turn_never_fires(self):
+        self.assertEqual(self.read([capital_record(t, CAPITAL) for t in range(80, 100)]),
+                         [None] * 20)
+
+    def test_turns_before_the_line_do_not_count(self):
+        results = self.read([capital_record(t, CAPITAL) for t in (98, 99, 100, 101)])
+        self.assertEqual(results, [None] * 4)
+
+    def test_several_records_in_one_turn_count_once(self):
+        results = self.read([capital_record(100, CAPITAL)] * 4
+                            + [capital_record(101, CAPITAL)] * 4)
+        self.assertEqual(results, [None] * 8)
+
+    def test_a_held_rival_capital_never_fires(self):
+        self.assertEqual(self.read([capital_record(t, CAPITAL, TAKEN)
+                                    for t in range(95, 140)]), [None] * 45)
+
+    def test_holding_a_rival_capital_clears_the_count(self):
+        results = self.read([capital_record(100, CAPITAL), capital_record(101, CAPITAL),
+                             capital_record(102, CAPITAL, TAKEN),
+                             capital_record(103, CAPITAL), capital_record(104, CAPITAL)])
+        self.assertEqual(results, [None] * 5)
+
+    def test_a_city_state_capital_is_not_a_rival_capital(self):
+        results = self.read([capital_record(t, CAPITAL, CITY_STATE) for t in (100, 101, 102)])
+        self.assertTrue(results[2]["fires"])
+
+    def test_a_capital_of_an_unknown_founder_counts_as_held(self):
+        # Without `minors` the founder may be a major: not evidence of a loss.
+        results = self.read([capital_record(t, CAPITAL, CITY_STATE, minors=())
+                             for t in (100, 101, 102)])
+        self.assertEqual(results, [None] * 3)
+
+    def test_we_are_known_after_our_capital_falls(self):
+        state: dict = {}
+        civ6_play.domination_no_capital_reading(state, capital_record(50, CAPITAL), 100)
+        moved = dict(SECOND, capital=True)  # the palace moved; Seoul is gone
+        results = [civ6_play.domination_no_capital_reading(state, capital_record(t, moved), 100)
+                   for t in (100, 101, 102)]
+        self.assertTrue(results[2]["fires"])
+        self.assertEqual(state["domination_owner"], US)
+
+    def test_unreadable_records_are_not_evidence(self):
+        state: dict = {}
+        for record in ({"kind": "turn", "ctx": "agent", "turn": 100, "cities": [CAPITAL]},
+                       capital_record(100, CAPITAL, ctx="autoclose"),
+                       capital_record(100),
+                       capital_record("100", CAPITAL),
+                       capital_record(100, CAPITAL, cities=None),
+                       capital_record(100, dict(CAPITAL, original_capital=None)),
+                       capital_record(100, CAPITAL, dict(TAKEN, original_owner=None)),
+                       capital_record(100, CAPITAL, "not a city")):
+            self.assertIsNone(civ6_play.domination_no_capital_reading(state, record, 100), record)
+        self.assertNotIn("domination_no_capital", state)
+
+    def test_an_unreadable_turn_neither_counts_nor_breaks_the_run(self):
+        results = self.read([capital_record(100, CAPITAL), capital_record(101),
+                             capital_record(102, CAPITAL), capital_record(103, CAPITAL)])
+        self.assertEqual(results[:3], [None, None, None])
+        self.assertEqual(results[3]["turns"], 3)
+
+    def test_who_we_are_is_unknown_until_our_capital_is_seen(self):
+        # A city founded as an original capital that is not our capital: ours
+        # or taken? Not evidence until our own capital names us.
+        self.assertEqual(self.read([capital_record(t, dict(CAPITAL, capital=False))
+                                    for t in (100, 101, 102)]), [None] * 3)
+
+    def test_off_reads_nothing(self):
+        for from_turn in (0, -1, True, None):
+            state: dict = {}
+            self.assertIsNone(civ6_play.domination_no_capital_reading(
+                state, capital_record(150, CAPITAL), from_turn), from_turn)
+            self.assertEqual(state, {})
+
+
+class DominationNoCapitalTurn(unittest.TestCase):
+    def turn(self, **values):
+        defaults = {"restart_domination_no_capital_from_turn": 100,
+                    "civvis_victory": "domination", "speed": "GAMESPEED_ONLINE"}
+        return civ6_play.domination_no_capital_turn(
+            argparse.Namespace(**{**defaults, **values}))
+
+    def test_online_turn_is_unchanged(self):
+        self.assertEqual(self.turn(), 100)
+
+    def test_standard_speed_scales_the_turn(self):
+        self.assertEqual(self.turn(speed="GAMESPEED_STANDARD"), 200)
+
+    def test_only_a_domination_seat(self):
+        for victory in ("religious", "science", "culture", "civvis", None):
+            self.assertEqual(self.turn(civvis_victory=victory), 0, victory)
+
+    def test_zero_or_unset_is_off(self):
+        self.assertEqual(self.turn(restart_domination_no_capital_from_turn=0), 0)
+        self.assertEqual(self.turn(restart_domination_no_capital_from_turn=None), 0)
+        self.assertEqual(civ6_play.domination_no_capital_turn(argparse.Namespace()), 0)
+
+    def test_policy_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy"
+            for text, expected in (
+                    ("CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=100\n", 100),
+                    ("CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=100 # Online\n", 100),
+                    ("CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=0\n", 0),
+                    ("CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=soon\n", 0),
+                    ("CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=-5\n", 0),
+                    ("OTHER=100\n", 0)):
+                path.write_text(text)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(civ6_play.domination_no_capital_policy(path),
+                                     expected, text)
+            path.unlink()
+            self.assertEqual(civ6_play.domination_no_capital_policy(path), 0)
+
+    def test_flag_is_offered(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            civ6_play.main(["--help"])
+        self.assertIn("--restart-domination-no-capital-from-turn", out.getvalue())
 
 
 if __name__ == "__main__":
