@@ -3590,7 +3590,6 @@ impl Game {
         Some(cost)
     }
 
-    #[cfg(test)]
     /// What a purchase would be charged this moment, for a client to print
     /// beside the offer. It reads the derivations `apply` charges from and
     /// decides nothing: applying the action always recomputes the price.
@@ -3633,6 +3632,7 @@ impl Game {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn do_buy(
         &mut self,
         pid: usize,
