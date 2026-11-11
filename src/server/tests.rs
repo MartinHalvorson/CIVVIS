@@ -15967,7 +15967,8 @@ fn a_purchase_row_prints_the_price_it_was_quoted() {
     assert!(EMBEDDED_APP_JS.contains("cost: price === undefined ? `<b>Buy</b>`"));
     assert!(EMBEDDED_APP_JS
         .contains(": `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,"));
-    assert!(EMBEDDED_APP_JS.contains("group.sort((a, b) => ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));"));
+    assert!(EMBEDDED_APP_JS
+        .contains("group.sort((a, b) => ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));"));
     assert!(EMBEDDED_APP_JS.contains(
         "`${purchasing ? \"Purchase\" : current ? \"Change production\" : \"Choose production\"}</div>` +"
     ));
