@@ -8569,6 +8569,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // spark bursts and territory pulses kept drawing over a brand new map, at
   // coordinates that meant nothing there, until they timed out.
   if (newWorld) resetAnim();
+  if (newWorld) SKY_SETTLED_SITES.clear();
   // Settled before anything is drawn: a new map must not be painted north-up
   // for a frame and then swing away from it.
   if (newWorld) adoptWorldFacing(st);
@@ -20456,6 +20457,96 @@ function drawSkyResourceBadge(resource, x, y, size, alpha) {
   cx.restore();
 }
 
+// The ground a civilization's landing stands on, in that world's own frame. One
+// nobody saw come down has a place of its own all the same. One that was watched
+// came down somewhere, and `skySettleLandingSite` keeps where.
+//
+// Kept for the life of the world rather than with the motion in the air: looking
+// through another civilization's eyes clears every animation, and must not move
+// a flag.
+const SKY_SETTLED_SITES = new Map();
+function skyLandingSite(bodyId, playerId) {
+  const settled = SKY_SETTLED_SITES.get(`${bodyId}:${playerId}`);
+  if (settled) return settled;
+  const latitude = (hash2(playerId, 61) - .5) * 1.7;
+  const longitude = 6.283 * hash2(playerId, 67);
+  return [Math.cos(latitude) * Math.cos(longitude),
+          Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)];
+}
+// A landing that is watched settles where it lands, and it lands where it can
+// be watched. Half of any world is round the back, and a site there sent its
+// rocket to the limb to fade out with nothing left standing: the ship and its
+// flag were on the far side, and came round minutes later somewhere else. So
+// the site is chosen as the flight is planned, once, from what the camera will
+// be seeing: the ground has to face the viewer, clear of the frame and of every
+// panel, from the flight's first frame until its flag has stood a while, on a
+// world that may be turning the whole time. A site that already does is left
+// alone. Otherwise it is the nearest such ground to this civilization's own
+// corner of the face that is not under somebody else's ship, and from then on
+// that ground is the site: it turns with the world like any other place.
+const SKY_SITE_STAYS_MS = 4000, SKY_SITE_FACING = .3, SKY_SITE_APART = .3;
+const SKY_SITE_CHOICES = 400;
+function skySettleLandingSite(launch, player, place, crew, now) {
+  if (launch.sited) return;
+  launch.sited = true;
+  // Far off the crews sit along an arc and there is no ground to choose.
+  if (skyGroundFade(place) < .5 || !skyOnCanvas(place)) return;
+  const rocket = Object.values(SKY_LAUNCH_FLIGHTS).find(flight => flight.body === place.id).rocket;
+  const room = 8 + skyRocketGeometry(rocket,
+    skyLandingMarkSize(place, place.r * .5) * SKY_LANDER_SCALE).length;
+  const boxes = skyWidgetBoxes();
+  const open = point => point.x > room && point.x < MAPW - room &&
+    point.y > room && point.y < MAPH - room &&
+    !boxes.some(box => point.x > box.left - room && point.x < box.right + room &&
+                       point.y > box.top - room && point.y < box.bottom + room);
+  const camera = skyBodyCamera(place.id);
+  const arrivesIn = Math.max(0, launch.t0 + launch.duration - now);
+  // The turn is planned for whenever the spin is switched on. Whatever holds
+  // the world still this instant, a hand or a camera on its way, may let go
+  // before the ship is down, and ground in sight both now and after the turn
+  // is in sight if the turn never comes. Now counts as well: a flight aims at a
+  // seat it can see from its first frame.
+  const period = WORLD_SPIN && SPEC && spinAvailable() ? worldSpinPeriodMs : Infinity;
+  const lenses = [0, arrivesIn, arrivesIn + SKY_TOUCHDOWN_MS,
+                  arrivesIn + SKY_TOUCHDOWN_MS + SKY_SITE_STAYS_MS]
+    .map(wait => ({...camera, longitude:camera.longitude - 2 * Math.PI * wait / period}));
+  // The least a site faces the viewer over the landing, and nothing at all if it
+  // spends any of it out of the picture.
+  const sight = site => {
+    let facing = 1;
+    for (const lens of lenses) {
+      const point = planetProject(site, lens, place.r, place.x, place.y);
+      if (!open(point)) return 0;
+      facing = Math.min(facing, point.z);
+    }
+    return facing;
+  };
+  if (sight(skyLandingSite(place.id, player.id)) >= SKY_SITE_FACING) return;
+  const taken = crew.filter(other => other.id !== player.id)
+    .map(other => skyLandingSite(place.id, other.id));
+  const apart = Math.cos(SKY_SITE_APART);
+  const turn = 6.283 * hash2(player.id, 71), out = .55 * Math.sqrt(hash2(player.id, 73));
+  const home = {x:Math.cos(turn) * out, y:Math.sin(turn) * out};
+  let best = null, nearest = Infinity, clearest = null, most = 0;
+  for (let index = 0; index < SKY_SITE_CHOICES; index++) {
+    // Places spread evenly over the whole world, the far side included: which
+    // of them face the camera is the question being asked.
+    const height = 1 - (2 * index + 1) / SKY_SITE_CHOICES, across = Math.sqrt(1 - height * height);
+    const site = [Math.cos(index * 2.39996) * across, Math.sin(index * 2.39996) * across, height];
+    const facing = sight(site);
+    if (facing > most) { most = facing; clearest = site; }
+    if (facing < SKY_SITE_FACING ||
+        taken.some(other => site[0] * other[0] + site[1] * other[1] + site[2] * other[2] > apart))
+      continue;
+    const flagUp = planetProject(site, lenses[2], 1, 0, 0);
+    const off = Math.hypot(flagUp.x - home.x, flagUp.y - home.y);
+    if (off < nearest) { nearest = off; best = site; }
+  }
+  // A world spun too fast to hold any ground in view that long, or one crowded
+  // to the horizon, still lands on the best there is.
+  const site = best || clearest;
+  if (site) SKY_SETTLED_SITES.set(`${place.id}:${player.id}`, site);
+}
 // Where each civilization's landing sits. Close enough to see the ground, a
 // landing site is a place on the ground: it turns with the world and goes round
 // the back with it. Far off there is no ground to be a place on — the body is a
@@ -20465,12 +20556,8 @@ function skyLandingSeats(place, crew) {
   if (skyGroundFade(place) >= .5) {
     const camera = skyBodyCamera(place.id);
     return crew.map(player => {
-      const latitude = (hash2(player.id, 61) - .5) * 1.7;
-      const longitude = 6.283 * hash2(player.id, 67);
-      const point = planetProject(
-        [Math.cos(latitude) * Math.cos(longitude),
-         Math.cos(latitude) * Math.sin(longitude), Math.sin(latitude)],
-        camera, place.r, place.x, place.y);
+      const point = planetProject(skyLandingSite(place.id, player.id),
+                                  camera, place.r, place.x, place.y);
       return {player, x:point.x, y:point.y, z:point.z,
               angle:Math.atan2(point.y - place.y, point.x - place.x),
               gap:place.r * .5};
@@ -20496,6 +20583,12 @@ function drawSkyLandings(place, crew, alpha, now) {
   // colours carry the same fact without pretending to a position.
   const shown = alpha * Math.max(0, Math.min(1, (place.r - 2.2) / 2.6));
   if (!crew.length || shown <= .02) return;
+  // The expedition has no flight to plan its landing from, so where it comes
+  // down is settled as the landing begins.
+  for (const player of crew) {
+    const landing = skyLandingUnderway(player.id, place.id, now);
+    if (landing) skySettleLandingSite(landing.launch, player, place, crew, now);
+  }
   const seats = skyLandingSeats(place, crew);
   const gap = seats.length ? seats[0].gap : place.r;
   const size = skyLandingMarkSize(place, gap);
@@ -20853,10 +20946,13 @@ function skyLaunchEnd(launch, player, place, crews,
       return {x:route.shipX, y:route.shipY};
     }
   }
-  // A turning world can carry a landing site over the horizon, or bring one up
-  // from behind it, while the rocket is on its way. Which of the two this flight
-  // aims at is settled once, so neither swings it across the disc: a site that
-  // sets is aimed at where it was last seen.
+  // Where it comes down is settled on the flight's first frame, in sight.
+  skySettleLandingSite(launch, player, place, launchCrew, performance.now());
+  // A turning world can still carry a landing site over the horizon, or bring
+  // one up from behind it, while the rocket is on its way: a hand on the world
+  // does it, and so does a camera that began far off. Which of the two this
+  // flight aims at is settled once, so neither swings it across the disc: a
+  // site that sets is aimed at where it was last seen.
   const seat = launch.aimsAtLimb ? null : skyLandingSeats(place, launchCrew)
     .find(entry => entry.player.id === player.id);
   if (seat) {
