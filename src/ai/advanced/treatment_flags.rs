@@ -260,6 +260,9 @@ impl AdvancedAi {
         /// Opt-in `each-civ-draws-its-width`; see
         /// `advanced/each_civ_draws_its_width.rs`.
         each_civ_draws_its_width => enable_each_civ_draws_its_width, disable_each_civ_draws_its_width;
+        /// Opt-in `faith-war-on-a-small-world`; see
+        /// `AdvancedAi::faith_war_on_a_small_world`.
+        faith_war_on_a_small_world => enable_faith_war_on_a_small_world, disable_faith_war_on_a_small_world;
         /// `first-capital-walks-the-one-landmass`: see
         /// `advanced/first_capital_walks_the_one_landmass.rs`.
         first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
@@ -284,6 +287,10 @@ impl AdvancedAi {
         last_charge_joins_the_army => enable_last_charge_joins_the_army, disable_last_charge_joins_the_army;
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
+        /// `land-recon-before-the-first-capital`: the missing land recon arm
+        /// claims an idle queue before optional economy work on an early
+        /// Domination seat without a reachable capital.
+        land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;

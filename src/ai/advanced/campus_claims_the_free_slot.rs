@@ -445,6 +445,8 @@ impl AdvancedAi {
                         Some("idle-route Trader claim")
                     } else if self.charting_hull_holds(g, pid, cid, plan, item) {
                         Some("Religion founder's contact hull")
+                    } else if self.first_capital_land_recon_holds(g, pid, cid, plan, item) {
+                        Some("first-capital land recon")
                     } else if self.backlog_builder_holds(g, pid, cid, plan, item) {
                         Some("backlog Builder claim")
                     } else if self.capped_aqueduct_holds(g, pid, cid, plan, item) {
