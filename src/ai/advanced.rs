@@ -7632,6 +7632,10 @@ pub struct AdvancedAi {
     /// strike war then as soon as the host signs. See
     /// `advanced/faith_strike.rs`. Opt-in.
     faith_strike_spares_the_stages: bool,
+    /// `faith-strike-fears-the-tech-lead`: a Culture seat strikes no rival
+    /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_fears_the_tech_lead: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See

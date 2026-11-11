@@ -296,6 +296,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
 | `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
+| `faith-strike-fears-the-tech-lead` | off (unmeasured) | Opt-in `faith-strike-fears-the-tech-lead`; see `AdvancedAi::faith_strike_fears_the_tech_lead`. | 1 \| 1 |
 | `faith-strike-spares-the-stages` | off (unmeasured) | Opt-in `faith-strike-spares-the-stages`; see `AdvancedAi::faith_strike_spares_the_stages`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |

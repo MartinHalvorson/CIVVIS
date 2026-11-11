@@ -5668,6 +5668,13 @@ pub const GENES: &[Gene] = &[
     // were 59 of 383 gun-turns before t130 and no siege-class gun. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
+    // Live Deity Culture seats, 25 games from 2026-11-10 20:00Z: the only
+    // wars the seat declared were 8 heretic strikes; 3 of 7 targets declared
+    // on us later and two of those wars were fatal (201752Z struck Sumeria at
+    // t95 at 42 techs to our 19; 214026Z the Aztecs at t115 at 45 to 29). A
+    // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
+    // `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
