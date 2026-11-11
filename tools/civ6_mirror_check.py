@@ -541,7 +541,9 @@ def public_fact_mismatches(state, board):
                     ("wonder_count", "wonder_count"),
                     ("suzerain_count", "suzerain_count"),
                     ("nuclear_devices", "nuclear_devices"),
-                    ("thermonuclear_devices", "thermonuclear_devices")):
+                    ("thermonuclear_devices", "thermonuclear_devices"),
+                    ("unit_count", "unit_count"),
+                    ("military_unit_count", "military_unit_count")):
                 want = public_stats.get(key)
                 got = player.get(board_key)
                 if isinstance(want, (int, float)) and want >= 0 \

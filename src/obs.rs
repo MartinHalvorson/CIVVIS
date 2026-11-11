@@ -840,6 +840,25 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 .and_then(|stats| stats.population)
                 .unwrap_or(modeled_population);
             let military = g.military_power(o.id).round() as i64;
+            // How many units this civilization fields, and how many of them
+            // fight. A native world counts its own roster. A mirrored board
+            // holds only the rival units the seat can see, so there the host's
+            // count of the whole roster is the figure, and an export from
+            // before the host sent one leaves the cell empty rather than
+            // passing a fogged count off as an army.
+            let (unit_count, military_unit_count) = match public_stats {
+                Some(stats) => (stats.unit_count, stats.military_unit_count),
+                None => {
+                    let (mut all, mut fighting) = (0_usize, 0_usize);
+                    for unit in g.units.values().filter(|unit| unit.owner == o.id) {
+                        all += 1;
+                        if g.rules.units[unit.kind].class == "military" {
+                            fighting += 1;
+                        }
+                    }
+                    (Some(all), Some(fighting))
+                }
+            };
             // A finished device is an empire-scale fact of the same kind as
             // military strength, and it goes on the public ledger for the same
             // reason: the standings ribbon compares empires somebody has met.
@@ -934,6 +953,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .and_then(|stats| stats.tourism_per_turn)
                     .unwrap_or_else(|| g.tourism_per_turn(o.id))),
                 "military": military,
+                "unit_count": unit_count,
+                "military_unit_count": military_unit_count,
                 "nuclear_devices": public_stats
                     .and_then(|stats| stats.nuclear_devices)
                     .unwrap_or_else(|| devices("project_effect:nuclear_devices")),
