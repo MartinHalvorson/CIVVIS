@@ -21181,7 +21181,7 @@ impl AdvancedAi {
         preview.snapshot_bulldoze_sites(&board, pid);
         // `culture-faith-site-per-theater-3`: the hint keeps the same slot for
         // the Holy Site as the main path; the board is thrown away after.
-        let _ = preview.culture_faith_hold_the_slots(&mut board, pid, &plan);
+        let _ = preview.culture_faith_hold_the_slots(&mut board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -26178,7 +26178,7 @@ impl AdvancedAi {
         // district slot waits for its Holy Site through the same pass,
         // released just before the field slot. Nothing is held with the gene
         // off. See `advanced/culture_faith_sources.rs`.
-        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid, &plan);
+        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot

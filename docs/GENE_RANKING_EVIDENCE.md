@@ -237,8 +237,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-braves-the-barbarians` | off (unmeasured) | `culture-faith-braves-the-barbarians`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
-| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | — \| 2 |
-| `culture-faith-site-per-theater-2` | off (unmeasured) | `culture-faith-site-per-theater-2`: see `advanced/culture_faith_sources.rs`. | — \| 2 |
+| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
+| `culture-faith-site-per-theater-2` | off (unmeasured) | `culture-faith-site-per-theater-2`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
+| `culture-faith-site-per-theater-3` | off (unmeasured) | `culture-faith-site-per-theater-3`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
 | `culture-gold-buys-the-shrines` | off (unmeasured) | `culture-gold-buys-the-shrines`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |

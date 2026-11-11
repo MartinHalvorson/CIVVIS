@@ -732,7 +732,7 @@ fn ready_cities(g: &Game, cities: &[u32]) -> Vec<u32> {
 
 #[test]
 fn version_three_keeps_the_last_slot_for_the_holy_site() {
-    let (mut g, mut ai, plan, cities) = fixture(3);
+    let (mut g, mut ai, _, cities) = fixture(3);
     let ready = ready_cities(&g, &cities);
     assert!(ready.len() >= 2, "the fixture has two ready cities");
     let (kept, open) = (ready[0], ready[1]);
@@ -744,13 +744,13 @@ fn version_three_keeps_the_last_slot_for_the_holy_site() {
     );
     ai.enable_culture_faith_site_per_theater_2();
     assert!(
-        ai.culture_faith_hold_the_slots(&mut g, 0, &plan).is_none(),
+        ai.culture_faith_hold_the_slots(&mut g, 0).is_none(),
         "version two holds nothing"
     );
     ai.disable_culture_faith_site_per_theater_2();
     ai.enable_culture_faith_site_per_theater_3();
     let before = Arc::clone(&g.blocked_districts);
-    let held = ai.culture_faith_hold_the_slots(&mut g, 0, &plan);
+    let held = ai.culture_faith_hold_the_slots(&mut g, 0);
     assert!(held.is_some(), "the one-slot Theater city keeps it");
     let menu = menu_families(&g, kept);
     assert!(
@@ -772,7 +772,7 @@ fn version_three_keeps_the_last_slot_for_the_holy_site() {
 
 #[test]
 fn version_three_releases_the_slot_once_the_holy_site_is_laid() {
-    let (mut g, mut ai, plan, cities) = fixture(3);
+    let (mut g, mut ai, _, cities) = fixture(3);
     let kept = ready_cities(&g, &cities)[0];
     g.cities.get_mut(&kept).unwrap().pop = 4;
     ai.enable_culture_faith_site_per_theater_3();
@@ -786,20 +786,20 @@ fn version_three_releases_the_slot_once_the_holy_site_is_laid() {
     )
     .unwrap();
     assert!(
-        !ai.culture_faith_keeps_the_slot(&g, 0, kept, &plan),
+        !ai.culture_faith_keeps_the_slot(&g, 0, kept),
         "the Holy Site's foundation fills the slot"
     );
 }
 
 #[test]
 fn version_three_keeps_the_slot_before_astrology() {
-    let (mut g, mut ai, plan, cities) = fixture(3);
+    let (mut g, mut ai, _, cities) = fixture(3);
     let kept = ready_cities(&g, &cities)[0];
     g.cities.get_mut(&kept).unwrap().pop = 4;
     g.players[0].techs.remove(&crate::name!("astrology"));
     ai.enable_culture_faith_site_per_theater_3();
-    assert!(ai.culture_faith_keeps_the_slot(&g, 0, kept, &plan));
-    let held = ai.culture_faith_hold_the_slots(&mut g, 0, &plan);
+    assert!(ai.culture_faith_keeps_the_slot(&g, 0, kept));
+    let held = ai.culture_faith_hold_the_slots(&mut g, 0);
     assert!(
         !menu_families(&g, kept).contains(&crate::name!("campus")),
         "the Campus waits for the Holy Site"
@@ -866,4 +866,43 @@ fn version_three_takes_astrology_first_and_carries_version_two() {
         claimed.push(city);
     }
     assert!(claimed.len() >= 2, "the parallel claim: {claimed:?}");
+}
+
+#[test]
+fn version_three_keeps_the_slot_through_an_attack() {
+    let (mut g, mut ai, plan, cities) = fixture(3);
+    let kept = ready_cities(&g, &cities)[0];
+    let turn = g.turn;
+    let city = g.cities.get_mut(&kept).unwrap();
+    city.pop = 4;
+    city.last_attacked = turn;
+    ai.enable_culture_faith_site_per_theater_3();
+    assert!(ai.culture_faith_keeps_the_slot(&g, 0, kept));
+    assert!(
+        ai.culture_faith_source_target(&g, 0, &plan)
+            .is_none_or(|(city, _, _)| city != kept),
+        "the claim itself still waits out the attack"
+    );
+}
+
+#[test]
+fn version_three_claims_every_theater_city_in_one_pass() {
+    let (mut g, mut ai, plan, _) = fixture(4);
+    ai.enable_culture_faith_site_per_theater_3();
+    let mut expected = Vec::new();
+    let mut board = g.clone();
+    while let Some(city) = claim(&mut board, &ai, &plan) {
+        expected.push(city);
+    }
+    assert!(expected.len() >= 2, "the fixture has two sources to claim");
+    ai.claim_culture_faith_source(&mut g, 0, &plan);
+    for city in expected {
+        assert!(
+            g.cities[&city]
+                .queue
+                .first()
+                .is_some_and(|item| AdvancedAi::culture_faith_item(&g, item)),
+            "city {city} claimed its source in the same pass"
+        );
+    }
 }

@@ -44,7 +44,9 @@
 //! Acropolis with no Holy Site; their Holy Sites came 16-68 turns later, at
 //! the next population step. Cold War came at t124 with 1,869 Faith banked
 //! and the game still needed about 2.5 times its concert Tourism. A finished
-//! Holy Site paid 22-35 Faith a turn there. Version three also researches
+//! Holy Site paid 22-35 Faith a turn there. The claim itself keeps every
+//! hold and the safety rule, and under version three gives every Theater city
+//! its source in one pass. Version three also researches
 //! Astrology ahead of the production technologies
 //! (`AdvancedAi::culture_faith_astrology_first`): 20261111T000134Z stood three
 //! Acropolises at t36 and researched Horseback Riding, Construction and the
@@ -259,18 +261,16 @@ impl AdvancedAi {
     }
 
     /// `culture-faith-site-per-theater-3`: whether `cid` keeps its last free
-    /// specialty district slot for its Holy Site. A safe city of ours with a
+    /// specialty district slot for its Holy Site. A city of ours with a
     /// standing Theater Square (or Acropolis), no Holy Site standing, queued
     /// or laid, and exactly one free slot, where the Holy Site can go: on the
     /// menu within the claim's turn cap once Astrology is known, or on some
-    /// plot before. The caller checks that the Faith sources are open.
-    fn culture_faith_keeps_the_slot(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-    ) -> bool {
+    /// plot before. The caller checks that the Faith sources are open. Safety
+    /// is the claim's rule, not the slot's: a city under threat or beside an
+    /// enemy keeps the slot and claims the Holy Site once the danger passes.
+    /// Live 232642Z placed Eretria's Commercial Hub at t88 while the plan
+    /// named a threatened home city; its Holy Site waited until t104.
+    fn culture_faith_keeps_the_slot(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = g.cities.get(&cid) else {
             return false;
         };
@@ -278,13 +278,6 @@ impl AdvancedAi {
             || !g.city_has_district_family(city, crate::name!("theater_square"))
             || Self::culture_faith_site_held(g, cid)
             || Self::culture_faith_free_slots(g, city) != 1
-            || !Self::culture_faith_city_safe(
-                g,
-                pid,
-                cid,
-                plan,
-                self.culture_faith_braves_the_barbarians_on(),
-            )
         {
             return false;
         }
@@ -313,7 +306,6 @@ impl AdvancedAi {
         &self,
         g: &mut Game,
         pid: usize,
-        plan: &StrategicPlan,
     ) -> Option<super::culture_theater_first::CultureSiteReservation> {
         if !self.culture_faith_site_per_theater_3 {
             return None;
@@ -322,7 +314,7 @@ impl AdvancedAi {
         let kept: Vec<u32> = g
             .player_city_ids(pid)
             .into_iter()
-            .filter(|cid| self.culture_faith_keeps_the_slot(g, pid, *cid, plan))
+            .filter(|cid| self.culture_faith_keeps_the_slot(g, pid, *cid))
             .collect();
         if kept.is_empty() {
             return None;
@@ -728,6 +720,31 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
+        if !self.culture_faith_site_per_theater_3 {
+            self.claim_one_culture_faith_source(g, pid, plan);
+            return;
+        }
+        // `culture-faith-site-per-theater-3`: every Theater city its source in
+        // one pass, one item each. Native replays of 232642Z t91, 173750Z t88
+        // and t106 and 000134Z t89 kept a city's slot while the one claim of
+        // the frame went to another city's quicker Shrine or Holy Site, and the
+        // kept city queued a Spy, a Caravel, a Skirmisher or a Library, which
+        // then held the claim as its head.
+        for _ in 0..g.player_city_ids(pid).len() {
+            if !self.claim_one_culture_faith_source(g, pid, plan) {
+                break;
+            }
+        }
+    }
+
+    /// One claim of [`Self::claim_culture_faith_source`]: true when it put a
+    /// new source at the head of a queue.
+    fn claim_one_culture_faith_source(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
         let mut skips = Vec::new();
         let target = self.culture_faith_source_scan(
             g,
@@ -746,10 +763,10 @@ impl AdvancedAi {
                     "No new Faith source this turn";
                     "{version}: {}", skips.join("; "));
             }
-            return;
+            return false;
         };
         if g.cities[&city].queue.first() == Some(&item) {
-            return;
+            return false;
         }
         if g.apply(
             pid,
@@ -758,17 +775,19 @@ impl AdvancedAi {
                 item: item.clone(),
             },
         )
-        .is_ok()
+        .is_err()
         {
-            let pace = if self.culture_faith_parallel_on() {
-                "one source per Theater city at a time"
-            } else {
-                "one safe source at a time"
-            };
-            think!(self.journal(), Cities, Decision,
-                "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
-                "{pace}, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
+            return false;
         }
+        let pace = if self.culture_faith_parallel_on() {
+            "one source per Theater city at a time"
+        } else {
+            "one safe source at a time"
+        };
+        think!(self.journal(), Cities, Decision,
+            "{} claims {} for Culture's Faith economy", g.cities[&city].name, Self::plain_item(&item);
+            "{pace}, {turns:.1} production turns; Faith supports Naturalists and Rock Bands after the Prophet race");
+        true
     }
 
     /// `culture-gold-buys-the-shrines`: the Shrine or Temple the treasury
