@@ -123,6 +123,48 @@ which is what chance gives; the mean is 0.03% ± 0.04% a gene. A gene that is
 off is one branch. The cost above is not genes as such, it is a handful of
 passes recomputing the same empire-wide numbers.
 
+### The browser build's own profile: ordered maps, not string compares
+
+The native table above put `memcmp` at 9.6% of self time, and an obvious next
+guess was that WebAssembly pays more for it: there is no wide compare to lean
+on there. The module's own profile says otherwise, and says the native table
+would have picked the wrong lever.
+
+A module built with function names (no LTO, sixteen codegen units: eight
+minutes), driven by `tools/site_wasm_frames.mjs` under `node --cpu-prof` for
+130 turns of seed 7 and read by `tools/site_wasm_profile.py` — 33.9 s sampled,
+all of it in the engine:
+
+| Self time | |
+| ---: | --- |
+| 39.7% | `BTreeMap` and `BTreeSet` |
+| 4.0% | the allocator (`dlmalloc`) |
+| 3.3% | hashing (SipHash, `specmap::hash_key`) |
+| 0.4% | `memcmp`, `bcmp` |
+
+The compare is still paid for: it is inlined into the tree search, so it
+shows as the search. What the native build spreads over `memcmp` and a dozen
+small tree functions, the module concentrates in the tree walk, a chain of
+bounds-checked loads with no wide compare underneath. The ordered maps by
+what they hold and what was asked of them:
+
+| Self time | Asked | Holding | What that is in the engine |
+| ---: | --- | --- | --- |
+| 6.1% | search | `Name` | tech, civic, building, policy and district lookups |
+| 4.3% | search | `String` | the string-keyed effect maps (`effects.get("…")`) |
+| 4.3% | iterate | `Name` | walking a seat's techs, civics, policies, a city's buildings |
+| 4.1% | iterate | `Unit` | walking every unit in the world |
+| 3.9% | iterate | `City` | walking every city in the world |
+| 7.7% | all | primitive keys | ids and positions |
+
+No single caller owns it. The largest are `in_enemy_zoc_for` 1.3%,
+`refresh_visibility_snapshot_with_world` 1.2%, `policy_effect` 1.1% and
+`entry_at_neighbor` 1.1%, then a long tail. So this is not a hot loop to
+fix but a choice of container to revisit: units and cities by dense id with
+their ids kept in order (the walks are in id order and the saves depend on
+it), and the `Name`-keyed sets and maps indexed by `Name::id`. Neither is
+attempted here. Both are play-identical by construction and both are large.
+
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
 A call-tree profile of the real batch workload — `gene_screen --games 6
