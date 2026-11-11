@@ -13007,6 +13007,15 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local withinBudget = buying and pay <= (pending.ceiling or 0)
 		and (pending.gold_cap == nil or payGold <= pending.gold_cap)
 		and (pending.gpt_cap == nil or payGpt <= pending.gpt_cap);
+	if withinBudget and pending.cash_bid_requested then
+		local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
+		withinBudget = type(cash) == "number" and cash < math.huge
+			and type(pending.cash_reserve) == "number"
+			and cash - payGold >= pending.cash_reserve;
+		if pending.cash_offer_bid ~= nil then
+			withinBudget = withinBudget and payGpt == 0 and payGold <= pending.cash_offer_bid;
+		end
+	end
 	local closable;
 	if buying then
 		closable = matches and foreign == 0 and withinBudget
@@ -13050,11 +13059,15 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			return DealManager.HasPendingDeal(pid, fromPlayer);
 		end, nil);
 		if pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
-				and enginePending == true then
+				and (enginePending == true or (pending.cash_offer_bid ~= nil
+					and pay == 0 and matches and foreign == 0)) then
 			-- Incoming-deal and statement callbacks may describe the old
 			-- rejection while the core is still evaluating our new proposal.
+			-- The old empty-payment quote cannot confirm a priced offer's
+			-- verdict; wait for its response or the existing bounded closer.
 			emit("deal_proposal_wait", { turn = turn, from = fromPlayer,
-				want = pending.want, reason = "engine_pending" });
+				want = pending.want,
+				reason = enginePending == true and "engine_pending" or "unpriced_callback" });
 			return true;
 		end
 		if not pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
@@ -13073,12 +13086,36 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			local ok, sent = pcall(function()
 				DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
 				if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
+				if pending.cash_bid_requested and pay == 0 then
+					-- Native 124038Z t65 rejected a free two-Iron proposal too.
+					-- Offer the desk's budget once, retaining all cash it reserved
+					-- at the ask. Shipped OnClickAvailableOneTimeGold (Expansion2 deal view:870-887)
+					-- sets duration BEFORE reading the native one-time maximum.
+					local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
+					if type(cash) ~= "number"
+							or not (cash >= pending.cash_reserve and cash < math.huge) then return false; end
+					local bid = math.floor(math.min(pending.ceiling, cash - pending.cash_reserve));
+					if bid < 1 then return false; end
+					local outgoing = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer);
+					local item = outgoing:AddItemOfType(DealItemTypes.GOLD, pid);
+					if item == nil then return false; end
+					item:SetDuration(0);
+					local cap = item:GetMaxAmount();
+					if type(cap) ~= "number" or not (cap >= 1 and cap < math.huge) then return false; end
+					bid = math.min(bid, math.floor(cap));
+					item:SetAmount(bid);
+					if item:GetAmount() ~= bid or not item:IsValid() then return false; end
+					outgoing:Validate();
+					if not outgoing:IsValid() then return false; end
+					pending.cash_offer_bid = bid;
+				end
 				DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, fromPlayer);
 				return true;
 			end);
 			emit("deal_reproposed", { turn = turn, from = fromPlayer, direction = "buy", action = "PROPOSED",
 				want = pending.want, verb = pending.verb, strategic = pending.strategic,
-				pay = pay, ceiling = pending.ceiling,
+				pay = pay, ceiling = pending.ceiling, cash_bid = pending.cash_offer_bid,
+				cash_reserve = pending.cash_reserve,
 				sent = (ok and sent) and true or false, threw = not ok });
 			if ok and sent then return true; end
 		end
@@ -15573,6 +15610,15 @@ local function applyOrder(player, pid, row, turn)
 				gave = type(barter) == "table" and barter or nil,
 				gold_cap = workGoldCap, gpt_cap = workGptCap,
 			};
+			if cfg.StrategicCashCeilingBid == true and cfg.VictoryLane == "domination"
+					and strategicAsk ~= nil and barter == nil and ceiling > 0 then
+				local pending = trade.pending[subject];
+				pending.cash_bid_requested = true;
+				local cash = try(function() return player:GetTreasury():GetGoldBalance(); end, nil);
+				if type(cash) == "number" and cash < math.huge and cash >= ceiling then
+					pending.cash_reserve = cash - ceiling;
+				end
+			end
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
 		end);
@@ -26753,7 +26799,9 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 end;
 
 function Initialize()
-	emit("loaded", { version = 2, play = cfg.Play ~= false, strategic_quote_proposals = 1 });
+	emit("loaded", { version = 2, play = cfg.Play ~= false,
+		strategic_quote_proposals = cfg.StrategicCashCeilingBid == true and 2 or 1,
+		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under
