@@ -667,17 +667,20 @@ pub fn city_focus(session: &mut Session, parsed: &Value) -> Value {
         stance if stance < 0 => FOCUS_DISFAVOURED,
         _ => 0.0,
     };
-    let directive = session.game.players[0]
-        .city_directives
+    // Written to the seat's own focus and not to the directive: an agent
+    // rebuilds every directive on the turns it plays, and a person's focus
+    // has to outlive handing the seat to auto-play.
+    let focus = session.game.players[0]
+        .citizen_focus
         .entry(city)
         .or_default();
     match parsed["yield"].as_str() {
-        Some("food") => directive.emphasis.food = amount,
-        Some("production") => directive.emphasis.production = amount,
-        Some("gold") => directive.emphasis.gold = amount,
-        Some("science") => directive.emphasis.science = amount,
-        Some("culture") => directive.emphasis.culture = amount,
-        Some("faith") => directive.emphasis.faith = amount,
+        Some("food") => focus.food = amount,
+        Some("production") => focus.production = amount,
+        Some("gold") => focus.gold = amount,
+        Some("science") => focus.science = amount,
+        Some("culture") => focus.culture = amount,
+        Some("faith") => focus.faith = amount,
         _ => return json!({"error": "a focus names one of the six yields"}),
     }
     // A governor setting, written without an action.
@@ -712,6 +715,48 @@ pub fn city_citizen(session: &mut Session, parsed: &Value) -> Value {
     let Some(city) = owned else {
         return json!({"error": "not your city"});
     };
+    // A district's specialist slots are filled by a count, not a tile: its
+    // slots are interchangeable, so the request says how many of that
+    // district's are to be held.
+    if let Some(family) = parsed["specialist"].as_str() {
+        let slots = session
+            .game
+            .city_specialist_slots(city)
+            .into_iter()
+            .find(|(held, _, _)| held == family)
+            .map(|(_, _, slots)| slots);
+        let Some(slots) = slots else {
+            return json!({"error": "that district has no specialist slot in this city"});
+        };
+        let wanted = parsed["count"].as_u64().unwrap_or(0) as usize;
+        if wanted > slots {
+            return json!({"error": "that district has no more specialist slots"});
+        }
+        let citizens = session.game.cities[&city].pop.max(0) as usize;
+        let seat = &mut session.game.players[0];
+        let on_tiles = seat.citizen_locks.get(&city).map_or(0, |held| held.len());
+        let held = seat.specialist_locks.entry(city).or_default();
+        let elsewhere: usize = held
+            .iter()
+            .filter(|(other, _)| other.as_str() != family)
+            .map(|(_, count)| *count)
+            .sum();
+        if wanted > 0 && on_tiles + elsewhere + wanted > citizens {
+            return json!({"error": "every citizen of this city is already placed"});
+        }
+        if wanted == 0 {
+            held.remove(family);
+        } else {
+            held.insert(family.to_string(), wanted);
+        }
+        if held.is_empty() {
+            seat.specialist_locks.remove(&city);
+        }
+        session.game.board_written();
+        let mut out = session.state();
+        out["error"] = Value::Null;
+        return out;
+    }
     let pos = parsed["pos"]
         .as_array()
         .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
@@ -734,11 +779,15 @@ pub fn city_citizen(session: &mut Session, parsed: &Value) -> Value {
         if !workable {
             return json!({"error": "that tile cannot be worked by this city"});
         }
+        let in_slots: usize = session.game.players[0]
+            .specialist_locks
+            .get(&city)
+            .map_or(0, |held| held.values().sum());
         let placed = session.game.players[0]
             .citizen_locks
             .entry(city)
             .or_default();
-        if !placed.contains(&pos) && placed.len() >= citizens {
+        if !placed.contains(&pos) && placed.len() + in_slots >= citizens {
             return json!({"error": "every citizen of this city is already placed"});
         }
         placed.insert(pos);

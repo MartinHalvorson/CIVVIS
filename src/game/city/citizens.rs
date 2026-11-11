@@ -321,6 +321,12 @@ impl Game {
             }
         }
 
+        // The seat's own focus, set from the city panel, on top of whatever an
+        // agent's directive asked for. See `Player::citizen_focus`.
+        if let Some(focus) = player.citizen_focus.get(&cid) {
+            weights.add(*focus);
+        }
+
         let housing_headroom = self.city_housing(city) - city.pop as f64;
         let amenities = self.city_amenity_surplus(city);
         let growth_surplus = if housing_headroom > 1.0 && amenities >= -2 {
@@ -434,6 +440,27 @@ impl Game {
             jobs.extend((0..slots).map(|_| (family.clone(), yields)));
         }
         jobs
+    }
+
+    /// How many specialist slots each of a city's districts offers, with the
+    /// tile the district stands on, for a client that lets a player fill them
+    /// by hand. One row per district family that has any slot.
+    pub fn city_specialist_slots(&self, cid: u32) -> Vec<(String, Pos, usize)> {
+        let Some(city) = self.cities.get(&cid) else {
+            return Vec::new();
+        };
+        let mut slots = std::collections::BTreeMap::<String, usize>::new();
+        for (family, _) in self.city_specialist_jobs(city) {
+            *slots.entry(family).or_insert(0) += 1;
+        }
+        let mut rows = Vec::new();
+        for (district, position) in &city.districts {
+            let family = self.district_family(*district).to_string();
+            if let Some(count) = slots.remove(&family) {
+                rows.push((family, *position, count));
+            }
+        }
+        rows
     }
 
     /// Choose the actual population-worked tiles. It exhausts food-bearing and
@@ -571,12 +598,40 @@ impl Game {
         // is never moved by the passes below. With nothing placed, `locked` is
         // empty, the first loop seats nobody, and the second is exactly the
         // `take(workers)` this used to be.
-        let locked: Vec<bool> = match self.players[city.owner].citizen_locks.get(&cid) {
-            Some(held) if !held.is_empty() => cands
+        let seat = &self.players[city.owner];
+        let tile_locks = seat.citizen_locks.get(&cid).filter(|held| !held.is_empty());
+        let slot_locks = seat
+            .specialist_locks
+            .get(&cid)
+            .filter(|held| !held.is_empty());
+        let locked: Vec<bool> = if tile_locks.is_none() && slot_locks.is_none() {
+            Vec::new()
+        } else {
+            // Specialist slots of one district are interchangeable, so the
+            // first few the sort offers are the ones a placement holds.
+            let mut seated = std::collections::BTreeMap::<&str, usize>::new();
+            cands
                 .iter()
-                .map(|job| job.pos.is_some_and(|pos| held.contains(&pos)))
-                .collect(),
-            _ => Vec::new(),
+                .map(|job| {
+                    if let Some(pos) = job.pos {
+                        return tile_locks.is_some_and(|held| held.contains(&pos));
+                    }
+                    let Some(family) = job.specialist.as_deref() else {
+                        return false;
+                    };
+                    let wanted = slot_locks
+                        .and_then(|held| held.get(family))
+                        .copied()
+                        .unwrap_or(0);
+                    let count = seated.entry(family).or_insert(0);
+                    if *count < wanted {
+                        *count += 1;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .collect()
         };
         let is_locked = |index: usize| locked.get(index).copied().unwrap_or(false);
         let mut placed = 0;

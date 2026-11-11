@@ -5140,6 +5140,21 @@ pub struct Player {
     /// old save. Nothing in the engine writes this.
     #[serde(default)]
     pub citizen_locks: BTreeMap<u32, BTreeSet<Pos>>,
+    /// Citizens a seat has placed in a district's specialist slots by hand:
+    /// city id, then district family, then how many. The governor seats them
+    /// first, as it does a citizen placed on a tile, and never moves them.
+    /// Empty is the shipped behaviour and nothing in the engine writes it.
+    #[serde(default)]
+    pub specialist_locks: BTreeMap<u32, BTreeMap<String, usize>>,
+    /// The seat's own yield focus for each city, added to the governor's
+    /// appetites after everything else.
+    ///
+    /// It is kept apart from `city_directives` on purpose. An agent rebuilds
+    /// that whole map every turn it plays, so a focus a person set there was
+    /// erased the first time they handed the seat to auto-play. This one is
+    /// written only by the played seat and nobody clears it but them.
+    #[serde(default)]
+    pub citizen_focus: BTreeMap<u32, Yields>,
     pub faith: f64,
     /// Gathering Storm strategic-resource stockpiles. Luxuries remain copy
     /// based and are intentionally not represented here.
@@ -5516,6 +5531,8 @@ impl Player {
             citizen_food_bias: 0.0,
             city_directives: BTreeMap::new(),
             citizen_locks: BTreeMap::new(),
+            specialist_locks: BTreeMap::new(),
+            citizen_focus: BTreeMap::new(),
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
             strategic_resource_shortages: BTreeMap::new(),
@@ -8666,6 +8683,8 @@ impl Game {
             player.remembered_cities.clear();
             player.city_directives.clear();
             player.citizen_locks.clear();
+            player.specialist_locks.clear();
+            player.citizen_focus.clear();
         }
     }
 
@@ -8731,6 +8750,8 @@ impl Game {
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
             player.citizen_locks.remove(&cid);
+            player.specialist_locks.remove(&cid);
+            player.citizen_focus.remove(&cid);
         }
         *self.query_memo.city_ids.borrow_mut() = None;
     }
