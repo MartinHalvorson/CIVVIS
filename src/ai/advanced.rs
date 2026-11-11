@@ -23203,8 +23203,12 @@ impl AdvancedAi {
                     // has to be funded with. The `scale` below already fades
                     // the whole term to zero once the empire is no longer
                     // short, so neither gate needs its own shortfall test.
+                    // `no-city-limit` is the third gate: the seats short are
+                    // the free seats that still pay, and the Hall is what
+                    // makes their Settlers cheap and their cities quick.
                     let expansion_hall = if ((self.expansion_hall && self.land_grab)
-                        || self.expansion_scales_with_difficulty)
+                        || self.expansion_scales_with_difficulty
+                        || self.no_city_limit)
                         && !spec.wonder
                     {
                         let seats_short = self

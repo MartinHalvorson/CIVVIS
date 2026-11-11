@@ -104,6 +104,13 @@
 //!    its city (`settler-shelters-from-the-war`): in the first paired games
 //!    two front-line cities held sheltering Settlers for 891 unit-turns.
 //!
+//! 6. **The Ancestral Hall.** While seats that pay are free, the Government
+//!    Plaza and the Ancestral Hall are priced as `expansion-hall` and
+//!    `expansion-hall-district` price them for a land grab: the Hall's +50%
+//!    toward Settlers in its own city moves every bar above fifteen to
+//!    twenty turns later for the Settlers trained there, and its free
+//!    Builder in each new city is what a young city lacks.
+//!
 //! A calibrated chair (`rival-pace`, `--seat-pace`) keeps its curve: the lift
 //! is not asked there.
 //!
