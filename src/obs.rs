@@ -2039,6 +2039,12 @@ fn live_city_json(
             "worked_tiles": citizens.worked_tiles.iter()
                 .map(|tile| json!([tile.0, tile.1])).collect::<Vec<_>>(),
             "specialists": citizens.specialists,
+            // Tiles the seat has placed a citizen on by hand.
+            "locked": g.players[city.owner]
+                .citizen_locks
+                .get(&city.id)
+                .map(|held| held.iter().map(|tile| json!([tile.0, tile.1])).collect::<Vec<_>>())
+                .unwrap_or_default(),
         },
     });
     merge(&mut value, private);

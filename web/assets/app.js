@@ -11027,12 +11027,13 @@ function drawTileYields(t, x, y, worked) {
 // tiles its citizens work ringed, and, while land is being bought, what each
 // priced plot would add. Null when a city has nothing to add to the overlay.
 function cityYieldsShowing() {
-  return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());
+  return !SPEC && Boolean((sitePick && (sitePick.plots || sitePick.citizens)) || cityScreenOpen());
 }
 function cityYieldTiles() {
   if (!state || !cityYieldsShowing()) return null;
   const buying = sitePick && sitePick.plots;
-  const cityId = buying ? sitePick.cityId : cityScreenId;
+  const placing = sitePick && sitePick.citizens;
+  const cityId = buying || placing ? sitePick.cityId : cityScreenId;
   const city = cityId === null ? null
     : state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
   if (!city) return null;
@@ -31169,6 +31170,7 @@ function cancelSitePick() {
 function chooseSite(pos) {
   const action = sitePick.sites.get(key(pos));
   if (!action) return;
+  if (sitePick.citizens) { toggleCitizenLock(sitePick.cityId, pos); return; }
   if (sitePick.queue) {
     // Chosen for the queue: the order keeps its tile and waits its turn, and
     // the city comes back up to be given the next thing.
@@ -31206,6 +31208,70 @@ function beginPlotPick(cityId) {
   modeline(); draw(); drawUbar();
   return true;
 }
+// ------------------------------------------------------------ manage citizens
+// Civilization VI's Manage Citizens: the city's land with who works what, and
+// a press on a tile to put a citizen there and keep them there. The governor
+// is the engine's and places everyone else around a citizen placed by hand
+// (`Player::citizen_locks`, written by `POST /city-citizen`). The page only
+// shows the assignment and asks.
+function beginCitizenPick(cityId, said) {
+  const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city || !city.citizens) return false;
+  const arriving = !sitePick;
+  const center = key(city.pos);
+  const sites = new Map();
+  for (const pos of city.owned_tiles || []) {
+    const tile = TMAP.get(key(pos));
+    if (!tile || key(pos) === center || tile.district || tile.wonder) continue;
+    sites.set(key(pos), {pos});
+  }
+  const placed = new Set((city.citizens.locked || []).map(key));
+  sitePick = {cityId, citizens: true, lens: sitePick ? sitePick.lens : mapLens, sites,
+    worked: new Set(city.citizens.worked_tiles.map(key)), placed};
+  closeCityScreen();
+  sel = null; selCity = city;
+  document.getElementById("site-pick-text").textContent = said ||
+    `${city.name}: ${city.citizens.worked_tiles.length} of ${city.pop} citizens on the land` +
+    (placed.size ? `, ${placed.size} placed by hand (ringed)` : "") +
+    ` · press a tile to place a citizen there, or to release one`;
+  document.getElementById("site-pick").hidden = false;
+  document.body.classList.add("site-picking");
+  if (arriving) centerOn(city.pos);
+  modeline(); draw(); drawUbar();
+  return true;
+}
+async function toggleCitizenLock(cityId, pos) {
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  const held = new Set(((city && city.citizens && city.citizens.locked) || []).map(key));
+  let answer = null;
+  try {
+    answer = await fetchJSON("/city-citizen", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({city: cityId, pos: [pos[0], pos[1]], lock: !held.has(key(pos))})});
+  } catch (error) { answer = {error: "The citizen could not be placed."}; }
+  if (answer && Array.isArray(answer.cities)) render(answer);
+  // The mode stays up with the new assignment, or with the engine's reason.
+  if (sitePick && sitePick.citizens)
+    beginCitizenPick(cityId, answer && answer.error
+      ? `${String(answer.error).replace(/^./, first => first.toUpperCase())}.` : "");
+}
+// Worked land carries a citizen; one placed by hand wears a white ring; land
+// nobody works shows where a citizen could go.
+function markCitizenPick(site, x, y, size) {
+  if (!sitePick.citizens) return;
+  const worked = sitePick.worked.has(site), placed = sitePick.placed.has(site);
+  cx.save();
+  cx.beginPath(); cx.arc(x, y, size * .5, 0, Math.PI * 2);
+  cx.fillStyle = worked ? "#f0d28c" : "#0b0f0e99"; cx.fill();
+  cx.lineWidth = size * (placed ? .17 : .07);
+  cx.strokeStyle = placed ? "#ffffff" : worked ? "#0b0f0e" : "#f0d28c99"; cx.stroke();
+  if (worked) {
+    cx.fillStyle = "#10151d";
+    cx.beginPath(); cx.arc(x, y - size * .13, size * .15, 0, Math.PI * 2); cx.fill();
+    cx.beginPath(); cx.arc(x, y + size * .32, size * .27, Math.PI, 0); cx.fill();
+  }
+  cx.restore();
+}
 // The price sits on the plot it buys, in Gold's own colour.
 function priceSitePick(site, x, y, size) {
   if (!sitePick.plots) return;
@@ -31220,6 +31286,12 @@ function priceSitePick(site, x, y, size) {
 }
 document.getElementById("site-pick-cancel").onclick = cancelSitePick;
 function outlineSitePick() {
+  // A city's whole land is the board while citizens are managed: it is edged
+  // and left its own colour, so the yields and the citizens are what read.
+  if (sitePick.citizens) {
+    cx.strokeStyle = "#f0d28c88"; cx.lineWidth = 1.4; cx.stroke();
+    return;
+  }
   cx.fillStyle = "#f0d28c33"; cx.fill();
   cx.strokeStyle = "#f0d28c"; cx.lineWidth = 2.6; cx.stroke();
 }
@@ -31232,6 +31304,8 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     outlineSitePick();
     priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
       planetCellInradius(cell) * .5);
+    markCitizenPick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
+      planetCellInradius(cell) * .5);
   }
 }
 function drawSitePicksFlat() {
@@ -31243,6 +31317,7 @@ function drawSitePicksFlat() {
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
     priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
+    markCitizenPick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
   }
 }
 async function sendFromCity(action) {
@@ -31588,6 +31663,12 @@ function drawCityScreen() {
       ? `<button type="button" title="Every plot the treasury can afford is priced on the map" ` +
         `onclick="beginPlotPick(${city.id})">⬡ Purchase tile` +
         `<small>from ${Math.round(plotBuys[0].cost)} Gold</small></button>` : "") +
+    // Placing citizens needs a server that says which are placed.
+    (city.citizens && Array.isArray(city.citizens.locked)
+      ? `<button type="button" title="See who works which tile, and place a citizen by hand" ` +
+        `onclick="beginCitizenPick(${city.id})">☻ Manage citizens` +
+        (city.citizens.locked.length
+          ? `<small>${city.citizens.locked.length} placed</small>` : "") + `</button>` : "") +
     `<button type="button" aria-expanded="${cityDetailsOpen}" ` +
     `onclick="toggleCityDetails()">${cityDetailsOpen ? "▾" : "▸"} City details</button></div>`;
   const strikes = cityStrikeButtons(city.id);
