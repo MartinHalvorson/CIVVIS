@@ -167,7 +167,7 @@ pub fn run(seed: u64, turns: u32, documents: bool) -> Report {
             let seat = &session.game.players[session.game.current];
             let minor = seat.is_minor || seat.is_barbarian;
             let started = Instant::now();
-            session.step();
+            session.step_quietly();
             let spent = started.elapsed().as_secs_f64();
             if minor {
                 band.minors_seconds += spent;
