@@ -1808,6 +1808,32 @@ pub struct QueryCache {
     // catalog with the next helper in the same decision; retaining it only
     // inside one guard would miss the duplicate scans this cache exists for.
     producible: std::cell::RefCell<BTreeMap<(usize, u32), Vec<Item>>>,
+    // `city_yields` of every city the acting seat does not own, kept from one
+    // read-only pass to the next while a driver has asked for it. See
+    // [`Game::keep_rival_yields`], which is the whole contract; like
+    // `producible` this intentionally outlives `QueryMemo`.
+    rival_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    // The acting seat's own cities, when `Game::keep_own_yields` asks. A
+    // separate map because more drops it: see `ActionReach`.
+    own_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    // What the acting seat's governor settings were when `own_yields` was
+    // derived: see `Game::own_settings_stamp`.
+    own_yields_stamp: std::cell::Cell<u64>,
+    // The tile-grid epoch `rival_yields` was derived under. A tile that
+    // changed hands, was improved or was pillaged moves it, whoever wrote it.
+    rival_yields_epoch: std::cell::Cell<u64>,
+    keeps_rival_yields: std::cell::Cell<bool>,
+    // The acting seat's own cities as well; see `Game::keep_own_yields`.
+    keeps_own_yields: std::cell::Cell<bool>,
+    // `Game::apply` calls in flight. The rules read yields while they are
+    // half-way through changing the board, so nothing is kept or reused
+    // inside an action.
+    acting: std::cell::Cell<u32>,
+    // The instrument: derive every reused answer again and compare.
+    audits_rival_yields: std::cell::Cell<bool>,
+    auditing_rival_yields: std::cell::Cell<bool>,
+    rival_yields_reused: std::cell::Cell<u64>,
+    rival_yields_derived: std::cell::Cell<u64>,
     // What a read-only sweep asked one seat's policy deck, while a
     // `Game::trace_policy_reads` guard is alive. Nothing records unless a
     // caller opens a trace, so the ordinary path pays one predicted `Cell`
@@ -1887,6 +1913,41 @@ impl Drop for PolicyReadTrace<'_> {
     fn drop(&mut self) {
         self.game.query_memo.policy_reads_on.set(false);
         *self.game.query_memo.policy_reads.borrow_mut() = PolicyReadSet::default();
+    }
+}
+
+/// How far an action reaches into the yields `Game::keep_rival_yields` holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ActionReach {
+    /// Only the acting seat's own cities can read differently afterwards.
+    OwnCities,
+    /// Anything can.
+    Board,
+}
+
+impl QueryCache {
+    /// An action is about to change the board. Nothing kept before it may
+    /// answer for the board after it.
+    fn action_begins(&self, reach: ActionReach) {
+        self.acting.set(self.acting.get() + 1);
+        self.drop_kept_yields(reach);
+    }
+
+    /// The action is over, successful or not. Whatever the rules derived
+    /// while it was half-applied goes too.
+    fn action_ends(&self, reach: ActionReach) {
+        self.acting.set(self.acting.get().saturating_sub(1));
+        self.drop_kept_yields(reach);
+    }
+
+    fn drop_kept_yields(&self, reach: ActionReach) {
+        if !self.keeps_rival_yields.get() {
+            return;
+        }
+        self.own_yields.borrow_mut().clear();
+        if reach == ActionReach::Board {
+            self.rival_yields.borrow_mut().clear();
+        }
     }
 }
 
@@ -13540,6 +13601,9 @@ impl Game {
 
 #[cfg(test)]
 mod production_catalog_tests;
+
+#[cfg(test)]
+mod yield_carry_tests;
 
 #[cfg(test)]
 mod dedication_era_tests;

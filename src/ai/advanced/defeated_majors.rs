@@ -62,6 +62,8 @@ impl AdvancedAi {
                 break;
             }
             g.players[seat].alive = false;
+            // Another seat's state, written without an action.
+            g.board_written();
             excess -= 1;
             think!(self.journal(), Strategy, Detail,
                 "Retiring {} from the living", g.players[seat].civ;

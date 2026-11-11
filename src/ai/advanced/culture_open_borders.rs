@@ -148,6 +148,10 @@ impl AdvancedAi {
         for &rival in &revealed {
             g.players[rival].civics.insert(early_empire);
         }
+        if !revealed.is_empty() {
+            // Other seats' civics, written without an action.
+            g.board_written();
+        }
         revealed
     }
 
