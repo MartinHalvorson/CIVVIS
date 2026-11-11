@@ -31463,15 +31463,15 @@ function drawUbar() {
   // asking, and the End Turn button stops counting it.
   const standing = unitOrder(u);
   if (standing !== "skip")
-    h += `<button title="Done for this turn" onclick='orderUnit("skip")'>⏭ Skip</button>`;
+    h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
   if (standing !== "sleep")
-    h += `<button title="Rest until this unit is struck" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
+    h += `<button title="Rest until this unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
   if (standing !== "alert")
-    h += `<button title="Stand watch until an enemy comes near (A)" onclick='orderUnit("alert")'>👁 Alert</button>`;
+    h += `<button title="Stand watch until an enemy comes near (V)" onclick='orderUnit("alert")'>👁 Alert</button>`;
   if (standing !== "heal")
-    h += `<button title="Fortify and wait out the damage" onclick='healHere()'>✚ Heal</button>`;
+    h += `<button title="Fortify and wait out the damage (H)" onclick='healHere()'>✚ Heal</button>`;
   if (standing !== "explore")
-    h += `<button title="Walk toward the edge of the known world" onclick='exploreHere()'>🧭 Explore</button>`;
+    h += `<button title="Walk toward the edge of the known world (E)" onclick='exploreHere()'>🧭 Explore</button>`;
   if (standing)
     h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" || standing === "explore" ? "Halt" : "Wake"}</button>`;
   h += `<button onclick='sel=null;draw();drawUbar();drawTurnLoop()'>✕</button>`;
@@ -38525,6 +38525,11 @@ const CIVVIS_SHORTCUTS = [
   // ---- the turn --------------------------------------------------------
   {id: "EndTurn", key: "1", run: () => advanceTurn(false)},
   {id: "EndTurnAnyway", key: "1", shift: true, run: () => advanceTurn(true)},
+  // Enter is the key a Civilization VI player's hand goes to at the end of
+  // every turn, whatever the installed game's settings file carried for
+  // EndTurn. It is the same action on a second key, not a second action.
+  {id: "EndTurnEnter", key: "Enter", run: () => advanceTurn(false)},
+  {id: "EndTurnAnywayEnter", key: "Enter", shift: true, run: () => advanceTurn(true)},
   // ---- unit orders -----------------------------------------------------
   {id: "FoundCity", key: "b", run: () => foundCityHere()},
   {id: "Fortify", key: "f", run: () => orderUnit("fortify")},
