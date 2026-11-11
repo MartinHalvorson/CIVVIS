@@ -45,6 +45,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.gold_buys_the_opening_builder
             || self.base.minor
             || self.base.barb

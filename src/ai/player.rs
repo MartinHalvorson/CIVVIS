@@ -84,6 +84,8 @@ pub struct PaceSample {
 
 impl PaceSample {
     pub fn observe(game: &Game, pid: usize) -> Self {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = game.query_memo();
         let cities = game.player_city_ids(pid);
         let mut yields = game.player_yield_extras(pid);
         for id in &cities {

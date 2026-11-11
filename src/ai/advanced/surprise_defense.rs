@@ -127,6 +127,8 @@ impl AdvancedAi {
     /// ranged bodies are preferred because one policy family accelerates all
     /// three; cavalry remains a fallback when it is the only credible body.
     fn surprise_fast_defender(&self, g: &Game, pid: usize, city: u32) -> Option<(f64, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let candidates: Vec<(Item, f64, bool)> = g
             .producible_items(pid, city)
             .into_iter()

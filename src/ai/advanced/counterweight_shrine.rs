@@ -110,6 +110,8 @@ impl AdvancedAi {
     /// rival faith presses us. The cheapest Shrine to buy now, else the one
     /// that finishes soonest; ties go to the lower city id.
     pub(super) fn counterweight_shrine_city(&self, g: &Game, pid: usize) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let threat = self.rival_faith_presses_us(g, pid)?;
         let own = g.players[pid].religion.as_deref();
         let shrine = Item::Building {
