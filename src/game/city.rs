@@ -1626,6 +1626,7 @@ impl Game {
         let outermost = self.query_memo.yields.borrow().is_none();
         if outermost {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.citizen_plans.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.tile_yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.district_yields.borrow_mut() = Some(BTreeMap::new());

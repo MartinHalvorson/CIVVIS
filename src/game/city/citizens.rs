@@ -393,6 +393,32 @@ impl Game {
     /// capital: expansion is gated by capital growth, and the shipped weights
     /// value production at 1.55 against food at 1.25.
     pub fn city_citizen_plan_weighted(&self, cid: u32, weights: Option<Yields>) -> CitizenPlan {
+        let reusable = weights.is_none() && !self.query_memo.policy_reads_on.get();
+        if reusable {
+            if let Some(plan) = self
+                .query_memo
+                .citizen_plans
+                .borrow()
+                .as_ref()
+                .and_then(|plans| plans.get(&cid))
+            {
+                return plan.clone();
+            }
+        }
+        let plan = self.city_citizen_plan_weighted_uncached(cid, weights);
+        if reusable {
+            if let Some(plans) = self.query_memo.citizen_plans.borrow_mut().as_mut() {
+                plans.insert(cid, plan.clone());
+            }
+        }
+        plan
+    }
+
+    pub(in crate::game) fn city_citizen_plan_weighted_uncached(
+        &self,
+        cid: u32,
+        weights: Option<Yields>,
+    ) -> CitizenPlan {
         let city = &self.cities[&cid];
         let mut strategy = self.citizen_strategy(cid);
         if let Some(weights) = weights {

@@ -1655,6 +1655,10 @@ type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
+    /// The ordinary citizen assignment used by both yields and observations.
+    /// Kept only while a QueryMemo immutably borrows this exact world. Custom
+    /// weight probes and policy-read tracing always derive their own answer.
+    citizen_plans: std::cell::RefCell<Option<BTreeMap<u32, CitizenPlan>>>,
     // Appeal is read far more often than anything else in this cache: the
     // settle and district planners sweep whole regions of the map, and every
     // sweep asks the same tiles again. Measured over a 150-turn six-player
@@ -2050,6 +2054,7 @@ impl Drop for QueryMemo<'_> {
     fn drop(&mut self) {
         if self.outermost {
             *self.game.query_memo.yields.borrow_mut() = None;
+            *self.game.query_memo.citizen_plans.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.tile_yields.borrow_mut() = None;
             *self.game.query_memo.district_yields.borrow_mut() = None;
@@ -13606,6 +13611,9 @@ mod production_catalog_tests;
 
 #[cfg(test)]
 mod yield_carry_tests;
+
+#[cfg(test)]
+mod citizen_plan_memo_tests;
 
 #[cfg(test)]
 mod dedication_era_tests;
