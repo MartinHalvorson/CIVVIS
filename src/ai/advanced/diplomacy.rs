@@ -2200,8 +2200,7 @@ impl AdvancedAi {
         // turn's one declaration.
         // `first-capital-strikes-the-open-window`: no new raid while the first
         // capital's window stands. `false` with the gene off.
-        if !self.first_capital_holds_the_raid(g) && self.opportunistic_war_diplomacy(g, pid, plan)
-        {
+        if !self.first_capital_holds_the_raid(g) && self.opportunistic_war_diplomacy(g, pid, plan) {
             return;
         }
         // `early-conquest-opening`: the assembled force's declaration, and the

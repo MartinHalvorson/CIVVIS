@@ -2095,9 +2095,7 @@ impl AdvancedAi {
         // that cover the bill are an assembled force. No-op with it off.
         let go = self.conquest_opening.as_ref().is_some_and(|opening| {
             opening.assembled.is_none()
-                && self
-                    .first_capital_open_window_go(g, pid, opening)
-                    .is_some()
+                && self.first_capital_open_window_go(g, pid, opening).is_some()
         });
         if go {
             if let Some(opening) = self.conquest_opening.as_mut() {
