@@ -15196,11 +15196,13 @@ fn browser_covers_every_empire_decision() {
         .contains("onclick='sendFromEmpire(${JSON.stringify(action)})'>${label}</button>"));
 }
 
-/// civvis.ai's majors play the deployment genome on the authoritative board,
-/// by construction rather than by comment. The comment on `ai_fleet` said
-/// "the deployment genome" for weeks while the code seated the stock agent;
-/// this pins the seat to `enable_native_deployment` by its whole decision
-/// stream, so neither half can move without the other.
+/// civvis.ai's majors play the deployment genome on the authoritative board
+/// plus the site's experiment list, by construction rather than by comment.
+/// The comment on `ai_fleet` said "the deployment genome" for weeks while the
+/// code seated the stock agent; this pins the seat to
+/// `enable_site_deployment` by its whole decision stream, so neither half
+/// can move without the other. `ai/advanced/site_deployment` pins that
+/// constructor to `enable_native_deployment` plus the list.
 #[test]
 fn the_strategy_panel_names_the_agent_the_site_seats() {
     // The panel's Agent row tells a viewer every major is the rule-based
@@ -15224,7 +15226,7 @@ fn the_strategy_panel_names_the_agent_the_site_seats() {
 }
 
 #[test]
-fn every_site_major_plays_the_native_deployment_genome() {
+fn every_site_major_plays_the_site_deployment() {
     use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};
     let game = Game::new_with(crate::game::GameOptions::new(3, 32, 20, 90_912, 25, 1));
     let mut site = Session::ai_fleet(&game);
@@ -15244,7 +15246,7 @@ fn every_site_major_plays_the_native_deployment_genome() {
                 Box::new(BasicAi::new())
             } else {
                 let mut ai = AdvancedAi::new();
-                ai.enable_native_deployment();
+                ai.enable_site_deployment();
                 Box::new(ai)
             }
         })
@@ -15255,7 +15257,7 @@ fn every_site_major_plays_the_native_deployment_genome() {
     assert_eq!(
         serde_json::to_string(&seated.log).unwrap(),
         serde_json::to_string(&expected.log).unwrap(),
-        "every site major must play AdvancedAi::new() + enable_native_deployment()"
+        "every site major must play AdvancedAi::new() + enable_site_deployment()"
     );
 }
 

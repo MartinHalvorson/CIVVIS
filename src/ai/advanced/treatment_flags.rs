@@ -254,6 +254,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-fears-the-tech-lead`; see
         /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
         faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
+        /// Opt-in `each-civ-draws-its-width`; see
+        /// `advanced/each_civ_draws_its_width.rs`.
+        each_civ_draws_its_width => enable_each_civ_draws_its_width, disable_each_civ_draws_its_width;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
