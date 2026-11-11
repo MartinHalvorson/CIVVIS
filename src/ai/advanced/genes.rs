@@ -5678,8 +5678,6 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
-    // Opt-in; see `advanced/first_capital_research.rs`.
-    Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
     // Live Deity Pericles 11-10: heretic strikes at t127 (232642Z), t130
     // (204138Z) and t133 (220038Z) opened 29-32-turn wars on the neighbours
     // whose land held our Rock Bands' stages. A Culture seat holds the strike
@@ -5838,6 +5836,8 @@ pub const GENES: &[Gene] = &[
     // bridge's five-turn retry lands the first ask on the first turn the host
     // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
     Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
+    // Opt-in; see `advanced/first_capital_research.rs`.
+    Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
