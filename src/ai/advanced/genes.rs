@@ -5759,6 +5759,11 @@ pub const GENES: &[Gene] = &[
     // `advanced/great_works_never_wait.rs`.
     Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // ---- append: l-o ------------------------------------------------
+    // Native Deity Macedon 100029Z: model-priced horse/iron barter was
+    // declined at51/55 and refused as barter_short at61. Ask the host for
+    // its cash price for one quoted land upgrade, keeping the upgrade bill.
+    // Opt-in; see `advanced/army_upgrade_materials.rs`.
+    Gene { tag: "land-army-asks-the-host-price", field: "land_army_asks_the_host_price", kind: Kind::OptIn, enable: AdvancedAi::enable_land_army_asks_the_host_price, disable: AdvancedAi::disable_land_army_asks_the_host_price },
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
     Gene { tag: "last-charge-joins-the-army", field: "last_charge_joins_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_last_charge_joins_the_army, disable: AdvancedAi::disable_last_charge_joins_the_army },

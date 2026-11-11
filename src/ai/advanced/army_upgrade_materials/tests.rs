@@ -143,3 +143,108 @@ fn fractional_native_bills_round_only_the_missing_purchase() {
         10.2
     );
 }
+
+fn mark_native(g: &mut Game, uid: u32) {
+    Arc::make_mut(&mut g.host_unit_facts)
+        .get_mut(&uid)
+        .unwrap()
+        .civ6_id = Some(i64::from(uid));
+    Arc::make_mut(&mut g.observed_strategic_income_adjustments)
+        .insert(0, BTreeMap::from([(crate::name!("iron"), 0.0)]));
+}
+
+#[test]
+fn host_cash_price_is_off_in_both_playing_controllers() {
+    assert!(!AdvancedAi::new().land_army_asks_the_host_price);
+    assert!(!AdvancedAi::targeting(VictoryTarget::Domination).land_army_asks_the_host_price);
+}
+
+#[test]
+fn native_cash_price_keeps_the_exact_want_and_its_upgrade_reserve() {
+    let (mut g, mut ai, uid) = fixture();
+    mark_native(&mut g, uid);
+    let (off, old_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0);
+    assert!(!old_price);
+    ai.enable_land_army_asks_the_host_price();
+    let (on, host_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0);
+    assert!(host_price);
+    assert_eq!(off, on);
+    assert_eq!(on[0].amount, 10);
+    assert_eq!(on[0].gold_reserve, 190.0);
+    assert_eq!(g.players[0].gold, 200.0);
+    assert_eq!(g.units[&uid].kind, "heavy_chariot");
+    ai.disable_land_army_asks_the_host_price();
+    assert!(
+        !ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0)
+            .1
+    );
+}
+
+#[test]
+fn model_units_and_incomplete_native_observations_keep_the_model_price_path() {
+    for missing in ["native_id", "income", "gold", "resource_bill"] {
+        let (mut g, mut ai, uid) = fixture();
+        mark_native(&mut g, uid);
+        ai.enable_land_army_asks_the_host_price();
+        match missing {
+            "native_id" => {
+                Arc::make_mut(&mut g.host_unit_facts)
+                    .get_mut(&uid)
+                    .unwrap()
+                    .civ6_id = None
+            }
+            "income" => Arc::make_mut(&mut g.observed_strategic_income_adjustments).clear(),
+            "gold" => {
+                Arc::make_mut(&mut g.host_unit_facts)
+                    .get_mut(&uid)
+                    .unwrap()
+                    .upgrade
+                    .as_mut()
+                    .unwrap()
+                    .cost = None
+            }
+            "resource_bill" => {
+                Arc::make_mut(&mut g.host_unit_facts)
+                    .get_mut(&uid)
+                    .unwrap()
+                    .upgrade
+                    .as_mut()
+                    .unwrap()
+                    .resources = None
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0)
+                .1,
+            "{missing}"
+        );
+    }
+}
+
+#[test]
+fn native_price_does_not_create_a_want_for_stocked_wounded_or_reserved_units() {
+    for unavailable in ["stocked", "wounded", "guard", "unfunded", "disabled"] {
+        let (mut g, mut ai, uid) = fixture();
+        mark_native(&mut g, uid);
+        ai.enable_land_army_asks_the_host_price();
+        match unavailable {
+            "stocked" => {
+                g.players[0]
+                    .strategic_resources
+                    .insert(crate::name!("iron"), 10.0);
+            }
+            "wounded" => g.units.get_mut(&uid).unwrap().hp = 10,
+            "guard" => {
+                let settler = g.spawn_test_unit("settler", 0, (4, 5));
+                ai.settler_guards.insert(settler, uid);
+            }
+            "unfunded" => g.players[0].gold = 189.0,
+            "disabled" => ai.disable_army_upgrade_materials(),
+            _ => unreachable!(),
+        }
+        let (wants, host_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0);
+        assert!(wants.is_empty(), "{unavailable}");
+        assert!(!host_price, "{unavailable}");
+    }
+}

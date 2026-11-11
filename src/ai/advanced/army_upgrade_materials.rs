@@ -6,6 +6,14 @@
 //! The siege/air resource buyer supplied no ordinary land-upgrade want.
 //! Native Culture armies at war use `culture_war_materials` for their
 //! observed upgrade bills and a renewable unit-fuel buffer.
+//!
+//! `land-army-asks-the-host-price` opts native Domination upgrades into the
+//! existing bounded host cash-price path. Deity Macedon 100029Z had four
+//! Warriors, no Iron and peaceful Iron sellers at turn50. Horse/Iron barter
+//! was declined at51/55 and refused as barter_short at61. Iron obtained at70
+//! finally allowed two Hypaspists at72. A model book is not the host price.
+//! Keep the existing single-upgrade want and its reserved cash; this changes
+//! the proposed material deal, not its acceptance or the upgrade itself.
 use super::*;
 
 /// One material purchase, with the cash that must remain for its upgrade.
@@ -94,8 +102,9 @@ impl AdvancedAi {
     }
 
     /// Native defensive purchases fund only upgrades still affordable after
-    /// this frame's other spending. The bool identifies that narrow path so
-    /// the bridge can defer a new alliance proposal for the material deal.
+    /// this frame's other spending. The bool selects the bounded host cash
+    /// price path, also used by the opt-in native land-army material buyer;
+    /// the bridge can then defer a new alliance proposal for the material deal.
     pub fn army_upgrade_material_wants_after_spending(
         &self,
         g: &Game,
@@ -105,7 +114,29 @@ impl AdvancedAi {
         if let Some((wants, _)) = self.culture_war_material_reading(g, pid, Some(remaining_gold)) {
             return (wants, true);
         }
-        (self.army_upgrade_material_wants(g, pid), false)
+        let wants = self.army_upgrade_material_wants(g, pid);
+        let host_price = self.land_army_asks_the_host_price
+            && wants.first().is_some_and(|want| {
+                let resource = Name::new(&want.resource_id);
+                g.observed_strategic_income_adjustments
+                    .get(&pid)
+                    .is_some_and(|income| income.contains_key(&resource))
+                    && g.host_unit_facts.get(&want.uid).is_some_and(|facts| {
+                        facts.civ6_id.is_some()
+                            && facts.upgrade.as_ref().is_some_and(|quote| {
+                                quote.to.is_some_and(|target| target == want.unit)
+                                    && quote
+                                        .cost
+                                        .is_some_and(|gold| gold.is_finite() && gold >= 0.0)
+                                    && quote.resources.as_ref().is_some_and(|bill| {
+                                        bill.resource == Some(resource)
+                                            && bill.cost.is_finite()
+                                            && bill.cost > 0.0
+                                    })
+                            })
+                    })
+            });
+        (wants, host_price)
     }
 
     fn army_upgrade_material_quotes(&self, g: &Game, pid: usize) -> Vec<ArmyUpgradeMaterialQuote> {
