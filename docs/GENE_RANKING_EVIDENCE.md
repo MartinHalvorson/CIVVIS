@@ -316,6 +316,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
 | `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
+| `friendship-outlasts-the-gated-race` | off (unmeasured) | `friendship-outlasts-the-gated-race`: see `advanced/friendship_outlasts_the_gated_race.rs`. | 1 \| 1 |
 | `friendship-refuses-the-racer` | off (unmeasured) | Opt-in gene `friendship-refuses-the-racer`; see `Self::friendship_refuses_the_racer`. | 1 \| 1 |
 | `friendship-spares-the-converter` | off (unmeasured) | Offer no friendship to the founder whose faith we must fight. | 1 \| 1 |
 | `garrison-before-the-surprise` | off (unmeasured) | Opt-in gene `garrison-before-the-surprise`; see `BasicAi::garrison_before_the_surprise`. | 1 \| 1 |
@@ -460,6 +461,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `threatened-war-holds-the-claims` | off (unmeasured) | Opt-in gene `threatened-war-holds-the-claims`; see `advanced/threatened_war_holds_the_claims.rs`. | 1 \| 1 |
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
 | `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
+| `tribute-warms-the-neighbour` | off (unmeasured) | Opt-in gene `tribute-warms-the-neighbour`; see `advanced/tribute_warms_the_neighbour.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
 | `unique-unit-closes-the-dark-age` | off (unmeasured) | `unique-unit-closes-the-dark-age`: see `advanced/unique_unit_closes_the_age.rs`. | 1 \| 1 |
 | `universities-before-the-forge` | off (unmeasured) | Opt-in Science University priority before industrial claims. | 1 \| 1 |
