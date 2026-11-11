@@ -1636,6 +1636,7 @@ impl Game {
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.purchase_price.borrow_mut() = Some(PurchasePriceMemo::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.worked_backlog.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
