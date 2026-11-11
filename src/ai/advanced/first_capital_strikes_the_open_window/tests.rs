@@ -661,6 +661,56 @@ fn the_live_ethiopia_shape_is_never_struck() {
     assert!(!game.is_at_war(0, 1));
 }
 
+/// The live Stirling shape: the whole reserved force at the rally of a
+/// capital of defence 24, its bill short because the owner's army stands
+/// four to six tiles behind the city. The strike waits while a body is
+/// missing or the owner out-powers us, and goes once the force is whole and
+/// the owner is no stronger than we are.
+#[test]
+fn the_whole_force_strikes_an_owner_no_stronger_than_us() {
+    let (mut game, mut ai, capital) = opened(true);
+    second_city(&mut game);
+    set_strength(&mut game, capital, 24.0);
+    for pos in [(28, 12), (29, 12), (30, 12), (28, 11), (28, 13), (29, 11)] {
+        game.spawn_test_unit("warrior", 1, pos);
+    }
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "warrior", rally, 1, 4);
+    bodies(&mut game, "archer", rally, 2, 1);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let ours = game.military_power(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 0.9 * ours);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    assert!(
+        ai.first_capital_open_window_go(&game, 0, &opening)
+            .is_none(),
+        "five of six bodies and a short bill"
+    );
+
+    // The sixth body arrives, but the owner reads 1.2 times our power.
+    bodies(&mut game, "archer", rally, 2, 1);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let ours = game.military_power(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 1.2 * ours);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(opening.force.len(), ai.conquest_force_size());
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    assert!(ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .is_none());
+    assert!(!ai.conquest_declaration(&mut game, 0));
+
+    // No stronger than us: the go stands on a bill it does not cover.
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 0.9 * ours);
+    let go = ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .expect("the whole force goes");
+    assert!(go.strength < go.requirement, "{go:?}");
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+}
+
 /// The Cree window that motivated the gene: three cities, four Warriors and
 /// a Battering Ram at the rally of an Ancient-walled capital of defence 18,
 /// the owner at half our power. The go declares; the shipped share rule
