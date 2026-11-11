@@ -718,3 +718,162 @@ fn the_opening_is_dropped_the_moment_the_gene_is_switched_off() {
     assert!(ai.city_state_stone.is_none());
     assert!(!ai.conquest_closed);
 }
+
+// ------------------------------------------------------- the stone's clock
+
+/// An ordinary early plan for the production and research pickers.
+fn expansion_plan(game: &Game) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    }
+}
+
+/// Live civvis-20261111T061116Z: Hong Kong named at turn 15, released at 40
+/// "before the force ever assembled" while its bodies were still coming.
+#[test]
+fn the_clock_holds_a_stone_whose_force_is_still_coming_until_turn_60() {
+    let (mut game, near, _) = fixture();
+    game.turn = 15;
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.conquest_opening.as_ref().unwrap().city, near);
+    // Two bodies on their way, eight tiles from the rally; no Ram yet.
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    for pos in [at(3, 14), at(3, 13)] {
+        unit(&mut game, "warrior", pos);
+        assert!(game.wdist(pos, rally) > 5);
+    }
+    for turn in [40, 49, 50, 59] {
+        game.turn = turn;
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(
+            ai.city_state_stone_stands(),
+            "turn {turn}: the force is still coming"
+        );
+        assert!(ai.conquest_reservation_open(&game), "turn {turn}");
+    }
+    game.turn = 60;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "turn 60: the clock runs out");
+    assert!(!ai.conquest_closed, "the capital opening is not spent");
+
+    // A major at war with us lifts the hold: the stone's own naming deadline
+    // (turn 50) is the clock.
+    let (mut game, _, _) = fixture();
+    game.turn = 15;
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    unit(&mut game, "warrior", at(3, 14));
+    game.at_war.insert((0, 1));
+    game.turn = 49;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(
+        ai.city_state_stone_stands(),
+        "turn 49: inside the naming deadline"
+    );
+    game.turn = 50;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "turn 50 in a major war");
+}
+
+#[test]
+fn the_ram_is_claimed_ahead_of_the_bodies_once_masonry_is_known() {
+    let (mut game, _, _) = fixture();
+    game.players[0].techs.insert(name!("masonry"));
+    game.players[0].gold = 50.0;
+    game.players[0].gold_per_turn = 5.0;
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.city_state_stone_stands());
+    let capital = AdvancedAi::conquest_capital(&game, 0).unwrap();
+    let counts = ai.counts(&game, 0);
+    let ram = ai.conquest_breaker_value(&game, 0, capital, "battering_ram");
+    for body in ["warrior", "archer", "spearman"] {
+        let spec = game.rules.units[body].clone();
+        assert!(
+            ram > ai.conquest_reservation(&game, 0, capital, &spec, &counts, false),
+            "the Ram outranks a {body}"
+        );
+    }
+    let plan = expansion_plan(&game);
+    let mut claimed = game.clone();
+    assert!(ai.conquest_opening_production(&mut claimed, 0, &plan));
+    assert_eq!(
+        claimed.cities[&capital].queue.first(),
+        Some(&crate::game::Item::Unit {
+            unit: name!("battering_ram")
+        }),
+        "the idle capital takes the Ram first"
+    );
+}
+
+#[test]
+fn research_takes_masonry_then_the_unique_melee_line_from_turn_one() {
+    let (mut game, _, _) = fixture();
+    game.turn = 6;
+    game.players[0].civ = "Macedon".to_string();
+    game.players[0].techs.insert(name!("mining"));
+    game.players[0].research = None;
+    let ai = seat(true);
+    assert!(ai.conquest_opening.is_none(), "nothing is named yet");
+    assert_eq!(
+        ai.city_state_stone_research_goal(&game, 0),
+        Some(name!("masonry"))
+    );
+    assert_eq!(seat(false).city_state_stone_research_goal(&game, 0), None);
+    let plan = expansion_plan(&game);
+    let mut on = game.clone();
+    ai.advanced_research(&mut on, 0, &plan);
+    assert_eq!(on.players[0].research.as_deref(), Some("masonry"));
+
+    // Masonry known: the step toward Iron Working (the Hypaspist).
+    game.players[0].techs.insert(name!("masonry"));
+    assert_eq!(
+        ai.city_state_stone_research_goal(&game, 0),
+        Some(name!("iron_working"))
+    );
+    let mut on = game.clone();
+    ai.advanced_research(&mut on, 0, &plan);
+    assert_eq!(on.players[0].research.as_deref(), Some("bronze_working"));
+}
+
+#[test]
+fn the_force_is_journalled_every_few_turns_before_the_war() {
+    let (mut game, _, _) = fixture();
+    game.turn = 15;
+    let mut ai = seat(true);
+    ai.base.journal = crate::reasoning::Journal::recording();
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    unit(&mut game, "warrior", at(3, 14));
+    game.turn = 16;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let thoughts = ai.journal().since(0).thoughts;
+    let line = thoughts
+        .iter()
+        .find(|thought| thought.headline.contains("bodies at the rally"))
+        .expect("the progress line");
+    assert!(
+        line.headline.contains("of 5 bodies at the rally for"),
+        "{}",
+        line.headline
+    );
+    assert!(
+        line.detail.contains("breaker waiting on Masonry"),
+        "{}",
+        line.detail
+    );
+    assert!(line.detail.contains("bill "), "{}", line.detail);
+    assert!(
+        line.detail.contains("the clock holds it"),
+        "{}",
+        line.detail
+    );
+}

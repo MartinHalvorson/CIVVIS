@@ -374,6 +374,10 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
+            // `city-state-before-the-first-capital`: Masonry, then the unique
+            // melee line, while a stepping stone can still be named or stands.
+            // `None` with the gene off.
+            let stone_research_goal = self.city_state_stone_research_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -470,6 +474,7 @@ impl AdvancedAi {
                 }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                _ if stone_research_goal.is_some() => stone_research_goal.as_deref(),
                 // `diplo-match-point-beelines-the-points`: from match point the
                 // last points in the tree, whatever the plan reads, ahead of
                 // every war and lane arm below. Live Immortal
@@ -957,6 +962,10 @@ impl AdvancedAi {
                                 format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
                             } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
+                            } else if defensive_walls_goal.as_deref() != Some(goal)
+                                && stone_research_goal.as_deref() == Some(goal)
+                            {
+                                format!("city-state before the first capital: the {step} step toward {}, which the stepping stone's force needs (the Battering Ram, then the unique melee line)", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
                                 if let Some((city, rival, ratio)) =
                                     self.frontier_walls_research_threat(g, pid)

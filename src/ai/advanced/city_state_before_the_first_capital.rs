@@ -36,20 +36,29 @@
 //!    rival-capital scan names nothing, so a capital in hand comes first.
 //! 2. **The clock**: named from the turn we hold [`STONE_CITIES`] cities
 //!    (the capital trains the first Settler before anything is reserved)
-//!    until standard turn [`STONE_NAMING_DEADLINE`] (50 on Online), with the
-//!    shipped preparation window, never while a major is at war with us and
-//!    never while `city-state-harvest` holds a name.
+//!    until standard turn [`STONE_NAMING_DEADLINE`] (50 on Online), never
+//!    while a major is at war with us and never while `city-state-harvest`
+//!    holds a name. A named stone's commit clock is at least that naming
+//!    deadline plus the shipped approach grace, and while its force is still
+//!    being raised (a body or the breaker missing) or walking to the rally,
+//!    the clock does not release it at all before standard turn
+//!    [`STONE_HOLD_DEADLINE`] (60 on Online), unless a major is at war with
+//!    us ([`AdvancedAi::city_state_stone_commit_hold`]). Every other exit is
+//!    unchanged, and a progress line is journalled every few turns.
 //! 3. **The force**: [`STONE_MELEE`] melee bodies and [`STONE_RANGED`]
 //!    shooters on top of each city's guard (the `first-capital-before-the-walls`
 //!    guard rule), plus the shipped breaker reservation's Battering Ram
-//!    against the walls. The reservation trains whatever melee body scores
-//!    best now (a Warrior, a Spearman, the unique line once it is in); the
-//!    bill preview, not a unit list, decides readiness. From turn one, while a
-//!    stone can still be named, the opening's research credit
-//!    (`conquest_research_value`) chases Masonry and the technology of this
-//!    civilization's own unique melee line when it out-fights a Warrior
-//!    (read from `unique_to`/`replaces`: Macedon's Hypaspist, Iron Working),
-//!    at the shipped weight and never on top of the opening's own credit.
+//!    against the walls, claimed ahead of the bodies once Masonry is known
+//!    ([`AdvancedAi::city_state_stone_breaker_lead`]). The reservation trains
+//!    whatever melee body scores best now (a Warrior, a Spearman, the unique
+//!    line once it is in); the bill preview, not a unit list, decides
+//!    readiness. From turn one, while a stone can still be named, research
+//!    takes Masonry and then the technology of this civilization's own unique
+//!    melee line when it out-fights a Warrior (read from `unique_to`/
+//!    `replaces`: Macedon's Hypaspist, Iron Working) as a forced goal
+//!    ([`AdvancedAi::city_state_stone_research_goal`]), behind only the
+//!    capital-walls and opening-Archery emergencies; the `tech_value` credit
+//!    (`conquest_research_value`) alone moved Masonry about ten points.
 //!    The declaration waits for a standing breaker (the armed
 //!    `opening-yields-to-walls` would otherwise stand the war down on its
 //!    first turn). The shipped builder already opens a revealed strategic
@@ -117,6 +126,16 @@ pub(crate) const STONE_MELEE: usize = 3;
 /// outranks razing or liberating it under any strategy.
 pub(crate) const STONE_KEEP_VALUE: f64 = 100_000.0;
 
+/// The last standard turn the commit clock holds a stone whose force is
+/// still being raised or walking to the rally: 60 on Online. Before it the
+/// stone's own clock is its naming deadline ([`STONE_NAMING_DEADLINE`], 50
+/// on Online) plus the shipped approach grace. Live Deity
+/// civvis-20261111T061116Z named Hong Kong at turn 15 and released it at 40,
+/// "the commit deadline passed before the force ever assembled", with its
+/// Battering Ram reserved on turn 35 and three of five bodies pulled onto a
+/// barbarian camp and the second city's defence; no suzerain ever came.
+pub(crate) const STONE_HOLD_DEADLINE: u32 = 90;
+
 /// The city-state city the opening stands on, keyed the way a live frame can
 /// re-read it: its tile and its civilization.
 #[derive(Clone, Debug, PartialEq)]
@@ -127,6 +146,10 @@ pub(crate) struct CityStateStone {
     pub(crate) civ: String,
     /// Whether a frame has read the war the opening declared.
     pub(crate) seen_at_war: bool,
+    /// Whether the commit clock holds the stone this turn: its force is still
+    /// being raised or walking, before [`STONE_HOLD_DEADLINE`] and with no
+    /// major at war with us.
+    pub(crate) held: bool,
 }
 
 /// What one scan of the board found: the stone to name, or the nearest met
@@ -362,6 +385,7 @@ impl AdvancedAi {
             pos,
             civ: g.players[minor].civ.clone(),
             seen_at_war: false,
+            held: false,
         });
         self.conquest_opening = Some(ConquestOpening {
             target: minor,
@@ -381,11 +405,13 @@ impl AdvancedAi {
         let walls = g.city_max_wall_hp(&g.cities[&city]);
         think!(self.journal(), Military, Strategy,
                "City-state before the first capital: {}", g.cities[&city].name;
-               "{} tiles, walls {}, garrison {}, no suzerain; the capital reserves {} melee \
-                bodies, {} shooters and a breaker on top of the city guards, rallies at the \
-                ring and can wait until turn {}",
+               "{} tiles, walls {}, garrison {}, no suzerain; the capital reserves a breaker, \
+                {} melee bodies and {} shooters on top of the city guards, rallies at the \
+                ring and can wait until turn {}, or turn {} while its force is still coming",
                distance, walls, garrison, STONE_MELEE, STONE_RANGED,
-               g.turn.saturating_add(self.conquest_preparation(g));
+               g.standard_duration(STONE_NAMING_DEADLINE)
+                   .max(g.turn.saturating_add(self.conquest_preparation(g))),
+               g.standard_duration(STONE_HOLD_DEADLINE);
                rally);
     }
 
@@ -474,7 +500,247 @@ impl AdvancedAi {
         }
         if g.city_max_wall_hp(&g.cities[&cid]) > STONE_WALL_CEILING {
             self.conquest_release(g, "its walls rose past Ancient before the war");
+            return;
         }
+        // The clock holds a force that is still being raised or walking.
+        let held = opening.assembled.is_none()
+            && g.turn < g.standard_duration(STONE_HOLD_DEADLINE)
+            && !Self::city_state_stone_major_war(g, pid)
+            && self.city_state_stone_in_progress(g, pid, &opening);
+        if let Some(stone) = self.city_state_stone.as_mut() {
+            stone.held = held;
+        }
+        self.city_state_stone_progress_note(g, pid, &opening, held);
+    }
+
+    /// Whether the stone's force is still coming: a reserved body is still
+    /// missing, the walls stand and no breaker of ours does yet (reserved,
+    /// queued, being trained or waiting on Masonry), or a named body is not
+    /// yet at the rally.
+    fn city_state_stone_in_progress(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+    ) -> bool {
+        let counts = self.counts(g, pid);
+        let (ranged, melee) = self.first_capital_shortfall(g, pid, &counts);
+        let walled = g
+            .cities
+            .get(&opening.city)
+            .is_some_and(|city| g.city_max_wall_hp(city) > 0);
+        let breaker_coming = walled && Self::city_state_stone_breakers_standing(g, pid) == 0;
+        let walking = opening.force.iter().any(|uid| {
+            g.units.get(uid).is_some_and(|unit| {
+                g.wdist(unit.pos, opening.rally) > super::early_conquest::CONQUEST_ASSEMBLY_RADIUS
+            })
+        });
+        ranged + melee > 0 || breaker_coming || walking
+    }
+
+    /// The breaker's state, for the progress line.
+    fn city_state_stone_breaker_state(g: &Game, pid: usize, opening: &ConquestOpening) -> String {
+        let walled = g
+            .cities
+            .get(&opening.city)
+            .is_some_and(|city| g.city_max_wall_hp(city) > 0);
+        if !walled {
+            return "not needed".to_string();
+        }
+        if let Some(ram) = g.units.values().find(|unit| {
+            unit.owner == pid && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+        }) {
+            return format!(
+                "standing {} from the rally",
+                g.wdist(ram.pos, opening.rally)
+            );
+        }
+        if Self::conquest_breakers_held(g, pid) > 0 {
+            return "in training".to_string();
+        }
+        let masonry = g
+            .rules
+            .units
+            .get("battering_ram")
+            .and_then(|ram| ram.tech)
+            .is_none_or(|tech| g.players[pid].techs.contains(&tech));
+        if masonry {
+            "not yet queued".to_string()
+        } else {
+            "waiting on Masonry".to_string()
+        }
+    }
+
+    /// The bill preview's two sides for the stone, `(force strength, bill)`,
+    /// or `None` with no force named.
+    fn city_state_stone_bill(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+    ) -> Option<(f64, f64)> {
+        let appraisal = self.city_state_stone_appraisal(g, pid, opening.target)?;
+        let force: Vec<u32> = opening.force.iter().copied().collect();
+        if force.is_empty() || !g.cities.contains_key(&opening.city) {
+            return None;
+        }
+        let strength = Self::campaign_strength_of(g, &force);
+        let requirement = self.campaign_city_requirement(
+            g,
+            pid,
+            opening.city,
+            &appraisal,
+            strength / force.len() as f64,
+        );
+        Some((strength, requirement.strength))
+    }
+
+    /// Journal, once every few turns before the war, where the stone's force
+    /// stands: bodies at the rally, the board rows holding the rest, the
+    /// breaker and the bill.
+    fn city_state_stone_progress_note(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+        held: bool,
+    ) {
+        let note_due = self.city_state_stone_noted.is_none_or(|noted| {
+            g.turn
+                >= noted
+                    + g.standard_duration(super::early_conquest::CONQUEST_FEASIBILITY_NOTE_TURNS)
+        });
+        if !note_due || !self.journal().wants(crate::reasoning::Level::Strategy) {
+            return;
+        }
+        self.city_state_stone_noted = Some(g.turn);
+        let Some(city) = g.cities.get(&opening.city) else {
+            return;
+        };
+        let reserved = self.conquest_force_size();
+        let up = opening
+            .force
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .filter(|unit| {
+                g.wdist(unit.pos, opening.rally) <= super::early_conquest::CONQUEST_ASSEMBLY_RADIUS
+            })
+            .count();
+        // The board rows holding the named bodies that are not at the rally.
+        let board = self.objective_board();
+        let mut elsewhere: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for uid in &opening.force {
+            let near = g.units.get(uid).is_some_and(|unit| {
+                g.wdist(unit.pos, opening.rally) <= super::early_conquest::CONQUEST_ASSEMBLY_RADIUS
+            });
+            if near {
+                continue;
+            }
+            let row = board
+                .forces
+                .iter()
+                .find(|force| force.units.contains(uid))
+                .and_then(|force| {
+                    board
+                        .rows
+                        .iter()
+                        .find(|row| row.key == force.objective_key)
+                        .map(|row| format!("{:?}", row.kind))
+                })
+                .unwrap_or_else(|| "walking".to_string());
+            *elsewhere.entry(row).or_insert(0) += 1;
+        }
+        let elsewhere = if elsewhere.is_empty() {
+            "none elsewhere".to_string()
+        } else {
+            elsewhere
+                .iter()
+                .map(|(row, n)| format!("{row} {n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let bill = match self.city_state_stone_bill(g, pid, opening) {
+            Some((strength, need)) if strength + 1e-9 >= need => {
+                format!("covered ({strength:.0} against {need:.0})")
+            }
+            Some((strength, need)) => format!(
+                "short by {:.0} ({strength:.0} against {need:.0})",
+                need - strength
+            ),
+            None => "not priced (no body named)".to_string(),
+        };
+        let clock = if held {
+            format!(
+                "the clock holds it to turn {} at most",
+                g.standard_duration(STONE_HOLD_DEADLINE)
+            )
+        } else {
+            format!(
+                "the clock runs to turn {}",
+                self.conquest_commit_due(g, opening)
+            )
+        };
+        think!(self.journal(), Military, Strategy,
+               "City-state before the first capital: {} of {} bodies at the rally for {}",
+               up, reserved, city.name;
+               "{} named, away: {elsewhere}; breaker {}; bill {bill}; {clock}",
+               opening.force.len(), Self::city_state_stone_breaker_state(g, pid, opening);
+               opening.rally);
+    }
+
+    /// The stone's commit clock floor: its own naming deadline (50 on
+    /// Online), under the shipped approach grace. Zero with no stone.
+    pub(super) fn city_state_stone_commit_floor(&self, g: &Game) -> u32 {
+        if self.city_state_stone_stands() {
+            g.standard_duration(STONE_NAMING_DEADLINE)
+        } else {
+            0
+        }
+    }
+
+    /// The commit clock with the stone's hold: a held stone is never due
+    /// this turn. `due` unchanged with no stone.
+    pub(super) fn city_state_stone_commit_hold(&self, g: &Game, due: u32) -> u32 {
+        let held = self.city_state_stone_stands()
+            && self
+                .city_state_stone
+                .as_ref()
+                .is_some_and(|stone| stone.held);
+        if held {
+            due.max(g.turn.saturating_add(1))
+        } else {
+            due
+        }
+    }
+
+    /// What the stone's Battering Ram adds to the shipped breaker value, so
+    /// it outranks every reserved body: its walls are known from the naming.
+    /// Zero with no stone.
+    pub(super) fn city_state_stone_breaker_lead(&self) -> f64 {
+        if self.city_state_stone_stands() {
+            super::early_conquest::CONQUEST_RESERVATION_PER_MISSING
+                * self.conquest_force_size() as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// `city-state-before-the-first-capital`: the forced research goal while
+    /// a stone can still be named or stands: Masonry (the Ram) first, then
+    /// this civilization's own unique melee line when it out-fights a
+    /// Warrior. A `tech_value` credit is divided by the square root of the
+    /// node's cost, so the opening's +90 moved Masonry about ten points:
+    /// live civvis-20261111T061116Z researched Animal Husbandry (52) and
+    /// Bronze Working (34) ahead of it and started Masonry at turn 26 for the
+    /// capital's walls. `None` with the gene off.
+    pub(super) fn city_state_stone_research_goal(&self, g: &Game, pid: usize) -> Option<Name> {
+        if !self.city_state_stone_window_open(g) {
+            return None;
+        }
+        Self::city_state_stone_research_goals(g, pid)
+            .first()
+            .copied()
     }
 
     /// Why the stone's assembled force holds at the rally, if it does: a
