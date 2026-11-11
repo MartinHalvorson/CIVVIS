@@ -619,6 +619,19 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
+                // `culture-faith-site-per-theater-3`: the Holy Site's unlock
+                // ahead of the production technologies, never ahead of a
+                // launch, wartime-upgrade, siege or endgame goal. See
+                // `advanced/culture_faith_sources.rs`.
+                _ if first_launch_goal.is_none()
+                    && wartime_modernization_goal.is_none()
+                    && domination_siege_goal.is_none()
+                    && endgame_goal.is_none()
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
+                    && self.culture_faith_astrology_first(g, pid) =>
+                {
+                    Some("astrology")
+                }
                 _ if production_technology_goal.is_some() => production_technology_goal
                     .as_ref()
                     .map(|tech| tech.as_str()),

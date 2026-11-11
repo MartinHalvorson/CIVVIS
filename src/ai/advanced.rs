@@ -6871,6 +6871,12 @@ pub struct AdvancedAi {
     /// government ladder and the culture list. See
     /// `advanced/cold_war_then_heritage.rs`. Opt-in.
     cold_war_then_heritage: bool,
+    /// `culture-faith-site-per-theater-3`: versions one and two without their
+    /// caps (a Holy Site in every Theater city, sources open to forty Faith a
+    /// city), a Theater city's last free specialty district slot kept for its
+    /// Holy Site, and Astrology ahead of the production technologies. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -21226,6 +21232,9 @@ impl AdvancedAi {
         // this board before anything is placed. Nothing happens while the gene
         // is off. See `advanced/district_planning.rs`.
         preview.snapshot_bulldoze_sites(&board, pid);
+        // `culture-faith-site-per-theater-3`: the hint keeps the same slot for
+        // the Holy Site as the main path; the board is thrown away after.
+        let _ = preview.culture_faith_hold_the_slots(&mut board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -26218,6 +26227,11 @@ impl AdvancedAi {
         // slot from every production writer below, released before the
         // defence handoff. Nothing is held with the gene off.
         let held_field_slot = self.surge_hold_field_slot(g, pid);
+        // `culture-faith-site-per-theater-3`: a Theater city's last free
+        // district slot waits for its Holy Site through the same pass,
+        // released just before the field slot. Nothing is held with the gene
+        // off. See `advanced/culture_faith_sources.rs`.
+        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
@@ -26531,6 +26545,7 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
+        Self::culture_faith_release_the_slots(g, held_faith_slots);
         Self::surge_release_field_slot(g, held_field_slot);
         // `religion-seat-first-shrine`: the founder's first Shrine, after every
         // ordinary writer so none of them takes the head back, and before the
