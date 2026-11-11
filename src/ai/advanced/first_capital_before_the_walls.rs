@@ -195,7 +195,8 @@ impl AdvancedAi {
     /// The preparation window, in turns at this game's speed. The stepping
     /// stone keeps the shipped window.
     pub(super) fn conquest_preparation(&self, g: &Game) -> u32 {
-        g.standard_duration(if self.first_capital_active() && !self.city_state_stone_stands() {
+        let first_capital = self.first_capital_active() && !self.city_state_stone_stands();
+        g.standard_duration(if first_capital {
             FIRST_CAPITAL_PREPARATION_TURNS
         } else {
             super::early_conquest::CONQUEST_MIN_PREPARATION_TURNS
