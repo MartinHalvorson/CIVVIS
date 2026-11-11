@@ -110,7 +110,11 @@ fn the_early_claim_keeps_opening_defense_and_other_lanes_ahead() {
             "book" => ai.base.book_pos = 3,
             "one_city" => {
                 let keep = g.player_city_ids(0)[0];
-                g.cities.retain(|id, _| *id == keep);
+                for cid in g.player_city_ids(0) {
+                    if cid != keep {
+                        g.cities.remove(&cid);
+                    }
+                }
             }
             "late" => g.turn = g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE) + 1,
             "threat" => plan.threatened_city = Some(g.player_city_ids(0)[0]),
