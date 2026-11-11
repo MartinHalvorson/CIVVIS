@@ -31625,11 +31625,15 @@ function drawUbar() {
     h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
   if (standing !== "sleep")
     h += `<button title="Rest until this unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
-  if (standing !== "alert")
+  // Civilization VI offers a unit only the orders it can carry out. Standing
+  // watch and exploring are for units that fight or scout; a Builder or a
+  // Settler has no watch to stand. Healing is offered to a unit that is hurt.
+  const soldier = unitHasHealth(u);
+  if (soldier && standing !== "alert")
     h += `<button title="Stand watch until an enemy comes near (V)" onclick='orderUnit("alert")'>👁 Alert</button>`;
-  if (standing !== "heal")
+  if (soldier && u.hp < 100 && standing !== "heal")
     h += `<button title="Fortify and wait out the damage (H)" onclick='healHere()'>✚ Heal</button>`;
-  if (standing !== "explore")
+  if (soldier && standing !== "explore")
     h += `<button title="Walk toward the edge of the known world (E)" onclick='exploreHere()'>🧭 Explore</button>`;
   if (standing)
     h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" || standing === "explore" ? "Halt" : "Wake"}</button>`;
@@ -31638,7 +31642,7 @@ function drawUbar() {
     const travel = unitTravelOrder(u);
     h += `<div class="small" style="margin-top:6px">${
       standing === "skip" ? "Skipping this turn"
-      : travel ? `Travelling to ${travel.to.join(",")}`
+      : travel ? `Travelling: it walks on each turn until it arrives. Halt stops it.`
       : standing === "explore" ? "Exploring"
       : standing === "alert" ? "On watch until an enemy comes near"
       : standing === "heal" ? "Healing until whole again"
