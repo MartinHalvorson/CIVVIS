@@ -62,7 +62,7 @@ impl AdvancedAi {
     ) -> bool {
         if !self.first_capital_land_recon_needed(g, pid, plan)
             || !matches!(item, Item::Unit { unit } if g.rules.units.get(unit.as_str()).is_some_and(|spec|
-                spec.promotion_class == "recon" && spec.domain == "land"))
+                spec.promotion_class == "recon" && spec.domain.as_deref().unwrap_or("land") == "land"))
             || !Self::production_commitment_is_legal(g, pid, cid, item)
             || self.counts_without_city_queue(g, pid, cid).scouts
                 >= early_conquest::CONQUEST_SEARCH_SCOUTS
