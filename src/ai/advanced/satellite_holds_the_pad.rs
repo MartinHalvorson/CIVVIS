@@ -33,6 +33,8 @@ impl AdvancedAi {
     /// standing pad of ours can build it, or while a pad already leads with
     /// it.
     pub(super) fn satellite_hold(&self, g: &Game, pid: usize) -> Option<(u32, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.satellite_holds_the_pad || self.base.minor || self.base.barb {
             return None;
         }

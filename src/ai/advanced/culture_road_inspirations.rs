@@ -132,6 +132,8 @@ impl AdvancedAi {
         civic: &str,
         boost: &BoostSpec,
     ) -> Option<f64> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let trigger = boost.trigger.as_str();
         if let Some(tech) = trigger.strip_prefix("tech:") {
             return self.culture_road_tech_eta(g, pid, tech, civic);

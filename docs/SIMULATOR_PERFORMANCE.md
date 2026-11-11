@@ -111,6 +111,76 @@ needs about 11.9 s of play for turns 1 to 100 on the same host under the same
 load, so WebAssembly costs about 1.4x here, not the 2x an earlier comparison
 read with the document's cost still in it.
 
+### What was done about it: a seat's planning keeps city yields
+
+Three changes, each measured with `site-bench` and each playing the same game.
+
+**One memo per sweep (#5063).** Fifty-five read-only helpers asked city after
+city with no `QueryMemo` open, which is fact 1 above. Each now opens one for
+its whole sweep. Site reading on the runner, three paired games of 100 turns:
+**−2.70% per turn**, pairs between −3.15% and −2.64%, same save and document
+checkpoints on every seed.
+
+**Yields kept between passes (`Game::keep_rival_yields`, `keep_own_yields`).**
+Fact 2 is not reachable with a memo: a `QueryMemo` borrows the game, and a
+mutable borrow separates one pass from the next. So for the length of one
+seat's turn the spectator session keeps city yields from one pass to the next
+and drops them when the board changes:
+
+* at both ends of every `Game::apply`, successful or refused, and never read
+  or filled inside one;
+* on every tile write, through the tile grid's epoch;
+* on `Game::board_written`, which the handful of places that write the board
+  without an action call (the turn-start settings, the governor's food bias
+  and directives, both policy what-ifs, a rival retired or inferred by hand);
+* and the acting seat's own cities additionally on any change to its deck,
+  food bias or directive count, which are stamped and read back on every
+  lookup, so a what-if against the deck is noticed whether or not it reports.
+
+`Action::Produce` drops only the acting seat's own cities: it writes one of
+that seat's queues, and nothing of another seat's. The live Civilization VI
+seat, the gene screen and `simulate` do not turn any of this on.
+
+One binary, `civvis site-bench --turns 150` with and without
+`--no-kept-yields`, on a GitHub runner:
+
+| Seed | Majors, nothing kept | Majors, kept | | Whole run | | Checkpoints |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 7 | 37.46 s | 30.12 s | −19.6% | 46.57 → 39.23 s | −15.8% | identical |
+| 8 | 34.53 s | 27.19 s | −21.3% | 42.98 → 35.91 s | −16.5% | identical |
+| 9 | 38.96 s | 30.67 s | −21.3% | 49.09 → 40.76 s | −17.0% | identical |
+| 10 | 36.01 s | 29.16 s | −19.0% | 44.72 → 38.18 s | −14.6% | identical |
+| 11 | 35.84 s | 28.15 s | −21.4% | 44.95 → 37.09 s | −17.5% | identical |
+
+Turns 101 to 150 alone are 24% to 27% faster for the majors (seed 7: 22.12 s
+to 16.70 s). Two thirds of all city-yield reads in a seat's turn are answered
+from what was kept (seed 7: 134,122 reused, 66,660 derived). Keeping only the
+rivals' gives about half of it (seed 7: 37.46 s to 33.39 s).
+
+⚠ **The audit could not see the one bug this had, and the save comparison
+did.** `Game::audit_rival_yields` derives every reused answer again and
+compares. The first build that kept the acting seat's own cities passed it
+over 150 turns on two seeds and still played a different game from turn 26.
+The values were never wrong. The policy scorer does not read the *answer* of
+its baseline sweep: it opens `trace_policy_reads`, which records every policy
+effect the sweep *asks*, and calls a card inert when it names none of them. A
+sweep answered from what was kept asks nothing, so every card read as inert
+and the seat stopped changing its deck — and under the audit every reuse
+re-derives, which asks the questions again and hides the fault. Nothing is
+reused while a trace records now, and `site_bench`'s tests play one seed with
+and without and compare the saves, which is the test that sees a caller that
+depends on a derivation having *run*.
+
+**A browser frame steps quietly (#5067).** `advance_one_frame` cloned every
+action of the turn into a `Vec` it then dropped. The state document is 6% of
+a game, so this is the free part and the rest of the document was left alone.
+
+What is left on this world after the three, in the order a profile ranks it:
+the unit phase (30% before any of this, and flat: builder sweeps 8.5%, the
+military step 13% across ten helpers, `plan_battle` 4.6%), the acting seat's
+own cities between its own actions, city-state turns (about a tenth), and
+`memcmp` under the string-keyed effect lookups.
+
 ### Genes are not the lever
 
 Asked directly on the day: would pruning old genes speed the site up. The gene

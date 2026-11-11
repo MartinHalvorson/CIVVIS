@@ -6891,6 +6891,19 @@ pub struct AdvancedAi {
     /// cities that finish one soonest. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot: bool,
+    /// `city-state-before-the-first-capital`: a Domination seat's early
+    /// conquest opening takes one nearby, unsuzerained city-state behind at
+    /// most Ancient Walls before, and without spending, the opening on a
+    /// rival capital. See `advanced/city_state_before_the_first_capital.rs`.
+    /// Opt-in.
+    city_state_before_the_first_capital: bool,
+    /// The stepping stone the opening stands on, by tile and civilization.
+    /// Written only while `city_state_before_the_first_capital` plays.
+    city_state_stone: Option<city_state_before_the_first_capital::CityStateStone>,
+    /// Whether this game has named its one stepping stone.
+    city_state_stone_named: bool,
+    /// The turn the last "none named" note was journalled.
+    city_state_stone_noted: Option<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7651,6 +7664,12 @@ pub struct AdvancedAi {
     /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
     /// default.
     friendship_outlasts_the_gated_race: bool,
+    /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
+    /// `first-capital-before-the-walls` counts uncharted ground as land in
+    /// its walk to the target capital, and the nearest free scout charts the
+    /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
+    /// Off by default.
+    first_capital_walks_the_one_landmass: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11264,6 +11283,9 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
+/// `city-state-before-the-first-capital`: see
+/// `advanced/city_state_before_the_first_capital.rs`.
+mod city_state_before_the_first_capital;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
@@ -11723,6 +11745,10 @@ mod threatened_war_holds_the_claims;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
+/// with one landmass, for the first capital's walk. One opt-in gene; see
+/// `advanced/first_capital_walks_the_one_landmass.rs`.
+mod first_capital_walks_the_one_landmass;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
@@ -13538,6 +13564,8 @@ impl AdvancedAi {
             if let Some(seat) = g.players.get_mut(pid) {
                 seat.city_directives.clear();
             }
+            // Governor settings, written without an action.
+            g.board_written();
             return;
         }
         // While the empire is still short of its city target, only the two
@@ -13624,6 +13652,8 @@ impl AdvancedAi {
         if let Some(seat) = g.players.get_mut(pid) {
             seat.city_directives = directives;
         }
+        // Governor settings, written without an action.
+        g.board_written();
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
@@ -14246,6 +14276,9 @@ impl AdvancedAi {
     }
 
     fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
+        // The lane table and the preferences below read the same empires;
+        // one memo for all of it. See `Game::query_memo`.
+        let _memo = g.query_memo();
         if let Some(target) = self.active_victory_target(g) {
             return VictoryFocus {
                 strategy: target.strategy(),
@@ -15421,6 +15454,8 @@ impl AdvancedAi {
     /// never holds a wonder lane the capital could finish in a third of the
     /// time.
     fn wonder_bargain_city(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let best = g
             .player_city_ids(pid)
             .into_iter()
@@ -18159,6 +18194,8 @@ impl AdvancedAi {
         counts: &EmpireCounts,
         city_ids: &[u32],
     ) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let expansion_covered = counts.settlers > 0 || city_ids.len() >= plan.desired_cities.max(2);
         if !self.first_builder_reserve_2
             || self.first_builder_reserve_2_paid
@@ -18757,6 +18794,8 @@ impl AdvancedAi {
     /// once a pad exists or is on its way, which leaves every city on the
     /// ordinary 250. See `one_launch_pad`.
     pub(crate) fn launch_pad_site(&self, g: &Game, pid: usize) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let mut best: Option<(u32, f64)> = None;
         for cid in g.player_city_ids(pid) {
             if Self::city_has_spaceport_commitment(g, cid) {
@@ -22234,6 +22273,8 @@ impl AdvancedAi {
     }
 
     fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         // Firaxis ProductionPanel.lua:2138 reads this exact city's item quote.
         // It already includes native modifiers and banked production; do not
         // rescale it or reconstruct it from an approximate production rate.
@@ -25368,6 +25409,9 @@ impl AdvancedAi {
         if after.winner.is_some() {
             return -1_000_000_000.0;
         }
+        // One memo for the whole reading of the resulting board; see
+        // `Game::query_memo`.
+        let _memo = after.query_memo();
         let player = &after.players[pid];
         let yield_weights = match strategy {
             GrandStrategy::Science => Yields {
@@ -25517,6 +25561,11 @@ impl AdvancedAi {
                 } else {
                     -100_000.0
                 };
+            }
+            // `city-state-before-the-first-capital`: the stepping stone is
+            // kept. `false` with the gene off.
+            if matches!(action, Action::KeepCity { .. }) && self.city_state_stone_keeps(city.pos) {
+                value += city_state_before_the_first_capital::STONE_KEEP_VALUE;
             }
             let nearest_core = before
                 .cities
@@ -25783,6 +25832,7 @@ impl AdvancedAi {
             g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
             g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
             g.heist_reads_the_host_menu = proposed.heist_reads_the_host_menu;
+            g.board_written();
             for action in actions {
                 let _ = g.apply(pid, &action);
             }
@@ -25808,6 +25858,9 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // The settings above are written on the board without an action.
+        // See `Game::keep_rival_yields`.
+        g.board_written();
         // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
         self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
@@ -26011,11 +26064,14 @@ impl AdvancedAi {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
+            // `city-state-before-the-first-capital`: no-op with the gene off.
+            self.apply_city_state_stone_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
+            self.apply_city_state_stone_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }

@@ -5635,6 +5635,14 @@ pub const GENES: &[Gene] = &[
     // power is at least half the near neighbour's. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
+    // `city-state-before-the-first-capital`: a Domination seat's early
+    // conquest opening takes one nearby, unsuzerained city-state behind at
+    // most Ancient Walls (3 melee, 2 shooters, a Battering Ram) before, and
+    // without spending, the opening on a rival capital. Live Deity: a
+    // city-state stood within 12 tiles in ~90% of 110 games, walls 100 and
+    // about four Warriors at t30-50, no suzerain in 64% at t40. Opt-in; see
+    // `advanced/city_state_before_the_first_capital.rs`.
+    Gene { tag: "city-state-before-the-first-capital", field: "city_state_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_before_the_first_capital, disable: AdvancedAi::disable_city_state_before_the_first_capital },
     // `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
     // Spy for every free slot from its first slot, side by side, in the
     // cities that finish one soonest. Opt-in; see
@@ -5694,6 +5702,14 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Live Deity Macedon, Tiny Pangaea, Online (040245Z): Washington was
+    // charted at t11, 12 tiles out behind no walls, and refused at every
+    // note from t12 to t62 as "no charted land walk reaches their capital":
+    // the capital exchange charts the capital, not the ground between. On a
+    // map with one landmass the first capital's walk counts uncharted ground
+    // as land, and the nearest free scout charts that fog. Opt-in; see
+    // `advanced/first_capital_walks_the_one_landmass.rs`.
+    Gene { tag: "first-capital-walks-the-one-landmass", field: "first_capital_walks_the_one_landmass", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_walks_the_one_landmass, disable: AdvancedAi::disable_first_capital_walks_the_one_landmass },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

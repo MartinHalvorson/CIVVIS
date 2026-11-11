@@ -355,11 +355,13 @@ impl Game {
     /// tile nearest that point. The corridor that comes out is the same
     /// object — every tile strictly between the two ends — so the cover rules
     /// above it are unchanged.
+    #[allow(clippy::too_many_arguments)]
     fn arc_is_clear(
         &self,
         heights: &mut HeightField,
         from: Pos,
         to: Pos,
+        steps: i32,
         viewer_height: i32,
         target_height: i32,
         see_through_woods: bool,
@@ -370,7 +372,7 @@ impl Game {
         let (Some(start), Some(end)) = (sphere.center(from), sphere.center(to)) else {
             return true;
         };
-        let steps = self.wdist(from, to).max(1);
+        debug_assert!(steps > 1);
         let angle = start
             .iter()
             .zip(end)
@@ -512,18 +514,23 @@ impl Game {
         // `wdist`; let its retained distance answer this fast path below.
         // A globe does not have a cube ray and an arena must keep its
         // non-wrapping distance, so both retain the original check.
-        if (sphere || !wraps) && self.wdist(from, to) <= 1 {
-            return true;
-        }
         if sphere {
+            let distance = self.wdist(from, to);
+            if distance <= 1 {
+                return true;
+            }
             return self.arc_is_clear(
                 heights,
                 from,
                 to,
+                distance,
                 viewer_height,
                 target_height,
                 see_through_woods,
             );
+        }
+        if !wraps && self.wdist(from, to) <= 1 {
+            return true;
         }
         let (unwrapped, distance) = self.unwrapped_toward(from, to);
         if distance == 0 || (wraps && distance == 1) {
@@ -624,7 +631,7 @@ impl Game {
     /// range 2 either unobstructed hex corridor is enough; hills provide a
     /// vantage point, while wooded hills and mountains remain taller cover.
     pub(super) fn has_line_of_sight(&self, from: Pos, to: Pos, unit_in_district: bool) -> bool {
-        let distance = self.wdist(from, to);
+        let distance = self.wdist_capped(from, to, 2);
         if distance <= 1 || distance >= 3 {
             return true; // adjacent fire is unconditional; range 3+ lobs shots
         }
@@ -656,7 +663,8 @@ impl Game {
     /// while also letting threat readers inspect a legal future firing tile.
     pub(crate) fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
         let unit = &self.units[&uid];
-        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
+        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist_capped(from, to, 2) == 2
+        {
             let attacker_height = self.see_from_level(from);
             return self.tile_has_strike_line(from, to, attacker_height, true);
         }
@@ -1955,7 +1963,7 @@ impl Game {
             let other = &self.units[&other_id];
             let origin = other.air_patrol_pos.unwrap_or(other.pos);
             let target = unit.air_patrol_pos.unwrap_or(unit.pos);
-            let distance = self.wdist(origin, target);
+            let distance = self.wdist_capped(origin, target, 1);
             distance <= 1
                 || (raider
                     && self.unit_visible_tiles(other_id).contains(&target)

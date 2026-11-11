@@ -77,6 +77,33 @@ pub struct Report {
     pub session: Session,
 }
 
+/// What a run is asked to do beyond playing the frames.
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// Build the page's document after every round.
+    pub documents: bool,
+    /// `Game::keep_rival_yields` for each seat's turn, as every session does.
+    /// Off prices it: the game is the same game, derived the slow way.
+    pub keeps_rival_yields: bool,
+    /// `Game::audit_rival_yields`: derive every reused yield again and panic
+    /// on a difference. Slower than keeping nothing.
+    pub audits_rival_yields: bool,
+    /// `Game::keep_own_yields`: the acting seat's own cities as well, as
+    /// every session does. Off with the rivals' on prices the two apart.
+    pub keeps_own_yields: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            documents: true,
+            keeps_rival_yields: true,
+            audits_rival_yields: false,
+            keeps_own_yields: true,
+        }
+    }
+}
+
 /// FNV-1a, written out so a digest means the same thing on every toolchain.
 /// `DefaultHasher` promises no such thing between Rust releases, and a
 /// baseline and a candidate are sometimes built by different ones.
@@ -137,7 +164,23 @@ fn frame_document(session: &Session, marks: &mut Option<Vec<u64>>, cursor: &mut 
 /// `documents: false` plays the same game and skips the page's half of every
 /// frame, which is what an unwatched exhibition costs.
 pub fn run(seed: u64, turns: u32, documents: bool) -> Report {
+    run_with(
+        seed,
+        turns,
+        Options {
+            documents,
+            ..Options::default()
+        },
+    )
+}
+
+/// [`run`], with every switch.
+pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
+    let documents = options.documents;
     let mut session = Session::new(stock_opening_params(seed));
+    session.keeps_rival_yields = options.keeps_rival_yields;
+    session.keeps_own_yields = options.keeps_own_yields;
+    session.game.audit_rival_yields(options.audits_rival_yields);
     let mut bands: Vec<Band> = BANDS
         .iter()
         .map(|(first, last)| Band {
@@ -167,7 +210,7 @@ pub fn run(seed: u64, turns: u32, documents: bool) -> Report {
             let seat = &session.game.players[session.game.current];
             let minor = seat.is_minor || seat.is_barbarian;
             let started = Instant::now();
-            session.step();
+            session.step_quietly();
             let spent = started.elapsed().as_secs_f64();
             if minor {
                 band.minors_seconds += spent;
@@ -246,5 +289,63 @@ mod tests {
         };
         assert_eq!(saves(&watched), saves(&unwatched));
         assert!(unwatched.bands.iter().all(|band| band.document_bytes == 0));
+    }
+
+    /// How far the yield tests play. Long enough for second cities, the first
+    /// wars and a policy deck or two, which is where the passes that sweep
+    /// every rival's cities start to run.
+    const YIELD_TURNS: u32 = 45;
+
+    /// Keeping yields between passes is an optimization, so the game it plays
+    /// and the documents it writes must be the ones the slow way gives. This
+    /// is the test that sees what the audit cannot: a caller that depends on
+    /// a derivation having *run* (the policy scorer's read trace did, and
+    /// the first build of this kept the acting seat's cities straight
+    /// through it; every card read as inert and the saves parted by turn 26).
+    #[test]
+    fn keeping_yields_plays_the_same_game() {
+        let derived = run_with(
+            17,
+            YIELD_TURNS,
+            Options {
+                keeps_rival_yields: false,
+                ..Options::default()
+            },
+        );
+        assert_eq!(derived.session.game.rival_yields_reused(), (0, 0));
+        for keeps_own_yields in [true, false] {
+            let kept = run_with(
+                17,
+                YIELD_TURNS,
+                Options {
+                    keeps_own_yields,
+                    ..Options::default()
+                },
+            );
+            assert_eq!(
+                kept.checkpoints, derived.checkpoints,
+                "own cities kept: {keeps_own_yields}"
+            );
+            let (reused, _) = kept.session.game.rival_yields_reused();
+            assert!(reused > 0, "the run this compares must actually reuse");
+        }
+    }
+
+    /// The stronger form: every single reused yield is derived again on the
+    /// spot and compared. A write to the board that no action, tile write or
+    /// `Game::board_written` reported panics here with the city and the turn.
+    #[test]
+    fn every_kept_yield_is_what_the_board_gives() {
+        let audited = run_with(
+            19,
+            YIELD_TURNS,
+            Options {
+                documents: false,
+                audits_rival_yields: true,
+                ..Options::default()
+            },
+        );
+        let (reused, _) = audited.session.game.rival_yields_reused();
+        assert!(reused > 0, "an audit of nothing proves nothing");
     }
 }
