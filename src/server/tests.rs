@@ -14920,6 +14920,59 @@ fn the_sky_carries_its_own_way_about() {
     );
 }
 
+/// The Moon and Mars are tiled to the Earth's scale and seeded with
+/// resources each game. A deposit count is a multiple of what the Earth
+/// carries on the same amount of land, so the page's figure for the Earth's
+/// strategic supply has to be the generator's own quota and its tile count
+/// the globe's own formula, not numbers that merely started out equal.
+#[test]
+fn the_moon_and_mars_are_tiled_to_the_earth_and_seeded_each_game() {
+    for (world, deposits) in [
+        ("moon", "deposits:{stone:1, aluminum:1.7, uranium:.6"),
+        (
+            "mars",
+            "deposits:{stone:1, aluminum:.6, uranium:.25, copper:5, salt:.2, mercury:.2",
+        ),
+    ] {
+        let spec = EMBEDDED_INDEX
+            .split_once(&format!("id:\"{world}\""))
+            .unwrap_or_else(|| panic!("{world} is absent from the sky catalogue"))
+            .1
+            .split_once("}},")
+            .unwrap_or_else(|| panic!("{world} carries no deposits"))
+            .0;
+        assert!(
+            spec.contains("earthTiles:true"),
+            "{world} is not tiled to the Earth"
+        );
+        assert!(spec.ends_with(deposits), "{world} is seeded differently");
+    }
+
+    // One tile is the same piece of ground on all three worlds, and nothing
+    // reads a seeded world's catalogue frequency past `skyFrequency`.
+    assert!(EMBEDDED_INDEX
+        .contains("return earth ? Math.max(2, Math.round(earth * body.size)) : body.frequency;"));
+    assert!(EMBEDDED_INDEX.contains("const cells = skyGlobeMesh(frequency);"));
+    assert!(!EMBEDDED_INDEX.contains("skyGlobeMesh(body.frequency)"));
+    assert!(!EMBEDDED_INDEX.contains("place.frequency"));
+
+    // The size arithmetic: the Earth's tiles times the body's share of its
+    // surface, never less than one of anything the catalogue lists.
+    assert!(EMBEDDED_INDEX.contains(
+        "const ground = earth ? (10 * earth * earth + 2) * body.size * body.size : tiles;"
+    ));
+    assert_eq!(crate::sphere::Sphere::tiles_for(18), 10 * 18 * 18 + 2);
+    assert!(EMBEDDED_INDEX.contains("counts.push([resource, Math.max(1, whole + extra)]);"));
+    assert!(EMBEDDED_INDEX.contains("const SKY_EARTH_LAND_PER_STRATEGIC_DEPOSIT = 90;"));
+    assert!(include_str!("../mapgen.rs")
+        .contains("let quota = (num_major_spawns + 1).max(land.len() / 90);"));
+
+    // A new game or a new Earth size rebuilds the world rather than reusing
+    // the last game's.
+    assert!(EMBEDDED_INDEX.contains("const stamp = `${frequency}:${worldSeed}`;"));
+    assert!(EMBEDDED_INDEX.contains("if (kept && kept.stamp === stamp) return kept.globe;"));
+}
+
 /// Every non-Sun body in the catalogue that has a frequency is a tiled
 /// visual surface. Their resource marks use already-known Civ resource IDs,
 /// but remain separate from the game rules until an off-world economy is
