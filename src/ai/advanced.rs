@@ -5625,6 +5625,11 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-stage-needs-three-venues`: under `band-plays-at-level-three`, a
+    /// promotion's two-level stage counts as reaching level 3 only where at
+    /// least three such stages are open; a thinner one is ranked by levels
+    /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
+    band_stage_needs_three_venues: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
