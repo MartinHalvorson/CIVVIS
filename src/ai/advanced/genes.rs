@@ -5593,6 +5593,13 @@ pub const GENES: &[Gene] = &[
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
     Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-faith-site-per-theater-3`: version two without the caps of six
+    // Holy Sites and 160 Faith, a Theater city's last free district slot kept
+    // for its Holy Site, and Astrology ahead of the production technologies.
+    // Live Pericles 232642Z put a Diplomatic Quarter, a Commercial Hub and two
+    // Industrial Zones in those slots; the Holy Sites came 16-68 turns later.
+    // Opt-in; see `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-site-per-theater-3", field: "culture_faith_site_per_theater_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_3, disable: AdvancedAi::disable_culture_faith_site_per_theater_3 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
