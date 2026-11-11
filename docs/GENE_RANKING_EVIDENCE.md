@@ -261,7 +261,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
-| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
+| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | — \| 2 |
+| `culture-seat-monuments-2` | off (unmeasured) | `culture-seat-monuments-2`: see `advanced/culture_monuments.rs`. | — \| 2 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
 | `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |

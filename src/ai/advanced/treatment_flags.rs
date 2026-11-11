@@ -221,6 +221,9 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `culture-seat-monuments-2`: see
+        /// `advanced/culture_monuments.rs`.
+        culture_seat_monuments_2 => enable_culture_seat_monuments_2, disable_culture_seat_monuments_2;
         /// `culture-faith-site-per-theater-3`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
