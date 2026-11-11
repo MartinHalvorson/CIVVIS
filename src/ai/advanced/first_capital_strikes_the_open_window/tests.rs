@@ -291,6 +291,51 @@ fn the_opening_declares_with_three_bodies_when_they_cover_the_bill() {
     }
 }
 
+/// Native 071743Z declared on turn 7 with one Warrior and two Scouts:
+/// the opening counted three bodies, but the siege staged only the Warrior
+/// while the Scouts kept exploring. Recon must not assemble that strike.
+#[test]
+fn scouts_do_not_fill_the_conquest_force_or_open_its_window() {
+    for gene in [false, true] {
+        let (mut game, mut ai, capital) = opened(gene);
+        set_strength(&mut game, capital, 13.0);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        let warrior = bodies(&mut game, "warrior", rally, 1, 1)[0];
+        let scouts = bodies(&mut game, "scout", rally, 2, 2);
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert_eq!(opening.force, [warrior].into_iter().collect());
+        assert!(opening.assembled.is_none());
+        assert!(ai
+            .first_capital_open_window_go(&game, 0, &opening)
+            .is_none());
+        assert!(!ai.conquest_declaration(&mut game, 0));
+        assert!(!game.is_at_war(0, 1));
+        for scout in scouts {
+            assert!(ai
+                .conquest_staging_objective(&game, 0, scout, &plan())
+                .is_none());
+        }
+
+        // The exclusion must keep actual melee, ranged and siege bodies.
+        let archer = bodies(&mut game, "archer", rally, 1, 1)[0];
+        let catapult = bodies(&mut game, "catapult", rally, 2, 1)[0];
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert_eq!(
+            opening.force,
+            [warrior, archer, catapult].into_iter().collect()
+        );
+        assert_eq!(
+            ai.first_capital_open_window_go(&game, 0, &opening)
+                .is_some(),
+            gene
+        );
+        assert_eq!(ai.conquest_declaration(&mut game, 0), gene);
+        assert_eq!(game.is_at_war(0, 1), gene);
+    }
+}
+
 /// Two bodies are too few, and walls ask for the breaker at the rally.
 #[test]
 fn the_go_needs_three_bodies_and_a_breaker_at_the_walls() {
