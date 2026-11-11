@@ -5625,6 +5625,10 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
@@ -11311,6 +11315,9 @@ mod aqueduct_claims_the_capped_queue;
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
+/// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
+/// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
+mod band_buys_near_the_stage;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
@@ -18340,7 +18347,13 @@ impl AdvancedAi {
                 return;
             }
         }
-        for city in g.player_city_ids(pid) {
+        // `band-buys-near-the-stage`: see `advanced/band_buys_near_the_stage.rs`.
+        let band_cities = if self.band_buys_near_the_stage {
+            self.band_purchase_cities(g, pid)
+        } else {
+            g.player_city_ids(pid)
+        };
+        for city in band_cities {
             // Same correction as the religious units above: the shipped rules
             // cost is the Standard-speed rate, and a Rock Band's price also
             // climbs 100 per band this player has already bought. Reading the

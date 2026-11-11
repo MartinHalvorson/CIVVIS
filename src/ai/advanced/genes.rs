@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band is bought in the city nearest a stage it can play rather
+    // than the first city that accepts. Opt-in; see
+    // `advanced/band_buys_near_the_stage.rs`.
+    Gene { tag: "band-buys-near-the-stage", field: "band_buys_near_the_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_buys_near_the_stage, disable: AdvancedAi::disable_band_buys_near_the_stage },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
