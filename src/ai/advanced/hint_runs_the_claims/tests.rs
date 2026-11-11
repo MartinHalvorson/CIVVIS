@@ -142,3 +142,146 @@ fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
         "a city with a hostile in reach keeps the governor's own hint"
     );
 }
+
+/// The capital has a competing Monument claim, three founded cities, and
+/// a named but unassembled first-capital force. Other cities are busy.
+fn first_capital_board() -> (Game, u32, Item, AdvancedAi) {
+    use super::super::early_conquest::ConquestOpening;
+    use std::collections::BTreeSet;
+
+    let (mut game, capital, monument) = board();
+    let site = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            !game.rules.is_water(tile)
+                && game.rules.is_passable(tile)
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(**pos, city.pos) >= 4)
+        })
+        .map(|(pos, _)| *pos)
+        .min()
+        .expect("fixture: third city site");
+    let third = game.found_city_for(0, site, None);
+    game.cities.get_mut(&third).unwrap().queue.push(Item::Unit {
+        unit: crate::name!("warrior"),
+    });
+    let rival_settler = game
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .unwrap();
+    let rival = game.found_city_for(1, game.units[&rival_settler].pos, None);
+    for uid in game.player_unit_ids(1) {
+        game.remove_unit(uid);
+    }
+    game.players[0].techs.insert(crate::name!("archery"));
+    game.players[0].gold = 100.0;
+    game.players[0].gold_per_turn = 20.0;
+    let mut ai = seat(true, true);
+    ai.enable_early_conquest_opening();
+    ai.enable_first_capital_before_the_walls();
+    ai.victory_target = Some(crate::ai::VictoryTarget::Domination);
+    ai.conquest_opening = Some(ConquestOpening {
+        target: 1,
+        city: rival,
+        opened: game.turn,
+        preparing_since: Some(game.turn),
+        grace_until: None,
+        rally: game.cities[&capital].pos,
+        force: BTreeSet::new(),
+        assembled: None,
+        declared: None,
+        kills_at_war: 0,
+        losses: 0,
+        taken: 0,
+    });
+    (game, capital, monument, ai)
+}
+
+#[test]
+fn the_first_capital_claim_precedes_the_monument_and_reaches_the_hint() {
+    let (game, capital, monument, mut ai) = first_capital_board();
+    let plan = ai.plan.clone().unwrap();
+    let mut off = ai.clone();
+    off.disable_first_capital_before_the_walls();
+    let mut untreated = game.clone();
+    off.run_idle_queue_claims(&mut untreated, 0, &plan);
+    assert_eq!(untreated.cities[&capital].queue.first(), Some(&monument));
+
+    let mut claimed = game.clone();
+    ai.run_idle_queue_claims(&mut claimed, 0, &plan);
+    let chosen = claimed.cities[&capital].queue.first().unwrap();
+    let Item::Unit { unit } = chosen else {
+        panic!("the incomplete first-capital force must claim the capital, got {chosen:?}");
+    };
+    let spec = &game.rules.units[unit];
+    assert!(AdvancedAi::conquest_ranged_body(spec) || AdvancedAi::conquest_melee_body(spec));
+    assert_eq!(
+        ai.preview_live_production(&game, 0, capital),
+        Some(chosen.clone()),
+        "a consumed hint must not restore the competing infrastructure claim"
+    );
+    let reserved = chosen.clone();
+    ai.run_idle_queue_claims(&mut claimed, 0, &plan);
+    assert_eq!(
+        claimed.cities[&capital].queue.first(),
+        Some(&reserved),
+        "the Monument must not retake the assault unit on a later poll"
+    );
+    assert!(game.cities[&capital].queue.is_empty());
+    for cid in game.player_city_ids(0) {
+        if cid != capital {
+            assert_eq!(claimed.cities[&cid].queue, game.cities[&cid].queue);
+        }
+    }
+}
+
+#[test]
+fn the_first_capital_claim_keeps_existing_builds_and_closes_with_the_reservation() {
+    let (game, capital, monument, ai) = first_capital_board();
+    let plan = ai.plan.clone().unwrap();
+    let mut busy = game.clone();
+    busy.cities
+        .get_mut(&capital)
+        .unwrap()
+        .queue
+        .push(monument.clone());
+    ai.clone().run_idle_queue_claims(&mut busy, 0, &plan);
+    assert_eq!(busy.cities[&capital].queue, vec![monument.clone()]);
+
+    for closed in [
+        "unnamed",
+        "declared",
+        "expired",
+        "other_lane",
+        "before_expansion",
+    ] {
+        let mut seat = ai.clone();
+        let mut board = game.clone();
+        match closed {
+            "unnamed" => seat.conquest_opening = None,
+            "declared" => seat.conquest_opening.as_mut().unwrap().declared = Some(board.turn),
+            "expired" => board.turn = 500,
+            "other_lane" => seat.victory_target = Some(crate::ai::VictoryTarget::Culture),
+            "before_expansion" => {
+                let other = board
+                    .player_city_ids(0)
+                    .into_iter()
+                    .find(|cid| *cid != capital)
+                    .unwrap();
+                board.cities.get_mut(&other).unwrap().owner = 1;
+            }
+            _ => unreachable!(),
+        }
+        seat.run_idle_queue_claims(&mut board, 0, &plan);
+        assert_eq!(
+            board.cities[&capital].queue.first(),
+            Some(&monument),
+            "{closed}"
+        );
+    }
+}
