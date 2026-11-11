@@ -374,6 +374,91 @@ end
     resetWork();
 end)()
 
+
+-- Native 115023Z t57/71/74: resource43=2, empty payment, REJECTED,
+-- within a 45/30/52-Gold ceiling. A quote is proposed before accepting it.
+;(function()
+    local function resetResource()
+        trade.pending, trade.asked, trade.sessions = {}, {}, {};
+        trade.unanswered, trade.disabled, trade.turnHold = 0, false, nil;
+        sessions.requested, sessions.closed = {}, {};
+        events, holds = {}, {};
+    end
+    local function quote(amount, payment, resource)
+        local items = { { kind = DealItemTypes.RESOURCES, from = 3,
+            valueType = resource or 43, amount = amount or 2 } };
+        if payment then items[#items + 1] = { kind = DealItemTypes.GOLD, from = 7, amount = payment }; end
+        return items;
+    end
+    local function answer(action)
+        onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901, DealAction = action });
+    end
+    local function resourceSession(opts)
+        resetResource(); opts = opts or {};
+        opts.incoming = opts.incoming or quote();
+        local state = fixture(opts);
+        trade.pending[3] = { direction = "buy", want = "RESOURCES:43", want_amount = 2,
+            strategic = true, verb = "RESOURCE_IRON=2", ceiling = 45, turn = TURN };
+        trade.ask(7, 3, "EQUALIZE", "buy", TURN);
+        onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
+        return state;
+    end
+    local bare = resourceSession();
+    answer(DealProposalAction.REJECTED);
+    check("an exact bare strategic quote is proposed", bare.sends[2] and bare.sends[2][1], "proposed");
+    check("a rejected resource quote is never directly accepted", #bare.sends, 2);
+    check("the resource proposal retains the session", #sessions.closed, 0);
+    check("the resource proposal retains its pending want", trade.pending[3] ~= nil, true);
+    bare.pending = true;
+    answer(DealProposalAction.REJECTED);
+    check("an old rejection waits for the resource proposal", #bare.sends, 2);
+    bare.pending = false;
+    answer(DealProposalAction.ACCEPTED);
+    check("the engine's accepted resource proposal can close", bare.sends[3] and bare.sends[3][1], "accepted");
+    check("accepted resource proposal settles the request", trade.pending[3], nil);
+    check("accepted resource proposal closes its session", #sessions.closed, 1);
+
+    local priced = resourceSession({ incoming = quote(2, 40) });
+    answer(DealProposalAction.REJECTED);
+    check("a priced strategic quote also needs PROPOSED", priced.sends[2] and priced.sends[2][1], "proposed");
+    answer(DealProposalAction.ADJUSTED);
+    check("a confirmed affordable resource quote can be accepted", priced.sends[3] and priced.sends[3][1], "accepted");
+
+    local refused = resourceSession();
+    answer(DealProposalAction.REJECTED);
+    answer(DealProposalAction.REJECTED);
+    check("a refused proposal cannot loop", #refused.sends, 2);
+    check("a refused resource proposal settles the ask", trade.pending[3], nil);
+    check("a refused resource proposal closes once", #sessions.closed, 1);
+
+    for name, incoming in pairs({
+        over_budget = quote(2, 46), short_quantity = quote(1), wrong_resource = quote(2, nil, 42),
+        collateral = { { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 2 },
+            { kind = DealItemTypes.FAVOR, from = 7, amount = 10 } },
+    }) do
+        local blocked = resourceSession({ incoming = incoming });
+        answer(DealProposalAction.REJECTED);
+        check(name .. " resource quote is not proposed", #blocked.sends, 1);
+        check(name .. " resource quote settles", trade.pending[3], nil);
+    end
+    local changed = quote(2, 40);
+    local repriced = resourceSession({ incoming = changed });
+    answer(DealProposalAction.REJECTED);
+    changed[2].amount = 46;
+    answer(DealProposalAction.ADJUSTED);
+    check("a later resource adjustment cannot exceed the budget", #repriced.sends, 2);
+    check("an over-budget resource adjustment settles", trade.pending[3], nil);
+
+    local unequal = resourceSession({ dealsEqual = false });
+    answer(DealProposalAction.REJECTED);
+    check("unequal copied resource quotes are not proposed", #unequal.sends, 1);
+    local unknown = resourceSession();
+    DealManager.HasPendingDeal = function() return nil; end;
+    answer(DealProposalAction.REJECTED);
+    check("unknown pending state cannot propose resource quotes", #unknown.sends, 1);
+    resetResource();
+end)()
+
 -- ── A sale: session first, question on our statement, close on theirs ──
 local sale, player = fixture({ incoming = {
 	{ kind = "gold", from = 3, duration = 0, amount = 90 },

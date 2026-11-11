@@ -1,0 +1,830 @@
+{
+  "schema": 1,
+  "scope": "Actual native quote failures plus offline Lua handler regression. No native acceptance, resource acquisition, upgrade, capital capture, or win improvement claimed.",
+  "native": {
+    "run": "civvis-20261111T115023Z",
+    "source_revision": "87fe709f9a3139ed336ce7bf29dcb8ce907e8999",
+    "orders_sha256": "29779d04a210e49f8403e46ef68bfad900f881a1fde288ff875d6f5eea808905",
+    "events_sha256": "c1a4d07b8c580aa209ca3d58aaf830738d3690b08409210fee2da5c9688da535",
+    "selected_raw_events": [
+      {
+        "ctx": "agent",
+        "kind": "deal_action_names",
+        "names": {
+          "1": "ACCEPTED",
+          "10": "EQUALIZE_FAILED",
+          "12": "REJECTED_PERMANENT",
+          "2": "REJECTED",
+          "3": "ADJUSTED",
+          "4": "PROPOSED",
+          "5": "DEMANDED",
+          "6": "EQUALIZE",
+          "7": "INSPECT",
+          "8": "CLOSED",
+          "9": "PENDING"
+        },
+        "run": "civvis-20261111T115023Z",
+        "t": 1794397868,
+        "utc": "2026-11-11T11:51:08.756Z"
+      },
+      {
+        "ceiling": 45,
+        "ctx": "agent",
+        "direction": "buy",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261111T115023Z",
+        "submitted": true,
+        "t": 1794397962,
+        "target": 3,
+        "threw": false,
+        "turn": 57,
+        "utc": "2026-11-11T11:52:42.521Z",
+        "verb": "RESOURCE_IRON=2",
+        "want": "RESOURCE_IRON=2"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 57,
+        "ceiling": 45,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 3,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T115023Z",
+        "session": 3,
+        "t": 1794397962,
+        "theirs": "RESOURCES:43=2x0",
+        "turn": 57,
+        "utc": "2026-11-11T11:52:42.648Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": 2,
+        "ceiling": 45,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 3,
+        "kind": "deal_declined",
+        "matches": true,
+        "pay": 0,
+        "run": "civvis-20261111T115023Z",
+        "t": 1794397962,
+        "turn": 57,
+        "utc": "2026-11-11T11:52:42.648Z",
+        "want": "RESOURCES:43",
+        "worth": 0
+      },
+      {
+        "ceiling": 30,
+        "ctx": "agent",
+        "direction": "buy",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261111T115023Z",
+        "submitted": true,
+        "t": 1794397989,
+        "target": 2,
+        "threw": false,
+        "turn": 71,
+        "utc": "2026-11-11T11:53:09.474Z",
+        "verb": "RESOURCE_IRON=2",
+        "want": "RESOURCE_IRON=2"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 71,
+        "ceiling": 30,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T115023Z",
+        "session": 2,
+        "t": 1794397989,
+        "theirs": "RESOURCES:43=2x0",
+        "turn": 71,
+        "utc": "2026-11-11T11:53:09.915Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": 2,
+        "ceiling": 30,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "kind": "deal_declined",
+        "matches": true,
+        "pay": 0,
+        "run": "civvis-20261111T115023Z",
+        "t": 1794397989,
+        "turn": 71,
+        "utc": "2026-11-11T11:53:09.915Z",
+        "want": "RESOURCES:43",
+        "worth": 0
+      },
+      {
+        "ceiling": 52,
+        "ctx": "agent",
+        "direction": "buy",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261111T115023Z",
+        "submitted": true,
+        "t": 1794397997,
+        "target": 2,
+        "threw": false,
+        "turn": 74,
+        "utc": "2026-11-11T11:53:17.259Z",
+        "verb": "RESOURCE_IRON=2",
+        "want": "RESOURCE_IRON=2"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 74,
+        "ceiling": 52,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T115023Z",
+        "session": 2,
+        "t": 1794397998,
+        "theirs": "RESOURCES:43=2x0",
+        "turn": 74,
+        "utc": "2026-11-11T11:53:18.511Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": 2,
+        "ceiling": 52,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "kind": "deal_declined",
+        "matches": true,
+        "pay": 0,
+        "run": "civvis-20261111T115023Z",
+        "t": 1794397998,
+        "turn": 74,
+        "utc": "2026-11-11T11:53:18.511Z",
+        "want": "RESOURCES:43",
+        "worth": 0
+      }
+    ]
+  },
+  "host_contract": {
+    "installed_asset": "DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua",
+    "sha256": "8454457c359c7dacae7698cb7073a8c883ccd408d7e0a2b88da97b1f092c33e9",
+    "lines": [
+      [
+        149,
+        156
+      ],
+      [
+        530,
+        544
+      ]
+    ],
+    "propose_call": "DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, g_LocalPlayer:GetID(), g_OtherPlayer:GetID());",
+    "behavior": "A rejected working quote must be proposed before the later accepted/adjusted verdict can be accepted."
+  },
+  "validation": {
+    "started_at": 1794399536.332385,
+    "finished_at": 1794399542.26973,
+    "runtime": "Lua 5.1 via lupa.lua51",
+    "syntax_files": 151,
+    "test_files": 146,
+    "results": [
+      {
+        "test": "accidental_war_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "acropolis_plot_purchase_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "action_transition_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "adjacent_improvements_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "agent_error_census_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "aid_emergency_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "aid_gift_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "air_strike_frame_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "alliance_ask_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "artifact_choice_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "auto_explore_cancellation_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "board_publication_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "capital_identity_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "citizen_growth_focus_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "city_banner_faith_rows_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "city_power_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "city_ranged_strength_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "climate_accords_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "comandante_activation_value_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "comandante_aura_support_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "combat_frame_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "combat_ledger_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_ballot_verdict_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_choice_context_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_claim_denial_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_leader_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_participation_denial_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_popup_phase_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_submission_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_unmet_target_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "congress_vote_budget_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "culture_operations_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "deal_action_names_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "deal_sale_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "deal_session_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "defending_district_strike_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "deferred_build_hint_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "dialog_escape_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "dialogue_no_war_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "diplomacy_response_context_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "diplomacy_response_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "district_capacity_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "district_defense_range_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "end_turn_wait_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "enemy_district_pillage_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "envoy_permission_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "envoy_spend_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "event_lock_ledger_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "export_timing_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "favor_readback_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "first_meet_close_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "first_meet_privacy_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "flood_state_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "foreign_city_religion_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "foreign_district_parent_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "foreign_encampment_health_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "foreign_movement_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "formation_command_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "friendship_session_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "government_ladder_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "great_person_owner_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "great_person_path_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "great_person_timeline_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "great_work_slot_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "heartbeat_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "heritage_culture_seat_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "heritage_denial_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "host_board_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "host_move_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "improvement_owner_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "isolated_action_probe_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "lake_identity_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "luxury_counts_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "major_production_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "map_view_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "melee_path_observation_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "military_formation_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "mirror_sync_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "move_refusal_details_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "museum_swap_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "national_park_delta_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "native_preview_breakdown_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "native_preview_modifiers_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "native_strike_offer_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "native_victory_movie_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "nobel_prize_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "operation_refused_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "operator_pause_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "opinion_modifiers_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "order_queue_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "order_queue_timing_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "order_verdict_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "orders_peek_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "peace_city_ask_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "peace_submission_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "plot_city_ownership_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "policy_change_lock_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "policy_deck_repair_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "policy_eligibility_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "policy_unlock_observation_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "popup_retry_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "production_menu_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "prophet_holy_site_walk_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "public_works_vote_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "racer_ballot_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "refused_shot_context_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "register_budget_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "religion_founding_order_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "religion_state_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "replan_frame_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "research_quote_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "research_tree_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "residual_census_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "restart_in_place_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "rival_wars_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "rock_band_progress_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "royal_society_command_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "settlement_loyalty_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "space_station_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "spy_breach_dam_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "spy_mission_targets_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "spy_posting_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "step_turn_actions_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "stranded_settler_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "strategic_improvement_replacement_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "strategic_income_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "strategic_stockpile_readback_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "strike_frame_settlement_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "strike_survival_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "trader_origin_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "turn_limit_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "typed_war_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "unit_count_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "unit_resource_menu_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "unit_upgrade_resource_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "unit_visibility_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "victory_state_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "victory_threat_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "victory_type_export_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "war_condemn_ack_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "war_type_permission_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "world_games_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "world_religion_condemn_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "world_religion_vote_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "worlds_fair_join_test.lua",
+        "exit": 0
+      },
+      {
+        "test": "writing_evacuation_test.lua",
+        "exit": 0
+      }
+    ],
+    "baseline_commit": "87fe709f9a3139ed336ce7bf29dcb8ce907e8999",
+    "baseline_regression_exit": 1,
+    "baseline_agent_sha256": "756fb33b7fe7da22aca85c3bd2ba73fac9521ec996f46104123cf50d53462cf7",
+    "candidate_agent_sha256": "96392d2b7a086c40ac48f5ccf1c59499fba4a768b38c85d02adaf19165ff1bc0",
+    "scope": "Offline real handler/session lifecycle tests with engine fixtures. Does not prove native host acceptance or wins."
+  },
+  "native_followup": "Require loaded.strategic_quote_proposals=1, actual strategic deal_reproposed, host accepted/adjusted verdict, deal_closed and observed resource/unit outcomes. Keep force-on genome unchanged."
+}
