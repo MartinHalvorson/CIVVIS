@@ -11343,6 +11343,10 @@ mod band_plays_its_stage;
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
 mod band_plays_what_it_can_reach;
+/// `band-stall-bars-no-host`: a Rock Band trip the host walked nowhere bars
+/// its host only on the second turn running. See
+/// `advanced/band_stall_bars_no_host.rs`.
+mod band_stall_bars_no_host;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;

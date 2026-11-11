@@ -196,6 +196,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
+| `band-stall-bars-no-host` | off (unmeasured) | Opt-in gene `band-stall-bars-no-host`; see `advanced/band_stall_bars_no_host.rs`. | 1 \| 1 |
 | `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bands-wait-at-the-door` | off (unmeasured) | Opt-in gene `bands-wait-at-the-door`; see `advanced/bands_wait_at_the_door.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 2 |
