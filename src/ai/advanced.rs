@@ -11817,6 +11817,10 @@ mod first_capital_research;
 /// its window and strikes through it. One opt-in gene; see
 /// `advanced/first_capital_strikes_the_open_window.rs`.
 mod first_capital_strikes_the_open_window;
+/// `first-capital-strikes-the-open-window`, beyond the first capital: a
+/// neighbour's unwalled city within reach of our soldiers opens the war.
+/// See `advanced/soft_city_window.rs`.
+mod soft_city_window;
 /// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
 /// with one landmass, for the first capital's walk. One opt-in gene; see
 /// `advanced/first_capital_walks_the_one_landmass.rs`.
