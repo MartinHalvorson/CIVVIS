@@ -331,17 +331,52 @@ fn mirrored_board(g: &Game, pid: usize) -> bool {
 
 /// `strike-reach`: every tile the hostile `uid` could strike on its next
 /// turn, read the way the engine resolves the blow rather than the way the
-/// movement flood records it. The hostile is stood at the start of its own
-/// turn on `probe` — full movement, no zone-of-control memory from the turn
-/// it has just ended — `approach_reach` gives the tiles it can end on with
-/// the movement it keeps there (a zone-of-control stop keeps it; `flow_past`
-/// zeroes it), and from its own tile and every stand with movement left it
-/// strikes each neighbour (melee) or each tile in range (ranged; a siege unit
-/// only from its own tile unless it may attack after moving). Ranged blows
-/// keep the engine's line-of-sight test on a native board and drop it on the
-/// mirrored one, where the host's rule is the player's visibility. Ascending
-/// and distinct, like `attack_reach`. The probe is left as it was found.
-pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos> {
+/// movement flood records it. The hostile is taken at the start of its own
+/// turn — full movement, no zone-of-control memory from the turn it has just
+/// ended — `approach_reach` gives the tiles it can end on with the movement
+/// it keeps there (a zone-of-control stop keeps it; `flow_past` zeroes it),
+/// and from its own tile and every stand with movement left it strikes each
+/// neighbour (melee) or each tile in range (ranged; a siege unit only from
+/// its own tile unless it may attack after moving). Ranged blows keep the
+/// engine's line-of-sight test on a native board and drop it on the mirrored
+/// one, where the host's rule is the player's visibility. Ascending and
+/// distinct, like `attack_reach`.
+///
+/// ★★★ IT READS THE BOARD IT IS GIVEN. Until 2026-11-11 this took `&mut
+/// Game`, wrote the hostile's turn state fresh, flooded, and wrote it back,
+/// so every caller first made a copy of the game to hand it. Now the flood
+/// is asked for the fresh turn directly
+/// (`Game::approach_arrivals_on_a_fresh_turn`, where the argument that the
+/// two are the same flood is written down). `strike_reach_tests` keeps the
+/// old route as its reference.
+pub(crate) fn strike_reach_of(g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+    let Some(unit) = g.units.get(&uid) else {
+        return Vec::new();
+    };
+    let spec = &g.rules.units[unit.kind];
+    if spec.class != "military" || !(spec.is_melee_capable() || spec.has_ranged_attack()) {
+        return Vec::new();
+    }
+    if spec.domain.as_deref() == Some("air") {
+        return g.attack_reach(uid);
+    }
+    let max_moves = g.unit_max_moves(uid);
+    if max_moves <= 0.0 {
+        return Vec::new();
+    }
+    let mut stands: Vec<(Pos, f64)> = vec![(unit.pos, max_moves)];
+    stands.extend(g.approach_arrivals_on_a_fresh_turn(uid));
+    strikes_from_stands(g, pid, uid, stands)
+}
+
+/// The reference for [`strike_reach_of`]: the route it took before it read
+/// the board, standing the hostile up on a board it may write to.
+#[cfg(test)]
+pub(crate) fn strike_reach_by_standing_the_hostile_up(
+    probe: &mut Game,
+    pid: usize,
+    uid: u32,
+) -> Vec<Pos> {
     let Some(saved) = probe.units.get(&uid).cloned() else {
         return Vec::new();
     };
@@ -356,10 +391,6 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
     if max_moves <= 0.0 {
         return Vec::new();
     }
-    let melee = spec.is_melee_capable();
-    let ranged = spec.has_ranged_attack();
-    let siege = spec.siege;
-    let sea = spec.domain.as_deref() == Some("sea");
     if let Some(live) = probe.units.get_mut(&uid) {
         live.moves_left = max_moves;
         live.moved = false;
@@ -370,43 +401,50 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
     let mut stands: Vec<(Pos, f64)> = vec![(saved.pos, max_moves)];
     stands.extend(probe.approach_arrivals(uid));
     if let Some(live) = probe.units.get_mut(&uid) {
-        *live = saved.clone();
+        *live = saved;
     }
+    strikes_from_stands(probe, pid, uid, stands)
+}
+
+/// Every tile `uid` strikes from its own tile and from each stand it reaches
+/// with movement left. `stands` leads with the unit's own tile.
+fn strikes_from_stands(g: &Game, pid: usize, uid: u32, stands: Vec<(Pos, f64)>) -> Vec<Pos> {
+    let unit = &g.units[&uid];
+    let spec = &g.rules.units[unit.kind];
+    let melee = spec.is_melee_capable();
+    let ranged = spec.has_ranged_attack();
+    let siege = spec.siege;
+    let sea = spec.domain.as_deref() == Some("sea");
     let range = if ranged {
-        probe.unit_attack_range(uid).max(1)
+        g.unit_attack_range(uid).max(1)
     } else {
         0
     };
-    let after_move = probe.promotion_effect(&saved, "attack_after_move") > 0.0;
-    let host_sight = mirrored_board(probe, pid);
+    let after_move = g.promotion_effect(unit, "attack_after_move") > 0.0;
+    let host_sight = mirrored_board(g, pid);
     let mut targets: Vec<Pos> = Vec::new();
     for (from, kept) in stands {
         if kept <= 0.0 {
             continue;
         }
         // A land unit standing on water is embarked there and strikes nothing.
-        let embarked = !sea
-            && probe
-                .map
-                .get(from)
-                .is_some_and(|tile| probe.rules.is_water(tile));
+        let embarked = !sea && g.map.get(from).is_some_and(|tile| g.rules.is_water(tile));
         if embarked {
             continue;
         }
         if melee {
-            for target in probe.nbrs(from) {
-                if probe.map.tiles.contains_key(&target)
-                    && probe.unit_can_melee_target_domain(uid, target)
+            for target in g.nbrs(from) {
+                if g.map.tiles.contains_key(&target) && g.unit_can_melee_target_domain(uid, target)
                 {
                     targets.push(target);
                 }
             }
         }
-        if ranged && (!siege || from == saved.pos || after_move) {
-            for target in probe.wdisk(from, range) {
+        if ranged && (!siege || from == unit.pos || after_move) {
+            for target in g.wdisk(from, range) {
                 if target != from
-                    && probe.map.tiles.contains_key(&target)
-                    && (host_sight || probe.unit_has_line_of_sight_from(uid, from, target))
+                    && g.map.tiles.contains_key(&target)
+                    && (host_sight || g.unit_has_line_of_sight_from(uid, from, target))
                 {
                     targets.push(target);
                 }
@@ -479,7 +517,7 @@ impl DangerField {
             let stands = probe.reachable(*uid);
             for stand in stands {
                 probe.relocate(*uid, stand);
-                reach.extend(strike_reach_of(&mut probe, pid, *uid));
+                reach.extend(strike_reach_of(&probe, pid, *uid));
             }
             probe.relocate(*uid, saved.pos);
             *probe.units.get_mut(uid).expect("forecast retains enemy") = saved;
@@ -497,7 +535,7 @@ impl DangerField {
     /// The field on the flood's reach, or with `strike_reach` on the reach
     /// the engine resolves a blow over (`strike_reach_of`).
     pub(super) fn with_reach(g: &Game, pid: usize, strike_reach: bool) -> Self {
-        let mut probe = g.speculative_clone();
+        let probe = g.speculative_clone();
         let mut reaches = Vec::new();
         let mut floods = BTreeMap::new();
         let mut widened = 0u32;
@@ -513,7 +551,7 @@ impl DangerField {
             }
             let flood = g.attack_reach(unit.id);
             let reach = if strike_reach {
-                let strike = strike_reach_of(&mut probe, pid, unit.id);
+                let strike = strike_reach_of(g, pid, unit.id);
                 if strike.iter().any(|tile| flood.binary_search(tile).is_err()) {
                     widened += 1;
                 }
@@ -3683,3 +3721,6 @@ mod siege_veto_advance_tests;
 
 #[cfg(test)]
 mod future_district_fire_tests;
+
+#[cfg(test)]
+mod strike_reach_tests;
