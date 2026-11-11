@@ -32,21 +32,23 @@ impl AdvancedAi {
         strategy: GrandStrategy,
     ) -> bool {
         let current = g.units[&uid].pos;
+        let origin = g.city_at(current).filter(|cid| g.cities[cid].owner == pid);
         // The native simulation lets a Trader walk to its origin, while the
         // live bridge may expose that walk as several host turns. A nearby
         // camp/raider makes the exposed path a bad trade: return to a friendly
         // city before searching for a route. Starting from the city itself is
         // still allowed because route creation is immediate there.
-        let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
-            || (!self.base.barbarian_trade_risk_for_controller(g, pid)
-                && g.player_city_ids(pid).into_iter().all(|city| {
+        // The danger result only affects an exposed Trader. A Trader already
+        // in its origin starts a route below regardless, so do not scan every
+        // city's camps and the world's units to compute an unused answer.
+        if origin.is_none()
+            && self.base.barbarian_tactics_enabled()
+            && (self.base.barbarian_trade_risk_for_controller(g, pid)
+                || g.player_city_ids(pid).into_iter().any(|city| {
                     self.base
                         .barbarian_threat_pressure_for_controller(g, pid, city)
-                        == 0
-                }));
-        if !barbarian_trade_safe
-            && g.city_at(current)
-                .is_none_or(|city| g.cities[&city].owner != pid)
+                        != 0
+                }))
         {
             let target = g
                 .cities
@@ -58,7 +60,7 @@ impl AdvancedAi {
                 return self.base.step_toward(g, pid, uid, target);
             }
         }
-        if let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) {
+        if let Some(origin) = origin {
             // `culture-routes-reach-every-rival`: a rival without a route of
             // ours first. `None` while the gene is off. See
             // `advanced/culture_routes.rs`.

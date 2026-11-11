@@ -127,6 +127,11 @@ fn plan() -> StrategicPlan {
     }
 }
 
+/// Our second city: no strike opens before the empire holds two.
+fn second_city(game: &mut Game) {
+    game.found_city_for(0, (6, 18), None);
+}
+
 /// Seats 0 (us), 1 (the first capital, 18 tiles east) and 2 (a rival to
 /// the south); the opening named on seat 1's capital.
 fn opened(gene: bool) -> (Game, AdvancedAi, u32) {
@@ -269,6 +274,7 @@ fn the_opening_declares_with_three_bodies_when_they_cover_the_bill() {
         let (mut game, mut ai, capital) = opened(gene);
         set_strength(&mut game, capital, 15.0);
         let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        second_city(&mut game);
         bodies(&mut game, "swordsman", rally, 1, 3);
         ai.maintain_conquest_opening(&mut game, 0);
         let opening = ai.conquest_opening.clone().unwrap();
@@ -291,6 +297,53 @@ fn the_opening_declares_with_three_bodies_when_they_cover_the_bill() {
     }
 }
 
+/// Native 071743Z declared on turn 7 with one Warrior and two Scouts:
+/// the opening counted three bodies, but the siege staged only the Warrior
+/// while the Scouts kept exploring. Recon must not assemble that strike.
+#[test]
+fn scouts_do_not_fill_the_conquest_force_or_open_its_window() {
+    for gene in [false, true] {
+        let (mut game, mut ai, capital) = opened(gene);
+        set_strength(&mut game, capital, 13.0);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        let warrior = bodies(&mut game, "warrior", rally, 1, 1)[0];
+        let scouts = bodies(&mut game, "scout", rally, 2, 2);
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert_eq!(opening.force, [warrior].into_iter().collect());
+        assert!(opening.assembled.is_none());
+        assert!(ai
+            .first_capital_open_window_go(&game, 0, &opening)
+            .is_none());
+        assert!(!ai.conquest_declaration(&mut game, 0));
+        assert!(!game.is_at_war(0, 1));
+        for scout in scouts {
+            assert!(ai
+                .conquest_staging_objective(&game, 0, scout, &plan())
+                .is_none());
+        }
+
+        // The exclusion must keep actual melee, ranged and siege bodies.
+        let archer = bodies(&mut game, "archer", rally, 1, 1)[0];
+        let catapult = bodies(&mut game, "catapult", rally, 2, 1)[0];
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert_eq!(
+            opening.force,
+            [warrior, archer, catapult].into_iter().collect()
+        );
+        // Scouts nearer the rally must not displace real soldiers when
+        // the six-body reservation fills. Declaration has separate guards.
+        let mut expected = vec![warrior, archer, catapult];
+        expected.extend(bodies(&mut game, "swordsman", rally, 3, 3));
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert_eq!(
+            ai.conquest_opening.as_ref().unwrap().force,
+            expected.into_iter().collect()
+        );
+    }
+}
+
 /// Two bodies are too few, and walls ask for the breaker at the rally.
 #[test]
 fn the_go_needs_three_bodies_and_a_breaker_at_the_walls() {
@@ -310,6 +363,7 @@ fn the_go_needs_three_bodies_and_a_breaker_at_the_walls() {
     set_strength(&mut game, capital, 15.0);
     set_walls(&mut game, capital, 100);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    second_city(&mut game);
     bodies(&mut game, "swordsman", rally, 1, 4);
     let ram = unit(&mut game, "battering_ram", (6, 13));
     ai.maintain_conquest_opening(&mut game, 0);
@@ -498,6 +552,7 @@ fn a_city_that_outclasses_the_rally_is_not_struck() {
     let (mut game, mut ai, capital) = opened(true);
     set_strength(&mut game, capital, 60.0);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    second_city(&mut game);
     bodies(&mut game, "swordsman", rally, 1, 6);
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.clone().unwrap();
@@ -532,6 +587,7 @@ fn the_declared_strike_keeps_its_city_and_its_posture() {
         let (mut game, mut ai, capital) = opened(gene);
         set_strength(&mut game, capital, 15.0);
         let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        second_city(&mut game);
         bodies(&mut game, "swordsman", rally, 1, 6);
         ai.maintain_conquest_opening(&mut game, 0);
         assert!(ai.conquest_declaration(&mut game, 0), "gene {gene}");
@@ -553,5 +609,82 @@ fn the_declared_strike_keeps_its_city_and_its_posture() {
                 (Some(1), Some(capital))
             );
         }
+    }
+}
+
+// ------------------------------------------- live 071743Z: the token strike
+
+/// Live 071743Z t7: one city, one Warrior and Scouts at the rally, our 35
+/// power against Ethiopia's 113, no Ethiopian unit in sight, and a capital
+/// of defence 13: the go read the bill as covered and declared. Under the
+/// guards no declaration opens on that shape, and each guard refuses alone.
+#[test]
+fn the_live_ethiopia_shape_is_never_struck() {
+    let (mut game, mut ai, capital) = opened(true);
+    set_strength(&mut game, capital, 13.0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "warrior", rally, 1, 1);
+    bodies(&mut game, "scout", rally, 1, 2);
+    let ours = game.military_power(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 3.0 * ours);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("1 city"), "{why}");
+    assert!(ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .is_none());
+    assert!(!ai.conquest_declaration(&mut game, 0));
+    assert!(!game.is_at_war(0, 1), "no war on the live shape");
+
+    // Two cities: one Warrior and two Scouts are one melee soldier.
+    second_city(&mut game);
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("1 melee soldier"), "{why}");
+
+    // Three Warriors, but the owner's public power three times ours.
+    bodies(&mut game, "warrior", rally, 2, 2);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    let ours = game.military_power(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 3.0 * ours);
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("times our"), "{why}");
+
+    // The owner at half our power, but three Warriors against strength 28
+    // would deal about 196 in three turns against 200 health and 60 healing.
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 0.5 * ours);
+    set_strength(&mut game, capital, 28.0);
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("would deal about"), "{why}");
+    assert!(!ai.conquest_declaration(&mut game, 0));
+    assert!(!game.is_at_war(0, 1));
+}
+
+/// The Cree window that motivated the gene: three cities, four Warriors and
+/// a Battering Ram at the rally of an Ancient-walled capital of defence 18,
+/// the owner at half our power. The go declares; the shipped share rule
+/// (four of six) does not.
+#[test]
+fn the_cree_shape_declares() {
+    for gene in [false, true] {
+        let (mut game, mut ai, capital) = opened(gene);
+        second_city(&mut game);
+        game.found_city_for(0, (12, 4), None);
+        set_walls(&mut game, capital, 100);
+        set_strength(&mut game, capital, 18.0);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        bodies(&mut game, "warrior", rally, 1, 4);
+        bodies(&mut game, "battering_ram", rally, 2, 1);
+        let ours = game.military_power(0);
+        Arc::make_mut(&mut game.observed_military_power).insert(1, 0.5 * ours);
+        ai.maintain_conquest_opening(&mut game, 0);
+        let opening = ai.conquest_opening.clone().unwrap();
+        assert!(
+            ai.first_capital_outclassed(&game, 0, &opening).is_none(),
+            "gene {gene}"
+        );
+        assert_eq!(ai.conquest_declaration(&mut game, 0), gene, "gene {gene}");
+        assert_eq!(game.is_at_war(0, 1), gene);
     }
 }

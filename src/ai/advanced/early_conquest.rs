@@ -1215,6 +1215,8 @@ impl AdvancedAi {
     /// A guard bound to a Settler or a Builder is not a strike body: the
     /// vision guard would otherwise score an escort's tiles, and the
     /// assembly share would count a unit that is walking the other way.
+    /// Recon units keep exploring rather than joining the siege train, so
+    /// they cannot fill the strike's quota or count toward its assembly.
     fn conquest_force(&self, g: &Game, pid: usize, rally: Pos) -> BTreeSet<u32> {
         let guards = self.all_reserved_civilian_guards();
         // `first-capital-before-the-walls`: each city keeps its guard. Empty
@@ -1223,6 +1225,7 @@ impl AdvancedAi {
         let mut army: Vec<u32> = self
             .campaign_field_army(g, pid)
             .into_iter()
+            .filter(|uid| g.rules.units[g.units[uid].kind].promotion_class != "recon")
             .filter(|uid| !guards.contains(uid) && !home.contains(uid))
             .collect();
         army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, rally), *uid));

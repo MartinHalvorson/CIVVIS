@@ -5709,6 +5709,12 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Operator 11-10 and 11-11: civs stop at the shared ten. Site world, 40
+    // swapped pairs a width: 12 read Science +7.7% and Production +11.6% at
+    // t150 at no cost in wins; 20 lost Science and wins. Each major draws
+    // 11-18. civvis.ai seats it (`advanced/site_deployment.rs`).
+    // Opt-in; see `advanced/each_civ_draws_its_width.rs`.
+    Gene { tag: "each-civ-draws-its-width", field: "each_civ_draws_its_width", kind: Kind::OptIn, enable: AdvancedAi::enable_each_civ_draws_its_width, disable: AdvancedAi::disable_each_civ_draws_its_width },
     // Live Deity Macedon civvis-20261111T040704Z named the Cree capital at
     // t16 and never declared: the reservation waited for the third city
     // (t29), the campaign was re-aimed at Tyre (t36, t44), an interception
