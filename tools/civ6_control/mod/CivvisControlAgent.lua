@@ -13042,7 +13042,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- may reach the unchanged item, budget and working-deal checks below.
 	local activeSession = trade.sessions[fromPlayer];
 	local proposalQuote = buying and type(pending.want) == "string"
-		and ((string.find(pending.want, "^GREATWORK:") ~= nil and pay > 0)
+		and ((string.find(pending.want, "^GREATWORK:") ~= nil)
 			or pending.strategic == true);
 	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
@@ -13059,6 +13059,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		end
 		if not pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
 				and matches and foreign == 0
+				and (pay > 0 or pending.strategic == true)
 				and withinBudget and enginePending == false then
 			-- Mark and hold before sending: the engine may answer inside it.
 			pending.purchase_quote_proposed = true;

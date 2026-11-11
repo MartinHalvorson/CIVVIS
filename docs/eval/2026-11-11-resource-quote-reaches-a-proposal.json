@@ -229,10 +229,10 @@
     "behavior": "A rejected working quote must be proposed before the later accepted/adjusted verdict can be accepted."
   },
   "validation": {
-    "started_at": 1794399536.332385,
-    "finished_at": 1794399542.26973,
+    "started_at": 1794400139.080816,
+    "finished_at": 1794400146.2180538,
     "runtime": "Lua 5.1 via lupa.lua51",
-    "syntax_files": 151,
+    "syntax_files": 153,
     "test_files": 146,
     "results": [
       {
@@ -820,11 +820,20 @@
         "exit": 0
       }
     ],
-    "baseline_commit": "87fe709f9a3139ed336ce7bf29dcb8ce907e8999",
-    "baseline_regression_exit": 1,
-    "baseline_agent_sha256": "756fb33b7fe7da22aca85c3bd2ba73fac9521ec996f46104123cf50d53462cf7",
-    "candidate_agent_sha256": "96392d2b7a086c40ac48f5ccf1c59499fba4a768b38c85d02adaf19165ff1bc0",
-    "scope": "Offline real handler/session lifecycle tests with engine fixtures. Does not prove native host acceptance or wins."
+    "baseline_regressions": {
+      "original": {
+        "revision": "87fe709f9a3139ed336ce7bf29dcb8ce907e8999",
+        "exit": 1,
+        "agent_sha256": "756fb33b7fe7da22aca85c3bd2ba73fac9521ec996f46104123cf50d53462cf7"
+      },
+      "stale-callback-regression": {
+        "revision": "861091c4d2",
+        "exit": 1,
+        "agent_sha256": "96392d2b7a086c40ac48f5ccf1c59499fba4a768b38c85d02adaf19165ff1bc0"
+      }
+    },
+    "candidate_agent_sha256": "1c2259208e331492de0ac44b0ea33a3313249b827963fb35685d9e64a4aafcab",
+    "scope": "Offline actual handler/session tests, including preserved Great Work pending-callback behavior. No native acceptance or win proof."
   },
   "native_followup": "Require loaded.strategic_quote_proposals=1, actual strategic deal_reproposed, host accepted/adjusted verdict, deal_closed and observed resource/unit outcomes. Keep force-on genome unchanged."
 }

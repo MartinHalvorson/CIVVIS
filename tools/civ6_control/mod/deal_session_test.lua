@@ -305,6 +305,16 @@ end
     check("a second rejection clears the request", trade.pending[3], nil);
     check("a second rejection closes the session", #sessions.closed, 1);
 
+    local pendingQuote = quote();
+    local waiting = workSession({ incoming = pendingQuote });
+    answer(DealProposalAction.REJECTED);
+    pendingQuote[2].amount, pendingQuote[3].amount = 0, 0;
+    waiting.pending = true;
+    answer(DealProposalAction.REJECTED);
+    check("a stale zero-price work callback still waits for the engine", trade.pending[3] ~= nil, true);
+    check("a stale zero-price work callback leaves the session open", #sessions.closed, 0);
+    check("a stale zero-price work callback sends no duplicate", #waiting.sends, 2);
+
     for name, incoming in pairs({
         over_budget = quote(13, 60, 5),
         substituted_work = quote(14, 50, 0),
