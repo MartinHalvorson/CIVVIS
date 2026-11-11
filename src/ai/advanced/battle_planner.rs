@@ -1963,9 +1963,7 @@ impl AdvancedAi {
                         !(escort_fires && targets[candidate.target].wall_threat > 0.0);
                 }
                 if escort_fires {
-                    own.retain(|candidate| {
-                        !candidate.kill_only || self.ranged_kills_are_free
-                    });
+                    own.retain(|candidate| !candidate.kill_only || self.ranged_kills_are_free);
                 }
             }
             if own.is_empty() {
