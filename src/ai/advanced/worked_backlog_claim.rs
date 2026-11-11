@@ -39,25 +39,31 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let mut best: Option<(f64, u32)> = None;
-        for &city in &city_ids {
-            if !g.cities[&city].queue.is_empty() || plan.threatened_city == Some(city) {
-                continue;
-            }
-            let Some(turns) = self.base.worked_backlog_claim_turns(
-                g,
-                pid,
-                city,
-                n_cities,
-                counts.settlers,
-                counts.builders,
-                counts.military,
-            ) else {
-                continue;
-            };
-            if best.is_none_or(|(old, old_city)| {
-                turns + 1e-9 < old || ((turns - old).abs() <= 1e-9 && city < old_city)
-            }) {
-                best = Some((turns, city));
+        {
+            // One scope for the pass: every idle city asks for the same
+            // empire-wide backlog. See `backlog_builder_claim_candidate`.
+            // Dropped before the claim below writes to the board.
+            let _memo = g.query_memo();
+            for &city in &city_ids {
+                if !g.cities[&city].queue.is_empty() || plan.threatened_city == Some(city) {
+                    continue;
+                }
+                let Some(turns) = self.base.worked_backlog_claim_turns(
+                    g,
+                    pid,
+                    city,
+                    n_cities,
+                    counts.settlers,
+                    counts.builders,
+                    counts.military,
+                ) else {
+                    continue;
+                };
+                if best.is_none_or(|(old, old_city)| {
+                    turns + 1e-9 < old || ((turns - old).abs() <= 1e-9 && city < old_city)
+                }) {
+                    best = Some((turns, city));
+                }
             }
         }
         let Some((turns, city)) = best else {
