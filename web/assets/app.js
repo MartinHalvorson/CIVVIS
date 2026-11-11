@@ -31550,7 +31550,7 @@ function drawCityScreen() {
           note: (several ? `<span class="build-sites">Choose a tile · ${entry.sites.length} sites</span>` : "") +
             (note || ""),
           cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +
-            (Number.isFinite(cost) ? `<small>${Math.round(cost)} ⚙</small>` : ""),
+            `<small>${Math.round(cost)} ⚙</small>`,
           onclick: several ? `beginSitePick(${city.id},${itemId})`
             : `sendFromCity(${JSON.stringify(entry.sites[0])})`,
           title: several ? "See where it could go and what each tile would give"
