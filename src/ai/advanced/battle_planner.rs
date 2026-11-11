@@ -1581,6 +1581,9 @@ impl AdvancedAi {
         // An active Domination siege owns its members' blows: its train has
         // priced the assault as a whole. See `active_siege_member`.
         doomed.retain(|uid| !self.active_siege_member(g, pid, *uid));
+        // `breaker-walks-under-a-shield`: so does a declared strike its
+        // bodies' blows at the city. Nothing with the gene off.
+        doomed.retain(|uid| !self.shield_presses(g, pid, *uid));
         self.census.battle_plan_doomed += doomed.len() as u32;
         if !doomed.is_empty() {
             think!(self.journal(), Military, Decision,
@@ -2562,6 +2565,14 @@ impl AdvancedAi {
                 // `battle-planner-3`: the siege's taker holds its post.
                 || (self.battle_planner_3 && self.unit_is_reserved(uid))
             {
+                continue;
+            }
+            // `breaker-walks-under-a-shield`: a body pressing the declared
+            // strike is that module's to move; the rotation pulled 98-hp
+            // Warriors off a breached Antananarivo for the danger of the
+            // tile. `false` with the gene off.
+            if self.shield_presses(g, pid, uid) {
+                self.battle_planner_recovering.remove(&uid);
                 continue;
             }
             if self.siege_wall_keepers.contains(&uid) {
