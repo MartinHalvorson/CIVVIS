@@ -354,6 +354,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `parity-upgrades-before-it-buys-2` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-2`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
 | `parity-upgrades-before-it-buys-3` | off (unmeasured) | Opt-in gene `parity-upgrades-before-it-buys-3`; see `advanced/parity_upgrades_before_it_buys.rs`. | — \| 3 |
 | `paused-district-spares-the-launch` | off (unmeasured) | Keep a committed Science launch or laser ahead of paused districts. | 1 \| 1 |
+| `peace-waits-for-the-host-minimum` | off (unmeasured) | `peace-waits-for-the-host-minimum`: see `advanced/unchosen_war_peace.rs`. | 1 \| 1 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
 | `pingala-earns-the-launch` | off (unmeasured) | Opt-in committed launch relocation; see `governor_dividends/pingala_launch`. | 1 \| 1 |
 | `pingala-follows-research-2` | off (unmeasured) | Pingala version two retains ordinary dividends and joins a committed launch producer. | 1 \| 2 |
