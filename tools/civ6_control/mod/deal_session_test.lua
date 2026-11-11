@@ -560,6 +560,36 @@ end)()
     resourceRows.RESOURCE_IRON = nil;
     GameInfo.Resource_Consumption.RESOURCE_IRON = nil;
 
+    -- Native131031Z t143 / cont1+cont2 t140: this is a valid barter quote,
+    -- not a cash request. Re-proposing it preceded EQUALIZE_FAILED and a
+    -- core-idle AI-phase stall. Preserve the original barter lifecycle even
+    -- when the cash-ceiling experiment is enabled.
+    CivvisControlConfig.StrategicCashCeilingBid = true;
+    CivvisControlConfig.VictoryLane = "domination";
+    local barter = resourceSession({ incoming = {
+        { kind = DealItemTypes.RESOURCES, from = 3, valueType = 40, amount = 6 },
+        { kind = DealItemTypes.RESOURCES, from = 7, valueType = 19, amount = 1, duration = 30 },
+        { kind = DealItemTypes.RESOURCES, from = 7, valueType = 41, amount = 1 },
+    } });
+    trade.pending[3].want, trade.pending[3].want_amount = "RESOURCES:40", 6;
+    trade.pending[3].verb = "RESOURCE_ALUMINUM=6;RESOURCE_IVORY=1,RESOURCE_COAL=1";
+    trade.pending[3].gave = { ["RESOURCES:19"] = 1, ["RESOURCES:41"] = 1 };
+    trade.pending[3].ceiling = 21;
+    answer(DealProposalAction.REJECTED);
+    check("the captured Aluminum barter matches its authorized items", eventField(lastEvent("deal_response"), "matches"), "true");
+    check("the captured Aluminum barter is within budget", eventField(lastEvent("deal_response"), "within_budget"), "true");
+    check("a rejected resource barter sends no new proposal", #barter.sends, 1);
+    check("a rejected barter settles its pending request", trade.pending[3], nil);
+    check("a rejected barter closes its session once", #sessions.closed, 1);
+    answer(DealProposalAction.EQUALIZE_FAILED);
+    check("late failed equalization cannot revive the barter", #barter.sends, 1);
+    check("late failed equalization cannot close twice", #sessions.closed, 1);
+    local emptyBarter = resourceSession(); trade.pending[3].gave = {};
+    answer(DealProposalAction.REJECTED);
+    check("an empty gave table is still a barter protocol", #emptyBarter.sends, 1);
+    CivvisControlConfig.StrategicCashCeilingBid = nil;
+    CivvisControlConfig.VictoryLane = nil;
+
     local changed = quote(2, 40);
     local repriced = resourceSession({ incoming = changed });
     answer(DealProposalAction.REJECTED);
