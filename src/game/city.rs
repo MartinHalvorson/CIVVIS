@@ -1261,32 +1261,28 @@ impl Game {
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
-                yields.science += self.rules.improvements[improvement]
-                    .effects
+                let effects = &self.rules.improvements[improvement].effects;
+                let science = effects
                     .get("appeal_science_percent")
                     .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.culture += self.rules.improvements[improvement]
-                    .effects
+                    .unwrap_or(0.0);
+                let culture = effects
                     .get("appeal_culture_percent")
                     .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.gold += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_gold")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.faith += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_faith")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
+                    .unwrap_or(0.0);
+                let gold = effects.get("appeal_gold").copied().unwrap_or(0.0);
+                let faith = effects.get("appeal_faith").copied().unwrap_or(0.0);
+                // Most improvements have no appeal-based yield. Otherwise
+                // all four bonuses use the same appeal of this unchanged tile.
+                let appeal = if science != 0.0 || culture != 0.0 || gold != 0.0 || faith != 0.0 {
+                    self.tile_appeal(pos).max(0) as f64
+                } else {
+                    0.0
+                };
+                yields.science += science / 100.0 * appeal;
+                yields.culture += culture / 100.0 * appeal;
+                yields.gold += gold * appeal;
+                yields.faith += faith * appeal;
             }
         }
 
@@ -1344,7 +1340,14 @@ impl Game {
         // shipped text moves from "Charming or better" to "Breathtaking" with
         // it. Modelling the cache's requirement set alone would have paid this
         // on twice the map.
-        yields.faith += pantheon_plot("breathtaking_appeal_faith", self.tile_appeal(pos) >= 4);
+        let breathtaking_faith = self.pantheon_effect(pid, "breathtaking_appeal_faith");
+        // A positive-zero bonus pays nothing at any appeal. Keep -0.0 on
+        // the original conditional path so its floating-point sign is retained.
+        yields.faith += if breathtaking_faith.to_bits() != 0 && self.tile_appeal(pos) >= 4 {
+            breathtaking_faith
+        } else {
+            0.0
+        };
 
         let building_effect = |effect: &str| self.city_building_effect(city, effect);
         let is_coast_or_lake = matches!(tile.terrain.as_str(), "coast" | "lake");
@@ -3518,3 +3521,9 @@ mod hidden_resource_wonder_tests;
 
 #[cfg(test)]
 mod builder_ownership_tests;
+
+#[cfg(test)]
+mod pantheon_appeal_query_tests;
+
+#[cfg(test)]
+mod tile_appeal_yield_tests;
