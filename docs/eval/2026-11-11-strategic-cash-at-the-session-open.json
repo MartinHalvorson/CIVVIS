@@ -1,0 +1,265 @@
+{
+  "scope": "Resource session lifecycle repair. Native Deity Macedon Domination win-rate gain remains unverified; no new native paid purchase is claimed. No Rust or worker policy changed.",
+  "at": 1794407638.501154,
+  "source_sha256": "f4cdde592807713c86e97b0a3ed20bcc134fa1c74f8b431f0a054ec43b64cdf3",
+  "native_failure": {
+    "run": "civvis-20261111T135842Z",
+    "source": "2c24af430c7ad26f0833011ece50a7a93cb3e714 (inherits repaired Lua e2bee6a)",
+    "scope": "Actual pure-cash quote reproduces the late failed-equalization stall. This is separate from the repaired barter re-proposal. No purchase/win claim.",
+    "selected_events": [
+      {
+        "action": "EQUALIZE",
+        "ctx": "agent",
+        "kind": "deal_session",
+        "phase": "opening",
+        "run": "civvis-20261111T135842Z",
+        "t": 1794405919,
+        "target": 1,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:19.654Z"
+      },
+      {
+        "ceiling": 196,
+        "ctx": "agent",
+        "direction": "buy",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261111T135842Z",
+        "submitted": true,
+        "t": 1794405919,
+        "target": 1,
+        "threw": false,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:19.654Z",
+        "verb": "RESOURCE_IRON=10",
+        "want": "RESOURCE_IRON=10"
+      },
+      {
+        "action": "EQUALIZE",
+        "ctx": "agent",
+        "hold": 30,
+        "kind": "deal_session",
+        "phase": "asked",
+        "run": "civvis-20261111T135842Z",
+        "sent": true,
+        "session": 1,
+        "t": 1794405920,
+        "target": 1,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z"
+      },
+      {
+        "ctx": "agent",
+        "deal_action": "2",
+        "kind": "deal_session",
+        "phase": "answered",
+        "run": "civvis-20261111T135842Z",
+        "session": 1,
+        "t": 1794405920,
+        "target": 1,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 146,
+        "ceiling": 196,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 1,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T135842Z",
+        "session": 1,
+        "t": 1794405920,
+        "theirs": "RESOURCES:43=10x0",
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": "PROPOSED",
+        "cash_bid": 196,
+        "cash_reserve": 190.793,
+        "ceiling": 196,
+        "ctx": "agent",
+        "direction": "buy",
+        "from": 1,
+        "kind": "deal_reproposed",
+        "pay": 0,
+        "run": "civvis-20261111T135842Z",
+        "sent": true,
+        "strategic": true,
+        "t": 1794405920,
+        "threw": false,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z",
+        "verb": "RESOURCE_IRON=10",
+        "want": "RESOURCES:43"
+      },
+      {
+        "ctx": "agent",
+        "deal_action": "10",
+        "kind": "deal_session",
+        "phase": "answered",
+        "run": "civvis-20261111T135842Z",
+        "session": 1,
+        "t": 1794405920,
+        "target": 1,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z"
+      },
+      {
+        "action": 10,
+        "asked": true,
+        "asked_turn": 146,
+        "ceiling": 196,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 1,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T135842Z",
+        "session": 1,
+        "t": 1794405920,
+        "theirs": "RESOURCES:43=10x0",
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": 10,
+        "ceiling": 196,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 1,
+        "kind": "deal_declined",
+        "matches": true,
+        "pay": 0,
+        "run": "civvis-20261111T135842Z",
+        "t": 1794405920,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.042Z",
+        "want": "RESOURCES:43",
+        "worth": 0
+      },
+      {
+        "ctx": "agent",
+        "kind": "deal_session",
+        "phase": "closed",
+        "run": "civvis-20261111T135842Z",
+        "t": 1794405920,
+        "target": 1,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:20.067Z",
+        "why": "answered"
+      },
+      {
+        "active_players": [
+          1
+        ],
+        "core_busy": false,
+        "ctx": "agent",
+        "held_locks": [],
+        "kind": "ai_phase_stall",
+        "lock_overflow": 0,
+        "open_sessions": [],
+        "processing": false,
+        "queued": false,
+        "run": "civvis-20261111T135842Z",
+        "t": 1794405950,
+        "turn": 146,
+        "utc": "2026-11-11T14:05:50.791Z",
+        "visible": [],
+        "waited": 30.2
+      }
+    ],
+    "core_tail": [
+      "146, 0, 1, 0, MAKE_DEAL, NONE, INITIAL, Processing Immediately",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, ACKNOWLEDGE, Adding to pending",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, ACKNOWLEDGE, Processing Statement",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, ACKNOWLEDGE, Processing Immediately",
+      "146, 1, 0, 0, MAKE_DEAL, AI_REFUSE_DEAL, NEGATIVE, Processing Statement",
+      "146, 1, 0, 0, MAKE_DEAL, AI_REFUSE_DEAL, NEGATIVE, Processing Immediately",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, 00000000, Processing Statement",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, 00000000, Processing Immediately",
+      "146, 1, 0, 0, MAKE_DEAL, NONE, 00000000, Adding to pending"
+    ],
+    "core_sha256": "ae22818a9034689d0226496a1b49532e7b64c402988cd3493a88de4d5db371a2"
+  },
+  "implementation": [
+    "Build and validate the authorized one-time Gold bid before RequestSession, protecting ask-time cash outside the existing ceiling. Clip against native maximum after setting duration zero.",
+    "Initial session question is PROPOSED. No resource re-proposals from incoming callbacks; default/resource barter and Great Work protocols retain their own behavior.",
+    "Recheck protected cash on opening and verdict; accept only engine ACCEPTED/ADJUSTED, matching resource, no collateral or GPT, authorized bid, equal native working deals.",
+    "Retain a refused paid session for a bounded four-second following counter. Duplicate refusal notifications do not send or close; the real counter is rejected then closed. Synchronous callbacks cannot re-enter counter rejection."
+  ],
+  "shipped_ui": {
+    "path": "/Users/martbot-mbp-m5-max-128/Library/Application Support/Steam/steamapps/common/Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua",
+    "sha256": "8454457c359c7dacae7698cb7073a8c883ccd408d7e0a2b88da97b1f092c33e9",
+    "lines": {
+      "149-156": "ProposeWorkingDeal: no pending deal, then SendWorkingDeal(PROPOSED).",
+      "530-544": "OnProposeOrAcceptDeal: engine verdict and working-deal equality precede ACCEPTED.",
+      "606-610": "OnRefuseDeal force-close: SendWorkingDeal(REJECTED), then CloseSession.",
+      "870-887": "Add Gold, SetDuration(0), clip amount against GetMaxAmount, then SetAmount."
+    }
+  },
+  "validation": {
+    "started_at": 1794407571.630404,
+    "parse": {
+      "discovered": 151,
+      "failures": []
+    },
+    "lua_suites": {
+      "discovered": 146,
+      "failures": []
+    },
+    "production_rendered": [
+      {
+        "file": "CivvisControlAgent.lua",
+        "bytes": 678081
+      },
+      {
+        "file": "CivvisControlAutoClose.lua",
+        "bytes": 31463
+      },
+      {
+        "file": "CivvisControlHeartbeat.lua",
+        "bytes": 4850
+      },
+      {
+        "file": "CivvisControlSetup.lua",
+        "bytes": 7918
+      }
+    ],
+    "baseline_red": {
+      "revision": "e2bee6a0b39baf3b14d99a01932d00b5f3897632",
+      "returncode": 1,
+      "failed_assertions": 60
+    },
+    "python_returncode": 0,
+    "finished_at": 1794407579.312705
+  },
+  "native_next": "Observe actual loaded protocol4/configured source and immutable worker provenance, one initial paid PROPOSED and real engine verdict, core enacted deal and stock changes, upgrades, rival original capitals, then native Domination outcome. Retirements remain censored; no map/rules/victory changes or healthy restarts."
+}
