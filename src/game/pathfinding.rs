@@ -343,6 +343,57 @@ impl Game {
             })
     }
 
+    /// The whole walk behind [`Game::route_step`], with the turn each tile is
+    /// reached on (0 is this turn), for a client to draw before the order is
+    /// given. It spends movement by the rule a real step is held to
+    /// ([`Game::can_pay_step`]): a step needs its whole cost in hand, and a
+    /// unit with its full allowance may always take one.
+    ///
+    /// A reading, never a permission. Every step is still validated by the
+    /// ordinary move when it is taken, and whatever stands in the way by then
+    /// may make the walk longer than it was drawn.
+    pub fn route_preview(&self, uid: u32, to: Pos) -> Option<Vec<(Pos, u32)>> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        self.route_step(uid, to, 0)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let path: Vec<Pos> = self
+            .routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == 0
+                    && route.access_key == access_key
+            })
+            .and_then(|route| {
+                route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .map(|index| route.path[index + 1..].to_vec())
+            })?;
+        let full = self.unit_max_moves(uid);
+        let mut left = unit.moves_left;
+        let mut turn = 0u32;
+        let mut from = start;
+        let mut walk = Vec::with_capacity(path.len());
+        for pos in path {
+            let cost = self.step_cost_for(uid, from, pos);
+            if left <= 0.0 || (left < cost && left < full) {
+                turn += 1;
+                left = full;
+            }
+            left = (left - cost).max(0.0);
+            walk.push((pos, turn));
+            from = pos;
+        }
+        Some(walk)
+    }
+
     /// Everything which can change whether this unit may cross a border
     /// without changing the map itself. Player access is already the complete
     /// shared predicate; city owners distinguish a same-turn city transfer
