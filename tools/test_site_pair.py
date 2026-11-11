@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -83,11 +84,11 @@ class APairIsScored(unittest.TestCase):
         self.assertIsNone(site_pair.time_ratio(game, []))
 
     def test_the_command_names_the_shortcut_and_its_seats(self):
-        command = site_pair.game_command(Path("/x/civvis"), 7, 400, "race-read-once-a-turn",
+        command = site_pair.game_command(Path("/x/civvis"), 7, 400, "envelopes-across-own-moves",
                                          [2, 3])
         self.assertEqual(command[:2], ["/x/civvis", "site-bench"])
         self.assertEqual(command[command.index("--shortcut-seats") + 1], "2,3")
-        self.assertEqual(command[command.index("--shortcuts") + 1], "race-read-once-a-turn")
+        self.assertEqual(command[command.index("--shortcuts") + 1], "envelopes-across-own-moves")
         self.assertIn("--no-documents", command)
 
 
@@ -140,7 +141,7 @@ class TheRunPlaysEverySeedInBothChairs(unittest.TestCase):
             with mock.patch.object(site_pair, "play", fake_play), \
                     mock.patch("sys.stdout", new_callable=io.StringIO) as printed:
                 code = site_pair.main(["--binary", str(binary), "--shortcuts",
-                                       "race-read-once-a-turn", "--pairs", "3",
+                                       "envelopes-across-own-moves", "--pairs", "3",
                                        "--seeds", "100", "--jobs", "1",
                                        "--out", str(out)])
             rows = out.read_text(encoding="utf-8").splitlines()
@@ -152,6 +153,21 @@ class TheRunPlaysEverySeedInBothChairs(unittest.TestCase):
             (str(seed), seats, "400") for seed in (100, 101, 102)
             for seats in ("0,1", "2,3")))
         self.assertEqual(len(rows), 6)
+
+    def test_a_stopped_run_is_read_back_and_a_half_played_pair_is_left_out(self):
+        game = site_pair.parse_game(WON_BY_2)
+        rows = [{"seed": seed, "shortcut_seats": chairs, **game}
+                for seed in (1, 2, 3) for chairs in ([0, 1], [2, 3])]
+        rows.append({"seed": 4, "shortcut_seats": [0, 1], **game})
+        with tempfile.TemporaryDirectory() as scratch:
+            played = Path(scratch) / "games.jsonl"
+            played.write_text("".join(json.dumps(row) + "\n" for row in rows),
+                              encoding="utf-8")
+            out = io.StringIO()
+            summary = site_pair.verdict_from(site_pair.read_rows(played),
+                                             "envelopes-across-own-moves", 0.15, out=out)
+        self.assertEqual(summary["pairs"], 3, "seed 4 has one chair played")
+        self.assertIn("won 3 of 6 decided games", out.getvalue())
 
 
 if __name__ == "__main__":

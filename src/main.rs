@@ -1996,7 +1996,7 @@ fn print_usage() {
               [--no-kept-yields (site-bench: derive every city yield afresh)] \
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
               [--audit-kept-yields (site-bench: re-derive every reused yield and compare)] \
-              [--shortcuts envelopes-across-own-moves,race-read-once-a-turn (site-bench: these change play)] \
+              [--shortcuts envelopes-across-own-moves (site-bench: this changes play)] \
               [--shortcut-seats 0,1 (site-bench: the player ids that take them; every seat when absent)]"
     );
 }

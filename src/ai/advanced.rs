@@ -14204,28 +14204,6 @@ impl AdvancedAi {
     /// preferences `victory_focus` adds are not progress and stay out of it,
     /// so a caller can read a rate from two readings.
     fn lane_progress_table(&self, g: &Game, pid: usize) -> [i32; 4] {
-        // `SiteShortcuts::race_read_once_a_turn`: one reading per seat for as
-        // long as the cache stands, which is from the start of the turn to the
-        // clear before the production pass and from there to the end. The
-        // exact rule below re-reads after every tile write and reads afresh
-        // on every ask before the unit phase.
-        if self.base.race_read_once_a_turn {
-            let held = self
-                .lane_progress_cache
-                .0
-                .borrow()
-                .iter()
-                .find(|(turn, seat, _, _)| *turn == g.turn && *seat == pid)
-                .map(|(_, _, _, table)| *table);
-            if let Some(table) = held {
-                return table;
-            }
-            let table = self.lane_progress_table_uncached(g, pid);
-            let mut entries = self.lane_progress_cache.0.borrow_mut();
-            entries.retain(|(_, seat, _, _)| *seat != pid);
-            entries.push((g.turn, pid, g.map.tiles.epoch(), table));
-            return table;
-        }
         // Like the settlement atlas, the cache lives only inside an active
         // controller turn; any other caller keeps the uncached reading.
         if self.battlefront_frame.is_none() {
@@ -25778,6 +25756,10 @@ impl Ai for AdvancedAi {
 
     fn set_site_shortcuts(&mut self, shortcuts: crate::ai::SiteShortcuts) {
         self.base.set_site_shortcuts(shortcuts);
+    }
+
+    fn site_shortcuts(&self) -> crate::ai::SiteShortcuts {
+        self.base.site_shortcuts()
     }
 
     fn strategy_label(&self) -> Option<&'static str> {

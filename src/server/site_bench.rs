@@ -375,6 +375,45 @@ mod tests {
             },
         );
         assert_eq!(plain.checkpoints, named_but_nobody.checkpoints);
+        // Read back from the agents themselves, seat by seat: the first build
+        // set every one of these and none of them heard it.
+        let taken = SiteShortcuts::named("envelopes-across-own-moves").unwrap();
+        let two_seats = run_with(
+            23,
+            2,
+            Options {
+                shortcuts: taken,
+                shortcut_seats: Some(0b0101),
+                ..Options::default()
+            },
+        );
+        for seat in 0..4 {
+            let expected = if seat % 2 == 0 {
+                taken
+            } else {
+                SiteShortcuts::default()
+            };
+            assert_eq!(
+                two_seats.session.seat_shortcuts(seat),
+                expected,
+                "seat {seat}"
+            );
+        }
+        let every_seat = run_with(
+            23,
+            2,
+            Options {
+                shortcuts: taken,
+                ..Options::default()
+            },
+        );
+        for seat in 0..every_seat.session.game.players.len() {
+            assert_eq!(
+                every_seat.session.seat_shortcuts(seat),
+                taken,
+                "seat {seat}"
+            );
+        }
         assert_eq!(plain.seat_seconds.len(), plain.session.game.players.len());
         assert!(plain.seat_seconds.iter().all(|seconds| *seconds > 0.0));
         assert!(SiteShortcuts::named("no-such-shortcut").is_err());

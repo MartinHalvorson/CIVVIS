@@ -161,11 +161,55 @@ def play(command: Sequence[str]) -> dict:
     return parse_game(done.stdout)
 
 
+def verdict_from(rows: Sequence[dict], shortcuts: str, margin: float,
+                 out=None) -> dict:
+    """Read the verdict out of played games. A seed counts once both of its
+    chairs have been played; a half-played pair says nothing and is left out."""
+    out = out or sys.stdout
+    by_seed: Dict[int, List[dict]] = {}
+    for row in rows:
+        by_seed.setdefault(row["seed"], []).append(row)
+    differences, ratios, decided, treated_wins = [], [], 0, 0
+    for seed in sorted(by_seed):
+        games = by_seed[seed]
+        if len({tuple(game["shortcut_seats"]) for game in games}) < 2:
+            continue
+        differences.append(
+            sum(treated_score(game, game["shortcut_seats"]) for game in games) - 1.0)
+        for game in games:
+            ratio = time_ratio(game, game["shortcut_seats"])
+            if ratio is not None:
+                ratios.append(ratio)
+            if game["winner"] is not None:
+                decided += 1
+                treated_wins += int(game["winner"] in game["shortcut_seats"])
+    summary = summarise(differences, margin)
+    print(describe(summary, shortcuts), file=out)
+    if decided:
+        print(f"  the shortcut's seats won {treated_wins} of {decided} decided games "
+              f"({100.0 * treated_wins / decided:.1f}%)", file=out)
+    if ratios:
+        print(f"  their agents' seconds per seat were {statistics.median(ratios):.3f} "
+              f"of the other seats' (median of {len(ratios)} games; "
+              f"{min(ratios):.3f} to {max(ratios):.3f})", file=out)
+    return summary
+
+
+def read_rows(path: Path) -> List[dict]:
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            row["seconds"] = {int(seat): spent for seat, spent in row["seconds"].items()}
+            rows.append(row)
+    return rows
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--binary", type=Path, default=None)
     parser.add_argument("--shortcuts", required=True,
                         help="comma-separated `SiteShortcuts` names")
     parser.add_argument("--pairs", type=int, default=150)
@@ -176,57 +220,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--margin", type=float, default=MARGIN)
     parser.add_argument("--out", type=Path, default=None,
-                        help="write every game as a JSON line")
+                        help="append every game as a JSON line as it finishes, "
+                             "so a run that is stopped keeps what it played")
+    parser.add_argument("--read", type=Path, default=None,
+                        help="read the verdict out of a file --out wrote, "
+                             "playing nothing")
     args = parser.parse_args(argv)
-    if not args.binary.is_file():
+    if args.read:
+        summary = verdict_from(read_rows(args.read), args.shortcuts, args.margin)
+        return 0 if summary["verdict"] == "NOT WORSE" else 1
+    if args.binary is None or not args.binary.is_file():
         raise SystemExit(f"not a binary: {args.binary}")
 
     print(f"bar, fixed before the first game: the lower end of the 95% interval "
           f"of the mean pair difference is above -{args.margin:.2f}; "
-          f"{args.pairs} pairs from seed {args.seeds}")
+          f"{args.pairs} pairs from seed {args.seeds}", flush=True)
     # One short game says which player ids are the majors.
     probe = play(game_command(args.binary, args.seeds, 1, args.shortcuts, []))
     first, second = split_majors(list(probe["seconds"]))
 
-    jobs = []
+    rows: List[dict] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        jobs = {}
         for offset in range(args.pairs):
             seed = args.seeds + offset
             for chairs in (first, second):
                 command = game_command(args.binary, seed, args.turns,
                                        args.shortcuts, chairs)
-                jobs.append((seed, chairs, pool.submit(play, command)))
-        games = [(seed, chairs, job.result()) for seed, chairs, job in jobs]
+                jobs[pool.submit(play, command)] = (seed, chairs)
+        for job in concurrent.futures.as_completed(jobs):
+            seed, chairs = jobs[job]
+            row = {"seed": seed, "shortcut_seats": list(chairs), **job.result()}
+            rows.append(row)
+            if args.out:
+                with args.out.open("a", encoding="utf-8") as out:
+                    out.write(json.dumps(row) + "\n")
 
-    by_seed: Dict[int, List[tuple]] = {}
-    for seed, chairs, game in games:
-        by_seed.setdefault(seed, []).append((chairs, game))
-    differences, ratios, decided, treated_wins = [], [], 0, 0
-    rows = []
-    for seed in sorted(by_seed):
-        scores = [treated_score(game, chairs) for chairs, game in by_seed[seed]]
-        differences.append(sum(scores) - 1.0)
-        for chairs, game in by_seed[seed]:
-            ratio = time_ratio(game, chairs)
-            if ratio is not None:
-                ratios.append(ratio)
-            if game["winner"] is not None:
-                decided += 1
-                treated_wins += int(game["winner"] in chairs)
-            rows.append({"seed": seed, "shortcut_seats": list(chairs), **game})
-    if args.out:
-        args.out.write_text("".join(json.dumps(row) + "\n" for row in rows),
-                            encoding="utf-8")
-
-    summary = summarise(differences, args.margin)
-    print(describe(summary, args.shortcuts))
-    if decided:
-        print(f"  the shortcut's seats won {treated_wins} of {decided} decided games "
-              f"({100.0 * treated_wins / decided:.1f}%)")
-    if ratios:
-        print(f"  their agents' seconds per seat were {statistics.median(ratios):.3f} "
-              f"of the other seats' (median of {len(ratios)} games; "
-              f"{min(ratios):.3f} to {max(ratios):.3f})")
+    summary = verdict_from(rows, args.shortcuts, args.margin)
     return 0 if summary["verdict"] == "NOT WORSE" else 1
 
 

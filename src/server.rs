@@ -2811,6 +2811,14 @@ impl Session {
         }
     }
 
+    /// What one seat's agent says it is taking: the read-back of the above.
+    pub fn seat_shortcuts(&self, seat: usize) -> crate::ai::SiteShortcuts {
+        self.ais
+            .get(seat)
+            .map(|agent| agent.site_shortcuts())
+            .unwrap_or_default()
+    }
+
     /// Spectator mode: play out exactly one player's turn with its AI.
     /// Returns the pid and successful actions so the observer UI can explain
     /// the AI's decisions instead of showing only their eventual outcomes.

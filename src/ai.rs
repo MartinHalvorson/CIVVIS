@@ -653,15 +653,12 @@ pub struct SiteShortcuts {
     /// `BasicAi::envelope_cache_across_own_moves`: an enemy's reach is read
     /// against where this seat's units stood when its pass began.
     pub envelopes_across_own_moves: bool,
-    /// The lane table is read once per phase of a seat's turn instead of
-    /// after every change to the board (`AdvancedAi::lane_progress_table`).
-    pub race_read_once_a_turn: bool,
 }
 
 impl SiteShortcuts {
     /// The names `civvis site-bench --shortcuts` and `tools/site_pair.py`
     /// take, in the order of the fields.
-    pub const NAMES: [&'static str; 2] = ["envelopes-across-own-moves", "race-read-once-a-turn"];
+    pub const NAMES: [&'static str; 1] = ["envelopes-across-own-moves"];
 
     /// Parse a comma-separated list of [`Self::NAMES`].
     pub fn named(list: &str) -> Result<SiteShortcuts, String> {
@@ -673,7 +670,6 @@ impl SiteShortcuts {
         {
             match name {
                 "envelopes-across-own-moves" => shortcuts.envelopes_across_own_moves = true,
-                "race-read-once-a-turn" => shortcuts.race_read_once_a_turn = true,
                 other => {
                     return Err(format!(
                         "unknown shortcut `{other}`; the shortcuts are {}",
@@ -696,6 +692,18 @@ pub trait Ai {
     /// Turn [`SiteShortcuts`] on or off for this seat. An agent with nothing
     /// to skip ignores it, which is what the default does.
     fn set_site_shortcuts(&mut self, _shortcuts: SiteShortcuts) {}
+
+    /// The shortcuts this seat is taking, read back from the agent itself.
+    ///
+    /// ⚠ Not decoration. A session holds its agents as `Box<dyn Ai>`, and
+    /// `impl Ai for Box<T>` below forwards each method by hand: the first
+    /// build of `set_site_shortcuts` was not forwarded, every call landed on
+    /// the default above, and four runs with four different settings played
+    /// one game to the last bit. Nothing failed. A setting that is sent is
+    /// read back from where it lands.
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        SiteShortcuts::default()
+    }
 
     fn strategy_label(&self) -> Option<&'static str> {
         None
@@ -760,6 +768,14 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn attach_journal(&mut self, journal: Journal) {
         (**self).attach_journal(journal);
+    }
+
+    fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
+        (**self).set_site_shortcuts(shortcuts);
+    }
+
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        (**self).site_shortcuts()
     }
 }
 
@@ -2513,9 +2529,6 @@ pub struct BasicAi {
     /// route (see docs/SIMULATOR_PERFORMANCE.md, 2026-08-19) can be measured
     /// against it.
     envelope_cache_across_own_moves: bool,
-    /// `SiteShortcuts::race_read_once_a_turn`, read by
-    /// `AdvancedAi::lane_progress_table`.
-    pub(crate) race_read_once_a_turn: bool,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
@@ -4036,7 +4049,6 @@ impl BasicAi {
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
-            race_read_once_a_turn: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4490,7 +4502,6 @@ impl BasicAi {
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
-            race_read_once_a_turn: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4614,7 +4625,12 @@ impl Ai for BasicAi {
 
     fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
         self.envelope_cache_across_own_moves = shortcuts.envelopes_across_own_moves;
-        self.race_read_once_a_turn = shortcuts.race_read_once_a_turn;
+    }
+
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        SiteShortcuts {
+            envelopes_across_own_moves: self.envelope_cache_across_own_moves,
+        }
     }
 }
 
