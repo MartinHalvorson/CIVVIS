@@ -59,11 +59,18 @@
 //!    prices it), with a breaker at the rally or no walls standing, the
 //!    opening counts as assembled and declares that turn. The shipped 80%
 //!    share rule stays the fallback. Under either rule no declaration passes
-//!    [`AdvancedAi::first_capital_outclassed`]: a melee body at the rally
-//!    within [`FIRST_CAPITAL_MELEE_MARGIN`] of the city's strength, and the
-//!    owner's visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] no stronger
-//!    than the bodies at the rally (live 063232Z struck a defence-56 capital
-//!    with Hypaspists of 38 at t80; the city took no damage in six turns).
+//!    [`AdvancedAi::first_capital_outclassed`]: at least
+//!    [`FIRST_CAPITAL_STRIKE_CITIES`] cities held,
+//!    [`FIRST_CAPITAL_STRIKE_MELEE`] melee soldiers (never Scouts) at the
+//!    rally, the owner's public military power at most
+//!    [`FIRST_CAPITAL_POWER_RATIO`] times ours, a melee soldier within
+//!    [`FIRST_CAPITAL_MELEE_MARGIN`] of the city's strength, the owner's
+//!    visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] no stronger than
+//!    the bodies at the rally, and the melee soldiers' expected blows over
+//!    [`FIRST_CAPITAL_STRIKE_TURNS`] turns above the city's health, walls and
+//!    healing. Live 063232Z struck a defence-56 capital with Hypaspists of 38
+//!    at t80 (no damage in six turns); live 071743Z struck Ethiopia at t7 with
+//!    one city, one Warrior and two Scouts at 35 power against 113.
 //! 3. **A soft capital starts sooner**
 //!    ([`AdvancedAi::first_capital_read_the_softness`]). While the named
 //!    capital is walled to Ancient or less and its strength reads
@@ -124,6 +131,30 @@ pub(crate) const FIRST_CAPITAL_MELEE_MARGIN: f64 = 10.0;
 /// How far from the city the owner's visible army counts as its defence when
 /// the strike is weighed against the bodies at the rally.
 pub(crate) const FIRST_CAPITAL_DEFENDER_REACH: i32 = 3;
+
+/// The cities we hold before any strike: two. The shipped opening never
+/// defers the first Settler, and a war before its city is never the plan.
+/// Live `civvis-20261111T071743Z` declared on Ethiopia at t7 with one city.
+pub(crate) const FIRST_CAPITAL_STRIKE_CITIES: usize = 2;
+
+/// Melee soldiers (land, melee-capable, not recon) that must stand at the
+/// rally before any strike. `CAMPAIGN_MIN_BODIES` (3) counted every body of
+/// the force, Scouts included: at t7 in 071743Z its three were one Warrior
+/// and two Scouts.
+pub(crate) const FIRST_CAPITAL_STRIKE_MELEE: usize = 3;
+
+/// The most the owner's public military power may be, as a multiple of ours,
+/// for a strike. The mirror carries it for every met rival, unseen units
+/// included. The Cree window that motivated the gene read 104 against our
+/// 226; 071743Z struck Ethiopia at 113 against our 35.
+pub(crate) const FIRST_CAPITAL_POWER_RATIO: f64 = 1.3;
+
+/// Turns of blows the melee bodies at the rally must need, at most, to take
+/// the city's health, walls and healing (the kill-time check).
+pub(crate) const FIRST_CAPITAL_STRIKE_TURNS: u32 = 3;
+
+/// What a city heals each turn in the engine (`game/turn.rs`: `city.hp + 20`).
+pub(crate) const FIRST_CAPITAL_CITY_HEAL: i32 = 20;
 
 /// What the bodies at the rally make of the city's bill.
 #[derive(Clone, Debug, PartialEq)]
@@ -429,13 +460,25 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// ⭐ Why the city outclasses the bodies at the rally, or `None`: no melee
-    /// body stands there, the city's strength (as last seen) is more than
-    /// [`FIRST_CAPITAL_MELEE_MARGIN`] above our best melee body's, or the
-    /// owner's visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] of the
-    /// city is stronger than the bodies at the rally. Under the gene no
-    /// declaration passes it, whichever rule assembled the force. `None` with
-    /// the gene off.
+    /// ⭐ Why no strike may open on this city now, or `None`. Under the gene
+    /// no declaration passes it, whichever rule assembled the force (the
+    /// board's go or the shipped share rule). In order:
+    ///
+    /// - we hold fewer than [`FIRST_CAPITAL_STRIKE_CITIES`] cities;
+    /// - fewer than [`FIRST_CAPITAL_STRIKE_MELEE`] melee soldiers (not
+    ///   Scouts) stand within the assembly radius of the rally;
+    /// - the owner's public military power is more than
+    ///   [`FIRST_CAPITAL_POWER_RATIO`] times ours;
+    /// - the city's strength (as last seen) is more than
+    ///   [`FIRST_CAPITAL_MELEE_MARGIN`] above our best melee soldier's;
+    /// - the owner's visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] of
+    ///   the city outweighs the bodies at the rally;
+    /// - the melee soldiers' expected blows (`game::expected_damage`, the
+    ///   engine's own mean) over [`FIRST_CAPITAL_STRIKE_TURNS`] turns do not
+    ///   exceed the city's health, its walls and its healing over those
+    ///   turns.
+    ///
+    /// `None` with the gene off and once declared.
     pub(super) fn first_capital_outclassed(
         &self,
         g: &Game,
@@ -446,21 +489,40 @@ impl AdvancedAi {
             return None;
         }
         let city = g.cities.get(&opening.city)?;
+        let cities = g.player_city_ids(pid).len();
+        if cities < FIRST_CAPITAL_STRIKE_CITIES {
+            return Some(format!(
+                "we hold {cities} cit{} and strike no capital before {FIRST_CAPITAL_STRIKE_CITIES}",
+                if cities == 1 { "y" } else { "ies" }
+            ));
+        }
         let bodies = Self::first_capital_bodies_at_the_rally(g, opening);
-        let best_melee = bodies
+        let melee: Vec<&crate::game::Unit> = bodies
             .iter()
             .filter_map(|uid| g.units.get(uid))
             .filter(|unit| Self::conquest_melee_body(&g.rules.units[unit.kind]))
-            .map(|unit| g.unit_strength(unit, false))
-            .fold(None, |best: Option<f64>, strength| {
-                Some(best.map_or(strength, |best| best.max(strength)))
-            });
-        let Some(best_melee) = best_melee else {
+            .collect();
+        if melee.len() < FIRST_CAPITAL_STRIKE_MELEE {
             return Some(format!(
-                "no melee body stands at the rally for {}",
-                city.name
+                "{} melee soldier{} at the rally for {} (Scouts do not count), fewer than {}",
+                melee.len(),
+                if melee.len() == 1 { "" } else { "s" },
+                city.name,
+                FIRST_CAPITAL_STRIKE_MELEE
             ));
-        };
+        }
+        let (ours, theirs_public) = (g.military_power(pid), g.military_power(city.owner));
+        if theirs_public > FIRST_CAPITAL_POWER_RATIO * ours {
+            return Some(format!(
+                "{}'s military {theirs_public:.0} is more than {FIRST_CAPITAL_POWER_RATIO:.1} times \
+                 our {ours:.0}",
+                g.players[city.owner].civ
+            ));
+        }
+        let best_melee = melee
+            .iter()
+            .map(|unit| g.unit_strength(unit, false))
+            .fold(f64::MIN, f64::max);
         let defence = g.city_strength(city.id);
         if defence > best_melee + FIRST_CAPITAL_MELEE_MARGIN {
             return Some(format!(
@@ -479,13 +541,37 @@ impl AdvancedAi {
             .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum();
-        let ours = Self::campaign_strength_of(g, &bodies);
-        (theirs > ours).then(|| {
-            format!(
+        let at_rally = Self::campaign_strength_of(g, &bodies);
+        if theirs > at_rally {
+            return Some(format!(
                 "{}'s visible army within {FIRST_CAPITAL_DEFENDER_REACH} tiles ({theirs:.0}) \
-                 outweighs the {} bodies at the rally ({ours:.0})",
+                 outweighs the {} bodies at the rally ({at_rally:.0})",
                 city.name,
                 bodies.len()
+            ));
+        }
+        let turns = f64::from(FIRST_CAPITAL_STRIKE_TURNS);
+        let blows: f64 = melee
+            .iter()
+            .map(|unit| {
+                let attack = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+                crate::game::expected_damage(attack, defence)
+            })
+            .sum::<f64>()
+            * turns;
+        let needed = f64::from(city.hp.max(0))
+            + f64::from(city.wall_hp.max(0))
+            + f64::from(FIRST_CAPITAL_CITY_HEAL) * turns;
+        (blows <= needed).then(|| {
+            format!(
+                "the {} melee soldiers at the rally would deal about {blows:.0} in \
+                 {FIRST_CAPITAL_STRIKE_TURNS} turns against {}'s {} health, {} walls and {:.0} of \
+                 healing",
+                melee.len(),
+                city.name,
+                city.hp,
+                city.wall_hp.max(0),
+                f64::from(FIRST_CAPITAL_CITY_HEAL) * turns
             )
         })
     }
