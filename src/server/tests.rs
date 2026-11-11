@@ -127,6 +127,24 @@ fn both_map_renderers_draw_the_one_city_plate() {
 }
 
 #[test]
+fn a_players_own_city_plates_count_the_turns() {
+    // Civilization VI's banner says how many turns until the city grows and
+    // until its build finishes. The one plate both renderers draw now does,
+    // on the played seat's cities only: a watched world keeps public plates.
+    let plate = EMBEDDED_APP_JS
+        .split_once("function drawCityNameplate(c, x, y, S) {")
+        .expect("the city plate")
+        .1
+        .split_once("\nfunction settlementSpread(")
+        .expect("end of the city plate")
+        .0;
+    assert!(plate.contains("const counted = !SPEC && c.owner === 0 && Boolean(c.yields);"));
+    assert!(plate.contains("Math.ceil((c.growth_need - c.food) / surplus)"));
+    assert!(plate.contains("turnsFor(c.queue_cost, c.yields.production || 0, c.production || 0)"));
+    assert_eq!(plate.matches("bannerTurns(").count(), 2);
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
@@ -8432,6 +8450,8 @@ fn browser_key_bindings_match_the_requested_set() {
         // names, so a row that drifts is a row that stopped matching the
         // game this client exists to be playable by.
         ("EndTurn", "1"),
+        // Enter is the same action on the key that game's players press.
+        ("EndTurnEnter", "Enter"),
         ("FoundCity", "b"),
         ("Fortify", "f"),
         ("FortifyUntilHeal", "h"),
@@ -8482,6 +8502,11 @@ fn browser_key_bindings_match_the_requested_set() {
     }
     // The two chords that game puts Shift on, and nothing else may.
     assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+    assert!(EMBEDDED_INDEX.contains(
+        "{id: \"EndTurnAnywayEnter\", key: \"Enter\", shift: true, run: () => advanceTurn(true)},"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains("{id: \"EndTurnEnter\", key: \"Enter\", run: () => advanceTurn(false)},"));
     assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
     // `A` is Attack in Civ 6 and this client attacks by pointing, so it
     // carries no order of its own — it was Alert here until this table
@@ -8505,7 +8530,7 @@ fn browser_key_bindings_match_the_requested_set() {
                 .map(|(rows, _)| rows)
         })
         .expect("the closed shortcut table");
-    assert_eq!(shortcuts.matches("{id: \"").count(), 44);
+    assert_eq!(shortcuts.matches("{id: \"").count(), 46);
     assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
     assert!(!EMBEDDED_INDEX.contains("let altTap"));
     // Everything that needs a seat is withheld from a spectator, and
@@ -8540,10 +8565,11 @@ fn browser_key_bindings_match_the_requested_set() {
         .split_once("<summary>Keyboard shortcuts</summary>")
         .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
         .expect("the keyboard shortcut legend");
-    assert_eq!(legend.matches("<kbd>").count(), 47);
-    assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+    assert_eq!(legend.matches("<kbd>").count(), 48);
+    assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 48);
     assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
-    assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
+    assert!(legend.contains("<span><kbd>Enter</kbd><kbd>1</kbd>End turn · next blocker</span>"));
+    assert!(legend.contains("<span><kbd>Shift</kbd><kbd>Enter</kbd>End turn anyway</span>"));
     assert!(EMBEDDED_INDEX.contains(
         "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
     ));
@@ -8577,11 +8603,12 @@ fn browser_key_bindings_match_the_requested_set() {
     // the browser, and never becomes a map binding.
     assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
     // Command, Control and Option belong to the browser and never become
-    // map bindings. Shift does, for the two chords Civ 6 puts it on, so
-    // it is matched from its own table rather than refused outright.
+    // map bindings. Shift does, for the two chords Civ 6 puts it on and
+    // for ending the turn anyway on Enter, so it is matched from its own
+    // table rather than refused outright.
     assert!(EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;"));
     assert!(EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;"));
-    assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+    assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 3);
     // Space and Enter belong to whichever control has focus, so a person
     // navigating by keyboard never skips a unit by pressing a button.
     assert!(EMBEDDED_INDEX.contains(
@@ -9107,7 +9134,7 @@ fn a_choice_of_tiles_is_made_on_the_map() {
     // coordinates. Both renderers outline the sites, because the default world
     // is a globe and a flat-only pass would reach nobody.
     assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
-    assert!(EMBEDDED_APP_JS.contains("onclick='beginSitePick(${city.id},"));
+    assert!(EMBEDDED_APP_JS.contains("`beginSitePick(${city.id},${itemId})`"));
     assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
     assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
     // A click belongs to the picker before anything else reads it, and a turn
@@ -13700,14 +13727,14 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
         .split_once("  let build = \"\";")
         .expect("the city build column")
         .1
-        .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
+        .split_once("column.innerHTML = build;")
         .expect("end of the city build column")
         .0;
     let producing = build
         .find("city-group-head\">Producing")
         .expect("the producing group");
     let categories = build
-        .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
+        .find("const order = [\"Districts\", \"Buildings\", \"Wonders\", \"Units\", \"Projects\"];")
         .or_else(|| build.find("for (const category of order) {"))
         .expect("the production categories");
     let plots = build
@@ -13722,6 +13749,80 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
         "the plot market comes after the production list"
     );
     assert!(build.contains("<details class=\"city-group city-plots\""));
+}
+
+/// Civilization VI opens a city on the map, not on a screen over it.
+///
+/// `CityPanel.xml` and `ProductionPanel.xml` are docked panels: the city
+/// stands where the selected unit's panel does, the production list runs down
+/// the right edge above End Turn, and the world between them stays in view
+/// and in play. The page used to cover the map with a dialog, which hid the
+/// one thing a district or a purchased tile is chosen by.
+#[test]
+fn a_city_opens_on_the_map_rather_than_over_it() {
+    // The section is a layer the two panels stand on, and takes no clicks.
+    assert!(EMBEDDED_INDEX.contains("<section id=\"cityscreen\" role=\"region\""));
+    let layer = EMBEDDED_INDEX
+        .split_once("  #cityscreen {\n")
+        .expect("the city layer")
+        .1
+        .split_once("}")
+        .expect("end of the city layer")
+        .0;
+    assert!(layer.contains("inset: 0;"));
+    assert!(layer.contains("pointer-events: none;"));
+    assert!(EMBEDDED_INDEX
+        .contains("  .city-panel, .city-build {\n    position: absolute; pointer-events: auto;"));
+    // End Turn stays in its corner; only its duplicate list steps aside.
+    assert!(EMBEDDED_INDEX.contains("body.city-open #actionoptions { display: none; }"));
+    assert!(EMBEDDED_INDEX.contains("bottom: var(--solo-corner-clearance, var(--panel-edge));"));
+
+    // The map's keys work under an open city: it is not one of the screens
+    // that hold the keyboard, and Escape still puts it down.
+    let screens = EMBEDDED_APP_JS
+        .split_once("function anyScreenOpen() {")
+        .expect("the screens that hold the keyboard")
+        .1
+        .split_once("\n}")
+        .expect("end of anyScreenOpen")
+        .0;
+    assert!(!screens.contains("cityScreenOpen()"));
+    assert!(EMBEDDED_APP_JS.contains("if (cityScreenOpen()) { closeCityScreen(); return true; }"));
+
+    // One corner, one selection: a unit selected, or open country pressed,
+    // puts the city down, and stepping between cities carries the panels.
+    assert!(EMBEDDED_APP_JS.contains("if (sel && cityScreenOpen()) closeCityScreen();"));
+    assert!(EMBEDDED_APP_JS.contains("sel = null; selCity = null;\n    // A press on open country puts the city down, as it does in Civ 6.\n    closeCityScreen();"));
+    assert!(EMBEDDED_APP_JS.contains("if (cityScreenOpen()) openCityScreen(next.id);"));
+    // An order closes the panels; a purchase leaves them up.
+    assert!(EMBEDDED_APP_JS.contains("if (action.type === \"produce\") closeCityScreen();"));
+
+    // Orders and purchases are pages of one list, each row one button.
+    assert!(EMBEDDED_APP_JS.contains("const CITY_BUILD_TABS = [[\"production\", "));
+    assert!(EMBEDDED_APP_JS.contains(
+        "`<button class=\"build-item${current ? \" current\" : \"\"}\" type=\"button\" `"
+    ));
+    // No name in either list carries a tile's coordinates.
+    assert!(!EMBEDDED_APP_JS
+        .contains("<span class=\"build-name\">${name} @ ${action.pos.join(\",\")}</span>"));
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("titleCase(itemName(entry.item))")
+            .count(),
+        0
+    );
+
+    // Land is bought on the land: priced on both maps, and the mode stays up
+    // for the next tile.
+    assert!(EMBEDDED_APP_JS.contains("function beginPlotPick(cityId) {"));
+    assert!(EMBEDDED_APP_JS.contains("onclick=\"beginPlotPick(${city.id})\">"));
+    assert!(EMBEDDED_APP_JS
+        .contains("priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);"));
+    assert!(
+        EMBEDDED_APP_JS.contains("priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);")
+    );
+    assert!(EMBEDDED_APP_JS
+        .contains("if (sitePick && sitePick.plots && !beginPlotPick(cityId)) cancelSitePick();"));
 }
 
 /// A watched simulation wears the laboratory, not Civilization VI's
