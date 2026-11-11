@@ -12347,8 +12347,12 @@ impl Game {
     /// game. Both questions — whether, and where — are answered from one
     /// lookup rather than from two of the same one.
     fn established_governor_at(&self, pid: usize, governor: &str) -> Option<u32> {
-        let state = self.players.get(pid)?.governor_roster.get(governor)?;
-        let spec = self.rules.governors.get(governor)?;
+        let (governor_name, state) = self
+            .players
+            .get(pid)?
+            .governor_roster
+            .get_key_value(governor)?;
+        let spec = self.rules.governors.get_interned(*governor_name)?;
         let city_id = state.city?;
         let city = self.cities.get(&city_id)?;
         // Capturing or razing a Governor's city displaces that Governor. Amani
