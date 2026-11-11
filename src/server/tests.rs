@@ -110,6 +110,95 @@ fn browser_saves_are_listed_from_the_game_inside_the_envelope() {
     assert!(!shim.contains("turn: held.turn"));
 }
 
+/// Civilization VI draws the path a selected unit would take, and numbers the
+/// turns along it, before the order is given. `/route` answered with the next
+/// step alone, so the page could send a unit across a continent and could not
+/// say how it would go or how long it would take.
+#[test]
+fn a_route_preview_is_the_whole_walk_with_its_turns() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let session = Session::new(params);
+    let (uid, start) = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "warrior")
+        .map(|unit| (unit.id, unit.pos))
+        .expect("seat 0 opens with a warrior");
+    // The furthest tile nearby that the router will walk to.
+    let (target, distance) = (-6..=6)
+        .flat_map(|dq| (-6..=6).map(move |dr| (start.0 + dq, start.1 + dr)))
+        .filter_map(|pos| {
+            session
+                .game
+                .route_distance(uid, pos, 0)
+                .map(|distance| (pos, distance))
+        })
+        .max_by_key(|(pos, distance)| (*distance, *pos))
+        .expect("somewhere to walk");
+    assert!(distance >= 3, "a walk of more than one turn: {distance}");
+
+    let walk = session
+        .game
+        .route_preview(uid, target)
+        .expect("the walk behind the step");
+    assert_eq!(walk.len(), distance);
+    assert_eq!(walk.last().map(|(pos, _)| *pos), Some(target));
+    // The first step is this turn's, the turns only ever count up, and a
+    // Warrior's two movement points cannot cover three tiles in one.
+    assert_eq!(walk[0].1, 0);
+    assert!(walk.windows(2).all(|pair| pair[0].1 <= pair[1].1));
+    assert!(walk[walk.len() - 1].1 >= 1);
+
+    // A plain step answers as it always has; a preview adds the walk.
+    let ask = json!({"unit": uid, "to": [target.0, target.1]});
+    let plain = crate::routes::route_step(&session, &ask);
+    assert_eq!(plain["step"], json!([walk[0].0 .0, walk[0].0 .1]));
+    assert!(plain.get("path").is_none());
+    let mut ask = ask;
+    ask["preview"] = json!(true);
+    let preview = crate::routes::route_step(&session, &ask);
+    assert_eq!(preview["step"], plain["step"]);
+    let path = preview["path"].as_array().expect("the previewed walk");
+    assert_eq!(path.len(), walk.len());
+    assert_eq!(
+        path[path.len() - 1],
+        json!([target.0, target.1, walk[walk.len() - 1].1])
+    );
+}
+
+#[test]
+fn the_page_draws_the_route_ahead_of_a_selected_unit() {
+    // Hovering asks the engine for the walk, once per tile, and only for a
+    // tile the player has seen: a route across unexplored ground would give
+    // the map away.
+    let ask = EMBEDDED_APP_JS
+        .split_once("async function showRouteAt(pos) {")
+        .expect("the route request")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the route request")
+        .0;
+    assert!(ask.contains("!tile || tile.unknown || strikeAt(pos)) { hideRoute(); return; }"));
+    assert!(ask.contains("if (routeAsked === ask) return;"));
+    assert!(
+        ask.contains("body: JSON.stringify({unit: sel.id, to: [pos[0], pos[1]], preview: true})")
+    );
+    // The drawing belongs to one unit on one tile, and both maps draw it.
+    assert!(EMBEDDED_APP_JS.contains("key(sel.pos) === routePreview.from ? routePreview : null;"));
+    assert!(EMBEDDED_APP_JS.contains("  drawRoutePreviewPlanet(cellByKey, onSheet);\n"));
+    assert!(EMBEDDED_APP_JS.contains("  drawRoutePreviewFlat();\n"));
+    assert!(EMBEDDED_APP_JS
+        .contains("cx.fillText(String(point.turn + 1), point.x, point.y + r * .03);"));
+    assert!(EMBEDDED_APP_JS.contains("hideTileTip(true); hideForecast(); hideRoute(); });"));
+}
+
 #[test]
 fn both_map_renderers_draw_the_one_city_plate() {
     // The default world is a globe. The plate lived in the flat renderer alone,
@@ -15616,69 +15705,6 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
     assert!(EMBEDDED_APP_JS
         .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
-}
-
-/// Civilization VI draws the path a selected unit would take, and numbers the
-/// turns along it, before the order is given. `/route` answered with the next
-/// step alone, so the page could send a unit across a continent and could not
-/// say how it would go or how long it would take.
-#[test]
-fn a_route_preview_is_the_whole_walk_with_its_turns() {
-    let mut params = current();
-    params.spectate = false;
-    params.num_players = 2;
-    params.num_city_states = 0;
-    params.width = 24;
-    params.height = 16;
-    params.seed = 20_261_014;
-    let session = Session::new(params);
-    let (uid, start) = session
-        .game
-        .units
-        .values()
-        .find(|unit| unit.owner == 0 && unit.kind == "warrior")
-        .map(|unit| (unit.id, unit.pos))
-        .expect("seat 0 opens with a warrior");
-    // The furthest tile nearby that the router will walk to.
-    let (target, distance) = (-6..=6)
-        .flat_map(|dq| (-6..=6).map(move |dr| (start.0 + dq, start.1 + dr)))
-        .filter_map(|pos| {
-            session
-                .game
-                .route_distance(uid, pos, 0)
-                .map(|distance| (pos, distance))
-        })
-        .max_by_key(|(pos, distance)| (*distance, *pos))
-        .expect("somewhere to walk");
-    assert!(distance >= 3, "a walk of more than one turn: {distance}");
-
-    let walk = session
-        .game
-        .route_preview(uid, target)
-        .expect("the walk behind the step");
-    assert_eq!(walk.len(), distance);
-    assert_eq!(walk.last().map(|(pos, _)| *pos), Some(target));
-    // The first step is this turn's, the turns only ever count up, and a
-    // Warrior's two movement points cannot cover three tiles in one.
-    assert_eq!(walk[0].1, 0);
-    assert!(walk.windows(2).all(|pair| pair[0].1 <= pair[1].1));
-    assert!(walk[walk.len() - 1].1 >= 1);
-
-    // A plain step answers as it always has; a preview adds the walk.
-    let ask = json!({"unit": uid, "to": [target.0, target.1]});
-    let plain = crate::routes::route_step(&session, &ask);
-    assert_eq!(plain["step"], json!([walk[0].0 .0, walk[0].0 .1]));
-    assert!(plain.get("path").is_none());
-    let mut ask = ask;
-    ask["preview"] = json!(true);
-    let preview = crate::routes::route_step(&session, &ask);
-    assert_eq!(preview["step"], plain["step"]);
-    let path = preview["path"].as_array().expect("the previewed walk");
-    assert_eq!(path.len(), walk.len());
-    assert_eq!(
-        path[path.len() - 1],
-        json!([target.0, target.1, walk[walk.len() - 1].1])
-    );
 }
 
 #[test]
