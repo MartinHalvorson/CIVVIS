@@ -248,6 +248,9 @@ impl AdvancedAi {
         /// Opt-in gene `every-shooter-at-the-walls`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
+        /// `friendship-outlasts-the-gated-race`: see
+        /// `advanced/friendship_outlasts_the_gated_race.rs`.
+        friendship_outlasts_the_gated_race => enable_friendship_outlasts_the_gated_race, disable_friendship_outlasts_the_gated_race;
         /// Opt-in `faith-strike-fears-the-tech-lead`; see
         /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
         faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;

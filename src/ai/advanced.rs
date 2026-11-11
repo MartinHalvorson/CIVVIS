@@ -7646,6 +7646,11 @@ pub struct AdvancedAi {
     /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
     /// Opt-in.
     faith_strike_fears_the_tech_lead: bool,
+    /// `friendship-outlasts-the-gated-race`: a lapsed friend racing to win is
+    /// renewed while `denial-war-needs-the-lane-edge` would refuse the war on
+    /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
+    /// default.
+    friendship_outlasts_the_gated_race: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10782,6 +10787,9 @@ mod age_closer;
 mod domination_research_commitment;
 /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
 mod flower_power_in_the_dark;
+/// `friendship-outlasts-the-gated-race`: see
+/// `advanced/friendship_outlasts_the_gated_race.rs`.
+mod friendship_outlasts_the_gated_race;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;

@@ -262,8 +262,14 @@ impl AdvancedAi {
             });
         }
         // `friendship-ends-at-the-race`: a rival racing to win is left to the
-        // counter once the friendship lapses.
-        if self.friendship_ends_at_the_race && self.friend_is_racing(g, other) {
+        // counter once the friendship lapses. `friendship-outlasts-the-gated-race`:
+        // not while `denial-war-needs-the-lane-edge` would refuse that war.
+        if self.friendship_ends_at_the_race
+            && self.friend_is_racing(g, other)
+            && self
+                .gated_race_keeps_the_friend(g, pid, other, lapsed)
+                .is_none()
+        {
             return Some("friendship-ends-at-the-race: they are racing to win, so they are left to the counter");
         }
         // `friendship-spares-the-prey`: a rival this much weaker is a conquest
@@ -390,6 +396,9 @@ impl AdvancedAi {
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
             let civ = g.players[partner].civ.clone();
+            if let Some(power) = self.gated_race_keeps_the_friend(g, pid, partner, &lapsed) {
+                self.journal_gated_race_renewal(g, partner, power);
+            }
             if lapsed.contains(&partner) {
                 think!(self.journal(), Diplomacy, Decision,
                     "Renewing the friendship with {civ}";
