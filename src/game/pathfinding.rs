@@ -651,6 +651,7 @@ impl Game {
             scratch.movement_seen.resize(tile_count, false);
             scratch.movement_score.resize(tile_count, UNSEEN);
             scratch.movement_stopped.resize(tile_count, false);
+            scratch.movement_zoc.resize(tile_count, None);
         }
         let touched = scratch.movement_touched.len();
         for index in 0..touched {
@@ -658,6 +659,7 @@ impl Game {
             scratch.movement_seen[slot] = false;
             scratch.movement_score[slot] = UNSEEN;
             scratch.movement_stopped[slot] = false;
+            scratch.movement_zoc[slot] = None;
         }
         scratch.movement_touched.clear();
         scratch.movement_frontier.clear();
@@ -723,7 +725,20 @@ impl Game {
                 let new_rem = (rem - cost)
                     .max(0.0)
                     .min(self.capped_moves_at(uid, &cap, n));
-                let arrival = V::arrival(new_rem, self.enters_enemy_zoc(&zoc, n));
+                // Entry may be reconsidered from several neighbors, especially
+                // when ZOC zeroes an earlier arrival. Only the remaining
+                // movement depends on the route: this predicate reads the
+                // fixed formation, destination and board. Its result expires
+                // with this flood, using the same touched list as its scores.
+                let enters_zoc = if let Some(cached) = scratch.movement_zoc[index] {
+                    debug_assert_eq!(cached, self.enters_enemy_zoc(&zoc, n));
+                    cached
+                } else {
+                    let value = self.enters_enemy_zoc(&zoc, n);
+                    scratch.movement_zoc[index] = Some(value);
+                    value
+                };
+                let arrival = V::arrival(new_rem, enters_zoc);
                 // ⚠ The zone-of-control rule is applied BEFORE the improvement
                 // test, not after it: `flow_past` and `path_to` compare the
                 // zeroed value, so a second arrival at a tile inside a zone of
