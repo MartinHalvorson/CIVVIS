@@ -26257,8 +26257,11 @@ impl AdvancedAi {
             // no-op while the gene is off.
             // `city-state-before-the-first-capital`: the stepping stone's Ram
             // under `breaker-bought-for-the-siege`. `false` with it off.
+            // The stepping stone's missing melee bodies after its Ram. `false`
+            // with `city-state-before-the-first-capital` off.
             if !self.buy_domination_breaker(g, pid, &plan)
                 && !self.city_state_stone_breaker_purchase(g, pid)
+                && !self.city_state_stone_body_purchase(g, pid)
             {
                 self.siege_breaker_purchase(g, pid);
             }
