@@ -297,6 +297,67 @@ for every Builder every turn), `worthwhile_improvements` 5.1%,
 5.3% and `tactical_step` 3.4%. `retreat_step` spends 3.8% of the thread at
 one line, fetching `enemy_attack_envelopes`.
 
+### Shortcuts were tried, against a bar, and none is on
+
+Everything above plays the same game faster. What is left of that kind is
+small and flat, so the operator approved the other kind for the site:
+shortcuts that change what a seat decides a little, each to be tried against
+seats that do not take it. `SiteShortcuts` (`src/ai.rs`) is the per-seat
+switch, `civvis site-bench --shortcuts NAME --shortcut-seats IDS` plays it,
+and `tools/site_pair.py` reads the verdict: every seed twice with the chairs
+swapped, a pair scored +1 when the shortcut's seats win both games, −1 when
+the others do, 0 when one civilization wins both. The bar was written into
+the tool before a game was played: the lower end of the 95% interval of the
+mean pair difference above −0.15.
+
+**`race-read-once-a-turn`: dropped unmeasured for strength, because it saved
+nothing.** Reading the lane table once per phase of a seat's turn instead of
+after every change to the board: 271.9 to 270.6 and 214.2 to 212.9 billion
+instructions on seeds 7 and 8 over 150 turns, −0.5%, with the same saves. The
+table's cost is its first reading; the repeats were already cheap once the
+yields under them were kept. Removed from the code.
+
+**`envelopes-across-own-moves` on the majors: does not pass.** This is
+`BasicAi::envelope_cache_across_own_moves`, which the gene screen's world
+rejected in August at 43.8% (below). On the site's world it saves 11.3% and
+8.5% of a 150-turn game's instructions with every seat taking it. Two runs
+of the paired test, different seeds, the bar fixed before both:
+
+| Run | Pairs | Up, level, down | Mean pair difference | 95% interval | Shortcut's seats won |
+| --- | ---: | --- | ---: | --- | --- |
+| this host, seeds 77200000+ | 60 | 7, 45, 8 | −0.017 | [−0.144, +0.111] | 59 of 120 (49.2%) |
+| GitHub runner, seeds 77210000+ | 44 | 4, 31, 9 | −0.114 | [−0.273, +0.045] | 39 of 88 (44.3%) |
+| both | 104 | 11, 76, 17 | −0.058 | [−0.157, +0.042] | 98 of 208 (47.1%) |
+
+The first run alone clears the bar by six thousandths and the two together
+miss it by seven. That is not a pass: the point estimate is below even in
+all three rows, it is the direction August measured, and the seats that took
+it were only about 4% quicker than the seats beside them (median 0.961 of
+their seconds), because two thirds of the whole saving is not theirs —
+
+**— it is the city-states' and the barbarians', and giving it only to them
+changes the game.** With the shortcut on for the small seats alone the same
+150 turns cost 252.5 billion instructions against 271.9 (−7.1%), and no major
+decides anything differently. But the world they play in is not the same
+world. Twenty-two seeds played to the end both ways:
+
+| | City-states standing at the end, of 8 | |
+| --- | ---: | --- |
+| runner, 10 seeds | 3.8 → 5.2 | up in 8, level in 1, down in 1 |
+| this host, 12 seeds | 4.5 → 5.2 | up in 6, level in 5, down in 1 |
+
+About one more city-state survives a game. A barbarian that reads an enemy's
+reach against where its own band stood when the pass began walks into more of
+it, and a weaker barbarian is a different opponent for everybody, not a
+faster one. It is a 7% that buys a visible change to the game, so it is the
+operator's to take or leave, and it is off.
+
+What the three readings say together: the cheap staleness that remains is in
+the tactical layer, and the tactical layer is where staleness costs. The
+exact route this file named in August — an enemy's envelope recomputed only
+when a move lands inside the tiles it is sensitive to — is the one that is
+left, and `compute_enemy_attack_envelopes` is still 5.2% of a site game.
+
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
 A call-tree profile of the real batch workload — `gene_screen --games 6

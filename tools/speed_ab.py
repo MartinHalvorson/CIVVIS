@@ -331,58 +331,7 @@ def site_advisory(baseline: Path, candidate: Path,
             f"  baseline  {result['per_turn']['baseline']:.6f} s/turn, "
             f"candidate {result['per_turn']['candidate']:.6f} s/turn",
             f"  {verdict(result, floor)}",
-            f"  {dispersion(result, None)}"] + wip_strength_games(candidate)
-
-
-def wip_strength_games(candidate: Path) -> list[str]:
-    """WIP, REMOVED BEFORE THIS PULL REQUEST IS READY: this host throttles
-    local games, so the runner plays the paired strength test and the
-    small-seats comparison, and prints every game."""
-    import concurrent.futures
-    import json
-    import site_pair
-    shortcut = "envelopes-across-own-moves"
-    out = []
-    try:
-        probe = site_pair.play(site_pair.game_command(candidate, 1, 1, shortcut, []))
-    except (SystemExit, OSError, ValueError) as failed:
-        return [f"STRENGTH not played: {failed}"]
-    first, second = site_pair.split_majors(list(probe["seconds"]))
-    minors = [seat for seat in range(max(probe["seconds"]) + 1, 40)]
-    plan = []
-    for seed in range(77_210_000, 77_210_000 + 44):
-        plan.append(("majors", seed, first))
-        plan.append(("majors", seed, second))
-    for seed in range(77_300_000, 77_300_000 + 10):
-        plan.append(("small", seed, minors))
-        plan.append(("small", seed, []))
-
-    def one(job):
-        arm, seed, seats = job
-        command = site_pair.game_command(candidate, seed, 400, shortcut, seats)
-        done = subprocess.run(command, capture_output=True, text=True, check=False)
-        if done.returncode != 0:
-            return {"arm": arm, "seed": seed, "shortcut_seats": seats,
-                    "error": done.stderr[-300:]}
-        game = site_pair.parse_game(done.stdout)
-        standing = re.search(r"^checkpoint city-states: (\d+) of (\d+)", done.stdout,
-                             re.MULTILINE)
-        game["city_states"] = int(standing.group(1)) if standing else None
-        return {"arm": arm, "seed": seed, "shortcut_seats": seats, **game}
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        rows = list(pool.map(one, plan))
-    for row in rows:
-        out.append("STRENGTH " + json.dumps(row, sort_keys=True))
-    majors = [row for row in rows if row["arm"] == "majors" and "error" not in row]
-    try:
-        import io
-        said = io.StringIO()
-        site_pair.verdict_from(majors, shortcut, site_pair.MARGIN, out=said)
-        out += ["STRENGTH " + line for line in said.getvalue().splitlines()]
-    except ValueError as failed:
-        out.append(f"STRENGTH no verdict: {failed}")
-    return out
+            f"  {dispersion(result, None)}"]
 
 
 def report_digest(text: str) -> str:

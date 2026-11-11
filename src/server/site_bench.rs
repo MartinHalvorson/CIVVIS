@@ -415,7 +415,13 @@ mod tests {
             );
         }
         assert_eq!(plain.seat_seconds.len(), plain.session.game.players.len());
-        assert!(plain.seat_seconds.iter().all(|seconds| *seconds > 0.0));
+        // Every major took its turns. A seat that never acts — a roster slot
+        // kept for Free Cities, say — has nothing to time.
+        for (seat, player) in plain.session.game.players.iter().enumerate() {
+            if !player.is_minor && !player.is_barbarian {
+                assert!(plain.seat_seconds[seat] > 0.0, "seat {seat}");
+            }
+        }
         assert!(SiteShortcuts::named("no-such-shortcut").is_err());
         assert_eq!(SiteShortcuts::named("").unwrap(), SiteShortcuts::default());
         for name in SiteShortcuts::NAMES {
