@@ -109,6 +109,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-at-level-three`; see
         /// `advanced/band_plays_at_level_three.rs`.
         base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-stall-bars-no-host`; see
+        /// `advanced/band_stall_bars_no_host.rs`.
+        base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -200,6 +203,9 @@ impl AdvancedAi {
         /// `culture-keeps-pingala-home`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
+        /// `culture-pass-keeps-half-the-army`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_pass_keeps_half_the_army => enable_culture_pass_keeps_half_the_army, disable_culture_pass_keeps_half_the_army;
         /// `cold-war-then-heritage`: see
         /// `advanced/cold_war_then_heritage.rs`.
         cold_war_then_heritage => enable_cold_war_then_heritage, disable_cold_war_then_heritage;
@@ -295,6 +301,9 @@ impl AdvancedAi {
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
+        /// `peace-waits-for-the-host-minimum`: see
+        /// `advanced/unchosen_war_peace.rs`.
+        peace_waits_for_the_host_minimum => enable_peace_waits_for_the_host_minimum, disable_peace_waits_for_the_host_minimum;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

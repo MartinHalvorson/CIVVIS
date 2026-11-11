@@ -1,0 +1,35 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-pass-keeps-half-the-army",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 24 boards of five live Deity Online Kristina (Sweden) Culture games played with culture-seat-builds-past-the-deterrent armed, at peace and at 0.22-0.45 of the near neighbour's power, each a turn whose why.log records a culture claim (civvis-20261110T211458Z t36-t52, 201305Z t49-t57, 224752Z t36-t60, 175553Z t37-t52, 202929Z t46-t54). Both arms run one frozen civvis_orders --resumed built from the branch at 2f05e5d8d5 with the run's own requested genome (which carries culture-seat-builds-past-the-deterrent); the on arm adds --with culture-pass-keeps-half-the-army. Production orders differ on 13/24 boards; on 12 the on arm trains an Archer or Spearman (the near-rival deterrent) where the off arm keeps the Amphitheater, Theater Square, Builder or Government Plaza at the head, and on 202929Z t46 it is the off arm that orders a Spearman; 201305Z (0/4) and most of 224752Z (1/6) already had the deterrent's unit queued or no culture claim at the head in both arms.",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-pass-keeps-half-the-army.native-queries.tar.xz",
+  "sha256": "fc74edbb83c00032536f4aa7bbb0a3ad7ce97dd1b56ba56d1a3f447667dfa7e7"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-02/0000/result.json",
+  "native-queries-02/0001/result.json",
+  "native-queries-02/0002/result.json",
+  "native-queries-02/0003/result.json",
+  "native-queries-03/0000/result.json",
+  "native-queries-03/0001/result.json",
+  "native-queries-03/0002/result.json",
+  "native-queries-03/0003/result.json",
+  "native-queries-03/0004/result.json",
+  "native-queries-03/0005/result.json",
+  "native-queries-04/0000/result.json",
+  "native-queries-04/0001/result.json",
+  "native-queries-04/0002/result.json",
+  "native-queries-04/0003/result.json",
+  "native-queries-04/0004/result.json",
+  "native-queries-05/0000/result.json",
+  "native-queries-05/0001/result.json",
+  "native-queries-05/0002/result.json"
+ ]
+}
