@@ -149,19 +149,34 @@ impl AdvancedAi {
             && self.victory_target == Some(VictoryTarget::Domination)
     }
 
-    /// The reserved force as `(ranged, melee)`.
+    /// The reserved force as `(ranged, melee)`. The stepping stone of
+    /// `city-state-before-the-first-capital` reserves its own.
     pub(super) fn conquest_quota(&self) -> (usize, usize) {
-        if self.first_capital_active() {
+        if self.city_state_stone_stands() {
+            (
+                super::city_state_before_the_first_capital::STONE_RANGED,
+                super::city_state_before_the_first_capital::STONE_MELEE,
+            )
+        } else if self.first_capital_active() {
             (FIRST_CAPITAL_RANGED, FIRST_CAPITAL_MELEE)
         } else {
             (CONQUEST_RANGED, CONQUEST_MELEE)
         }
     }
 
+    /// The bodies in the reserved force: the shipped six, or the stepping
+    /// stone's five.
+    pub(super) fn conquest_force_size(&self) -> usize {
+        let (ranged, melee) = self.conquest_quota();
+        ranged + melee
+    }
+
     /// The cities the empire holds before the capital's production is
     /// reserved and its Settlers deferred.
     pub(super) fn conquest_first_settler_cities(&self) -> usize {
-        if self.first_capital_active() {
+        if self.city_state_stone_stands() {
+            super::city_state_before_the_first_capital::STONE_CITIES
+        } else if self.first_capital_active() {
             FIRST_CAPITAL_SETTLER_CITIES
         } else {
             super::early_conquest::CONQUEST_FIRST_SETTLER_CITIES
@@ -177,9 +192,11 @@ impl AdvancedAi {
         }
     }
 
-    /// The preparation window, in turns at this game's speed.
+    /// The preparation window, in turns at this game's speed. The stepping
+    /// stone keeps the shipped window.
     pub(super) fn conquest_preparation(&self, g: &Game) -> u32 {
-        g.standard_duration(if self.first_capital_active() {
+        let first_capital = self.first_capital_active() && !self.city_state_stone_stands();
+        g.standard_duration(if first_capital {
             FIRST_CAPITAL_PREPARATION_TURNS
         } else {
             super::early_conquest::CONQUEST_MIN_PREPARATION_TURNS
@@ -187,7 +204,7 @@ impl AdvancedAi {
     }
 
     /// Our capital, or `None` before it is founded.
-    fn first_capital_home(g: &Game, pid: usize) -> Option<Pos> {
+    pub(super) fn first_capital_home(g: &Game, pid: usize) -> Option<Pos> {
         g.player_city_ids(pid)
             .into_iter()
             .map(|cid| &g.cities[&cid])
@@ -238,7 +255,7 @@ impl AdvancedAi {
                 "their capital stands behind Medieval Walls and we cannot train a Siege Tower",
             );
         }
-        if !Self::first_capital_walk_is_charted(g, pid, rival, home, pos) {
+        if !self.first_capital_walk_is_charted(g, pid, rival, home, pos) {
             return Err("no charted land walk reaches their capital");
         }
         Ok(city)
@@ -264,17 +281,37 @@ impl AdvancedAi {
     /// within [`FIRST_CAPITAL_REACH_TILES`] plus [`FIRST_CAPITAL_WALK_SLACK`]
     /// of home. Uncharted ground does not count: on the live mirror it reads
     /// as default land, so a capital across a strait would otherwise pass.
+    /// Under `first-capital-walks-the-one-landmass`, on a map with one
+    /// landmass, it does (see that module).
     pub(super) fn first_capital_walk_is_charted(
+        &self,
         g: &Game,
         pid: usize,
         rival: usize,
         home: Pos,
         target: Pos,
     ) -> bool {
+        let uncharted_is_land = self.first_capital_walks_the_one_landmass_on(g);
+        Self::first_capital_walk(g, pid, rival, home, target, uncharted_is_land).is_some()
+    }
+
+    /// The shortest walk [`Self::first_capital_walk_is_charted`] asks for,
+    /// from `home` to the tile beside `target` it ends on, or `None`. With
+    /// `uncharted_is_land`, an uncharted tile inside the bound is walkable
+    /// ground whatever the board says of it.
+    pub(super) fn first_capital_walk(
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        home: Pos,
+        target: Pos,
+        uncharted_is_land: bool,
+    ) -> Option<Vec<Pos>> {
         let explored = &g.players[pid].explored;
         let bound = FIRST_CAPITAL_REACH_TILES + FIRST_CAPITAL_WALK_SLACK;
         let walkable = |pos: Pos| {
-            if pos != home && !explored.contains(&pos) {
+            let uncharted = pos != home && !explored.contains(&pos);
+            if uncharted && !uncharted_is_land {
                 return false;
             }
             if g.wdist(home, pos) > bound {
@@ -283,6 +320,9 @@ impl AdvancedAi {
             let Some(tile) = g.map.get(pos) else {
                 return false;
             };
+            if uncharted {
+                return true;
+            }
             if !g.rules.is_passable(tile) || g.rules.is_water(tile) {
                 return false;
             }
@@ -302,17 +342,24 @@ impl AdvancedAi {
         };
         let mut seen: BTreeSet<Pos> = BTreeSet::from([home]);
         let mut queue: VecDeque<Pos> = VecDeque::from([home]);
+        let mut came_from: std::collections::BTreeMap<Pos, Pos> = Default::default();
         while let Some(pos) = queue.pop_front() {
             if g.wdist(pos, target) <= 1 {
-                return true;
+                let mut walk = vec![pos];
+                while let Some(previous) = came_from.get(&walk[walk.len() - 1]) {
+                    walk.push(*previous);
+                }
+                walk.reverse();
+                return Some(walk);
             }
             for next in g.nbrs(pos) {
                 if seen.insert(next) && walkable(next) {
+                    came_from.insert(next, pos);
                     queue.push_back(next);
                 }
             }
         }
-        false
+        None
     }
 
     /// Journal, once every few turns, why no first capital is named: the
@@ -363,10 +410,11 @@ impl AdvancedAi {
     /// Each of our cities' guard: the field-army body (a land shooter or
     /// melee body) on or beside it, nearest first, a shooter before a melee
     /// body, then the lower id. One body guards one city. Empty with the
-    /// gene off.
+    /// gene off (and under `city-state-before-the-first-capital`'s stepping
+    /// stone too).
     pub(super) fn first_capital_home_guards(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
         let mut guards = BTreeSet::new();
-        if !self.first_capital_active() {
+        if !self.first_capital_active() && !self.city_state_stone_stands() {
             return guards;
         }
         let escorts = self.all_reserved_civilian_guards();
@@ -422,9 +470,10 @@ impl AdvancedAi {
             .saturating_sub(counts.scouts)
             .saturating_sub(melee_guards);
         let ranged = counts.ranged.saturating_sub(ranged_guards);
+        let (want_ranged, want_melee) = self.conquest_quota();
         (
-            FIRST_CAPITAL_RANGED.saturating_sub(ranged),
-            FIRST_CAPITAL_MELEE.saturating_sub(melee),
+            want_ranged.saturating_sub(ranged),
+            want_melee.saturating_sub(melee),
         )
     }
 
@@ -453,7 +502,13 @@ impl AdvancedAi {
         if !self.first_capital_active() {
             return false;
         }
-        if let Some(opening) = self.conquest_opening.as_ref() {
+        // `city-state-before-the-first-capital`: the stepping stone is not
+        // the capital opening; the capital it precedes is still spared.
+        if let Some(opening) = self
+            .conquest_opening
+            .as_ref()
+            .filter(|_| !self.city_state_stone_stands())
+        {
             return opening.target == other;
         }
         !self.conquest_closed

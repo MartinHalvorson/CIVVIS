@@ -403,14 +403,21 @@ pub(super) fn policy_card_score(
     let (without, with) = if reads.card_is_inert(&g.rules, *card) {
         (current_reading, current_reading)
     } else if incumbent {
+        // `board_written` on both sides of each what-if: this seat's own
+        // cities are never kept, but an ally's or a trade partner's are, and
+        // nothing read under the rearranged deck may answer for the real one.
         g.players[pid].policies.remove(card);
+        g.board_written();
         let without = empire_reading(g, pid, w, net_maintenance, player_income);
         g.players[pid].policies.insert(*card);
+        g.board_written();
         (without, current_reading)
     } else {
         g.players[pid].policies.insert(*card);
+        g.board_written();
         let with = empire_reading(g, pid, w, net_maintenance, player_income);
         g.players[pid].policies.remove(card);
+        g.board_written();
         (current_reading, with)
     };
     let gain = with - without;

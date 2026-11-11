@@ -839,9 +839,15 @@ fn main() {
 fn site_bench_command(args: Vec<String>) {
     let seed = arg(&args, "--seed", 7).max(1) as u64;
     let turns = arg(&args, "--turns", 100).max(1) as u32;
-    let documents = !args.iter().any(|a| a == "--no-documents");
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let options = civvis::server::site_bench::Options {
+        documents: !has("--no-documents"),
+        keeps_rival_yields: !has("--no-kept-yields"),
+        audits_rival_yields: has("--audit-kept-yields"),
+        keeps_own_yields: !has("--no-own-kept-yields"),
+    };
     let started = Instant::now();
-    let report = civvis::server::site_bench::run(seed, turns, documents);
+    let report = civvis::server::site_bench::run_with(seed, turns, options);
     println!("[{:.3}s]", started.elapsed().as_secs_f64());
     for band in &report.bands {
         let last = if band.last == u32::MAX {
@@ -871,6 +877,13 @@ fn site_bench_command(args: Vec<String>) {
         total(|band| band.majors_seconds),
         total(|band| band.minors_seconds),
         total(|band| band.documents_seconds),
+    );
+    // How often a seat's planning was answered from the city yields it had
+    // already derived (`Game::keep_rival_yields`). Bracketed like a timing so
+    // the report hashes the same with the carry on, off or absent.
+    let (reused, derived) = report.session.game.rival_yields_reused();
+    println!(
+        "[city yields: {reused} answered from what was kept, {derived} derived for all seats]"
     );
     for checkpoint in &report.checkpoints {
         println!(
@@ -1950,7 +1963,10 @@ fn print_usage() {
               [--victories science,culture,religious,diplomatic,domination,score] \
               [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
               [--generations N] [--pop N] \
-              [--no-documents (site-bench: play the frames, skip the page's state documents)]"
+              [--no-documents (site-bench: play the frames, skip the page's state documents)] \
+              [--no-kept-yields (site-bench: derive every city yield afresh)] \
+              [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
+              [--audit-kept-yields (site-bench: re-derive every reused yield and compare)]"
     );
 }
 

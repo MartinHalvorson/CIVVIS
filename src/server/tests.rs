@@ -5731,7 +5731,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // human game never offers to replace it with a simulation by default.
     assert!(EMBEDDED_INDEX.contains("select.value = SPEC ? \"ai_sim\" : \"single\""));
     assert!(EMBEDDED_INDEX.contains(
-        "id=\"restart-sim\" title=\"Restart with the same settings\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
+        "id=\"restart-sim\" title=\"Start a new game with the same settings, on a fresh map\"><span class=\"lbl\">Restart sim</span><span class=\"sub\">same settings</span>"
     ));
     assert!(!EMBEDDED_INDEX.contains("id=\"fresh-sim\""));
     assert!(!EMBEDDED_INDEX.contains("id=\"default-settings\""));
@@ -12135,7 +12135,51 @@ fn browser_sets_up_and_reopens_a_single_player_game() {
     // above remain the single-player additions. City-states follow the
     // selected map-size profile, and the turn cap follows the selected
     // game speed; neither needs a separate control.
-    assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
+    //
+    // The seed is also the one setting the panel does not adopt from the
+    // world on screen. Copying it into the field made "Restart sim · same
+    // settings" send it straight back, so the restart replayed the identical
+    // map with the identical civilizations instead of starting a new game.
+    // The field is blanked for every new world, the staged queue's seed
+    // (always present, the live world's own by default) is not read back
+    // into it, and the world's seed is named under the field with one
+    // control that asks for it on purpose.
+    assert!(EMBEDDED_INDEX.contains("showWorldSeed(st.seed);"));
+    assert!(!EMBEDDED_INDEX.contains("setOptionalWorldNumber"));
+    let show_seed = EMBEDDED_INDEX
+        .split_once("function showWorldSeed(seed) {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel names the world's seed")
+        .0;
+    assert!(show_seed.contains("if (input) input.value = \"\";"));
+    assert!(show_seed.contains("if (line) line.hidden = !known;"));
+    let queued = EMBEDDED_INDEX
+        .split_once("function applyQueuedSimulationSettings(settings) {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel reads the staged queue back")
+        .0;
+    assert!(!queued.contains("mapseed"));
+    assert!(EMBEDDED_INDEX.contains(
+        "<small class=\"setup-number-hint\" id=\"mapseed-current\" hidden>This world is seed <b id=\"mapseed-current-value\"></b>"
+    ));
+    assert!(
+        EMBEDDED_INDEX.contains("#newgame-options .setup-number-hint[hidden] { display: none; }")
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("document.getElementById(\"mapseed-replay\").onclick = replayShownWorldSeed;"));
+    let replay = EMBEDDED_INDEX
+        .split_once("function replayShownWorldSeed() {")
+        .and_then(|(_, tail)| tail.split_once("\n}\n"))
+        .expect("the panel can ask for this world again")
+        .0;
+    assert!(replay.contains("input.value = String(shownWorldSeed);"));
+    assert!(replay.contains("stageSelectedSimulationSettings();"));
+    // With the field blank, the start control rolls the seed itself.
+    assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
+    assert!(EMBEDDED_INDEX.contains("? \"Start a new game with the selected settings\""));
+    assert!(
+        EMBEDDED_INDEX.contains(": \"Start a new game with the same settings, on a fresh map\");")
+    );
     // A build without the save endpoints hides the group rather than
     // offering one that cannot work.
     assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));

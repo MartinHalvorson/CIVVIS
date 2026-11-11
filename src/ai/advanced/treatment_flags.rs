@@ -230,6 +230,9 @@ impl AdvancedAi {
         /// `culture-faith-site-per-theater-3`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
+        /// `city-state-before-the-first-capital`: a Domination seat's early
+        /// conquest opening takes one nearby city-state before the first capital.
+        city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -257,6 +260,9 @@ impl AdvancedAi {
         /// Opt-in `each-civ-draws-its-width`; see
         /// `advanced/each_civ_draws_its_width.rs`.
         each_civ_draws_its_width => enable_each_civ_draws_its_width, disable_each_civ_draws_its_width;
+        /// `first-capital-walks-the-one-landmass`: see
+        /// `advanced/first_capital_walks_the_one_landmass.rs`.
+        first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

@@ -8681,7 +8681,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
-    setOptionalWorldNumber("mapseed", st.seed);
+    // Every other control here adopts the world on screen; the seed must not.
+    // It is the one setting that makes the next game this same game, and a
+    // restart is a new game: the field goes back to blank and the world's own
+    // seed is named under it instead.
+    showWorldSeed(st.seed);
     document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are

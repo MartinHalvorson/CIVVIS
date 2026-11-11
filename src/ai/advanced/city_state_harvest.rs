@@ -400,8 +400,11 @@ impl AdvancedAi {
             }
             return;
         }
+        // `city-state-before-the-first-capital`: no second city-state name
+        // while the opening stands on one. `false` with that gene off.
         if g.turn < harvest_floor(g, HARVEST_FROM_TURN)
             || g.turn < self.city_state_harvest_cooldown
+            || self.city_state_stone_stands()
             || self.war_plan.is_some()
             || Self::harvest_major_war(g, pid)
             || g.emergency_objective(pid).is_some()

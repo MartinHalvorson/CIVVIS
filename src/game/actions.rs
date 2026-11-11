@@ -411,6 +411,31 @@ impl Game {
     }
 
     pub fn apply(&mut self, pid: usize, action: &Action) -> Result<(), String> {
+        // Bracketed rather than cleared on success: a refused action has
+        // usually changed nothing, but "usually" is the word every stale
+        // cache in this file's history was built on. See
+        // `Game::keep_rival_yields`.
+        //
+        // One action is known not to reach another seat's cities, and it is
+        // the one a seat issues most while it plans. `do_produce` writes the
+        // named city's queue and banked progress, the seat's own strategic
+        // resource commitments, and for a district a foundation tile — which
+        // the tile grid's epoch reports by itself. A city's own yields do read
+        // its queue (the citizen plan, a running project, the envoy bonus),
+        // so the acting seat's own cities are dropped as for any action.
+        // Everything else drops everything: nothing here reasons about what a
+        // purchase, a move, an envoy or a deal can touch.
+        let reach = match action {
+            Action::Produce { .. } => ActionReach::OwnCities,
+            _ => ActionReach::Board,
+        };
+        self.query_memo.action_begins(reach);
+        let result = self.apply_unbracketed(pid, action);
+        self.query_memo.action_ends(reach);
+        result
+    }
+
+    fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
         if self.is_finished() {
             return Err("game over".into());
         }
