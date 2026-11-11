@@ -282,17 +282,16 @@ fn the_diplomacy_step_opens_the_strike() {
     assert!(targets.iter().all(|uid| !g.units.contains_key(uid)));
 }
 
-/// `faith-strike-spares-the-stages`: a Culture seat whose city leans to the
-/// rival faith, with three Missionaries in reach of three soldiers.
+/// `faith-strike-spares-the-stages`: a Culture seat whose city is being
+/// converted to the rival faith (at 70% of the city's strongest pressure),
+/// with three Missionaries in reach of three soldiers.
 fn culture_fixture() -> (Game, AdvancedAi) {
     let (mut g, mut ai) = fixture();
     ai.victory_target = Some(VictoryTarget::Culture);
     let home = g.player_city_ids(0)[0];
-    g.cities
-        .get_mut(&home)
-        .unwrap()
-        .pressure
-        .insert("Islam".into(), 100.0);
+    let pressure = &mut g.cities.get_mut(&home).unwrap().pressure;
+    pressure.insert("Buddhism".into(), 100.0);
+    pressure.insert("Islam".into(), 70.0);
     for at in [(4, 8), (5, 9), (6, 8)] {
         soldier(&mut g, at);
     }
