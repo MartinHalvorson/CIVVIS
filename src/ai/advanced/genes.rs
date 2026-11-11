@@ -5635,6 +5635,11 @@ pub const GENES: &[Gene] = &[
     // power is at least half the near neighbour's. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
+    // `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    // Spy for every free slot from its first slot, side by side, in the
+    // cities that finish one soonest. Opt-in; see
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot", field: "denial_spies_fill_every_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot, disable: AdvancedAi::disable_denial_spies_fill_every_slot },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

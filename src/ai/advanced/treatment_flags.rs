@@ -221,6 +221,9 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `denial-spies-fill-every-slot`: see
+        /// `advanced/denial_spies_fill_every_slot.rs`.
+        denial_spies_fill_every_slot => enable_denial_spies_fill_every_slot, disable_denial_spies_fill_every_slot;
         /// `culture-seat-monuments-2`: see
         /// `advanced/culture_monuments.rs`.
         culture_seat_monuments_2 => enable_culture_seat_monuments_2, disable_culture_seat_monuments_2;

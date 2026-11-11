@@ -273,6 +273,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-keep-the-city-in-reach` | off (unmeasured) | Keep defensive formations near their assigned threatened city. | 1 \| 1 |
 | `denial-charts-the-racer` | off (unmeasured) | `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`. | 1 \| 1 |
 | `denial-spies-count-their-losses` | off (unmeasured) | Opt-in gene `denial-spies-count-their-losses`; see `advanced/denial_spies_count_their_losses.rs`. | 1 \| 1 |
+| `denial-spies-fill-every-slot` | off (unmeasured) | `denial-spies-fill-every-slot`: see `advanced/denial_spies_fill_every_slot.rs`. | 1 \| 1 |
 | `denial-war-needs-the-lane-edge` | off (unmeasured) | `denial-war-needs-the-lane-edge`: see `advanced/denial_war_needs_the_lane_edge.rs`. | 1 \| 1 |
 | `denounce-only-to-declare` | off (unmeasured) | Opt-in gene `denounce-only-to-declare`; see `advanced/denounce_only_to_declare.rs`. | 1 \| 1 |
 | `deterrence-trusts-a-friend` | off (unmeasured) | Opt-in gene `deterrence-trusts-a-friend`; see `Self::deterrence_trusts_a_friend`. | 1 \| 1 |

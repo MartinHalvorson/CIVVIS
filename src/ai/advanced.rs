@@ -6886,6 +6886,11 @@ pub struct AdvancedAi {
     /// Monument goes before the city's other heads. See
     /// `advanced/culture_monuments.rs`. Opt-in.
     culture_seat_monuments_2: bool,
+    /// `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    /// Spy for every free slot from its first slot, side by side, in the
+    /// cities that finish one soonest. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11569,6 +11574,9 @@ mod culture_defense;
 mod decisive_window;
 /// `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`.
 mod denial_charts_the_racer;
+/// `denial-spies-fill-every-slot`: see
+/// `advanced/denial_spies_fill_every_slot.rs`.
+mod denial_spies_fill_every_slot;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
