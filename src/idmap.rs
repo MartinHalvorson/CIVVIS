@@ -152,21 +152,26 @@ impl<T> IdMap<T> {
     pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         IterMut(self.entries.iter_mut())
     }
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &u32> + ExactSizeIterator {
-        self.entries.iter().map(|(id, _)| id)
+    pub fn keys(&self) -> Keys<'_, T> {
+        Keys(self.iter())
     }
-    pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> + ExactSizeIterator {
-        self.entries.iter().map(|(_, value)| value)
+    pub fn values(&self) -> Values<'_, T> {
+        Values(self.iter())
     }
-    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut T> + ExactSizeIterator {
-        self.entries.iter_mut().map(|(_, value)| value)
+    pub fn values_mut(&mut self) -> ValuesMut<'_, T> {
+        ValuesMut(self.iter_mut())
     }
-    pub fn into_values(self) -> impl DoubleEndedIterator<Item = T> + ExactSizeIterator {
-        self.entries.into_iter().map(|(_, value)| value)
+    pub fn into_values(self) -> IntoValues<T> {
+        IntoValues(self.entries.into_iter())
     }
 }
 
 pub struct Iter<'a, T>(slice::Iter<'a, (u32, T)>);
+impl<T> Clone for Iter<'_, T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = (&'a u32, &'a T);
     #[inline]
@@ -205,6 +210,99 @@ impl<T> DoubleEndedIterator for IterMut<'_, T> {
 }
 impl<T> ExactSizeIterator for IterMut<'_, T> {}
 impl<T> FusedIterator for IterMut<'_, T> {}
+
+// Concrete iterator types preserve BTreeMap's borrowing behavior in tail
+// expressions. An opaque `impl Iterator` makes drop checking conservative
+// enough to reject callers that borrow a local roster for a final lookup.
+pub struct Keys<'a, T>(Iter<'a, T>);
+impl<T> Clone for Keys<'_, T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+impl<'a, T> Iterator for Keys<'a, T> {
+    type Item = &'a u32;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, _)| id)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<T> DoubleEndedIterator for Keys<'_, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(id, _)| id)
+    }
+}
+impl<T> ExactSizeIterator for Keys<'_, T> {}
+impl<T> FusedIterator for Keys<'_, T> {}
+
+pub struct Values<'a, T>(Iter<'a, T>);
+impl<T> Clone for Values<'_, T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+impl<'a, T> Iterator for Values<'a, T> {
+    type Item = &'a T;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, value)| value)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<T> DoubleEndedIterator for Values<'_, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(_, value)| value)
+    }
+}
+impl<T> ExactSizeIterator for Values<'_, T> {}
+impl<T> FusedIterator for Values<'_, T> {}
+
+pub struct ValuesMut<'a, T>(IterMut<'a, T>);
+impl<'a, T> Iterator for ValuesMut<'a, T> {
+    type Item = &'a mut T;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, value)| value)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<T> DoubleEndedIterator for ValuesMut<'_, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(_, value)| value)
+    }
+}
+impl<T> ExactSizeIterator for ValuesMut<'_, T> {}
+impl<T> FusedIterator for ValuesMut<'_, T> {}
+
+pub struct IntoValues<T>(std::vec::IntoIter<(u32, T)>);
+impl<T> Iterator for IntoValues<T> {
+    type Item = T;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(_, value)| value)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+impl<T> DoubleEndedIterator for IntoValues<T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(|(_, value)| value)
+    }
+}
+impl<T> ExactSizeIterator for IntoValues<T> {}
+impl<T> FusedIterator for IntoValues<T> {}
 
 impl<T> std::ops::Index<&u32> for IdMap<T> {
     type Output = T;
@@ -397,6 +495,15 @@ mod tests {
             [100, 56, 12]
         );
         assert_eq!(actual.keys().copied().collect::<Vec<_>>(), [1, 5, 9]);
+    }
+
+    #[test]
+    fn a_tail_expression_can_finish_borrowing_a_local_roster() {
+        let best = {
+            let roster: IdMap<_> = [(1, 10), (2, 20)].into_iter().collect();
+            roster.values().copied().max().unwrap()
+        };
+        assert_eq!(best, 20);
     }
 
     #[test]

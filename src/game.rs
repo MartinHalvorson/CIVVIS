@@ -2924,7 +2924,7 @@ impl Units {
     }
 
     #[inline]
-    pub fn keys(&self) -> impl DoubleEndedIterator<Item = &u32> + ExactSizeIterator {
+    pub fn keys(&self) -> crate::idmap::Keys<'_, Arc<Unit>> {
         self.0.keys()
     }
 
@@ -3375,9 +3375,7 @@ mod city_roster {
             Arc::make_mut(&mut self.map).get_mut(id)
         }
 
-        pub fn values_mut(
-            &mut self,
-        ) -> impl DoubleEndedIterator<Item = &mut City> + ExactSizeIterator {
+        pub fn values_mut(&mut self) -> crate::idmap::ValuesMut<'_, City> {
             self.invalidate();
             Arc::make_mut(&mut self.map).values_mut()
         }
@@ -3397,7 +3395,7 @@ mod city_roster {
             Arc::make_mut(&mut self.map).clear();
         }
 
-        pub fn into_values(self) -> impl DoubleEndedIterator<Item = City> + ExactSizeIterator {
+        pub fn into_values(self) -> crate::idmap::IntoValues<City> {
             match Arc::try_unwrap(self.map) {
                 Ok(map) => map.into_values(),
                 Err(shared) => shared.as_ref().clone().into_values(),
