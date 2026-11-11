@@ -1705,10 +1705,13 @@ impl Game {
     ///
     /// * **By every action,** at both ends of `apply`, successful or refused,
     ///   and it is never read or filled while one is in flight: the rules
-    ///   read yields half-way through changing the board. The one exception
-    ///   is `Action::Produce`, which names what one of the acting seat's own
-    ///   cities builds next and reaches nothing of another seat's; `apply`
-    ///   carries the argument.
+    ///   read yields half-way through changing the board. `Action::Produce`
+    ///   names what one of the acting seat's own cities builds next and
+    ///   reaches nothing of another seat's. An uncontested military step can
+    ///   keep the rivals too, after `apply` reads back the map/round stamps,
+    ///   exploration, contacts, completed research and exact Envoy placements.
+    ///   A refused step or any changed stamp drops everything; `apply` carries
+    ///   the action's write-set argument. Our own cities always go.
     /// * **By every tile write,** through the tile grid's epoch, which every
     ///   `get_mut` moves whoever calls it.
     /// * **By [`Game::board_written`],** which is what a caller that writes

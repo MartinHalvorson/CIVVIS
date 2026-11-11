@@ -436,8 +436,8 @@ impl Game {
         // cache in this file's history was built on. See
         // `Game::keep_rival_yields`.
         //
-        // One action is known not to reach another seat's cities, and it is
-        // the one a seat issues most while it plans. `do_produce` writes the
+        // Production does not reach another seat's cities, and it is what
+        // a seat issues most while it plans. `do_produce` writes the
         // named city's queue and banked progress, the seat's own strategic
         // resource commitments, and for a district a foundation tile — which
         // the tile grid's epoch reports by itself. A city's own yields do read
