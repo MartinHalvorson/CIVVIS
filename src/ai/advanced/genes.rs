@@ -5678,6 +5678,8 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Opt-in; see `advanced/first_capital_research.rs`.
+    Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
     // Live Deity Pericles 11-10: heretic strikes at t127 (232642Z), t130
     // (204138Z) and t133 (220038Z) opened 29-32-turn wars on the neighbours
     // whose land held our Rock Bands' stages. A Culture seat holds the strike

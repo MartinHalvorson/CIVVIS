@@ -352,6 +352,9 @@ impl AdvancedAi {
         /// `peace-waits-for-the-host-minimum`: see
         /// `advanced/unchosen_war_peace.rs`.
         peace_waits_for_the_host_minimum => enable_peace_waits_for_the_host_minimum, disable_peace_waits_for_the_host_minimum;
+        /// `research-follows-the-first-capital`: see
+        /// `advanced/first_capital_research.rs`.
+        research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
