@@ -5626,11 +5626,19 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
     /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
     /// Opt-in.
     domination_charts_every_capital: bool,
+    /// `denial-charts-the-racer`: a Culture or Domination seat charts every
+    /// city of the leading Science rival. See
+    /// `advanced/denial_charts_the_racer.rs`. Opt-in.
+    denial_charts_the_racer: bool,
     /// `corps-comes-home-alive`: a wounded religious unit walks to a Holy
     /// Site of ours and heals, fights only what it survives, and reads every
     /// rival blow that can land on a tile together. See
@@ -6845,10 +6853,10 @@ pub struct AdvancedAi {
     /// Builders standing when it lands. See `advanced/culture_unique_first.rs`.
     /// Off by default.
     culture_road_takes_the_unique_first: bool,
-    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
-    /// near-rival deterrent only while our power is at least half the near
-    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
-    culture_pass_keeps_half_the_army: bool,
+    /// `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    /// six-tile soldier rule skips Barbarian units. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_braves_the_barbarians: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -11487,6 +11495,8 @@ pub use science_victory_drive::ScienceDrive;
 mod capital_campus_claim;
 mod culture_defense;
 mod decisive_window;
+/// `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`.
+mod denial_charts_the_racer;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;

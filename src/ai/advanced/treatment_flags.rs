@@ -191,6 +191,9 @@ impl AdvancedAi {
         /// `domination-charts-every-capital`: see
         /// `advanced/domination_charts_every_capital.rs`.
         domination_charts_every_capital => enable_domination_charts_every_capital, disable_domination_charts_every_capital;
+        /// `denial-charts-the-racer`: see
+        /// `advanced/denial_charts_the_racer.rs`.
+        denial_charts_the_racer => enable_denial_charts_the_racer, disable_denial_charts_the_racer;
         /// `domination-target-gets-its-breaker`: see
         /// `advanced/domination_target_gets_its_breaker.rs`.
         domination_target_gets_its_breaker => enable_domination_target_gets_its_breaker, disable_domination_target_gets_its_breaker;
@@ -200,6 +203,9 @@ impl AdvancedAi {
         /// `culture-pass-keeps-half-the-army`: see
         /// `advanced/culture_past_the_deterrent.rs`.
         culture_pass_keeps_half_the_army => enable_culture_pass_keeps_half_the_army, disable_culture_pass_keeps_half_the_army;
+        /// `culture-faith-braves-the-barbarians`: see
+        /// `advanced/culture_faith_sources.rs`.
+        culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
