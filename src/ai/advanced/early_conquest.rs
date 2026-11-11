@@ -1623,7 +1623,7 @@ impl AdvancedAi {
             self.conquest_first_turn = Some(g.turn);
         }
         // `first-capital-strikes-the-open-window`: see that module.
-        self.first_capital_read_the_softness(g);
+        self.first_capital_read_the_softness(g, pid);
         self.conquest_count_losses(g);
         // `city-state-before-the-first-capital`: re-read the stepping stone
         // from its tile and close it on a capture, a refused war or a

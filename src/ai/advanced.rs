@@ -7674,6 +7674,11 @@ pub struct AdvancedAi {
     /// `first-capital-strikes-the-open-window`: whether the named capital
     /// read soft at the start of this turn. Always `false` with the gene off.
     first_capital_soft_now: bool,
+    /// `first-capital-strikes-the-open-window`: the named capital that read
+    /// bare (no walls, a centre our Warriors out-fight, next door) while its
+    /// opening stood undeclared. Its reservation opens at one city and its
+    /// strike does not wait for a second. `None` with the gene off.
+    first_capital_bare: Option<u32>,
     /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
     /// `first-capital-before-the-walls` counts uncharted ground as land in
     /// its walk to the target capital, and the nearest free scout charts the
