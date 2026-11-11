@@ -140,7 +140,15 @@ impl AdvancedAi {
         let before = g.units[&uid].pos;
         // See `rival_lead_goal`: the lead becomes the explorer's held goal,
         // so its routing, threat checks and dead-goal retirement still apply.
-        if let Some(goal) = self.rival_lead_goal(g, pid, uid) {
+        // `first-capital-strikes-the-open-window`: with no lead, the search
+        // for a first capital is held the same way (see that module).
+        let lead = self.rival_lead_goal(g, pid, uid);
+        let search = if lead.is_none() {
+            self.first_capital_search_goal(g, pid, uid)
+        } else {
+            None
+        };
+        if let Some(goal) = lead.or(search) {
             let fresh = self
                 .base
                 .explore_goal
@@ -151,7 +159,7 @@ impl AdvancedAi {
                 .explore_goal
                 .borrow_mut()
                 .insert(uid, (goal, g.turn));
-            if fresh {
+            if fresh && lead.is_some() {
                 think!(self.journal(), Military, Detail,
                     "{} {uid} looks for an unseen rival's cities", g.units[&uid].kind;
                     "a met major's ground at {goal:?} has no city we know of; the lead scout heads for the fog beside it"; goal);
