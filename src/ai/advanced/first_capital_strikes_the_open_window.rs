@@ -121,6 +121,24 @@ pub(crate) const FIRST_CAPITAL_SOFT_STRENGTH: f64 = 30.0;
 /// force is trained while the window is open.
 pub(crate) const FIRST_CAPITAL_SOFT_SETTLER_CITIES: usize = 2;
 
+/// The most city strength a named capital may read and be bare: a Warrior's
+/// own, so the bodies the capital can train today out-trade the centre. Live
+/// Deity Gran Colombia `civvis-20261111T174731Z` named Pasargadae 13 tiles
+/// away at turn 16 reading 13 with no walls and still 13 at turn 38; the
+/// seat held one city until turn 30, so the reservation opened then, the
+/// force stood at the rally from turn 49 against a centre of 44, and the
+/// opening was released at 63.
+pub(crate) const FIRST_CAPITAL_BARE_STRENGTH: f64 = 20.0;
+
+/// How far from our capital a bare capital may stand: a five-turn walk for
+/// the first Warriors, well inside the shipped reach of twenty.
+pub(crate) const FIRST_CAPITAL_BARE_REACH: i32 = 14;
+
+/// The cities the empire holds before the reservation opens on a bare
+/// capital, and before its strike: one. The capital's production goes to the
+/// force before the first Settler; a rival capital is worth more cities.
+pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 1;
+
 /// How much stronger than our best melee body at the rally the city may read
 /// and still be struck. Live civvis-20261111T063232Z declared at t80 on Wak
 /// Kab'nal, defence 47-56, with Warriors, Heavy Chariots and one or two
@@ -490,9 +508,14 @@ impl AdvancedAi {
         }
         let city = g.cities.get(&opening.city)?;
         let cities = g.player_city_ids(pid).len();
-        if cities < FIRST_CAPITAL_STRIKE_CITIES {
+        let before = if self.first_capital_bare == Some(opening.city) {
+            FIRST_CAPITAL_BARE_CITIES
+        } else {
+            FIRST_CAPITAL_STRIKE_CITIES
+        };
+        if cities < before {
             return Some(format!(
-                "we hold {cities} cit{} and strike no capital before {FIRST_CAPITAL_STRIKE_CITIES}",
+                "we hold {cities} cit{} and strike no capital before {before}",
                 if cities == 1 { "y" } else { "ies" }
             ));
         }
@@ -655,10 +678,51 @@ impl AdvancedAi {
         })
     }
 
+    /// Whether `city` is bare right now: no walls built, a strength (as last
+    /// seen) of at most [`FIRST_CAPITAL_BARE_STRENGTH`], and within
+    /// [`FIRST_CAPITAL_BARE_REACH`] of our capital.
+    pub(crate) fn first_capital_is_bare(g: &Game, pid: usize, city: u32) -> bool {
+        let Some(home) = Self::first_capital_home(g, pid) else {
+            return false;
+        };
+        g.cities.get(&city).is_some_and(|target| {
+            g.city_max_wall_hp(target) <= 0
+                && g.city_strength(city) <= FIRST_CAPITAL_BARE_STRENGTH
+                && g.wdist(home, target.pos) <= FIRST_CAPITAL_BARE_REACH
+        })
+    }
+
+    /// The bare capital's latch, start of turn: set the first turn the named
+    /// capital reads bare and kept while that opening stands undeclared and
+    /// the capital stays soft, so a garrison that walks in does not hand the
+    /// half-trained force's queue back to the Settler.
+    fn first_capital_read_the_bareness(&mut self, g: &Game, pid: usize, soft: bool) {
+        let named = self
+            .conquest_opening
+            .as_ref()
+            .filter(|opening| soft && opening.declared.is_none())
+            .map(|opening| opening.city);
+        let kept = self.first_capital_bare.filter(|city| named == Some(*city));
+        let bare = kept.or_else(|| named.filter(|city| Self::first_capital_is_bare(g, pid, *city)));
+        if bare.is_some() && self.first_capital_bare != bare {
+            if let Some(city) = bare.and_then(|cid| g.cities.get(&cid)) {
+                think!(self.journal(), Military, Strategy,
+                       "First capital before the walls: {} is bare", city.name;
+                       "defence {:.0}, no walls, {} tiles from our capital: the reservation opens \
+                        at {} city and the strike does not wait for a second",
+                       g.city_strength(city.id),
+                       Self::first_capital_home(g, pid).map_or(0, |home| g.wdist(home, city.pos)),
+                       FIRST_CAPITAL_BARE_CITIES;
+                       city.pos);
+            }
+        }
+        self.first_capital_bare = bare;
+    }
+
     /// ⭐ Item 3, start of turn: whether the named capital is soft, which
     /// `conquest_first_settler_cities` reads, journalled when it changes.
     /// Always `false` with the gene off.
-    pub(super) fn first_capital_read_the_softness(&mut self, g: &Game) {
+    pub(super) fn first_capital_read_the_softness(&mut self, g: &Game, pid: usize) {
         let soft = self.first_capital_strikes_active()
             && self.conquest_opening.as_ref().is_some_and(|opening| {
                 opening.declared.is_none()
@@ -693,13 +757,20 @@ impl AdvancedAi {
             }
         }
         self.first_capital_soft_now = soft;
+        self.first_capital_read_the_bareness(g, pid, soft);
     }
 
-    /// The cities a soft capital's reservation waits for, or `None` while
-    /// the named capital is not soft (or the gene is off).
+    /// The cities a soft capital's reservation waits for (one for a bare
+    /// one), or `None` while the named capital is not soft (or the gene is
+    /// off).
     pub(super) fn first_capital_soft_settler_cities(&self) -> Option<usize> {
-        (self.first_capital_soft_now && self.first_capital_strikes_active())
-            .then_some(FIRST_CAPITAL_SOFT_SETTLER_CITIES)
+        (self.first_capital_soft_now && self.first_capital_strikes_active()).then_some(
+            if self.first_capital_bare.is_some() {
+                FIRST_CAPITAL_BARE_CITIES
+            } else {
+                FIRST_CAPITAL_SOFT_SETTLER_CITIES
+            },
+        )
     }
 
     /// ⭐ Item 4: at the commit deadline, an unassembled opening whose force

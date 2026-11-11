@@ -1637,7 +1637,7 @@ impl AdvancedAi {
             self.conquest_first_turn = Some(g.turn);
         }
         // `first-capital-strikes-the-open-window`: see that module.
-        self.first_capital_read_the_softness(g);
+        self.first_capital_read_the_softness(g, pid);
         self.conquest_count_losses(g);
         // `breaker-walks-under-a-shield`: journal a lost breaker before the
         // release checks below read the loss. No-op with the gene off.
