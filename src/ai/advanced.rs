@@ -7617,6 +7617,11 @@ pub struct AdvancedAi {
     /// and an escort may shoot one. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     every_shooter_at_the_walls: bool,
+    /// `faith-strike-spares-the-stages`: a Culture seat holds the heretic
+    /// strike once Cold War is known or its band bank is open, and ends a
+    /// strike war then as soon as the host signs. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_spares_the_stages: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See

@@ -230,6 +230,9 @@ impl AdvancedAi {
         /// `first-capital-before-the-walls`: see
         /// `advanced/first_capital_before_the_walls.rs`.
         first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// Opt-in `faith-strike-spares-the-stages`; see
+        /// `AdvancedAi::faith_strike_spares_the_stages`.
+        faith_strike_spares_the_stages => enable_faith_strike_spares_the_stages, disable_faith_strike_spares_the_stages;
         /// Opt-in gene `every-shooter-at-the-walls`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;

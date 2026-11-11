@@ -477,7 +477,8 @@ impl AdvancedAi {
 
     /// Whether the gene keeps the war with `rival`: it is the gene's war, a
     /// city of ours is still being converted to the founder's faith, and no
-    /// city of ours is falling. `false` with the gene off.
+    /// city of ours is falling. `false` with the gene off, and for a heretic
+    /// strike's war that `faith-strike-spares-the-stages` ends.
     pub(crate) fn faith_war_keeps_the_war(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.faith_war_is_run()
             && self
@@ -486,12 +487,16 @@ impl AdvancedAi {
             && g.is_at_war(pid, rival)
             && Self::faith_war_converting(g, pid, rival) > 0
             && !Self::our_cities_falling(g, pid)
+            && !self.faith_strike_war_spares_the_stages(g, pid, rival)
     }
 
     /// Whether the gene's war with `rival` has done its work: no spreader of
-    /// the faith at our cities for [`FAITH_WAR_CLEAR_TURNS`] standard turns,
-    /// no city of ours converting, the host's minimum war term over, and the
-    /// rival neither the plan's target nor an urgent victory threat.
+    /// the faith at our cities for [`FAITH_WAR_CLEAR_TURNS`] standard turns
+    /// and no city of ours converting (or, under
+    /// `faith-strike-spares-the-stages`, a heretic strike's war once the
+    /// Culture seat's band economy has begun), the host's minimum war term
+    /// over, and the rival neither the plan's target nor an urgent victory
+    /// threat.
     pub(crate) fn faith_war_exit_peace(
         &self,
         g: &Game,
@@ -505,9 +510,10 @@ impl AdvancedAi {
         self.faith_war_is_run()
             && war.rival == rival
             && g.is_at_war(pid, rival)
-            && g.turn.saturating_sub(war.spreader_seen)
+            && ((g.turn.saturating_sub(war.spreader_seen)
                 >= g.standard_duration(FAITH_WAR_CLEAR_TURNS).max(1)
-            && Self::faith_war_converting(g, pid, rival) == 0
+                && Self::faith_war_converting(g, pid, rival) == 0)
+                || self.faith_strike_war_spares_the_stages(g, pid, rival))
             && g.peace_available_at(pid, rival).is_none()
             && plan.target_player != Some(rival)
             && !self.urgent_victory_threat(g, rival)
