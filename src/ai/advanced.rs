@@ -8062,6 +8062,9 @@ pub struct AdvancedAi {
     /// See `advanced/great_works_never_wait.rs`. Off by default.
     great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
+    /// Ask the host for a cash price for a native land upgrade material bill.
+    /// Opt-in; see `advanced/army_upgrade_materials.rs`.
+    land_army_asks_the_host_price: bool,
     /// `no-city-limit`: no city target of its own. The empire settles every
     /// seat it can hold while the city founded there out-earns its Settler,
     /// several Settlers at a time. See `advanced/no_city_limit.rs`. Off by
@@ -9293,6 +9296,10 @@ pub struct AdvancedAi {
     /// bridge's retry window is not spent on an offer the host never signs.
     /// See `advanced/unchosen_war_peace.rs`. Opt-in.
     peace_waits_for_the_host_minimum: bool,
+    /// `research-follows-the-first-capital`: keep the preparing first-capital
+    /// army's breaker and unique melee research after the stepping stone ends.
+    /// See `advanced/first_capital_research.rs`. Off by default.
+    research_follows_the_first_capital: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11797,6 +11804,9 @@ mod breaker_walks_under_a_shield;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `research-follows-the-first-capital`: carry the army's research into the
+/// named major-capital opening. See `advanced/first_capital_research.rs`.
+mod first_capital_research;
 /// `first-capital-strikes-the-open-window`: the first-capital opening keeps
 /// its window and strikes through it. One opt-in gene; see
 /// `advanced/first_capital_strikes_the_open_window.rs`.
@@ -25762,6 +25772,14 @@ impl Ai for AdvancedAi {
         Some(AdvancedAi::expansion_census(self))
     }
 
+    fn set_site_shortcuts(&mut self, shortcuts: crate::ai::SiteShortcuts) {
+        self.base.set_site_shortcuts(shortcuts);
+    }
+
+    fn site_shortcuts(&self) -> crate::ai::SiteShortcuts {
+        self.base.site_shortcuts()
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.plan.as_ref().map(|plan| plan.strategy.as_str())
     }
@@ -25814,7 +25832,10 @@ impl Ai for AdvancedAi {
             target_player: plan.target_player,
             target_city: plan.target_city,
             threatened_city: plan.threatened_city,
-            desired_cities: plan.desired_cities,
+            // `no-city-limit`: the page's "wants N" shows the settlement
+            // target the Settlers are trained toward. The plan's own number
+            // with the gene off.
+            desired_cities: self.reported_city_target(plan),
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
             peace_routed: self.peace_routed.iter().copied().collect(),

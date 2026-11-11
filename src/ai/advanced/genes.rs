@@ -5766,6 +5766,11 @@ pub const GENES: &[Gene] = &[
     // `advanced/great_works_never_wait.rs`.
     Gene { tag: "great-works-never-wait", field: "great_works_never_wait", kind: Kind::OptIn, enable: AdvancedAi::enable_great_works_never_wait, disable: AdvancedAi::disable_great_works_never_wait },
     // ---- append: l-o ------------------------------------------------
+    // Native Deity Macedon 100029Z: model-priced horse/iron barter was
+    // declined at51/55 and refused as barter_short at61. Ask the host for
+    // its cash price for one quoted land upgrade, keeping the upgrade bill.
+    // Opt-in; see `advanced/army_upgrade_materials.rs`.
+    Gene { tag: "land-army-asks-the-host-price", field: "land_army_asks_the_host_price", kind: Kind::OptIn, enable: AdvancedAi::enable_land_army_asks_the_host_price, disable: AdvancedAi::disable_land_army_asks_the_host_price },
     // An Apostle fights at full strength on one charge: it keeps the charge
     // and hunts, and a Missionary keeps its own and scouts.
     Gene { tag: "last-charge-joins-the-army", field: "last_charge_joins_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_last_charge_joins_the_army, disable: AdvancedAi::disable_last_charge_joins_the_army },
@@ -5843,6 +5848,8 @@ pub const GENES: &[Gene] = &[
     // bridge's five-turn retry lands the first ask on the first turn the host
     // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
     Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
+    // Opt-in; see `advanced/first_capital_research.rs`.
+    Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

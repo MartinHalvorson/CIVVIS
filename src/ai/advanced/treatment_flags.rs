@@ -288,6 +288,8 @@ impl AdvancedAi {
         /// `advanced/great_works_never_wait.rs`.
         great_works_never_wait => enable_great_works_never_wait, disable_great_works_never_wait;
         // ---- append: l-o --------------------------------------------
+        /// Native land upgrade materials use a bounded host cash quote.
+        land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
         /// Opt-in gene `last-charge-joins-the-army`; see
         /// `advanced/apostle_army.rs`.
         last_charge_joins_the_army => enable_last_charge_joins_the_army, disable_last_charge_joins_the_army;
@@ -355,6 +357,9 @@ impl AdvancedAi {
         /// `peace-waits-for-the-host-minimum`: see
         /// `advanced/unchosen_war_peace.rs`.
         peace_waits_for_the_host_minimum => enable_peace_waits_for_the_host_minimum, disable_peace_waits_for_the_host_minimum;
+        /// `research-follows-the-first-capital`: see
+        /// `advanced/first_capital_research.rs`.
+        research_follows_the_first_capital => enable_research_follows_the_first_capital, disable_research_follows_the_first_capital;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.

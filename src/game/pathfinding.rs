@@ -343,6 +343,57 @@ impl Game {
             })
     }
 
+    /// The whole walk behind [`Game::route_step`], with the turn each tile is
+    /// reached on (0 is this turn), for a client to draw before the order is
+    /// given. It spends movement by the rule a real step is held to
+    /// ([`Game::can_pay_step`]): a step needs its whole cost in hand, and a
+    /// unit with its full allowance may always take one.
+    ///
+    /// A reading, never a permission. Every step is still validated by the
+    /// ordinary move when it is taken, and whatever stands in the way by then
+    /// may make the walk longer than it was drawn.
+    pub fn route_preview(&self, uid: u32, to: Pos) -> Option<Vec<(Pos, u32)>> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        self.route_step(uid, to, 0)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let path: Vec<Pos> = self
+            .routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == 0
+                    && route.access_key == access_key
+            })
+            .and_then(|route| {
+                route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .map(|index| route.path[index + 1..].to_vec())
+            })?;
+        let full = self.unit_max_moves(uid);
+        let mut left = unit.moves_left;
+        let mut turn = 0u32;
+        let mut from = start;
+        let mut walk = Vec::with_capacity(path.len());
+        for pos in path {
+            let cost = self.step_cost_for(uid, from, pos);
+            if left <= 0.0 || (left < cost && left < full) {
+                turn += 1;
+                left = full;
+            }
+            left = (left - cost).max(0.0);
+            walk.push((pos, turn));
+            from = pos;
+        }
+        Some(walk)
+    }
+
     /// Everything which can change whether this unit may cross a border
     /// without changing the map itself. Player access is already the complete
     /// shared predicate; city owners distinguish a same-turn city transfer
@@ -651,6 +702,7 @@ impl Game {
             scratch.movement_seen.resize(tile_count, false);
             scratch.movement_score.resize(tile_count, UNSEEN);
             scratch.movement_stopped.resize(tile_count, false);
+            scratch.movement_zoc.resize(tile_count, None);
         }
         let touched = scratch.movement_touched.len();
         for index in 0..touched {
@@ -658,6 +710,7 @@ impl Game {
             scratch.movement_seen[slot] = false;
             scratch.movement_score[slot] = UNSEEN;
             scratch.movement_stopped[slot] = false;
+            scratch.movement_zoc[slot] = None;
         }
         scratch.movement_touched.clear();
         scratch.movement_frontier.clear();
@@ -723,7 +776,20 @@ impl Game {
                 let new_rem = (rem - cost)
                     .max(0.0)
                     .min(self.capped_moves_at(uid, &cap, n));
-                let arrival = V::arrival(new_rem, self.enters_enemy_zoc(&zoc, n));
+                // Entry may be reconsidered from several neighbors, especially
+                // when ZOC zeroes an earlier arrival. Only the remaining
+                // movement depends on the route: this predicate reads the
+                // fixed formation, destination and board. Its result expires
+                // with this flood, using the same touched list as its scores.
+                let enters_zoc = if let Some(cached) = scratch.movement_zoc[index] {
+                    debug_assert_eq!(cached, self.enters_enemy_zoc(&zoc, n));
+                    cached
+                } else {
+                    let value = self.enters_enemy_zoc(&zoc, n);
+                    scratch.movement_zoc[index] = Some(value);
+                    value
+                };
+                let arrival = V::arrival(new_rem, enters_zoc);
                 // ⚠ The zone-of-control rule is applied BEFORE the improvement
                 // test, not after it: `flow_past` and `path_to` compare the
                 // zeroed value, so a second arrival at a tile inside a zone of

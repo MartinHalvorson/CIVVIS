@@ -287,8 +287,7 @@ jobs:
 
       - name: Toolchain for the bundle
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends binaryen brotli
+          bash .github/scripts/install-apt-packages.sh binaryen brotli
           python3 -m pip install --quiet --disable-pip-version-check pillow
           wasm-opt --version
 
@@ -307,7 +306,7 @@ jobs:
           echo "test lane:   $head"
 
       - name: Build the stable lane
-        run: ./beta/publish.sh --commit "${{ steps.lanes.outputs.stable }}" --out "$PWD/lane-stable"
+        run: ./beta/publish.sh --commit "${{ steps.lanes.outputs.stable }}" --out "$PWD/lane-stable" --symbols-out "$PWD/wasm-symbols/stable"
 
       - name: Build the test lane
         run: |
@@ -315,8 +314,9 @@ jobs:
             # Same commit, same bundle; a second three-minute wasm build would
             # prove nothing. cp keeps the two-lane assembly identical either way.
             cp -R lane-stable lane-test
+            cp -R wasm-symbols/stable wasm-symbols/test
           else
-            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-test"
+            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-test" --symbols-out "$PWD/wasm-symbols/test"
           fi
 
       # One site from the two lanes. publish.sh emits a complete lane —
@@ -362,6 +362,14 @@ jobs:
             beta/verify-root.png
             beta/verify-test.png
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Keep the exact engine's function maps outside the site
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-symbols
+          path: wasm-symbols
+          if-no-files-found: error
           retention-days: 14
 
       - name: Refuse a requested deploy without credentials

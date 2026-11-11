@@ -25,6 +25,7 @@ use std::time::Instant;
 use serde_json::Value;
 
 use super::{spectator_step_completes_frame, stock_opening_params, tile_mark, Session};
+use crate::ai::SiteShortcuts;
 
 /// Where a game's cost is reported. The bands are narrow early because the
 /// opening is what a first visit sees, and wide late because turn cost has
@@ -74,6 +75,10 @@ pub struct Checkpoint {
 pub struct Report {
     pub bands: Vec<Band>,
     pub checkpoints: Vec<Checkpoint>,
+    /// Seconds each seat's agent spent taking its turns, by player id. What
+    /// a shortcut saves the seats that take it shows here, beside the seats
+    /// in the same game that do not.
+    pub seat_seconds: Vec<f64>,
     pub session: Session,
 }
 
@@ -91,6 +96,12 @@ pub struct Options {
     /// `Game::keep_own_yields`: the acting seat's own cities as well, as
     /// every session does. Off with the rivals' on prices the two apart.
     pub keeps_own_yields: bool,
+    /// [`SiteShortcuts`] for the seats in `shortcut_seats`. Unlike everything
+    /// above, these change what a seat decides.
+    pub shortcuts: SiteShortcuts,
+    /// Which seats take `shortcuts`, as a bit per player id. `None` is every
+    /// seat, city-states and barbarians included.
+    pub shortcut_seats: Option<u64>,
 }
 
 impl Default for Options {
@@ -100,6 +111,8 @@ impl Default for Options {
             keeps_rival_yields: true,
             audits_rival_yields: false,
             keeps_own_yields: true,
+            shortcuts: SiteShortcuts::default(),
+            shortcut_seats: None,
         }
     }
 }
@@ -180,6 +193,17 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
     let mut session = Session::new(stock_opening_params(seed));
     session.keeps_rival_yields = options.keeps_rival_yields;
     session.keeps_own_yields = options.keeps_own_yields;
+    if options.shortcuts != SiteShortcuts::default() {
+        for seat in 0..session.game.players.len() {
+            let taken = options
+                .shortcut_seats
+                .is_none_or(|seats| seat < 64 && seats & (1 << seat) != 0);
+            if taken {
+                session.set_seat_shortcuts(seat, options.shortcuts);
+            }
+        }
+    }
+    let mut seat_seconds = vec![0.0; session.game.players.len()];
     session.game.audit_rival_yields(options.audits_rival_yields);
     let mut bands: Vec<Band> = BANDS
         .iter()
@@ -207,11 +231,13 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
         loop {
             let turn_before = session.game.turn;
             let finished_before = session.game.is_finished();
-            let seat = &session.game.players[session.game.current];
+            let acting = session.game.current;
+            let seat = &session.game.players[acting];
             let minor = seat.is_minor || seat.is_barbarian;
             let started = Instant::now();
             session.step_quietly();
             let spent = started.elapsed().as_secs_f64();
+            seat_seconds[acting] += spent;
             if minor {
                 band.minors_seconds += spent;
             } else {
@@ -239,6 +265,7 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
     Report {
         bands,
         checkpoints,
+        seat_seconds,
         session,
     }
 }
@@ -328,6 +355,81 @@ mod tests {
             );
             let (reused, _) = kept.session.game.rival_yields_reused();
             assert!(reused > 0, "the run this compares must actually reuse");
+        }
+    }
+
+    /// A shortcut is taken by the seats it is given to and by nobody else,
+    /// and naming none leaves the game alone. This is the plumbing the paired
+    /// strength test stands on: if "treated" seats were not the treated ones
+    /// its verdict would be about nothing.
+    #[test]
+    fn a_shortcut_is_taken_only_by_the_seats_it_is_given_to() {
+        let plain = run_with(23, 30, Options::default());
+        let named_but_nobody = run_with(
+            23,
+            30,
+            Options {
+                shortcuts: SiteShortcuts::named("envelopes-across-own-moves").unwrap(),
+                shortcut_seats: Some(0),
+                ..Options::default()
+            },
+        );
+        assert_eq!(plain.checkpoints, named_but_nobody.checkpoints);
+        // Read back from the agents themselves, seat by seat: the first build
+        // set every one of these and none of them heard it.
+        let taken = SiteShortcuts::named("envelopes-across-own-moves").unwrap();
+        let two_seats = run_with(
+            23,
+            2,
+            Options {
+                shortcuts: taken,
+                shortcut_seats: Some(0b0101),
+                ..Options::default()
+            },
+        );
+        for seat in 0..4 {
+            let expected = if seat % 2 == 0 {
+                taken
+            } else {
+                SiteShortcuts::default()
+            };
+            assert_eq!(
+                two_seats.session.seat_shortcuts(seat),
+                expected,
+                "seat {seat}"
+            );
+        }
+        let every_seat = run_with(
+            23,
+            2,
+            Options {
+                shortcuts: taken,
+                ..Options::default()
+            },
+        );
+        for seat in 0..every_seat.session.game.players.len() {
+            assert_eq!(
+                every_seat.session.seat_shortcuts(seat),
+                taken,
+                "seat {seat}"
+            );
+        }
+        assert_eq!(plain.seat_seconds.len(), plain.session.game.players.len());
+        // Every major took its turns. A seat that never acts — a roster slot
+        // kept for Free Cities, say — has nothing to time.
+        for (seat, player) in plain.session.game.players.iter().enumerate() {
+            if !player.is_minor && !player.is_barbarian {
+                assert!(plain.seat_seconds[seat] > 0.0, "seat {seat}");
+            }
+        }
+        assert!(SiteShortcuts::named("no-such-shortcut").is_err());
+        assert_eq!(SiteShortcuts::named("").unwrap(), SiteShortcuts::default());
+        for name in SiteShortcuts::NAMES {
+            assert_ne!(
+                SiteShortcuts::named(name).unwrap(),
+                SiteShortcuts::default(),
+                "{name} must turn something on"
+            );
         }
     }
 

@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +27,12 @@ SEARCH_STRING = ("_RINvMs3_NtNtNtNtCsX_5alloc11collections5btree4node"
                  "dNtB1i_14LeafOrInternalE11search_treeeECsY_6civvis")
 MALLOC = "_RNvMs0_NtCsQ_8dlmalloc8dlmallocINtB5_8DlmallocNtNtB7_3sys6SystemE6malloc"
 PLAIN = "_RNvMNtNtCsY_6civvis4game10visibilityNtB4_4Game16tile_has_line_to"
+# Exact counterexample from the optimized public-toolchain module: BTreeMap
+# is the rules entry type here, not the machinery doing this lookup.
+SPEC_WITH_MAP_VALUE = (
+    "_RNvMs_NtCsgd7u1lQsIfn_6civvis7specmapINtB4_7SpecMapINtNtNtNt"
+    "Cs5JHfeWeQK0x_5alloc11collections5btree3map8BTreeMapNtNtBW_6string"
+    "6StringNtNtB6_5rules15GoodyRewardSpecEE8positionB6_")
 
 
 def a_profile(spent: dict) -> dict:
@@ -61,6 +68,18 @@ class ASymbolIsReadByItsLengths(unittest.TestCase):
 
 
 class TheOrderedMapsAreNamedByWhatTheyHold(unittest.TestCase):
+    def test_a_rules_lookup_does_not_execute_its_ordered_map_value(self):
+        self.assertFalse(reader.is_ordered_map(SPEC_WITH_MAP_VALUE))
+        self.assertEqual(reader.ordered_maps({SPEC_WITH_MAP_VALUE: 400}), {})
+
+    def test_readable_rules_lookup_names_follow_the_same_rule(self):
+        self.assertFalse(reader.is_ordered_map(
+            "civvis::specmap::SpecMap<BTreeMap<String, GoodyRewardSpec>>::position"))
+
+    def test_a_real_tree_with_a_rules_table_value_still_counts(self):
+        self.assertTrue(reader.is_ordered_map(
+            "alloc::collections::btree::map::BTreeMap<civvis::specmap::SpecMap<i32>>::get"))
+
     def test_a_search_and_a_walk_are_told_apart(self):
         self.assertEqual(reader.held_and_asked(SEARCH_NAME).split(), ["search", "Name"])
         self.assertEqual(reader.held_and_asked(ITERATE_UNIT).split(), ["iterate", "Unit"])
@@ -94,6 +113,15 @@ class TheReportAddsUpWhatATableHides(unittest.TestCase):
         self.assertIn("  20.00%  iterate  Unit", text)
         self.assertIn("tile_has_line_to", text)
 
+    def test_both_tree_totals_exclude_rules_lookup_time_without_losing_samples(self):
+        profile = a_profile({SPEC_WITH_MAP_VALUE: 400, SEARCH_NAME: 100})
+        totals = reader.self_time(profile)
+        text = self.text(profile)
+        self.assertEqual(sum(totals.values()), 500)
+        self.assertIn("  20.00%  ordered maps (BTreeMap, BTreeSet)", text)
+        self.assertIn("  20.00%  search   Name", text)
+        self.assertIn("  80.00%  specmap::SpecMap", text)
+
     def test_a_module_without_names_is_said_to_be_one(self):
         """A published module has no name section, so its profile is a list of
         `wasm-function[n]`. That must read as a missing build step, not as a
@@ -118,6 +146,74 @@ class TheNewestProfileInADirectoryIsRead(unittest.TestCase):
             written.write_text(json.dumps(PROFILE), encoding="utf-8")
             self.assertEqual(reader.newest_profile(where), written)
             self.assertEqual(reader.newest_profile(written), written)
+
+
+class PublishedFunctionMapsNameTheExactModule(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.directory = Path(self.scratch.name)
+        self.module = self.directory / "engine.wasm"
+        # One empty function, index zero. The name is supplied by Binaryen.
+        self.module.write_bytes(bytes.fromhex(
+            "0061736d01000000010401600000030201000a040102000b"))
+        self.mapping = self.directory / "functions.map"
+        self.mapping.write_text("0:" + SEARCH_NAME + "\n", encoding="utf-8")
+        reader.site_wasm_symbols.record(self.module, self.mapping, "test-revision")
+
+    def test_indexes_are_translated_and_other_frames_keep_their_time(self):
+        symbols, manifest = reader.site_wasm_symbols.load(self.directory, self.module)
+        profile = a_profile({"wasm-function[0]": 300, PLAIN: 90, "paint": 10})
+        before = json.dumps(profile)
+        self.assertEqual(reader.self_time(profile, symbols),
+                         {SEARCH_NAME: 300, PLAIN: 90, "paint": 10})
+        self.assertEqual(json.dumps(profile), before)
+        self.assertEqual(manifest["wasm_bytes"], self.module.stat().st_size)
+
+    def test_same_length_different_engine_is_rejected(self):
+        changed = bytearray(self.module.read_bytes())
+        changed[-1] ^= 1
+        self.module.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "different WebAssembly module"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_changed_map_is_rejected(self):
+        self.mapping.write_text("0:" + SEARCH_STRING + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "checksum"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_unknown_manifest_format_is_rejected(self):
+        path = self.directory / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["format"] = 2
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "manifest format"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_missing_function_is_an_error_instead_of_a_partial_attribution(self):
+        with self.assertRaisesRegex(ValueError, "index 17 is absent"):
+            reader.self_time(a_profile({"wasm-function[17]": 300}), {0: SEARCH_NAME})
+
+    def test_malformed_empty_and_duplicate_maps_are_rejected(self):
+        for text in ["", "\n", "x:name", "-1:name", "0:", "0:first\n0:second"]:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                reader.site_wasm_symbols.parse_function_map(text)
+
+    def test_cli_prints_named_costs_from_the_bound_sidecar(self):
+        profile = self.directory / "CPU.1.cpuprofile"
+        profile.write_text(json.dumps(a_profile({"wasm-function[0]": 300, PLAIN: 100})))
+        output, diagnostics = io.StringIO(), io.StringIO()
+        with redirect_stdout(output), redirect_stderr(diagnostics):
+            self.assertEqual(reader.main([str(profile), "--symbols", str(self.directory),
+                                          "--wasm", str(self.module)]), 0)
+        self.assertIn("search   Name", output.getvalue())
+        self.assertNotIn("wasm-function[0]", output.getvalue())
+        self.assertIn("test-revision", diagnostics.getvalue())
+
+    def test_cli_requires_module_and_sidecar_together(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as missing:
+            reader.main(["unused.cpuprofile", "--symbols", str(self.directory)])
+        self.assertEqual(missing.exception.code, 2)
 
 
 if __name__ == "__main__":

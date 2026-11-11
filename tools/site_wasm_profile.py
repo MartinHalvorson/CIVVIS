@@ -2,17 +2,23 @@
 """Read a node CPU profile of the browser engine: where WebAssembly spends a site game.
 
 `tools/profile_civvis.py` profiles the native build, and the native build is
-not what a visitor runs. The published module is the same Rust compiled for
-`wasm32`, and the two do not agree about what is expensive. On 2026-11-11 the
-native profile of a site game put `memcmp` at 9.6% of self time and the ordered
-maps well below it; the module's own profile put **39.7% of self time inside
-`BTreeMap` and `BTreeSet`** and `memcmp` at 0.4%, because the comparison is
-inlined into the tree search there and a tree walk is a chain of bounds-checked
-loads with no wide compare to lean on. A lever chosen from the native table
-would have been the wrong one.
+not what a visitor runs. Profile the optimized browser module itself: its
+inlining, container costs and memory operations can differ substantially
+from native code or a diagnostic module built without LTO.
 
-By hand only: it needs a module built with function names, and a published
-module has none (`wasm-opt` strips the name section).
+By hand only: use the exact published module and its matching
+`civvis-wasm-symbols` build artifact. The reader verifies the module and map
+checksums before translating V8's function indexes. Use the lane you profiled:
+
+    tools/site_wasm_profile.py /tmp/prof --wasm /tmp/site/civvis.wasm \\
+      --symbols /tmp/wasm-symbols/stable
+
+The module must be the one that produced the profile; V8's profile format
+does not include its SHA256. The build artifact binds the names to that module,
+not to a source revision that might have been built with different options.
+
+Without a sidecar, a named diagnostic module still works. Its different
+optimization settings can change the cost distribution:
 
     # a named module: no LTO and sixteen codegen units build in minutes
     CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \\
@@ -51,6 +57,7 @@ from typing import Counter, Dict, List, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import profile_civvis  # noqa: E402
+import site_wasm_symbols  # noqa: E402
 
 #: A symbol that is part of an ordered map's machinery, whatever it holds.
 ORDERED_MAP = re.compile(r"btree|LeafOrInternal|BTreeMap|BTreeSet")
@@ -110,10 +117,20 @@ def readable(symbol: str) -> str:
     return profile_civvis.shorten(profile_civvis.demangle(symbol), 92)
 
 
-def self_time(profile: dict) -> Counter[str]:
+def self_time(profile: dict, symbols: Dict[int, str] | None = None) -> Counter[str]:
     """Microseconds whose innermost frame is each function."""
+    def named(frame: dict) -> str:
+        name = frame.get("functionName") or "(anonymous)"
+        indexed = re.fullmatch(r"wasm-function\[(\d+)\]", name)
+        if symbols is not None and indexed:
+            index = int(indexed[1])
+            if index not in symbols:
+                raise ValueError(f"profile function index {index} is absent from the map")
+            return symbols[index]
+        return name
+
     names: Dict[int, str] = {
-        node["id"]: node["callFrame"].get("functionName") or "(anonymous)"
+        node["id"]: named(node["callFrame"])
         for node in profile.get("nodes", [])}
     totals: Counter[str] = collections.Counter()
     for node, delta in zip(profile.get("samples", []),
@@ -132,10 +149,31 @@ def held_and_asked(symbol: str) -> str:
     return "%-8s %s" % (asked, "/".join(held) if held else "a primitive key")
 
 
+def is_ordered_map(symbol: str) -> bool:
+    """Distinguish map machinery from a gameplay method's map type argument.
+
+    In the optimized module, `SpecMap<BTreeMap<String, GoodyRewardSpec>>`
+    names one shared `SpecMap::position` implementation. Its lookup does not
+    execute the BTreeMap it holds. In an actual ordered-map symbol, the tree
+    namespace precedes any gameplay key/value type; in this counterexample
+    the gameplay namespace comes first. Keep the same rule for readable
+    names and the length-prefixed Rust names emitted by Binaryen.
+    """
+    if not ORDERED_MAP.search(symbol):
+        return False
+    parts = identifiers(symbol) or re.findall(r"[A-Za-z_][A-Za-z_0-9]*", symbol)
+    for part in parts:
+        if part in {"btree", "LeafOrInternal", "BTreeMap", "BTreeSet"}:
+            return True
+        if part in {"civvis", "specmap", "SpecMap"}:
+            return False
+    return True
+
+
 def ordered_maps(totals: Counter[str]) -> Counter[str]:
     by_kind: Counter[str] = collections.Counter()
     for symbol, spent in totals.items():
-        if ORDERED_MAP.search(symbol):
+        if is_ordered_map(symbol):
             by_kind[held_and_asked(symbol)] += spent
     return by_kind
 
@@ -161,8 +199,9 @@ def report(totals: Counter[str], top: int = 30, out=sys.stdout) -> None:
     print("%.1f s sampled" % (total / 1e6), file=out)
     if share(named) < 50.0:
         print("⚠ only %.0f%% of it lands in a named function. A published "
-              "module has no name section; build one with names (see this "
-              "file's header)." % share(named), file=out)
+              "module has no name section; supply its matching function map "
+              "or build a diagnostic module with names (see this file's "
+              "header)." % share(named), file=out)
 
     print("\n== SELF  (share of sampled time)", file=out)
     for symbol, spent in totals.most_common(top):
@@ -170,8 +209,9 @@ def report(totals: Counter[str], top: int = 30, out=sys.stdout) -> None:
 
     print("\n== ROLL-UPS  (self time; a per-function table hides these)", file=out)
     for label, pattern in ROLLUPS:
+        matches = is_ordered_map if pattern is ORDERED_MAP else pattern.search
         spent = sum(value for symbol, value in totals.items()
-                    if pattern.search(symbol))
+                    if matches(symbol))
         print("%7.2f%%  %s" % (share(spent), label), file=out)
 
     print("\n== ORDERED MAPS, BY WHAT THEY HOLD AND WHAT WAS ASKED", file=out)
@@ -186,10 +226,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("profile", type=Path,
                         help="a .cpuprofile, or the directory node wrote one to")
     parser.add_argument("--top", type=int, default=30)
+    parser.add_argument("--symbols", type=Path,
+                        help="stable/ or test/ directory from civvis-wasm-symbols")
+    parser.add_argument("--wasm", type=Path,
+                        help="the exact module profiled; required with --symbols")
     args = parser.parse_args(argv)
+    if bool(args.symbols) != bool(args.wasm):
+        parser.error("--symbols and --wasm must be supplied together")
     path = newest_profile(args.profile)
     print("profile: %s" % path, file=sys.stderr)
-    report(self_time(json.loads(path.read_text(encoding="utf-8"))), args.top)
+    symbols = None
+    try:
+        if args.symbols:
+            symbols, manifest = site_wasm_symbols.load(args.symbols, args.wasm)
+            print("symbols: %s, engine %s" %
+                  (manifest["source_commit"], manifest["wasm_sha256"]), file=sys.stderr)
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        report(self_time(profile, symbols), args.top, out=sys.stdout)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     return 0
 
 

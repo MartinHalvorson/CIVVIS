@@ -638,12 +638,72 @@ pub struct PlanReport {
     pub war: Option<WarPlanReport>,
 }
 
+/// Work one seat may skip because the answer it would get is close to settled.
+///
+/// Every field changes what a seat decides, a little, to save time. That is
+/// what separates these from the caches in `Game`: a cache is checked by
+/// comparing saves, and a shortcut cannot be, so each one is tried the only
+/// way that says anything — seats that take it against seats that do not, on
+/// the same maps with the chairs swapped (`tools/site_pair.py`), against a bar
+/// written down before a game is played. All of them are off unless a driver
+/// turns one on for a seat. `docs/SIMULATOR_PERFORMANCE.md` records what each
+/// was measured to cost and to save.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SiteShortcuts {
+    /// `BasicAi::envelope_cache_across_own_moves`: an enemy's reach is read
+    /// against where this seat's units stood when its pass began.
+    pub envelopes_across_own_moves: bool,
+}
+
+impl SiteShortcuts {
+    /// The names `civvis site-bench --shortcuts` and `tools/site_pair.py`
+    /// take, in the order of the fields.
+    pub const NAMES: [&'static str; 1] = ["envelopes-across-own-moves"];
+
+    /// Parse a comma-separated list of [`Self::NAMES`].
+    pub fn named(list: &str) -> Result<SiteShortcuts, String> {
+        let mut shortcuts = SiteShortcuts::default();
+        for name in list
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            match name {
+                "envelopes-across-own-moves" => shortcuts.envelopes_across_own_moves = true,
+                other => {
+                    return Err(format!(
+                        "unknown shortcut `{other}`; the shortcuts are {}",
+                        Self::NAMES.join(", ")
+                    ))
+                }
+            }
+        }
+        Ok(shortcuts)
+    }
+}
+
 pub trait Ai {
     /// Whether this controller needs last-seen world memory for deliberation.
     fn uses_player_observation(&self) -> bool {
         false
     }
     fn take_turn(&mut self, g: &mut Game, pid: usize);
+
+    /// Turn [`SiteShortcuts`] on or off for this seat. An agent with nothing
+    /// to skip ignores it, which is what the default does.
+    fn set_site_shortcuts(&mut self, _shortcuts: SiteShortcuts) {}
+
+    /// The shortcuts this seat is taking, read back from the agent itself.
+    ///
+    /// ⚠ Not decoration. A session holds its agents as `Box<dyn Ai>`, and
+    /// `impl Ai for Box<T>` below forwards each method by hand: the first
+    /// build of `set_site_shortcuts` was not forwarded, every call landed on
+    /// the default above, and four runs with four different settings played
+    /// one game to the last bit. Nothing failed. A setting that is sent is
+    /// read back from where it lands.
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        SiteShortcuts::default()
+    }
 
     fn strategy_label(&self) -> Option<&'static str> {
         None
@@ -708,6 +768,14 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn attach_journal(&mut self, journal: Journal) {
         (**self).attach_journal(journal);
+    }
+
+    fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
+        (**self).set_site_shortcuts(shortcuts);
+    }
+
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        (**self).site_shortcuts()
     }
 }
 
@@ -4553,6 +4621,16 @@ impl Ai for BasicAi {
 
     fn attach_journal(&mut self, journal: Journal) {
         self.journal = journal;
+    }
+
+    fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
+        self.envelope_cache_across_own_moves = shortcuts.envelopes_across_own_moves;
+    }
+
+    fn site_shortcuts(&self) -> SiteShortcuts {
+        SiteShortcuts {
+            envelopes_across_own_moves: self.envelope_cache_across_own_moves,
+        }
     }
 }
 
