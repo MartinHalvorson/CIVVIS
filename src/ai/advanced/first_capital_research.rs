@@ -20,6 +20,7 @@ impl AdvancedAi {
     pub(super) fn first_capital_army_research_goal(&self, g: &Game, pid: usize) -> Option<Name> {
         if !self.research_follows_the_first_capital
             || !self.first_capital_active()
+            || self.conquest_closed
             || !self.conquest_reservation_open(g)
         {
             return None;

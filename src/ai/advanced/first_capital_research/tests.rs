@@ -3,7 +3,7 @@ use super::*;
 use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 
 fn fixture(on: bool) -> (Game, AdvancedAi, StrategicPlan) {
-    let mut g = Game::new_full(2, 48, 30, 50_580, 250, 0, false);
+    let mut g = Game::new_full(2, 48, 30, 50_580, 250, 0, true);
     g.players[0].civ = "Macedon".to_string();
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
