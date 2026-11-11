@@ -5625,6 +5625,11 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-stage-needs-three-venues`: under `band-plays-at-level-three`, a
+    /// promotion's two-level stage counts as reaching level 3 only where at
+    /// least three such stages are open; a thinner one is ranked by levels
+    /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
+    band_stage_needs_three_venues: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
@@ -7608,6 +7613,11 @@ pub struct AdvancedAi {
     /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
     /// Off by default.
     first_capital_before_the_walls: bool,
+    /// `every-shooter-at-the-walls`: every hostile land shooter in reach of our
+    /// walls is a wall threat priced by the city damage its next blow would do,
+    /// and an escort may shoot one. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    every_shooter_at_the_walls: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9184,6 +9194,11 @@ pub struct AdvancedAi {
     /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
     /// default.
     religion_seat_counts_the_pressure: bool,
+    /// `peace-waits-for-the-host-minimum`: no peace offer goes to a major
+    /// whose war on us is younger than the host's minimum war length, so the
+    /// bridge's retry window is not spent on an offer the host never signs.
+    /// See `advanced/unchosen_war_peace.rs`. Opt-in.
+    peace_waits_for_the_host_minimum: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
