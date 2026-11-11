@@ -561,6 +561,75 @@ fn a_lost_breaker_is_journalled_and_the_opening_yields_as_shipped() {
     );
 }
 
+/// Walls the strike has opened are not walls it yields to, and a strike
+/// that is opening them gets a second patience window.
+#[test]
+fn opened_walls_do_not_yield_and_a_denting_strike_gets_a_second_window() {
+    use super::super::early_conquest::CONQUEST_ABANDON_TURNS;
+    for gene in [false, true] {
+        let (mut game, mut ai, capital) = opened(gene);
+        at_war(&mut game, 0, 1);
+        let declared = game.turn;
+        ai.conquest_opening.as_mut().unwrap().declared = Some(declared);
+        let opening = ai.conquest_opening.clone().unwrap();
+        let window = game.standard_duration(CONQUEST_ABANDON_TURNS);
+
+        // No breaker anywhere, the walls untouched: yields as shipped.
+        assert_eq!(
+            ai.conquest_yields_to_walls(&game, 0, &opening, declared),
+            Some("the target walled up before the strike landed and no breaker is held"),
+            "gene {gene}"
+        );
+
+        // The walls already opened, the Ram lost afterwards.
+        game.cities.get_mut(&capital).unwrap().wall_hp = 0;
+        let yields = ai.conquest_yields_to_walls(&game, 0, &opening, declared);
+        if gene {
+            assert_eq!(yields, None, "opened walls are not walls it yields to");
+        } else {
+            assert_eq!(
+                yields,
+                Some("the target walled up before the strike landed and no breaker is held")
+            );
+        }
+
+        // A Ram stands; the walls are damaged, the city itself untouched.
+        let tile = game
+            .wring(game.cities[&capital].pos, 2)
+            .into_iter()
+            .find(|pos| game.unit_ids_at(*pos).is_empty())
+            .unwrap();
+        unit(&mut game, "swordsman", 0, tile);
+        unit(&mut game, "battering_ram", 0, tile);
+        game.cities.get_mut(&capital).unwrap().wall_hp = 40;
+        game.turn = declared + window;
+        let yields = ai.conquest_yields_to_walls(&game, 0, &opening, declared);
+        if gene {
+            assert_eq!(yields, None, "a denting strike gets a second window");
+        } else {
+            assert_eq!(
+                yields,
+                Some("the strike has not dented the city in the whole patience window")
+            );
+        }
+        game.turn = declared + window * 2;
+        assert_eq!(
+            ai.conquest_yields_to_walls(&game, 0, &opening, declared),
+            Some("the strike has not dented the city in the whole patience window"),
+            "the second window ends too (gene {gene})"
+        );
+
+        // Untouched walls keep the single window either way.
+        game.cities.get_mut(&capital).unwrap().wall_hp = 100;
+        game.turn = declared + window;
+        assert_eq!(
+            ai.conquest_yields_to_walls(&game, 0, &opening, declared),
+            Some("the strike has not dented the city in the whole patience window"),
+            "gene {gene}"
+        );
+    }
+}
+
 /// A live rebuild carries the memory by the mirror's unit map.
 #[test]
 fn the_memory_follows_a_live_rebuild() {

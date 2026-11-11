@@ -1123,6 +1123,38 @@ impl AdvancedAi {
     /// `maintain_conquest_opening`, before its release checks: journal the
     /// breaker's loss since the last look, with where and to what, then
     /// look again. Nothing with the gene off.
+    /// Whether the strike has already opened `city`'s walls: it has walls
+    /// and none of their health is left. A Ram lost after that is no reason
+    /// to yield: `opening-yields-to-walls` read the walls' ceiling, so the
+    /// CI replay of the live Auckland board released two strikes "walled up
+    /// ... no breaker is held" one turn after their Rams died beside walls
+    /// that already stood at 0. `false` with the gene off.
+    pub(super) fn shield_strike_opened_the_walls(
+        &self,
+        g: &Game,
+        city: &crate::game::City,
+    ) -> bool {
+        self.breaker_walks_under_a_shield && g.city_max_wall_hp(city) > 0 && city.wall_hp <= 0
+    }
+
+    /// The patience window of a declared strike: `window`, or twice that
+    /// while the strike has damaged the walls. The same replay released
+    /// five of ten strikes as "not dented" three to six turns after their
+    /// walls fell, the city at 110 to 154 health. `window` with the gene off.
+    pub(super) fn shield_strike_patience(
+        &self,
+        g: &Game,
+        city: &crate::game::City,
+        window: u32,
+    ) -> u32 {
+        let max = g.city_max_wall_hp(city);
+        if self.breaker_walks_under_a_shield && max > 0 && city.wall_hp < max {
+            window.saturating_mul(2)
+        } else {
+            window
+        }
+    }
+
     pub(super) fn breaker_shield_watch(&mut self, g: &Game, pid: usize) {
         if !self.breaker_walks_under_a_shield {
             return;

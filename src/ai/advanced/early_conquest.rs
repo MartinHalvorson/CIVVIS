@@ -770,11 +770,20 @@ impl AdvancedAi {
             return None;
         }
         let city = g.cities.get(&opening.city)?;
-        if g.city_max_wall_hp(city) > 0 && Self::conquest_breakers_held(g, pid) == 0 {
+        // `breaker-walks-under-a-shield`: walls the strike has already opened
+        // are not walls it yields to, and a strike that is opening them gets
+        // a second window. Both `false`/unchanged with the gene off. See
+        // `advanced/breaker_walks_under_a_shield.rs`.
+        let walls_open = self.shield_strike_opened_the_walls(g, city);
+        if g.city_max_wall_hp(city) > 0
+            && !walls_open
+            && Self::conquest_breakers_held(g, pid) == 0
+        {
             return Some("the target walled up before the strike landed and no breaker is held");
         }
         let at_war = g.turn.saturating_sub(declared);
-        (at_war >= g.standard_duration(CONQUEST_ABANDON_TURNS) && city.hp >= CONQUEST_UNDENTED_HP)
+        let window = self.shield_strike_patience(g, city, g.standard_duration(CONQUEST_ABANDON_TURNS));
+        (at_war >= window && city.hp >= CONQUEST_UNDENTED_HP)
             .then_some("the strike has not dented the city in the whole patience window")
     }
 
