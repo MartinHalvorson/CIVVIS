@@ -362,6 +362,7 @@ impl AdvancedAi {
             let lane_target: Option<&str> = science_harbor_goal
                 .or(science_victory_goal)
                 .or(great_person_goal.as_deref());
+            let unique_unit_age_goal = self.unique_unit_age_tech(g, pid);
             let bargain_goal_3 =
                 self.boosted_bargain_tech_3(g, pid, plan, &available, lane_target, None);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
@@ -619,6 +620,19 @@ impl AdvancedAi {
                 // strand the expedition without its next launch or laser tech.
                 _ if endgame_research_preempts_wartime => endgame_goal,
                 _ if standing_army_fuel_goal.is_some() => standing_army_fuel_goal.as_deref(),
+                // `culture-faith-site-per-theater-3`: the Holy Site's unlock
+                // ahead of the production technologies, never ahead of a
+                // launch, wartime-upgrade, siege or endgame goal. See
+                // `advanced/culture_faith_sources.rs`.
+                _ if first_launch_goal.is_none()
+                    && wartime_modernization_goal.is_none()
+                    && domination_siege_goal.is_none()
+                    && endgame_goal.is_none()
+                    && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
+                    && self.culture_faith_astrology_first(g, pid) =>
+                {
+                    Some("astrology")
+                }
                 _ if production_technology_goal.is_some() => production_technology_goal
                     .as_ref()
                     .map(|tech| tech.as_str()),
@@ -643,6 +657,10 @@ impl AdvancedAi {
                 // `advanced/domination_research.rs`.
                 // Science can take the same earlier slot without moving any
                 // military, barbarian, wall or committed launch goal above it.
+                // `unique-unit-closes-the-dark-age`: the unique unit's unlock,
+                // when its first unit turns this era's Dark Age Normal. See
+                // `advanced/unique_unit_closes_the_age.rs`.
+                _ if unique_unit_age_goal.is_some() => unique_unit_age_goal.as_deref(),
                 _ if science_writing_goal.is_some() => science_writing_goal,
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal

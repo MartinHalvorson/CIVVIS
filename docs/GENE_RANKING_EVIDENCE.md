@@ -193,9 +193,12 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-evangelizes-unspent` | off (unmeasured) | Opt-in gene `apostle-evangelizes-unspent`; see `advanced/apostle_evangelizes_unspent.rs`. | 1 \| 1 |
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
+| `band-bank-bars-people-under-fire` | off (unmeasured) | Opt-in gene `band-bank-bars-people-under-fire`; see `advanced/culture_band_bank.rs`. | 1 \| 1 |
+| `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
+| `band-stage-needs-three-venues` | off (unmeasured) | Opt-in gene `band-stage-needs-three-venues`; see `advanced/band_plays_its_stage.rs`. | 1 \| 1 |
 | `band-stall-bars-no-host` | off (unmeasured) | Opt-in gene `band-stall-bars-no-host`; see `advanced/band_stall_bars_no_host.rs`. | 1 \| 1 |
 | `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bands-wait-at-the-door` | off (unmeasured) | Opt-in gene `bands-wait-at-the-door`; see `advanced/bands_wait_at_the_door.rs`. | 1 \| 1 |
@@ -239,8 +242,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-faith-braves-the-barbarians` | off (unmeasured) | `culture-faith-braves-the-barbarians`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
-| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | — \| 2 |
-| `culture-faith-site-per-theater-2` | off (unmeasured) | `culture-faith-site-per-theater-2`: see `advanced/culture_faith_sources.rs`. | — \| 2 |
+| `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
+| `culture-faith-site-per-theater-2` | off (unmeasured) | `culture-faith-site-per-theater-2`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
+| `culture-faith-site-per-theater-3` | off (unmeasured) | `culture-faith-site-per-theater-3`: see `advanced/culture_faith_sources.rs`. | — \| 3 |
 | `culture-gold-buys-the-shrines` | off (unmeasured) | `culture-gold-buys-the-shrines`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
@@ -257,7 +261,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-seat-builds-past-the-deterrent` | off (unmeasured) | `culture-seat-builds-past-the-deterrent`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-seat-drama-before-government` | off (unmeasured) | `culture-seat-drama-before-government`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
 | `culture-seat-drama-first` | off (unmeasured) | `culture-seat-drama-first`: see `advanced/culture_drama_first.rs`. | 1 \| 1 |
-| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
+| `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | — \| 2 |
+| `culture-seat-monuments-2` | off (unmeasured) | `culture-seat-monuments-2`: see `advanced/culture_monuments.rs`. | — \| 2 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | — \| 2 |
 | `culture-seat-theater-first-2` | off (unmeasured) | Turn on `culture-seat-theater-first-2`. | — \| 2 |
 | `curator-sits-with-the-works` | off (unmeasured) | Opt-in gene `curator-sits-with-the-works`; see `advanced/curator_sits_with_the_works.rs`. | 1 \| 1 |
@@ -289,8 +294,11 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
+| `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
 | `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
+| `faith-strike-fears-the-tech-lead` | off (unmeasured) | Opt-in `faith-strike-fears-the-tech-lead`; see `AdvancedAi::faith_strike_fears_the_tech_lead`. | 1 \| 1 |
+| `faith-strike-spares-the-stages` | off (unmeasured) | Opt-in `faith-strike-spares-the-stages`; see `AdvancedAi::faith_strike_spares_the_stages`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
 | `faith-war-defends-the-diplomat` | off (unmeasured) | Opt-in gene `faith-war-defends-the-diplomat`; see `Self::faith_war_defends_the_diplomat`. | 1 \| 1 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
@@ -426,6 +434,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `settler-shelters-from-the-war` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
 | `settler-shelters-from-the-war-2` | off (unmeasured) | Opt-in gene `settler-shelters-from-the-war-2`, version two of `settler-shelters-from-the-war`; see `advanced/settler_shelters_from_the_war.rs`. | — \| 2 |
+| `settler-stall-counts-turns` | off (unmeasured) | Opt-in gene `settler-stall-counts-turns`; see `advanced/settler_stall_counts_turns.rs`. | 1 \| 1 |
 | `siege-at-the-walls-dies-first` | off (unmeasured) | Opt-in gene `siege-at-the-walls-dies-first`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
@@ -452,6 +461,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
 | `tribute-warms-the-neighbour` | off (unmeasured) | Opt-in gene `tribute-warms-the-neighbour`; see `advanced/tribute_warms_the_neighbour.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
+| `unique-unit-closes-the-dark-age` | off (unmeasured) | `unique-unit-closes-the-dark-age`: see `advanced/unique_unit_closes_the_age.rs`. | 1 \| 1 |
 | `universities-before-the-forge` | off (unmeasured) | Opt-in Science University priority before industrial claims. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |

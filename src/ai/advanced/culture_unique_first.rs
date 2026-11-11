@@ -243,6 +243,7 @@ impl AdvancedAi {
                 }
                 if let Some(head) = city.queue.first() {
                     if matches!(head, Item::Unit { unit } if *unit == builder)
+                        || self.culture_monument_finishes_first(g, pid, cid, plan, head)
                         || !Self::culture_theater_may_defer(g, pid, cid, head, at_major_war)
                     {
                         return None;

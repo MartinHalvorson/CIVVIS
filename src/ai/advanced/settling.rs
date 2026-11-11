@@ -2266,15 +2266,15 @@ impl AdvancedAi {
                 let moved = self.settler_step_toward_safe(g, pid, uid, target);
                 if moved {
                     self.settler_stalls.remove(&uid);
+                    self.note_settler_progress_turn(g, uid);
                     self.settler_blocked_turns.remove(&uid);
                 } else if self.settler_commit {
                     *self.settler_blocked_turns.entry(uid).or_insert(0) += 1;
-                    let stalls = self.settler_stalls.entry(uid).or_insert(0);
-                    *stalls += 1;
-                    if *stalls >= SETTLER_STALL_LIMIT {
+                    if self.count_settler_stall(g, uid) >= SETTLER_STALL_LIMIT {
                         if self.founds_where_it_stands(g, pid, uid, current) {
                             return true;
                         }
+                        self.journal_settler_stall_drop(g, uid, target);
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
                         self.settler_targets.remove(&uid);
@@ -2729,8 +2729,9 @@ impl AdvancedAi {
             }
             return false;
         }
+        let sid = self.settler_stall_id_note(g, uid);
         think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
-               "{} tiles away, the site is worth {:.1}",
+               "{} tiles away, the site is worth {:.1}{sid}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
         // See `civilian_out_of_reach`: the step is refused inside a raider's
         // reach unless the guard walks in too or the city is founded now.
@@ -2793,7 +2794,7 @@ impl AdvancedAi {
             if let Some((left, cost)) = end_of_move {
                 think!(self.journal(), Expansion, Detail, "Settler ends its move short of {target:?}";
                        "{} tiles away with {left:.0} movement left; the next tile costs {cost:.0}, \
-                        so it walks on next turn",
+                        so it walks on next turn{sid}",
                        g.wdist(current, target); target);
             } else {
                 let why = if current == target {
@@ -2825,7 +2826,7 @@ impl AdvancedAi {
                     }
                 };
                 think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
-                       "{} tiles away and it did not move — {why}",
+                       "{} tiles away and it did not move — {why}{sid}",
                        g.wdist(current, target); target);
                 // `settler-founds-under-raiders`: held by the safe-step guard a
                 // second turn running, among barbarians only, it founds where
@@ -2895,18 +2896,18 @@ impl AdvancedAi {
         if advanced {
             self.settler_closest.insert(uid, (target, distance));
             self.settler_stalls.remove(&uid);
+            self.note_settler_progress_turn(g, uid);
             if Self::settler_delay_is_resolved(retargeted, closer) {
                 self.settler_blocked_turns.remove(&uid);
             }
         } else {
             *self.settler_blocked_turns.entry(uid).or_insert(0) += 1;
-            let stalls = self.settler_stalls.entry(uid).or_insert(0);
-            *stalls += 1;
-            if *stalls >= SETTLER_STALL_LIMIT {
+            if self.count_settler_stall(g, uid) >= SETTLER_STALL_LIMIT {
                 let here = g.units[&uid].pos;
                 if self.founds_where_it_stands(g, pid, uid, here) {
                     return true;
                 }
+                self.journal_settler_stall_drop(g, uid, target);
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
                 self.settler_targets.remove(&uid);
@@ -3183,17 +3184,13 @@ impl AdvancedAi {
                     self.settler_closest.insert(settler, (target, distance));
                 }
                 self.settler_stalls.remove(&settler);
+                self.note_settler_progress_turn(g, settler);
                 self.settler_blocked_turns.remove(&settler);
                 think!(self.journal(), Expansion, Detail, "Escort opening the route";
                        "the Settler formation advances toward {target:?}"; target);
             } else if self.linked_settler_progress || !moved {
                 *self.settler_blocked_turns.entry(settler).or_insert(0) += 1;
-                let stalls = {
-                    let stalls = self.settler_stalls.entry(settler).or_insert(0);
-                    *stalls += 1;
-                    *stalls
-                };
-                if stalls >= SETTLER_STALL_LIMIT {
+                if self.count_settler_stall(g, settler) >= SETTLER_STALL_LIMIT {
                     self.settler_avoid
                         .insert(settler, (target, g.turn + g.standard_duration(8)));
                     self.settler_targets.remove(&settler);
