@@ -31433,17 +31433,52 @@ async function resumeCityQueues() {
 // Civilization VI's city panel: press a yield to favour it, again to
 // disfavour it, again to leave it to the governor. The governor is the
 // engine's; this only tells it what the city is for.
+//
+// A lean is only called a focus once it is the size a player's press makes
+// it. An agent that held the seat leaves its own small tilts on the same
+// directive, and those are the governor's business, not a mark on the panel.
+function cityFocusStance(lean) {
+  return lean >= 1 ? "favoured" : lean <= -.5 ? "disfavoured" : "";
+}
+// What the last press did, said under the yields until the turn moves on. A
+// city with as many citizens as it has tiles has nobody to move, and a button
+// that changes nothing without saying why reads as a button that is broken.
+let cityFocusNote = null; // {city, turn, text}
+function cityFocusOutcome(kind, stance, before, after) {
+  const said = stance > 0 ? `Favouring ${titleCase(kind)}`
+    : stance < 0 ? `Disfavouring ${titleCase(kind)}` : `${titleCase(kind)} left to the governor`;
+  if (!before || !after) return said;
+  const moved = before.worked !== after.citizens.worked_tiles.map(String).sort().join(" ") ||
+    before.specialists !== (after.citizens.specialists || []).join(" ");
+  if (!moved) return `${said}: no citizen has a better tile to work. It will tell as the city grows.`;
+  const shifts = CIV6_YIELD_ICON_KINDS.map(name => {
+    const delta = Math.round(((after.yields[name] || 0) - (before.yields[name] || 0)) * 10) / 10;
+    return delta ? `${titleCase(name)} ${delta > 0 ? "+" : "−"}${Math.abs(delta)}` : "";
+  }).filter(Boolean);
+  return `${said}: citizens moved` + (shifts.length ? ` · ${shifts.join(" · ")}` : "");
+}
 let cityFocusPending = false;
 async function cycleCityFocus(cityId, kind) {
   if (SPEC || turnAdvancePending || cityFocusPending) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
-  const lean = Number(city?.citizens?.emphasis?.[kind]) || 0;
+  const now = cityFocusStance(Number(city?.citizens?.emphasis?.[kind]) || 0);
+  const stance = now === "favoured" ? -1 : now === "disfavoured" ? 0 : 1;
+  const before = city && city.citizens ? {yields: {...city.yields},
+    worked: city.citizens.worked_tiles.map(String).sort().join(" "),
+    specialists: (city.citizens.specialists || []).join(" ")} : null;
   cityFocusPending = true;
   try {
     const next = await fetchJSON("/city-focus", {method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})});
-    if (next && !next.error && Array.isArray(next.cities)) render(next);
+      body: JSON.stringify({city: cityId, yield: kind, stance})});
+    if (next && !next.error && Array.isArray(next.cities)) {
+      render(next);
+      const after = state.cities.find(candidate => candidate.id === cityId);
+      cityFocusNote = {city: cityId, turn: state.turn, text: cityFocusOutcome(kind, stance,
+        before && {yields: before.yields, worked: before.worked, specialists: before.specialists},
+        after && after.citizens ? after : null)};
+      drawCityScreen();
+    }
   } catch (error) {
     // A server without the route leaves the focus where it was.
   } finally { cityFocusPending = false; }
@@ -31502,14 +31537,14 @@ function drawCityScreen() {
       `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span>`;
     if (!emphasis)
       return `<div class="city-yield" title="${titleCase(kind)} per turn">${body}</div>`;
-    const lean = Number(emphasis[kind]) || 0;
-    const stance = lean > 0 ? "favoured" : lean < 0 ? "disfavoured" : "";
+    const stance = cityFocusStance(Number(emphasis[kind]) || 0);
+    const favoured = stance === "favoured";
     return `<button type="button" class="city-yield ${stance}" aria-pressed="${stance ? "true" : "false"}" ` +
       `title="${titleCase(kind)} per turn. ${stance
-        ? `${titleCase(stance)}: citizens ${lean > 0 ? "work for it first" : "avoid working for it"}. `
-        : ""}Press to ${lean > 0 ? "disfavour it" : lean < 0 ? "leave it to the governor" : "favour it"}." ` +
+        ? `${titleCase(stance)}: citizens ${favoured ? "work for it first" : "avoid working for it"}. `
+        : ""}Press to ${favoured ? "disfavour it" : stance ? "leave it to the governor" : "favour it"}." ` +
       `onclick='cycleCityFocus(${city.id},"${kind}")'>${body}` +
-      (stance ? `<em class="city-focus-mark">${lean > 0 ? "✓" : "✕"}</em>` : "") + `</button>`;
+      (stance ? `<em class="city-focus-mark">${favoured ? "✓" : "✕"}</em>` : "") + `</button>`;
   };
   const meter = (label, note, bar) =>
     `<div class="city-meter"><div class="row"><span class="small">${label}</span>` +
@@ -31522,6 +31557,8 @@ function drawCityScreen() {
   const queueTurns = current ? turnsFor(queueCost, perTurn, banked) : null;
   let dossier =
     `<div class="city-yields">${CIV6_YIELD_ICON_KINDS.map(yieldChip).join("")}</div>` +
+    (cityFocusNote && cityFocusNote.city === city.id && cityFocusNote.turn === state.turn
+      ? `<div class="city-focus-note" role="status">${escapeAttr(cityFocusNote.text)}</div>` : "") +
     `<div class="city-meters">` +
     meter("Growth", growthTurns ? `${turnsWord(growthTurns)} until growth` : "stalled",
       prog(city.food, city.growth_need, "#76c893")) +
