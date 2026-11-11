@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "All qualification gates passed; public promotion in progress",
+  "status": "Qualified storage release promoted and actual public build/module verified",
   "baseline_source": "ef9ddb192ea0f244dfa8742df9331594179f8bd6",
   "candidate_source": "cc6647d8394336360dc6bf7857c43deba9e98352",
   "candidate_tree": "007682b9e7583220f4bab1d31f042e6d5a5fec77",
@@ -135,5 +135,145 @@
     "civvis_orders": "1e640c0442d9ca0e16771922215b1c36751ba9b52086abcaf89a5d43a5b4441e"
   },
   "quality_status": "success",
-  "measurement_scope": "12 full Online/Prince engine/state games, four majors/six city-states and six majors/nine city-states; excludes module download/compilation and UI rendering. All normalized observation/reasoning frames and final full saves match current public ef9 exactly."
+  "measurement_scope": "12 full Online/Prince engine/state games, four majors/six city-states and six majors/nine city-states; excludes module download/compilation and UI rendering. All normalized observation/reasoning frames and final full saves match current public ef9 exactly.",
+  "public_verification": {
+    "verified_utc": "2026-11-11T14:08:26.293556+00:00",
+    "promotion_run": 43030233049,
+    "promotion_status": "success",
+    "url": "https://www.civvis.ai",
+    "public_build": {
+      "commit": "cc6647d8394336360dc6bf7857c43deba9e98352",
+      "short": "cc6647d83",
+      "commit_time": "2026-11-11T06:22:55-06:00",
+      "built_at": "2026-11-11T13:41:38Z",
+      "wasm_bytes": 16889097,
+      "bundle_bytes": 22593264
+    },
+    "wasm_bytes": 16889097,
+    "wasm_sha256": "a29374f998b70c5e31c4137099788b738438f32b3e928e213d105a9c8cc6d795",
+    "exact_qualified_bytes": true,
+    "verification_note": "Canonical public URLs returned HTTP 200. Cache-busting query requests returned HTTP 403; failed watcher stopped after successful canonical-URL verification."
+  },
+  "full_game_elapsed": [
+    {
+      "roster": "default",
+      "seed": 7,
+      "arm": "candidate",
+      "turn": 178,
+      "cpuMs": 34150.713,
+      "wallMs": 27809.487250000002,
+      "traceHash": "2fe88e75c1b0b94f6527eba993dc0e823f60971144c205adbbb980b240938be7",
+      "saveHash": "c94c4eeab231a3e488bce2f3599779576a9812cdac30efed48a536e5e53ba7f7"
+    },
+    {
+      "roster": "default",
+      "seed": 7,
+      "arm": "baseline",
+      "turn": 178,
+      "cpuMs": 42861.614,
+      "wallMs": 34432.176834000005,
+      "traceHash": "2fe88e75c1b0b94f6527eba993dc0e823f60971144c205adbbb980b240938be7",
+      "saveHash": "c94c4eeab231a3e488bce2f3599779576a9812cdac30efed48a536e5e53ba7f7"
+    },
+    {
+      "roster": "six",
+      "seed": 7311001,
+      "arm": "baseline",
+      "turn": 213,
+      "cpuMs": 92928.11,
+      "wallMs": 84000.234125,
+      "traceHash": "b2ba9687fe2d81f8dfdc1e913f6de31861c774aeee2ee487062db93a83189945",
+      "saveHash": "2c01696ad62667415433b46b098b86b72c620e259c3ad4aea2d79918818dec19"
+    },
+    {
+      "roster": "six",
+      "seed": 7311001,
+      "arm": "candidate",
+      "turn": 213,
+      "cpuMs": 85980.179,
+      "wallMs": 77971.90225,
+      "traceHash": "b2ba9687fe2d81f8dfdc1e913f6de31861c774aeee2ee487062db93a83189945",
+      "saveHash": "2c01696ad62667415433b46b098b86b72c620e259c3ad4aea2d79918818dec19"
+    },
+    {
+      "roster": "default",
+      "seed": 8,
+      "arm": "baseline",
+      "turn": 207,
+      "cpuMs": 72815.191,
+      "wallMs": 63992.057291000005,
+      "traceHash": "073ad5cf776bf68f7d1549b6017256a6c3dab171ea4938393fab217c79f1d248",
+      "saveHash": "e56178630feffb885dcfec5b081678c51569f131c0d4b4dbabe3235cab787aa9"
+    },
+    {
+      "roster": "default",
+      "seed": 8,
+      "arm": "candidate",
+      "turn": 207,
+      "cpuMs": 66668.913,
+      "wallMs": 57549.775833,
+      "traceHash": "073ad5cf776bf68f7d1549b6017256a6c3dab171ea4938393fab217c79f1d248",
+      "saveHash": "e56178630feffb885dcfec5b081678c51569f131c0d4b4dbabe3235cab787aa9"
+    },
+    {
+      "roster": "six",
+      "seed": 7311002,
+      "arm": "candidate",
+      "turn": 187,
+      "cpuMs": 66353.048,
+      "wallMs": 57952.64875,
+      "traceHash": "5f247bb2f7e6ed35edbdfa4a9a3f216f1c54a564ac419c0d36833e47978a9e8e",
+      "saveHash": "59fc3e85369534a8aea70cfa945f1cd865143aa5f806c4f4ee5e1d7284200bf5"
+    },
+    {
+      "roster": "six",
+      "seed": 7311002,
+      "arm": "baseline",
+      "turn": 187,
+      "cpuMs": 72659.021,
+      "wallMs": 65199.515583,
+      "traceHash": "5f247bb2f7e6ed35edbdfa4a9a3f216f1c54a564ac419c0d36833e47978a9e8e",
+      "saveHash": "59fc3e85369534a8aea70cfa945f1cd865143aa5f806c4f4ee5e1d7284200bf5"
+    },
+    {
+      "roster": "default",
+      "seed": 9,
+      "arm": "candidate",
+      "turn": 181,
+      "cpuMs": 50559.659,
+      "wallMs": 42707.568583,
+      "traceHash": "6660aab217d0bb881fc8292e2f53b6cf097c883a09ab52c4559b13e278d8ebdf",
+      "saveHash": "2a97466bd7520de69d6d355619f8b077f7803153e6dc916b5683e883d49c8d08"
+    },
+    {
+      "roster": "default",
+      "seed": 9,
+      "arm": "baseline",
+      "turn": 181,
+      "cpuMs": 57309.689,
+      "wallMs": 48194.231542,
+      "traceHash": "6660aab217d0bb881fc8292e2f53b6cf097c883a09ab52c4559b13e278d8ebdf",
+      "saveHash": "2a97466bd7520de69d6d355619f8b077f7803153e6dc916b5683e883d49c8d08"
+    },
+    {
+      "roster": "six",
+      "seed": 7311003,
+      "arm": "baseline",
+      "turn": 198,
+      "cpuMs": 99774.662,
+      "wallMs": 89324.3155,
+      "traceHash": "d259fb0a45d6165ca61e93ab9bf2b7eee6fe1c11d69768525ad431bdf8b5a356",
+      "saveHash": "e0132a72e7d97f10cfbf814941cb6023747073fad6a91c59e5048d5315a8f3cb"
+    },
+    {
+      "roster": "six",
+      "seed": 7311003,
+      "arm": "candidate",
+      "turn": 198,
+      "cpuMs": 90982.806,
+      "wallMs": 82168.41475,
+      "traceHash": "d259fb0a45d6165ca61e93ab9bf2b7eee6fe1c11d69768525ad431bdf8b5a356",
+      "saveHash": "e0132a72e7d97f10cfbf814941cb6023747073fad6a91c59e5048d5315a8f3cb"
+    }
+  ]
 }
