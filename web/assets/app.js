@@ -25190,6 +25190,7 @@ function drawPlanetMap() {
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   drawPlanetClaims(cellByKey, onSheet, now);
   drawSitePicksPlanet(cellByKey, onSheet);
+  drawRoutePreviewPlanet(cellByKey, onSheet);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
   // Use the same stable tile layout as the flat command map. A unit on the
   // move is left out of the stacks, and a played game walks it along its route.
@@ -25855,6 +25856,7 @@ function drawScene() {
     cx.globalAlpha = 1;
   }
   drawSitePicksFlat();
+  drawRoutePreviewFlat();
   // --- movement / attack highlights
   for (const k in hl) {
     const [q, r] = k.split(",").map(Number);
@@ -37653,6 +37655,113 @@ async function showForecastAt(pos) {
   const answer = await forecastCache.get(ask);
   if (forecastShown === ask) paintForecast(answer);
 }
+// ------------------------------------------------------------ the route ahead
+// Civilization VI draws the path a selected unit would take to the tile under
+// the pointer, and numbers the turns along it, before the order is given. A
+// secondary click on a far tile already sent a unit walking for as long as it
+// took; nothing said which way it would go, or how long that was.
+//
+// The walk is the engine's own (`/route` with `preview`), the one the travel
+// order then follows step by step, so the line cannot promise a road the unit
+// will not take. A server that predates the preview answers with the step
+// alone, and nothing is drawn.
+let routeAsked = "", routePreview = null;
+const routeCache = new Map();
+function hideRoute() {
+  routeAsked = "";
+  if (!routePreview) return;
+  routePreview = null;
+  draw();
+}
+async function showRouteAt(pos) {
+  const here = pos ? key(pos) : "";
+  const tile = TMAP.get(here);
+  // A strike is the forecast's to describe, and a tile nobody has seen is
+  // nowhere the unit can be sent, nor a route the map should give away.
+  if (!pos || !sel || SPEC || !(sel.moves_left > 0) || here === key(sel.pos) ||
+      !tile || tile.unknown || strikeAt(pos)) { hideRoute(); return; }
+  const from = key(sel.pos);
+  const ask = `${sel.id}|${from}|${here}|${state.turn}|${sel.moves_left}`;
+  if (routeAsked === ask) return;
+  routeAsked = ask;
+  if (!routeCache.has(ask)) {
+    if (routeCache.size > 96) routeCache.clear();
+    routeCache.set(ask, fetchJSON("/route", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({unit: sel.id, to: [pos[0], pos[1]], preview: true})})
+      .catch(() => null));
+  }
+  const answer = await routeCache.get(ask);
+  if (routeAsked !== ask) return;
+  const path = answer && Array.isArray(answer.path) && answer.path.length ? answer.path : null;
+  routePreview = path ? {unit: sel.id, from, path} : null;
+  draw();
+}
+// The preview belongs to one unit standing on one tile. Once either changes
+// it is a drawing of a walk nobody is about to take.
+function routePreviewNow() {
+  return routePreview && sel && !SPEC && sel.id === routePreview.unit &&
+    key(sel.pos) === routePreview.from ? routePreview : null;
+}
+// A pale line from the unit along the tiles it would cross, and a numbered
+// disc where each turn's movement ends: 1 is as far as it gets this turn. A
+// gap in `points` is a tile this view cannot place, and the pen lifts over
+// it; so does a jump across the seam of a map that wraps.
+function strokeRoutePreview(points, r) {
+  cx.save();
+  cx.lineJoin = "round"; cx.lineCap = "round";
+  for (const [width, ink] of [[r * .3, "#0b0f0ecc"], [r * .14, "#f6ecc8"]]) {
+    cx.lineWidth = width; cx.strokeStyle = ink;
+    cx.beginPath();
+    let pen = null;
+    for (const point of points) {
+      if (point && pen && Math.hypot(point.x - pen.x, point.y - pen.y) < r * 4)
+        cx.lineTo(point.x, point.y);
+      else if (point) cx.moveTo(point.x, point.y);
+      pen = point;
+    }
+    cx.stroke();
+  }
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `800 ${r * .5}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  points.forEach((point, index) => {
+    if (!point || point.turn === undefined) return;
+    const next = points.slice(index + 1).find(Boolean);
+    if (next && next.turn === point.turn) return;
+    cx.beginPath(); cx.arc(point.x, point.y, r * .4, 0, Math.PI * 2);
+    cx.fillStyle = "#f6ecc8"; cx.fill();
+    cx.lineWidth = r * .08; cx.strokeStyle = "#0b0f0e"; cx.stroke();
+    cx.fillStyle = "#10151d";
+    cx.fillText(String(point.turn + 1), point.x, point.y + r * .03);
+  });
+  cx.restore();
+}
+function drawRoutePreviewPlanet(cellByKey, onSheet) {
+  const preview = routePreviewNow();
+  if (!preview) return;
+  const origin = cellByKey.get(preview.from);
+  const place = (site, turn) => {
+    const cell = cellByKey.get(site);
+    return cell && cell.center.z >= (onSheet ?? .02)
+      ? {x: cell.center.x, y: cell.center.y, turn} : null;
+  };
+  const points = [place(preview.from)].concat(
+    preview.path.map(([q, r, turn]) => place(`${q},${r}`, turn)));
+  const sized = origin || preview.path.map(([q, r]) => cellByKey.get(`${q},${r}`)).find(Boolean);
+  if (sized) strokeRoutePreview(points, planetCellInradius(sized));
+}
+function drawRoutePreviewFlat() {
+  const preview = routePreviewNow();
+  if (!preview) return;
+  const place = (site, turn) => {
+    const [q, r] = site.split(",").map(Number);
+    const tile = TMAP.get(site);
+    const [x, y] = hexXY(q, r);
+    return {x, y: y - (tile ? elev(tile) : 0), turn};
+  };
+  strokeRoutePreview([place(preview.from)].concat(
+    preview.path.map(([q, r, turn]) => place(`${q},${r}`, turn))), S * .866);
+}
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
@@ -37661,11 +37770,16 @@ cv.addEventListener("mousemove", ev => {
   queueTileTip(ev.clientX, ev.clientY);
   if (sel && !SPEC) {
     const r = cv.getBoundingClientRect();
-    showForecastAt(pixelToHex(ev.clientX - r.left, ev.clientY - r.top));
-  } else if (forecastShown) hideForecast();
+    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+    showForecastAt(pos);
+    showRouteAt(pos);
+  } else {
+    if (forecastShown) hideForecast();
+    hideRoute();
+  }
 });
-cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); });
-window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); });
+cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); hideRoute(); });
+window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); hideRoute(); });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
