@@ -169,8 +169,73 @@ fn play(job: &Job, genome: &[String]) -> String {
         .map(|city| city.pos)
         .collect();
     let (mut war, mut taken, mut walls_down, mut min_hp) = (None, None, None, i32::MAX);
+    let mut trace = String::new();
+    let traced = job.seed == 0 && job.board == "040704Z";
+    let mut last_traced = 0;
     while g.winner.is_none() && g.turn < start + job.turns {
         let pid = g.current;
+        if traced && pid == 0 && g.turn != last_traced {
+            last_traced = g.turn;
+            let breakers: Vec<String> = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == 0 && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+                })
+                .map(|unit| {
+                    let stack = g.unit_ids_at(unit.pos).len();
+                    format!(
+                        "{}@{:?} d{} hp{} stack{}",
+                        unit.kind,
+                        unit.pos,
+                        g.wdist(unit.pos, target_pos),
+                        unit.hp,
+                        stack
+                    )
+                })
+                .collect();
+            let near: Vec<String> = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == 0
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.wdist(unit.pos, target_pos) <= 6
+                })
+                .map(|unit| {
+                    format!(
+                        "{}d{}hp{}",
+                        unit.kind,
+                        g.wdist(unit.pos, target_pos),
+                        unit.hp
+                    )
+                })
+                .collect();
+            let theirs = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == owner
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.wdist(unit.pos, target_pos) <= 3
+                })
+                .count();
+            let city = g.cities.values().find(|city| city.pos == target_pos);
+            trace.push_str(&format!(
+                "TRACE|{} t{} {}|t{} war {} city hp {} walls {} strength {:.0}; their bodies within 3: {}; ours within 6: {:?}; breakers {:?}\n",
+                job.board,
+                job.turn,
+                if job.on { "on" } else { "off" },
+                g.turn,
+                g.is_at_war(0, owner),
+                city.map_or(-1, |c| c.hp),
+                city.map_or(-1, |c| c.wall_hp),
+                city.map_or(0.0, |c| g.city_strength(c.id)),
+                theirs,
+                near,
+                breakers
+            ));
+        }
         ais[pid].take_turn(&mut g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -286,6 +351,7 @@ fn play(job: &Job, genome: &[String]) -> String {
         releases,
         declared_by
     );
+    out.push_str(&trace);
     if job.seed == 0 {
         out.push_str(&format!("HEAD|{head}\n"));
         let mut lines = 0;

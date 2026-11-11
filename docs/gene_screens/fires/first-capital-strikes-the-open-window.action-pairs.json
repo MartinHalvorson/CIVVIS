@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "first-capital-strikes-the-open-window",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Live Deity Macedon civvis-20261111T040704Z (four players, Pangaea, Online, Domination), whose first-capital opening named the Cree capital Mikisiw-Wacikh at t16 and never declared. Each arm runs one frozen civvis_orders built from the branch at 1691841d2 (ci profile at opt-level 0, this host parking optimized builds) as the live bridge does (--serve --fresh-board --explain, one persistent agent), on the run's events.jsonl cut after the case turn's first state frame, fed turn-lead..turn, with the run's requested genome (why.log forced, each as --with); the on arm adds --with first-capital-strikes-the-open-window. t24 (lead 4): the soft-capital line fires ('the reservation opens at 2 cities') but the reply's orders are unchanged. t44 (lead 4): off 'Campaign aimed at Phoenicia | first objective Tyre', on 'the opening keeps the campaign | Countering Phoenicia does not move the opening's force' and the plan stays on Mikisiw-Wacikh; one unit's move changes. t47 (lead 3): the capital trains an Archer for the opening instead of a Granary, and a unit's move changes.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-first-capital-strikes-the-open-window.native-queries.tar.xz",
+    "sha256": "9af7549444cce96970b26ea3eba8094a85a32798db42ae9242956c48a2956ac8"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json"
+  ]
+}

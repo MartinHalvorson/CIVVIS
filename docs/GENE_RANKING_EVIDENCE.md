@@ -306,6 +306,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-capital-before-the-walls` | off (unmeasured) | `first-capital-before-the-walls`: see `advanced/first_capital_before_the_walls.rs`. | 1 \| 1 |
+| `first-capital-strikes-the-open-window` | off (unmeasured) | `first-capital-strikes-the-open-window`: see `advanced/first_capital_strikes_the_open_window.rs`. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
 | `flower-power-in-the-dark` | off (unmeasured) | `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`. | 1 \| 1 |
