@@ -239,6 +239,9 @@ impl AdvancedAi {
         /// Opt-in gene `every-shooter-at-the-walls`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
+        /// Opt-in `faith-strike-fears-the-tech-lead`; see
+        /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
+        faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
