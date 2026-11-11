@@ -200,6 +200,9 @@ impl AdvancedAi {
         /// `culture-keeps-pingala-home`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
+        /// `culture-pass-keeps-half-the-army`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_pass_keeps_half_the_army => enable_culture_pass_keeps_half_the_army, disable_culture_pass_keeps_half_the_army;
         /// `cold-war-then-heritage`: see
         /// `advanced/cold_war_then_heritage.rs`.
         cold_war_then_heritage => enable_cold_war_then_heritage, disable_cold_war_then_heritage;

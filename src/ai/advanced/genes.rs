@@ -5598,6 +5598,11 @@ pub const GENES: &[Gene] = &[
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
     Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
+    // lets the culture claims pass the near-rival deterrent only while our
+    // power is at least half the near neighbour's. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
