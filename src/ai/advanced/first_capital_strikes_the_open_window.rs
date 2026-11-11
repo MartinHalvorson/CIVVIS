@@ -139,6 +139,23 @@ pub(crate) const FIRST_CAPITAL_BARE_REACH: i32 = 14;
 /// force before the first Settler; a rival capital is worth more cities.
 pub(crate) const FIRST_CAPITAL_BARE_CITIES: usize = 1;
 
+/// The military power the reserved force adds to ours once it is trained:
+/// four Warriors and two Slingers or Archers. A capital is bare only when
+/// its owner's public power is within [`FIRST_CAPITAL_POWER_RATIO`] of ours
+/// plus this, because no strike passes that ratio later. The four bare
+/// capitals the live seat has named, at the turn of the naming:
+///
+/// | Owner | Its power | Ours | Bare by this rule | What followed |
+/// |---|---|---|---|---|
+/// | Persia | 170 | 67 | yes (230) | still 163 to 234 at turns 30 to 40 |
+/// | Scotland | 159 | 62 | yes (224) | 191 to 219, below ours by turn 40 |
+/// | Mali | 113 | 34 | yes (187) | 164 to 285 |
+/// | Arabia | 293 | 53 | no (212) | 399, then 485 at turn 40 |
+///
+/// Against Arabia (`civvis-20261111T194319Z`) the reservation held the
+/// capital from turn 20 for a strike its power guard never allowed.
+pub(crate) const FIRST_CAPITAL_BARE_FORCE: f64 = 110.0;
+
 /// How much stronger than our best melee body at the rally the city may read
 /// and still be struck. Live civvis-20261111T063232Z declared at t80 on Wak
 /// Kab'nal, defence 47-56, with Warriors, Heavy Chariots and one or two
@@ -739,8 +756,11 @@ impl AdvancedAi {
     }
 
     /// Whether `city` is bare right now: no walls built, a strength (as last
-    /// seen) of at most [`FIRST_CAPITAL_BARE_STRENGTH`], and within
-    /// [`FIRST_CAPITAL_BARE_REACH`] of our capital.
+    /// seen) of at most [`FIRST_CAPITAL_BARE_STRENGTH`], within
+    /// [`FIRST_CAPITAL_BARE_REACH`] of our capital, and an owner whose public
+    /// military power the reserved force would bring within the strike's
+    /// ratio: at most [`FIRST_CAPITAL_POWER_RATIO`] times ours plus
+    /// [`FIRST_CAPITAL_BARE_FORCE`].
     pub(crate) fn first_capital_is_bare(g: &Game, pid: usize, city: u32) -> bool {
         let Some(home) = Self::first_capital_home(g, pid) else {
             return false;
@@ -749,6 +769,9 @@ impl AdvancedAi {
             g.city_max_wall_hp(target) <= 0
                 && g.city_strength(city) <= FIRST_CAPITAL_BARE_STRENGTH
                 && g.wdist(home, target.pos) <= FIRST_CAPITAL_BARE_REACH
+                && g.military_power(target.owner)
+                    <= FIRST_CAPITAL_POWER_RATIO
+                        * (g.military_power(pid) + FIRST_CAPITAL_BARE_FORCE)
         })
     }
 
