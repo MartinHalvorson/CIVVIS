@@ -15760,6 +15760,27 @@ fn a_purchase_row_prints_the_price_it_was_quoted() {
     ));
 }
 
+#[test]
+fn a_building_is_listed_under_the_district_it_stands_in() {
+    // Civilization VI's production list puts the Library under Campus. Ours
+    // was one run of buildings in price order, so a player who knew where to
+    // look found nothing where they looked.
+    assert!(EMBEDDED_APP_JS
+        .contains("? RULES.buildings?.[entry.item.building]?.district || \"city_center\" : \"\";"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "const rank = entry => home(entry) === \"city_center\" ? -1 : cheapest.get(home(entry));"
+    ));
+    assert!(EMBEDDED_APP_JS
+        .contains("? `<div class=\"build-sub\">${escapeAttr(titleCase(district))}</div>` : \"\";"));
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("return lead + cityBuildRow({")
+            .count(),
+        2
+    );
+    assert!(EMBEDDED_INDEX.contains("  .build-sub {\n"));
+}
+
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
 /// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
 /// to a live control now leaves one line naming the sender; nothing else does.
