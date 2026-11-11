@@ -412,11 +412,6 @@ impl AdvancedAi {
         // Every cut below still applies. See
         // `advanced/good_land_lifts_the_city_target.rs`.
         let desired_cities = self.good_land_city_target(g, pid, desired_cities, &cities);
-        // `each-civ-draws-its-width`: two cities ahead of what the empire
-        // holds, to the width it drew for this game, once that passes the
-        // shared ten. Every cut below still applies. See
-        // `advanced/each_civ_draws_its_width.rs`.
-        let desired_cities = self.city_width_target(g, pid, desired_cities, cities.len());
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -471,9 +466,6 @@ impl AdvancedAi {
             // gene sets (7 at Prince). `None` with the gene off, so the cap
             // reads its shipped constant.
             let cap = wide_city_target.map_or(cap, |wide| cap.max(wide));
-            // `each-civ-draws-its-width`: the drawn width is the floor of the
-            // cap, or a Science seat would be cut back to its twelve.
-            let cap = self.city_width_science_cap(g, pid, cap);
             desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities

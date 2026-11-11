@@ -28,7 +28,8 @@
 //! While the empire's cities, walking Settlers and Settlers in production
 //! are short of its settlement target (`settlement_target`, which
 //! `no-city-limit` lifts to every seat that pays), the plan is not Recovery
-//! and the seat is not on a Religion lane (there the Faith is the lane's):
+//! and the seat is neither on a Religion lane nor a founder playing its
+//! religion (there the Faith is the lane's):
 //!
 //! 1. **The Dedication.** In a Golden or Heroic Age that offers
 //!    Monumentality, it is taken first; the ordinary choice fills any slot
@@ -63,7 +64,8 @@ const MONUMENTALITY: &str = "monumentality";
 
 impl AdvancedAi {
     /// Whether the empire still has a seat to settle that Faith may pay for:
-    /// the gene is on, a major seat, off the Religion lane, not in Recovery,
+    /// the gene is on, a major seat, off the Religion lane and no founder
+    /// playing its religion, not in Recovery,
     /// and short of its settlement target counting every Settler out or in
     /// production. `(cities, in_flight, target)` when it does.
     pub(super) fn faith_settler_wanted(
@@ -76,8 +78,11 @@ impl AdvancedAi {
             || self.base.minor
             || self.base.barb
             || plan.strategy == GrandStrategy::Recovery
-            || plan.strategy == GrandStrategy::Religion
             || self.active_victory_target(g) == Some(VictoryTarget::Religion)
+            // A founder playing its religion spends its Faith there; a seat
+            // only racing for a Prophet has founded nothing to spend it on.
+            || (plan.strategy == GrandStrategy::Religion
+                && g.players.get(pid).is_some_and(|player| player.religion.is_some()))
         {
             return None;
         }

@@ -90,7 +90,10 @@ fn monumentality_buys_a_settler_with_faith() {
     let plan = ai.assess(&on, 0);
     assert!(
         ai.faith_settler_wanted(&on, 0, &plan).is_some(),
-        "fixture: the plan wants more cities than the two it holds"
+        "fixture: the plan wants more cities than the two it holds ({:?}, target {}, lane {:?})",
+        plan.strategy,
+        ai.settlement_target(&plan),
+        ai.active_victory_target(&on)
     );
     assert!(ai.claim_faith_settler(&mut on, 0, &plan));
     assert_eq!(settlers(&on), 1, "one Settler bought");
@@ -101,8 +104,8 @@ fn monumentality_buys_a_settler_with_faith() {
     assert_eq!(on.players[0].gold, game.players[0].gold, "no Gold spent");
 }
 
-/// The bounds: no Golden Age, no Monumentality, a bank short of the price, a
-/// Religion plan and Recovery each leave the Faith alone.
+/// The bounds: no Golden Age, no Monumentality, a bank short of the price,
+/// Recovery and a Religion lane each leave the Faith alone.
 #[test]
 fn the_purchase_waits_for_monumentality_the_price_and_the_lane() {
     let ai = armed();
@@ -135,15 +138,22 @@ fn the_purchase_waits_for_monumentality_the_price_and_the_lane() {
     );
     assert_eq!(settlers(&poor), 0);
 
-    for strategy in [GrandStrategy::Religion, GrandStrategy::Recovery] {
-        let (mut game, _) = golden(1_000.0);
-        let mut plan = ai.assess(&game, 0);
-        plan.strategy = strategy;
-        assert!(
-            !ai.claim_faith_settler(&mut game, 0, &plan),
-            "{strategy:?} keeps its Faith"
-        );
-    }
+    let (mut game, _) = golden(1_000.0);
+    let mut plan = ai.assess(&game, 0);
+    plan.strategy = GrandStrategy::Recovery;
+    assert!(
+        !ai.claim_faith_settler(&mut game, 0, &plan),
+        "Recovery settles nothing"
+    );
+
+    let mut lane = armed();
+    lane.victory_target = Some(VictoryTarget::Religion);
+    let (mut game, _) = golden(1_000.0);
+    let plan = lane.assess(&game, 0);
+    assert!(
+        !lane.claim_faith_settler(&mut game, 0, &plan),
+        "a Religion lane keeps its Faith"
+    );
 }
 
 /// One Settler past the ordinary pipeline's width, and no more.
