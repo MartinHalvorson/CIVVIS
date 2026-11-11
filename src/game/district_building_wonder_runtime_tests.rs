@@ -1864,7 +1864,6 @@ fn aqueducts_dams_and_flood_barriers_execute_disaster_protection() {
         .get_mut(&city)
         .unwrap()
         .districts
-        .0
         .remove(&Name::new("aqueduct"));
     game.map.tiles.get_mut(&position).unwrap().district = None;
     game.map.tiles.get_mut(&farm).unwrap().pillaged = false;
