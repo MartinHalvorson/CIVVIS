@@ -221,7 +221,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", "rivalstrategy", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -38664,13 +38664,42 @@ function fillStrategies(rules) {
   if (!select || !roster.length) return;
   select.innerHTML = roster.map(entry =>
     `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}">` +
-      `${escapeAttr(entry.username || entry.name)}</option>`).join("");
+      `${escapeAttr(entry.username || entry.name)}${strategyEloSuffix(entry)}</option>`).join("");
+  fillRivalStrategies(rules, roster);
   let remembered = null;
   try { remembered = localStorage.getItem(AUTOPLAY_STRATEGY_KEY); } catch (e) {}
   const wanted = [remembered, rules.seat_strategy]
     .find(name => name && roster.some(entry => entry.name === name));
   select.value = wanted || roster[0].name;
   syncAutoplayLabel();
+}
+// A rating is shown only once something measured it, and a thin one says so.
+function strategyEloSuffix(entry) {
+  if (entry.elo === null || entry.elo === undefined) return "";
+  return ` · ${entry.provisional ? "~" : ""}${Math.round(entry.elo)}`;
+}
+// Who a person plays against. Each Civ AI Agent carries its measured Elo and
+// the Civilization VI level whose rivals rate nearest it, so somebody who
+// knows what they beat in that game can find the same fight here. The note
+// under the control is the whole ladder on the same scale.
+function fillRivalStrategies(rules, roster) {
+  const select = document.getElementById("rivalstrategy");
+  if (!select) return;
+  select.innerHTML = `<option value="">House mix</option>` + roster.map(entry => {
+    const rated = entry.elo === null || entry.elo === undefined ? ""
+      : `${strategyEloSuffix(entry)} Elo${entry.civ6_level ? ` ≈ ${entry.civ6_level}` : ""}`;
+    return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.blurb || entry.label || "")}">` +
+      `${escapeAttr(entry.username || entry.name)} — ${escapeAttr(entry.tilt || "")}${escapeAttr(rated)}</option>`;
+  }).join("");
+  const wanted = rules.rival_strategy;
+  select.value = wanted && roster.some(entry => entry.name === wanted) ? wanted : "";
+  const note = document.getElementById("rivalstrategy-note");
+  if (!note) return;
+  const rungs = (Array.isArray(rules.civ6_ladder) ? rules.civ6_ladder : [])
+    .filter(rung => rung.elo !== null && rung.elo !== undefined);
+  note.textContent = rungs.length
+    ? "Civ VI levels in Elo: " + rungs.map(rung => `${rung.name} ${Math.round(rung.elo)}`).join(" · ")
+    : "";
 }
 // "All" is the turns this game has left. A continued game deliberately has no
 // cap, so use a stop-button-sized horizon: a next-victory run will finish when

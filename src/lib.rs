@@ -94,6 +94,7 @@ pub mod simultaneous;
 pub mod skirmish;
 pub mod specmap;
 pub mod sphere;
+pub mod strategies;
 pub mod strategic;
 pub mod trafalgar;
 pub mod validate;

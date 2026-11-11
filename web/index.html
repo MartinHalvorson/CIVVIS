@@ -5991,8 +5991,8 @@
       <div class="footer-actions" id="humanfooter">
         <div class="autoplay-bar" id="autoplaybar">
           <div class="autoplay-fields">
-            <label class="autoplay-field"><span>Agent</span>
-              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
+            <label class="autoplay-field"><span>Civ AI</span>
+              <select id="autoplaystrategy" title="Which Civ AI Agent plays your seat"></select></label>
             <label class="autoplay-field"><span>Turns</span>
               <select id="autoplayturns" title="How many turns it plays before handing the seat back">
                 <option value="1" selected>1</option>
@@ -6484,6 +6484,10 @@
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
+        <!-- Who the rivals are. Difficulty is what the rules hand them; this
+             is how well they play, on an Elo scale pinned to Civilization
+             VI's own levels (docs/ELO.md). -->
+        <label class="small human-setting civ6-hidden">Rival Civ AI Agent<select id="rivalstrategy" style="margin-top:4px" title="Which of our Civ AI Agents plays every rival seat"><option value="">House mix</option></select><small id="rivalstrategy-note" style="display:block;margin-top:3px;opacity:.75"></small></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
           <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate, wraparound &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>

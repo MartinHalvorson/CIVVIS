@@ -12805,6 +12805,52 @@ fn a_human_finale_counts_itself_down_to_the_next_game() {
     assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\");"));
 }
 
+/// A person chooses who they play against. The choice is one of the
+/// registered Civ AI Agents, it survives into the next game at the same
+/// table, and a name nobody registered is refused rather than swapped for
+/// the house fleet.
+#[test]
+fn a_new_game_seats_the_rivals_a_person_asked_for() {
+    let mut session = Session::new(current());
+    assert_eq!(session.rival_strategy_name(), None);
+    session
+        .start_new_game(&json!({
+            "seed": 11, "spectate": false, "force": true, "rival_strategy": "SiegeTheDay",
+        }))
+        .expect("a registered agent can be seated");
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    let rules = crate::routes::rules(&session, false);
+    assert_eq!(rules["rival_strategy"], json!("siege"));
+    let ladder = rules["civ6_ladder"].as_array().expect("a ladder");
+    assert_eq!(ladder.len(), 8);
+    assert_eq!(ladder[3]["id"], json!("prince"));
+    assert_eq!(ladder[7]["name"], json!("Deity"));
+    // It plays: the rivals take their turns as the agent that was seated.
+    session.autoplay(2);
+    // And the lobby can ask for it: the control exists, sits under the
+    // difficulty it complements, and its value travels with a played game.
+    assert!(EMBEDDED_INDEX.contains("<select id=\"rivalstrategy\""));
+    assert!(EMBEDDED_INDEX.contains("\"difficulty\", \"rivalstrategy\","));
+    assert!(EMBEDDED_INDEX.contains("{rival_strategy: rivalStrategy}"));
+    assert!(EMBEDDED_INDEX.contains("fillRivalStrategies(rules, roster);"));
+
+    assert!(session.start_automatic_next_game(None));
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+
+    assert_eq!(
+        session.start_new_game(&json!({
+            "seed": 12, "spectate": false, "force": true, "rival_strategy": "nobody",
+        })),
+        Err("no strategy named nobody".to_string())
+    );
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+    session
+        .start_new_game(&json!({"seed": 13, "spectate": false, "force": true}))
+        .expect("the house fleet needs no name");
+    assert_eq!(session.rival_strategy_name(), None);
+}
+
 /// Auto-play used to be one button that ran whichever agent the fleet
 /// happened to build for the seat, for one turn or ten. Both of those are
 /// decisions a person should make: *which* of our strategies plays, and
@@ -12821,10 +12867,7 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
         .iter()
         .filter_map(|entry| entry["name"].as_str())
         .collect();
-    assert!(
-        names.contains(&"advanced"),
-        "the default agent is offerable"
-    );
+    assert!(names.contains(&"jack"), "the flagship agent is offerable");
     assert!(
         !names.contains(&"strategic"),
         "the score-only search is not a live auto-play offer"
@@ -12856,16 +12899,17 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
         Err("no strategy named strategic".to_string()),
         "a direct request must not bypass the live-eligibility boundary"
     );
+    // An id remembered from before the registry still finds its agent.
     session
         .seat_strategy_at(0, "basic")
         .expect("a built-in agent is always available");
-    assert_eq!(session.seated_strategy_name(0), Some("basic"));
+    assert_eq!(session.seated_strategy_name(0), Some("wheels"));
     assert_eq!(
         session.seat_strategy_at(0, "no-such-strategy"),
         Err("no strategy named no-such-strategy".to_string()),
         "a player who picked a strategy must not silently get another one"
     );
-    assert_eq!(session.seated_strategy_name(0), Some("basic"));
+    assert_eq!(session.seated_strategy_name(0), Some("wheels"));
 
     // And it plays: turns pass, and the seat is still the player's after.
     let before = session.game.turn;

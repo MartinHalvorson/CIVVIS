@@ -83,6 +83,8 @@ pub fn rules(session: &Session, include_civ6: bool) -> Value {
         "default_setup": server::default_setup_json(),
         "strategies": server::strategy_roster(session),
         "seat_strategy": session.seated_strategy_name(0),
+        "rival_strategy": session.rival_strategy_name(),
+        "civ6_ladder": crate::strategies::civ6_ladder_json(),
     });
     if include_civ6 {
         out["civ6"] = crate::civ6::vocabulary();

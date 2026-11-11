@@ -9,8 +9,8 @@
 //! `builtin_ai`, `builtin_send_ai`), and the provenance report that keeps a
 //! degraded artifact from playing under a trained name. The frozen anchor's
 //! behaviour pin lives on in `main.rs` (`ANCHOR_BEHAVIOUR_FNV`), and
-//! `docs/ELO_REPINS.md` remains its paper trail. Bringing a rating system
-//! back for finished genomes is planned; see docs/ROADMAP.md.
+//! `docs/ELO_REPINS.md` remains its paper trail. Finished genomes are rated
+//! again by `crate::strategies` and `strategy_elo`; see docs/ELO.md.
 use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi};
 
 pub const BUILTIN_AIS: &[&str] = &[
