@@ -25754,6 +25754,14 @@ impl Ai for AdvancedAi {
         Some(AdvancedAi::expansion_census(self))
     }
 
+    fn set_site_shortcuts(&mut self, shortcuts: crate::ai::SiteShortcuts) {
+        self.base.set_site_shortcuts(shortcuts);
+    }
+
+    fn site_shortcuts(&self) -> crate::ai::SiteShortcuts {
+        self.base.site_shortcuts()
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.plan.as_ref().map(|plan| plan.strategy.as_str())
     }
@@ -25806,7 +25814,10 @@ impl Ai for AdvancedAi {
             target_player: plan.target_player,
             target_city: plan.target_city,
             threatened_city: plan.threatened_city,
-            desired_cities: plan.desired_cities,
+            // `no-city-limit`: the page's "wants N" shows the settlement
+            // target the Settlers are trained toward. The plan's own number
+            // with the gene off.
+            desired_cities: self.reported_city_target(plan),
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
             peace_routed: self.peace_routed.iter().copied().collect(),

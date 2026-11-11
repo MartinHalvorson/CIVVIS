@@ -12673,6 +12673,16 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	if statementType ~= "MAKE_DEAL" then return; end
 	if session.sessionID == nil then session.sessionID = sessionID; end
 	if not session.sent then
+		local pending = trade.pending[other];
+		if pending ~= nil and pending.cash_bid_requested then
+			local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
+			if type(cash) ~= "number" or not (cash < math.huge
+					and cash - pending.cash_offer_bid >= pending.cash_reserve) then
+				trade.pending[other] = nil;
+				CivvisTrade.close(pid, other, "cash_budget_changed");
+				return;
+			end
+		end
 		-- The session is live: put the question. `sent` goes first so an
 		-- answer delivered from inside the send is read as the answer.
 		session.sent = true;
@@ -12704,7 +12714,10 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		emit("deal_session", { turn = turn, target = other, kind = session.kind,
 			action = session.action, session = sessionID or -1, phase = "asked", sent = ok,
 			hold = cfg.DealAnswerHoldSeconds or 30 });
-		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
+		if not ok then
+			if pending ~= nil and pending.cash_bid_requested then trade.pending[other] = nil; end
+			CivvisTrade.close(pid, other, "send_threw");
+		end
 		return;
 	end
 	if fromPlayer ~= other then return; end
@@ -12730,6 +12743,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 	-- it is refused the way DiplomacyDealView.lua OnRefuseDeal does
 	-- (SendWorkingDeal REJECTED, then CloseSession).
 	if session.counter_wait ~= nil then
+		if session.counter_wait.resource_cash and session.counter_wait.answering then return; end
+		if session.counter_wait.resource_cash and
+				(kVariants.DealAction == DealProposalAction.REJECTED
+					or kVariants.DealAction == DealProposalAction.EQUALIZE_FAILED) then
+			-- These can be duplicate notifications of the original refusal.
+			-- Keep ownership for its following counter or the bounded closer.
+			emit("counter_wait", { turn = turn, target = other, kind = session.kind,
+				reason = "duplicate_refusal" });
+			return;
+		end
+		if session.counter_wait.resource_cash then session.counter_wait.answering = true; end
 		local rejected = CivvisK.attempt(function()
 			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
 		end);
@@ -12852,7 +12876,8 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			return;
 		end
 	else
-		-- A bounded Great Work re-proposal still awaits the rival's verdict.
+		-- Great Work re-proposals and refused cash offers may retain ownership
+		-- while awaiting a verdict or the rival's following counter.
 		if CivvisOnIncomingDeal(other, pid, dealAction) then return; end
 	end
 	CivvisTrade.close(pid, other, "answered");
@@ -13041,41 +13066,29 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		closable = closable,
 	});
 	if pending == nil then return; end
-	-- The shipped UI submits a working quote as PROPOSED after REJECTED,
-	-- before it can accept it (Expansion2 DiplomacyDealView.lua:149-156,
-	-- 530-544). This is already required for Great Works. Native Macedon
-	-- 115023Z t57/71/74 returned exact, affordable Iron quotes as REJECTED
-	-- too, with no payment item; discarding them never submits a deal.
-	-- A strategic quote can legitimately have no payment: let the engine
-	-- evaluate that proposal once. Only its later ACCEPTED/ADJUSTED verdict
-	-- may reach the unchanged item, budget and working-deal checks below.
-	-- Cash quotes only. Native 131031Z and two continuations re-proposed a
-	-- declined Aluminum/Ivory/Coal barter, received EQUALIZE_FAILED, then
-	-- stalled with a NONE statement pending. Keep barter's original lifecycle.
+	-- Great Work quote re-proposals retain their existing lifecycle. Resource
+	-- cash bids are built before the session opens: native 135842Z t146
+	-- re-entered EQUALIZE with PROPOSED, then received its late EQUALIZE_FAILED
+	-- and stalled. Never send a second resource request from this callback.
 	local activeSession = trade.sessions[fromPlayer];
 	local proposalQuote = buying and type(pending.want) == "string"
-		and ((string.find(pending.want, "^GREATWORK:") ~= nil)
-			or (pending.strategic == true and pending.gave == nil));
+		and string.find(pending.want, "^GREATWORK:") ~= nil;
 	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
 		local enginePending = try(function()
 			return DealManager.HasPendingDeal(pid, fromPlayer);
 		end, nil);
 		if pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
-				and (enginePending == true or (pending.cash_offer_bid ~= nil
-					and pay == 0 and matches and foreign == 0)) then
+				and enginePending == true then
 			-- Incoming-deal and statement callbacks may describe the old
 			-- rejection while the core is still evaluating our new proposal.
-			-- The old empty-payment quote cannot confirm a priced offer's
-			-- verdict; wait for its response or the existing bounded closer.
 			emit("deal_proposal_wait", { turn = turn, from = fromPlayer,
-				want = pending.want,
-				reason = enginePending == true and "engine_pending" or "unpriced_callback" });
+				want = pending.want, reason = "engine_pending" });
 			return true;
 		end
 		if not pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
 				and matches and foreign == 0
-				and (pay > 0 or pending.strategic == true)
+				and pay > 0
 				and withinBudget and enginePending == false then
 			-- Mark and hold before sending: the engine may answer inside it.
 			pending.purchase_quote_proposed = true;
@@ -13089,29 +13102,6 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 			local ok, sent = pcall(function()
 				DealManager.CopyIncomingToOutgoingWorkingDeal(pid, fromPlayer);
 				if not DealManager.AreWorkingDealsEqual(pid, fromPlayer) then return false; end
-				if pending.cash_bid_requested and pay == 0 then
-					-- Native 124038Z t65 rejected a free two-Iron proposal too.
-					-- Offer the desk's budget once, retaining all cash it reserved
-					-- at the ask. Shipped OnClickAvailableOneTimeGold (Expansion2 deal view:870-887)
-					-- sets duration BEFORE reading the native one-time maximum.
-					local cash = try(function() return Players[pid]:GetTreasury():GetGoldBalance(); end, nil);
-					if type(cash) ~= "number"
-							or not (cash >= pending.cash_reserve and cash < math.huge) then return false; end
-					local bid = math.floor(math.min(pending.ceiling, cash - pending.cash_reserve));
-					if bid < 1 then return false; end
-					local outgoing = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer);
-					local item = outgoing:AddItemOfType(DealItemTypes.GOLD, pid);
-					if item == nil then return false; end
-					item:SetDuration(0);
-					local cap = item:GetMaxAmount();
-					if type(cap) ~= "number" or not (cap >= 1 and cap < math.huge) then return false; end
-					bid = math.min(bid, math.floor(cap));
-					item:SetAmount(bid);
-					if item:GetAmount() ~= bid or not item:IsValid() then return false; end
-					outgoing:Validate();
-					if not outgoing:IsValid() then return false; end
-					pending.cash_offer_bid = bid;
-				end
 				DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, fromPlayer);
 				return true;
 			end);
@@ -13126,13 +13116,28 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- The final answer settles the ask, whichever way it went.
 	trade.pending[fromPlayer] = nil;
 	if not closable then
-		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);
+		local counterHold = pending.cash_bid_requested and activeSession ~= nil
+			and activeSession.kind == "buy" and activeSession.sent
+			and (action == DealProposalAction.REJECTED or action == DealProposalAction.EQUALIZE_FAILED)
+			and 4 or 0;
+		if counterHold == 0 then
+			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, fromPlayer); end);
+		end
 		emit("deal_declined", {
 			turn = turn, from = fromPlayer, action = action, worth = worth,
 			direction = buying and "buy" or "sell", pay = pay,
 			floor = pending.floor, ceiling = pending.ceiling, want = pending.want,
 			matches = matches, foreign = foreign,
 		});
+		if counterHold > 0 then
+			-- As for peace/alliance refusals, do not close under the rival's
+			-- following counter. OnRefuseDeal sends REJECTED, then closes.
+			activeSession.counter_wait = { turn = turn, resource_cash = true };
+			pcall(function() LuaEvents.CivvisDealSession(fromPlayer, true, counterHold); end);
+			emit("deal_session", { turn = turn, target = fromPlayer, kind = "buy",
+				phase = "counter_wait", hold = counterHold });
+			return true;
+		end
 		return;
 	end
 	local ok, sent = pcall(function()
@@ -15457,7 +15462,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local ceiling = math.max(0, math.floor(x or 0));
 		if ceiling <= 0 and barter == nil then return false, "buy_no_ceiling"; end
-		local ran, submitted, reason, wantName = pcall(function()
+		local ran, submitted, reason, wantName, offeredCash, protectedCash = pcall(function()
 			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			if deal == nil then return false, "no_working_deal"; end
@@ -15603,6 +15608,29 @@ local function applyOrder(player, pid, row, turn)
 					return false, "agreement_invalid";
 				end
 			end
+			local cashBid, cashReserve;
+			if cfg.StrategicCashCeilingBid == true and cfg.VictoryLane == "domination"
+					and strategicAsk ~= nil and barter == nil and ceiling > 0 then
+				local cash = try(function() return player:GetTreasury():GetGoldBalance(); end, nil);
+				if type(cash) ~= "number" or not (cash >= ceiling and cash < math.huge) then
+					return false, "cash_budget_unreadable", name;
+				end
+				cashReserve = cash - ceiling;
+				-- OnClickAvailableOneTimeGold (Expansion2 deal view:870-887)
+				-- sets duration before reading the native one-time maximum.
+				local item = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+				if item == nil then return false, "no_gold_item", name; end
+				item:SetDuration(0);
+				local cap = item:GetMaxAmount();
+				if type(cap) ~= "number" or not (cap >= 1 and cap < math.huge) then
+					return false, "cash_maximum_unreadable", name;
+				end
+				cashBid = math.floor(math.min(ceiling, cap));
+				item:SetAmount(cashBid);
+				if item:GetAmount() ~= cashBid or not item:IsValid() then
+					return false, "cash_offer_invalid", name;
+				end
+			end
 			deal:Validate();
 			if not deal:IsValid() then return false, "invalid_deal", name; end
 			-- Registered BEFORE the ask goes out — see the sale arm above.
@@ -15612,18 +15640,10 @@ local function applyOrder(player, pid, row, turn)
 				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
 				gave = type(barter) == "table" and barter or nil,
 				gold_cap = workGoldCap, gpt_cap = workGptCap,
+				cash_bid_requested = cashBid ~= nil, cash_offer_bid = cashBid, cash_reserve = cashReserve,
 			};
-			if cfg.StrategicCashCeilingBid == true and cfg.VictoryLane == "domination"
-					and strategicAsk ~= nil and barter == nil and ceiling > 0 then
-				local pending = trade.pending[subject];
-				pending.cash_bid_requested = true;
-				local cash = try(function() return player:GetTreasury():GetGoldBalance(); end, nil);
-				if type(cash) == "number" and cash < math.huge and cash >= ceiling then
-					pending.cash_reserve = cash - ceiling;
-				end
-			end
-			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
-			return true, "asked", name;
+			CivvisTrade.ask(pid, subject, cashBid ~= nil and "PROPOSED" or "EQUALIZE", "buy", turn);
+			return true, "asked", name, cashBid, cashReserve;
 		end);
 		if not ran then
 			submitted, reason, wantName = false, "throw", nil;
@@ -15642,6 +15662,8 @@ local function applyOrder(player, pid, row, turn)
 				or reason == "no_favor_item" or reason == "buy_no_strategic"
 				or reason == "buy_no_great_work" or reason == "no_great_work_item"
 				or reason == "great_work_invalid"
+				or reason == "cash_budget_unreadable" or reason == "no_gold_item"
+				or reason == "cash_maximum_unreadable" or reason == "cash_offer_invalid"
 				or reason == "strategic_invalid" or reason == "barter_nothing"
 				or reason == "barter_short") then
 			-- The engine will not sell passage here right now — usually a
@@ -15652,7 +15674,8 @@ local function applyOrder(player, pid, row, turn)
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 		end
 		emit("deal_offer", {
-			turn = turn, target = subject, verb = verb, direction = "buy",
+			turn = turn, target = subject, verb = verb, direction = "buy", action = offeredCash ~= nil and "PROPOSED" or "EQUALIZE",
+			cash_bid = offeredCash, cash_reserve = protectedCash,
 			ceiling = ceiling, want = wantName, gold_cap = workGoldCap, gpt_cap = workGptCap,
 			submitted = submitted and true or false, reason = reason,
 			threw = reason == "throw",
@@ -26803,7 +26826,7 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
-		strategic_quote_proposals = 3,
+		strategic_quote_proposals = 4,
 		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.

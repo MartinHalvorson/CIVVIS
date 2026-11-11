@@ -1,0 +1,234 @@
+{
+  "at": 1794413152.8641448,
+  "scope": "Correct civilian-reservation accounting in the existing first-capital/stepping-stone production quota. No new treatment or force selection. Native Domination gain remains unproven.",
+  "source_sha256": "1f8d4d08da6bdb8f5ccdbaa43651335c2fe9fc742c32e1a6558f5889de710447",
+  "problem": "conquest_force excludes all_reserved_civilian_guards and home guards. first_capital_shortfall subtracted only home guards (and Scouts). An escort could therefore satisfy the production quota although it could not join the roster.",
+  "repair": "Subtract the union of owned, extant home and civilian-reserved bodies, using EmpireCounts.add_field_unit for the same classification as the original census. Scouts are not removed twice; queued/projected replacements remain in counts. Inactive parent paths retain their existing census.",
+  "regression_red": {
+    "base": "original production source in task based on main",
+    "tests_passed": 9,
+    "new_tests_failed": 2,
+    "message": "old shortfall (0,0), expected (0,1) with one of four nominal melee bodies assigned as a civilian escort"
+  },
+  "local_checks": {
+    "integrated-first-capital": {
+      "passed": 58,
+      "profile": "ci with CARGO_PROFILE_CI_OPT_LEVEL=0",
+      "log_sha256": "1baf18049bc819428f4ddd1cfb1ca3ec55f443c18928e42f28bcb52763d2679d"
+    },
+    "integrated-early-conquest": {
+      "passed": 79,
+      "profile": "ci with CARGO_PROFILE_CI_OPT_LEVEL=0",
+      "log_sha256": "53e9db391d2025a77093fad506d3ff88eeabb68b5fb8f695a0a6e99dca904e8c"
+    },
+    "integrated-city-stone": {
+      "passed": 23,
+      "profile": "ci with CARGO_PROFILE_CI_OPT_LEVEL=0",
+      "log_sha256": "462d2bce7cd10cfbf9d538618fa452e0d7594fde60cb3f04318edc8986ae7f3f"
+    }
+  },
+  "other_checks": "Exact-file rustfmt and git diff --check pass. Full optimized cargo suite and repository checks are merge gates in CI; not claimed as already run locally.",
+  "build": {
+    "at": 1794413031.1061912,
+    "worker_sha256": "eb2884eec597ebd12336459500201a959421477b129cbd1853b6caebe865aef5",
+    "source_sha256": "1f8d4d08da6bdb8f5ccdbaa43651335c2fe9fc742c32e1a6558f5889de710447",
+    "integrated_main": "0df8de398c864aa3d4e67d21c9b66e4245927529",
+    "task_head_before_source_commit": "e9ff77c7aecc92a178872245a6c791ce474964cb",
+    "build": "cargo build --profile ci --locked --bin civvis_orders, CARGO_PROFILE_CI_OPT_LEVEL=0,CARGO_BUILD_JOBS=2; ownfreshsourcecompilationfinished37.70s aftermainmerge."
+  },
+  "screens": [
+    {
+      "run": "civvis-20261111T152706Z",
+      "through_turn": 60,
+      "frames": 145,
+      "native_control": {
+        "gate_passed": true,
+        "native_history_gate_passed": true,
+        "request_identity_gate_passed": true,
+        "invalid_request_reply_frames": 0,
+        "gate_kind": "earliest_changed_complete_reply",
+        "frames": 145,
+        "matched_frames": 145,
+        "missing_record_frames": 0,
+        "changed_complete_reply_frames": 3
+      },
+      "changed_order_frames": 3,
+      "equal_requested_genomes": true,
+      "production_changes": [
+        {
+          "turn": 53,
+          "frame": 0,
+          "baseline": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ],
+          "candidate": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "UNIT_WARRIOR",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ]
+        },
+        {
+          "turn": 53,
+          "frame": 1,
+          "baseline": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ],
+          "candidate": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "UNIT_WARRIOR",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ]
+        },
+        {
+          "turn": 53,
+          "frame": 2,
+          "baseline": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ],
+          "candidate": [
+            {
+              "kind": "produce_next",
+              "subject": 65536,
+              "verb": "UNIT_WARRIOR",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 196610,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            },
+            {
+              "kind": "produce_next",
+              "subject": 327684,
+              "verb": "BUILDING_GRANARY",
+              "x": null,
+              "y": null
+            }
+          ]
+        }
+      ],
+      "scope": "Untreated recorded history. Requests and original replies verified; these are counterfactual order intentions, not host execution, trained units, captures or wins."
+    },
+    {
+      "run": "civvis-20261111T132641Z",
+      "through_turn": 60,
+      "frames": 151,
+      "native_control": {
+        "gate_passed": true,
+        "native_history_gate_passed": true,
+        "request_identity_gate_passed": true,
+        "invalid_request_reply_frames": 0,
+        "gate_kind": "unchanged_original_history",
+        "frames": 151,
+        "matched_frames": 151,
+        "missing_record_frames": 0,
+        "changed_complete_reply_frames": 0
+      },
+      "changed_order_frames": 0,
+      "equal_requested_genomes": true,
+      "production_changes": [],
+      "scope": "Untreated recorded history. Requests and original replies verified; these are counterfactual order intentions, not host execution, trained units, captures or wins."
+    }
+  ],
+  "native_context": "152706 named Ulundi at27, failed to assemble by57. At53 the final candidate asks for UNIT_WARRIOR next in the capital, while the recorded worker asked for a Campus research project. Native132641 through60 remains unchanged. This does not prove a counterfactual assembled force or capture.",
+  "native_trial_parallel": "Existing opening-ranged-support pilot remains separate. Initial Slinger5 is verified; no win-rate improvement inferred. No healthy game restarted, no setup/victory/difficulty/retirement changes."
+}

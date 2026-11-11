@@ -2214,25 +2214,78 @@
   /* The city screen. The sidebar panel is the glance; this is the desk you
      work at — everything the city is, and everything it could build, in one
      place, the way Civ 6 opens a city rather than a dropdown. */
+  /* Civilization VI opens a city on the map. The production panel docks on
+     the right edge above the action corner (ProductionPanel.xml, `Anchor=
+     "R,T"`), the city panel takes the selected unit's place inboard of End
+     Turn (CityPanel.xml, `Anchor="R,B"`), and the world between them stays in
+     view and in play. The section itself is only the layer they stand on. */
   #cityscreen {
-    position: absolute; z-index: 18;
-    inset: var(--workspace-block-inset) var(--workspace-inline-inset);
-    display: none; flex-direction: column;
-    overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
-    background: radial-gradient(circle at 12% 0, #1d322df5, #091310fc 58%);
-    box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
+    position: absolute; z-index: 18; inset: 0;
+    display: none; pointer-events: none; color: var(--text);
   }
-  #cityscreen.open { display: flex; animation: rise .18s ease-out; }
-  .city-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid #40534b; }
-  .city-head-name { color: var(--gold-bright); font: 600 23px/1 Georgia, serif; }
+  #cityscreen.open { display: block; }
+  .city-panel, .city-build {
+    position: absolute; pointer-events: auto; overflow: hidden;
+    display: flex; flex-direction: column;
+    border: 1px solid #536c63; border-radius: 14px;
+    background: radial-gradient(circle at 12% 0, #1d322df5, #091310fc 58%);
+    box-shadow: var(--shadow); backdrop-filter: blur(20px);
+    animation: rise .18s ease-out;
+  }
+  .city-build {
+    top: var(--solo-bar-top, 47px); right: var(--panel-edge);
+    bottom: var(--solo-corner-clearance, var(--panel-edge));
+    width: var(--solo-action-width, 320px);
+  }
+  .city-panel {
+    right: calc(var(--panel-edge) + var(--solo-action-width, 320px) + var(--panel-gap));
+    bottom: var(--panel-edge);
+    width: min(520px, calc(100% - var(--solo-action-width, 320px)
+      - var(--world-minimap-width, 200px) - 4 * var(--panel-edge)));
+    max-height: calc(100% - var(--solo-below-bars, 116px) - 2 * var(--panel-edge));
+  }
+  /* The corner's own list of what the idle city could build is the panel
+     standing right above it; twice is once too many. */
+  body.city-open #actionoptions { display: none; }
+  .city-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 9px; border-bottom: 1px solid #40534b; }
+  .city-head-title { min-width: 0; flex: 1; text-align: center; }
+  .city-head-name { color: var(--gold-bright); font: 600 20px/1 Georgia, serif; }
   .city-head-sub { margin-top: 5px; color: var(--muted); font-size: var(--type-small); letter-spacing: .05em; }
-  .city-cols { flex: 1; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 0; overflow: hidden; }
-  .city-dossier { overflow: auto; padding: 15px 18px 20px; border-right: 1px solid #26372f; }
-  .city-build { overflow: auto; padding: 15px 18px 20px; }
-  .city-yields { display: grid; gap: 5px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 12px; }
+  .city-head button { margin: 0; padding: 6px 9px; flex: none; }
+  .city-dossier { min-height: 0; overflow: auto; padding: 10px 12px 12px; }
+  .city-build { padding: 0; }
+  .build-head { padding: 11px 12px 0; border-bottom: 1px solid #40534b; }
+  .build-title {
+    color: var(--gold-bright); font: 600 16px/1 Georgia, serif; letter-spacing: .04em;
+    text-align: center; text-transform: uppercase;
+  }
+  .build-tabs { display: flex; gap: 3px; margin-top: 10px; }
+  .build-tabs button {
+    flex: 1; margin: 0; padding: 7px 4px; color: var(--muted); font-size: var(--type-small);
+    font-weight: 750; letter-spacing: .02em; text-transform: none; white-space: nowrap;
+    border: 1px solid #2c4239; border-bottom: 0; border-radius: 9px 9px 0 0;
+    background: #ffffff06; box-shadow: none;
+  }
+  .build-tabs button:hover { color: var(--text); transform: none; }
+  .build-tabs button[aria-selected="true"] { color: var(--gold-bright); border-color: #536c63; background: #1b2a23; }
+  .build-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 12px; }
+  .city-yields { display: grid; gap: 5px; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 9px; }
+  .city-yield-icon {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: url("/assets/civ6-yield-icons.png") calc(var(--cell) * 20%) 0 / 600% 100% no-repeat,
+      var(--fill);
+  }
+  .city-meters { display: grid; gap: 4px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .city-meter b, .city-fact b { color: var(--text); font-size: var(--type-secondary); text-align: right; }
+  .city-facts { display: grid; gap: 2px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 8px; }
+  .city-fact { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .city-fact.wide { grid-column: 1 / -1; }
+  .city-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .city-tools button { margin: 0; padding: 7px 10px; font-size: var(--type-secondary); }
+  .city-tools button small { margin-left: 7px; color: var(--muted); font-weight: 600; }
   .city-yield {
-    display: flex; flex-direction: column; gap: 1px; padding: 7px 9px; border-radius: 10px;
-    background: #0c1815; border: 1px solid #26372f;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px;
+    border-radius: 10px; background: #0c1815; border: 1px solid #26372f;
   }
   .city-yield b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
   .city-yield span { color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
@@ -2262,20 +2315,26 @@
   }
   .city-tag.district { color: var(--gold-bright); border-color: var(--gold-deep); }
   .city-tag.wonder { color: var(--violet); border-color: #5a466b; }
-  .build-list { display: grid; gap: 7px; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); }
+  .build-list { display: grid; gap: 4px; grid-template-columns: minmax(0, 1fr); }
+  /* One row is one order: the whole row is the button, as it is on Civ 6's
+     production list, with the turns it would take where the eye lands last. */
   .build-item {
-    display: flex; flex-direction: column; gap: 5px; padding: 9px 11px;
-    border: 1px solid #2d443d; border-radius: 11px; background: #101d1abb;
+    width: 100%; min-width: 0; margin: 0; color: var(--text); text-align: left;
+    font: inherit; letter-spacing: 0; text-transform: none; box-shadow: none;
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
+    padding: 7px 9px; border: 1px solid #2d443d; border-radius: 10px; background: #101d1abb;
   }
+  button.build-item { cursor: pointer; }
+  button.build-item:hover { transform: none; border-color: var(--gold); background: #17261f; }
+  .build-glyph { color: var(--gold-bright); font-size: 15px; line-height: 1; text-align: center; }
+  .build-text { display: grid; gap: 2px; min-width: 0; }
+  .build-sites { display: block; color: var(--gold-bright); }
+  .build-cost b { display: block; color: var(--text); font-size: var(--type-body); line-height: 1.2; }
+  .build-cost small { display: block; font-size: var(--type-label); }
   .build-item.current { border-color: var(--gold); background: #1b241bcc; }
-  .build-row { display: flex; align-items: baseline; gap: 8px; }
   .build-name { color: var(--text); font-size: var(--type-body); font-weight: 700; }
-  .build-cost { margin-left: auto; color: var(--muted); font-size: var(--type-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .build-cost { margin-left: auto; text-align: right; color: var(--muted); font-size: var(--type-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .build-note { color: var(--muted); font-size: var(--type-small); line-height: 1.5; }
-  .build-actions { display: flex; flex-wrap: wrap; gap: 4px; }
-  .build-actions button { margin: 0; padding: 5px 8px; font-size: var(--type-secondary); }
-  .build-sites { display: flex; flex-wrap: wrap; gap: 3px; }
-  .build-sites button { margin: 0; padding: 4px 7px; border-radius: 7px; font-size: var(--type-small); }
   .winner-again {
     width: auto; margin-top: 14px; padding: 10px 18px; border-radius: 10px;
     font-size: var(--type-control); letter-spacing: .04em;
@@ -3507,9 +3566,22 @@
     #empire, #diplomacy, #cityscreen, #tree, #pedia, #trade { border-radius: 14px; }
     .empire-head, .diplo-head, .city-head, .trade-head { gap: 10px; padding: 12px 13px 10px; }
     .empire-body, .diplo-body { padding: 12px 13px 15px; }
-    .city-cols { grid-template-columns: minmax(0, 1fr); }
-    .city-dossier { padding: 12px 13px 14px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
-    .city-build { padding: 12px 13px 15px; }
+    /* A stage this narrow has no edge to dock against: the two panels stack
+       into one sheet over the map, the city above what it can build. */
+    #cityscreen.open {
+      inset: var(--workspace-block-inset) var(--workspace-inline-inset);
+      display: flex; flex-direction: column; overflow: hidden; pointer-events: auto;
+      border: 1px solid #536c63;
+      background: radial-gradient(circle at 12% 0, #1d322df5, #091310fc 58%);
+      box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
+    }
+    .city-panel, .city-build {
+      position: static; width: auto; max-height: none; border: 0; border-radius: 0;
+      background: none; box-shadow: none; backdrop-filter: none; animation: none;
+    }
+    .city-panel { flex: 0 1 auto; max-height: 48%; border-bottom: 1px solid var(--line-soft); }
+    .city-build { flex: 1; min-height: 0; }
+    .city-yields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .diplo-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
     #pediabody { grid-template-columns: minmax(118px, .72fr) minmax(0, 1fr); gap: 8px; }
     #tree { padding: 13px; }
@@ -4761,7 +4833,7 @@
   .notice:hover, .launch:hover { background: #171a1df0; }
   .notice-dismiss { background: #0c0e10; border-color: #4d5559; }
 
-  #empire, #diplomacy, #cityscreen, #pedia, #tree, #trade {
+  #empire, #diplomacy, .city-panel, .city-build, #pedia, #tree, #trade {
     border-color: #4b5155;
     background: radial-gradient(circle at 18% 0, #202225f2, #07090afc 58%);
   }
@@ -5619,9 +5691,9 @@
 <div id="solo-notice" hidden>
   <section class="solo-notice-card" role="dialog" aria-modal="true" aria-labelledby="solo-notice-title">
     <div class="capture-kicker">Heads up</div>
-    <div class="capture-title" id="solo-notice-title">Single player is very questionable right now</div>
-    <p class="capture-copy">I haven't really played much of it myself yet. Feel free to give it a shot, but just a warning: it isn't really polished at all.</p>
-    <p class="capture-copy">Auto-play N turns is probably the most interesting bit of the single-player experience at the moment. It's at the top of the left panel: pick how many turns and press the button.</p>
+    <div class="capture-title" id="solo-notice-title">Single Player isn't quite ready yet</div>
+    <p class="capture-copy">I haven't really played much of this myself yet and haven't gone through to really polish things. It should be mostly working. Feel free to give it a shot if you want.</p>
+    <p class="capture-copy">Auto-play N turns is probably the most interesting part of the single player experience right now. It's at the top of the left panel: pick how many turns and press the button.</p>
     <div class="capture-actions"><button id="solo-notice-ack" class="primary" type="button">Ack</button></div>
   </section>
 </div>
@@ -5891,16 +5963,18 @@
     </div>
     <div class="diplo-body" id="diplomacy-body"></div>
   </section>
-  <section id="cityscreen" role="dialog" aria-modal="true" aria-labelledby="cityscreen-name">
-    <div class="city-head">
-      <div><div class="city-head-name" id="cityscreen-name">City</div>
-        <div class="city-head-sub" id="cityscreen-sub"></div></div>
-      <button class="ghost" style="margin-left:auto" onclick="closeCityScreen()">✕ Close</button>
-    </div>
-    <div class="city-cols">
+  <section id="cityscreen" role="region" aria-labelledby="cityscreen-name">
+    <div class="city-panel">
+      <div class="city-head">
+        <button class="ghost city-step" type="button" title="Previous city ( [ )" aria-label="Previous city" onclick="cycleCity(-1)">◀</button>
+        <div class="city-head-title"><div class="city-head-name" id="cityscreen-name">City</div>
+          <div class="city-head-sub" id="cityscreen-sub"></div></div>
+        <button class="ghost city-step" type="button" title="Next city ( ] )" aria-label="Next city" onclick="cycleCity(1)">▶</button>
+        <button class="ghost city-close" type="button" title="Close ( Esc )" aria-label="Close the city" onclick="closeCityScreen()">✕</button>
+      </div>
       <div class="city-dossier" id="cityscreen-dossier"></div>
-      <div class="city-build" id="cityscreen-build"></div>
     </div>
+    <div class="city-build" id="cityscreen-build"></div>
   </section>
   <section id="trade" role="dialog" aria-modal="true" aria-labelledby="tradetitle">
     <div class="trade-head">
@@ -6765,7 +6839,7 @@
          InputSettings.json — see docs/CIV6_KEYBINDINGS.md for the whole table
          and for the four places this map cannot be that game's. -->
     <div class="utility-body shortcut-grid">
-      <span><kbd>1</kbd>End turn · next blocker</span><span><kbd>Shift</kbd><kbd>1</kbd>End turn anyway</span>
+      <span><kbd>Enter</kbd><kbd>1</kbd>End turn · next blocker</span><span><kbd>Shift</kbd><kbd>Enter</kbd>End turn anyway</span>
       <span><kbd>Space</kbd>Skip unit</span><span><kbd>Z</kbd>Sleep</span>
       <span><kbd>F</kbd>Fortify</span><span><kbd>H</kbd>Fortify and heal</span>
       <span><kbd>V</kbd>Alert</span><span><kbd>E</kbd>Explore</span>

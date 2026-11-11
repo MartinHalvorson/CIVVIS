@@ -28,10 +28,29 @@ use super::*;
 /// Opt-in genes civvis.ai's majors play on top of the deployment genome, by
 /// registry tag.
 ///
-/// - `each-civ-draws-its-width` (operator, 2026-11-11): every major draws a
-///   city width of 11 to 18 for the game instead of stopping at the shared
-///   ten. See `advanced/each_civ_draws_its_width.rs`.
-pub const SITE_EXPERIMENT_GENES: &[&str] = &["each-civ-draws-its-width"];
+/// - `no-city-limit` (operator, 2026-11-11: "Remove the civvis city limit
+///   ... Try to build 15-20 cities per game"): no city target of its own;
+///   every major settles each seat it can hold while the city founded there
+///   out-earns its Settler, several Settlers at a time. See
+///   `advanced/no_city_limit.rs`.
+///
+/// It replaced `each-civ-draws-its-width`, the list's first entry (a drawn
+/// width of 11 to 18), on the measurement that decided between them: all four
+/// majors on one list, the stock site world, 8 seeds a list (2026-11-11).
+///
+/// | list | peak cities | majors past 15 | Science t150 | Production t150 | wall time |
+/// |---|---|---|---|---|---|
+/// | none (the shared ten) | 11.2 | 6% | par | par | par |
+/// | the draw | 14.9 | 41% | +5% (se 5) | +10% (se 4) | x1.08 |
+/// | `no-city-limit` | 18.3 | 81% | +13% (se 3) | +18% (se 3) | x1.19 |
+/// | both | 19.3 | 84% | +9% (se 3) | +21% (se 4) | x1.31 |
+///
+/// The price is early: Science at turn 100 reads 22% (se 3) under the shared
+/// ten's, against 3% for the draw, and is back to par near turn 130; Gold is
+/// 9% (se 3) lower at turn 150. The draw on top of it only keeps the plan in
+/// its expansion half longer, which costs Science and wall time, so it came
+/// off the list and stays in the registry as an opt-in.
+pub const SITE_EXPERIMENT_GENES: &[&str] = &["no-city-limit"];
 
 impl AdvancedAi {
     /// The player civvis.ai seats (`Session::ai_fleet`): the deployment

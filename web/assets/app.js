@@ -955,13 +955,22 @@ let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== 
 // while (#1453) and the operator asked for a still world by default
 // (2026-08-15): a moving map is something a viewer chooses, not something they
 // have to catch and stop. It is a preference and not a mood, so the button in
-// the map controls carries it and the answer is remembered either way.
+// the map controls carries it and the answer is remembered either way. The
+// published site answers for a first visit (`beta/shim.js` seeds a turning
+// world, #4721).
+//
+// Only the button and its bar write the answer. The key is the second of its
+// name because under the first, "civvis-world-spin", every drag of the map
+// wrote "0" as well: a stored off could not be told from a hand that only
+// wanted a look, and a visitor who had looked around once never saw the world
+// turn again (operator, 2026-11-11: "the world should still spin as before
+// [...] it should default on"). The first key is left orphaned.
 //
 // The period is the whole feel of the thing, and it is a viewing rate rather
 // than an astronomical one: the ground has to drift slowly enough that a
 // reader following a war can keep their place while it moves. Twelve seconds
 // read as a spin; thirty-six reads as a world going about its business.
-const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
+const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin-2";
 const WORLD_SPIN_PERIOD_MS = 36000;
 let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
 // The bar that opens over the button sets how fast. Its notches run from 1, the
@@ -4770,13 +4779,26 @@ function setWorldSpin(on) {
   updateSpinButton();
 }
 // Taking hold of the world is the plainest way of saying you would rather it
-// held still, so a drag stops it — and stops it for good rather than for the
-// moment, because a map that resumed drifting the instant a viewer let go of
-// it would have to be caught again every time they looked away. The button is
-// how it comes back. A world already held still has nothing to stop, so looking
-// around a watched empire does not cost the turn waiting back at All.
+// held still, so a drag stops it — and it stays stopped rather than starting
+// again the moment the hand lets go, because a map that resumed drifting then
+// would have to be caught again every time a viewer looked away. But a hand is
+// not a choice: it saves nothing, so the hold lasts for this world and no
+// longer. The button brings the turn back at once, and the next world or the
+// next visit opens as the button last left it (`restoreWorldSpin`). A world
+// already held still has nothing to stop, so looking around a watched empire
+// does not cost the turn waiting back at All.
 function stopWorldSpin() {
-  if (WORLD_SPIN && spinAvailable()) setWorldSpin(false);
+  if (!WORLD_SPIN || !spinAvailable()) return;
+  WORLD_SPIN = false;
+  updateSpinButton();
+}
+// A new world opens as the button last left it, whatever a hand did to the
+// world before it.
+function restoreWorldSpin() {
+  const saved = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
+  if (WORLD_SPIN === saved) return;
+  WORLD_SPIN = saved;
+  updateSpinButton();
 }
 // One tick of the turn. `dt` is milliseconds and a whole turn is the period,
 // so the pace holds however the frames fall — within the fifty-millisecond
@@ -8570,6 +8592,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // coordinates that meant nothing there, until they timed out.
   if (newWorld) resetAnim();
   if (newWorld) SKY_SETTLED_SITES.clear();
+  // A hand that held the last world still does not hold this one.
+  if (newWorld) restoreWorldSpin();
   // Settled before anything is drawn: a new map must not be painted north-up
   // for a frame and then swing away from it.
   if (newWorld) adoptWorldFacing(st);
@@ -13491,10 +13515,31 @@ function drawCityNameplate(c, x, y, S) {
   // time and crowded the health/wall bars, which are the only strips left.
   // Keyed off data presence, not seat 0 — spectate frames rotate the
   // observed seat, and an owner gate makes it blink with them.
+  // Civilization VI's banner counts the turns: to the next citizen under the
+  // population, and to the finished build under what is being built. Only on
+  // a player's own cities, where both are theirs to know and to plan around;
+  // a watched world's banners stay the uncluttered public ones.
+  const counted = !SPEC && c.owner === 0 && Boolean(c.yields);
+  const bannerTurns = (turns, tx, ty, ink) => {
+    cx.font = "800 10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+    cx.strokeText(turns, tx, ty);
+    cx.fillStyle = ink; cx.fillText(turns, tx, ty);
+  };
+  if (counted && c.growth_need) {
+    const surplus = c.yields.food || 0;
+    bannerTurns(surplus > 0
+      ? String(Math.max(1, Math.ceil((c.growth_need - c.food) / surplus))) : "–",
+      bx + 2 + popWidth / 2, statusY + 5.5, surplus > 0 ? "#9be38f" : "#f08b82");
+  }
   if (c.queue && c.queue.length && c.queue_cost) {
     const it = c.queue[0];
     const mx = bx + tw + (minorPlate ? 8 : 10.5);
     const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
+    if (counted) {
+      const turns = turnsFor(c.queue_cost, c.yields.production || 0, c.production || 0);
+      bannerTurns(turns === Infinity ? "–" : String(turns), mx, my + mr + 7, "#f0b070");
+    }
     cx.fillStyle = "#1c2418f2";
     cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
     cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
@@ -25145,6 +25190,7 @@ function drawPlanetMap() {
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   drawPlanetClaims(cellByKey, onSheet, now);
   drawSitePicksPlanet(cellByKey, onSheet);
+  drawRoutePreviewPlanet(cellByKey, onSheet);
   if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
   // Use the same stable tile layout as the flat command map. A unit on the
   // move is left out of the stacks, and a played game walks it along its route.
@@ -25810,6 +25856,7 @@ function drawScene() {
     cx.globalAlpha = 1;
   }
   drawSitePicksFlat();
+  drawRoutePreviewFlat();
   // --- movement / attack highlights
   for (const k in hl) {
     const [q, r] = k.split(",").map(Number);
@@ -30944,15 +30991,30 @@ let cityScreenId = null;
 function cityScreenOpen() {
   return document.getElementById("cityscreen").classList.contains("open");
 }
+// Civilization VI opens a city on the map: the city is selected, the camera
+// goes to it, and its two panels stand at the edge of a world that stays in
+// view and in play (CityPanel.xml and ProductionPanel.xml are docked panels,
+// neither is a screen). A unit's panel and a city's share one corner, so the
+// city is what is selected for as long as this is up.
 function openCityScreen(id) {
   if (SPEC) return;
+  const arriving = !cityScreenOpen() || (id !== undefined && id !== cityScreenId);
   if (id !== undefined) cityScreenId = id;
   if (cityScreenId === null) return;
   document.getElementById("cityscreen").classList.add("open");
+  document.body.classList.add("city-open");
+  const city = state && state.cities.find(candidate =>
+    candidate.id === cityScreenId && candidate.owner === 0);
+  if (city && arriving) {
+    selCity = city;
+    if (sel) { sel = null; clearUnitIntel(); drawUbar(); }
+    centerOn(city.pos); draw();
+  }
   drawCityScreen();
 }
 function closeCityScreen() {
   document.getElementById("cityscreen").classList.remove("open");
+  document.body.classList.remove("city-open");
 }
 // Choosing a tile on the map. Where a district goes decides what it is worth,
 // and a list of coordinates says nothing about that: the map does. The city
@@ -30960,19 +31022,24 @@ function closeCityScreen() {
 // and the tiles this city could use are outlined. Anything else clicked is
 // ignored, and Escape goes back to the city.
 let sitePick = null;
-function beginSitePick(cityId, itemId) {
-  const actions = state.legal_actions.filter(action => action.type === "produce" &&
-    action.city === cityId && action.item.pos && itemKey(action.item) === itemId);
+// A district bought outright is placed the same way as one that is built: the
+// purchase names its tile, so `currency` only changes which legal actions the
+// outlined tiles stand for.
+function beginSitePick(cityId, itemId, currency) {
+  const actions = state.legal_actions.filter(action => action.city === cityId && (currency
+    ? action.type === "buy_district" && (action.currency || "gold") === currency &&
+      itemKey({district: action.district}) === itemId
+    : action.type === "produce" && action.item.pos && itemKey(action.item) === itemId));
   const city = state.cities.find(candidate => candidate.id === cityId);
   if (!actions.length || !city) return;
-  const item = actions[0].item;
+  const item = currency ? {district: actions[0].district} : actions[0].item;
   sitePick = {cityId, lens: mapLens,
-    sites: new Map(actions.map(action => [key(action.item.pos), action]))};
+    sites: new Map(actions.map(action => [key(currency ? action.pos : action.item.pos), action]))};
   closeCityScreen();
   sel = null; selCity = city;
   if (item.district) { mapLens = districtLensId(item.district); syncMapLensControls(); }
   document.getElementById("site-pick-text").textContent =
-    `Place ${itemPlainName(item)}: choose a tile`;
+    `${currency ? "Buy" : "Place"} ${itemPlainName(item)}: choose a tile`;
   document.getElementById("site-pick").hidden = false;
   document.body.classList.add("site-picking");
   centerOn(city.pos);
@@ -30994,8 +31061,46 @@ function cancelSitePick() {
 function chooseSite(pos) {
   const action = sitePick.sites.get(key(pos));
   if (!action) return;
-  endSitePick();
-  send(action);
+  if (!sitePick.plots) { endSitePick(); send(action); return; }
+  // A border is usually pushed more than one tile, so buying land stays up
+  // and re-prices what the treasury can still afford, as Civ 6's mode does.
+  const cityId = sitePick.cityId;
+  send(action).then(() => {
+    if (sitePick && sitePick.plots && !beginPlotPick(cityId)) cancelSitePick();
+  });
+}
+// Buying land is chosen on the land (Civilization VI's Purchase Tile): every
+// plot the treasury can afford is outlined and priced where it lies. The list
+// of coordinates this replaces said nothing about which plot was which.
+function beginPlotPick(cityId) {
+  const actions = state.legal_actions.filter(action =>
+    action.type === "buy_plot" && action.city === cityId);
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  if (!actions.length || !city) return false;
+  const arriving = !sitePick;
+  sitePick = {cityId, plots: true, lens: sitePick ? sitePick.lens : mapLens,
+    sites: new Map(actions.map(action => [key(action.pos), action]))};
+  closeCityScreen();
+  sel = null; selCity = city;
+  document.getElementById("site-pick-text").textContent =
+    `Purchase a tile for ${city.name} · ${Math.round(state.me.gold)} Gold in the treasury`;
+  document.getElementById("site-pick").hidden = false;
+  document.body.classList.add("site-picking");
+  if (arriving) centerOn(city.pos);
+  modeline(); draw(); drawUbar();
+  return true;
+}
+// The price sits on the plot it buys, in Gold's own colour.
+function priceSitePick(site, x, y, size) {
+  if (!sitePick.plots) return;
+  cx.save();
+  cx.font = `800 ${size}px system-ui, sans-serif`;
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.lineJoin = "round"; cx.lineWidth = size * .32; cx.strokeStyle = "#0b0f0ee6";
+  const price = String(Math.round(sitePick.sites.get(site).cost));
+  cx.strokeText(price, x, y);
+  cx.fillStyle = YPIP.gold; cx.fillText(price, x, y);
+  cx.restore();
 }
 document.getElementById("site-pick-cancel").onclick = cancelSitePick;
 function outlineSitePick() {
@@ -31009,6 +31114,7 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
     planetPaintPath(cx, cell, .15);
     outlineSitePick();
+    priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);
   }
 }
 function drawSitePicksFlat() {
@@ -31019,11 +31125,16 @@ function drawSitePicksFlat() {
     const [x, y] = hexXY(q, r);
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
+    priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);
   }
 }
 async function sendFromCity(action) {
   await send(action);
-  if (cityScreenOpen()) drawCityScreen();
+  // An order closes the panels, as choosing production does in Civilization
+  // VI: the city has its answer and the turn moves on. A purchase leaves them
+  // up, because a treasury is often spent on more than one thing.
+  if (action.type === "produce") closeCityScreen();
+  else if (cityScreenOpen()) drawCityScreen();
 }
 function cityAct(action, label, cls = "", title = "") {
   return `<button class="${cls}" title="${escapeAttr(title)}" ` +
@@ -31099,6 +31210,25 @@ function turnsFor(cost, perTurn, banked = 0) {
   if (left <= 0) return 1;
   return perTurn > 0 ? Math.ceil(left / perTurn) : Infinity;
 }
+// Which page of the production panel is showing. Civilization VI keeps what a
+// city can build and what the treasury can buy outright as tabs on one panel
+// (ProductionPanel.xml), so a purchase is never mistaken for an order.
+let cityBuildTab = "production";
+function setCityBuildTab(tab) { cityBuildTab = tab; drawCityScreen(); }
+// What already stands in the city is a fold on its panel, shut until asked
+// for, as Civ 6's city details are.
+let cityDetailsOpen = false;
+function toggleCityDetails() { cityDetailsOpen = !cityDetailsOpen; drawCityScreen(); }
+const CITY_BUILD_TABS = [["production", "⚙ Production"], ["gold", "💰 Buy · Gold"],
+                         ["faith", "☼ Buy · Faith"]];
+function cityBuildRow({glyph, name, note, cost, onclick, title, current}) {
+  return `<button class="build-item${current ? " current" : ""}" type="button" ` +
+    `title="${escapeAttr(title)}" onclick='${onclick}'>` +
+    `<span class="build-glyph">${glyph}</span>` +
+    `<span class="build-text"><span class="build-name">${name}</span>` +
+    (note ? `<span class="build-note">${note}</span>` : "") + `</span>` +
+    `<span class="build-cost">${cost}</span></button>`;
+}
 function drawCityScreen() {
   if (!cityScreenOpen()) return;
   if (!state || SPEC) { closeCityScreen(); return; }
@@ -31111,6 +31241,7 @@ function drawCityScreen() {
   const current = (city.queue || [])[0];
   const banked = city.production || 0;
   const governor = cityGovernor(city);
+  const turnsWord = turns => `${turns} turn${turns === 1 ? "" : "s"}`;
 
   document.getElementById("cityscreen-name").textContent =
     city.name + (city.is_capital ? " ♛" : "");
@@ -31119,57 +31250,85 @@ function drawCityScreen() {
     (governor ? ` · ⚑ ${governor.name}` : "") +
     (city.religion ? ` · ${titleCase(city.religion)}` : "");
 
-  const yieldTile = (label, value, suffix = "") =>
-    `<div class="city-yield"><b>${Math.round(value * 10) / 10}${suffix}</b><span>${label}</span></div>`;
+  // The six yields wear Civilization VI's own signs, off the sheet the map
+  // draws, over the coloured disc that survives a sheet that did not load.
+  const yieldChip = kind =>
+    `<div class="city-yield" title="${titleCase(kind)} per turn">` +
+    `<i class="city-yield-icon" style="--cell:${CIV6_YIELD_ICON_INDEX.get(kind)};--fill:${YPIP[kind]}"></i>` +
+    `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span></div>`;
+  const meter = (label, note, bar) =>
+    `<div class="city-meter"><div class="row"><span class="small">${label}</span>` +
+    `<b>${note}</b></div>${bar}</div>`;
+  const fact = (label, value) =>
+    `<div class="city-fact"><span class="small">${label}</span><b>${value}</b></div>`;
   const growthTurns = yields.food > 0
-    ? Math.max(1, Math.ceil((city.growth_need - city.food) / yields.food)) : "—";
+    ? Math.max(1, Math.ceil((city.growth_need - city.food) / yields.food)) : null;
+  const queueCost = current ? city.queue_cost || itemCost(current) : 0;
+  const queueTurns = current ? turnsFor(queueCost, perTurn, banked) : null;
   let dossier =
-    `<div class="city-yields">` +
-    yieldTile("Food", yields.food) + yieldTile("Production", yields.production) +
-    yieldTile("Gold", yields.gold) + yieldTile("Science", yields.science) +
-    yieldTile("Culture", yields.culture) + yieldTile("Faith", yields.faith) +
-    `</div>` +
-    `<div class="row"><span class="small">Growth</span>` +
-    `<b>${growthTurns === "—" ? "stalled" : `${growthTurns} turn${growthTurns === 1 ? "" : "s"}`}</b></div>` +
-    prog(city.food, city.growth_need, "#76c893") +
-    `<div class="row"><span class="small">Housing</span><b>${city.housing}</b></div>` +
-    `<div class="row"><span class="small">Amenities</span>` +
-    `<b>${city.amenities} of ${city.amenities_required} needed</b></div>` +
-    `<div class="row"><span class="small">Loyalty</span>` +
-    `<b>${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
-    ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})</b></div>` +
-    (governor ? `<div class="row"><span class="small">Governor</span>` +
-      `<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b></div>` : "");
+    `<div class="city-yields">${CIV6_YIELD_ICON_KINDS.map(yieldChip).join("")}</div>` +
+    `<div class="city-meters">` +
+    meter("Growth", growthTurns ? `${turnsWord(growthTurns)} until growth` : "stalled",
+      prog(city.food, city.growth_need, "#76c893")) +
+    // A city building nothing has no bar to fill, only what it has banked.
+    (current
+      ? meter("Production", `${escapeAttr(itemPlainName(current))} · ` +
+          (queueTurns === Infinity ? "stalled" : turnsWord(queueTurns)),
+          prog(banked, queueCost, "#d7b66a"))
+      : meter("Production", "nothing",
+          `<span class="small">${Math.round(banked)} ⚙ banked</span>`)) +
+    `</div><div class="city-facts">` +
+    fact("Housing", `${city.pop} of ${Math.round(city.housing * 10) / 10}`) +
+    fact("Amenities", `${city.amenities} of ${city.amenities_required} needed`) +
+    fact("Loyalty", `${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
+      ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})`) +
+    (governor ? `<div class="city-fact wide"><span class="small">Governor</span>` +
+      `<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b></div>` : "") +
+    `</div>`;
 
-  const districts = Object.keys(city.districts || {});
-  const buildings = city.buildings || [];
-  const wonders = Object.keys(city.wonders || {});
-  const tags = (items, cls) => items.length
-    ? `<div class="city-tags">${items.map(name =>
-        `<span class="city-tag ${cls}">${titleCase(name)}</span>`).join("")}</div>`
-    : `<div class="empty-state">None yet.</div>`;
-  dossier +=
-    `<div class="city-group"><div class="city-group-head">Districts<span>${districts.length}</span></div>` +
-    tags(districts, "district") + `</div>` +
-    `<div class="city-group"><div class="city-group-head">Buildings<span>${buildings.length}</span></div>` +
-    tags(buildings, "") + `</div>`;
-  if (wonders.length) {
-    dossier += `<div class="city-group"><div class="city-group-head">Wonders<span>${wonders.length}</span></div>` +
-      tags(wonders, "wonder") + `</div>`;
-  }
-  if (city.citizens) {
-    const specialists = city.citizens.specialists || [];
-    dossier += `<div class="city-group"><div class="city-group-head">Citizens` +
-      `<span>${city.citizens.worked_tiles.length} tiles · ${specialists.length} specialists</span></div>` +
-      `<div class="row"><span class="small">Focus</span><b>${titleCase(city.citizens.focus)}</b></div>` +
-      (specialists.length
-        ? `<div class="city-tags">${specialists.map(job =>
-            `<span class="city-tag">${titleCase(job)}</span>`).join("")}</div>` : "") +
-      `</div>`;
-  }
+  const plotBuys = state.legal_actions.filter(a =>
+    a.type === "buy_plot" && a.city === city.id)
+    .sort((a, b) => a.cost - b.cost || a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1]);
+  // Buying land is chosen on the land, behind its own button (Civ 6's
+  // Purchase Tile), and what stands in the city is a fold beside it.
+  dossier += `<div class="city-tools">` +
+    (plotBuys.length
+      ? `<button type="button" title="Every plot the treasury can afford is priced on the map" ` +
+        `onclick="beginPlotPick(${city.id})">⬡ Purchase tile` +
+        `<small>from ${Math.round(plotBuys[0].cost)} Gold</small></button>` : "") +
+    `<button type="button" aria-expanded="${cityDetailsOpen}" ` +
+    `onclick="toggleCityDetails()">${cityDetailsOpen ? "▾" : "▸"} City details</button></div>`;
   const strikes = cityStrikeButtons(city.id);
   if (strikes)
     dossier += `<div class="city-group"><div class="city-group-head">Strikes</div>${strikes}</div>`;
+  if (cityDetailsOpen) {
+    const districts = Object.keys(city.districts || {});
+    const buildings = city.buildings || [];
+    const wonders = Object.keys(city.wonders || {});
+    const tags = (items, cls) => items.length
+      ? `<div class="city-tags">${items.map(name =>
+          `<span class="city-tag ${cls}">${titleCase(name)}</span>`).join("")}</div>`
+      : `<div class="empty-state">None yet.</div>`;
+    dossier +=
+      `<div class="city-group"><div class="city-group-head">Districts<span>${districts.length}</span></div>` +
+      tags(districts, "district") + `</div>` +
+      `<div class="city-group"><div class="city-group-head">Buildings<span>${buildings.length}</span></div>` +
+      tags(buildings, "") + `</div>`;
+    if (wonders.length) {
+      dossier += `<div class="city-group"><div class="city-group-head">Wonders<span>${wonders.length}</span></div>` +
+        tags(wonders, "wonder") + `</div>`;
+    }
+    if (city.citizens) {
+      const specialists = city.citizens.specialists || [];
+      dossier += `<div class="city-group"><div class="city-group-head">Citizens` +
+        `<span>${city.citizens.worked_tiles.length} tiles · ${specialists.length} specialists</span></div>` +
+        `<div class="row"><span class="small">Focus</span><b>${titleCase(city.citizens.focus)}</b></div>` +
+        (specialists.length
+          ? `<div class="city-tags">${specialists.map(job =>
+              `<span class="city-tag">${titleCase(job)}</span>`).join("")}</div>` : "") +
+        `</div>`;
+    }
+  }
   document.getElementById("cityscreen-dossier").innerHTML = dossier;
 
   // Everything this city could start, gathered by what it is rather than by
@@ -31178,9 +31337,6 @@ function drawCityScreen() {
   const buys = state.legal_actions.filter(a =>
     (a.type === "buy" || a.type === "buy_building" || a.type === "buy_district") &&
     a.city === city.id);
-  const plotBuys = state.legal_actions.filter(a =>
-    a.type === "buy_plot" && a.city === city.id)
-    .sort((a, b) => a.cost - b.cost || a.pos[0] - b.pos[0] || a.pos[1] - b.pos[1]);
   const entries = new Map();
   for (const action of produce) {
     const key = itemKey(action.item);
@@ -31202,66 +31358,89 @@ function drawCityScreen() {
     entries.get(key).buys.push(action);
   }
 
-  const order = ["Districts", "Buildings", "Units", "Wonders", "Projects"];
+  // The Faith page exists once Faith can buy something here; a page that
+  // could never hold a row is a tab nobody should have to open to find out.
+  const paidIn = action => action.currency || "gold";
+  const tabs = CITY_BUILD_TABS.filter(([tab]) =>
+    tab !== "faith" || buys.some(action => paidIn(action) === "faith"));
+  if (!tabs.some(([tab]) => tab === cityBuildTab)) cityBuildTab = "production";
+  const purchasing = cityBuildTab !== "production";
+  const order = ["Districts", "Buildings", "Wonders", "Units", "Projects"];
   const currentKey = current ? itemKey(current) : null;
   let build = "";
-  if (current) {
-    const cost = city.queue_cost || itemCost(current);
-    const turns = turnsFor(cost, perTurn, banked);
+  build += `<div class="build-head"><div class="build-title">` +
+    `${current ? "Change production" : "Choose production"}</div>` +
+    `<div class="build-tabs" role="tablist">` + tabs.map(([tab, label]) =>
+      `<button type="button" role="tab" aria-selected="${tab === cityBuildTab}" ` +
+      `onclick='setCityBuildTab("${tab}")'>${label}</button>`).join("") +
+    `</div></div><div class="build-scroll">`;
+  if (purchasing) {
+    const purse = cityBuildTab === "faith" ? state.me.faith : state.me.gold;
+    build += `<div class="city-group"><div class="city-group-head">Treasury` +
+      `<span>${Math.round(purse)} ${titleCase(cityBuildTab)}</span></div></div>`;
+  } else if (current) {
     build += `<div class="city-group"><div class="city-group-head">Producing` +
-      `<span>${turns === Infinity ? "stalled" : `${turns} turn${turns === 1 ? "" : "s"} left`}</span></div>` +
-      `<div class="build-item current"><div class="build-row">` +
-      `<span class="build-name">${titleCase(itemName(current))}</span>` +
-      `<span class="build-cost">${Math.round(banked)} / ${Math.round(cost)} ⚙</span></div>` +
-      prog(banked, cost, "#d7b66a") + `</div></div>`;
+      `<span>${queueTurns === Infinity ? "stalled" : `${turnsWord(queueTurns)} left`}</span></div>` +
+      `<div class="build-item current"><span class="build-glyph">` +
+      `${current.unit ? "⚔" : prodGlyph(current)}</span>` +
+      `<span class="build-text"><span class="build-name">${escapeAttr(itemPlainName(current))}</span>` +
+      prog(banked, queueCost, "#d7b66a") + `</span></div></div>`;
   } else {
     build += `<div class="city-group"><div class="city-group-head">Producing<span>nothing</span></div>` +
       `<div class="empty-state">${Math.round(banked)} ⚙ banked and waiting for an order.</div></div>`;
   }
+  let listed = 0;
   for (const category of order) {
-    const group = [...entries.values()].filter(entry => entry.category === category);
+    const group = [...entries.values()].filter(entry => entry.category === category &&
+      (purchasing ? entry.buys.some(action => paidIn(action) === cityBuildTab)
+        : entry.sites.length));
     if (!group.length) continue;
+    listed += group.length;
     group.sort((a, b) => itemCost(a.item) - itemCost(b.item));
     build += `<div class="city-group"><div class="city-group-head">${category}` +
       `<span>${group.length}</span></div><div class="build-list">` +
       group.map(entry => {
+        const itemId = JSON.stringify(itemKey(entry.item));
+        const name = escapeAttr(itemPlainName(entry.item));
+        const glyph = entry.item.unit ? "⚔" : prodGlyph(entry.item);
+        const note = itemNote(entry.item);
+        if (purchasing) {
+          const offers = entry.buys.filter(action => paidIn(action) === cityBuildTab);
+          // A district is bought onto a tile, and which tile is chosen where
+          // tiles are: on the map.
+          return cityBuildRow({glyph, name, note, cost: `<b>Buy</b>`,
+            onclick: offers.length > 1
+              ? `beginSitePick(${city.id},${itemId},"${cityBuildTab}")`
+              : `sendFromCity(${JSON.stringify(offers[0])})`,
+            title: `Pay ${titleCase(cityBuildTab)} for it outright`});
+        }
         const cost = itemCost(entry.item);
         const isCurrent = itemKey(entry.item) === currentKey;
         const turns = turnsFor(cost, perTurn, isCurrent ? banked : 0);
-        const note = itemNote(entry.item);
-        // One site: a plain Produce. Several: the choice is made on the map,
+        // One site: a plain order. Several: the choice is made on the map,
         // because where a district goes decides what it is worth.
-        const sites = entry.sites.length > 1
-          ? `<div class="build-actions"><button class="primary" type="button" ` +
-            `title="See where it could go and what each tile would give" ` +
-            `onclick='beginSitePick(${city.id},${JSON.stringify(itemKey(entry.item))})'>` +
-            `Choose a tile · ${entry.sites.length} sites</button></div>`
-          : entry.sites.length === 1
-            ? `<div class="build-actions">` +
-              cityAct(entry.sites[0], isCurrent ? "Producing" : "Produce",
-                isCurrent ? "" : "primary") + `</div>`
-            : "";
-        const purchases = entry.buys.length
-          ? `<div class="build-actions">` + entry.buys.map(action =>
-              cityAct(action, `Buy · ${titleCase(action.currency || "gold")}`, "",
-                "Pay for it outright")).join("") + `</div>`
-          : "";
-        return `<div class="build-item ${isCurrent ? "current" : ""}">` +
-          `<div class="build-row"><span class="build-name">${entry.sites.length > 1
-            ? itemPlainName(entry.item) : titleCase(itemName(entry.item))}</span>` +
-          `<span class="build-cost">${Math.round(cost)} ⚙ · ` +
-          `${turns === Infinity ? "—" : `${turns}t`}</span></div>` +
-          (note ? `<div class="build-note">${note}</div>` : "") +
-          sites + purchases + `</div>`;
+        const several = entry.sites.length > 1;
+        return cityBuildRow({glyph, name, current: isCurrent,
+          note: (several ? `<span class="build-sites">Choose a tile · ${entry.sites.length} sites</span>` : "") +
+            (note || ""),
+          cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +
+            `<small>${Math.round(cost)} ⚙</small>`,
+          onclick: several ? `beginSitePick(${city.id},${itemId})`
+            : `sendFromCity(${JSON.stringify(entry.sites[0])})`,
+          title: several ? "See where it could go and what each tile would give"
+            : isCurrent ? "Already in production" : `Produce ${name}`});
       }).join("") + `</div></div>`;
+  }
+  if (!listed) {
+    build += `<div class="empty-state">${purchasing
+      ? `Nothing here can be bought with ${titleCase(cityBuildTab)} this turn.`
+      : "Nothing can be started this turn."}</div>`;
   }
   // Land last, and folded. Civilization VI does not open a city on its tile
   // market: the panel opens on what the city can build, and buying a plot is
-  // a separate mode behind its own button. Seventeen plot cards ahead of the
-  // production list pushed Districts and Buildings off the bottom of the
-  // screen, so the one thing a person opens a city to do was the one thing
-  // they had to scroll for.
-  if (plotBuys.length) {
+  // a separate mode behind its own button. The fold lists the same plots the
+  // map prices, for anyone who would rather read them than find them.
+  if (plotBuys.length && cityBuildTab !== "faith") {
     build += `<details class="city-group city-plots"${cityPlotsOpen ? " open" : ""}>` +
       `<summary class="city-group-head">Buy plots` +
       `<span>${plotBuys.length} affordable · from ${Math.round(plotBuys[0].cost)} Gold</span></summary>` +
@@ -31272,19 +31451,22 @@ function drawCityScreen() {
           ? titleCase(tile.resource || tile.feature || tile.terrain || "plot")
           : "Plot";
         const yieldNote = tile ? yieldWords(tileYieldFull(tile)).join(" · ") : "";
-        return `<div class="build-item"><div class="build-row">` +
-          `<span class="build-name">${name} @ ${action.pos.join(",")}</span>` +
-          `<span class="build-cost">${Math.round(action.cost)} 💰</span></div>` +
-          (yieldNote ? `<div class="build-note">${yieldNote}</div>` : "") +
-          `<div class="build-actions">` + cityAct(action,
-            `Buy · ${Math.round(action.cost)} Gold`, "primary",
-            "Annex this adjacent plot immediately") + `</div></div>`;
+        return cityBuildRow({glyph: "⬡", name, note: yieldNote,
+          cost: `<b>${Math.round(action.cost)}</b><small>Gold</small>`,
+          onclick: `sendFromCity(${JSON.stringify(action)})`,
+          title: "Annex this adjacent plot immediately"});
       }).join("") + `</div></details>`;
   }
-  document.getElementById("cityscreen-build").innerHTML = build;
+  build += `</div>`;
+  // A repaint happens on every observation, and it must not throw the list
+  // back to its top under a person who was reading the foot of it.
+  const column = document.getElementById("cityscreen-build");
+  const scrolled = column.querySelector(".build-scroll")?.scrollTop || 0;
+  column.innerHTML = build;
+  if (scrolled) column.querySelector(".build-scroll").scrollTop = scrolled;
   // Whether the fold is open is the player's, and it has to outlive a repaint
-  // that happens on every observation.
-  const plots = document.querySelector("#cityscreen-build .city-plots");
+  // too.
+  const plots = column.querySelector(".city-plots");
   if (plots) plots.addEventListener("toggle", () => { cityPlotsOpen = plots.open; });
 }
 // Shut on the first city screen of the session, and whatever the player last
@@ -31336,6 +31518,9 @@ function unitPlaque(u, {linked, escortName}) {
 }
 function drawUbar() {
   syncSettlerLens();
+  // The unit panel and the city panel are one corner. Every way of selecting
+  // a unit ends here, so this is where a city gives the corner up.
+  if (sel && cityScreenOpen()) closeCityScreen();
   const bar = document.getElementById("ubar");
   // Published from here rather than watched: the bar is `display:none`
   // whenever nothing is selected, and an element with no CSS box gives a
@@ -31439,15 +31624,15 @@ function drawUbar() {
   // asking, and the End Turn button stops counting it.
   const standing = unitOrder(u);
   if (standing !== "skip")
-    h += `<button title="Done for this turn" onclick='orderUnit("skip")'>⏭ Skip</button>`;
+    h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
   if (standing !== "sleep")
-    h += `<button title="Rest until this unit is struck" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
+    h += `<button title="Rest until this unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
   if (standing !== "alert")
-    h += `<button title="Stand watch until an enemy comes near (A)" onclick='orderUnit("alert")'>👁 Alert</button>`;
+    h += `<button title="Stand watch until an enemy comes near (V)" onclick='orderUnit("alert")'>👁 Alert</button>`;
   if (standing !== "heal")
-    h += `<button title="Fortify and wait out the damage" onclick='healHere()'>✚ Heal</button>`;
+    h += `<button title="Fortify and wait out the damage (H)" onclick='healHere()'>✚ Heal</button>`;
   if (standing !== "explore")
-    h += `<button title="Walk toward the edge of the known world" onclick='exploreHere()'>🧭 Explore</button>`;
+    h += `<button title="Walk toward the edge of the known world (E)" onclick='exploreHere()'>🧭 Explore</button>`;
   if (standing)
     h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" || standing === "explore" ? "Halt" : "Wake"}</button>`;
   h += `<button onclick='sel=null;draw();drawUbar();drawTurnLoop()'>✕</button>`;
@@ -36955,6 +37140,8 @@ cv.addEventListener("click", ev => {
     openCityScreen(ours.id);
   } else {
     sel = null; selCity = null;
+    // A press on open country puts the city down, as it does in Civ 6.
+    closeCityScreen();
     // Nothing of yours here. If somebody else's unit is, this press is the
     // question about it; your own selected unit already draws its own range,
     // so the two readings never argue over the same tiles.
@@ -37468,6 +37655,113 @@ async function showForecastAt(pos) {
   const answer = await forecastCache.get(ask);
   if (forecastShown === ask) paintForecast(answer);
 }
+// ------------------------------------------------------------ the route ahead
+// Civilization VI draws the path a selected unit would take to the tile under
+// the pointer, and numbers the turns along it, before the order is given. A
+// secondary click on a far tile already sent a unit walking for as long as it
+// took; nothing said which way it would go, or how long that was.
+//
+// The walk is the engine's own (`/route` with `preview`), the one the travel
+// order then follows step by step, so the line cannot promise a road the unit
+// will not take. A server that predates the preview answers with the step
+// alone, and nothing is drawn.
+let routeAsked = "", routePreview = null;
+const routeCache = new Map();
+function hideRoute() {
+  routeAsked = "";
+  if (!routePreview) return;
+  routePreview = null;
+  draw();
+}
+async function showRouteAt(pos) {
+  const here = pos ? key(pos) : "";
+  const tile = TMAP.get(here);
+  // A strike is the forecast's to describe, and a tile nobody has seen is
+  // nowhere the unit can be sent, nor a route the map should give away.
+  if (!pos || !sel || SPEC || !(sel.moves_left > 0) || here === key(sel.pos) ||
+      !tile || tile.unknown || strikeAt(pos)) { hideRoute(); return; }
+  const from = key(sel.pos);
+  const ask = `${sel.id}|${from}|${here}|${state.turn}|${sel.moves_left}`;
+  if (routeAsked === ask) return;
+  routeAsked = ask;
+  if (!routeCache.has(ask)) {
+    if (routeCache.size > 96) routeCache.clear();
+    routeCache.set(ask, fetchJSON("/route", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({unit: sel.id, to: [pos[0], pos[1]], preview: true})})
+      .catch(() => null));
+  }
+  const answer = await routeCache.get(ask);
+  if (routeAsked !== ask) return;
+  const path = answer && Array.isArray(answer.path) && answer.path.length ? answer.path : null;
+  routePreview = path ? {unit: sel.id, from, path} : null;
+  draw();
+}
+// The preview belongs to one unit standing on one tile. Once either changes
+// it is a drawing of a walk nobody is about to take.
+function routePreviewNow() {
+  return routePreview && sel && !SPEC && sel.id === routePreview.unit &&
+    key(sel.pos) === routePreview.from ? routePreview : null;
+}
+// A pale line from the unit along the tiles it would cross, and a numbered
+// disc where each turn's movement ends: 1 is as far as it gets this turn. A
+// gap in `points` is a tile this view cannot place, and the pen lifts over
+// it; so does a jump across the seam of a map that wraps.
+function strokeRoutePreview(points, r) {
+  cx.save();
+  cx.lineJoin = "round"; cx.lineCap = "round";
+  for (const [width, ink] of [[r * .3, "#0b0f0ecc"], [r * .14, "#f6ecc8"]]) {
+    cx.lineWidth = width; cx.strokeStyle = ink;
+    cx.beginPath();
+    let pen = null;
+    for (const point of points) {
+      if (point && pen && Math.hypot(point.x - pen.x, point.y - pen.y) < r * 4)
+        cx.lineTo(point.x, point.y);
+      else if (point) cx.moveTo(point.x, point.y);
+      pen = point;
+    }
+    cx.stroke();
+  }
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `800 ${r * .5}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  points.forEach((point, index) => {
+    if (!point || point.turn === undefined) return;
+    const next = points.slice(index + 1).find(Boolean);
+    if (next && next.turn === point.turn) return;
+    cx.beginPath(); cx.arc(point.x, point.y, r * .4, 0, Math.PI * 2);
+    cx.fillStyle = "#f6ecc8"; cx.fill();
+    cx.lineWidth = r * .08; cx.strokeStyle = "#0b0f0e"; cx.stroke();
+    cx.fillStyle = "#10151d";
+    cx.fillText(String(point.turn + 1), point.x, point.y + r * .03);
+  });
+  cx.restore();
+}
+function drawRoutePreviewPlanet(cellByKey, onSheet) {
+  const preview = routePreviewNow();
+  if (!preview) return;
+  const origin = cellByKey.get(preview.from);
+  const place = (site, turn) => {
+    const cell = cellByKey.get(site);
+    return cell && cell.center.z >= (onSheet ?? .02)
+      ? {x: cell.center.x, y: cell.center.y, turn} : null;
+  };
+  const points = [place(preview.from)].concat(
+    preview.path.map(([q, r, turn]) => place(`${q},${r}`, turn)));
+  const sized = origin || preview.path.map(([q, r]) => cellByKey.get(`${q},${r}`)).find(Boolean);
+  if (sized) strokeRoutePreview(points, planetCellInradius(sized));
+}
+function drawRoutePreviewFlat() {
+  const preview = routePreviewNow();
+  if (!preview) return;
+  const place = (site, turn) => {
+    const [q, r] = site.split(",").map(Number);
+    const tile = TMAP.get(site);
+    const [x, y] = hexXY(q, r);
+    return {x, y: y - (tile ? elev(tile) : 0), turn};
+  };
+  strokeRoutePreview([place(preview.from)].concat(
+    preview.path.map(([q, r, turn]) => place(`${q},${r}`, turn))), S * .866);
+}
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
@@ -37476,11 +37770,16 @@ cv.addEventListener("mousemove", ev => {
   queueTileTip(ev.clientX, ev.clientY);
   if (sel && !SPEC) {
     const r = cv.getBoundingClientRect();
-    showForecastAt(pixelToHex(ev.clientX - r.left, ev.clientY - r.top));
-  } else if (forecastShown) hideForecast();
+    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+    showForecastAt(pos);
+    showRouteAt(pos);
+  } else {
+    if (forecastShown) hideForecast();
+    hideRoute();
+  }
 });
-cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); });
-window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); });
+cv.addEventListener("mouseleave", () => { hideTileTip(true); hideForecast(); hideRoute(); });
+window.addEventListener("blur", () => { hideTileTip(true); hideForecast(); hideRoute(); });
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -38023,7 +38322,7 @@ function actionOptionsFor(next) {
       const cost = itemCost(entry.item);
       const turns = turnsFor(cost, perTurn, 0);
       const several = entry.sites.length > 1;
-      const name = several ? itemPlainName(entry.item) : titleCase(itemName(entry.item));
+      const name = itemPlainName(entry.item);
       return actionOption({icon: entry.item.unit ? "⚔" : prodGlyph(entry.item),
         name: escapeAttr(name) + (several ? ` <small>${entry.sites.length} sites</small>` : ""),
         note: `${Math.round(cost)} ⚙ · ${turns === Infinity ? "—" : `${turns}t`}`,
@@ -38438,6 +38737,7 @@ function cycleCity(step) {
       ? cities.find(city => city.is_capital) || cities[0]
       : cities[cities.length - 1];
   selCity = next; sel = null;
+  if (cityScreenOpen()) openCityScreen(next.id);
   centerOn(next.pos);
   draw(); drawSide(); drawUbar();
 }
@@ -38501,6 +38801,11 @@ const CIVVIS_SHORTCUTS = [
   // ---- the turn --------------------------------------------------------
   {id: "EndTurn", key: "1", run: () => advanceTurn(false)},
   {id: "EndTurnAnyway", key: "1", shift: true, run: () => advanceTurn(true)},
+  // Enter is the key a Civilization VI player's hand goes to at the end of
+  // every turn, whatever the installed game's settings file carried for
+  // EndTurn. It is the same action on a second key, not a second action.
+  {id: "EndTurnEnter", key: "Enter", run: () => advanceTurn(false)},
+  {id: "EndTurnAnywayEnter", key: "Enter", shift: true, run: () => advanceTurn(true)},
   // ---- unit orders -----------------------------------------------------
   {id: "FoundCity", key: "b", run: () => foundCityHere()},
   {id: "Fortify", key: "f", run: () => orderUnit("fortify")},
@@ -38626,7 +38931,7 @@ function anyScreenOpen() {
   return document.getElementById("pedia").classList.contains("open") ||
     document.getElementById("trade").classList.contains("open") ||
     document.getElementById("tree").classList.contains("open") ||
-    cityScreenOpen() || empireOpen() || diplomacyOpen();
+    empireOpen() || diplomacyOpen();
 }
 // Escape unwinds the open screens one at a time, topmost first.
 function closeTopmostScreen() {
