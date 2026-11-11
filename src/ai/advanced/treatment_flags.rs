@@ -298,6 +298,9 @@ impl AdvancedAi {
         religion_seat_charts_the_rivals => enable_religion_seat_charts_the_rivals, disable_religion_seat_charts_the_rivals;
         /// See `advanced/religion_seat_spends_the_bank.rs`.
         religion_seat_spends_the_bank => enable_religion_seat_spends_the_bank, disable_religion_seat_spends_the_bank;
+        /// `peace-waits-for-the-host-minimum`: see
+        /// `advanced/unchosen_war_peace.rs`.
+        peace_waits_for_the_host_minimum => enable_peace_waits_for_the_host_minimum, disable_peace_waits_for_the_host_minimum;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `sweden-builds-open-air-museums`; see
         /// `advanced/sweden_builds_open_air_museums.rs`.
