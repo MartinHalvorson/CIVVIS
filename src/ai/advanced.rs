@@ -17813,6 +17813,23 @@ impl AdvancedAi {
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
+            // ★★★ UNDER THE RESERVE THERE IS NOTHING TO RANK, AND THE MENU WAS
+            // PRICED AND SCORED ANYWAY. Every way into `candidates` below
+            // leaves the reserve behind: a plot needs `bank >= reserve + cost`
+            // (plus 200 outside the district plan), and a unit, a building or
+            // a district is refused by `gold_purchase_score` when what is
+            // left after paying is under the reserve. A purchase never adds
+            // Gold, so a treasury already under the reserve produces no
+            // candidate, the ranking is empty and the loop ends at the `break`
+            // below. This is that `break`, taken before the empire is
+            // counted, the menu listed and every item on it valued.
+            //
+            // `CIVVIS_PURCHASE_AUDIT` runs the long way round instead and
+            // reports any candidate it finds.
+            let under_reserve = bank + f64::EPSILON < reserve;
+            if under_reserve && !Self::purchase_audit_enabled() {
+                break;
+            }
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
@@ -18025,6 +18042,16 @@ impl AdvancedAi {
                 }
             }
             drop(memo);
+            if under_reserve {
+                // Only the audit gets here.
+                if let Some((score, _, action)) = candidates.first() {
+                    Self::report_purchase_audit(format_args!(
+                        "turn {} seat {pid}: {bank} Gold under a reserve of {reserve} still ranked {action:?} at {score}",
+                        g.turn
+                    ));
+                }
+                break;
+            }
             // `order_retry`: this loop used to `break` on a refusal, which
             // abandoned the ENTIRE remaining purchase budget for the turn
             // rather than the one item the treasury could not buy. Walk the
@@ -18113,7 +18140,62 @@ impl AdvancedAi {
         purchased
     }
 
+    /// Whether `CIVVIS_PURCHASE_AUDIT` asked the gold pass to take no
+    /// shortcut and check each one it would have taken. Read once.
+    fn purchase_audit_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("CIVVIS_PURCHASE_AUDIT").is_some())
+    }
+
+    /// ⚠ DIAGNOSTIC ONLY. One shortcut of the gold pass that the long way
+    /// round disagreed with. A clean audit prints nothing.
+    fn report_purchase_audit(what: std::fmt::Arguments<'_>) {
+        eprintln!("PURCHASE AUDIT: {what}");
+    }
+
+    /// ★★★ THE PRICE IS READ BEFORE THE NEED IS SCORED. The last thing
+    /// [`Self::gold_purchase_score_in_full`] does with an item is refuse it
+    /// when the treasury would be under the reserve after paying — and to
+    /// learn that it first values the item with the whole production scorer
+    /// and then clones the game and buys it. The price was already known:
+    /// `Game::purchase_quote` reads the derivation `apply` charges from, and
+    /// inside the pass's query scope the menu that listed this item has
+    /// priced it once already. An empire sits a little above its reserve for
+    /// most of a game, so most of a menu fails on price alone.
+    ///
+    /// Exact because every refusal in the full scorer returns `None` and
+    /// none of them writes to the board: an item this refuses is one the
+    /// full scorer refuses at its last step if it has not refused it sooner.
+    /// The arithmetic is the full scorer's own — what is left is `bank`
+    /// less the price in one subtraction, as `apply` leaves it.
+    /// `CIVVIS_PURCHASE_AUDIT` scores every refused item in full and reports
+    /// one that would have been bought.
     fn gold_purchase_score(
+        &self,
+        context: PurchaseScoreContext<'_>,
+        action: &Action,
+        city: u32,
+        item: &Item,
+    ) -> Option<f64> {
+        let priced_out = context
+            .g
+            .purchase_quote(context.pid, action)
+            .is_some_and(|price| context.bank - price + f64::EPSILON < context.reserve);
+        if !priced_out {
+            return self.gold_purchase_score_in_full(context, action, city, item);
+        }
+        if Self::purchase_audit_enabled() {
+            if let Some(score) = self.gold_purchase_score_in_full(context, action, city, item) {
+                Self::report_purchase_audit(format_args!(
+                    "turn {} seat {}: {action:?} was priced out of {} Gold over a reserve of {} and scores {score} in full",
+                    context.g.turn, context.pid, context.bank, context.reserve
+                ));
+            }
+        }
+        None
+    }
+
+    fn gold_purchase_score_in_full(
         &self,
         context: PurchaseScoreContext<'_>,
         action: &Action,
@@ -18154,6 +18236,17 @@ impl AdvancedAi {
         }
         let mut after = g.speculative_clone();
         after.apply(pid, action).ok()?;
+        if Self::purchase_audit_enabled() {
+            // What the price-first refusal stands on: `apply` charges the
+            // quote, in one subtraction, and nothing else moves the Gold.
+            let quoted = g.purchase_quote(pid, action).map(|price| bank - price);
+            if quoted != Some(after.players[pid].gold) {
+                Self::report_purchase_audit(format_args!(
+                    "turn {} seat {pid}: {action:?} was quoted to leave {quoted:?} of {bank} Gold and left {}",
+                    g.turn, after.players[pid].gold
+                ));
+            }
+        }
         let cost = (bank - after.players[pid].gold).max(0.0);
         if after.players[pid].gold + f64::EPSILON < reserve {
             return None;
@@ -27252,3 +27345,6 @@ mod native_domination_activation_tests;
 
 #[cfg(test)]
 mod builder_job_safety_tests;
+
+#[cfg(test)]
+mod gold_pass_tests;
