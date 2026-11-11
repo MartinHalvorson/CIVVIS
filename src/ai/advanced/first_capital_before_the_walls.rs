@@ -155,7 +155,7 @@ impl AdvancedAi {
         if self.city_state_stone_stands() {
             (
                 super::city_state_before_the_first_capital::STONE_RANGED,
-                super::city_state_before_the_first_capital::STONE_MELEE,
+                self.city_state_stone_melee(),
             )
         } else if self.first_capital_active() {
             (FIRST_CAPITAL_RANGED, FIRST_CAPITAL_MELEE)

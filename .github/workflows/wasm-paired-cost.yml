@@ -1,0 +1,86 @@
+name: wasm-paired-cost
+
+# Qualified module comparisons run away from the operator's local games and
+# compilers. No build, deployment, tag mutation or simulator setting change.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/wasm-paired-cost.yml
+      - tools/site_wasm_pair.py
+      - tools/site_wasm_game.mjs
+      - tools/test_site_wasm_pair.py
+  workflow_dispatch:
+    inputs:
+      baseline_run:
+        description: Successful wasm-qualify run containing the baseline artifact
+        required: true
+      baseline_source:
+        description: Exact baseline source commit SHA, as recorded in its receipt
+        required: true
+      candidate_run:
+        description: Successful wasm-qualify run containing the candidate artifact
+        required: true
+      candidate_source:
+        description: Exact candidate source commit SHA, as recorded in its receipt
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: wasm-paired-cost-${{ github.ref }}-${{ inputs.baseline_run || 'self-test' }}-${{ inputs.candidate_run || 'self-test' }}
+  cancel-in-progress: false
+
+jobs:
+  wasm-paired-cost:
+    runs-on: macos-latest
+    timeout-minutes: 180
+    env:
+      # PR self-tests compare one frozen, qualified control against itself.
+      # A dispatch must supply both run IDs and their source pins explicitly.
+      BASELINE_RUN: ${{ inputs.baseline_run || '43062502811' }}
+      CANDIDATE_RUN: ${{ inputs.candidate_run || '43062502811' }}
+      BASELINE_SOURCE: ${{ inputs.baseline_source || 'e4e0dff858cb8904ac8734d03544785a23f96d94' }}
+      CANDIDATE_SOURCE: ${{ inputs.candidate_source || 'e4e0dff858cb8904ac8734d03544785a23f96d94' }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Test comparison guards without playing games
+        run: python3 -m unittest discover -s tools -p test_site_wasm_pair.py -v
+      - name: Download qualified baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: civvis-wasm-qualification
+          run-id: ${{ env.BASELINE_RUN }}
+          github-token: ${{ github.token }}
+          path: inputs/baseline
+      - name: Download qualified candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: civvis-wasm-qualification
+          run-id: ${{ env.CANDIDATE_RUN }}
+          github-token: ${{ github.token }}
+          path: inputs/candidate
+      - name: Compare complete games in both orders
+        shell: bash
+        run: |
+          set -euo pipefail
+          extra=()
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            extra+=(--self-test)
+          fi
+          python3 tools/site_wasm_pair.py \
+            --baseline inputs/baseline --baseline-source "$BASELINE_SOURCE" \
+            --candidate inputs/candidate --candidate-source "$CANDIDATE_SOURCE" \
+            --out comparison "${extra[@]}"
+      - name: Preserve timings, traces and raw saves
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: civvis-wasm-paired-cost
+          path: comparison
+          if-no-files-found: warn

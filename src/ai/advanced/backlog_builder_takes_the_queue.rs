@@ -167,6 +167,19 @@ impl AdvancedAi {
                 && !other.is_minor
                 && g.is_at_war(pid, other.id)
         });
+        // ★★★ ONE SCOPE FOR THE WHOLE PASS, BECAUSE EVERY CITY ASKS THE SAME
+        // EMPIRE-WIDE QUESTION. `backlog_builder_item` reaches
+        // `worked_backlog_builder`, which counts the unimproved worked tiles
+        // of the *empire* — a citizen assignment for every city — to decide
+        // about *one* city, so a pass over C cities made C x C assignments.
+        // `Game::unimproved_worked_tiles` keeps its count for as long as a
+        // query scope is open; with no scope here each of those calls was the
+        // outermost scope of its own and kept nothing. On a site game's
+        // profile that was 5.5% of the stepping thread.
+        //
+        // Exact for the reason every memo scope is: it is opened over `&Game`
+        // and nothing below can write to the board while it lives.
+        let _memo = g.query_memo();
         let mut best: Option<(f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
             if exclude == Some(cid) {

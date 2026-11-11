@@ -1186,6 +1186,13 @@ impl AdvancedAi {
         if let Some(acted) = self.amphibious_member_step(g, pid, uid) {
             return acted;
         }
+        // `breaker-walks-under-a-shield`: the early conquest opening's breaker
+        // rides with a melee body of its force, and at war the force holds
+        // its swings at the walls until the breaker stands beside them.
+        // `None` with the gene off. See `advanced/breaker_walks_under_a_shield.rs`.
+        if let Some(acted) = self.shielded_breaker_step(g, pid, uid, plan) {
+            return acted;
+        }
         // `domination-target-gets-its-breaker`: before the war a Ram or Tower
         // for the lane's target walks to the army before its walls. `None`
         // with the gene off. See `advanced/domination_target_gets_its_breaker.rs`.
@@ -2678,6 +2685,10 @@ impl AdvancedAi {
                 && !air_assault_units.contains(uid)
                 && !evacuated_aircraft.contains(uid)
         });
+        // `breaker-walks-under-a-shield`: the breaker's shield moves first, so
+        // the bodies that hold for it read where it stands. `None` with the
+        // gene off, which keeps the shipped order.
+        let shield_first = self.shield_moves_first(g, pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
@@ -2694,7 +2705,12 @@ impl AdvancedAi {
                 _ => 6,
             };
             // Zero for every unit with `fire-plan` off: the shipped key.
-            (self.fire_plan_rank(*uid), order, *uid)
+            (
+                self.fire_plan_rank(*uid),
+                Some(*uid) != shield_first,
+                order,
+                *uid,
+            )
         });
         let pool = self
             .work_pool
@@ -2776,6 +2792,9 @@ impl AdvancedAi {
             );
             cursor = end;
         }
+        // `breaker-walks-under-a-shield`: where the breaker ends our turn,
+        // and this turn's strikes beside it. Nothing with the gene off.
+        self.breaker_shield_note(g, pid);
         self.settler_targets
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_guards
