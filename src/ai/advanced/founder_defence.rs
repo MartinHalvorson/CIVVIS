@@ -82,6 +82,8 @@ impl AdvancedAi {
 
     /// The Faith our cities yield a turn.
     fn founder_faith_income(g: &Game, pid: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|cid| g.city_yields(cid).faith)

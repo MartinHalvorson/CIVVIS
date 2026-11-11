@@ -240,6 +240,8 @@ pub(super) struct PortfolioState {
 }
 
 fn empire_yields(g: &Game, pid: usize) -> Yields {
+    // One memo for the whole sweep; see `Game::query_memo`.
+    let _memo = g.query_memo();
     let mut yields = g.player_yield_extras(pid);
     for cid in g.player_city_ids(pid) {
         yields.add(g.city_yields(cid));
@@ -1201,6 +1203,8 @@ impl AdvancedAi {
     }
 
     pub(super) fn record_portfolio_trace(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.victory_planning {
             return;
         }

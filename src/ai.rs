@@ -8047,6 +8047,8 @@ impl BasicAi {
     /// seat, which carries a live rival's public Production total. Empty on a
     /// native board, where the cities are the whole reading.
     pub(crate) fn seat_production_per_turn(g: &Game, seat: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(seat)
             .into_iter()
             .map(|city| g.city_yields(city).production)

@@ -550,6 +550,9 @@ impl AdvancedAi {
     }
 
     fn science_spaceport_production(&self, g: &mut Game, pid: usize) {
+        // Choosing the pad is a read: one memo for the whole sweep, dropped
+        // before the claim below writes. See `Game::query_memo`.
+        let memo = g.query_memo();
         let races_science = self.space_race_lane(g, pid);
         let city_ids = g.player_city_ids(pid);
         if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
@@ -587,6 +590,7 @@ impl AdvancedAi {
                 }
             }
         }
+        drop(memo);
         if let Some((_, city, pos)) = best {
             let _ = g.apply(
                 pid,
