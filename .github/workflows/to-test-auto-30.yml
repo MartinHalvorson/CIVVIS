@@ -79,7 +79,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: to-test-auto-30
+  group: publisher-build-only-mbp-20261111T160909Z
   cancel-in-progress: false
 
 jobs:
