@@ -5635,6 +5635,11 @@ pub const GENES: &[Gene] = &[
     // power is at least half the near neighbour's. Opt-in; see
     // `advanced/culture_past_the_deterrent.rs`.
     Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
+    // `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    // Spy for every free slot from its first slot, side by side, in the
+    // cities that finish one soonest. Opt-in; see
+    // `advanced/denial_spies_fill_every_slot.rs`.
+    Gene { tag: "denial-spies-fill-every-slot", field: "denial_spies_fill_every_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot, disable: AdvancedAi::disable_denial_spies_fill_every_slot },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5676,6 +5681,12 @@ pub const GENES: &[Gene] = &[
     // were 59 of 383 gun-turns before t130 and no siege-class gun. See
     // `advanced/siege_at_the_walls_dies_first.rs`.
     Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
+    // Live Deity Kristina 11-10: `friendship-ends-at-the-race` ended 26
+    // friendships; 202929Z dropped Georgia at 352 power against 383, and
+    // Georgia declared on us 11 turns later. While the denial gate would
+    // refuse the war, the lapsed racer is renewed. Opt-in; see
+    // `advanced/friendship_outlasts_the_gated_race.rs`.
+    Gene { tag: "friendship-outlasts-the-gated-race", field: "friendship_outlasts_the_gated_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_outlasts_the_gated_race, disable: AdvancedAi::disable_friendship_outlasts_the_gated_race },
     // Live Deity Culture seats, 25 games from 2026-11-10 20:00Z: the only
     // wars the seat declared were 8 heretic strikes; 3 of 7 targets declared
     // on us later and two of those wars were fatal (201752Z struck Sumeria at
@@ -5806,6 +5817,11 @@ pub const GENES: &[Gene] = &[
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
     // reading leaves out, so 40 of 64 matched fights were losing exchanges.
     Gene { tag: "theology-fights-count-the-host-edge", field: "theology_fights_count_the_host_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_count_the_host_edge, disable: AdvancedAi::disable_theology_fights_count_the_host_edge },
+    // Deity Culture 11-10: the nearest neighbour read Unfriendly from the turn
+    // after contact in 24 of 24 games and the first attacker never reached
+    // Friendly; `tribute-buys-the-friendship` held on its 100-Gold reserve.
+    // See `advanced/tribute_warms_the_neighbour.rs`.
+    Gene { tag: "tribute-warms-the-neighbour", field: "tribute_warms_the_neighbour", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_warms_the_neighbour, disable: AdvancedAi::disable_tribute_warms_the_neighbour },
     // `unique-unit-closes-the-dark-age`: one to four Era Score short of a
     // Normal Age, research the unique unit's unlock and train or buy the
     // first one (+4) before the era closes. Live Deity Online 11-10: 30 of 49
