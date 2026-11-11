@@ -10348,6 +10348,11 @@ pub struct AdvancedAi {
     /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
     /// default.
     tribute_buys_the_friendship: bool,
+    /// `unique-unit-closes-the-dark-age`: a seat one to four Era Score short
+    /// of a Normal Age researches and trains or buys its first unique unit
+    /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
+    /// Opt-in.
+    unique_unit_closes_the_dark_age: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11108,6 +11113,7 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -26500,6 +26506,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `unique-unit-closes-the-dark-age`: the first unique unit before
+        // the era closes, when it turns a Dark Age Normal. Exact no-op while
+        // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
+        self.claim_unique_unit_for_the_age(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
