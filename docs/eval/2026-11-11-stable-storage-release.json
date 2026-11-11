@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "status": "qualification pending; not deployed",
+  "baseline_source": "ef9ddb192ea0f244dfa8742df9331594179f8bd6",
+  "candidate_source": "cc6647d8394336360dc6bf7857c43deba9e98352",
+  "candidate_tree": "007682b9e7583220f4bab1d31f042e6d5a5fec77",
+  "candidate_ref": "bench/codex-speed/stable-storage-20261111T122255Z",
+  "patches": [
+    {
+      "merged_commit": "acb79f470799edb21ff6e7792cfa755dd02585a9",
+      "patch_sha256": "09662f3fef96352775697e6f9dfe7550ce8eba4fd775dbfc04890268ed8e669f"
+    },
+    {
+      "merged_commit": "8d277f0be50f41f5061fce979140890ea6bcc49f",
+      "patch_sha256": "eda97189552455ab0b0b9584c9e48433792b3d26fe6e3ce45e5fd44af6418842"
+    }
+  ],
+  "changed_paths": [
+    "src/game.rs",
+    "src/game/disasters.rs",
+    "src/game/district_building_wonder_runtime_tests.rs",
+    "src/game/district_roster_tests.rs",
+    "src/idmap.rs",
+    "src/lib.rs"
+  ],
+  "combined_patch_sha256": "d7ca9eae3154c92ed57c5f1e34a7ea15dc0cd1dabae814ae88f9424f91319862",
+  "ai_rules_and_toolchain_blobs_unchanged": true,
+  "web_qualification_run": null,
+  "native_qualification_run": null,
+  "full_game_results": null,
+  "promotion_run": null,
+  "notes": "Source snapshot contains only already-merged performance patches. Main keeps its newer AI changes. Promotion requires exact public-baseline gameplay/save parity and measured full-game gains."
+}
