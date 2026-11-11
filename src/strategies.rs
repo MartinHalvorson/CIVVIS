@@ -226,7 +226,7 @@ pub fn rung_key(rung: &str) -> String {
 }
 
 /// One entrant's published rating.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct Rating {
     pub elo: f64,
     /// Bootstrap standard deviation, in Elo.
@@ -237,6 +237,10 @@ pub struct Rating {
     pub games: u32,
     #[serde(default)]
     pub wins: u32,
+    /// `"lower"` when it has never lost a table and `"upper"` when it has
+    /// never won one: the fit then only bounds the rating from one side.
+    #[serde(default)]
+    pub bound: String,
 }
 
 /// `data/strategy_elo.json` as `strategy_elo` writes it.
@@ -249,6 +253,10 @@ pub struct RatingFile {
     /// Strategy ids and `civ6:<rung>` keys.
     #[serde(default)]
     pub ratings: BTreeMap<String, Rating>,
+    /// Rung id to its Elo on the ladder a person is shown: the measured rung
+    /// ratings after [`monotone_ladder`].
+    #[serde(default)]
+    pub ladder: BTreeMap<String, f64>,
 }
 
 /// The ratings this build shipped with. An unreadable file is no ratings, and
@@ -264,10 +272,7 @@ pub fn published() -> &'static RatingFile {
 pub fn nearest_rung(file: &RatingFile, elo: f64) -> Option<&'static str> {
     CIV6_RUNGS
         .iter()
-        .filter_map(|(id, name)| {
-            let rating = file.ratings.get(&rung_key(id))?;
-            Some(((rating.elo - elo).abs(), *name))
-        })
+        .filter_map(|(id, name)| Some(((file.ladder.get(*id)? - elo).abs(), *name)))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, name)| name)
 }
@@ -287,6 +292,7 @@ pub fn roster_json() -> Value {
                 "blurb": row.blurb,
                 "elo": rating.map(|r| r.elo.round()),
                 "elo_sd": rating.map(|r| r.sd.round()),
+                "bound": rating.map(|r| r.bound.as_str()),
                 "rated_tables": rating.map_or(0, |r| r.games),
                 "civ6_level": rating.and_then(|r| nearest_rung(file, r.elo)),
                 "provisional": rating.is_none_or(|r| r.games < PROVISIONAL_TABLES),
@@ -308,12 +314,48 @@ pub fn civ6_ladder_json() -> Value {
                 "id": id,
                 "name": name,
                 "level": order + 1,
-                "elo": rating.map(|r| r.elo.round()),
+                "elo": file.ladder.get(*id).map(|elo| elo.round()),
+                "measured_elo": rating.map(|r| r.elo.round()),
                 "elo_sd": rating.map(|r| r.sd.round()),
+                "bound": rating.map(|r| r.bound.as_str()),
                 "rated_tables": rating.map_or(0, |r| r.games),
             })
         })
         .collect::<Vec<_>>())
+}
+
+/// The measured rung ratings made non-decreasing up the ladder.
+///
+/// Each rung's handicap contains the one below it, so a higher rung cannot
+/// truly be easier; when two measure the wrong way round, that is noise, and
+/// showing it would tell a person King is harder than Emperor. Neighbours out
+/// of order are pooled to their weighted mean (isotonic regression), with the
+/// `pin` rung held where it is because it defines the scale. Rungs the
+/// tables cannot tell apart therefore show the same Elo, which is the honest
+/// reading of them.
+pub fn monotone_ladder(elo: &[f64], weight: &[f64], pin: usize) -> Vec<f64> {
+    // Blocks of (weighted sum, weight, rungs); a pinned block outweighs all.
+    let mut blocks: Vec<(f64, f64, usize)> = Vec::new();
+    for (index, value) in elo.iter().enumerate() {
+        let w = if index == pin {
+            1e12
+        } else {
+            weight[index].max(1.0)
+        };
+        blocks.push((value * w, w, 1));
+        while blocks.len() > 1 {
+            let (last, before) = (blocks[blocks.len() - 1], blocks[blocks.len() - 2]);
+            if before.0 / before.1 <= last.0 / last.1 {
+                break;
+            }
+            blocks.truncate(blocks.len() - 2);
+            blocks.push((before.0 + last.0, before.1 + last.1, before.2 + last.2));
+        }
+    }
+    blocks
+        .iter()
+        .flat_map(|(sum, w, rungs)| std::iter::repeat_n(sum / w, *rungs))
+        .collect()
 }
 
 /// One finished table: the entrant in each major seat and the seat that won.
@@ -443,6 +485,19 @@ mod tests {
         if let Some(prince) = file.ratings.get(&rung_key(PRINCE)) {
             assert!((prince.elo - PRINCE_ELO).abs() < 0.5);
         }
+        // The ladder a person is shown climbs, and Prince is where it is pinned.
+        let ladder: Vec<f64> = CIV6_RUNGS
+            .iter()
+            .filter_map(|(id, _)| file.ladder.get(*id).copied())
+            .collect();
+        assert!(ladder.is_empty() || ladder.len() == CIV6_RUNGS.len());
+        assert!(
+            ladder.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{ladder:?}"
+        );
+        if let Some(prince) = file.ladder.get(PRINCE) {
+            assert!((prince - PRINCE_ELO).abs() < 0.5);
+        }
     }
 
     /// Two entrants, one winning three head-to-head games in four: the fit
@@ -477,6 +532,25 @@ mod tests {
         let sd = bootstrap_sd(2, &tables, 1, 50, 7);
         assert_eq!(sd[1], 0.0);
         assert!(sd[0] > 0.0 && sd[0] < 200.0, "{sd:?}");
+    }
+
+    #[test]
+    fn a_ladder_measured_out_of_order_is_pooled_around_the_pin() {
+        // Two low rungs measured above the pinned one, and the top two the
+        // wrong way round.
+        let ladder = monotone_ladder(
+            &[1100.0, 950.0, 1000.0, 1200.0, 1500.0, 1400.0],
+            &[30.0, 30.0, 0.0, 30.0, 30.0, 30.0],
+            2,
+        );
+        assert!(
+            ladder.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{ladder:?}"
+        );
+        assert!((ladder[2] - 1000.0).abs() < 1e-6, "the pin does not move");
+        assert!((ladder[0] - 1000.0).abs() < 1e-6 && (ladder[1] - 1000.0).abs() < 1e-6);
+        assert_eq!(ladder[3], 1200.0);
+        assert!((ladder[4] - 1450.0).abs() < 1e-6 && (ladder[5] - 1450.0).abs() < 1e-6);
     }
 
     #[test]

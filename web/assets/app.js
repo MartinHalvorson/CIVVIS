@@ -38676,7 +38676,10 @@ function fillStrategies(rules) {
 // A rating is shown only once something measured it, and a thin one says so.
 function strategyEloSuffix(entry) {
   if (entry.elo === null || entry.elo === undefined) return "";
-  return ` · ${entry.provisional ? "~" : ""}${Math.round(entry.elo)}`;
+  // An agent that has never won a table is rated "at most"; one that has
+  // never lost, "at least". Either outranks the provisional mark.
+  const lead = entry.bound === "upper" ? "≤" : entry.provisional && entry.bound !== "lower" ? "~" : "";
+  return ` · ${lead}${Math.round(entry.elo)}${entry.bound === "lower" ? "+" : ""}`;
 }
 // Who a person plays against. Each Civ AI Agent carries its measured Elo and
 // the Civilization VI level whose rivals rate nearest it, so somebody who
@@ -38698,7 +38701,8 @@ function fillRivalStrategies(rules, roster) {
   const rungs = (Array.isArray(rules.civ6_ladder) ? rules.civ6_ladder : [])
     .filter(rung => rung.elo !== null && rung.elo !== undefined);
   note.textContent = rungs.length
-    ? "Civ VI levels in Elo: " + rungs.map(rung => `${rung.name} ${Math.round(rung.elo)}`).join(" · ")
+    ? "Civ VI levels in Elo: " + rungs.map(rung =>
+        `${rung.name} ${Math.round(rung.elo)}${rung.bound === "lower" ? "+" : ""}`).join(" · ")
     : "";
 }
 // "All" is the turns this game has left. A continued game deliberately has no

@@ -330,12 +330,46 @@ fn publish(options: &Options) {
                 "sd": round(sd[*at]),
                 "games": sat[*at],
                 "wins": won[*at],
+                // Never lost, or never won: the fit bounds it from one side.
+                "bound": if sat[*at] > 0 && won[*at] == sat[*at] {
+                    "lower"
+                } else if won[*at] == 0 {
+                    "upper"
+                } else {
+                    ""
+                },
             }),
         );
     }
     // Prince's rivals are the reference agent with nothing added: one entrant
     // under two names.
     ratings.insert(strategies::rung_key(PRINCE), ratings[reference].clone());
+    // The ladder a person is shown, once every rung has been played.
+    let rungs: Vec<&Value> = CIV6_RUNGS
+        .iter()
+        .filter_map(|(rung, _)| ratings.get(&strategies::rung_key(rung)))
+        .collect();
+    let mut ladder = BTreeMap::new();
+    if rungs.len() == CIV6_RUNGS.len() {
+        let measured: Vec<f64> = rungs
+            .iter()
+            .map(|r| r["elo"].as_f64().unwrap_or(0.0))
+            .collect();
+        let weight: Vec<f64> = rungs
+            .iter()
+            .map(|r| r["games"].as_f64().unwrap_or(0.0))
+            .collect();
+        let pin = CIV6_RUNGS
+            .iter()
+            .position(|(rung, _)| *rung == PRINCE)
+            .unwrap_or(0);
+        for ((rung, _), elo) in CIV6_RUNGS
+            .iter()
+            .zip(strategies::monotone_ladder(&measured, &weight, pin))
+        {
+            ladder.insert(rung.to_string(), round(elo));
+        }
+    }
     let file = json!({
         "protocol": 1,
         "prince_elo": PRINCE_ELO,
@@ -345,6 +379,7 @@ fn publish(options: &Options) {
         "speed": SPEED,
         "tables": tables.len(),
         "victories": victories,
+        "ladder": ladder,
         "ratings": ratings,
     });
     let mut body = serde_json::to_string_pretty(&file).expect("ratings serialise");
@@ -359,6 +394,7 @@ fn publish(options: &Options) {
             .total_cmp(&a.1["elo"].as_f64().unwrap_or(0.0))
     });
     println!("{} rated tables -> {}", tables.len(), options.out);
+    println!("ladder: {}", json!(ladder));
     println!(
         "{:<18} {:>6} {:>5} {:>6} {:>5}",
         "entrant", "elo", "sd", "tables", "wins"

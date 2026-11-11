@@ -60,6 +60,18 @@ the reference agent plays with nothing added, so its own rating *is* Prince.
 The `sd` column is a bootstrap over tables, relative to that anchor. An agent
 with fewer than `strategies::PROVISIONAL_TABLES` tables is shown with a `~`.
 
+Two things keep the published numbers from saying more than the tables do:
+
+- **Bounds.** An entrant that has never lost a table is rated "at least"
+  (`bound: "lower"`, shown with a trailing `+`), and one that has never won is
+  rated "at most" (`bound: "upper"`, a leading `≤`). The fit can only place such an entrant from one side.
+- **The ladder climbs.** Each rung's handicap contains the one below it, so a
+  higher rung cannot truly be easier. Rungs that measure out of order are
+  pooled to their weighted mean (`strategies::monotone_ladder`, with Prince
+  held at the pin), and the file's `ladder` is what a person is shown. Rungs
+  the tables cannot tell apart show the same Elo. The raw fit stays in
+  `ratings`.
+
 ```bash
 cargo run --features developer-tools --profile ci --bin strategy_elo -- \
   --games 240 --rung-games 40 --jobs 4
@@ -82,6 +94,20 @@ agent, and the claim "Prince is 1000" is the assumption that the reference
 agent, unassisted, plays about as well as theirs. The spacing between rungs is
 a measurement; where the whole ladder sits against our agents is that one
 assumption.
+
+The reference is `stock` (`ByTheBook`), the planner with no promoted extras,
+chosen by what it predicts at the top of the ladder. Calibration record,
+2026-11-11:
+
+- With the scripted baseline (`wheels`) as the rivals, challengers won 12 of
+  the first 14 rung tables, including 2 of 4 at Immortal and Deity. Our real
+  seat has won a handful of several hundred games at Deity
+  (`docs/CIV6_LADDER.md`), so that reference is far too weak. Those 14 tables
+  are still in the log, marked `"reference": "wheels"`, and are not fitted.
+- With `stock`, challengers won 0 of 120 tables at Immortal and Deity, 2 of 60
+  at Emperor and 15 of 60 at King. That is the shape of the real record.
+
+Pass `--reference <id>` with its own `--out` to try another.
 
 The live ladder is the check on it. `docs/CIV6_LADDER.md` records our seat's
 real games against the real AI at each level, and a clean win rate there gives
@@ -106,4 +132,7 @@ measurement those constants were waiting for; reconciling them is open.
   accepts `rival_strategy` by id or handle and refuses a name nobody registered.
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
-rivals; the agent is how well they play.
+rivals; the agent is how well they play. As measured on 2026-11-11 no
+unhandicapped agent of ours rates nearer Emperor than King, so a harder game than that is a strong agent *and* a higher
+Difficulty, and it will be harder than the rung's own number, which was
+measured with the reference agent in the rival seats.
