@@ -8450,6 +8450,8 @@ fn browser_key_bindings_match_the_requested_set() {
         // names, so a row that drifts is a row that stopped matching the
         // game this client exists to be playable by.
         ("EndTurn", "1"),
+        // Enter is the same action on the key that game's players press.
+        ("EndTurnEnter", "Enter"),
         ("FoundCity", "b"),
         ("Fortify", "f"),
         ("FortifyUntilHeal", "h"),
@@ -8500,6 +8502,11 @@ fn browser_key_bindings_match_the_requested_set() {
     }
     // The two chords that game puts Shift on, and nothing else may.
     assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+    assert!(EMBEDDED_INDEX.contains(
+        "{id: \"EndTurnAnywayEnter\", key: \"Enter\", shift: true, run: () => advanceTurn(true)},"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains("{id: \"EndTurnEnter\", key: \"Enter\", run: () => advanceTurn(false)},"));
     assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
     // `A` is Attack in Civ 6 and this client attacks by pointing, so it
     // carries no order of its own — it was Alert here until this table
@@ -8523,7 +8530,7 @@ fn browser_key_bindings_match_the_requested_set() {
                 .map(|(rows, _)| rows)
         })
         .expect("the closed shortcut table");
-    assert_eq!(shortcuts.matches("{id: \"").count(), 44);
+    assert_eq!(shortcuts.matches("{id: \"").count(), 46);
     assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
     assert!(!EMBEDDED_INDEX.contains("let altTap"));
     // Everything that needs a seat is withheld from a spectator, and
@@ -8558,10 +8565,11 @@ fn browser_key_bindings_match_the_requested_set() {
         .split_once("<summary>Keyboard shortcuts</summary>")
         .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
         .expect("the keyboard shortcut legend");
-    assert_eq!(legend.matches("<kbd>").count(), 47);
-    assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+    assert_eq!(legend.matches("<kbd>").count(), 48);
+    assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 48);
     assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
-    assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
+    assert!(legend.contains("<span><kbd>Enter</kbd><kbd>1</kbd>End turn · next blocker</span>"));
+    assert!(legend.contains("<span><kbd>Shift</kbd><kbd>Enter</kbd>End turn anyway</span>"));
     assert!(EMBEDDED_INDEX.contains(
         "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
     ));
@@ -8595,11 +8603,12 @@ fn browser_key_bindings_match_the_requested_set() {
     // the browser, and never becomes a map binding.
     assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
     // Command, Control and Option belong to the browser and never become
-    // map bindings. Shift does, for the two chords Civ 6 puts it on, so
-    // it is matched from its own table rather than refused outright.
+    // map bindings. Shift does, for the two chords Civ 6 puts it on and
+    // for ending the turn anyway on Enter, so it is matched from its own
+    // table rather than refused outright.
     assert!(EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;"));
     assert!(EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;"));
-    assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+    assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 3);
     // Space and Enter belong to whichever control has focus, so a person
     // navigating by keyboard never skips a unit by pressing a button.
     assert!(EMBEDDED_INDEX.contains(
