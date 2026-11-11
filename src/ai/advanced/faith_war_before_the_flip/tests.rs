@@ -681,11 +681,12 @@ fn a_larger_world_or_a_lone_founder_is_held_as_today() {
 }
 
 /// The live Byzantium shape: a lone founder (race 25%, no other major on
-/// its faith) at twice our power, with two of our three cities leaning to
-/// it. One leaning city is held as today; two open the war.
+/// its faith) at 200 power against our 120, with two of our three cities
+/// leaning to it. One leaning city is held as today; two open the war;
+/// under half the founder's power they do not.
 #[test]
 fn a_small_world_opens_the_faith_war_when_our_own_flip_is_next() {
-    let (mut g, mut ai, plan, _, _) = small_world(4, 100.0, 200.0);
+    let (mut g, mut ai, plan, _, _) = small_world(4, 120.0, 200.0);
     ai.enable_faith_war_on_a_small_world();
     Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
     assert_eq!(
@@ -714,6 +715,22 @@ fn a_small_world_opens_the_faith_war_when_our_own_flip_is_next() {
     );
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(g.is_at_war(0, 1), "two of three leaning: opened");
+
+    // Under half the founder's power our own flip opens nothing.
+    let (mut g, mut ai, plan, _, _) = small_world(4, 90.0, 200.0);
+    ai.enable_faith_war_on_a_small_world();
+    Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
+    let second = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| g.cities[cid].pos == (7, 8))
+        .expect("our second city");
+    let city = g.cities.get_mut(&second).unwrap();
+    city.atheist_pressure = 1_000.0;
+    city.pressure.insert(FAITH.into(), 100.0);
+    assert_eq!(ai.faith_war_small_world(&g, 0, 1), None, "90 against 200");
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1));
 
     // A larger world is still held as today.
     let (mut g, mut ai, plan, _, _) = small_world(6, 100.0, 200.0);
