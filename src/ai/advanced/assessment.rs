@@ -1437,6 +1437,20 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // `first-capital-strikes-the-open-window`: while the first capital's
+        // window stands, the campaign stays on its city. `None` with the gene
+        // off. See `advanced/first_capital_strikes_the_open_window.rs`.
+        let (target_player, target_city) = match self.first_capital_keeps_the_campaign(
+            g,
+            pid,
+            target_player,
+            &wartime_rivals,
+            emergency_objective.is_some(),
+            actionable_denial.map(|(rival, _)| rival),
+        ) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
         // A final war aims at the nearest rival city, whichever race the
         // ranking above would still be countering. See `last_civ_standing`.
         let (target_player, target_city) = match self.final_war_objective(g, pid) {

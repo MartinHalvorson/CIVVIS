@@ -1458,6 +1458,14 @@ impl AdvancedAi {
                 enemies.push(barb);
             }
         }
+        // `first-capital-strikes-the-open-window`: a body of the first
+        // capital's force, or its breaker, walks on to the rally through a
+        // home faith war, which is no front. `false` with the gene off.
+        if self.first_capital_marches_through(g, pid, uid, &enemies) {
+            if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                return acted;
+            }
+        }
         // A home raider supplies a bounded defensive assignment, not a second
         // major-war front. Remember this exact shape so responders keep their
         // first claim below while every other pre-war campaign unit can retain

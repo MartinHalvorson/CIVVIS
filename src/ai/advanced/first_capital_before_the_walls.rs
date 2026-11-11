@@ -162,7 +162,9 @@ impl AdvancedAi {
     /// reserved and its Settlers deferred.
     pub(super) fn conquest_first_settler_cities(&self) -> usize {
         if self.first_capital_active() {
-            FIRST_CAPITAL_SETTLER_CITIES
+            // `first-capital-strikes-the-open-window`: two on a soft capital.
+            self.first_capital_soft_settler_cities()
+                .unwrap_or(FIRST_CAPITAL_SETTLER_CITIES)
         } else {
             super::early_conquest::CONQUEST_FIRST_SETTLER_CITIES
         }

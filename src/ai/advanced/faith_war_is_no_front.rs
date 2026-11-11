@@ -65,6 +65,10 @@ impl AdvancedAi {
         // `prey-war-is-kept`: a faith war on prey is a front. See
         // `advanced/prey_war_is_kept.rs`.
         exempt.retain(|rival| !self.prey_faith_war_is_a_front(g, pid, *rival));
+        // `first-capital-strikes-the-open-window`: while a first capital's
+        // window stands, its home faith wars are no front either. Empty with
+        // the gene off. See `advanced/first_capital_strikes_the_open_window.rs`.
+        exempt.extend(self.first_capital_faith_fronts(g, pid));
         exempt.sort_unstable();
         exempt.dedup();
         exempt

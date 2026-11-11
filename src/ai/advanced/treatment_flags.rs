@@ -254,6 +254,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-fears-the-tech-lead`; see
         /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
         faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
+        /// `first-capital-strikes-the-open-window`: see
+        /// `advanced/first_capital_strikes_the_open_window.rs`.
+        first_capital_strikes_the_open_window => enable_first_capital_strikes_the_open_window, disable_first_capital_strikes_the_open_window;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
