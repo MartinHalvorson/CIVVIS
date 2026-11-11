@@ -14,6 +14,8 @@
 //! finally allowed two Hypaspists at72. A model book is not the host price.
 //! Keep the existing single-upgrade want and its reserved cash; this changes
 //! the proposed material deal, not its acceptance or the upgrade itself.
+//! With less cash than the transport minimum, retain the existing barter path:
+//! the initial implementation removed a native Iron barter at091313Z/59.
 use super::*;
 
 /// One material purchase, with the cash that must remain for its upgrade.
@@ -38,6 +40,10 @@ struct ArmyUpgradeMaterialQuote {
 }
 
 impl AdvancedAi {
+    /// Shared minimum spendable cash for a native resource price request.
+    /// Below this transport floor, the opt-in retains the existing barter path.
+    pub const NATIVE_RESOURCE_CASH_QUOTE_MINIMUM: i32 = 30;
+
     pub fn army_upgrade_materials_enabled(&self) -> bool {
         self.army_upgrade_materials
     }
@@ -116,11 +122,15 @@ impl AdvancedAi {
         }
         let wants = self.army_upgrade_material_wants(g, pid);
         let host_price = self.land_army_asks_the_host_price
+            && remaining_gold.is_finite()
             && wants.first().is_some_and(|want| {
                 let resource = Name::new(&want.resource_id);
-                g.observed_strategic_income_adjustments
-                    .get(&pid)
-                    .is_some_and(|income| income.contains_key(&resource))
+                remaining_gold.min(g.players[pid].gold).floor()
+                    >= want.gold_reserve.ceil()
+                        + f64::from(Self::NATIVE_RESOURCE_CASH_QUOTE_MINIMUM)
+                    && g.observed_strategic_income_adjustments
+                        .get(&pid)
+                        .is_some_and(|income| income.contains_key(&resource))
                     && g.host_unit_facts.get(&want.uid).is_some_and(|facts| {
                         facts.civ6_id.is_some()
                             && facts.upgrade.as_ref().is_some_and(|quote| {

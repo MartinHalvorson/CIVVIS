@@ -163,19 +163,20 @@ fn host_cash_price_is_off_in_both_playing_controllers() {
 fn native_cash_price_keeps_the_exact_want_and_its_upgrade_reserve() {
     let (mut g, mut ai, uid) = fixture();
     mark_native(&mut g, uid);
-    let (off, old_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0);
+    g.players[0].gold = 250.0;
+    let (off, old_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 250.0);
     assert!(!old_price);
     ai.enable_land_army_asks_the_host_price();
-    let (on, host_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0);
+    let (on, host_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, 250.0);
     assert!(host_price);
     assert_eq!(off, on);
     assert_eq!(on[0].amount, 10);
     assert_eq!(on[0].gold_reserve, 190.0);
-    assert_eq!(g.players[0].gold, 200.0);
+    assert_eq!(g.players[0].gold, 250.0);
     assert_eq!(g.units[&uid].kind, "heavy_chariot");
     ai.disable_land_army_asks_the_host_price();
     assert!(
-        !ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0)
+        !ai.army_upgrade_material_wants_after_spending(&g, 0, 250.0)
             .1
     );
 }
@@ -185,6 +186,7 @@ fn model_units_and_incomplete_native_observations_keep_the_model_price_path() {
     for missing in ["native_id", "income", "gold", "resource_bill"] {
         let (mut g, mut ai, uid) = fixture();
         mark_native(&mut g, uid);
+        g.players[0].gold = 250.0;
         ai.enable_land_army_asks_the_host_price();
         match missing {
             "native_id" => {
@@ -215,7 +217,7 @@ fn model_units_and_incomplete_native_observations_keep_the_model_price_path() {
             _ => unreachable!(),
         }
         assert!(
-            !ai.army_upgrade_material_wants_after_spending(&g, 0, 200.0)
+            !ai.army_upgrade_material_wants_after_spending(&g, 0, 250.0)
                 .1,
             "{missing}"
         );
@@ -247,4 +249,31 @@ fn native_price_does_not_create_a_want_for_stocked_wounded_or_reserved_units() {
         assert!(wants.is_empty(), "{unavailable}");
         assert!(!host_price, "{unavailable}");
     }
+}
+
+#[test]
+fn a_cash_quote_below_the_transport_floor_keeps_the_existing_barter_want() {
+    let (mut g, mut ai, uid) = fixture();
+    mark_native(&mut g, uid);
+    g.players[0].gold = 250.0;
+    let baseline = ai
+        .army_upgrade_material_wants_after_spending(&g, 0, 250.0)
+        .0;
+    assert_eq!(baseline[0].gold_reserve, 190.0);
+    ai.enable_land_army_asks_the_host_price();
+    for budget in [200.0, 219.0, 219.99] {
+        let (wants, cash_price) = ai.army_upgrade_material_wants_after_spending(&g, 0, budget);
+        assert_eq!(wants, baseline);
+        assert!(!cash_price, "budget {budget}: keep the barter opportunity");
+    }
+    assert!(
+        ai.army_upgrade_material_wants_after_spending(&g, 0, 220.0)
+            .1
+    );
+    g.players[0].gold = 219.99;
+    assert!(
+        !ai.army_upgrade_material_wants_after_spending(&g, 0, 250.0)
+            .1,
+        "the host treasury caps the requested remaining budget too"
+    );
 }
