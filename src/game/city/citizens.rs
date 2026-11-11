@@ -567,8 +567,33 @@ impl Game {
         });
         let workers = (city.pop.max(0) as usize).min(cands.len());
         let mut selected = vec![false; cands.len()];
-        for slot in selected.iter_mut().take(workers) {
-            *slot = true;
+        // A citizen the seat placed by hand is seated before anyone else and
+        // is never moved by the passes below. With nothing placed, `locked` is
+        // empty, the first loop seats nobody, and the second is exactly the
+        // `take(workers)` this used to be.
+        let locked: Vec<bool> = match self.players[city.owner].citizen_locks.get(&cid) {
+            Some(held) if !held.is_empty() => cands
+                .iter()
+                .map(|job| job.pos.is_some_and(|pos| held.contains(&pos)))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let is_locked = |index: usize| locked.get(index).copied().unwrap_or(false);
+        let mut placed = 0;
+        for (index, slot) in selected.iter_mut().enumerate() {
+            if placed < workers && is_locked(index) {
+                *slot = true;
+                placed += 1;
+            }
+        }
+        for slot in selected.iter_mut() {
+            if placed >= workers {
+                break;
+            }
+            if !*slot {
+                *slot = true;
+                placed += 1;
+            }
         }
         // Fixed food (buildings, districts, routes, envoys, beliefs) satisfies
         // nutrition before citizens are pulled off more valuable jobs. This is
@@ -613,7 +638,11 @@ impl Game {
             }
             let need = strategy.food_target - food;
             let mut best: Option<(f64, f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
-            for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
+            for (out, a) in cands
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| selected[*i] && !is_locked(*i))
+            {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     let food_gain = b.yields.food - a.yields.food;
                     if food_gain <= 1e-9 {
@@ -651,7 +680,11 @@ impl Game {
         // One-swap local optimum under the nutrition constraint.
         for _ in 0..cands.len() {
             let mut best: Option<(f64, &CitizenJobKey, &CitizenJobKey, usize, usize)> = None;
-            for (out, a) in cands.iter().enumerate().filter(|(i, _)| selected[*i]) {
+            for (out, a) in cands
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| selected[*i] && !is_locked(*i))
+            {
                 for (inside, b) in cands.iter().enumerate().filter(|(i, _)| !selected[*i]) {
                     if b.fallback_tier > a.fallback_tier {
                         continue;
