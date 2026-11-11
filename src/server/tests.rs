@@ -5931,7 +5931,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // ahead of the advanced drawer, which strands it above the whole form
     // — the way the endgame rules were stranded until they were nested.
     assert!(EMBEDDED_INDEX.contains(
-        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", \"rivalstrategy\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
     ));
     // Recomposed on every change of mode, from the same one function.
     assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
