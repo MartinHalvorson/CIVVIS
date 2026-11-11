@@ -9326,7 +9326,7 @@ fn a_choice_of_tiles_is_made_on_the_map() {
     // coordinates. Both renderers outline the sites, because the default world
     // is a globe and a flat-only pass would reach nobody.
     assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
-    assert!(EMBEDDED_APP_JS.contains("`beginSitePick(${city.id},${itemId})`"));
+    assert!(EMBEDDED_APP_JS.contains("`pickSiteFromCity(event,${city.id},${itemId})`"));
     assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
     assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
     // A click belongs to the picker before anything else reads it, and a turn
@@ -15992,6 +15992,48 @@ fn a_played_seat_sets_its_citys_yield_focus() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-focus\")"));
     assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-focus\")"));
     assert!(include_str!("../../beta/shim.js").contains("\"/city-focus\""));
+}
+
+/// Civilization VI lets a city be told what to build after what it is
+/// building. The engine holds one item per city, so the rest of the list is a
+/// standing order the page keeps and re-issues, the way a travel order is.
+#[test]
+fn a_city_keeps_a_queue_the_page_reissues() {
+    // A row is an order, or with the queue on or Shift held, an order for
+    // later; a district chosen for the queue keeps the tile it was given.
+    assert!(EMBEDDED_APP_JS.contains(
+        "if (cityQueueMode || (event && event.shiftKey)) queueCityItem(action.city, action);"
+    ));
+    assert!(EMBEDDED_APP_JS.contains("if (sitePick && queueing) sitePick.queue = true;"));
+    assert!(EMBEDDED_APP_JS.contains(": `orderFromCity(event,${JSON.stringify(entry.sites[0])})`,"));
+    // An idle city starts on it at once; anything else waits its turn.
+    assert!(EMBEDDED_APP_JS.contains("if (!(city.queue && city.queue.length)) await send(action);"));
+    // The turn opens: saved lists come back on the first one, and every idle
+    // city takes the next thing the engine still offers.
+    assert!(EMBEDDED_APP_JS.contains(
+        "  if (first) restoreCityQueues();\n  resumeAllTravel();\n  resumeCityQueues();\n"
+    ));
+    let resume = EMBEDDED_APP_JS
+        .split_once("async function resumeCityQueues() {")
+        .expect("the queue's turn")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the queue's turn")
+        .0;
+    assert!(resume.contains("if (city.queue && city.queue.length) continue;"));
+    assert!(resume.contains("action.type === \"produce\""));
+    assert!(resume.contains("if (!order) continue;"));
+    // A new world never inherits another's list.
+    assert!(EMBEDDED_APP_JS.contains("unitOrders.clear(); cityQueues.clear();"));
+    assert!(EMBEDDED_APP_JS.contains("held.seed !== state.seed"));
+
+    // The yields on the city panel are their own focus, when the server says
+    // what the focus is.
+    assert!(EMBEDDED_APP_JS.contains("const emphasis = city.citizens && city.citizens.emphasis;"));
+    assert!(EMBEDDED_APP_JS.contains("onclick='cycleCityFocus(${city.id},\"${kind}\")'>"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})"
+    ));
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
