@@ -9,7 +9,10 @@
 //! greedily, each at least `FRONT_SEPARATION` tiles from every post already
 //! taken, and each post takes the nearest General still free. A General that
 //! already stands within one tile of its post holds. Generals beyond the posts
-//! are left to the bridge's ordinary activation.
+//! are left to the bridge's ordinary activation, except Comandantes: the
+//! first [`COMANDANTES_KEPT`] of them wait with our largest group of soldiers,
+//! however small, because their aura never expires and a scattered army
+//! gathers again (see [`plan`]).
 
 use std::collections::BTreeMap;
 
@@ -26,6 +29,20 @@ const FRONT_SEPARATION: i32 = 6;
 /// The fewest own land soldiers inside the aura that make a post worth a
 /// General, unless the post faces an enemy.
 const MIN_LED: usize = 2;
+
+/// Comandante Generals kept on the board when no post is worth one: enough
+/// for two fronts. Live Deity Gran Colombia `civvis-20261111T172329Z` led its
+/// first Comandante from turn 31 and retired it on turn 44, the first frame
+/// no two soldiers stood within two tiles of each other, and retired the
+/// next five the same way (turns 53, 89, 91, 131 and 134); it never declared
+/// a war with one on the board.
+const COMANDANTES_KEPT: usize = 2;
+
+/// Whether this General's aura lasts the whole game (`CLASS_ALL_ERAS`). A
+/// Great General's covers two eras, so an idle one is still better retired.
+fn is_comandante(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("UNIT_COMANDANTE_GENERAL")
+}
 
 /// Whether this unit kind is a General whose aura the gene keeps.
 pub(super) fn is_general(kind: &str) -> bool {
@@ -86,6 +103,11 @@ fn enemy_positions(state: &StateSnapshot) -> Vec<(i32, i32)> {
 /// Where each kept General goes this frame: `Some(tile)` to walk there, `None`
 /// to hold where it stands. A General absent from the map is not kept and is
 /// left to the ordinary activation.
+///
+/// A Comandante with no post is still kept while fewer than
+/// [`COMANDANTES_KEPT`] are: it walks to the soldier that leads the most
+/// others (the nearest of equals), away from the posts already taken when it
+/// can.
 pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
     let mut generals: Vec<&StateUnit> = state
         .units
@@ -104,7 +126,7 @@ pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
     let enemies = enemy_positions(state);
     // (worth, led, threat, tile) for every soldier's tile, best first; ties
     // break on the tile so the choice is stable frame to frame.
-    let mut posts: Vec<(usize, usize, usize, (i32, i32))> = soldiers
+    let mut ranked: Vec<(usize, usize, usize, (i32, i32))> = soldiers
         .iter()
         .map(|anchor| {
             let tile = (anchor.x, anchor.y);
@@ -119,10 +141,14 @@ pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
                 .min(4);
             (led + 2 * threat, led, threat, tile)
         })
-        .filter(|&(_, led, threat, _)| led >= MIN_LED || threat > 0)
         .collect();
-    posts.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)).then(a.3.cmp(&b.3)));
-    posts.dedup_by_key(|post| post.3);
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)).then(a.3.cmp(&b.3)));
+    ranked.dedup_by_key(|post| post.3);
+    let posts: Vec<(usize, usize, usize, (i32, i32))> = ranked
+        .iter()
+        .filter(|&&(_, led, threat, _)| led >= MIN_LED || threat > 0)
+        .copied()
+        .collect();
     let mut taken: Vec<(i32, i32)> = Vec::new();
     let mut free: Vec<&StateUnit> = generals;
     for &(_, _, _, tile) in &posts {
@@ -144,6 +170,50 @@ pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
             .expect("free is not empty");
         free.remove(index);
         let stand = (general.x, general.y);
+        out.insert(
+            general.id,
+            if offset_distance(stand, tile) <= 1 {
+                None
+            } else {
+                Some(tile)
+            },
+        );
+    }
+    // Comandantes past the posts: the first few wait with the army.
+    let mut kept = state
+        .units
+        .iter()
+        .filter(|unit| is_comandante(&unit.kind) && out.contains_key(&unit.id))
+        .count();
+    for general in free.into_iter().filter(|g| is_comandante(&g.kind)) {
+        if kept >= COMANDANTES_KEPT {
+            break;
+        }
+        let stand = (general.x, general.y);
+        // The soldier leading the most others, then the nearest one.
+        let best = |apart: bool| {
+            ranked
+                .iter()
+                .filter(|post| {
+                    !apart
+                        || taken
+                            .iter()
+                            .all(|&other| offset_distance(post.3, other) >= FRONT_SEPARATION)
+                })
+                .min_by_key(|post| {
+                    (
+                        std::cmp::Reverse(post.0),
+                        offset_distance(stand, post.3),
+                        post.3,
+                    )
+                })
+                .map(|post| post.3)
+        };
+        let Some(tile) = best(true).or_else(|| best(false)) else {
+            break;
+        };
+        taken.push(tile);
+        kept += 1;
         out.insert(
             general.id,
             if offset_distance(stand, tile) <= 1 {
@@ -279,13 +349,69 @@ mod tests {
         );
     }
 
+    fn great_general(id: i64, x: i32, y: i32) -> StateUnit {
+        StateUnit {
+            kind: "UNIT_GREAT_GENERAL".into(),
+            ..general(id, x, y)
+        }
+    }
+
     #[test]
     fn a_lone_soldier_with_no_enemy_is_no_post() {
         let state = StateSnapshot {
-            units: vec![general(1, 0, 0), soldier(10, 10, 10)],
+            units: vec![great_general(1, 0, 0), soldier(10, 10, 10)],
             ..StateSnapshot::default()
         };
-        assert!(plan(&state).is_empty());
+        assert!(plan(&state).is_empty(), "a Great General is left to retire");
+    }
+
+    #[test]
+    fn a_comandante_waits_with_a_scattered_army() {
+        // No two soldiers within two tiles and no enemy: no post, as on live
+        // turn 44. The Comandante walks to a soldier instead of retiring.
+        let state = StateSnapshot {
+            units: vec![
+                general(1, 0, 0),
+                soldier(10, 10, 10),
+                soldier(11, 20, 10),
+                soldier(12, 30, 10),
+            ],
+            ..StateSnapshot::default()
+        };
+        let plan = plan(&state);
+        let target = plan.get(&1).copied().flatten().expect("kept and walking");
+        assert_eq!(target, (10, 10), "the nearest of the equal tiles");
+
+        // Standing with a lone soldier, it holds.
+        let state = StateSnapshot {
+            units: vec![general(1, 10, 10), soldier(10, 10, 10)],
+            ..StateSnapshot::default()
+        };
+        assert_eq!(plan_of(&state).get(&1), Some(&None));
+    }
+
+    #[test]
+    fn only_two_comandantes_wait_and_they_stand_apart() {
+        let state = StateSnapshot {
+            units: vec![
+                general(1, 0, 0),
+                general(2, 0, 1),
+                general(3, 0, 2),
+                soldier(10, 10, 10),
+                soldier(11, 30, 10),
+            ],
+            ..StateSnapshot::default()
+        };
+        let plan = plan(&state);
+        assert_eq!(plan.len(), 2, "{plan:?}");
+        let mut tiles: Vec<(i32, i32)> = plan.values().filter_map(|tile| *tile).collect();
+        tiles.sort_unstable();
+        assert_eq!(tiles, vec![(10, 10), (30, 10)]);
+        assert!(!plan.contains_key(&3), "the third is left to retire");
+    }
+
+    fn plan_of(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
+        plan(state)
     }
 
     #[test]
