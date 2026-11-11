@@ -479,6 +479,11 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
 
         ("POST", "/route") => with_session(|session| crate::routes::route_step(session, &parsed)),
         ("POST", "/forecast") => with_session(|session| crate::routes::forecast(session, &parsed)),
+        ("POST", "/city-focus") => with_session(|session| {
+            let mut out = crate::routes::city_focus(session, &parsed);
+            decorate_browser(&mut out);
+            out
+        }),
 
         // The same one-unit question the native server answers, and it has to
         // be answered here too: this router is the whole server on the

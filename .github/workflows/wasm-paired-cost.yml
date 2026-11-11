@@ -69,14 +69,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          extra=()
+          set --
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            extra+=(--self-test)
+            set -- --self-test
           fi
           python3 tools/site_wasm_pair.py \
             --baseline inputs/baseline --baseline-source "$BASELINE_SOURCE" \
             --candidate inputs/candidate --candidate-source "$CANDIDATE_SOURCE" \
-            --out comparison "${extra[@]}"
+            --out comparison "$@"
       - name: Preserve timings, traces and raw saves
         if: always()
         uses: actions/upload-artifact@v4

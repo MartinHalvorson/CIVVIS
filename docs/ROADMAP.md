@@ -36,8 +36,9 @@ Everything the old roadmap called planned has shipped and then some:
   random-genome gene screen (`docs/GENE_SCREEN.md`) and shipped by the gene
   ledger's default rule. The Glicko-2 selection league, the paired evaluator
   and the `civvis arena` Elo batches are retired (#2351, #2357,
-  `docs/closed/LEAGUE.md`); a rating system for *finished* genomes is planned
-  to return once the screen has settled the gene set. No learned policy
+  `docs/closed/LEAGUE.md`). Finished genomes are rated again: named Civ AI
+  Agents on an Elo scale pinned to Civilization VI's levels (`docs/ELO.md`,
+  `strategy_elo`). No learned policy
   ships; search wins offline but is not live-eligible. `docs/AI_GAPS.md`
   ranks the gaps.
 - **The live bridge plays real Civilization VI**: a Lua control mod + macOS

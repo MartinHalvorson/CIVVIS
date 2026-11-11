@@ -10,9 +10,11 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -208,6 +210,47 @@ for(const [key,value] of Object.entries({majors:2,cityStates:0,speed:'quick',tur
 assert.throws(()=>validateSettings({...settings,victoryConditions:{...victories,science:false}},'default'));
 ''')
 
+
+
+class PortableEntrypoints(unittest.TestCase):
+    def test_actual_workflow_script_supports_manual_and_pr_modes(self):
+        workflow = Path(__file__).resolve().parent.parent / '.github/workflows/wasm-paired-cost.yml'
+        block = workflow.read_text().split('      - name: Compare complete games in both orders\n', 1)[1]
+        script = textwrap.dedent(block.split('        run: |\n', 1)[1].split('      - name:', 1)[0])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / 'python3'
+            binary.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ARGUMENT_REPORT\"\n")
+            binary.chmod(0o755)
+            for event in ['workflow_dispatch', 'pull_request']:
+                with self.subTest(event=event):
+                    report = root / event
+                    env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
+                               ARGUMENT_REPORT=str(report), EVENT_NAME=event,
+                               BASELINE_SOURCE='a' * 40, CANDIDATE_SOURCE='b' * 40)
+                    answer = subprocess.run(['/bin/bash', '-c', script], cwd=root, env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(answer.returncode, 0, answer.stderr)
+                    arguments = report.read_text().splitlines()
+                    self.assertEqual('--self-test' in arguments, event == 'pull_request')
+                    self.assertIn('a' * 40, arguments)
+                    self.assertIn('b' * 40, arguments)
+
+    def test_symlinked_cli_reaches_the_driver_and_rejects_missing_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            alias = Path(directory) / 'entry.mjs'
+            alias.symlink_to(pair.DRIVER.resolve())
+            missing = str(Path(directory) / 'missing.wasm')
+            answer = subprocess.run(['node', str(alias), missing], capture_output=True, text=True)
+            self.assertNotEqual(answer.returncode, 0, 'CLI silently skipped its entry point')
+            self.assertIn('ENOENT', answer.stderr)
+
+    def test_import_with_unrelated_nonexistent_argv_never_enters_game(self):
+        source = f'await import({json.dumps(pair.DRIVER.resolve().as_uri())});'
+        answer = subprocess.run(['node', '--input-type=module', '-e', source,
+                                 '/nonexistent/non-entry-script'], capture_output=True, text=True)
+        self.assertEqual(answer.returncode, 0, answer.stderr)
+        self.assertEqual(answer.stdout, '')
 
 if __name__ == '__main__':
     unittest.main()

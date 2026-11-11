@@ -305,8 +305,17 @@ impl BasicAi {
     /// unit upgrades and emergency purchases.
     pub(super) fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let bank = g.players[pid].gold;
+        // A plot must leave the reserve behind (the test at the head of the
+        // loop below), and no plot is free: under the reserve there is none
+        // to find, so the menu is not listed.
+        if bank + f64::EPSILON < reserve {
+            return false;
+        }
         let mut best: Option<PlotPurchaseCandidate> = None;
-        for action in g.legal_purchase_actions(pid) {
+        // Only the plots of the menu: this used to list every unit, building
+        // and district as well and drop them one by one. See
+        // `Game::legal_plot_purchases`.
+        for action in g.legal_plot_purchases(pid) {
             let Action::BuyPlot { city, pos, cost } = action else {
                 continue;
             };
