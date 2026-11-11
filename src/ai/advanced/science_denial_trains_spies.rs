@@ -168,6 +168,9 @@ impl AdvancedAi {
                         .queue
                         .first()
                         .is_none_or(|head| Self::spy_displaces(g, head))
+                    // `denial-spies-fill-every-slot`: the Culture aim keeps
+                    // its culture heads. False with that gene off.
+                    && !self.denial_fill_keeps_the_culture_head(g, *cid)
                     && g.can_produce(pid, *cid, &spy)
             })
             .map(|cid| (g.city_yields(cid).production, cid))

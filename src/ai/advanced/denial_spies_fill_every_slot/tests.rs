@@ -300,3 +300,30 @@ fn the_governor_keeps_a_spy_the_gene_trains() {
         "on: the stand-in racer reserves the queue"
     );
 }
+
+#[test]
+fn the_culture_aim_keeps_its_culture_heads() {
+    let (g, ours) = board(false);
+    let ranked = by_production(&g, &ours);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    let run = |target: VictoryTarget, strategy: GrandStrategy| {
+        let mut g = g.clone();
+        for cid in &ranked[..2] {
+            g.cities.get_mut(cid).unwrap().queue = vec![amphitheater.clone()];
+        }
+        seat(target, true).claim_queues_for_denial_spies(&mut g, 0, &plan(strategy));
+        training(&g)
+    };
+    assert_eq!(
+        run(VictoryTarget::Culture, GrandStrategy::Culture),
+        BTreeSet::from([ranked[2]]),
+        "Culture: the Amphitheaters stay, the third city trains"
+    );
+    assert_eq!(
+        run(VictoryTarget::Domination, GrandStrategy::Conquest),
+        BTreeSet::from([ranked[0], ranked[1]]),
+        "Domination: the old displacement rule"
+    );
+}

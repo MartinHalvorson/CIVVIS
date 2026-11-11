@@ -53,6 +53,10 @@
 //!    shortfall at once.
 //! 3. **Soonest first.** When the host quotes the Spy in every eligible
 //!    city, the claim takes the fewest turns, then the most Production.
+//! 4. **Culture first on the Culture aim.** A Spy never displaces a Theater
+//!    Square district, a building of one, or a building with Great Work
+//!    slots. Replayed on captured live boards, the unguarded claim replaced
+//!    an Art Museum in Sparta (civvis-20261111T002909Z t100).
 //!
 //! The eligibility, displacement, siege, threat and launch-pad rules of the
 //! claim are unchanged, and the governor keeps a Spy it trains for the gene
@@ -141,6 +145,33 @@ impl AdvancedAi {
         } else {
             shortfall.min(1)
         }
+    }
+
+    /// Under the gene on a Culture aim, whether `cid` opens its queue with
+    /// culture a Spy must not displace: a Theater Square district, a building
+    /// of one, or any building with Great Work slots. False off the gene or
+    /// off the Culture aim (the old displacement rule).
+    pub(super) fn denial_fill_keeps_the_culture_head(&self, g: &Game, cid: u32) -> bool {
+        if !self.denial_spies_fill_every_slot_on(g)
+            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
+        {
+            return false;
+        }
+        g.cities
+            .get(&cid)
+            .and_then(|city| city.queue.first())
+            .is_some_and(|item| match item {
+                Item::District { district, .. } => g.district_family(*district) == "theater_square",
+                Item::Building { building } => {
+                    g.rules.buildings.get(building).is_some_and(|spec| {
+                        !spec.great_work_slots.is_empty()
+                            || spec.district.is_some_and(|district| {
+                                g.district_family(district) == "theater_square"
+                            })
+                    })
+                }
+                _ => false,
+            })
     }
 
     /// Under the gene, order the claim's candidates by the host's quote for
