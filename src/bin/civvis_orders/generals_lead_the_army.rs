@@ -180,15 +180,16 @@ pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
         );
     }
     // Comandantes past the posts: the first few wait with the army.
-    let mut kept = state
+    let posted = state
         .units
         .iter()
         .filter(|unit| is_comandante(&unit.kind) && out.contains_key(&unit.id))
         .count();
-    for general in free.into_iter().filter(|g| is_comandante(&g.kind)) {
-        if kept >= COMANDANTES_KEPT {
-            break;
-        }
+    let waiting = free
+        .into_iter()
+        .filter(|g| is_comandante(&g.kind))
+        .take(COMANDANTES_KEPT.saturating_sub(posted));
+    for general in waiting {
         let stand = (general.x, general.y);
         // The soldier leading the most others, then the nearest one.
         let best = |apart: bool| {
@@ -213,7 +214,6 @@ pub(super) fn plan(state: &StateSnapshot) -> BTreeMap<i64, Option<(i32, i32)>> {
             break;
         };
         taken.push(tile);
-        kept += 1;
         out.insert(
             general.id,
             if offset_distance(stand, tile) <= 1 {
