@@ -1,0 +1,25 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "unique-unit-closes-the-dark-age",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 14 boards of eight live Deity Online Pericles (Greece) Culture games of 2026-11-10/11, at turns t18-t26 of the Ancient era when the seat stood one to four Era Score short of its Normal threshold with no Hoplite and Bronze Working unknown; each the run's events.jsonl cut at frame 0. Both arms run one frozen civvis_orders --resumed built from the branch at 39a07731ca with the run's own requested genome; the on arm adds --with unique-unit-closes-the-dark-age. Orders differ on 2/14: on 230836Z t18 the on arm researches Bronze Working (the Hoplite's unlock) where the off arm took Irrigation, and on 232642Z t18 Bronze Working where it took Pottery. The other boards issued no research order at frame 0 and had no Hoplite to train.",
+ "archive": {
+  "path": "docs/eval/2026-11-11-unique-unit-closes-the-dark-age.native-queries.tar.xz",
+  "sha256": "409e4b471ea1fc87be8e77263016495fde170a73062e95815a11fa828ca1f524"
+ },
+ "members": [
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0003/result.json"
+ ]
+}

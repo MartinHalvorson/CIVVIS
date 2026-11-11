@@ -5147,6 +5147,10 @@ pub struct AdvancedAi {
     battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -6877,6 +6881,11 @@ pub struct AdvancedAi {
     /// Holy Site, and Astrology ahead of the production technologies. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_site_per_theater_3: bool,
+    /// `culture-seat-monuments-2`: version one, and a war holds the Monument
+    /// claim only for a city that is itself threatened, while a near-done
+    /// Monument goes before the city's other heads. See
+    /// `advanced/culture_monuments.rs`. Opt-in.
+    culture_seat_monuments_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7628,6 +7637,10 @@ pub struct AdvancedAi {
     /// strike war then as soon as the host signs. See
     /// `advanced/faith_strike.rs`. Opt-in.
     faith_strike_spares_the_stages: bool,
+    /// `faith-strike-fears-the-tech-lead`: a Culture seat strikes no rival
+    /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_fears_the_tech_lead: bool,
     /// `friendship-outlasts-the-gated-race`: a lapsed friend racing to win is
     /// renewed while `denial-war-needs-the-lane-edge` would refuse the war on
     /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
@@ -10395,6 +10408,11 @@ pub struct AdvancedAi {
     /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
     /// default.
     tribute_buys_the_friendship: bool,
+    /// `unique-unit-closes-the-dark-age`: a seat one to four Era Score short
+    /// of a Normal Age researches and trains or buys its first unique unit
+    /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
+    /// Opt-in.
+    unique_unit_closes_the_dark_age: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11158,6 +11176,7 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -11377,6 +11396,9 @@ mod aqueduct_claims_the_capped_queue;
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
+/// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
+/// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
+mod band_buys_near_the_stage;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
@@ -18417,7 +18439,13 @@ impl AdvancedAi {
                 return;
             }
         }
-        for city in g.player_city_ids(pid) {
+        // `band-buys-near-the-stage`: see `advanced/band_buys_near_the_stage.rs`.
+        let band_cities = if self.band_buys_near_the_stage {
+            self.band_purchase_cities(g, pid)
+        } else {
+            g.player_city_ids(pid)
+        };
+        for city in band_cities {
             // Same correction as the religious units above: the shipped rules
             // cost is the Standard-speed rate, and a Rock Band's price also
             // climbs 100 per band this player has already bought. Reading the
@@ -26568,6 +26596,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `unique-unit-closes-the-dark-age`: the first unique unit before
+        // the era closes, when it turns a Dark Age Normal. Exact no-op while
+        // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
+        self.claim_unique_unit_for_the_age(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);

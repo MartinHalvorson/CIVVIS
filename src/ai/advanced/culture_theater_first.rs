@@ -389,6 +389,7 @@ impl AdvancedAi {
                 if self.early_settler_floor_holds(g, pid, cid, plan)
                     || self.bound_granary_holds(g, pid, cid, plan, item)
                     || self.capital_monument_holds(g, pid, cid, plan, item)
+                    || self.culture_monument_finishes_first(g, pid, cid, plan, item)
                     // See `advanced/acropolis_before_the_deterrent.rs`.
                     // `culture-seat-builds-past-the-deterrent`: see
                     // `advanced/culture_past_the_deterrent.rs`.
@@ -531,6 +532,7 @@ impl AdvancedAi {
                     if self.early_settler_floor_holds(g, pid, cid, plan)
                         || self.bound_granary_holds(g, pid, cid, plan, head)
                         || self.capital_monument_holds(g, pid, cid, plan, head)
+                        || self.culture_monument_finishes_first(g, pid, cid, plan, head)
                         || self.deterrent_holds_against_culture(g, pid, head)
                         || self.idle_route_trader_holds(g, pid, cid, plan, head)
                         || self.backlog_builder_holds(g, pid, cid, plan, head)

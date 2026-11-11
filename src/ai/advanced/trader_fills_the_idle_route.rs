@@ -202,6 +202,7 @@ impl AdvancedAi {
                 Some(item) => {
                     if self.deterrence_unit_holds(g, pid, item)
                         || self.bound_granary_holds(g, pid, cid, plan, item)
+                        || self.culture_monument_finishes_first(g, pid, cid, plan, item)
                         || !Self::idle_route_trader_may_defer(g, pid, cid, item, at_major_war)
                     {
                         continue;

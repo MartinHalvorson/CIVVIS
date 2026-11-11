@@ -414,3 +414,72 @@ fn the_strike_war_ends_once_the_bands_need_the_stages() {
     );
     assert!(!ai.faith_war_exit_peace(&g, 0, 1, &plan));
 }
+
+/// Rival 1 knows `lead` more techs than we do, on the seats' own trees.
+fn rival_leads_by(g: &mut Game, lead: usize) {
+    let target = g.players[0].techs.len() + lead;
+    let unknown: Vec<_> = g
+        .rules
+        .techs
+        .keys()
+        .copied()
+        .filter(|tech| !g.players[1].techs.contains(tech))
+        .collect();
+    let missing = target.saturating_sub(g.players[1].techs.len());
+    g.players[1].techs.extend(unknown.into_iter().take(missing));
+    assert_eq!(g.players[1].techs.len(), target);
+}
+
+#[test]
+fn the_tech_lead_gene_ships_off_and_is_registered() {
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "faith-strike-fears-the-tech-lead",
+        |ai| ai.faith_strike_fears_the_tech_lead,
+    );
+}
+
+#[test]
+fn a_rival_far_ahead_in_technology_is_not_struck() {
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD);
+    let mut off = g.clone();
+    assert!(ai.faith_strike_opening(&mut off, 0), "off: struck");
+    ai.enable_faith_strike_fears_the_tech_lead();
+    let (gate, reason) = ai.faith_strike_gate(&g, 0, 1).unwrap();
+    assert_eq!(gate, "tech_lead");
+    assert!(reason.starts_with(&format!("it leads us by {FAITH_STRIKE_TECH_LEAD} techs")));
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+    assert!(!g.is_at_war(0, 1));
+
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD - 1);
+    ai.enable_faith_strike_fears_the_tech_lead();
+    assert!(ai.faith_strike_opening(&mut g, 0), "one short of the bar");
+
+    let (mut g, mut ai) = culture_fixture();
+    rival_leads_by(&mut g, FAITH_STRIKE_TECH_LEAD);
+    ai.enable_faith_strike_fears_the_tech_lead();
+    ai.victory_target = Some(VictoryTarget::Religion);
+    assert!(
+        ai.faith_strike_opening(&mut g, 0),
+        "a Religion seat strikes as before"
+    );
+}
+
+/// A live board redacts a rival's tree; the host's public count is read.
+#[test]
+fn the_tech_lead_reads_the_hosts_public_count() {
+    let (mut g, mut ai) = culture_fixture();
+    ai.enable_faith_strike_fears_the_tech_lead();
+    assert_eq!(ai.faith_strike_gate(&g, 0, 1), None);
+    let ours = g.players[0].techs.len();
+    std::sync::Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .techs = Some(ours + FAITH_STRIKE_TECH_LEAD);
+    assert_eq!(
+        ai.faith_strike_gate(&g, 0, 1).map(|(gate, _)| gate),
+        Some("tech_lead")
+    );
+    assert!(!ai.faith_strike_opening(&mut g, 0));
+}
