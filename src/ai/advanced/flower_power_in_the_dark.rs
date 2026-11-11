@@ -174,6 +174,8 @@ impl AdvancedAi {
     /// [`FLOWER_POWER_FAITH_STANDARD_TURNS`]: the cheapest quote of our
     /// cities (the host's live), else the list price.
     fn flower_power_band_in_reach(g: &Game, pid: usize) -> Option<String> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let bands = g
             .player_unit_ids(pid)
             .iter()

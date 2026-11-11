@@ -141,6 +141,8 @@ pub(crate) fn gold_income_shortfall_from(income: f64, cities: usize) -> f64 {
 
 impl AdvancedAi {
     fn yield_floor_shortfalls(&self, g: &Game, pid: usize) -> (f64, f64) {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if self.base.minor || self.base.barb {
             return (0.0, 0.0);
         }

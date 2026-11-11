@@ -14255,6 +14255,9 @@ impl AdvancedAi {
     }
 
     fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
+        // The lane table and the preferences below read the same empires;
+        // one memo for all of it. See `Game::query_memo`.
+        let _memo = g.query_memo();
         if let Some(target) = self.active_victory_target(g) {
             return VictoryFocus {
                 strategy: target.strategy(),
@@ -15430,6 +15433,8 @@ impl AdvancedAi {
     /// never holds a wonder lane the capital could finish in a third of the
     /// time.
     fn wonder_bargain_city(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let best = g
             .player_city_ids(pid)
             .into_iter()
@@ -18168,6 +18173,8 @@ impl AdvancedAi {
         counts: &EmpireCounts,
         city_ids: &[u32],
     ) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let expansion_covered = counts.settlers > 0 || city_ids.len() >= plan.desired_cities.max(2);
         if !self.first_builder_reserve_2
             || self.first_builder_reserve_2_paid
@@ -18766,6 +18773,8 @@ impl AdvancedAi {
     /// once a pad exists or is on its way, which leaves every city on the
     /// ordinary 250. See `one_launch_pad`.
     pub(crate) fn launch_pad_site(&self, g: &Game, pid: usize) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let mut best: Option<(u32, f64)> = None;
         for cid in g.player_city_ids(pid) {
             if Self::city_has_spaceport_commitment(g, cid) {
@@ -22235,6 +22244,8 @@ impl AdvancedAi {
     }
 
     fn production_build_turns(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         // Firaxis ProductionPanel.lua:2138 reads this exact city's item quote.
         // It already includes native modifiers and banked production; do not
         // rescale it or reconstruct it from an approximate production rate.
@@ -25369,6 +25380,9 @@ impl AdvancedAi {
         if after.winner.is_some() {
             return -1_000_000_000.0;
         }
+        // One memo for the whole reading of the resulting board; see
+        // `Game::query_memo`.
+        let _memo = after.query_memo();
         let player = &after.players[pid];
         let yield_weights = match strategy {
             GrandStrategy::Science => Yields {
