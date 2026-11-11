@@ -5631,6 +5631,10 @@ pub struct AdvancedAi {
     /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
     band_stage_needs_three_venues: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
     /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
@@ -11344,6 +11348,10 @@ mod band_plays_its_stage;
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
 mod band_plays_what_it_can_reach;
+/// `band-stall-bars-no-host`: a Rock Band trip the host walked nowhere bars
+/// its host only on the second turn running. See
+/// `advanced/band_stall_bars_no_host.rs`.
+mod band_stall_bars_no_host;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;

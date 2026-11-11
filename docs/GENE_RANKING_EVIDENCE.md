@@ -197,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |
 | `band-stage-needs-three-venues` | off (unmeasured) | Opt-in gene `band-stage-needs-three-venues`; see `advanced/band_plays_its_stage.rs`. | 1 \| 1 |
+| `band-stall-bars-no-host` | off (unmeasured) | Opt-in gene `band-stall-bars-no-host`; see `advanced/band_stall_bars_no_host.rs`. | 1 \| 1 |
 | `bands-draw-from-the-bar` | off (unmeasured) | `bands-draw-from-the-bar`: see `advanced/bands_draw_from_the_bar.rs`. | 1 \| 1 |
 | `bands-wait-at-the-door` | off (unmeasured) | Opt-in gene `bands-wait-at-the-door`; see `advanced/bands_wait_at_the_door.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain-2` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain-2`, version two of `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 2 |
@@ -246,6 +247,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-keeps-pingala-home` | off (unmeasured) | `culture-keeps-pingala-home`: see `advanced/culture_pingala_first.rs`. | 1 \| 1 |
+| `culture-pass-keeps-half-the-army` | off (unmeasured) | `culture-pass-keeps-half-the-army`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-road-builds-its-triggers` | off (unmeasured) | `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`. | 1 \| 1 |
 | `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
