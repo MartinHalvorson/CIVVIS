@@ -103,8 +103,10 @@ impl AdvancedAi {
         {
             return false;
         }
-        let racers = self.denial_spy_racers(g, pid);
-        !racers.is_empty() && g.spy_agents(pid) < self.denial_spies_wanted(g, pid, &racers)
+        // `denial-spies-fill-every-slot`: the stand-in racer and the whole
+        // capacity. Exactly the denial's own reading with that gene off.
+        let racers = self.denial_training_racers(g, pid);
+        !racers.is_empty() && g.spy_agents(pid) < self.denial_training_target(g, pid, &racers)
     }
 
     /// See the module: claim queues for the Spies a decisive space race
@@ -120,7 +122,9 @@ impl AdvancedAi {
         if !self.science_denial_trains_spies || self.spy_losses_pause_training(g) {
             return;
         }
-        let racers = self.denial_spy_racers(g, pid);
+        // `denial-spies-fill-every-slot`: from the first slot, a stand-in
+        // racer. Exactly `denial_spy_racers` with that gene off.
+        let racers = self.denial_training_racers(g, pid);
         if racers.is_empty() {
             return;
         }
@@ -133,7 +137,7 @@ impl AdvancedAi {
             .filter(|cid| g.cities[cid].queue.contains(&spy))
             .count();
         let held = g.spy_agents(pid);
-        let needed = self.denial_spies_wanted(g, pid, &racers);
+        let needed = self.denial_training_target(g, pid, &racers);
         // One Spy in training at a time, in the best city: the host trains
         // them one by one. Live G411 (civvis-20261008T151915Z) sent a second
         // (and third) Spy order on the same turn five times — turns 161, 171,
@@ -141,10 +145,13 @@ impl AdvancedAi {
         // after the first came back refused, leaving its city producing
         // nothing or its old build, while the first trained. Spies already
         // in training count, so the claim waits for the one in the queue.
-        if queued > 0 || held >= needed {
+        // `denial-spies-fill-every-slot`: one more per pass while the host's
+        // menu still offers a Spy, which counts those in training; see
+        // `advanced/denial_spies_fill_every_slot.rs`.
+        let deficit = self.denial_training_claims(g, held, queued, needed);
+        if deficit == 0 {
             return;
         }
-        let deficit = 1;
         let mut candidates: Vec<(f64, u32)> = city_ids
             .iter()
             .copied()
@@ -161,6 +168,9 @@ impl AdvancedAi {
                         .queue
                         .first()
                         .is_none_or(|head| Self::spy_displaces(g, head))
+                    // `denial-spies-fill-every-slot`: the Culture aim keeps
+                    // its culture heads. False with that gene off.
+                    && !self.denial_fill_keeps_the_culture_head(g, *cid)
                     && g.can_produce(pid, *cid, &spy)
             })
             .map(|cid| (g.city_yields(cid).production, cid))
@@ -172,6 +182,9 @@ impl AdvancedAi {
             self.racer_spy_note_held_slots(g, pid, held, needed, refused_everywhere);
         }
         self.rank_spy_producers(g, &mut candidates);
+        // `denial-spies-fill-every-slot`: the host's soonest Spy first. Exact
+        // no-op with that gene off.
+        self.denial_fill_rank_by_quote(g, &mut candidates);
         let rival = racers
             .iter()
             .next()

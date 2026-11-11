@@ -35,21 +35,12 @@ impl AdvancedAi {
     /// target. Called last among the war's gates, so a refusal, which is
     /// journalled, marks a war that would otherwise have opened.
     pub(super) fn denial_war_has_the_lane_edge(&self, g: &Game, pid: usize, rival: usize) -> bool {
-        if !self.denial_war_needs_the_lane_edge {
-            return true;
-        }
-        let Some(target) = self
-            .active_victory_target(g)
-            .filter(|target| *target != VictoryTarget::Domination)
-        else {
+        let Some(target) = self.denial_war_lane(g) else {
             return true;
         };
-        let ours = g.military_power(pid);
-        let theirs = self.steady_rival_power(g, rival).max(1.0);
-        let edge = self.lane_launcher_edge(g);
         let gate = if let Some(friend) = self.denial_war_spares_the_friend(g, pid, rival) {
             friend.to_string()
-        } else if ours < edge * theirs {
+        } else if let Some((ours, theirs, edge)) = self.under_the_denial_lane_edge(g, pid, rival) {
             format!(
                 "a denial war needs {edge:.1} times their steady power; {ours:.0} against {theirs:.0}"
             )
@@ -68,6 +59,33 @@ impl AdvancedAi {
                "{lane} keeps the peace with {}", g.players[rival].civ;
                "denial-war-needs-the-lane-edge: {gate}");
         false
+    }
+
+    /// The seat's victory target while this gene gates the denial war: on,
+    /// with a target other than Domination.
+    fn denial_war_lane(&self, g: &Game) -> Option<VictoryTarget> {
+        if !self.denial_war_needs_the_lane_edge {
+            return None;
+        }
+        self.active_victory_target(g)
+            .filter(|target| *target != VictoryTarget::Domination)
+    }
+
+    /// The gene's edge test alone: `Some((ours, theirs, edge))` when it gates
+    /// this seat and our military power is under `edge` times `rival`'s
+    /// steady power, else `None`. `friendship-outlasts-the-gated-race` reads
+    /// the same test.
+    pub(super) fn under_the_denial_lane_edge(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<(f64, f64, f64)> {
+        self.denial_war_lane(g)?;
+        let ours = g.military_power(pid);
+        let theirs = self.steady_rival_power(g, rival).max(1.0);
+        let edge = self.lane_launcher_edge(g);
+        (ours < edge * theirs).then_some((ours, theirs, edge))
     }
 
     /// Why `rival` is spared as a friend, or `None`: a declared friend, an

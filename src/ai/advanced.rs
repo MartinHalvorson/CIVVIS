@@ -6886,6 +6886,11 @@ pub struct AdvancedAi {
     /// Monument goes before the city's other heads. See
     /// `advanced/culture_monuments.rs`. Opt-in.
     culture_seat_monuments_2: bool,
+    /// `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
+    /// Spy for every free slot from its first slot, side by side, in the
+    /// cities that finish one soonest. See
+    /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
+    denial_spies_fill_every_slot: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7641,6 +7646,11 @@ pub struct AdvancedAi {
     /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
     /// Opt-in.
     faith_strike_fears_the_tech_lead: bool,
+    /// `friendship-outlasts-the-gated-race`: a lapsed friend racing to win is
+    /// renewed while `denial-war-needs-the-lane-edge` would refuse the war on
+    /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
+    /// default.
+    friendship_outlasts_the_gated_race: bool,
     /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
     /// `first-capital-before-the-walls` counts uncharted ground as land in
     /// its walk to the target capital, and the nearest free scout charts the
@@ -10414,6 +10424,10 @@ pub struct AdvancedAi {
     /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
     /// Opt-in.
     unique_unit_closes_the_dark_age: bool,
+    /// `tribute-warms-the-neighbour`: the live bridge gifts Gold to the
+    /// nearest stronger neighbour until it can be asked for a friendship.
+    /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
+    tribute_warms_the_neighbour: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -10783,6 +10797,9 @@ mod age_closer;
 mod domination_research_commitment;
 /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
 mod flower_power_in_the_dark;
+/// `friendship-outlasts-the-gated-race`: see
+/// `advanced/friendship_outlasts_the_gated_race.rs`.
+mod friendship_outlasts_the_gated_race;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;
@@ -11565,6 +11582,9 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+/// `tribute-warms-the-neighbour`: see
+/// `advanced/tribute_warms_the_neighbour.rs`.
+mod tribute_warms_the_neighbour;
 mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11575,6 +11595,9 @@ mod culture_defense;
 mod decisive_window;
 /// `denial-charts-the-racer`: see `advanced/denial_charts_the_racer.rs`.
 mod denial_charts_the_racer;
+/// `denial-spies-fill-every-slot`: see
+/// `advanced/denial_spies_fill_every_slot.rs`.
+mod denial_spies_fill_every_slot;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;

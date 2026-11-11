@@ -5,6 +5,124 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-11-11: the speed tools could not see the world civvis.ai plays
+
+Every reading in this file was taken with `civvis simulate` at the gene
+screen's shape, because the screen is where the fleet's compute goes. A
+visitor's browser runs something else, and on three counts the two disagree
+about what is expensive:
+
+| | `simulate` (the gate, the profiler) | civvis.ai |
+| --- | --- | --- |
+| Majors | stock `AdvancedAi::new()` | the deployment genome (`enable_native_deployment`) |
+| City-states, barbarians | `AdvancedAi::new()` as well | `BasicAi` |
+| After every round | nothing | the state document the page reads, the reasoning delta, the tile patch |
+| Map | 6 players, Continents, flat, 74x46 | 4 players, Tennis Ball, planet, 75x32 |
+
+So a change to the document, or to anything only a promoted gene turns on,
+moved the site and read as noise on the gate. `civvis site-bench` closes that:
+it is the browser build's own frame loop (`wasm.rs`, `advance_one_frame`, then
+`/state`) run through the same `Session` methods on a native build.
+
+    civvis site-bench --seed 7 --turns 150            # per-band cost, checkpoints, standings
+    civvis site-bench --seed 7 --no-documents         # the same game, the page's half skipped
+    tools/speed_ab.py --baseline A --candidate B --workload site --turns 150
+    tools/profile_civvis.py --site --turns 150 --line-tables --lines take_turn_inner
+    node tools/site_wasm_frames.mjs civvis.wasm --turns 200 --split   # the published module
+
+Every line of its report that carries a time opens with `[` and closes with
+`s]`, which is `speed_ab.py`'s rule for a line to strip. The rest is the game:
+a fingerprint of the save and of the page's document every 25 turns, then the
+standings. Two builds whose reports hash alike played the same game *and wrote
+the same documents*, which is a stronger identity than the standings alone.
+
+The CI gate now prints a site reading beside its verdict (three paired games
+of 100 turns) and does not judge by it. The budget, the ledger and the noise
+floor all belong to the screen's shape; the site reading is a sentence in the
+log, so a pull request that slows every site frame no longer merges unseen.
+
+### What the site's world costs
+
+The published module (`/test`, commit `8210bbb15`), driven by
+`tools/site_wasm_frames.mjs --split`, seed 7, on `mbp-m5-max-128` at load
+average 60 to 85. The game ended on turn 178 after 57 s of frames.
+
+| Turns | A frame | of which the document | Document | Units | Cities |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1-10 | 61 ms | 12 ms | 111 KB | 31 | 10 |
+| 11-25 | 77 ms | 13 ms | 149 KB | 58 | 13 |
+| 26-50 | 131 ms | 15 ms | 209 KB | 87 | 23 |
+| 51-75 | 222 ms | 17 ms | 283 KB | 134 | 36 |
+| 76-100 | 322 ms | 20 ms | 340 KB | 168 | 45 |
+| 101-150 | 423 ms | 23 ms | 371 KB | 189 | 46 |
+| 151-178 | 629 ms | 31 ms | 404 KB | 184 | 48 |
+
+The document is 6% of the game and a fifth of the first ten turns. Everything
+else is the agents and the rules.
+
+⚠ An earlier reading from the same session put the document at 19% of the
+game and 60% of the opening. It was wrong: the split paused the world with
+`POST /pace` on either side of the re-read, and `/pace` answers with a whole
+state document, complete map included, so each sample timed three documents
+and called it one. The tool in the tree pauses outside the timed window.
+
+### Where the agents' time goes on that world
+
+`/usr/bin/sample`, 15 s across turns 97 to 160, the native release build at
+`4ae45717c5` playing the stock world unwatched (11,417 running samples).
+Inclusive, share of the stepping thread:
+
+| | Share |
+| --- | ---: |
+| `AdvancedAi::take_turn_inner` | 89.2% |
+| `Game::city_yields` | 38.4% |
+| ... of which `city_citizen_plan_weighted` | 26.0% |
+| `AdvancedAi::advanced_units` | 30.1% |
+| `culture_lane_forecast_score_with` | 14.1% |
+| `Game::apply` | 9.6% |
+| `memcmp`, self | 9.6% |
+| `BasicAi::culture_defense_theater_item` | 8.2% |
+| `Game::city_amenities` | 7.8% |
+| city-state and barbarian turns (`BasicAi::take_turn`) | 7.7% |
+| `lane_progress_table_uncached` | 7.4% |
+
+`city_yields` is the reading a `simulate` profile does not give at this size,
+and its callers are the promoted culture and victory-lane genes. Two facts
+about it decide what is worth doing:
+
+1. **One derivation is mostly empire-wide work.** 57% of a `city_yields` call
+   is the citizen plan, and 41% of the plan is `citizen_strategy`, which is
+   61% `city_amenities` — the luxury allocation, a fact about the whole
+   empire. A caller that asks city by city with no memo open pays that
+   allocation once per city.
+2. **About ten passes a seat-turn each sweep every city in the world.**
+   `--lines take_turn_inner` (the pass names are the callees; none of these
+   has a frame of its own in a symbol profile, because the passes are inlined
+   into the one function): `culture_budgeted_base_cities` 7.4%,
+   `advanced_gold_spending` 6.9%, `culture_defense_theater_item` 5.1%,
+   `run_idle_queue_claims` 3.7%, `science_spaceport_production` 3.6%,
+   `culture_lane_spends` 3.5% twice, `victory_focus` 2.9%,
+   `research_with_government` 2.7%, `higher_level_investment_target` 2.4%.
+   Each is called once a turn and each costs whole percents, because each
+   prices every rival's cities to read one number.
+
+The same unwatched game reached turn 97 in 8.3 s of CPU. The published module
+needs about 11.9 s of play for turns 1 to 100 on the same host under the same
+load, so WebAssembly costs about 1.4x here, not the 2x an earlier comparison
+read with the document's cost still in it.
+
+### Genes are not the lever
+
+Asked directly on the day: would pruning old genes speed the site up. The gene
+screens already answer it, because every screen fits a compute cost per gene
+(`compute_cost_pct`, percent of seconds per completed turn per seat carrying
+the gene). In the 30,000-seat screen of 2026-11-04, of 651 genes exactly one
+is measurable: `unit-preservation`, +16.7% a seat, z = 14.5, and it is off in
+the deployment genome. The other 650 show 19 above z = 2 and 14 below −2,
+which is what chance gives; the mean is 0.03% ± 0.04% a gene. A gene that is
+off is one branch. The cost above is not genes as such, it is a handful of
+passes recomputing the same empire-wide numbers.
+
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
 A call-tree profile of the real batch workload — `gene_screen --games 6
