@@ -429,9 +429,12 @@ impl AdvancedAi {
                     && Self::first_capital_is_soft(g, opening.city)
             });
         if soft != self.first_capital_soft_now {
+            // The line for a capital that hardened, not for an opening that
+            // declared or left.
             if let Some(city) = self
                 .conquest_opening
                 .as_ref()
+                .filter(|opening| opening.declared.is_none())
                 .and_then(|opening| g.cities.get(&opening.city))
             {
                 if soft {

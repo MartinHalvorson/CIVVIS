@@ -58,7 +58,25 @@ fn base(name: &str, turn: u32) -> Game {
     } else {
         250
     };
-    crate::mirror::rebuild_from_state(&snapshot, &state, players, 1, max_turns, 6).game
+    let mut game =
+        crate::mirror::rebuild_from_state(&snapshot, &state, players, 1, max_turns, 6).game;
+    // The live state reports the walls of every city the seat knows
+    // (`rivals[].cities[].max_wall_damage`), and the live decision view read
+    // them ("walls 100 of at most 100" at t57). The rebuilt seat's city memory
+    // was made before those observations and reads 0 until it sees the city
+    // again; carry the reported walls into the memory, as live knows them.
+    let walls: Vec<(u32, i32, i32)> = game
+        .cities
+        .values()
+        .map(|city| (city.id, game.city_max_wall_hp(city), city.wall_hp))
+        .collect();
+    for (id, max, hp) in walls {
+        if let Some(memory) = game.players[0].remembered_cities.get_mut(&id) {
+            memory.wall_max = max;
+            memory.wall_hp = hp;
+        }
+    }
+    game
 }
 
 fn military(g: &Game, pid: usize) -> usize {
@@ -94,13 +112,19 @@ fn play(job: &Job, genome: &[String]) -> String {
             .find(|city| city.pos == target_pos)
             .unwrap();
         format!(
-            "{} t{}: {} owner {} walls {}/{} hp {} strength {:.0}; our military {} power {:.0} against theirs {:.0}; cities {}",
+            "{} t{}: {} owner {} walls {}/{} (the seat's view {}) hp {} strength {:.0}; our military {} power {:.0} against theirs {:.0}; cities {}",
             job.board,
             g.turn,
             city.name,
             owner,
             city.wall_hp,
             g.city_max_wall_hp(city),
+            {
+                let view = g.player_decision_view(0);
+                view.cities
+                    .get(&city.id)
+                    .map_or(-1, |seen| view.city_max_wall_hp(seen))
+            },
             city.hp,
             g.city_strength(city.id),
             military(&g, 0),
@@ -319,7 +343,7 @@ fn scaffold_open_window_replays() {
         for seed in 0..6 {
             jobs.push(Job {
                 board: "040245Z",
-                target: "Washington",
+                target: "Wanuku",
                 turn: 24,
                 on,
                 seed,
