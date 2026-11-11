@@ -192,7 +192,12 @@ fn campus_competition() -> (Game, StrategicPlan, u32) {
 
 #[test]
 fn the_claimed_scout_survives_the_governors_first_zero_investment_frame() {
-    let (base, plan, capital) = campus_competition();
+    let (mut base, plan, capital) = campus_competition();
+    let production = base.city_yields(capital).production;
+    std::sync::Arc::make_mut(&mut base.observed_city_yield_adjustments)
+        .get_mut(&capital)
+        .unwrap()
+        .production += 1.0 - production;
     let scout = Item::Unit {
         unit: crate::name!("scout"),
     };
@@ -215,6 +220,68 @@ fn the_claimed_scout_survives_the_governors_first_zero_investment_frame() {
             "the on arm must retain the Scout the off arm overwrites"
         );
     }
+}
+
+#[test]
+fn the_next_expansion_settler_waits_for_the_missing_second_land_eye() {
+    let (mut base, mut plan, capital) = campus_competition();
+    plan.desired_cities = 6;
+    base.players[0]
+        .explored
+        .extend(base.map.tiles.keys().copied().filter(|(x, _)| *x < 25));
+    let production = base.city_yields(capital).production;
+    std::sync::Arc::make_mut(&mut base.observed_city_yield_adjustments)
+        .get_mut(&capital)
+        .unwrap()
+        .production += 5.0 - production;
+    for cid in base.player_city_ids(0) {
+        if cid != capital {
+            base.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
+                building: crate::name!("walls"),
+            }];
+        }
+    }
+    assert!(seat(false).base.has_practical_settle_site(&base, 0));
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    for on in [false, true] {
+        let mut g = base.clone();
+        let mut ai = seat(on);
+        ai.enable_early_settler_floor();
+        g.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: scout.clone(),
+            },
+        )
+        .unwrap();
+        assert!(AdvancedAi::early_settler_may_displace(&g, 0, capital));
+        ai.claim_early_settler_floor(&mut g, 0, &plan);
+        assert_eq!(g.cities[&capital].queue.first() == Some(&scout), on);
+    }
+}
+
+#[test]
+fn the_naming_deadline_stops_new_claims_but_finishes_an_invested_eye() {
+    let (mut g, plan, capital) = campus_competition();
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: scout.clone(),
+        },
+    )
+    .unwrap();
+    g.turn = g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE) + 1;
+    let ai = seat(true);
+    assert!(!ai.first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
+    g.cities.get_mut(&capital).unwrap().production = 1.0;
+    assert!(ai.first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
 }
 
 #[test]

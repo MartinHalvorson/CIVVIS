@@ -64,6 +64,7 @@ impl AdvancedAi {
             || !matches!(item, Item::Unit { unit } if g.rules.units.get(unit.as_str()).is_some_and(|spec|
                 spec.promotion_class == "recon" && spec.domain.as_deref().unwrap_or("land") == "land"))
             || !Self::production_commitment_is_legal(g, pid, cid, item)
+            || self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid))
             || self.counts_without_city_queue(g, pid, cid).scouts
                 >= early_conquest::CONQUEST_SEARCH_SCOUTS
             || (g.turn > g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE)
