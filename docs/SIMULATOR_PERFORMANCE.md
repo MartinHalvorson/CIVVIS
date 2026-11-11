@@ -343,7 +343,7 @@ world. Twenty-two seeds played to the end both ways:
 
 | | City-states standing at the end, of 8 | |
 | --- | ---: | --- |
-| runner, 10 seeds | 3.8 → 5.2 | up in 8, level in 1, down in 1 |
+| runner, 10 seeds | 3.8 → 5.2 | up in 7, level in 2, down in 1 |
 | this host, 12 seeds | 4.5 → 5.2 | up in 6, level in 5, down in 1 |
 
 About one more city-state survives a game. A barbarian that reads an enemy's
