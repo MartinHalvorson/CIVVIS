@@ -94,18 +94,30 @@ fn unit(game: &mut Game, kind: &str, pos: Pos) -> u32 {
     uid
 }
 
-/// Three Warriors and two Archers on the ring around `rally`.
+/// Five Warriors and an Archer on the ring around `rally`, the city-states'
+/// centres at the floor strength an undefended one reads.
 fn force_at(game: &mut Game, rally: Pos) -> Vec<u32> {
+    let stones: Vec<u32> = game
+        .cities
+        .values()
+        .filter(|city| game.players[city.owner].is_minor)
+        .map(|city| city.id)
+        .collect();
+    for cid in stones {
+        Arc::make_mut(&mut game.observed_city_strength).insert(cid, 20.0);
+    }
     let ring: Vec<Pos> = game
         .wring(rally, 1)
         .into_iter()
         .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
         .collect();
-    ["warrior", "warrior", "warrior", "archer", "archer"]
-        .iter()
-        .zip(ring)
-        .map(|(kind, pos)| unit(game, kind, pos))
-        .collect()
+    [
+        "warrior", "warrior", "warrior", "warrior", "warrior", "archer",
+    ]
+    .iter()
+    .zip(ring)
+    .map(|(kind, pos)| unit(game, kind, pos))
+    .collect()
 }
 
 fn counter(game: &Game, key: &str) -> Option<i64> {
@@ -148,7 +160,7 @@ fn city_state_before_the_first_capital_is_a_native_opt_in_off_in_both_controller
         !bare.city_state_stone_active(),
         "rides on early-conquest-opening"
     );
-    assert_eq!(STONE_RANGED + STONE_MELEE, 5);
+    assert_eq!((STONE_RANGED, STONE_MELEE), (1, 5));
     assert_eq!(
         crate::setup::GameSpeed::Online.scale_turns(STONE_NAMING_DEADLINE),
         50
@@ -190,7 +202,7 @@ fn names_the_nearest_eligible_city_state_with_its_own_force_and_clock() {
     assert!(ai.city_state_stone_stands());
     assert_eq!(ai.city_state_opening_tile(), Some(at(14, 12)));
     assert_eq!(ai.conquest_quota(), (STONE_RANGED, STONE_MELEE));
-    assert_eq!(ai.conquest_force_size(), 5);
+    assert_eq!(ai.conquest_force_size(), STONE_RANGED + STONE_MELEE);
     assert_eq!(ai.conquest_first_settler_cities(), STONE_CITIES);
     assert_eq!(
         ai.conquest_preparation(&game),
@@ -330,7 +342,7 @@ fn nothing_is_named_with_one_city_past_turn_50_or_in_a_major_war() {
 // ---------------------------------------------------------------- the force
 
 #[test]
-fn reserves_three_melee_two_shooters_and_a_ram_on_top_of_the_city_guards() {
+fn reserves_five_melee_a_shooter_and_a_ram_on_top_of_the_city_guards() {
     let (mut game, _, _) = fixture();
     let capital_guard = unit(&mut game, "archer", at(6, 12));
     let second_guard = unit(&mut game, "warrior", at(6, 18));
@@ -345,8 +357,8 @@ fn reserves_three_melee_two_shooters_and_a_ram_on_top_of_the_city_guards() {
     let counts = ai.counts(&game, 0);
     assert_eq!(
         ai.first_capital_shortfall(&game, 0, &counts),
-        (2, 2),
-        "two shooters and three melee bodies on top of the guards; one stands"
+        (1, 4),
+        "a shooter and five melee bodies on top of the guards; one Warrior stands"
     );
     let force = &ai.conquest_opening.as_ref().unwrap().force;
     assert_eq!(*force, BTreeSet::from([free]), "no guard marches");
@@ -431,7 +443,7 @@ fn declares_on_the_city_state_once_assembled_with_a_ram_and_the_bill_covered() {
     let force = force_at(&mut game, rally);
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.clone().unwrap();
-    assert!(opening.assembled.is_some(), "five of five at the rally");
+    assert!(opening.assembled.is_some(), "six of six at the rally");
     assert!(ai.conquest_share(&game, &opening) >= CONQUEST_ASSEMBLY_SHARE);
     assert!(
         ai.conquest_preview_takes_the_city(&game, 0, &opening),
@@ -494,6 +506,60 @@ fn declares_on_the_city_state_once_assembled_with_a_ram_and_the_bill_covered() {
         siege.units.iter().any(|uid| force.contains(uid)),
         "the strike force marches on it"
     );
+}
+
+/// The assembled force holds while its melee bodies would not finish the
+/// city: the kill-time preview prices blows, not strength.
+#[test]
+fn the_force_holds_until_its_melee_can_finish_the_city() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    unit(&mut game, "battering_ram", rally);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+
+    // Five Warriors against the floor centre: 30 a blow, four blows each.
+    let (bodies, blows, needed) =
+        AdvancedAi::city_state_stone_kill_time(&game, &opening).expect("priced");
+    assert_eq!(bodies, 5, "the Archer and the Ram land no blow");
+    assert!(
+        (needed - 360.0).abs() < 1e-6,
+        "200 health, 100 walls, 60 healing: {needed}"
+    );
+    assert!(blows > needed, "{blows} against {needed}");
+    assert_eq!(ai.city_state_stone_holds(&game, 0, &opening), None);
+
+    // A centre of 28 kills a Warrior on its third blow, each worth about 22:
+    // five of them fall short, and the force holds.
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 28.0);
+    let (_, blows, needed) =
+        AdvancedAi::city_state_stone_kill_time(&game, &opening).expect("priced");
+    assert!(blows <= needed, "{blows} against {needed}");
+    assert_eq!(
+        ai.city_state_stone_holds(&game, 0, &opening),
+        Some("the melee bodies at the rally would not finish the city before they fall")
+    );
+    assert!(
+        !ai.conquest_declaration(&mut game, 0),
+        "no war it cannot finish"
+    );
+    assert!(!game.is_at_war(0, 2));
+
+    // Bodies away from the rally are not counted.
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 20.0);
+    let far_tile = at(3, 14);
+    let mover = *opening
+        .force
+        .iter()
+        .find(|uid| AdvancedAi::conquest_melee_body(&game.rules.units[game.units[*uid].kind]))
+        .unwrap();
+    game.units.get_mut(&mover).unwrap().pos = far_tile;
+    let (bodies, _, _) = AdvancedAi::city_state_stone_kill_time(&game, &opening).expect("priced");
+    assert_eq!(bodies, 4);
 }
 
 #[test]
@@ -894,7 +960,7 @@ fn the_force_is_journalled_every_few_turns_before_the_war() {
         .find(|thought| thought.headline.contains("bodies at the rally"))
         .expect("the progress line");
     assert!(
-        line.headline.contains("of 5 bodies at the rally for"),
+        line.headline.contains("of 6 bodies at the rally for"),
         "{}",
         line.headline
     );
@@ -923,7 +989,7 @@ fn the_patience_window_waits_for_a_coming_breaker_while_the_bill_is_covered() {
     game.turn = 16;
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.clone().unwrap();
-    assert_eq!(opening.assembled, Some(16), "five of five at the rally");
+    assert_eq!(opening.assembled, Some(16), "six of six at the rally");
     assert!(ai.conquest_preview_takes_the_city(&game, 0, &opening));
     // The declaration holds for the Ram and records the covered bill.
     assert!(!ai.conquest_declaration(&mut game, 0));

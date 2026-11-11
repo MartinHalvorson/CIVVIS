@@ -11022,14 +11022,35 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Civilization VI shows a city's yields while that city is selected, whether
+// or not the yield icons are on for the whole map: its own land, with the
+// tiles its citizens work ringed, and, while land is being bought, what each
+// priced plot would add. Null when a city has nothing to add to the overlay.
+function cityYieldsShowing() {
+  return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());
+}
+function cityYieldTiles() {
+  if (!state || !cityYieldsShowing()) return null;
+  const buying = sitePick && sitePick.plots;
+  const cityId = buying ? sitePick.cityId : cityScreenId;
+  const city = cityId === null ? null
+    : state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city) return null;
+  const tiles = new Set((city.owned_tiles || []).map(key));
+  if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);
+  return tiles;
+}
+
 // Yield pips are a viewer-selected information overlay, so they deliberately
 // paint after every map object rather than participating in the terrain pass.
 // Fogged-but-explored tiles keep the old subdued treatment without letting the
 // fog wash turn a checked yield overlay into a lower, hidden layer again.
 function drawFlatTileYieldOverlay(tiles, worked, turnVisible) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   for (const t of tiles) {
     if (t.district || t.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(t.pos))) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     cx.save();
     if (!turnVisible.has(key(t.pos))) cx.globalAlpha = .42;
@@ -16289,7 +16310,7 @@ function planetGpuMapDeclines(camera) {
 // one, the ink above the GPU's ground asks for a handful of cells by key.
 function planetGpuMapOverlayWalksCells() {
   return !!((sel && ((sel.reachable || []).length || (state.legal_actions || []).length)) ||
-    SHOW_YIELDS || state.arena_flags?.length || anim.blasts.length ||
+    SHOW_YIELDS || cityYieldsShowing() || state.arena_flags?.length || anim.blasts.length ||
     mapSearchMatches().size || unitIntelLayers().length);
 }
 
@@ -23147,12 +23168,14 @@ function drawPlanetNaturalWonders(cells, visible, spectator) {
 // ground objects. The normal cell wrapper retains the globe's limb clipping
 // and fog alpha while making the ordering explicit.
 function drawPlanetTileYieldOverlay(cells, visible, spectator) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   const worked = new Set(state.cities.flatMap(city =>
     city.citizens ? city.citizens.worked_tiles.map(key) : []));
   for (const entry of cells) {
     const {tile} = entry;
     if (tile.district || tile.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(tile.pos))) continue;
     withPlanetStrategicCell(entry, visible, spectator, () =>
       drawTileYields(tile, 0, 0, worked.has(key(tile.pos))));
   }
@@ -30187,6 +30210,7 @@ function drawSoloHud() {
     if (rankingsReportOpen) toggleRankingsReport(false);
     drawCivTop();
     drawWorldTracker();
+    drawLeaderRibbon();
     return;
   }
   settleSoloRankings();
@@ -30194,6 +30218,69 @@ function drawSoloHud() {
   settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
+  drawLeaderRibbon();
+}
+
+// ------------------------------------------------------ the diplomacy ribbon
+//
+// Civilization VI keeps every leader you have met along the top of the map
+// (DiplomacyRibbon.xml, `Anchor="R,T"`): who is out there, how each stands
+// with you, and one press from talking to them. There is no portrait art
+// here, so a leader is their civilization's monogram in the two colours its
+// borders and units wear on the map, which is how a player tells them apart
+// anyway. The mark in the corner is the stance, said in full by the tooltip.
+function ribbonStance(player) {
+  const relationship = player.their_relationship || player.relationship || "neutral";
+  if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
+  if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
+  if (player.allied)
+    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+  if (player.friend || relationship === "declared_friend")
+    return {tone: "friend", word: "Friend", mark: "♥"};
+  if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
+  if (relationship === "friendly") return {tone: "", word: "Friendly", mark: ""};
+  if (relationship === "unfriendly") return {tone: "", word: "Unfriendly", mark: ""};
+  return {tone: "", mark: "", word: opinionWord(
+    Math.round(player.relationship_opinion_of_me ?? player.opinion_of_me ?? 0))};
+}
+let leaderRibbonHtml = null;
+function drawLeaderRibbon() {
+  const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  if (state && playingSolo()) {
+    const leaders = state.players.filter(player => player.alive && !player.is_minor &&
+      !player.is_barbarian && !player.is_free_city && (player.id === 0 || player.met));
+    // Before anyone is met there is nobody to show, and a ribbon of one is
+    // only the player looking at themselves.
+    if (leaders.length > 1) html = leaders.map(player => {
+      const mine = player.id === 0;
+      const stance = mine ? {tone: "", mark: "", word: "you"} : ribbonStance(player);
+      const title = `${player.leader || player.civ} of ${player.civ} — ${stance.word}` +
+        (mine ? "" : " · open diplomacy");
+      return `<button type="button" class="ribbon-leader${mine ? " mine" : ""}` +
+        `${stance.tone ? ` ${stance.tone}` : ""}" ` +
+        `style="--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}" ` +
+        `title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}" ` +
+        `onclick="openDiplomacyWith(${player.id})">` +
+        `<span class="ribbon-crest">${escapeAttr(fdMonogram(player.civ))}</span>` +
+        (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
+    }).join("");
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+// The ribbon opens the same diplomacy screen the hook does, on the leader
+// that was pressed.
+function openDiplomacyWith(seat) {
+  openDiplomacy();
+  const card = document.querySelector(`#diplomacy-body [data-seat="${seat}"]`);
+  if (!card) return;
+  card.scrollIntoView({block: "nearest"});
+  card.classList.add("called");
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -30955,7 +31042,8 @@ function drawDiplomacy() {
             (player.my_open_borders_to_them ? " · open to them" : "")) +
           meter("Cities", player.cities) +
           meter("Military", Math.round(player.military));
-      return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}">` +
+      return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}" ` +
+        `data-seat="${player.id}">` +
         `<div class="leader-head">${player.is_minor ? "" : fdCrest(player.civ, "fd-crest-small")}` +
         `<span class="leader-name">${player.leader || player.civ}</span>` +
         `<span class="leader-civ">${player.is_minor
@@ -31114,7 +31202,8 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
     planetPaintPath(cx, cell, .15);
     outlineSitePick();
-    priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);
+    priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
+      planetCellInradius(cell) * .5);
   }
 }
 function drawSitePicksFlat() {
@@ -31125,7 +31214,7 @@ function drawSitePicksFlat() {
     const [x, y] = hexXY(q, r);
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
-    priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);
+    priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
   }
 }
 async function sendFromCity(action) {
@@ -31369,7 +31458,7 @@ function drawCityScreen() {
   const currentKey = current ? itemKey(current) : null;
   let build = "";
   build += `<div class="build-head"><div class="build-title">` +
-    `${current ? "Change production" : "Choose production"}</div>` +
+    `${purchasing ? "Purchase" : current ? "Change production" : "Choose production"}</div>` +
     `<div class="build-tabs" role="tablist">` + tabs.map(([tab, label]) =>
       `<button type="button" role="tab" aria-selected="${tab === cityBuildTab}" ` +
       `onclick='setCityBuildTab("${tab}")'>${label}</button>`).join("") +
@@ -31396,7 +31485,10 @@ function drawCityScreen() {
         : entry.sites.length));
     if (!group.length) continue;
     listed += group.length;
-    group.sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    const priced = entry => purchasing
+      ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
+      : itemCost(entry.item);
+    group.sort((a, b) => priced(a) - priced(b));
     build += `<div class="city-group"><div class="city-group-head">${category}` +
       `<span>${group.length}</span></div><div class="build-list">` +
       group.map(entry => {
@@ -31408,11 +31500,17 @@ function drawCityScreen() {
           const offers = entry.buys.filter(action => paidIn(action) === cityBuildTab);
           // A district is bought onto a tile, and which tile is chosen where
           // tiles are: on the map.
-          return cityBuildRow({glyph, name, note, cost: `<b>Buy</b>`,
+          // The engine quotes every purchase it offers. A server that
+          // predates the quote still gets a row that says what it is for.
+          const price = offers[0].cost;
+          return cityBuildRow({glyph, name, note,
+            cost: price === undefined ? `<b>Buy</b>`
+              : `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,
             onclick: offers.length > 1
               ? `beginSitePick(${city.id},${itemId},"${cityBuildTab}")`
               : `sendFromCity(${JSON.stringify(offers[0])})`,
-            title: `Pay ${titleCase(cityBuildTab)} for it outright`});
+            title: price === undefined ? `Pay ${titleCase(cityBuildTab)} for it outright`
+              : `Pay ${Math.round(price)} ${titleCase(cityBuildTab)} for it outright`});
         }
         const cost = itemCost(entry.item);
         const isCurrent = itemKey(entry.item) === currentKey;
@@ -31627,11 +31725,15 @@ function drawUbar() {
     h += `<button title="Done for this turn (Space)" onclick='orderUnit("skip")'>⏭ Skip</button>`;
   if (standing !== "sleep")
     h += `<button title="Rest until this unit is struck (Z)" onclick='orderUnit("sleep")'>☾ Sleep</button>`;
-  if (standing !== "alert")
+  // Civilization VI offers a unit only the orders it can carry out. Standing
+  // watch and exploring are for units that fight or scout; a Builder or a
+  // Settler has no watch to stand. Healing is offered to a unit that is hurt.
+  const soldier = unitHasHealth(u);
+  if (soldier && standing !== "alert")
     h += `<button title="Stand watch until an enemy comes near (V)" onclick='orderUnit("alert")'>👁 Alert</button>`;
-  if (standing !== "heal")
+  if (soldier && u.hp < 100 && standing !== "heal")
     h += `<button title="Fortify and wait out the damage (H)" onclick='healHere()'>✚ Heal</button>`;
-  if (standing !== "explore")
+  if (soldier && standing !== "explore")
     h += `<button title="Walk toward the edge of the known world (E)" onclick='exploreHere()'>🧭 Explore</button>`;
   if (standing)
     h += `<button title="Take this unit off standing orders" onclick='unitOrders.delete(${u.id});drawUbar();drawTurnLoop()'>⏻ ${standing === "goto" || standing === "explore" ? "Halt" : "Wake"}</button>`;
@@ -31640,7 +31742,7 @@ function drawUbar() {
     const travel = unitTravelOrder(u);
     h += `<div class="small" style="margin-top:6px">${
       standing === "skip" ? "Skipping this turn"
-      : travel ? `Travelling to ${travel.to.join(",")}`
+      : travel ? `Travelling: it walks on each turn until it arrives. Halt stops it.`
       : standing === "explore" ? "Exploring"
       : standing === "alert" ? "On watch until an enemy comes near"
       : standing === "heal" ? "Healing until whole again"

@@ -234,6 +234,19 @@ fn a_players_own_city_plates_count_the_turns() {
 }
 
 #[test]
+fn a_unit_is_offered_only_the_orders_it_can_carry_out() {
+    // A Builder was offered Alert, Heal and Explore, and a unit at full
+    // health was offered Heal. Civilization VI's unit panel shows a unit its
+    // own orders, so a new player is not handed buttons that mean nothing.
+    assert!(EMBEDDED_APP_JS.contains("const soldier = unitHasHealth(u);"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && standing !== \"alert\")"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && u.hp < 100 && standing !== \"heal\")"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && standing !== \"explore\")"));
+    // A journey is described, not located by coordinates.
+    assert!(!EMBEDDED_APP_JS.contains("`Travelling to ${travel.to.join(\",\")}`"));
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
@@ -13996,13 +14009,51 @@ fn a_city_opens_on_the_map_rather_than_over_it() {
     // for the next tile.
     assert!(EMBEDDED_APP_JS.contains("function beginPlotPick(cityId) {"));
     assert!(EMBEDDED_APP_JS.contains("onclick=\"beginPlotPick(${city.id})\">"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,"
+    ));
     assert!(EMBEDDED_APP_JS
-        .contains("priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);"));
-    assert!(
-        EMBEDDED_APP_JS.contains("priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);")
-    );
+        .contains("priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);"));
     assert!(EMBEDDED_APP_JS
         .contains("if (sitePick && sitePick.plots && !beginPlotPick(cityId)) cancelSitePick();"));
+}
+
+/// Civilization VI shows a city's yields while that city is selected, whether
+/// or not the yield icons are on for the whole map.
+#[test]
+fn a_selected_city_shows_what_its_land_yields() {
+    // Its own land while its panels are up, and the priced plots as well
+    // while land is being bought; never over a watched world.
+    let tiles = EMBEDDED_APP_JS
+        .split_once("function cityYieldTiles() {")
+        .expect("the city's yield tiles")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the city's yield tiles")
+        .0;
+    assert!(tiles.contains("if (!state || !cityYieldsShowing()) return null;"));
+    assert!(tiles.contains("const tiles = new Set((city.owned_tiles || []).map(key));"));
+    assert!(
+        tiles.contains("if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);")
+    );
+    assert!(EMBEDDED_APP_JS
+        .contains("return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());"));
+    // Both maps read it, and the yield icons being on still shows everything.
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();\n  if (!SHOW_YIELDS && !cityTiles) return;")
+            .count(),
+        2
+    );
+    // Over the GPU globe the Canvas above only walks every cell when some
+    // overlay asks it to. Without this the city's own tiles were never
+    // offered to the overlay, and nothing drew.
+    assert!(
+        EMBEDDED_APP_JS.contains("SHOW_YIELDS || cityYieldsShowing() || state.arena_flags?.length")
+    );
+    // A globe cell found by key carries no `inradius` of its own; the price
+    // was sized by one and drew at whatever size the last painter left.
+    assert!(!EMBEDDED_APP_JS.contains("cell.inradius * .58"));
 }
 
 /// A watched simulation wears the laboratory, not Civilization VI's
@@ -15775,6 +15826,69 @@ fn the_policy_ledger_prices_the_seats_slotted_cards() {
     assert_eq!(answer["net"], cards[0]["worth"]);
 }
 
+/// A purchase used to be offered with no price on it: the page listed what
+/// the treasury could buy and could not say what any of it cost. Every
+/// offered unit and building purchase now carries the price `apply` would
+/// charge, and the action posted back with it reads as the same action.
+#[test]
+fn an_offered_purchase_carries_its_price() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    session.game.players[0].gold = 5_000.0;
+
+    let state = session.state();
+    let offered = state["legal_actions"].as_array().expect("legal actions");
+    let legal = session.game.legal_actions(0);
+    assert_eq!(offered.len(), legal.len());
+    let mut priced = 0;
+    for (row, action) in offered.iter().zip(&legal) {
+        // The price rides beside the action without changing what it is.
+        let read: Action = serde_json::from_value(row.clone()).expect("an offered action");
+        assert_eq!(&read, action, "{row}");
+        if matches!(action, Action::Buy { .. } | Action::BuyBuilding { .. }) {
+            let cost = row["cost"].as_f64().expect("a purchase names its price");
+            assert_eq!(Some(cost), session.game.purchase_quote(0, action), "{row}");
+            assert!(cost > 0.0, "{row}");
+            priced += 1;
+        } else if !matches!(action, Action::BuyDistrict { .. } | Action::BuyPlot { .. }) {
+            assert!(row.get("cost").is_none(), "{row}");
+        }
+    }
+    assert!(
+        priced > 0,
+        "a city with a full treasury is offered something to buy"
+    );
+}
+
+#[test]
+fn a_purchase_row_prints_the_price_it_was_quoted() {
+    // The Buy pages of the production panel said "Buy" and nothing else. Each
+    // row now prints the engine's quote, cheapest first, and a server that
+    // predates the quote still gets a row that says what it is for.
+    assert!(EMBEDDED_APP_JS.contains("const price = offers[0].cost;"));
+    assert!(EMBEDDED_APP_JS.contains("cost: price === undefined ? `<b>Buy</b>`"));
+    assert!(EMBEDDED_APP_JS
+        .contains(": `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,"));
+    assert!(EMBEDDED_APP_JS.contains("group.sort((a, b) => priced(a) - priced(b));"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "`${purchasing ? \"Purchase\" : current ? \"Change production\" : \"Choose production\"}</div>` +"
+    ));
+}
+
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
 /// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
 /// to a live control now leaves one line naming the sender; nothing else does.
@@ -15879,6 +15993,41 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
     assert!(EMBEDDED_APP_JS
         .contains("${player.is_minor ? \"\" : fdCrest(player.civ, \"fd-crest-small\")}"));
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
+}
+
+/// Civilization VI keeps the leaders a player has met along the top of the
+/// map (`DiplomacyRibbon.xml`). The played frame had hooks to the diplomacy
+/// screen and nobody's face on the map: who was out there, and how they
+/// stood, was a screen away.
+#[test]
+fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
+    assert!(EMBEDDED_INDEX
+        .contains("<div id=\"leaderribbon\" aria-label=\"Leaders you have met\" hidden></div>"));
+    // It belongs to the played frame: a watched world never shows it. The
+    // watcher's own ribbon of #2382 stays gone, name and all
+    // (`a_watched_simulation_keeps_the_laboratory`).
+    assert!(EMBEDDED_INDEX
+        .contains("  #leaderribbon { display: none; }\n  body.civ6-frame #leaderribbon {"));
+    let ribbon = EMBEDDED_APP_JS
+        .split_once("function drawLeaderRibbon() {")
+        .expect("the ribbon")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the ribbon")
+        .0;
+    assert!(ribbon.contains("if (state && playingSolo()) {"));
+    // Only leaders who are alive and met, and never a ribbon of one.
+    assert!(ribbon.contains("(player.id === 0 || player.met)"));
+    assert!(ribbon.contains("if (leaders.length > 1)"));
+    // Each wears the colours their borders do, and opens diplomacy on them.
+    assert!(ribbon.contains("--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}"));
+    assert!(ribbon.contains("onclick=\"openDiplomacyWith(${player.id})\""));
+    assert!(ribbon.contains("if (html === leaderRibbonHtml) return;"));
+    assert!(EMBEDDED_APP_JS.contains("`data-seat=\"${player.id}\">` +"));
+    assert_eq!(
+        EMBEDDED_APP_JS.matches("  drawLeaderRibbon();\n").count(),
+        2
+    );
 }
 
 #[test]
