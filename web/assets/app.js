@@ -11022,14 +11022,35 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Civilization VI shows a city's yields while that city is selected, whether
+// or not the yield icons are on for the whole map: its own land, with the
+// tiles its citizens work ringed, and, while land is being bought, what each
+// priced plot would add. Null when a city has nothing to add to the overlay.
+function cityYieldsShowing() {
+  return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());
+}
+function cityYieldTiles() {
+  if (!state || !cityYieldsShowing()) return null;
+  const buying = sitePick && sitePick.plots;
+  const cityId = buying ? sitePick.cityId : cityScreenId;
+  const city = cityId === null ? null
+    : state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city) return null;
+  const tiles = new Set((city.owned_tiles || []).map(key));
+  if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);
+  return tiles;
+}
+
 // Yield pips are a viewer-selected information overlay, so they deliberately
 // paint after every map object rather than participating in the terrain pass.
 // Fogged-but-explored tiles keep the old subdued treatment without letting the
 // fog wash turn a checked yield overlay into a lower, hidden layer again.
 function drawFlatTileYieldOverlay(tiles, worked, turnVisible) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   for (const t of tiles) {
     if (t.district || t.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(t.pos))) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     cx.save();
     if (!turnVisible.has(key(t.pos))) cx.globalAlpha = .42;
@@ -16289,7 +16310,7 @@ function planetGpuMapDeclines(camera) {
 // one, the ink above the GPU's ground asks for a handful of cells by key.
 function planetGpuMapOverlayWalksCells() {
   return !!((sel && ((sel.reachable || []).length || (state.legal_actions || []).length)) ||
-    SHOW_YIELDS || state.arena_flags?.length || anim.blasts.length ||
+    SHOW_YIELDS || cityYieldsShowing() || state.arena_flags?.length || anim.blasts.length ||
     mapSearchMatches().size || unitIntelLayers().length);
 }
 
@@ -23147,12 +23168,14 @@ function drawPlanetNaturalWonders(cells, visible, spectator) {
 // ground objects. The normal cell wrapper retains the globe's limb clipping
 // and fog alpha while making the ordering explicit.
 function drawPlanetTileYieldOverlay(cells, visible, spectator) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   const worked = new Set(state.cities.flatMap(city =>
     city.citizens ? city.citizens.worked_tiles.map(key) : []));
   for (const entry of cells) {
     const {tile} = entry;
     if (tile.district || tile.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(tile.pos))) continue;
     withPlanetStrategicCell(entry, visible, spectator, () =>
       drawTileYields(tile, 0, 0, worked.has(key(tile.pos))));
   }
@@ -31179,7 +31202,8 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
     planetPaintPath(cx, cell, .15);
     outlineSitePick();
-    priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);
+    priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
+      planetCellInradius(cell) * .5);
   }
 }
 function drawSitePicksFlat() {
@@ -31190,7 +31214,7 @@ function drawSitePicksFlat() {
     const [x, y] = hexXY(q, r);
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
-    priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);
+    priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
   }
 }
 async function sendFromCity(action) {
@@ -31434,7 +31458,7 @@ function drawCityScreen() {
   const currentKey = current ? itemKey(current) : null;
   let build = "";
   build += `<div class="build-head"><div class="build-title">` +
-    `${current ? "Change production" : "Choose production"}</div>` +
+    `${purchasing ? "Purchase" : current ? "Change production" : "Choose production"}</div>` +
     `<div class="build-tabs" role="tablist">` + tabs.map(([tab, label]) =>
       `<button type="button" role="tab" aria-selected="${tab === cityBuildTab}" ` +
       `onclick='setCityBuildTab("${tab}")'>${label}</button>`).join("") +
@@ -31461,10 +31485,30 @@ function drawCityScreen() {
         : entry.sites.length));
     if (!group.length) continue;
     listed += group.length;
-    group.sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    const priced = entry => purchasing
+      ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
+      : itemCost(entry.item);
+    group.sort((a, b) => priced(a) - priced(b));
+    // Civilization VI lists a building under the district it stands in, so
+    // the Library is found under Campus and not somewhere in a list of
+    // prices. The City Center's own come first, then each district in the
+    // order of the cheapest thing it offers.
+    const home = entry => category === "Buildings"
+      ? RULES.buildings?.[entry.item.building]?.district || "city_center" : "";
+    if (category === "Buildings") {
+      const cheapest = new Map();
+      for (const entry of group)
+        if (!cheapest.has(home(entry))) cheapest.set(home(entry), priced(entry));
+      const rank = entry => home(entry) === "city_center" ? -1 : cheapest.get(home(entry));
+      group.sort((a, b) => rank(a) - rank(b) || home(a).localeCompare(home(b)) ||
+        priced(a) - priced(b));
+    }
     build += `<div class="city-group"><div class="city-group-head">${category}` +
       `<span>${group.length}</span></div><div class="build-list">` +
-      group.map(entry => {
+      group.map((entry, index) => {
+        const district = home(entry);
+        const lead = district && (!index || home(group[index - 1]) !== district)
+          ? `<div class="build-sub">${escapeAttr(titleCase(district))}</div>` : "";
         const itemId = JSON.stringify(itemKey(entry.item));
         const name = escapeAttr(itemPlainName(entry.item));
         const glyph = entry.item.unit ? "⚔" : prodGlyph(entry.item);
@@ -31473,11 +31517,17 @@ function drawCityScreen() {
           const offers = entry.buys.filter(action => paidIn(action) === cityBuildTab);
           // A district is bought onto a tile, and which tile is chosen where
           // tiles are: on the map.
-          return cityBuildRow({glyph, name, note, cost: `<b>Buy</b>`,
+          // The engine quotes every purchase it offers. A server that
+          // predates the quote still gets a row that says what it is for.
+          const price = offers[0].cost;
+          return lead + cityBuildRow({glyph, name, note,
+            cost: price === undefined ? `<b>Buy</b>`
+              : `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,
             onclick: offers.length > 1
               ? `beginSitePick(${city.id},${itemId},"${cityBuildTab}")`
               : `sendFromCity(${JSON.stringify(offers[0])})`,
-            title: `Pay ${titleCase(cityBuildTab)} for it outright`});
+            title: price === undefined ? `Pay ${titleCase(cityBuildTab)} for it outright`
+              : `Pay ${Math.round(price)} ${titleCase(cityBuildTab)} for it outright`});
         }
         const cost = itemCost(entry.item);
         const isCurrent = itemKey(entry.item) === currentKey;
@@ -31485,7 +31535,7 @@ function drawCityScreen() {
         // One site: a plain order. Several: the choice is made on the map,
         // because where a district goes decides what it is worth.
         const several = entry.sites.length > 1;
-        return cityBuildRow({glyph, name, current: isCurrent,
+        return lead + cityBuildRow({glyph, name, current: isCurrent,
           note: (several ? `<span class="build-sites">Choose a tile · ${entry.sites.length} sites</span>` : "") +
             (note || ""),
           cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +

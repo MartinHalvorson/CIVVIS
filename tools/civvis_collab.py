@@ -124,6 +124,12 @@ ADVISORY_CHECKS = {
         "self-test runs only when its workflow file changes, so it cannot be "
         "required on every PR. Source CI remains required; workflow edits "
         "must record a successful qualification self-test before shipping.",
+    "wasm-paired-cost":
+        "A manual full-game comparison of pinned qualified engine artifacts, "
+        "which can intentionally include an unsuccessful experiment. Its PR "
+        "self-test runs only when the comparator changes; record a passing "
+        "full-game self-test before shipping those changes. A timing result "
+        "alone never substitutes for source CI or exact-state parity.",
 }
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or
