@@ -86,10 +86,15 @@ impl AdvancedAi {
     /// above the plan's own target. Zero with the gene off and past the band
     /// turn.
     pub(super) fn early_settler_floor(&self, g: &Game, plan: &StrategicPlan) -> usize {
-        if !self.early_settler_floor
+        if !(self.early_settler_floor || self.no_city_limit)
             || g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
         {
             return 0;
+        }
+        // `no-city-limit`: the opening fills to every seat that pays, not to
+        // six. See `advanced/no_city_limit.rs`.
+        if self.no_city_limit {
+            return self.settlement_target(plan).max(1);
         }
         EARLY_SETTLER_FLOOR_CITIES.min(plan.desired_cities.max(1))
     }
@@ -118,8 +123,14 @@ impl AdvancedAi {
         {
             return false;
         }
-        let (walkers, _) = Self::early_settler_census(g, pid);
-        g.player_city_ids(pid).len() + walkers < floor
+        let (walkers, queued) = Self::early_settler_census(g, pid);
+        // `no-city-limit`: the other Settlers in production count too.
+        let others = if self.no_city_limit {
+            queued.saturating_sub(1)
+        } else {
+            0
+        };
+        g.player_city_ids(pid).len() + walkers + others < floor
     }
 
     /// A barbarian raider in the city's home ring. A camp merely in reach is
@@ -168,15 +179,23 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let (walkers, queued) = Self::early_settler_census(g, pid);
-        if n_cities == 0 || queued > 0 || walkers > 1 || n_cities + walkers >= floor {
+        // `no-city-limit`: several Settlers at once. `None` with the gene
+        // off. See `advanced/no_city_limit.rs`.
+        let wide = self.no_city_limit_width(g, pid);
+        let full = match wide {
+            Some(width) => walkers + queued >= width || n_cities + walkers + queued >= floor,
+            None => queued > 0 || walkers > 1 || n_cities + walkers >= floor,
+        };
+        if n_cities == 0 || full {
             return;
         }
         if walkers > 0 && n_cities < 2 {
             return;
         }
         // A home city under threat answers first; so does an army short of a
-        // body per city in a war with a major.
-        if plan.threatened_city.is_some() {
+        // body per city in a war with a major. `no-city-limit` passes over
+        // only the cities at the threatened one.
+        if plan.threatened_city.is_some() && wide.is_none() {
             return;
         }
         let at_major_war = g.players.iter().any(|other| {
@@ -189,6 +208,13 @@ impl AdvancedAi {
         if at_major_war && self.counts(g, pid).military < n_cities {
             return;
         }
+        // `no-city-limit`: at war the cities near a visible enemy soldier
+        // train no Settler; it would only shelter there.
+        let war_soldiers = if wide.is_some() && at_major_war {
+            Self::no_city_limit_war_soldiers(g, pid)
+        } else {
+            Vec::new()
+        };
         if !self.base.has_practical_settle_site(g, pid) {
             return;
         }
@@ -207,10 +233,17 @@ impl AdvancedAi {
         for &cid in &city_ids {
             let city = &g.cities[&cid];
             if Some(cid) == opening_capital
+                || (wide.is_some() && !Self::no_city_limit_city_is_clear(g, plan, cid))
+                || Self::no_city_limit_war_at_the_gates(g, &war_soldiers, city.pos)
                 || (city.pop as f64) < crate::ai::HOST_SETTLER_MIN_POP
                 || (city.last_attacked > 0
                     && g.turn.saturating_sub(city.last_attacked) <= EARLY_SETTLER_ATTACK_MEMORY)
-                || Self::early_settler_raider_near(g, city.pos)
+                || match wide {
+                    // `no-city-limit`: a garrisoned city trains through
+                    // raiders.
+                    Some(_) => Self::no_city_limit_raider_holds(g, pid, city.pos),
+                    None => Self::early_settler_raider_near(g, city.pos),
+                }
                 || self.short_seowon_holds_settler_floor(g, pid, cid)
                 || self.science_campus_holds_repeat_settler(g, pid, cid, plan)
                 || city.queue.first().is_some_and(|head| {
@@ -223,6 +256,10 @@ impl AdvancedAi {
             }
             let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
                 g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
+                    // `no-city-limit`: the city's Settler modifiers count, so
+                    // the Ancestral Hall's city and a Colonization empire
+                    // train where the Settler is really cheapest.
+                    / wide.map_or(1.0, |_| g.item_prod_mult(pid, cid, Some(&item)).max(0.1))
             });
             if turns > max_turns {
                 continue;

@@ -26,7 +26,11 @@
 //! (`AdvancedAi::retarget_against`) instead of letting the plan choose: the
 //! feasibility probe for a war the seat would not open on its own, such as a
 //! nearby city-state. `--lane <science|culture|religious|domination>` seats
-//! our agent on that victory lane instead of Domination.
+//! our agent on that victory lane instead of Domination. Each seed's row also
+//! says when we were first at war with the target's owner (`war_turn`), how
+//! many of the owner's cities we took (`owner_cities_taken`) and how many of
+//! ours we lost (`cities_lost`). `--why-match a,b` adds headline needles to
+//! `--why`'s journal print (seed 0).
 
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Action, Game};
@@ -65,6 +69,13 @@ struct Outcome {
     turns: u32,
     /// Cities of ours at the end that were not ours at the start, anywhere.
     any_captures: usize,
+    /// Turns after the start at which we were first at war with the target
+    /// city's owner, `Some(0)` when the war was already running.
+    war_turn: Option<u32>,
+    /// Cities the target's owner held at the start that are ours at the end.
+    owner_cities_taken: usize,
+    /// Cities of ours at the start that are not ours at the end.
+    cities_lost: usize,
     /// Our empire at the end: summed city science, production and population.
     science: f64,
     production: f64,
@@ -126,6 +137,9 @@ fn replay(
         units_lost: 0,
         turns: 0,
         any_captures: 0,
+        war_turn: None,
+        owner_cities_taken: 0,
+        cities_lost: 0,
         science: 0.0,
         production: 0.0,
         population: 0,
@@ -136,11 +150,25 @@ fn replay(
         .filter(|city| city.owner == 0)
         .map(|city| city.pos)
         .collect();
+    let owner = g
+        .cities
+        .values()
+        .find(|city| city.pos == target_pos)
+        .map(|city| city.owner);
+    let owners_at_start: std::collections::BTreeSet<(i32, i32)> = g
+        .cities
+        .values()
+        .filter(|city| Some(city.owner) == owner)
+        .map(|city| city.pos)
+        .collect();
     while g.winner.is_none() && g.turn < start + turns {
         let pid = g.current;
         ais[pid].take_turn(&mut g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
+        }
+        if out.war_turn.is_none() && owner.is_some_and(|owner| g.is_at_war(0, owner)) {
+            out.war_turn = Some(g.turn - start);
         }
         if let Some(city) = g.cities.values().find(|city| city.pos == target_pos) {
             out.min_hp = out.min_hp.min(city.hp);
@@ -164,20 +192,32 @@ fn replay(
         .values()
         .filter(|city| city.owner == 0 && !ours_at_start.contains(&city.pos))
         .count();
+    out.owner_cities_taken = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 0 && owners_at_start.contains(&city.pos))
+        .count();
+    out.cities_lost = ours_at_start
+        .iter()
+        .filter(|pos| g.city_at(**pos).is_none_or(|cid| g.cities[&cid].owner != 0))
+        .count();
     for cid in g.player_city_ids(0) {
         let yields = g.city_yields(cid);
         out.science += yields.science;
         out.production += yields.production;
         out.population += g.cities[&cid].pop;
     }
-    // `--why`: our seat's journal lines that name the target, to read why a
-    // siege held where it did.
-    if let Some(name) = why {
-        let needle = name.to_lowercase();
+    // `--why`: our seat's journal lines that name the target (or any
+    // `--why-match` needle), to read why a siege held where it did.
+    if let Some(names) = why {
+        let needles: Vec<String> = names.split(',').map(str::to_lowercase).collect();
         for thought in journal.since(0).thoughts {
             // The grand strategy too, so a war's posture cost is visible.
+            let headline = thought.headline.to_lowercase();
             if thought.player == 0
-                && (thought.headline.to_lowercase().contains(&needle)
+                && (needles
+                    .iter()
+                    .any(|needle| headline.contains(needle.as_str()))
                     || thought.headline.starts_with("Grand strategy"))
             {
                 let detail: String = thought.detail.chars().take(220).collect();
@@ -191,7 +231,7 @@ fn replay(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let Some(run) = text(&args, "--run") else {
-        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b] [--force-target] [--lane L] [--why]");
+        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b] [--force-target] [--lane L] [--why] [--why-match a,b]");
         std::process::exit(2);
     };
     let turn = number(&args, "--turn", 0) as u32;
@@ -255,6 +295,12 @@ fn main() {
     let forced: Vec<&str> = forced_tags.iter().map(String::as_str).collect();
     let without = tags(text(&args, "--without"));
     let why = args.iter().any(|arg| arg == "--why");
+    // `--why-match`: more headline needles for `--why`, comma separated.
+    let mut why_needles = target.clone();
+    for needle in tags(text(&args, "--why-match")) {
+        why_needles.push(',');
+        why_needles.push_str(&needle);
+    }
     let force_owner = args
         .iter()
         .any(|arg| arg == "--force-target")
@@ -270,7 +316,7 @@ fn main() {
     let mut captured = 0;
     let mut breached = 0;
     for seed in 0..seeds {
-        let name = (why && seed == 0).then_some(target.as_str());
+        let name = (why && seed == 0).then_some(why_needles.as_str());
         let out = replay(
             &base,
             9_100 + seed,
@@ -285,7 +331,7 @@ fn main() {
         captured += usize::from(out.captured.is_some());
         breached += usize::from(out.walls_down.is_some());
         println!(
-            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{},\"any_captures\":{},\"science\":{:.1},\"production\":{:.1},\"population\":{}}}",
+            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{},\"any_captures\":{},\"war_turn\":{},\"owner_cities_taken\":{},\"cities_lost\":{},\"science\":{:.1},\"production\":{:.1},\"population\":{}}}",
             out.walls_down.map_or("null".into(), |t| t.to_string()),
             out.captured.map_or("null".into(), |t| t.to_string()),
             out.min_hp,
@@ -293,6 +339,9 @@ fn main() {
             out.units_lost,
             out.turns,
             out.any_captures,
+            out.war_turn.map_or("null".into(), |t| t.to_string()),
+            out.owner_cities_taken,
+            out.cities_lost,
             out.science,
             out.production,
             out.population

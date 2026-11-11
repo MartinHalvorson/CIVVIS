@@ -309,6 +309,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `field-reads-the-tile-it-leaves` | off (unmeasured) | Opt-in gene `field-reads-the-tile-it-leaves`; see `Self::field_reads_the_tile_it_leaves`. | 1 \| 1 |
 | `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-capital-before-the-walls` | off (unmeasured) | `first-capital-before-the-walls`: see `advanced/first_capital_before_the_walls.rs`. | 1 \| 1 |
+| `first-capital-strikes-the-open-window` | off (unmeasured) | `first-capital-strikes-the-open-window`: see `advanced/first_capital_strikes_the_open_window.rs`. | 1 \| 1 |
 | `first-capital-walks-the-one-landmass` | off (unmeasured) | `first-capital-walks-the-one-landmass`: see `advanced/first_capital_walks_the_one_landmass.rs`. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
@@ -362,6 +363,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `modernization-prices-the-path` | off (unmeasured) | Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`. | 1 \| 1 |
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
 | `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
+| `no-city-limit` | off (unmeasured) | Opt-in gene `no-city-limit`; see `advanced/no_city_limit.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `nusantara-reads-the-coast` | off (unmeasured) | Opt-in gene `nusantara-reads-the-coast`; see `Self::nusantara_reads_the_coast`. | 1 \| 1 |
 | `nusantara-settles-the-shore` | off (unmeasured) | Opt-in gene `nusantara-settles-the-shore`; see `advanced/nusantara_settles_the_shore.rs`. | 1 \| 1 |
