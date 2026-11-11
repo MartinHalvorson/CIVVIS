@@ -132,8 +132,11 @@ impl AdvancedAi {
     /// Whether the floor's window is open this turn: on, past the opening
     /// floor's window, and early enough for a new city to repay.
     pub(super) fn holdable_land_window(&self, g: &Game) -> bool {
-        self.holdable_land_keeps_settling
-            && g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
+        // `no-city-limit`: open from the first turn, beside the opening
+        // floor; the pay test closes it. See `advanced/no_city_limit.rs`.
+        (self.no_city_limit
+            || (self.holdable_land_keeps_settling
+                && g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)))
             && g.turn + g.standard_duration(HOLDABLE_LAND_PAYBACK_STANDARD_TURNS) < g.max_turns
     }
 
@@ -155,8 +158,15 @@ impl AdvancedAi {
         {
             return false;
         }
-        let (walkers, _) = Self::early_settler_census(g, pid);
-        g.player_city_ids(pid).len() + walkers < self.settlement_target(plan)
+        let (walkers, queued) = Self::early_settler_census(g, pid);
+        // `no-city-limit`: the other Settlers in production count too, so
+        // the last seat is not trained for twice.
+        let others = if self.no_city_limit {
+            queued.saturating_sub(1)
+        } else {
+            0
+        };
+        g.player_city_ids(pid).len() + walkers + others < self.settlement_target(plan)
     }
 
     /// Whether `cid`'s queue head may give way to the floor's Settler: the
@@ -201,7 +211,7 @@ impl AdvancedAi {
 
     /// The land soldier test shared by both soldier filters: a unit that can
     /// fight on land and is not recon.
-    fn holdable_land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
+    pub(super) fn holdable_land_soldier(g: &Game, unit: &crate::game::Unit) -> bool {
         let spec = &g.rules.units[unit.kind];
         spec.class == "military"
             && spec.domain.as_deref().is_none_or(|domain| domain == "land")
@@ -401,10 +411,20 @@ impl AdvancedAi {
         let n_cities = city_ids.len();
         let (walkers, queued) = Self::early_settler_census(g, pid);
         let target = self.settlement_target(plan);
-        if n_cities == 0 || queued > 0 || walkers > 1 || n_cities + walkers >= target {
+        // `no-city-limit`: several Settlers at once, each with its own seat.
+        // `None` with the gene off. See `advanced/no_city_limit.rs`.
+        let wide = self.no_city_limit_width(g, pid);
+        let in_flight = walkers + queued;
+        let full = match wide {
+            Some(width) => in_flight >= width || n_cities + in_flight >= target,
+            None => queued > 0 || walkers > 1 || n_cities + walkers >= target,
+        };
+        if n_cities == 0 || full {
             return;
         }
-        if plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some() {
+        if plan.strategy == GrandStrategy::Recovery
+            || (plan.threatened_city.is_some() && wide.is_none())
+        {
             self.journal_holdable_land_decline(
                 g,
                 &format!("{n_cities} cities against {target}, but the plan defends a city"),
@@ -418,7 +438,9 @@ impl AdvancedAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
-        if at_major_war {
+        // `no-city-limit`: a war stops the Settlers only while the army is
+        // short of a soldier for every city.
+        if at_major_war && (wide.is_none() || self.counts(g, pid).military < n_cities) {
             self.journal_holdable_land_decline(
                 g,
                 &format!("{n_cities} cities against {target}, but we are at war with a major"),
@@ -434,8 +456,24 @@ impl AdvancedAi {
                     .find(|cid| g.cities[cid].is_capital)
             })
             .flatten();
-        let threats = Self::holdable_land_threats(g, pid);
-        let good_seat_floor = self.good_land_seat_floor(n_cities + walkers);
+        let mut threats = Self::holdable_land_threats(g, pid);
+        // `no-city-limit`: at war every visible enemy soldier makes a seat
+        // unholdable and keeps the cities near it from training.
+        let war_soldiers = if wide.is_some() && at_major_war {
+            Self::no_city_limit_war_soldiers(g, pid)
+        } else {
+            Vec::new()
+        };
+        threats.strong_soldiers.extend(war_soldiers.iter().copied());
+        // `no-city-limit`: the seat must be worth what a city needs to
+        // out-earn its Settler, at any city count.
+        let good_seat_floor = if wide.is_some() {
+            self.no_city_limit_pay_floor(g, pid)
+        } else {
+            self.good_land_seat_floor(n_cities + walkers)
+        };
+        // Each Settler in flight takes a seat ahead of the one queued now.
+        let seated = if wide.is_some() { in_flight } else { walkers };
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
         let mut best: Option<(f64, u32, Pos, f64)> = None;
@@ -446,13 +484,28 @@ impl AdvancedAi {
             let city = &g.cities[&cid];
             let skip = if Some(cid) == opening_capital {
                 Some("reserved for the conquest opening")
+            } else if wide.is_some() && !Self::no_city_limit_city_is_clear(g, plan, cid) {
+                Some("at the threatened city")
+            } else if Self::no_city_limit_war_at_the_gates(g, &war_soldiers, city.pos) {
+                Some("the war is at its gates")
+            } else if wide.is_some()
+                && matches!(
+                    city.queue.first(),
+                    Some(Item::Unit { unit }) if *unit == "settler"
+                )
+            {
+                Some("already training a Settler")
             } else if city.pop < HOLDABLE_LAND_MIN_POP {
                 Some("too small")
             } else if city.last_attacked > 0
                 && g.turn.saturating_sub(city.last_attacked) <= HOLDABLE_LAND_ATTACK_MEMORY
             {
                 Some("recently attacked")
-            } else if Self::early_settler_raider_near(g, city.pos) {
+            } else if match wide {
+                // `no-city-limit`: a garrisoned city trains through raiders.
+                Some(_) => Self::no_city_limit_raider_holds(g, pid, city.pos),
+                None => Self::early_settler_raider_near(g, city.pos),
+            } {
                 Some("a raider in its ring")
             } else if self.science_campus_holds_repeat_settler(g, pid, cid, plan)
                 || !Self::holdable_land_may_displace(g, pid, cid)
@@ -469,6 +522,10 @@ impl AdvancedAi {
             }
             let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
                 g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
+                    // `no-city-limit`: the city's Settler modifiers count, so
+                    // the Ancestral Hall's city and a Colonization empire
+                    // train where the Settler is really cheapest.
+                    / wide.map_or(1.0, |_| g.item_prod_mult(pid, cid, Some(&item)).max(0.1))
             });
             if turns > max_turns {
                 *passed.entry("too slow").or_default() += 1;
@@ -479,7 +536,7 @@ impl AdvancedAi {
             }) {
                 continue;
             }
-            match self.holdable_land_seat(g, pid, city.pos, walkers, &threats) {
+            match self.holdable_land_seat(g, pid, city.pos, seated, &threats) {
                 // `good-land-lifts-the-city-target`: past the shared target
                 // only a good seat is worth a Settler. Zero with it off.
                 Ok((_, worth)) if worth < good_seat_floor => {

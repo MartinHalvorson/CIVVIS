@@ -2163,6 +2163,14 @@ impl AdvancedAi {
             let floor = self.purchase_upkeep_floor(g, pid, 0.0);
             self.base.levy_city_state_military(g, pid, true, floor);
         }
+        // `first-capital-strikes-the-open-window`: the first capital's
+        // opening declares ahead of every other war this turn, the home
+        // faith wars included. `false` with the gene off. See
+        // `advanced/first_capital_strikes_the_open_window.rs`.
+        let opening_first = self.first_capital_strikes_active();
+        if opening_first && self.conquest_declaration(g, pid) {
+            return;
+        }
         // A visible spreader can supply an immediate religious counter even
         // when the founder's cities have not yet been discovered.
         if self.religious_interception_opening(g, pid) {
@@ -2190,14 +2198,16 @@ impl AdvancedAi {
         // See `opportunistic_war`: close a raid that has paid, or open one on
         // a prize the board exposes this turn. A declaration here is the
         // turn's one declaration.
-        if self.opportunistic_war_diplomacy(g, pid, plan) {
+        // `first-capital-strikes-the-open-window`: no new raid while the first
+        // capital's window stands. `false` with the gene off.
+        if !self.first_capital_holds_the_raid(g) && self.opportunistic_war_diplomacy(g, pid, plan) {
             return;
         }
         // `early-conquest-opening`: the assembled force's declaration, and the
         // terms it asks for once the war stops paying. A declaration here is
         // the turn's one declaration. Exact no-op while off. See
         // `advanced/early_conquest.rs`.
-        if self.conquest_declaration(g, pid) {
+        if !opening_first && self.conquest_declaration(g, pid) {
             return;
         }
         // `city_campaign`: a campaign whose every city is ours offers peace,
@@ -2238,6 +2248,12 @@ impl AdvancedAi {
         else {
             return;
         };
+        // `first-capital-strikes-the-open-window`: while the first capital's
+        // window stands, its opening owns the seat's declaration. `false`
+        // with the gene off.
+        if self.first_capital_holds_the_war(g, target, plan.strategy == GrandStrategy::Conquest) {
+            return;
+        }
         // `one_war_at_a_time`: the appointment and the surge refuse a second
         // front when they are made; this refuses it at the declaration, for
         // the war that arrived in between. See `advanced/one_war.rs`.

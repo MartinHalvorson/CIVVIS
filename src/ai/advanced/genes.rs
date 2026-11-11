@@ -5702,6 +5702,22 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Operator 11-10 and 11-11: civs stop at the shared ten. Site world, 40
+    // swapped pairs a width: 12 read Science +7.7% and Production +11.6% at
+    // t150 at no cost in wins; 20 lost Science and wins. Each major draws
+    // 11-18. civvis.ai seats it (`advanced/site_deployment.rs`).
+    // Opt-in; see `advanced/each_civ_draws_its_width.rs`.
+    Gene { tag: "each-civ-draws-its-width", field: "each_civ_draws_its_width", kind: Kind::OptIn, enable: AdvancedAi::enable_each_civ_draws_its_width, disable: AdvancedAi::disable_each_civ_draws_its_width },
+    // Live Deity Macedon civvis-20261111T040704Z named the Cree capital at
+    // t16 and never declared: the reservation waited for the third city
+    // (t29), the campaign was re-aimed at Tyre (t36, t44), an interception
+    // war stopped the staging (t46), and only two of six bodies ever stood at
+    // the rally while the capital read defence 18-28 and the Cree army 104
+    // against our 226 (t40). Over 109 live Deity games a rival city within
+    // 12 tiles stood unwalled at defence 25 or less in 75, an original
+    // capital in 25. The opening keeps its window and strikes through it.
+    // Opt-in; see `advanced/first_capital_strikes_the_open_window.rs`.
+    Gene { tag: "first-capital-strikes-the-open-window", field: "first_capital_strikes_the_open_window", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_strikes_the_open_window, disable: AdvancedAi::disable_first_capital_strikes_the_open_window },
     // Live Deity Macedon, Tiny Pangaea, Online (040245Z): Washington was
     // charted at t11, 12 tiles out behind no walls, and refused at every
     // note from t12 to t62 as "no charted land walk reaches their capital":
@@ -5710,6 +5726,14 @@ pub const GENES: &[Gene] = &[
     // as land, and the nearest free scout charts that fog. Opt-in; see
     // `advanced/first_capital_walks_the_one_landmass.rs`.
     Gene { tag: "first-capital-walks-the-one-landmass", field: "first_capital_walks_the_one_landmass", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_walks_the_one_landmass, disable: AdvancedAi::disable_first_capital_walks_the_one_landmass },
+    // Live Deity 4-player Pangaea civvis-20261111T040245Z: the Netherlands'
+    // Protestantism held a second major from t51 ("religion race reads 50%")
+    // and won at t83; the faith war on it was held at t52 on power alone (199
+    // against a steady 398). On four living majors or fewer the war opens on
+    // such a founder without the power, edge, rout and solvency gates, and is
+    // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
+    // see `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -5742,6 +5766,10 @@ pub const GENES: &[Gene] = &[
     // First-slot ranged support. Leaves later recon settings unchanged;
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
+    // Operator 11-11: remove the city limit. The empire settles every seat it
+    // can hold while the city out-earns its Settler, several Settlers at a
+    // time. See `advanced/no_city_limit.rs`.
+    Gene { tag: "no-city-limit", field: "no_city_limit", kind: Kind::OptIn, enable: AdvancedAi::enable_no_city_limit, disable: AdvancedAi::disable_no_city_limit },
     // A missing land eye precedes economy claims until an early Domination target is charted.
     Gene { tag: "land-recon-before-the-first-capital", field: "land_recon_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_land_recon_before_the_first_capital, disable: AdvancedAi::disable_land_recon_before_the_first_capital },
     // ---- append: p-r ------------------------------------------------

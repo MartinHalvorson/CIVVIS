@@ -7664,12 +7664,34 @@ pub struct AdvancedAi {
     /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
     /// default.
     friendship_outlasts_the_gated_race: bool,
+    /// `first-capital-strikes-the-open-window`: the first-capital opening
+    /// keeps its force and the campaign through its window, declares when
+    /// the bodies at the rally cover the bill, opens its reservation at two
+    /// cities on a soft capital, and is not released at the deadline while
+    /// its army was held away. See
+    /// `advanced/first_capital_strikes_the_open_window.rs`. Off by default.
+    first_capital_strikes_the_open_window: bool,
+    /// `first-capital-strikes-the-open-window`: whether the named capital
+    /// read soft at the start of this turn. Always `false` with the gene off.
+    first_capital_soft_now: bool,
     /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
     /// `first-capital-before-the-walls` counts uncharted ground as land in
     /// its walk to the target capital, and the nearest free scout charts the
     /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
     /// Off by default.
     first_capital_walks_the_one_landmass: bool,
+    /// `faith-war-on-a-small-world`: on a world of four living majors or
+    /// fewer, the faith war on a founder whose faith already holds another
+    /// major (or whose race reads 50%) opens without the power floor, the
+    /// edge, the rout ratio, the treasury reserve and the income gate, and
+    /// peace waits while that race holds and its spreaders keep coming.
+    /// Rides `faith-war-before-the-flip-2`. See
+    /// `advanced/faith_war_before_the_flip.rs`. Opt-in.
+    faith_war_on_a_small_world: bool,
+    /// `each-civ-draws-its-width`: every major draws a city width past the
+    /// shared ten and its target walks two ahead of the cities it holds. See
+    /// `advanced/each_civ_draws_its_width.rs`. Opt-in.
+    each_civ_draws_its_width: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -8032,6 +8054,14 @@ pub struct AdvancedAi {
     /// See `advanced/great_works_never_wait.rs`. Off by default.
     great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `no-city-limit`: no city target of its own. The empire settles every
+    /// seat it can hold while the city founded there out-earns its Settler,
+    /// several Settlers at a time. See `advanced/no_city_limit.rs`. Off by
+    /// default.
+    no_city_limit: bool,
+    /// `no-city-limit`: the lifted settlement target `assess` counted, with
+    /// its turn. See `advanced/no_city_limit.rs`.
+    no_city_limit_target: std::cell::Cell<no_city_limit::NoCityLimitTarget>,
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
     /// its last charge and scouts. See `advanced/apostle_army.rs`. Off by
@@ -11102,6 +11132,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// The player civvis.ai seats: the deployment genome plus the site's own
+/// experiment list. See `advanced/site_deployment.rs`.
+mod site_deployment;
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -11311,6 +11344,9 @@ mod victory_conversion;
 mod victory_lane;
 pub mod victory_portfolio;
 
+/// `each-civ-draws-its-width`: a drawn city width past the shared ten. See
+/// `advanced/each_civ_draws_its_width.rs`.
+mod each_civ_draws_its_width;
 /// `early-settler-floor`: the actuation half of the opening's pace -- a
 /// Settler in the queue while the empire is short of the band floor. One
 /// opt-in gene; see `advanced/early_settler_floor.rs`.
@@ -11531,6 +11567,9 @@ mod launcher_war;
 /// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
 mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
+/// `no-city-limit`: the empire settles every seat that pays, several
+/// Settlers at a time. See `advanced/no_city_limit.rs`.
+mod no_city_limit;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
 /// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
@@ -11745,6 +11784,10 @@ mod threatened_war_holds_the_claims;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `first-capital-strikes-the-open-window`: the first-capital opening keeps
+/// its window and strikes through it. One opt-in gene; see
+/// `advanced/first_capital_strikes_the_open_window.rs`.
+mod first_capital_strikes_the_open_window;
 /// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
 /// with one landmass, for the first capital's walk. One opt-in gene; see
 /// `advanced/first_capital_walks_the_one_landmass.rs`.
@@ -15171,7 +15214,13 @@ impl AdvancedAi {
         let restore_target = self.base.w.city_target;
         let restore_stop = self.base.w.settler_stop_turn;
         let restore_builders = self.base.w.builder_per_city;
-        self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
+        // `settlement_target` is `plan.desired_cities` unless `no-city-limit`
+        // has counted paying seats past it this turn.
+        self.base.w.city_target = restore_target.max(if self.no_city_limit {
+            self.settlement_target(plan)
+        } else {
+            plan.desired_cities
+        } as f64);
         // The last production-only override this audit had not priced. Whether
         // it binds at all depends on the speed: the gene is 150 and the
         // deadline is `min(300 standard, max_turns - 50 standard)`, which at
@@ -21935,11 +21984,20 @@ impl AdvancedAi {
     /// Off by default; evaluator arm `advanced_settlement_gap_target`,
     /// reserved matrix seed 31000000.
     fn settlement_target(&self, plan: &StrategicPlan) -> usize {
-        if self.settlement_gap_reads_city_target {
+        let target = if self.settlement_gap_reads_city_target {
             plan.desired_cities
                 .max(self.base.w.city_target.max(0.0) as usize)
         } else {
             plan.desired_cities
+        };
+        // `no-city-limit`: every free seat that pays, counted by `assess` on
+        // the plan's own turn. Zero with the gene off. See
+        // `advanced/no_city_limit.rs`.
+        let noted = self.no_city_limit_target.get();
+        if self.no_city_limit && noted.turn == plan.assessed_turn {
+            target.max(noted.cities)
+        } else {
+            target
         }
     }
 
@@ -21966,6 +22024,15 @@ impl AdvancedAi {
             return 0;
         }
         let width = self.settler_in_flight_allowed(g, desired_cities, city_count, settlers);
+        // `no-city-limit`: several Settlers at once, never more than the
+        // seats still short. `None` with the gene off. See
+        // `advanced/no_city_limit.rs`.
+        let width = match self.no_city_limit_width(g, pid) {
+            Some(wide) if city_count + settlers < desired_cities => {
+                width.max(wide.min(desired_cities - city_count))
+            }
+            _ => width,
+        };
         if self.settler_backlog_brake_2
             && city_count >= BasicAi::SETTLER_BACKLOG_V2_MIN_CITIES
             && self
@@ -23260,8 +23327,12 @@ impl AdvancedAi {
                     // has to be funded with. The `scale` below already fades
                     // the whole term to zero once the empire is no longer
                     // short, so neither gate needs its own shortfall test.
+                    // `no-city-limit` is the third gate: the seats short are
+                    // the free seats that still pay, and the Hall is what
+                    // makes their Settlers cheap and their cities quick.
                     let expansion_hall = if ((self.expansion_hall && self.land_grab)
-                        || self.expansion_scales_with_difficulty)
+                        || self.expansion_scales_with_difficulty
+                        || self.no_city_limit)
                         && !spec.wonder
                     {
                         let seats_short = self
@@ -26145,7 +26216,11 @@ impl AdvancedAi {
             // `domination-target-gets-its-breaker`: the Domination target's
             // breaker, when the war or the declaration waits on it. Exact
             // no-op while the gene is off.
-            if !self.buy_domination_breaker(g, pid, &plan) {
+            // `city-state-before-the-first-capital`: the stepping stone's Ram
+            // under `breaker-bought-for-the-siege`. `false` with it off.
+            if !self.buy_domination_breaker(g, pid, &plan)
+                && !self.city_state_stone_breaker_purchase(g, pid)
+            {
                 self.siege_breaker_purchase(g, pid);
             }
         }

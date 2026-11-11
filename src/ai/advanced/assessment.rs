@@ -412,6 +412,11 @@ impl AdvancedAi {
         // Every cut below still applies. See
         // `advanced/good_land_lifts_the_city_target.rs`.
         let desired_cities = self.good_land_city_target(g, pid, desired_cities, &cities);
+        // `each-civ-draws-its-width`: two cities ahead of what the empire
+        // holds, to the width it drew for this game, once that passes the
+        // shared ten. Every cut below still applies. See
+        // `advanced/each_civ_draws_its_width.rs`.
+        let desired_cities = self.city_width_target(g, pid, desired_cities, cities.len());
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -466,6 +471,9 @@ impl AdvancedAi {
             // gene sets (7 at Prince). `None` with the gene off, so the cap
             // reads its shipped constant.
             let cap = wide_city_target.map_or(cap, |wide| cap.max(wide));
+            // `each-civ-draws-its-width`: the drawn width is the floor of the
+            // cap, or a Science seat would be cut back to its twelve.
+            let cap = self.city_width_science_cap(g, pid, cap);
             desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities
@@ -484,6 +492,11 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // `no-city-limit`: count the free seats that pay and note the lifted
+        // settlement target the Settler paths read. The plan keeps its own
+        // number, so the strategy below leaves its expansion half when it
+        // did before. See `advanced/no_city_limit.rs`.
+        self.note_no_city_limit_target(g, pid, desired_cities, &cities);
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
@@ -593,7 +606,11 @@ impl AdvancedAi {
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war
-                    && !science_targeted))
+                    && !science_targeted
+                    // `first-capital-strikes-the-open-window`: the strike's
+                    // own war is not pulled home by the power gap; a
+                    // threatened city still is. `false` with the gene off.
+                    && !self.first_capital_strike_running(g, pid)))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
         } else if impossible_denial {
@@ -1437,6 +1454,32 @@ impl AdvancedAi {
             .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
+        // `first-capital-strikes-the-open-window`: while the first capital's
+        // window stands, the campaign stays on its city. `None` with the gene
+        // off. See `advanced/first_capital_strikes_the_open_window.rs`.
+        let (target_player, target_city) = match self.first_capital_keeps_the_campaign(
+            g,
+            pid,
+            target_player,
+            &wartime_rivals,
+            emergency_objective.is_some(),
+            actionable_denial.map(|(rival, _)| rival),
+        ) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
+        // `first-capital-strikes-the-open-window`: once the opening has
+        // declared, its city stays the campaign's over a siege committed
+        // elsewhere. `None` with the gene off.
+        let (target_player, target_city) = match self.first_capital_strike_objective(
+            g,
+            pid,
+            target_city,
+            emergency_objective.is_some(),
+        ) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
         // A final war aims at the nearest rival city, whichever race the
         // ranking above would still be countering. See `last_civ_standing`.
         let (target_player, target_city) = match self.final_war_objective(g, pid) {

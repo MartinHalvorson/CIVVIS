@@ -14669,6 +14669,76 @@ fn a_landing_plants_a_ship_and_a_flag_that_stay() {
     assert!(painter.contains("launch.touchdown = {size, hover:film.hover};"));
 }
 
+/// A landing that is watched settles where it lands. Half of any world is
+/// round the back, and a site there sent its rocket to the limb to fade out
+/// with no ship and no flag left in view. The site is chosen once, as the
+/// landing is planned, on ground that will be facing the viewer from then
+/// until its flag has stood a while, and that ground is the site from
+/// then on.
+#[test]
+fn a_watched_landing_settles_where_it_can_be_seen() {
+    let js = EMBEDDED_APP_JS;
+    let body_of = |name: &str| {
+        js.split_once(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("the end of {name}"))
+            .0
+    };
+    // One place per civilization and world: the settled one when there is
+    // one, and every seat on the ground is read from it.
+    let site = body_of("function skyLandingSite(");
+    assert!(site.contains("SKY_SETTLED_SITES.get(`${bodyId}:${playerId}`)"));
+    assert!(site.contains("if (settled) return settled;"));
+    assert!(body_of("function skyLandingSeats(")
+        .contains("planetProject(skyLandingSite(place.id, player.id),"));
+
+    let settle = body_of("function skySettleLandingSite(");
+    // Once per landing, and only where there is ground to choose.
+    assert!(settle.contains("if (launch.sited) return;"));
+    assert!(settle.contains("if (skyGroundFade(place) < .5 || !skyOnCanvas(place)) return;"));
+    // In sight from now until the flag has stood a while, on a world that
+    // turns whenever the spin is switched on, and clear of the frame and of
+    // every panel.
+    assert!(settle.contains("const lenses = [0, arrivesIn, arrivesIn + SKY_TOUCHDOWN_MS,"));
+    assert!(settle.contains("arrivesIn + SKY_TOUCHDOWN_MS + SKY_SITE_STAYS_MS]"));
+    assert!(settle.contains(
+        "const period = WORLD_SPIN && SPEC && spinAvailable() ? worldSpinPeriodMs : Infinity;"
+    ));
+    assert!(settle.contains("longitude:camera.longitude - 2 * Math.PI * wait / period}"));
+    assert!(settle.contains("const boxes = skyWidgetBoxes();"));
+    assert!(settle.contains("if (!open(point)) return 0;"));
+    // A site that can already be seen is left where it is.
+    assert!(settle
+        .contains("if (sight(skyLandingSite(place.id, player.id)) >= SKY_SITE_FACING) return;"));
+    assert!(settle.contains("SKY_SETTLED_SITES.set(`${place.id}:${player.id}`, site);"));
+
+    // A flight settles it before it aims, and the expedition, which has no
+    // flight coming in, as its landing begins.
+    let end = body_of("function skyLaunchEnd(");
+    let settled = end
+        .find("skySettleLandingSite(launch, player, place, launchCrew, performance.now());")
+        .expect("a flight settles its site");
+    let aimed = end
+        .find("const seat = launch.aimsAtLimb ? null : skyLandingSeats(")
+        .expect("a flight aims at its seat");
+    assert!(settled < aimed);
+    let landings = body_of("function drawSkyLandings(");
+    let settled = landings
+        .find("if (landing) skySettleLandingSite(landing.launch, player, place, crew, now);")
+        .expect("an arrival settles its site");
+    let seated = landings
+        .find("const seats = skyLandingSeats(place, crew);")
+        .expect("the landings are seated");
+    assert!(settled < seated);
+
+    // A flag belongs to its world, not to the motion in the air: a new
+    // world clears the sites, and a change of observed seat does not.
+    assert!(js.contains("if (newWorld) SKY_SETTLED_SITES.clear();"));
+    assert!(!body_of("function resetAnim()").contains("SKY_SETTLED_SITES"));
+}
+
 /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
 /// not make them navigable. Sixty-five notches is a distance nobody
 /// scrolls, and every one of them has to be aimed over empty space. So the
@@ -15293,11 +15363,13 @@ fn browser_covers_every_empire_decision() {
         .contains("onclick='sendFromEmpire(${JSON.stringify(action)})'>${label}</button>"));
 }
 
-/// civvis.ai's majors play the deployment genome on the authoritative board,
-/// by construction rather than by comment. The comment on `ai_fleet` said
-/// "the deployment genome" for weeks while the code seated the stock agent;
-/// this pins the seat to `enable_native_deployment` by its whole decision
-/// stream, so neither half can move without the other.
+/// civvis.ai's majors play the deployment genome on the authoritative board
+/// plus the site's experiment list, by construction rather than by comment.
+/// The comment on `ai_fleet` said "the deployment genome" for weeks while the
+/// code seated the stock agent; this pins the seat to
+/// `enable_site_deployment` by its whole decision stream, so neither half
+/// can move without the other. `ai/advanced/site_deployment` pins that
+/// constructor to `enable_native_deployment` plus the list.
 #[test]
 fn the_strategy_panel_names_the_agent_the_site_seats() {
     // The panel's Agent row tells a viewer every major is the rule-based
@@ -15321,7 +15393,7 @@ fn the_strategy_panel_names_the_agent_the_site_seats() {
 }
 
 #[test]
-fn every_site_major_plays_the_native_deployment_genome() {
+fn every_site_major_plays_the_site_deployment() {
     use crate::ai::{run_game, AdvancedAi, Ai, BasicAi};
     let game = Game::new_with(crate::game::GameOptions::new(3, 32, 20, 90_912, 25, 1));
     let mut site = Session::ai_fleet(&game);
@@ -15341,7 +15413,7 @@ fn every_site_major_plays_the_native_deployment_genome() {
                 Box::new(BasicAi::new())
             } else {
                 let mut ai = AdvancedAi::new();
-                ai.enable_native_deployment();
+                ai.enable_site_deployment();
                 Box::new(ai)
             }
         })
@@ -15352,7 +15424,7 @@ fn every_site_major_plays_the_native_deployment_genome() {
     assert_eq!(
         serde_json::to_string(&seated.log).unwrap(),
         serde_json::to_string(&expected.log).unwrap(),
-        "every site major must play AdvancedAi::new() + enable_native_deployment()"
+        "every site major must play AdvancedAi::new() + enable_site_deployment()"
     );
 }
 
