@@ -212,6 +212,9 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `denial-spies-fill-every-slot`: see
+        /// `advanced/denial_spies_fill_every_slot.rs`.
+        denial_spies_fill_every_slot => enable_denial_spies_fill_every_slot, disable_denial_spies_fill_every_slot;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
