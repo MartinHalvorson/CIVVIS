@@ -343,9 +343,13 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by `Units.WMDCapable` on the Bomber, Jet Bomber and Nuclear
     // Submarine, which is what lets those three carry a device.
     // Moved again by Sumeria's levy discount and Tamar's doubled Envoys.
+    // Moved again by Flower Power's Rock Band price: live
+    // civvis-20261110T192354Z held the card t171-185 and the band's Faith
+    // quote kept its +50 step (450, 500, 550, 600, 650), so a band is no
+    // longer free under it; every other unit still costs +100%.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:5e27c254aed61f85"
+        "fnv1a64:526e959f1ebf836c"
     );
 }
 
