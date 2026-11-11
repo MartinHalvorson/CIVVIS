@@ -452,9 +452,8 @@ up to twice a seat-turn (3.5%).
 
 ### What a kept yield is made of is kept with it (−2.1%)
 
-After the three cuts above the citizen plan was still 17% of the stepping
-thread, and the split of an empire's luxuries between its cities 5%.
-`Game::keep_rival_yields` kept each city's *yields* between a seat's passes
+After the three cuts above the citizen plan was still the largest single
+cost in a site game. `Game::keep_rival_yields` kept each city's *yields* between a seat's passes
 and threw away the two things a yield is made of that other callers ask for
 by themselves: the citizen plan (the Builder census, the worked-tile test and
 the state document ask for the plan and never the yield) and the luxury split
@@ -468,8 +467,9 @@ plan and split as it does every reused yield. Instructions for 150 turns,
 every checkpoint identical: −2.06%, −2.12%, −1.97% (seeds 7, 8, 9).
 
 **What is left, and why it is not in this change.** A profile of the result
-(seed 7, turns 40 to 170) still has 26% of the thread deriving city yields,
-and 8 points of that is one caller: the culture forecast, which reads every
+(seed 7, turns 40 to 170) still has 26% of the thread deriving city yields
+(the plan is 17 of those points and the luxury split 5), and 8 points of the
+26 is one caller: the culture forecast, which reads every
 *rival* city's culture. Counted over one 150-turn game, the four majors
 issued 35,303 actions, the lane table was rebuilt 1,127 times and the
 forecast ran 1,801 times, three a seat-turn, and each run found the rivals'
