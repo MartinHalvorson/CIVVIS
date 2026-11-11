@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `band-bank-bars-people-under-fire` | off (unmeasured) | Opt-in gene `band-bank-bars-people-under-fire`; see `advanced/culture_band_bank.rs`. | 1 \| 1 |
+| `band-buys-near-the-stage` | off (unmeasured) | Opt-in gene `band-buys-near-the-stage`; see `advanced/band_buys_near_the_stage.rs`. | 1 \| 1 |
 | `band-plays-at-level-three` | off (unmeasured) | Opt-in gene `band-plays-at-level-three`; see `advanced/band_plays_at_level_three.rs`. | 1 \| 1 |
 | `band-plays-its-stage` | off (unmeasured) | `band-plays-its-stage`: Rock Bands take the promotions and tours that keep them alive, because album sales compound over a band's career. | 1 \| 1 |
 | `band-plays-what-it-can-reach` | off (unmeasured) | Opt-in gene `band-plays-what-it-can-reach`; see `advanced/band_plays_what_it_can_reach.rs`. | 1 \| 1 |

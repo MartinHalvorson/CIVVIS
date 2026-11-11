@@ -5147,6 +5147,10 @@ pub struct AdvancedAi {
     battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -11369,6 +11373,9 @@ mod aqueduct_claims_the_capped_queue;
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
+/// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
+/// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
+mod band_buys_near_the_stage;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
@@ -18409,7 +18416,13 @@ impl AdvancedAi {
                 return;
             }
         }
-        for city in g.player_city_ids(pid) {
+        // `band-buys-near-the-stage`: see `advanced/band_buys_near_the_stage.rs`.
+        let band_cities = if self.band_buys_near_the_stage {
+            self.band_purchase_cities(g, pid)
+        } else {
+            g.player_city_ids(pid)
+        };
+        for city in band_cities {
             // Same correction as the religious units above: the shipped rules
             // cost is the Standard-speed rate, and a Rock Band's price also
             // climbs 100 per band this player has already bought. Reading the

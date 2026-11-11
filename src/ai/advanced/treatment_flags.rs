@@ -109,6 +109,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-at-level-three`; see
         /// `advanced/band_plays_at_level_three.rs`.
         base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-buys-near-the-stage`; see
+        /// `advanced/band_buys_near_the_stage.rs`.
+        band_buys_near_the_stage => enable_band_buys_near_the_stage, disable_band_buys_near_the_stage;
         /// Opt-in gene `band-bank-bars-people-under-fire`; see
         /// `advanced/culture_band_bank.rs`.
         band_bank_bars_people_under_fire => enable_band_bank_bars_people_under_fire, disable_band_bank_bars_people_under_fire;
