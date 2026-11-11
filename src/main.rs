@@ -802,6 +802,11 @@ fn main() {
         // any loop (docs/ADJUDICATION.md).
         "odds-audit" => odds_audit_command(args),
         "benchmark" => benchmark_command(args),
+        // The world civvis.ai plays, a page frame at a time. `simulate` seats
+        // a different agent, plays a different map and writes no state
+        // document, so neither speed tool could see a change that only the
+        // site pays for; see `civvis::server::site_bench`.
+        "site-bench" => site_bench_command(args),
         // What an agent that searches actually does: take a position and roll
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
@@ -822,6 +827,71 @@ fn main() {
         "validate" => validate_command(args),
         _ => print_usage(),
     }
+}
+
+/// `civvis site-bench`: play the site's opening world and say what it cost.
+///
+/// The report is shaped for `tools/speed_ab.py`: every line that carries a
+/// time opens with `[` and closes with `s]`, which is the tool's own rule for
+/// a line to strip before hashing, and everything else — the checkpoints and
+/// the standings — is the game, so two builds whose reports hash alike played
+/// the same game and wrote the same documents.
+fn site_bench_command(args: Vec<String>) {
+    let seed = arg(&args, "--seed", 7).max(1) as u64;
+    let turns = arg(&args, "--turns", 100).max(1) as u32;
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let options = civvis::server::site_bench::Options {
+        documents: !has("--no-documents"),
+        keeps_rival_yields: !has("--no-kept-yields"),
+        audits_rival_yields: has("--audit-kept-yields"),
+        keeps_own_yields: !has("--no-own-kept-yields"),
+    };
+    let started = Instant::now();
+    let report = civvis::server::site_bench::run_with(seed, turns, options);
+    println!("[{:.3}s]", started.elapsed().as_secs_f64());
+    for band in &report.bands {
+        let last = if band.last == u32::MAX {
+            "on".to_string()
+        } else {
+            band.last.to_string()
+        };
+        println!(
+            "[turns {}-{}: {} frames, {:.1} ms a frame, {:.0} KB a document; \
+             majors {:.3}s, city-states and barbarians {:.3}s, documents {:.3}s]",
+            band.first,
+            last,
+            band.frames,
+            1000.0 * (band.majors_seconds + band.minors_seconds + band.documents_seconds)
+                / f64::from(band.frames),
+            band.document_bytes as f64 / 1024.0 / f64::from(band.frames),
+            band.majors_seconds,
+            band.minors_seconds,
+            band.documents_seconds,
+        );
+    }
+    let total = |pick: fn(&civvis::server::site_bench::Band) -> f64| {
+        report.bands.iter().map(pick).sum::<f64>()
+    };
+    println!(
+        "[all: majors {:.3}s, city-states and barbarians {:.3}s, documents {:.3}s]",
+        total(|band| band.majors_seconds),
+        total(|band| band.minors_seconds),
+        total(|band| band.documents_seconds),
+    );
+    // How often a seat's planning was answered from the city yields it had
+    // already derived (`Game::keep_rival_yields`). Bracketed like a timing so
+    // the report hashes the same with the carry on, off or absent.
+    let (reused, derived) = report.session.game.rival_yields_reused();
+    println!(
+        "[city yields: {reused} answered from what was kept, {derived} derived for all seats]"
+    );
+    for checkpoint in &report.checkpoints {
+        println!(
+            "checkpoint {}: save {:016x}, document {:016x}",
+            checkpoint.turn, checkpoint.save, checkpoint.document
+        );
+    }
+    standings(&report.session.game);
 }
 
 /// `civvis simulate`: play one game and print the standings.
@@ -1876,7 +1946,7 @@ fn validate_command(args: Vec<String>) {
 /// The usage line, for `help` and anything unrecognised.
 fn print_usage() {
     println!(
-        "usage: civvis <simulate|soak|odds-audit|benchmark|play|evolve|validate|pedia> \
+        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|play|evolve|validate|pedia> \
               [--players N] [--seed N] [--turns N] [--width N] [--height N] \
               [--city-states N] [--games N] [--port N] [--no-open] \
               [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
@@ -1892,7 +1962,11 @@ fn print_usage() {
               [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
               [--victories science,culture,religious,diplomatic,domination,score] \
               [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
-              [--generations N] [--pop N]"
+              [--generations N] [--pop N] \
+              [--no-documents (site-bench: play the frames, skip the page's state documents)] \
+              [--no-kept-yields (site-bench: derive every city yield afresh)] \
+              [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
+              [--audit-kept-yields (site-bench: re-derive every reused yield and compare)]"
     );
 }
 

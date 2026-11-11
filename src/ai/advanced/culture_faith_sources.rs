@@ -106,6 +106,8 @@ const CULTURE_SHRINE_FUND_TURNS: f64 = 6.0;
 
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
             || self.lane_lost
@@ -661,6 +663,7 @@ impl AdvancedAi {
                         || self.early_settler_floor_holds(g, pid, cid, plan)
                         || self.bound_granary_holds(g, pid, cid, plan, head)
                         || self.capital_monument_holds(g, pid, cid, plan, head)
+                        || self.culture_monument_finishes_first(g, pid, cid, plan, head)
                         || self.deterrent_holds_against_culture(g, pid, head)
                         || self.idle_route_trader_holds(g, pid, cid, plan, head)
                         || self.backlog_builder_holds(g, pid, cid, plan, head)

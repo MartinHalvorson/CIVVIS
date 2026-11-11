@@ -1363,6 +1363,9 @@
   .ribbon-stat.tourism { --stat-color: #e9b5dd; }
   .ribbon-stat.faith { --stat-color: #eee7cf; }
   .ribbon-stat.gold { --stat-color: #e8c64c; }
+  /* A paler cut of the military red beside it: the same subject, counted
+     rather than weighed. */
+  .ribbon-stat.units { --stat-color: #eec3b8; }
   .ribbon-stat.military { --stat-color: #f2a09b; }
   /* The hazard amber the detonation log and the war ledger's nuclear badge
      already use, so a stockpile in the standings and the strike it becomes
@@ -2954,6 +2957,12 @@
   }
   #newgame-options input[type="number"]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
   #newgame-options .setup-number-hint { display: block; margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.3; }
+  /* The world's own seed, under the field it is no longer copied into. A
+     class with `display` outranks the user agent's `[hidden]`, so the line
+     that has no seed to name yet says so itself. */
+  #newgame-options .setup-number-hint[hidden] { display: none; }
+  #newgame-options #mapseed-current b { color: var(--muted); font-variant-numeric: tabular-nums; user-select: all; }
+  #newgame-options #mapseed-replay { display: block; margin-top: 4px; font-size: var(--type-label); }
   .victory-options { padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
   /* Victory conditions stay as one short checklist: every option gets a full
@@ -5960,7 +5969,7 @@
       <div id="specbar" style="display:none">
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
-          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
+          <button id="restart-sim" title="Start a new game with the same settings, on a fresh map"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
         </div>
         <script>
           // A supervised restart replaces this whole page. Restore the label
@@ -6470,7 +6479,7 @@
         </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
           inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
-          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
+          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small><small class="setup-number-hint" id="mapseed-current" hidden>This world is seed <b id="mapseed-current-value"></b> <button type="button" class="mini" id="mapseed-replay" title="Fill in this world's seed, so the next game replays this exact map and these civilizations">Replay it</button></small></label>
         <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
           <option value="">Random</option>
         </select></label>

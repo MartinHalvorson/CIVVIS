@@ -362,6 +362,7 @@ impl AdvancedAi {
             let lane_target: Option<&str> = science_harbor_goal
                 .or(science_victory_goal)
                 .or(great_person_goal.as_deref());
+            let unique_unit_age_goal = self.unique_unit_age_tech(g, pid);
             let bargain_goal_3 =
                 self.boosted_bargain_tech_3(g, pid, plan, &available, lane_target, None);
             let barbarian_military_goal = if self.base.barbarian_tactics_enabled()
@@ -656,6 +657,10 @@ impl AdvancedAi {
                 // `advanced/domination_research.rs`.
                 // Science can take the same earlier slot without moving any
                 // military, barbarian, wall or committed launch goal above it.
+                // `unique-unit-closes-the-dark-age`: the unique unit's unlock,
+                // when its first unit turns this era's Dark Age Normal. See
+                // `advanced/unique_unit_closes_the_age.rs`.
+                _ if unique_unit_age_goal.is_some() => unique_unit_age_goal.as_deref(),
                 _ if science_writing_goal.is_some() => science_writing_goal,
                 _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
                     domination_campus_goal
@@ -1593,6 +1598,8 @@ impl AdvancedAi {
         pid: usize,
         available: &[Name],
     ) -> Option<&'static str> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first {
             return None;
         }
@@ -1636,6 +1643,8 @@ impl AdvancedAi {
         available: &[Name],
         ordinary: &Name,
     ) -> Option<Name> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first_2 {
             return None;
         }
@@ -1701,6 +1710,8 @@ impl AdvancedAi {
         lane_target: Option<&str>,
         ordinary: Option<&Name>,
     ) -> Option<Name> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.boosted_bargain_first_3 {
             return None;
         }

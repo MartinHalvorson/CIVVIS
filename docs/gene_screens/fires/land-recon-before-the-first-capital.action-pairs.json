@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "land-recon-before-the-first-capital",
+  "scope": "Development inputs; same-input proposal activation only. No host execution, counterfactual training/captures, survival or native win-rate estimate. Captured fresh/resumed Macedon Deity turn30 keeps the Scout instead of a Settler; turns40/60 are unchanged. Persistent history replay first changes at53 and matches all130 native baseline replies.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-land-recon-before-the-first-capital.native-queries.tar.xz",
+    "sha256": "e9399cbd5a7fd45eee043778ffe3aeebf8ecdee561be822c7d134384cd2ae378"
+  },
+  "members": [
+    "captured/t30/pair.json",
+    "captured/t40/pair.json",
+    "captured/t60/pair.json"
+  ]
+}

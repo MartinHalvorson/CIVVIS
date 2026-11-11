@@ -5,6 +5,236 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-11-11: the speed tools could not see the world civvis.ai plays
+
+Every reading in this file was taken with `civvis simulate` at the gene
+screen's shape, because the screen is where the fleet's compute goes. A
+visitor's browser runs something else, and on three counts the two disagree
+about what is expensive:
+
+| | `simulate` (the gate, the profiler) | civvis.ai |
+| --- | --- | --- |
+| Majors | stock `AdvancedAi::new()` | the deployment genome (`enable_native_deployment`) |
+| City-states, barbarians | `AdvancedAi::new()` as well | `BasicAi` |
+| After every round | nothing | the state document the page reads, the reasoning delta, the tile patch |
+| Map | 6 players, Continents, flat, 74x46 | 4 players, Tennis Ball, planet, 75x32 |
+
+So a change to the document, or to anything only a promoted gene turns on,
+moved the site and read as noise on the gate. `civvis site-bench` closes that:
+it is the browser build's own frame loop (`wasm.rs`, `advance_one_frame`, then
+`/state`) run through the same `Session` methods on a native build.
+
+    civvis site-bench --seed 7 --turns 150            # per-band cost, checkpoints, standings
+    civvis site-bench --seed 7 --no-documents         # the same game, the page's half skipped
+    tools/speed_ab.py --baseline A --candidate B --workload site --turns 150
+    tools/profile_civvis.py --site --turns 150 --line-tables --lines take_turn_inner
+    node tools/site_wasm_frames.mjs civvis.wasm --turns 200 --split   # the published module
+
+Every line of its report that carries a time opens with `[` and closes with
+`s]`, which is `speed_ab.py`'s rule for a line to strip. The rest is the game:
+a fingerprint of the save and of the page's document every 25 turns, then the
+standings. Two builds whose reports hash alike played the same game *and wrote
+the same documents*, which is a stronger identity than the standings alone.
+
+The CI gate now prints a site reading beside its verdict (three paired games
+of 100 turns) and does not judge by it. The budget, the ledger and the noise
+floor all belong to the screen's shape; the site reading is a sentence in the
+log, so a pull request that slows every site frame no longer merges unseen.
+
+### What the site's world costs
+
+The published module (`/test`, commit `8210bbb15`), driven by
+`tools/site_wasm_frames.mjs --split`, seed 7, on `mbp-m5-max-128` at load
+average 60 to 85. The game ended on turn 178 after 57 s of frames.
+
+| Turns | A frame | of which the document | Document | Units | Cities |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1-10 | 61 ms | 12 ms | 111 KB | 31 | 10 |
+| 11-25 | 77 ms | 13 ms | 149 KB | 58 | 13 |
+| 26-50 | 131 ms | 15 ms | 209 KB | 87 | 23 |
+| 51-75 | 222 ms | 17 ms | 283 KB | 134 | 36 |
+| 76-100 | 322 ms | 20 ms | 340 KB | 168 | 45 |
+| 101-150 | 423 ms | 23 ms | 371 KB | 189 | 46 |
+| 151-178 | 629 ms | 31 ms | 404 KB | 184 | 48 |
+
+The document is 6% of the game and a fifth of the first ten turns. Everything
+else is the agents and the rules.
+
+⚠ An earlier reading from the same session put the document at 19% of the
+game and 60% of the opening. It was wrong: the split paused the world with
+`POST /pace` on either side of the re-read, and `/pace` answers with a whole
+state document, complete map included, so each sample timed three documents
+and called it one. The tool in the tree pauses outside the timed window.
+
+### Where the agents' time goes on that world
+
+`/usr/bin/sample`, 15 s across turns 97 to 160, the native release build at
+`4ae45717c5` playing the stock world unwatched (11,417 running samples).
+Inclusive, share of the stepping thread:
+
+| | Share |
+| --- | ---: |
+| `AdvancedAi::take_turn_inner` | 89.2% |
+| `Game::city_yields` | 38.4% |
+| ... of which `city_citizen_plan_weighted` | 26.0% |
+| `AdvancedAi::advanced_units` | 30.1% |
+| `culture_lane_forecast_score_with` | 14.1% |
+| `Game::apply` | 9.6% |
+| `memcmp`, self | 9.6% |
+| `BasicAi::culture_defense_theater_item` | 8.2% |
+| `Game::city_amenities` | 7.8% |
+| city-state and barbarian turns (`BasicAi::take_turn`) | 7.7% |
+| `lane_progress_table_uncached` | 7.4% |
+
+`city_yields` is the reading a `simulate` profile does not give at this size,
+and its callers are the promoted culture and victory-lane genes. Two facts
+about it decide what is worth doing:
+
+1. **One derivation is mostly empire-wide work.** 57% of a `city_yields` call
+   is the citizen plan, and 41% of the plan is `citizen_strategy`, which is
+   61% `city_amenities` — the luxury allocation, a fact about the whole
+   empire. A caller that asks city by city with no memo open pays that
+   allocation once per city.
+2. **About ten passes a seat-turn each sweep every city in the world.**
+   `--lines take_turn_inner` (the pass names are the callees; none of these
+   has a frame of its own in a symbol profile, because the passes are inlined
+   into the one function): `culture_budgeted_base_cities` 7.4%,
+   `advanced_gold_spending` 6.9%, `culture_defense_theater_item` 5.1%,
+   `run_idle_queue_claims` 3.7%, `science_spaceport_production` 3.6%,
+   `culture_lane_spends` 3.5% twice, `victory_focus` 2.9%,
+   `research_with_government` 2.7%, `higher_level_investment_target` 2.4%.
+   Each is called once a turn and each costs whole percents, because each
+   prices every rival's cities to read one number.
+
+The same unwatched game reached turn 97 in 8.3 s of CPU. The published module
+needs about 11.9 s of play for turns 1 to 100 on the same host under the same
+load, so WebAssembly costs about 1.4x here, not the 2x an earlier comparison
+read with the document's cost still in it.
+
+### What was done about it: a seat's planning keeps city yields
+
+Three changes, each measured with `site-bench` and each playing the same game.
+
+**One memo per sweep (#5063).** Fifty-five read-only helpers asked city after
+city with no `QueryMemo` open, which is fact 1 above. Each now opens one for
+its whole sweep. Site reading on the runner, three paired games of 100 turns:
+**−2.70% per turn**, pairs between −3.15% and −2.64%, same save and document
+checkpoints on every seed.
+
+**Yields kept between passes (`Game::keep_rival_yields`, `keep_own_yields`).**
+Fact 2 is not reachable with a memo: a `QueryMemo` borrows the game, and a
+mutable borrow separates one pass from the next. So for the length of one
+seat's turn the spectator session keeps city yields from one pass to the next
+and drops them when the board changes:
+
+* at both ends of every `Game::apply`, successful or refused, and never read
+  or filled inside one;
+* on every tile write, through the tile grid's epoch;
+* on `Game::board_written`, which the handful of places that write the board
+  without an action call (the turn-start settings, the governor's food bias
+  and directives, both policy what-ifs, a rival retired or inferred by hand);
+* and the acting seat's own cities additionally on any change to its deck,
+  food bias or directive count, which are stamped and read back on every
+  lookup, so a what-if against the deck is noticed whether or not it reports.
+
+`Action::Produce` drops only the acting seat's own cities: it writes one of
+that seat's queues, and nothing of another seat's. The live Civilization VI
+seat, the gene screen and `simulate` do not turn any of this on.
+
+One binary, `civvis site-bench --turns 150` with and without
+`--no-kept-yields`, on a GitHub runner:
+
+| Seed | Majors, nothing kept | Majors, kept | | Whole run | | Checkpoints |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 7 | 37.46 s | 30.12 s | −19.6% | 46.57 → 39.23 s | −15.8% | identical |
+| 8 | 34.53 s | 27.19 s | −21.3% | 42.98 → 35.91 s | −16.5% | identical |
+| 9 | 38.96 s | 30.67 s | −21.3% | 49.09 → 40.76 s | −17.0% | identical |
+| 10 | 36.01 s | 29.16 s | −19.0% | 44.72 → 38.18 s | −14.6% | identical |
+| 11 | 35.84 s | 28.15 s | −21.4% | 44.95 → 37.09 s | −17.5% | identical |
+
+Turns 101 to 150 alone are 24% to 27% faster for the majors (seed 7: 22.12 s
+to 16.70 s). Two thirds of all city-yield reads in a seat's turn are answered
+from what was kept (seed 7: 134,122 reused, 66,660 derived). Keeping only the
+rivals' gives about half of it (seed 7: 37.46 s to 33.39 s).
+
+⚠ **The audit could not see the one bug this had, and the save comparison
+did.** `Game::audit_rival_yields` derives every reused answer again and
+compares. The first build that kept the acting seat's own cities passed it
+over 150 turns on two seeds and still played a different game from turn 26.
+The values were never wrong. The policy scorer does not read the *answer* of
+its baseline sweep: it opens `trace_policy_reads`, which records every policy
+effect the sweep *asks*, and calls a card inert when it names none of them. A
+sweep answered from what was kept asks nothing, so every card read as inert
+and the seat stopped changing its deck — and under the audit every reuse
+re-derives, which asks the questions again and hides the fault. Nothing is
+reused while a trace records now, and `site_bench`'s tests play one seed with
+and without and compare the saves, which is the test that sees a caller that
+depends on a derivation having *run*.
+
+**A browser frame steps quietly (#5067).** `advance_one_frame` cloned every
+action of the turn into a `Vec` it then dropped. The state document is 6% of
+a game, so this is the free part and the rest of the document was left alone.
+
+What is left on this world after the three, in the order a profile ranks it:
+the unit phase (30% before any of this, and flat: builder sweeps 8.5%, the
+military step 13% across ten helpers, `plan_battle` 4.6%), the acting seat's
+own cities between its own actions, city-state turns (about a tenth), and
+`memcmp` under the string-keyed effect lookups.
+
+### Genes are not the lever
+
+Asked directly on the day: would pruning old genes speed the site up. The gene
+screens already answer it, because every screen fits a compute cost per gene
+(`compute_cost_pct`, percent of seconds per completed turn per seat carrying
+the gene). In the 30,000-seat screen of 2026-11-04, of 651 genes exactly one
+is measurable: `unit-preservation`, +16.7% a seat, z = 14.5, and it is off in
+the deployment genome. The other 650 show 19 above z = 2 and 14 below −2,
+which is what chance gives; the mean is 0.03% ± 0.04% a gene. A gene that is
+off is one branch. The cost above is not genes as such, it is a handful of
+passes recomputing the same empire-wide numbers.
+
+### The browser build's own profile: ordered maps, not string compares
+
+The native table above put `memcmp` at 9.6% of self time, and an obvious next
+guess was that WebAssembly pays more for it: there is no wide compare to lean
+on there. The module's own profile says otherwise, and says the native table
+would have picked the wrong lever.
+
+A module built with function names (no LTO, sixteen codegen units: eight
+minutes), driven by `tools/site_wasm_frames.mjs` under `node --cpu-prof` for
+130 turns of seed 7 and read by `tools/site_wasm_profile.py` — 33.9 s sampled,
+all of it in the engine:
+
+| Self time | |
+| ---: | --- |
+| 39.7% | `BTreeMap` and `BTreeSet` |
+| 4.0% | the allocator (`dlmalloc`) |
+| 3.3% | hashing (SipHash, `specmap::hash_key`) |
+| 0.4% | `memcmp`, `bcmp` |
+
+The compare is still paid for: it is inlined into the tree search, so it
+shows as the search. What the native build spreads over `memcmp` and a dozen
+small tree functions, the module concentrates in the tree walk, a chain of
+bounds-checked loads with no wide compare underneath. The ordered maps by
+what they hold and what was asked of them:
+
+| Self time | Asked | Holding | What that is in the engine |
+| ---: | --- | --- | --- |
+| 6.1% | search | `Name` | tech, civic, building, policy and district lookups |
+| 4.3% | search | `String` | the string-keyed effect maps (`effects.get("…")`) |
+| 4.3% | iterate | `Name` | walking a seat's techs, civics, policies, a city's buildings |
+| 4.1% | iterate | `Unit` | walking every unit in the world |
+| 3.9% | iterate | `City` | walking every city in the world |
+| 7.7% | all | primitive keys | ids and positions |
+
+No single caller owns it. The largest are `in_enemy_zoc_for` 1.3%,
+`refresh_visibility_snapshot_with_world` 1.2%, `policy_effect` 1.1% and
+`entry_at_neighbor` 1.1%, then a long tail. So this is not a hot loop to
+fix but a choice of container to revisit: units and cities by dense id with
+their ids kept in order (the walks are in id order and the saves depend on
+it), and the `Name`-keyed sets and maps indexed by `Name::id`. Neither is
+attempted here. Both are play-identical by construction and both are large.
+
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
 A call-tree profile of the real batch workload — `gene_screen --games 6

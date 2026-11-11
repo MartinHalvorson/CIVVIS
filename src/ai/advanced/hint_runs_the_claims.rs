@@ -188,8 +188,10 @@ impl AdvancedAi {
         }
         // `culture-seat-monuments`: a Culture seat's Monuments, after the
         // Theater claim (whose heads they leave alone). Exact no-op while
-        // the gene is off. See `advanced/culture_monuments.rs`.
-        if !war_holds {
+        // the gene is off. Version two holds a Monument only in a city that
+        // is itself threatened, so the war's hold does not reach it. See
+        // `advanced/culture_monuments.rs`.
+        if !war_holds || self.culture_seat_monuments_2 {
             self.claim_culture_monuments(g, pid, plan);
         }
         // `culture-road-builds-its-triggers`: the last Market a near road

@@ -247,9 +247,9 @@ function fdShowIntro() {
 async function fdBegin() {
   fdSet("humanplayers", "single");
   fdSet("leader", fdChoice);
-  // The form is refilled from the world on screen, seed included, so a second
-  // game from here would otherwise be the same map. Replaying a seed on purpose
-  // is what Advanced setup is for.
+  // A game begun here is a fresh map. The seed field is blank unless somebody
+  // asked Advanced setup to replay a world, and that request was made of the
+  // start control beside it, not of this door.
   fdSet("mapseed", "");
   closeFrontDoor();
   await startNewSimulation();

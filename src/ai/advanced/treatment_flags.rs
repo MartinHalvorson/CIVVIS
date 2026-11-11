@@ -221,9 +221,18 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `denial-spies-fill-every-slot`: see
+        /// `advanced/denial_spies_fill_every_slot.rs`.
+        denial_spies_fill_every_slot => enable_denial_spies_fill_every_slot, disable_denial_spies_fill_every_slot;
+        /// `culture-seat-monuments-2`: see
+        /// `advanced/culture_monuments.rs`.
+        culture_seat_monuments_2 => enable_culture_seat_monuments_2, disable_culture_seat_monuments_2;
         /// `culture-faith-site-per-theater-3`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_site_per_theater_3 => enable_culture_faith_site_per_theater_3, disable_culture_faith_site_per_theater_3;
+        /// `city-state-before-the-first-capital`: a Domination seat's early
+        /// conquest opening takes one nearby city-state before the first capital.
+        city_state_before_the_first_capital => enable_city_state_before_the_first_capital, disable_city_state_before_the_first_capital;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -242,6 +251,18 @@ impl AdvancedAi {
         /// Opt-in gene `every-shooter-at-the-walls`; see
         /// `advanced/siege_at_the_walls_dies_first.rs`.
         every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
+        /// `friendship-outlasts-the-gated-race`: see
+        /// `advanced/friendship_outlasts_the_gated_race.rs`.
+        friendship_outlasts_the_gated_race => enable_friendship_outlasts_the_gated_race, disable_friendship_outlasts_the_gated_race;
+        /// Opt-in `faith-strike-fears-the-tech-lead`; see
+        /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
+        faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
+        /// Opt-in `faith-war-on-a-small-world`; see
+        /// `AdvancedAi::faith_war_on_a_small_world`.
+        faith_war_on_a_small_world => enable_faith_war_on_a_small_world, disable_faith_war_on_a_small_world;
+        /// `first-capital-walks-the-one-landmass`: see
+        /// `advanced/first_capital_walks_the_one_landmass.rs`.
+        first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -265,6 +286,10 @@ impl AdvancedAi {
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
         /// Opt-in gene `no-city-limit`; see `advanced/no_city_limit.rs`.
         no_city_limit => enable_no_city_limit, disable_no_city_limit;
+        /// `land-recon-before-the-first-capital`: the missing land recon arm
+        /// claims an idle queue before optional economy work on an early
+        /// Domination seat without a reachable capital.
+        land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
@@ -341,6 +366,12 @@ impl AdvancedAi {
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
         theology_fights_count_the_host_edge => enable_theology_fights_count_the_host_edge, disable_theology_fights_count_the_host_edge;
+        /// Opt-in gene `tribute-warms-the-neighbour`; see
+        /// `advanced/tribute_warms_the_neighbour.rs`.
+        tribute_warms_the_neighbour => enable_tribute_warms_the_neighbour, disable_tribute_warms_the_neighbour;
+        /// `unique-unit-closes-the-dark-age`: see
+        /// `advanced/unique_unit_closes_the_age.rs`.
+        unique_unit_closes_the_dark_age => enable_unique_unit_closes_the_dark_age, disable_unique_unit_closes_the_dark_age;
     }
 
     toggles! {

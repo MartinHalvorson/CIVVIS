@@ -156,6 +156,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let cities = g.player_city_ids(pid);
         for cid in &cities {
             if let Some(item) = g.cities[cid]

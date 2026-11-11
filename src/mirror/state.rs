@@ -1302,6 +1302,15 @@ pub struct StatePublicEmpireStats {
     pub nuclear_devices: Option<i64>,
     #[serde(default)]
     pub thermonuclear_devices: Option<i64>,
+    /// Every unit on this civilization's roster and how many of them are
+    /// military (`GetUnits():Members()` with a land, naval or air combat
+    /// `FormationClass`), seen or not. A count places nothing on the board:
+    /// where a rival's units stand still crosses only in `StateRival::units`,
+    /// which stays visibility-gated.
+    #[serde(default)]
+    pub unit_count: Option<i64>,
+    #[serde(default)]
+    pub military_unit_count: Option<i64>,
 }
 
 /// The World Congress diplomatic standing as of the last session, and the turn

@@ -1,0 +1,21 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "faith-strike-fears-the-tech-lead",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Ten boards from nine live Deity Online Culture-lane games of 2026-11-10, each a turn on which the live seat declared a heretic strike (faith-strike-wipes-the-spreaders), cut at that turn's first state frame. Both arms run one frozen civvis_orders --resumed built from this branch (8658fb7259) with the run's own requested genome (summary.json forced; why.log's first-line forced list where the summary is partial); the on arm adds --with faith-strike-fears-the-tech-lead. Every off arm reproduces the live strike (a war order and 2-4 CONDEMN_HERETIC orders). The on arm holds the strike, with no war order and no condemnation, on the seven boards where the host's public tech count put the target 10 or more ahead: 201752Z t95 Sumeria (42 to our 19), 214026Z-cont2 t115 Aztec (45 to 29), 220038Z t133 France (45 to 32), 192354Z t115 Mapuche (44 to 27), 171451Z t106 Khmer (39 to 27), 212836Z t121 Maori (44 to 29) and 173750Z t105 Portugal (37 to 27); the journal reads 'Holding the heretic strike on X | faith-strike-fears-the-tech-lead: it leads us by N techs'. The three boards under the bar are unchanged: 232642Z t127 India (50 to 41), 204138Z t130 Egypt (42 to 33) and 232642Z t87 India (33 to 31).",
+  "archive": {
+    "path": "docs/eval/2026-11-11-faith-strike-fears-the-tech-lead.native-queries.tar.xz",
+    "sha256": "8a60a0f6765847fe9e500e1e17f499e2f2a2fa391708e9027d13f9fce03a145f"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json"
+  ]
+}

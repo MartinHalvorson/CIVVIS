@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 import re
 import sys
@@ -897,6 +898,132 @@ class TheRequiredGateHasAWayToSayYes(unittest.TestCase):
         variable = argv[argv.index("--acknowledge-env") + 1]
         raw = (WORKFLOWS / "speed.yml").read_text(encoding="utf-8")
         self.assertRegex(raw, rf"{variable}: \$\{{\{{ github.event.pull_request.body")
+
+
+SITE_REPORT = """[{total}s]
+[turns 1-10: 10 frames, 54.0 ms a frame, 111 KB a document; majors {majors}s, \
+city-states and barbarians 0.050s, documents 0.320s]
+[all: majors {majors}s, city-states and barbarians 0.050s, documents 0.320s]
+checkpoint 11: save {save}, document 00000000deadbeef
+No winner: turn 11 of 500, and no enabled victory was achieved
+  1. Rome  score 12
+"""
+
+
+class TheSiteWorkloadPlaysTheSitesWorld(unittest.TestCase):
+    """The gate's world is the gene screen's. A visitor's browser runs another
+    one, and a change that only that world pays for read as noise here."""
+
+    def test_it_runs_the_site_bench_and_no_screen_shape(self):
+        command = speed_ab.game_command(
+            Path("/x/civvis"), 7, dict(speed_ab.DEFAULTS, workload="site"))
+        self.assertEqual(command, ["/x/civvis", "site-bench", "--seed", "7",
+                                   "--turns", str(speed_ab.DEFAULTS["turns"])])
+
+    def test_the_gate_still_plays_the_screens_shape(self):
+        """`compare` is handed `DEFAULTS` with no workload in it by every
+        caller written before this one, and must keep meaning the screen."""
+        for opts in (speed_ab.DEFAULTS, dict(speed_ab.DEFAULTS, workload="screen")):
+            command = speed_ab.game_command(Path("/x/civvis"), 7, opts)
+            self.assertEqual(command[1], "simulate")
+            for flag in ("--players", "--width", "--height", "--city-states",
+                         "--speed", "--map", "--shape", "--jobs"):
+                self.assertIn(flag, command)
+        self.assertNotIn("--workload", gate_invocation(),
+                         "the CI gate measures the screen's shape")
+
+    def test_a_site_report_hashes_its_game_and_not_its_clock(self):
+        fast = SITE_REPORT.format(total="1.000", majors="0.200", save="aa")
+        slow = SITE_REPORT.format(total="9.000", majors="7.000", save="aa")
+        other = SITE_REPORT.format(total="1.000", majors="0.200", save="ab")
+        self.assertEqual(speed_ab.report_digest(fast), speed_ab.report_digest(slow))
+        self.assertNotEqual(speed_ab.report_digest(fast),
+                            speed_ab.report_digest(other),
+                            "a different checkpoint is a different game")
+        self.assertEqual(speed_ab.turns_played(fast), 11)
+
+    def test_every_line_the_engine_times_is_a_line_this_tool_strips(self):
+        """The engine's half of that contract, read from its source: a line of
+        `site-bench` output that carries a time and did not match
+        `TIMING_LINE` would make two runs of one binary disagree."""
+        source = (REPO / "src" / "main.rs").read_text(encoding="utf-8")
+        body = source[source.index("fn site_bench_command"):]
+        body = body[:body.index("\n}\n")]
+        formats = [re.sub(r"\\\n\s*", "", literal) for literal in
+                   re.findall(r'println!\(\s*"((?:[^"\\]|\\[\s\S])*)"', body)]
+        self.assertGreaterEqual(len(formats), 4, formats)
+        timed = [text for text in formats if "s" in text and "{:.3}" in text]
+        self.assertGreaterEqual(len(timed), 3, formats)
+        for text in timed:
+            self.assertTrue(speed_ab.TIMING_LINE.match(text), text)
+        # Anything else in brackets is a count that differs between two
+        # builds playing one game, and has to be stripped with the times.
+        for text in formats:
+            if text not in timed:
+                self.assertTrue(text.startswith("checkpoint ")
+                                or speed_ab.TIMING_LINE.match(text), text)
+
+    def test_a_binary_older_than_the_command_is_recognised(self):
+        """`civvis nonsense` prints the usage line and exits 0, so an old base
+        commit would otherwise be timed playing nothing."""
+        usage = mock.Mock(returncode=0, stdout="usage: civvis <simulate|soak>\n")
+        real = mock.Mock(returncode=0, stdout=SITE_REPORT.format(
+            total="1.000", majors="0.200", save="aa"))
+        with mock.patch.object(speed_ab.subprocess, "run", return_value=usage):
+            self.assertFalse(speed_ab.knows_site_bench(Path("/x/old")))
+        with mock.patch.object(speed_ab.subprocess, "run", return_value=real):
+            self.assertTrue(speed_ab.knows_site_bench(Path("/x/new")))
+        with mock.patch.object(speed_ab.subprocess, "run",
+                               side_effect=OSError("not executable")):
+            self.assertFalse(speed_ab.knows_site_bench(Path("/x/broken")))
+
+    def test_the_gate_prints_a_site_reading_and_never_judges_by_it(self):
+        """Advisory: the reading is a sentence in the log. A site workload
+        that reads three times slower leaves the gate's exit code alone."""
+        asked = []
+
+        def fake_compare(baseline, candidate, seeds, opts, interleaves=1):
+            asked.append(opts.get("workload", "screen"))
+            slow = 3.0 if opts.get("workload") == "site" else 1.0
+            return a_result([a_pair(seed, 1.0, slow, 100) for seed in seeds])
+
+        with tempfile.TemporaryDirectory() as scratch:
+            binaries = [Path(scratch) / name for name in ("base", "cand")]
+            for binary in binaries:
+                binary.write_text("")
+            with mock.patch.object(speed_ab, "compare", fake_compare), \
+                    mock.patch.object(speed_ab, "knows_site_bench",
+                                      lambda binary: True), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+                code = speed_ab.main(["--baseline", str(binaries[0]),
+                                      "--candidate", str(binaries[1]),
+                                      "--budget", "8"])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(asked, ["screen", "site"])
+        self.assertIn("site workload (advisory", out.getvalue())
+        self.assertIn("+200.00%", out.getvalue())
+
+    def test_a_base_commit_without_the_command_is_said_not_guessed(self):
+        with mock.patch.object(speed_ab, "knows_site_bench", lambda binary: False):
+            lines = speed_ab.site_advisory(Path("/x/a"), Path("/x/b"))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("predates", lines[0])
+
+    def test_a_failed_site_run_is_a_sentence_not_a_failed_job(self):
+        def broken(*args, **kwargs):
+            raise SystemExit("/x/b exited 101 on seed 7")
+
+        with mock.patch.object(speed_ab, "knows_site_bench", lambda binary: True), \
+                mock.patch.object(speed_ab, "compare", broken):
+            lines = speed_ab.site_advisory(Path("/x/a"), Path("/x/b"))
+        self.assertIn("exited 101", lines[0])
+
+    def test_a_site_reading_is_not_written_into_the_screens_ledger(self):
+        with self.assertRaises(SystemExit) as refused:
+            speed_ab.main(["--baseline", "/x/a", "--candidate", "/x/b",
+                           "--workload", "site", "--record-ledger",
+                           "--ledger-machine", "here"])
+        self.assertIn("ledger holds the screen's shape", str(refused.exception))
 
 
 if __name__ == "__main__":

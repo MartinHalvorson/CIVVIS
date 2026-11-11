@@ -53,6 +53,8 @@ impl AdvancedAi {
     /// The Holy Site city whose Shrine the race wants now: one at a time, the
     /// city that produces most among those with a site and no Shrine.
     pub(super) fn race_shrine_city(&self, g: &Game, pid: usize) -> Option<u32> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.race_points_wanted(g, pid) {
             return None;
         }

@@ -13,6 +13,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || !(self.research_building_catchup
                 || self.research_building_catchup_2
