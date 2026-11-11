@@ -3,7 +3,7 @@
 // Includes frame/state/reasoning work; excludes module startup and UI drawing.
 // Used by site_wasm_pair.py; importing this file never starts a game.
 // Complete browser-engine game, reasoning cursor and every-frame/save parity.
-import {readFileSync, writeFileSync} from 'node:fs';
+import {readFileSync, writeFileSync, realpathSync} from 'node:fs';
 import {performance} from 'node:perf_hooks';
 import {createHash} from 'node:crypto';
 
@@ -128,6 +128,14 @@ writeFileSync(report+'.trace.jsonl',trace.join('\n')+'\n');
 console.log(JSON.stringify({harnessVersion:7,path,seed,roster,settings,wallMs,requestWallMs:requests,traceWallMs,cpuMs:(cpu.user+cpu.system)/1000,frames:count,turn:state.turn,finished:state.finished,winner:state.winner,victoryType:state.victory_type,traceHash:digest.digest('hex'),saveHash:hashSave(saveText),moduleSha256,memoryBytes:engine.memory.buffer.byteLength}));
 
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+if (isEntryPoint()) {
   await playGame(...process.argv.slice(2));
 }

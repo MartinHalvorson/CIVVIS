@@ -448,6 +448,95 @@ fn a_soft_capital_opens_the_reservation_at_two_cities() {
     assert!(!AdvancedAi::first_capital_is_soft(&game, capital));
 }
 
+/// [`opened`] with seat 1's capital twelve tiles east instead of eighteen.
+fn opened_next_door() -> (Game, AdvancedAi, u32) {
+    let mut game = board(&[(6, 12), (18, 12), (6, 24)]);
+    meet_and_explore(&mut game, 1);
+    meet(&mut game, 2);
+    let walled = capital_of(&game, 2);
+    set_walls(&mut game, walled, 300);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let capital = capital_of(&game, 1);
+    let opening = ai.conquest_opening.as_ref().expect("the opening stands");
+    assert_eq!((opening.target, opening.city), (1, capital));
+    (game, ai, capital)
+}
+
+/// The live Pasargadae shape: an unwalled capital twelve tiles away reading
+/// 13. The reservation opens with our one city, the latch outlives a
+/// garrison that walks in, and the strike does not wait for a second city.
+#[test]
+fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
+    let (mut game, mut ai, capital) = opened_next_door();
+    let home = capital_of(&game, 0);
+    let counts = EmpireCounts::default();
+    set_strength(&mut game, capital, 13.0);
+    assert!(AdvancedAi::first_capital_is_bare(&game, 0, capital));
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.first_capital_bare, Some(capital));
+    assert_eq!(
+        ai.conquest_first_settler_cities(),
+        FIRST_CAPITAL_BARE_CITIES
+    );
+    assert!(
+        ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false),
+        "the force comes before the first Settler"
+    );
+    assert!(ai
+        .conquest_opening
+        .as_ref()
+        .unwrap()
+        .preparing_since
+        .is_some());
+
+    // Three Warriors at the rally, the owner at half our power: one city is
+    // no reason to hold, and the go stands.
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "warrior", rally, 1, 3);
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let ours = game.military_power(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 0.5 * ours);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+
+    // A garrison walks in: 28 is still soft, and the latch holds.
+    set_strength(&mut game, capital, 28.0);
+    assert!(!AdvancedAi::first_capital_is_bare(&game, 0, capital));
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.first_capital_bare, Some(capital));
+    assert!(ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
+
+    // Hardened past soft: the latch drops and the shipped three return.
+    set_strength(&mut game, capital, 38.0);
+    game.turn += 1;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.first_capital_bare, None);
+    assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
+    assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 2, false));
+
+    // The edges: 21 is not bare, nor is any wall, nor fifteen tiles.
+    let mut game = board(&[(6, 12), (18, 12), (21, 20)]);
+    let near = capital_of(&game, 1);
+    set_strength(&mut game, near, 20.0);
+    assert!(AdvancedAi::first_capital_is_bare(&game, 0, near));
+    set_strength(&mut game, near, 21.0);
+    assert!(!AdvancedAi::first_capital_is_bare(&game, 0, near));
+    set_strength(&mut game, near, 13.0);
+    set_walls(&mut game, near, 100);
+    assert!(!AdvancedAi::first_capital_is_bare(&game, 0, near));
+    let far = capital_of(&game, 2);
+    set_strength(&mut game, far, 13.0);
+    assert!(
+        game.wdist((6, 12), (21, 20)) > FIRST_CAPITAL_BARE_REACH,
+        "the third capital stands past the bare reach"
+    );
+    assert!(!AdvancedAi::first_capital_is_bare(&game, 0, far));
+}
+
 // ------------------------------------------------- 4. the deadline's grace
 
 fn at_the_deadline(game: &mut Game, ai: &AdvancedAi) {
@@ -523,6 +612,9 @@ fn the_deadline_extends_a_covered_bill_and_nothing_else() {
 fn the_constants_are_the_ones_the_design_states() {
     assert_eq!(FIRST_CAPITAL_SOFT_STRENGTH, 30.0);
     assert_eq!(FIRST_CAPITAL_SOFT_SETTLER_CITIES, 2);
+    assert_eq!(FIRST_CAPITAL_BARE_CITIES, 1);
+    assert!((FIRST_CAPITAL_BARE_STRENGTH - 20.0).abs() < 1e-9);
+    assert_eq!(FIRST_CAPITAL_BARE_REACH, 14);
     assert_eq!(CAMPAIGN_MIN_BODIES, 3);
 }
 

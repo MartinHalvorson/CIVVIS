@@ -76,17 +76,46 @@ impl Game {
         if self.formation_zoc_stopped(uid) {
             return true;
         }
-        let action_locked = |id: u32| {
-            self.units.get(&id).is_some_and(|unit| {
-                unit.started_turn_in_zoc
-                    && unit.acted
-                    && !unit.moved
-                    && !self.unit_ignores_zoc(id)
-                    && self.in_enemy_zoc_for(id, unit.pos)
-            })
+        self.action_locked_by_zoc(uid)
+            || (self.is_linked_leader(uid)
+                && self.units[&uid]
+                    .linked_to
+                    .is_some_and(|peer| self.action_locked_by_zoc(peer)))
+    }
+
+    /// The half of [`Self::formation_movement_locked_by_zoc`] one unit can
+    /// answer for itself: it began the turn in a zone of control, has acted
+    /// there without moving, and is still inside one.
+    fn action_locked_by_zoc(&self, id: u32) -> bool {
+        self.units.get(&id).is_some_and(|unit| {
+            unit.started_turn_in_zoc
+                && unit.acted
+                && !unit.moved
+                && !self.unit_ignores_zoc(id)
+                && self.in_enemy_zoc_for(id, unit.pos)
+        })
+    }
+
+    /// [`Self::formation_movement_locked_by_zoc`] as it will read when this
+    /// unit's own next turn begins: with `uid`'s own `zoc_stopped`,
+    /// `started_turn_in_zoc`, `acted` and `moved` all cleared, and nothing
+    /// else changed.
+    ///
+    /// Those four are everything a turn's start resets that the lock reads
+    /// off the unit itself, so with them cleared the unit's own two terms are
+    /// false and what is left is its linked peer's, read as the peer stands.
+    /// This is the lock a caller used to learn by writing those four fields
+    /// on a copy of the game and asking the ordinary question; see
+    /// [`Game::approach_arrivals_on_a_fresh_turn`].
+    pub(super) fn formation_movement_locked_on_a_fresh_turn(&self, uid: u32) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return true;
         };
-        action_locked(uid)
-            || (self.is_linked_leader(uid) && self.units[&uid].linked_to.is_some_and(action_locked))
+        self.is_linked_leader(uid)
+            && unit.linked_to.is_some_and(|peer| {
+                self.units.get(&peer).is_some_and(|peer| peer.zoc_stopped)
+                    || self.action_locked_by_zoc(peer)
+            })
     }
 
     /// Which units of a formation a tile has to be tested against, decided

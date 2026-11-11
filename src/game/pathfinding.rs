@@ -995,6 +995,47 @@ impl Game {
         if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
             return Vec::new();
         }
+        self.approach_arrivals_with(uid, start, moves)
+    }
+
+    /// [`Self::approach_arrivals`] for the turn this unit has not begun yet:
+    /// from where it stands, with its full movement and no memory of the
+    /// zone of control it ended its last turn in.
+    ///
+    /// ★★★ THE BOARD IS READ, NOT REWRITTEN. The one caller that wants this
+    /// (`strike_reach_of`, an enemy's reach on its next turn) used to get it
+    /// by taking a copy of the whole game, writing `moves_left`, `moved`,
+    /// `acted`, `zoc_stopped` and `started_turn_in_zoc` on the unit, asking
+    /// `approach_arrivals`, and writing them back — a copy of the game for
+    /// every table of reaches it rebuilt, and no query scope could span two
+    /// enemies because the board was being written between them.
+    ///
+    /// Exact because those five fields have exactly two readers on this
+    /// path. `moves_left` is read by the line above that seeds the flood, and
+    /// here the seed is `unit_max_moves`, the value that was written. The
+    /// other four are read only by `formation_movement_locked_by_zoc`
+    /// (`zone_of_control.rs`), and `formation_movement_locked_on_a_fresh_turn`
+    /// is that function with them cleared. The flood itself is given its
+    /// start and its movement and asks the unit for nothing a turn changes:
+    /// `relax_movement_into`, `can_pass_neighbor`, `unit_step_cost`,
+    /// `capped_moves_at`, `enters_enemy_zoc` and `can_stop` read its kind,
+    /// owner, place, formation and link. `strike_reach_tests` holds the two
+    /// routes equal over every military unit of a played game, with the
+    /// flags set every way round.
+    pub(crate) fn approach_arrivals_on_a_fresh_turn(&self, uid: u32) -> Vec<(Pos, f64)> {
+        let Some(unit) = self.units.get(&uid) else {
+            return Vec::new();
+        };
+        let (start, moves) = (unit.pos, self.unit_max_moves(uid));
+        if moves <= 0.0 || self.formation_movement_locked_on_a_fresh_turn(uid) {
+            return Vec::new();
+        }
+        self.approach_arrivals_with(uid, start, moves)
+    }
+
+    /// The flood both of the above run, once each has settled where the unit
+    /// starts and with how much movement.
+    fn approach_arrivals_with(&self, uid: u32, start: Pos, moves: f64) -> Vec<(Pos, f64)> {
         let _memo = self.query_memo();
         let mut arrivals: Vec<(Pos, (f64, bool))> = Vec::new();
         self.relax_movement_into(
