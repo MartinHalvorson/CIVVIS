@@ -5138,11 +5138,19 @@ pub struct AdvancedAi {
     apostle_evangelizes_unspent: bool,
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
+    /// `band-bank-bars-people-under-fire`: a city under fire opens the Rock
+    /// Band bank to the defence only, not to Great People. See
+    /// `advanced/culture_band_bank.rs`. Off by default.
+    band_bank_bars_people_under_fire: bool,
     /// `battle-solver`: play every local fight forward and choose the turn
     /// by how the battle ends. See `advanced/battle_solver.rs`.
     battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -6867,6 +6875,17 @@ pub struct AdvancedAi {
     /// government ladder and the culture list. See
     /// `advanced/cold_war_then_heritage.rs`. Opt-in.
     cold_war_then_heritage: bool,
+    /// `culture-faith-site-per-theater-3`: versions one and two without their
+    /// caps (a Holy Site in every Theater city, sources open to forty Faith a
+    /// city), a Theater city's last free specialty district slot kept for its
+    /// Holy Site, and Astrology ahead of the production technologies. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater_3: bool,
+    /// `culture-seat-monuments-2`: version one, and a war holds the Monument
+    /// claim only for a city that is itself threatened, while a near-done
+    /// Monument goes before the city's other heads. See
+    /// `advanced/culture_monuments.rs`. Opt-in.
+    culture_seat_monuments_2: bool,
     /// `denial-spies-fill-every-slot`: a Culture or Domination seat trains a
     /// Spy for every free slot from its first slot, side by side, in the
     /// cities that finish one soonest. See
@@ -7618,6 +7637,15 @@ pub struct AdvancedAi {
     /// and an escort may shoot one. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     every_shooter_at_the_walls: bool,
+    /// `faith-strike-spares-the-stages`: a Culture seat holds the heretic
+    /// strike once Cold War is known or its band bank is open, and ends a
+    /// strike war then as soon as the host signs. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_spares_the_stages: bool,
+    /// `faith-strike-fears-the-tech-lead`: a Culture seat strikes no rival
+    /// that leads it by 10 or more techs. See `advanced/faith_strike.rs`.
+    /// Opt-in.
+    faith_strike_fears_the_tech_lead: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9980,6 +10008,14 @@ pub struct AdvancedAi {
     /// the kill plan, the ladder and the city strike. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     siege_at_the_walls_dies_first: bool,
+    /// `settler-stall-counts-turns`: `SETTLER_STALL_LIMIT` counts a Settler's
+    /// stall at most once per game turn, and not on a turn it got closer. See
+    /// `advanced/settler_stall_counts_turns.rs`. Off by default.
+    settler_stall_counts_turns: bool,
+    /// `settler-stall-counts-turns`: the last game turn already spoken for
+    /// (a stall counted, or progress made), keyed by the Settler's stable
+    /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
+    settler_stall_turn: BTreeMap<i64, u32>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -10372,6 +10408,11 @@ pub struct AdvancedAi {
     /// friendship. See `advanced/tribute_buys_the_friendship.rs`. Off by
     /// default.
     tribute_buys_the_friendship: bool,
+    /// `unique-unit-closes-the-dark-age`: a seat one to four Era Score short
+    /// of a Normal Age researches and trains or buys its first unique unit
+    /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
+    /// Opt-in.
+    unique_unit_closes_the_dark_age: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11132,6 +11173,7 @@ mod battle_solver;
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod guru_walks_to_the_wounded;
+mod unique_unit_closes_the_age;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -11351,6 +11393,9 @@ mod aqueduct_claims_the_capped_queue;
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
+/// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest a
+/// stage it can play. See `advanced/band_buys_near_the_stage.rs`.
+mod band_buys_near_the_stage;
 mod band_hunt;
 /// `band-plays-its-stage`: a Rock Band's promotion is priced by the stages its
 /// survival depends on. See `advanced/band_plays_its_stage.rs`.
@@ -11627,6 +11672,9 @@ mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
+/// A Settler's stall limit counts game turns, not decision frames. One
+/// opt-in gene; see `advanced/settler_stall_counts_turns.rs`.
+mod settler_stall_counts_turns;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
@@ -12022,6 +12070,7 @@ impl AdvancedAi {
         self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.settler_stall_turn.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();
@@ -16882,8 +16931,9 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
-            // See `advanced/culture_band_bank.rs`.
-            + self.culture_band_bank(g, pid)
+            // See `advanced/culture_band_bank.rs` (and
+            // `band-bank-bars-people-under-fire` there).
+            + self.culture_band_bank_for_people(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
@@ -18389,7 +18439,13 @@ impl AdvancedAi {
                 return;
             }
         }
-        for city in g.player_city_ids(pid) {
+        // `band-buys-near-the-stage`: see `advanced/band_buys_near_the_stage.rs`.
+        let band_cities = if self.band_buys_near_the_stage {
+            self.band_purchase_cities(g, pid)
+        } else {
+            g.player_city_ids(pid)
+        };
+        for city in band_cities {
             // Same correction as the religious units above: the shipped rules
             // cost is the Standard-speed rate, and a Rock Band's price also
             // climbs 100 per band this player has already bought. Reading the
@@ -21212,6 +21268,9 @@ impl AdvancedAi {
         // this board before anything is placed. Nothing happens while the gene
         // is off. See `advanced/district_planning.rs`.
         preview.snapshot_bulldoze_sites(&board, pid);
+        // `culture-faith-site-per-theater-3`: the hint keeps the same slot for
+        // the Holy Site as the main path; the board is thrown away after.
+        let _ = preview.culture_faith_hold_the_slots(&mut board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -26204,6 +26263,11 @@ impl AdvancedAi {
         // slot from every production writer below, released before the
         // defence handoff. Nothing is held with the gene off.
         let held_field_slot = self.surge_hold_field_slot(g, pid);
+        // `culture-faith-site-per-theater-3`: a Theater city's last free
+        // district slot waits for its Holy Site through the same pass,
+        // released just before the field slot. Nothing is held with the gene
+        // off. See `advanced/culture_faith_sources.rs`.
+        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
@@ -26517,6 +26581,7 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
+        Self::culture_faith_release_the_slots(g, held_faith_slots);
         Self::surge_release_field_slot(g, held_field_slot);
         // `religion-seat-first-shrine`: the founder's first Shrine, after every
         // ordinary writer so none of them takes the head back, and before the
@@ -26531,6 +26596,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `unique-unit-closes-the-dark-age`: the first unique unit before
+        // the era closes, when it turns a Dark Age Normal. Exact no-op while
+        // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
+        self.claim_unique_unit_for_the_age(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);

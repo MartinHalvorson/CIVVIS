@@ -1,0 +1,19 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "faith-strike-spares-the-stages",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Eight boards from seven live Deity Online Culture-lane games of 2026-11-10, each a turn on which the live seat declared a heretic strike (faith-strike-wipes-the-spreaders), cut at that turn's first state frame. Both arms run one frozen civvis_orders --resumed built from this branch (97af476238) with the run's own requested genome (summary.json forced; why.log's first-line forced list for 220038Z, whose summary is partial); the on arm adds --with faith-strike-spares-the-stages. Every off arm reproduces the live strike (a war order and 2-4 CONDEMN_HERETIC orders). On the three band-phase boards (232642Z t127 India, Cold War known; 220038Z t133 France and 204138Z t130 Egypt, band bank open from Nationalism t128) the on arm holds the strike: no war order, no condemnation, and the journal reads 'Holding the heretic strike on X | faith-strike-spares-the-stages'. Four strikes before Nationalism (192354Z t115, 171451Z t106, 212836Z t121, 232642Z t87) are unchanged. 173750Z t105 Portugal is also held: its band bank was open (Nationalism known at t101), which the gene's rule covers by design.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-faith-strike-spares-the-stages.native-queries.tar.xz",
+    "sha256": "2ae1077a08c728b977e8dfb69985dde29ecc9caadc9377c42d94dd7fd056d817"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json"
+  ]
+}
