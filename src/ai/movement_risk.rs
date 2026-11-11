@@ -75,13 +75,22 @@ impl BasicAi {
                     return Arc::clone(reach);
                 }
             }
-            let mut probe = None;
             // Keep other seats' entries through the round; camping enemies
             // often have unchanged reach next turn too. Bound retained worlds
             // when a worker is reused for successive simulations.
             if cache.enemies.len() > 1024 {
                 cache.enemies.clear();
             }
+            // ★★★ ONE QUERY SCOPE FOR THE TABLE, AND NO COPY OF THE GAME. A
+            // strike reach used to need a board it could write to, so the
+            // first enemy this table had to recompute cost a copy of the
+            // whole game, and each enemy's flood then opened a query scope of
+            // its own on that copy because the board was written between
+            // them. `strike_reach_of` reads the board now: the floods run on
+            // `g`, under one scope, and share what a scope keeps (the air
+            // patrols, passage and traversal tables a flood asks for once per
+            // neighbour of every tile it expands).
+            let _memo = g.query_memo();
             let mut envelopes = Vec::new();
             for unit in g.units.values() {
                 let spec = &g.rules.units[unit.kind];
@@ -108,11 +117,7 @@ impl BasicAi {
                 } else {
                     let mut targets: Vec<_> =
                         raw.map_or_else(Vec::new, |old| old.iter().copied().collect());
-                    targets.extend(super::advanced::movement_strike_reach(
-                        probe.get_or_insert_with(|| g.speculative_clone()),
-                        pid,
-                        unit.id,
-                    ));
+                    targets.extend(super::advanced::movement_strike_reach(g, pid, unit.id));
                     targets.sort_unstable();
                     targets.dedup();
                     Arc::new(EnvelopeReach::from_tiles(targets))
