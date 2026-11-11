@@ -1036,6 +1036,31 @@ impl AdvancedAi {
         true
     }
 
+    /// `city-state-before-the-first-capital`: whether `cid`, a city of ours
+    /// that is not the capital, trains the stone's reserved bodies as well:
+    /// while the stone stands, any city within the purchase reach of the
+    /// rally ([`STONE_BREAKER_PURCHASE_REACH`]). `false` with the gene off
+    /// and with no stone.
+    ///
+    /// The shipped reservation is the capital's alone. Live Deity Gran
+    /// Colombia `civvis-20261111T184206Z` named Antananarivo at turn 11; the
+    /// capital finished a Settler (16), the Ram (23) and seven Warriors, one
+    /// every two turns, and the force stood at the rally at turn 39. Its
+    /// second city, at 3 to 7 Production a turn against the capital's ten,
+    /// trained a Builder, a Monument, a Scout, a Settler and an Archer over
+    /// those turns. A city-state's centre gains about a point a turn from
+    /// turn 30, so the turns are what the strike is short of.
+    pub(super) fn city_state_stone_trains_in(&self, g: &Game, cid: u32) -> bool {
+        if !self.city_state_stone_stands() {
+            return false;
+        }
+        let (Some(opening), Some(city)) = (self.conquest_opening.as_ref(), g.cities.get(&cid))
+        else {
+            return false;
+        };
+        g.wdist(city.pos, opening.rally) <= STONE_BREAKER_PURCHASE_REACH
+    }
+
     /// The stone's commit clock floor: its own naming deadline (50 on
     /// Online), under the shipped approach grace. Zero with no stone.
     pub(super) fn city_state_stone_commit_floor(&self, g: &Game) -> u32 {
