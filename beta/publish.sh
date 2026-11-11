@@ -66,7 +66,8 @@ echo "==> building the engine for wasm32 from $short"
   cd "$source_tree"
   CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="" \
     cargo rustc --lib \
-    --target wasm32-unknown-unknown --release --crate-type cdylib
+    --target wasm32-unknown-unknown --release --crate-type cdylib \
+    -- -Ctarget-feature=+simd128
 )
 
 raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
