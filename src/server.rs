@@ -470,6 +470,27 @@ fn host_memory_percent() -> Option<f64> {
     None
 }
 
+/// What the page should print beside an action the played seat is offered,
+/// where the page cannot work it out from the ruleset it was sent.
+///
+/// A purchase is priced by modifiers only the engine holds. A repair and a
+/// corporation's product are orders the ruleset does not list at all: the page
+/// looked each up, found nothing, and the city could not be opened for as long
+/// as one was on offer, which is to say whenever a district had been pillaged.
+/// The quote is for printing; applying the action recomputes everything.
+pub(crate) fn offered_cost(game: &Game, action: &Action) -> Option<f64> {
+    match action {
+        Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. } => {
+            game.purchase_quote(0, action)
+        }
+        Action::Produce {
+            city,
+            item: item @ (crate::game::Item::Repair { .. } | crate::game::Item::Product { .. }),
+        } => Some(game.item_cost_for_city(0, *city, item)),
+        _ => None,
+    }
+}
+
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_PALETTE_JS: &str = include_str!("../web/assets/app_palette.js");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
@@ -2832,11 +2853,7 @@ impl Session {
         let mut offered = serde_json::to_value(&legal).unwrap();
         if let Some(rows) = offered.as_array_mut() {
             for (row, action) in rows.iter_mut().zip(&legal) {
-                let purchase = matches!(
-                    action,
-                    Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. }
-                );
-                if let Some(cost) = self.game.purchase_quote(0, action).filter(|_| purchase) {
+                if let Some(cost) = offered_cost(&self.game, action) {
                     row["cost"] = json!(cost);
                 }
             }

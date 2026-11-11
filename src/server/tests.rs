@@ -233,6 +233,90 @@ fn a_players_own_city_plates_count_the_turns() {
     assert_eq!(plate.matches("bannerTurns(").count(), 2);
 }
 
+/// The engine offers two orders the ruleset has no row for: mending what was
+/// pillaged (`Item::Repair`) and a corporation's product (`Item::Product`).
+/// The page looked each up in the ruleset, found nothing, and threw, so a
+/// city could not be opened for as long as one was on offer: after any
+/// pillage, the one city that most needed an order could not be given one.
+#[test]
+fn a_repair_or_a_product_is_an_order_the_page_can_show() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let (city, pos) = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| (city.id, city.pos))
+        .expect("the city just founded");
+
+    // The engine quotes what the ruleset cannot: a quarter of what is mended,
+    // and a product's flat price, each at this game's speed.
+    let repair = Action::Produce {
+        city,
+        item: crate::game::Item::Repair {
+            repair: crate::name::Name::new("monument"),
+            pos,
+        },
+    };
+    let quoted = offered_cost(&session.game, &repair).expect("a repair is quoted");
+    assert!(quoted > 0.0);
+    let monument = session
+        .game
+        .rules
+        .buildings
+        .get("monument")
+        .expect("the ruleset's monument")
+        .cost;
+    assert!(quoted < monument);
+    let product = Action::Produce {
+        city,
+        item: crate::game::Item::Product {
+            product: crate::name::Name::new("silk"),
+        },
+    };
+    assert!(offered_cost(&session.game, &product).is_some_and(|cost| cost > 0.0));
+    // An order the ruleset lists is left to the page, as before.
+    let warrior = Action::Produce {
+        city,
+        item: crate::game::Item::Unit {
+            unit: crate::name::Name::new("warrior"),
+        },
+    };
+    assert!(offered_cost(&session.game, &warrior).is_none());
+
+    // The page names, files, prices and describes both without the ruleset.
+    for taught in [
+        "if (item.repair) return \"Repairs\";",
+        "if (item.product) return \"Projects\";",
+        ": item.repair ? `repair:${item.repair}:${item.pos}`",
+        "if (it.repair) return `repair ${repairedThing(it)}`;",
+        "if (it.product) return `${it.product} product`;",
+        "const standard = it.repair ? (mended ? mended.cost * .25 : NaN)",
+        "if (!Number.isFinite(cost)) return Infinity;",
+        "if (item.repair) return \"Pillaged. It pays nothing until it is mended.\";",
+        "const order = [\"Repairs\", \"Districts\", \"Buildings\", \"Wonders\", \"Units\", \"Projects\"];",
+    ] {
+        assert!(EMBEDDED_APP_JS.contains(taught), "{taught}");
+    }
+    // No reader of an Item reaches into the ruleset for a name it may not hold.
+    assert!(!EMBEDDED_APP_JS.contains("else standard = RULES.districts[it.district].cost;"));
+}
+
 #[test]
 fn a_unit_is_offered_only_the_orders_it_can_carry_out() {
     // A Builder was offered Alert, Heal and Explore, and a unit at full
@@ -13927,7 +14011,7 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
         .find("city-group-head\">Producing")
         .expect("the producing group");
     let categories = build
-        .find("const order = [\"Districts\", \"Buildings\", \"Wonders\", \"Units\", \"Projects\"];")
+        .find("const order = [\"Repairs\", \"Districts\", \"Buildings\", \"Wonders\", \"Units\", \"Projects\"];")
         .or_else(|| build.find("for (const category of order) {"))
         .expect("the production categories");
     let plots = build
@@ -15883,7 +15967,7 @@ fn a_purchase_row_prints_the_price_it_was_quoted() {
     assert!(EMBEDDED_APP_JS.contains("cost: price === undefined ? `<b>Buy</b>`"));
     assert!(EMBEDDED_APP_JS
         .contains(": `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,"));
-    assert!(EMBEDDED_APP_JS.contains("group.sort((a, b) => priced(a) - priced(b));"));
+    assert!(EMBEDDED_APP_JS.contains("group.sort((a, b) => ranked(a) === ranked(b) ? 0 : ranked(a) - ranked(b));"));
     assert!(EMBEDDED_APP_JS.contains(
         "`${purchasing ? \"Purchase\" : current ? \"Change production\" : \"Choose production\"}</div>` +"
     ));
