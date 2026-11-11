@@ -379,6 +379,9 @@ impl AdvancedAi {
             // `None` with the gene off.
             let stone_research_goal = self.city_state_stone_research_goal(g, pid);
             let stone_breaker_goal = self.city_state_stone_breaker_research_goal(g, pid);
+            // `research-follows-the-first-capital`: the same army's research
+            // survives a stepping stone's release when a major capital is named.
+            let first_capital_army_goal = self.first_capital_army_research_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -481,6 +484,7 @@ impl AdvancedAi {
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
                 _ if stone_research_goal.is_some() => stone_research_goal.as_deref(),
+                _ if first_capital_army_goal.is_some() => first_capital_army_goal.as_deref(),
                 // `diplo-match-point-beelines-the-points`: from match point the
                 // last points in the tree, whatever the plan reads, ahead of
                 // every war and lane arm below. Live Immortal
@@ -992,6 +996,8 @@ impl AdvancedAi {
                                         None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
                                     }
                                 }
+                            } else if first_capital_army_goal.as_deref() == Some(goal) {
+                                format!("research-follows-the-first-capital: the {step} step toward {}, keeping the named capital's breaker and unique melee line ahead of the economic beeline", plain(goal))
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to catch a nearby barbarian army",
