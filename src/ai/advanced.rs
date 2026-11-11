@@ -9288,6 +9288,10 @@ pub struct AdvancedAi {
     /// bridge's retry window is not spent on an offer the host never signs.
     /// See `advanced/unchosen_war_peace.rs`. Opt-in.
     peace_waits_for_the_host_minimum: bool,
+    /// `research-follows-the-first-capital`: keep the preparing first-capital
+    /// army's breaker and unique melee research after the stepping stone ends.
+    /// See `advanced/first_capital_research.rs`. Off by default.
+    research_follows_the_first_capital: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11787,6 +11791,9 @@ mod threatened_war_holds_the_claims;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `research-follows-the-first-capital`: carry the army's research into the
+/// named major-capital opening. See `advanced/first_capital_research.rs`.
+mod first_capital_research;
 /// `first-capital-strikes-the-open-window`: the first-capital opening keeps
 /// its window and strikes through it. One opt-in gene; see
 /// `advanced/first_capital_strikes_the_open_window.rs`.

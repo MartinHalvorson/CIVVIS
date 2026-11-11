@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "research-follows-the-first-capital",
+  "scope": "Development activation on persistent native history:163 original planning/order/protocol controls and163 matched consumer-read sequences. Named first-capital opening retains the unique melee research after the city-state phase ends; at25/frame0 OFF proposes Pottery and ON Bronze Working. Full warmup is essential. No host/counterfactual outcome, resource-access, unit-quality or win-rate claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-research-follows-the-first-capital.native-queries.tar.xz",
+    "sha256": "5be20db01ab4d24400c6029c7145f84d95bb64ea79e4cd5fec239ec0ec50e508"
+  },
+  "members": [
+    "persistent-t25-pair.json"
+  ]
+}

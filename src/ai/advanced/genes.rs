@@ -5841,6 +5841,8 @@ pub const GENES: &[Gene] = &[
     // bridge's five-turn retry lands the first ask on the first turn the host
     // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
     Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
+    // Opt-in; see `advanced/first_capital_research.rs`.
+    Gene { tag: "research-follows-the-first-capital", field: "research_follows_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_research_follows_the_first_capital, disable: AdvancedAi::disable_research_follows_the_first_capital },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
