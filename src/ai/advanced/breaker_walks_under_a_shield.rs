@@ -142,6 +142,8 @@ pub(super) struct BreakerShieldMemory {
     city_pos: Pos,
     /// The turn the hold was last journalled.
     hold_noted: Option<u32>,
+    /// The turn the declaration hold was last journalled.
+    declaration_noted: Option<u32>,
     /// The turn and number of strikes made beside the breaker.
     strikes: (u32, u32),
 }
@@ -174,9 +176,9 @@ impl AdvancedAi {
         })
     }
 
-    /// The opening's breaker: our Battering Ram or Siege Tower whose effect
-    /// works on the city's walls, nearest the city, then the lowest id.
-    fn scene_breaker(g: &Game, pid: usize, scene: &ShieldScene) -> Option<u32> {
+    /// Our Battering Rams and Siege Towers whose effect works on the city's
+    /// walls, off the water.
+    fn scene_breakers(g: &Game, pid: usize, scene: &ShieldScene) -> Vec<u32> {
         g.units
             .values()
             .filter(|unit| {
@@ -185,20 +187,39 @@ impl AdvancedAi {
                     && !g.is_embarked(unit)
                     && g.city_allows_siege_support(scene.city, unit.kind.as_str())
             })
-            .min_by_key(|unit| (g.wdist(unit.pos, scene.city_pos), unit.id))
             .map(|unit| unit.id)
+            .collect()
+    }
+
+    /// The opening's breaker: of [`Self::scene_breakers`], the one a shield
+    /// body carries, then the nearest the city, then the lowest id. Any
+    /// other is a spare (`spare_breaker_turn`).
+    fn scene_breaker(&self, g: &Game, pid: usize, scene: &ShieldScene) -> Option<u32> {
+        let breakers = Self::scene_breakers(g, pid, scene);
+        if breakers.len() <= 1 {
+            return breakers.first().copied();
+        }
+        let bodies = self.shield_bodies(g, pid);
+        breakers.into_iter().min_by_key(|id| {
+            (
+                Self::breaker_carrier(g, *id).is_none_or(|carrier| !bodies.contains(&carrier)),
+                g.wdist(g.units[id].pos, scene.city_pos),
+                *id,
+            )
+        })
     }
 
     /// The breaker this gene walks under a shield. `None` with the gene off.
     pub(super) fn shielded_breaker(&self, g: &Game, pid: usize) -> Option<u32> {
         let scene = self.shield_scene(g, pid)?;
-        Self::scene_breaker(g, pid, &scene)
+        self.scene_breaker(g, pid, &scene)
     }
 
-    /// `advanced_formations`: the opening's breaker links only to its
-    /// shield, in its own step. `false` with the gene off.
+    /// `advanced_formations`: the opening's breakers link only to a shield,
+    /// in their own step. `false` with the gene off.
     pub(super) fn breaker_waits_for_its_shield(&self, g: &Game, pid: usize, uid: u32) -> bool {
-        self.shielded_breaker(g, pid) == Some(uid)
+        self.shield_scene(g, pid)
+            .is_some_and(|scene| Self::scene_breakers(g, pid, &scene).contains(&uid))
     }
 
     /// The land soldier carrying `breaker` in a formation, if one is.
@@ -404,10 +425,13 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<bool> {
         let scene = self.shield_scene(g, pid)?;
-        let breaker = Self::scene_breaker(g, pid, &scene);
+        let breaker = self.scene_breaker(g, pid, &scene);
         if breaker == Some(uid) {
             // The breaker never walks alone, a home city threatened or not.
             return self.shielded_breaker_turn(g, pid, uid, &scene);
+        }
+        if Self::scene_breakers(g, pid, &scene).contains(&uid) {
+            return self.spare_breaker_turn(g, pid, uid);
         }
         // A home city under threat keeps its shipped first claim on the
         // bodies.
@@ -466,10 +490,29 @@ impl AdvancedAi {
             }
             return Some(true);
         }
-        if Self::breaker_carrier(g, uid).is_some() {
-            // Carried by a soldier that is no shield (a garrison, a guard):
-            // it rides there until a shield comes for it.
-            return Some(false);
+        if let Some(carrier) = Self::breaker_carrier(g, uid) {
+            // Carried by a soldier that is no shield (a garrison, a guard, an
+            // archer): at war it rides there until a shield comes for it;
+            // before the war it leaves the formation and stands, so the
+            // shield walking back for it is not chasing the carrier's orders.
+            if scene.declared || shield.is_none() {
+                return Some(false);
+            }
+            if g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_err() {
+                return Some(false);
+            }
+            self.force_groups_dirty = true;
+            if let Some(shield) = shield {
+                let kind = plain(unit.kind.as_str());
+                let carrier = plain(g.units[&carrier].kind.as_str());
+                let body = plain(g.units[&shield].kind.as_str());
+                think!(self.journal(), Military, Detail,
+                    "Breaker under a shield: the {kind} leaves the {carrier} for its shield";
+                    "the {body} is {} tiles off and walks back for it",
+                    g.wdist(g.units[&shield].pos, unit.pos);
+                    unit.pos);
+            }
+            return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         if unit.linked_to.is_some() {
             let _ = g.apply(pid, &Action::UnlinkUnits { unit: uid });
@@ -489,30 +532,62 @@ impl AdvancedAi {
                 here);
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
-        // Alone in the open: the tile in reach a soldier or a city of ours
-        // holds, nearest its shield (else our nearest city); else toward our
-        // nearest city.
+        let toward = shield.map(|shield| g.units[&shield].pos);
+        Some(self.breaker_to_cover(g, pid, uid, toward))
+    }
+
+    /// A breaker alone in the open: to the tile in its reach a soldier or a
+    /// city of ours holds, nearest `toward` (else our nearest city); else a
+    /// step toward our nearest city. Whether it moved.
+    fn breaker_to_cover(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        toward: Option<Pos>,
+    ) -> bool {
+        let Some(here) = g.units.get(&uid).map(|unit| unit.pos) else {
+            return false;
+        };
         let home = g
             .player_city_ids(pid)
             .into_iter()
             .map(|cid| g.cities[&cid].pos)
             .min_by_key(|pos| (g.wdist(here, *pos), *pos));
-        let toward = shield.map(|shield| g.units[&shield].pos).or(home)?;
-        if let Some(to) = reach
-            .iter()
-            .copied()
+        let Some(toward) = toward.or(home) else {
+            return false;
+        };
+        if let Some(to) = g
+            .reachable(uid)
+            .into_iter()
             .filter(|pos| Self::shield_safe_tile(g, pid, *pos, uid))
             .min_by_key(|pos| (g.wdist(*pos, toward), *pos))
         {
             if self.base.path_walk_to(g, pid, uid, to) {
-                return Some(true);
+                return true;
             }
         }
-        let home = home?;
-        let next = g
-            .route_step(uid, home, 0)
-            .filter(|next| g.can_move(uid, *next))?;
-        Some(self.base.tactical_apply_move(g, pid, uid, next))
+        let Some(next) = home
+            .and_then(|home| g.route_step(uid, home, 0))
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return false;
+        };
+        self.base.tactical_apply_move(g, pid, uid, next)
+    }
+
+    /// Any other breaker of ours while the opening stands walks nowhere
+    /// alone: it rides with whatever soldier carries it, waits under a
+    /// soldier or in a city of ours, else steps under cover.
+    fn spare_breaker_turn(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        let here = g.units.get(&uid)?.pos;
+        if Self::breaker_carrier(g, uid).is_some() {
+            return Some(false);
+        }
+        if Self::shield_safe_tile(g, pid, here, uid) {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        Some(self.breaker_to_cover(g, pid, uid, None))
     }
 
     /// Items 1 and 2, the shield: walk back for an uncarried breaker, and at
@@ -772,6 +847,59 @@ impl AdvancedAi {
         self.shield_close_in(g, pid, uid, shield, scene)
     }
 
+    /// `conquest_declaration`: the opening does not declare into standing
+    /// walls before its breaker stands with its shield within
+    /// `CONQUEST_ASSEMBLY_RADIUS` of the rally. Live 072641Z declared on
+    /// Auckland at t36 with the Ram 10 tiles back at Pella, and the replay's
+    /// shield then spent the whole patience window walking it in. A missing
+    /// breaker is the shipped rules' to judge (`false`), as is everything with
+    /// the gene off.
+    pub(super) fn breaker_holds_the_declaration(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        opening: &super::early_conquest::ConquestOpening,
+    ) -> bool {
+        let Some(scene) = self.shield_scene(g, pid) else {
+            return false;
+        };
+        let Some(city) = g.cities.get(&scene.city) else {
+            return false;
+        };
+        let (walls, max) = (city.wall_hp, g.city_max_wall_hp(city));
+        if walls <= 0 || max <= 0 {
+            return false;
+        }
+        let Some(breaker) = self.scene_breaker(g, pid, &scene) else {
+            return false;
+        };
+        let at = g.units[&breaker].pos;
+        let shielded = self
+            .breaker_shield(g, pid, breaker)
+            .is_some_and(|shield| g.units[&shield].pos == at);
+        let distance = g.wdist(at, opening.rally);
+        if shielded && distance <= super::early_conquest::CONQUEST_ASSEMBLY_RADIUS {
+            return false;
+        }
+        let noted = self
+            .breaker_shield_memory
+            .as_ref()
+            .is_some_and(|memory| memory.declaration_noted == Some(g.turn));
+        if !noted {
+            if let Some(memory) = self.breaker_shield_memory.as_mut() {
+                memory.declaration_noted = Some(g.turn);
+            }
+            let kind = plain(g.units[&breaker].kind.as_str());
+            let name = city.name.clone();
+            think!(self.journal(), Military, Decision,
+                "Breaker under a shield: the declaration on {name} waits for the ram";
+                "the {kind} stands {distance} tiles from the rally{}; walls {walls}/{max}, and a melee blow without it beside the city lands 15% on them",
+                if shielded { " with its shield" } else { " with no shield yet" };
+                at);
+        }
+        true
+    }
+
     /// The army before the walls at war: the opening's force, and any other
     /// land body of the field army within [`ASSAULT_JOIN_RADIUS`] of the city
     /// that is no civilian's guard and stands in no city of ours. Live
@@ -1014,9 +1142,34 @@ impl AdvancedAi {
     /// `advanced_units`, after the unit loop: where the breaker and its shield
     /// end our turn, and this turn's strikes beside the ram. Nothing with the
     /// gene off.
-    pub(super) fn breaker_shield_note(&mut self, g: &Game, pid: usize) {
+    pub(super) fn breaker_shield_note(&mut self, g: &mut Game, pid: usize) {
         if !self.breaker_walks_under_a_shield {
             return;
+        }
+        // No breaker ends our turn alone: one a later mover left behind
+        // steps back under cover with what movement it has.
+        if let Some(scene) = self.shield_scene(g, pid) {
+            let breaker = self.scene_breaker(g, pid, &scene);
+            for uid in Self::scene_breakers(g, pid, &scene) {
+                let Some(unit) = g.units.get(&uid) else {
+                    continue;
+                };
+                if unit.moves_left <= 0.0 || Self::shield_safe_tile(g, pid, unit.pos, uid) {
+                    continue;
+                }
+                let toward = breaker
+                    .filter(|breaker| *breaker == uid)
+                    .and_then(|breaker| self.breaker_shield(g, pid, breaker))
+                    .map(|shield| g.units[&shield].pos);
+                let from = unit.pos;
+                let kind = plain(unit.kind.as_str());
+                if self.breaker_to_cover(g, pid, uid, toward) {
+                    think!(self.journal(), Military, Detail,
+                        "Breaker under a shield: the {kind} steps back under cover";
+                        "the soldier it stood with at {from:?} moved on; it ends the turn beside a soldier or in a city of ours";
+                        from);
+                }
+            }
         }
         let previous = self.breaker_shield_memory.take();
         let strikes = previous
@@ -1027,7 +1180,7 @@ impl AdvancedAi {
         let Some(scene) = self.shield_scene(g, pid) else {
             return;
         };
-        let Some(breaker) = Self::scene_breaker(g, pid, &scene) else {
+        let Some(breaker) = self.scene_breaker(g, pid, &scene) else {
             return;
         };
         if strikes == 0 || g.wdist(g.units[&breaker].pos, scene.city_pos) > 1 {
@@ -1056,10 +1209,12 @@ impl AdvancedAi {
         previous: Option<BreakerShieldMemory>,
     ) -> Option<BreakerShieldMemory> {
         let scene = self.shield_scene(g, pid)?;
-        let breaker = Self::scene_breaker(g, pid, &scene)?;
+        let breaker = self.scene_breaker(g, pid, &scene)?;
         let shield = self.breaker_shield(g, pid, breaker);
-        let (hold_noted, strikes) =
-            previous.map_or((None, (0, 0)), |memory| (memory.hold_noted, memory.strikes));
+        let (hold_noted, declaration_noted, strikes) = previous
+            .map_or((None, None, (0, 0)), |memory| {
+                (memory.hold_noted, memory.declaration_noted, memory.strikes)
+            });
         Some(BreakerShieldMemory {
             breaker: Some(breaker),
             kind: g.units[&breaker].kind,
@@ -1068,6 +1223,7 @@ impl AdvancedAi {
             shield_kind: shield.map(|shield| g.units[&shield].kind),
             city_pos: scene.city_pos,
             hold_noted,
+            declaration_noted,
             strikes,
         })
     }

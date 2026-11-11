@@ -2248,6 +2248,12 @@ impl AdvancedAi {
                    "first capital before the walls: {why}");
             return false;
         }
+        // `breaker-walks-under-a-shield`: not into standing walls before the
+        // breaker stands at the rally with its shield. `false` with the gene
+        // off. See `advanced/breaker_walks_under_a_shield.rs`.
+        if self.breaker_holds_the_declaration(g, pid, &opening) {
+            return false;
+        }
         if !self.campaign_target_legal(g, pid, opening.target) {
             return false;
         }

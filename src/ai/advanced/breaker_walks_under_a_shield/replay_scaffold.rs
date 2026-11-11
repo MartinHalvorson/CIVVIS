@@ -22,7 +22,6 @@ const NEEDLES: &[&str] = &[
     "opening a conquest",
     "yields",
     "holding the conquest force",
-    "task force",
     "holding the capture",
 ];
 
@@ -420,7 +419,7 @@ fn play(job: &Job, genome: &[String]) -> String {
                 detail
             ));
             lines += 1;
-            if lines >= 160 {
+            if lines >= 220 {
                 break;
             }
         }

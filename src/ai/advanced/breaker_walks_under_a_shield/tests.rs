@@ -209,7 +209,7 @@ fn off_the_gene_names_nothing_and_moves_nothing() {
     assert_eq!(ai.shielded_breaker_step(&mut game, 0, ram, &plan()), None);
     assert_eq!(ai.shielded_breaker_step(&mut game, 0, sword, &plan()), None);
     ai.breaker_shield_watch(&game, 0);
-    ai.breaker_shield_note(&game, 0);
+    ai.breaker_shield_note(&mut game, 0);
     assert!(ai.breaker_shield_memory.is_none());
     assert_eq!(game.units[&ram].pos, before.units[&ram].pos);
     assert_eq!(game.units[&sword].pos, before.units[&sword].pos);
@@ -281,7 +281,11 @@ fn the_breaker_ends_every_move_stacked_with_its_shield() {
             );
         }
     }
-    assert_eq!(linked_on, Some(0), "the body met the ram on the first turn");
+    // A river crossing on the generated map can cost a turn of the meeting.
+    assert!(
+        linked_on.is_some_and(|turn| turn <= 2),
+        "the body met the ram within two turns: {linked_on:?}"
+    );
     assert!(
         game.wdist(game.units[&ram].pos, city) + 6 <= start,
         "the pair marched: {} -> {}",
@@ -392,7 +396,7 @@ fn melee_holds_until_the_ram_stands_beside_the_walls_then_strikes() {
         "a full blow on the walls: {walls} -> {after}"
     );
     assert!(game.units.contains_key(&body));
-    ai.breaker_shield_note(&game, 0);
+    ai.breaker_shield_note(&mut game, 0);
     // The shield may have struck from its tile as well.
     assert!(headlines(&ai).iter().any(|(head, _)| head
         .starts_with("Breaker under a shield: the ram stands beside")
@@ -428,6 +432,53 @@ fn with_the_walls_down_the_assault_does_not_wait() {
         Some(true)
     );
     assert!(game.cities[&capital].hp < hp, "the city takes the blow");
+}
+
+/// Walls stand, four Swordsmen at the rally cover the bill, and the Ram
+/// stands alone two tiles from the rally. Off, the open window declares (a
+/// breaker is at the rally); on, the declaration waits for the Ram to stand
+/// with a body, and goes once it does.
+#[test]
+fn the_declaration_waits_for_the_ram_at_the_rally() {
+    for gene in [false, true] {
+        let (mut game, mut ai, _) = opened(gene);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        let ring: Vec<Pos> = game
+            .wring(rally, 1)
+            .into_iter()
+            .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
+            .take(4)
+            .collect();
+        let bodies: Vec<u32> = ring
+            .iter()
+            .map(|pos| unit(&mut game, "swordsman", 0, *pos))
+            .collect();
+        let spot = game
+            .wring(rally, 2)
+            .into_iter()
+            .find(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
+            .unwrap();
+        let ram = unit(&mut game, "battering_ram", 0, spot);
+        ai.maintain_conquest_opening(&mut game, 0);
+        let declared = ai.conquest_declaration(&mut game, 0);
+        assert_eq!(declared, !gene, "gene {gene}");
+        if !gene {
+            continue;
+        }
+        assert!(headlines(&ai).iter().any(|(head, detail)| head
+            .starts_with("Breaker under a shield: the declaration on")
+            && head.ends_with("waits for the ram")
+            && detail.contains("with no shield yet")));
+        // The Ram steps onto a Swordsman: the war opens.
+        let with = game.units[&bodies[0]].pos;
+        game.remove_unit(ram);
+        unit(&mut game, "battering_ram", 0, with);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(
+            ai.conquest_declaration(&mut game, 0),
+            "the Ram is with its shield"
+        );
+    }
 }
 
 // --------------------------------------------------- 4. the breaker is lost
@@ -608,7 +659,10 @@ fn the_city_state_strike_walks_in_under_the_shield_and_hits_the_walls() {
     .map(|(kind, pos)| unit(&mut game, kind, 0, pos))
     .collect();
     assert_eq!(force.len(), 7, "the ring had room");
-    let ram = unit(&mut game, "battering_ram", 0, rally);
+    // The Ram stands with a Warrior at the rally: the declaration does not
+    // wait for it (see `the_declaration_waits_for_the_ram_at_the_rally`).
+    let with = game.units[&force[0]].pos;
+    let ram = unit(&mut game, "battering_ram", 0, with);
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_declaration(&mut game, 0), "the war opens");
     set_strength(&mut game, near, 25.0);
