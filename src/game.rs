@@ -2448,6 +2448,11 @@ struct RouteScratch {
     movement_seen: Vec<bool>,
     movement_score: Vec<f64>,
     movement_stopped: Vec<bool>,
+    /// The formation and board stay fixed throughout one movement flood.
+    /// An arrival can improve a tile repeatedly; its ZOC answer cannot.
+    /// Reset with `movement_touched` before the next flood, even for another
+    /// unit or after direct board edits between read-only queries.
+    movement_zoc: Vec<Option<bool>>,
 }
 
 impl Clone for RouteScratch {
@@ -13630,6 +13635,8 @@ mod approach_arrival_tests;
 
 #[cfg(test)]
 mod movement_rule_tests;
+#[cfg(test)]
+mod movement_zoc_memo_tests;
 
 #[cfg(test)]
 mod victory_conditions;
