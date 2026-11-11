@@ -2853,6 +2853,8 @@ const PUBLIC_STATS_KEYS: &[&str] = &[
     "suzerain_count",
     "nuclear_devices",
     "thermonuclear_devices",
+    "unit_count",
+    "military_unit_count",
 ];
 
 /// Every key a met rival's export may carry. `state_schema_gaps` reports

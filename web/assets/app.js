@@ -2139,7 +2139,11 @@ const PLAYER_HUD_COLUMNS = [
       // panel shows.
       ["tourism", "Tourism", worldStandingsInPlay],
       ["faith", "Faith", worldStandingsInPlay],
-      ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
+      // The unit count stands just before the military strength it is the
+      // other reading of: how many units a civilization fields, of every
+      // kind, where MIL weighs what the fighting ones are worth. An arena
+      // fields units too, so the column is a fact of every world.
+      ["gold", "Gold", worldStandingsInPlay], ["units", "Units"], ["military", "Military"],
       ["nukes", "Nuclear stockpile", worldStandingsInPlay],
       ["suzerain", "Suzerainty", worldStandingsInPlay],
       ["wonders", "Wonders", worldStandingsInPlay],
@@ -2218,6 +2222,14 @@ try {
       const rest = merged.filter(key => key !== "tourism");
       const at = rest.indexOf("culture");
       rest.splice(at < 0 ? rest.length : at + 1, 0, "tourism");
+      merged = rest;
+    }
+    // Units joined just before Military, which is where it goes in a layout
+    // saved before it existed, wherever that viewer has put Military.
+    if (!known.includes("units")) {
+      const rest = merged.filter(key => key !== "units");
+      const at = rest.indexOf("military");
+      rest.splice(at < 0 ? rest.length : at, 0, "units");
       merged = rest;
     }
     predatesClosestVictory = !known.includes("closest_victory");
@@ -2320,7 +2332,7 @@ function visiblePlayerHudColumns() {
 const PLAYER_HUD_SHED_ORDER = [
   "player", "leader", "win_start", "win_delta", "age", "nukes", "suzerain",
   "wonders", "closest_victory", "food", "population", "rank", "tourism", "faith", "gold",
-  "culture",
+  "culture", "units",
 ];
 const PLAYER_HUD_READABLE_WIDTH = {
   lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo_delta:40,
@@ -2656,6 +2668,7 @@ const PLAYER_HUD_HEAD_LABELS = {
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
   tourism:["TOUR", "Tourism per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
+  units:["UNIT", "Units fielded"],
   military:["MIL", "Military strength"], nukes:["NUK", "Nuclear devices held"],
   suzerain:["SUZ", "City-states under suzerainty"],
   wonders:["WNDR", "World wonders controlled"], score:["SCORE", "Score"],
@@ -27977,6 +27990,22 @@ function oddsTitle(player) {
       : ""}`;
 }
 
+// Every unit a civilization fields, of any kind. A world that does not say —
+// a replay recorded before the count existed, or a mirrored game whose host
+// has not sent one — has no figure, which is not the same as having no units.
+function playerUnitCount(player) {
+  const count = player.unit_count;
+  return count === null || count === undefined || !Number.isFinite(+count) ? null : +count;
+}
+
+function unitCountTitle(player) {
+  const count = playerUnitCount(player);
+  if (count === null) return "Units fielded: not reported";
+  const military = player.military_unit_count;
+  return `Units fielded: ${exactStat(count)}` +
+    (military === null || military === undefined ? "" : ` · ${exactStat(military)} military`);
+}
+
 function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
@@ -27992,6 +28021,7 @@ function playerHudStats(player, rank) {
       `${exactStat(player.foreign_tourists)} visiting · ${exactStat(player.domestic_tourists)} domestic`],
     ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
+    ["units", "UNIT", playerUnitCount(player), unitCountTitle(player)],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
     ["nukes", "NUK", playerNuclearStockpile(player), nuclearStockpileTitle(player)],
     ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
@@ -28414,7 +28444,8 @@ function drawPlayerHud() {
           `data-hud-action="watch" data-hud-civ="${p.id}" ` +
           `title="${label}${marker ? " · * Founded a religion" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
           `aria-label="${label}; watch ${escapeAttr(p.civ)}">` +
-          `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
+          `<b>${kind === "score" ? ribbonScore(value)
+            : kind === "units" && value === null ? "—" : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
