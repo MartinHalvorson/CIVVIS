@@ -69,6 +69,8 @@ impl AdvancedAi {
     /// lands in `observed_yield_adjustments` as the difference, so the sum is
     /// the host's figure.
     pub(crate) fn seat_science_per_turn(g: &Game, seat: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(seat)
             .into_iter()
             .map(|city| g.city_yields(city).science)

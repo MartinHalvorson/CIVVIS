@@ -106,6 +106,8 @@ const CULTURE_SHRINE_FUND_TURNS: f64 = 6.0;
 
 impl AdvancedAi {
     fn culture_faith_source_budget(&self, g: &Game, pid: usize) -> Option<usize> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !(self.culture_seat_theater_first || self.culture_seat_theater_first_2)
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
             || self.lane_lost

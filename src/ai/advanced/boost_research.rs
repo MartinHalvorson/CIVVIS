@@ -446,6 +446,8 @@ impl AdvancedAi {
     /// city yields the war desk's own horizon reads. Floored at one so a
     /// yield-less empire cannot divide by zero.
     pub(super) fn research_rate(g: &Game, pid: usize, techs: bool) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
             .map(|cid| {

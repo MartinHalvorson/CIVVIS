@@ -317,6 +317,8 @@ impl AdvancedAi {
         pid: usize,
         threatened: Option<u32>,
     ) -> Option<(u32, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || !g.victory_conditions.religious
         {

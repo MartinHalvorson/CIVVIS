@@ -129,6 +129,8 @@ impl BasicAi {
         n_cities: usize,
         threatened: Option<u32>,
     ) -> Option<Item> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let zone = crate::name!("industrial_zone");
         if !g.city_has_district_family(g.cities.get(&cid)?, zone) {
             return None;
@@ -171,6 +173,8 @@ impl BasicAi {
         n_cities: usize,
         threatened: Option<u32>,
     ) -> Option<Item> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let zone = Self::civ_district(g, pid, "industrial_zone");
         let spec = g.rules.districts.get(&zone)?;
         let unlocked = spec
