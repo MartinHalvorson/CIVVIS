@@ -475,7 +475,7 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     assert!(AdvancedAi::first_capital_is_bare(&game, 0, capital));
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert_eq!(ai.first_capital_bare, Some(capital));
+    assert_eq!(ai.first_capital_bare, Some(game.cities[&capital].pos));
     assert_eq!(
         ai.conquest_first_settler_cities(),
         FIRST_CAPITAL_BARE_CITIES
@@ -507,7 +507,7 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     assert!(!AdvancedAi::first_capital_is_bare(&game, 0, capital));
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert_eq!(ai.first_capital_bare, Some(capital));
+    assert_eq!(ai.first_capital_bare, Some(game.cities[&capital].pos));
     assert!(ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
 
     // Hardened past soft: the latch drops and the shipped three return.
@@ -779,4 +779,53 @@ fn the_cree_shape_declares() {
         assert_eq!(ai.conquest_declaration(&mut game, 0), gene, "gene {gene}");
         assert_eq!(game.is_at_war(0, 1), gene);
     }
+}
+
+/// A major's capital walls up behind a declaration (live Niani: declared
+/// at turn 45 with no walls, walled at 47, opening released). Under the
+/// gene the strike reserves a Ram with no walls standing, and a Ram we hold
+/// stands at the rally before any declaration. With no Ram held the strike
+/// goes as before.
+#[test]
+fn an_unwalled_capital_strike_reserves_and_waits_for_its_ram() {
+    for gene in [false, true] {
+        let (mut game, ai, capital) = opened(gene);
+        second_city(&mut game);
+        set_strength(&mut game, capital, 15.0);
+        assert_eq!(
+            ai.conquest_breach_target(&game),
+            gene.then_some(capital),
+            "gene {gene}: no walls stand"
+        );
+    }
+    let (mut game, mut ai, capital) = opened(true);
+    second_city(&mut game);
+    set_strength(&mut game, capital, 15.0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "swordsman", rally, 1, 3);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(
+        ai.first_capital_outclassed(&game, 0, &opening),
+        None,
+        "no Ram held: as before"
+    );
+
+    // A Ram of ours still at home: the declaration waits for it.
+    let ram = unit(&mut game, "battering_ram", (7, 12));
+    assert!(game.wdist((7, 12), rally) > CONQUEST_ASSEMBLY_RADIUS);
+    let why = ai.first_capital_outclassed(&game, 0, &opening).unwrap();
+    assert!(why.contains("breaker is not at the rally"), "{why}");
+    assert!(ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .is_none());
+    assert!(!ai.conquest_declaration(&mut game, 0));
+    assert!(!game.is_at_war(0, 1));
+
+    // At the rally: nothing waits.
+    game.remove_unit(ram);
+    bodies(&mut game, "battering_ram", rally, 2, 1);
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
 }
