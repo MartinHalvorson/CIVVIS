@@ -3527,14 +3527,8 @@ impl AdvancedAi {
             // the leader held, a spare Spy takes the next racer's free pad
             // city, and one standing in it stays. `None` with the gene off.
             // See `advanced/spare_spies_take_the_next_pad.rs`.
-            let spare = self.spare_spy_post(
-                g,
-                pid,
-                spy_id,
-                racer_spy_leader,
-                &racer_spy_racers,
-                &legal,
-            );
+            let spare =
+                self.spare_spy_post(g, pid, spy_id, racer_spy_leader, &racer_spy_racers, &legal);
             if let Some(spare_spies_take_the_next_pad::SparePost::Go(post)) = spare {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
