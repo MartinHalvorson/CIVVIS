@@ -4862,6 +4862,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             drop(session);
             respond_json(stream, &answer);
         }
+        // The played seat's yield focus for one of its cities.
+        ("POST", "/city-focus") => {
+            let mut session = lock_or_recover(&sh.session);
+            let answer = crate::routes::city_focus(&mut session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
+        }
         // What a blow would do, read before it is struck.
         ("POST", "/forecast") => {
             let session = lock_or_recover(&sh.session);
