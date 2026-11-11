@@ -15,22 +15,20 @@
 //! trip of 17-22 hexes (the efficient first trips that day ran 0.52 turns a
 //! hex). Two of the three were still alive with 300-500 album sales when a
 //! rival's Science victory ended the game at t180, so the lost turns were
-//! the most valuable concerts of their careers. The same signature recurs:
-//! two bands barred on one turn at t176 and t177 there, and two at t151 in
-//! 20261110T211838Z. Across today's 44 culture games, 17 of 84 first trips
-//! moved away from the venue they finally played on two or more turns, 164
-//! band-turns over the efficient pace.
+//! the most valuable concerts of their careers. The rule fired 31 times in
+//! 9 of the 14 games of 2026-11-10 that bought bands; across those games 17
+//! of 84 first trips moved away from the venue they finally played on two or
+//! more turns, 164 band-turns over the efficient pace.
 //!
 //! A host that really refuses a walk (a war, a closed passage) refuses it
 //! again the next turn; a turn the host moved nobody does not repeat.
 //!
 //! **What the gene does.** The first turn a band is walked nowhere records a
-//! strike against the civilization it was walking to and bars nothing: the
-//! band plans as before and normally tries the same trip again. A band
-//! walked nowhere toward the same civilization on the next turn as well bars
-//! that host exactly as before. A band that moves clears its strike. Bands
-//! only; inert unless armed with `band-plays-what-it-can-reach`, whose trip
-//! judgement it gates.
+//! strike and bars nothing: the band plans as before and normally tries the
+//! same trip again. A band walked nowhere on the next turn as well bars the
+//! host of the venue it was walking to, exactly as before. A band that moves
+//! clears its strike. Bands only; inert unless armed with
+//! `band-plays-what-it-can-reach`, whose trip judgement it gates.
 
 use crate::ai::BasicAi;
 use crate::game::Game;
@@ -38,8 +36,9 @@ use crate::Pos;
 
 impl BasicAi {
     /// Whether this is the second turn running that the host walked the band
-    /// under `key` nowhere toward `civ`'s land. The first such turn records a
-    /// strike and returns false; the second clears it and returns true.
+    /// under `key` nowhere (this time toward `civ`'s land). The first such
+    /// turn records a strike and returns false; the second clears it and
+    /// returns true.
     pub(crate) fn band_stall_second_strike(
         &self,
         g: &Game,
@@ -50,7 +49,7 @@ impl BasicAi {
         let mut strikes = self.band_stall_strikes.borrow_mut();
         let second = strikes
             .get(&key)
-            .is_some_and(|(turn, held)| turn + 1 == g.turn && held == civ);
+            .is_some_and(|(turn, _)| turn + 1 == g.turn);
         if second {
             strikes.remove(&key);
             return true;

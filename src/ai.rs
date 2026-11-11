@@ -2143,9 +2143,9 @@ pub struct BasicAi {
     /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
     pub(crate) band_plays_at_level_three: bool,
     /// `band-stall-bars-no-host`: a trip the host walked nowhere bars its
-    /// host only when the same band was walked nowhere toward the same host
-    /// the turn before as well; one stalled turn bars nothing. Off by
-    /// default; opt-in gene. See `advanced/band_stall_bars_no_host.rs`.
+    /// host only when the same band was walked nowhere the turn before as
+    /// well; one stalled turn bars nothing. Off by default; opt-in gene. See
+    /// `advanced/band_stall_bars_no_host.rs`.
     pub(crate) band_stall_bars_no_host: bool,
     /// `band-stall-bars-no-host`: by [`BasicAi::band_memory_key`], the turn a
     /// band was last walked nowhere and the civilization it was walking to.
