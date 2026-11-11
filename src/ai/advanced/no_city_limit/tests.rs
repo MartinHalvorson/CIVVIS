@@ -306,9 +306,25 @@ fn the_seat_count_stands_until_the_empire_changes() {
 /// garrisoned one's.
 #[test]
 fn a_garrisoned_city_trains_through_raiders() {
-    let (mut game, capital, _) = two_idle_cities();
-    let home = game.cities[&capital].pos;
+    let mut game = Game::new_full(1, 32, 20, 936_221, 200, 0, true);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("the player opens with a settler");
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    for uid in game.player_unit_ids(0) {
+        game.remove_unit(uid);
+    }
     let barbarians = game.barb_pid.expect("fixture: a barbarian seat");
+    for uid in game.player_unit_ids(barbarians) {
+        game.remove_unit(uid);
+    }
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    assert!(
+        !AdvancedAi::early_settler_raider_near(&game, home),
+        "fixture: no raider yet"
+    );
     let beside = game
         .map
         .tiles
