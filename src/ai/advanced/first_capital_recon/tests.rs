@@ -161,12 +161,105 @@ fn a_reachable_capital_keeps_the_opening_army_ahead_of_an_extra_eye() {
     assert_eq!(queued_scouts(&g), 0, "the reachable opening has priority");
 }
 
+fn campus_competition() -> (Game, StrategicPlan, u32) {
+    let (mut g, plan) = board();
+    let capital = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .unwrap();
+    for c in g.cities.values_mut() {
+        c.buildings.push(crate::name!("granary"));
+        if c.owner == 0 && c.id != capital {
+            c.queue.push(Item::Building {
+                building: crate::name!("monument"),
+            });
+        }
+    }
+    g.spawn_test_unit("settler", 0, (12, 10));
+    for u in g.units.values_mut() {
+        u.moves_left = 0.0;
+    }
+    std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        capital,
+        crate::rules::Yields {
+            production: 10.0,
+            ..Default::default()
+        },
+    );
+    (g, plan, capital)
+}
+
 #[test]
-fn the_real_turn_claims_a_land_eye_before_economy_fills_its_queue() {
-    let (mut g, _) = board();
-    let mut ai = seat(true);
-    ai.take_turn(&mut g, 0);
-    assert!(g.log.iter().any(|(pid, action)| *pid == 0 && matches!(action,
-        Action::Produce { item: Item::Unit { unit }, .. } if g.rules.units[unit].promotion_class == "recon"
-    )), "the real production pipeline must reach the early claim");
+fn the_claimed_scout_survives_the_governors_first_zero_investment_frame() {
+    let (base, plan, capital) = campus_competition();
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    for on in [false, true] {
+        let mut g = base.clone();
+        let mut ai = seat(on);
+        g.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: scout.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(g.item_invested_production(capital, &scout), 0.0);
+        ai.advanced_production(&mut g, 0, &plan, false);
+        assert_eq!(
+            g.cities[&capital].queue.first() == Some(&scout),
+            on,
+            "the on arm must retain the Scout the off arm overwrites"
+        );
+    }
+}
+
+#[test]
+fn the_hold_releases_to_a_full_arm_and_defense() {
+    let (mut g, mut plan, capital) = campus_competition();
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    g.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: scout.clone(),
+        },
+    )
+    .unwrap();
+    let ai = seat(true);
+    assert!(ai.first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
+    assert!(!seat(false).first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
+    plan.threatened_city = Some(capital);
+    assert!(!ai.first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
+    plan.threatened_city = None;
+    g.spawn_test_unit("scout", 0, (16, 8));
+    assert!(!ai.first_capital_land_recon_holds(&g, 0, capital, &plan, &scout));
+}
+
+#[test]
+fn the_real_turn_leaves_a_second_land_eye_in_the_arm() {
+    let (base, _, _) = campus_competition();
+    let mut arms = Vec::new();
+    for on in [false, true] {
+        let mut g = base.clone();
+        let mut ai = seat(on);
+        ai.enable_capital_campus_before_the_plaza();
+        ai.take_turn(&mut g, 0);
+        let fielded = g
+            .units
+            .values()
+            .filter(|u| u.owner == 0 && g.rules.units[&u.kind].promotion_class == "recon")
+            .count();
+        arms.push(fielded + queued_scouts(&g));
+    }
+    assert_eq!(
+        arms,
+        vec![1, 2],
+        "the whole turn must preserve the new Scout, not just log an overwritten order"
+    );
 }

@@ -11440,6 +11440,7 @@ mod dvp_leader_front;
 mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
+mod first_capital_recon;
 mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
@@ -11576,7 +11577,6 @@ mod denial_charts_the_racer;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
-mod first_capital_recon;
 mod domination_research;
 /// `domination-target-gets-its-breaker`: the Domination lane's breaker for
 /// its target. See `advanced/domination_target_gets_its_breaker.rs`.
@@ -20341,6 +20341,12 @@ impl AdvancedAi {
             let naval_eye_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.naval_eye_holds(g, pid, cid, plan, item));
+            // The early land eye must survive its first zero-investment
+            // frame. Siege and economic recovery retain their precedence.
+            let land_eye_commitment = !economic_recovery
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    self.first_capital_land_recon_holds(g, pid, cid, plan, item)
+                });
             // `space-people-call-the-projects`: the called district project
             // finishes while its person stays on offer.
             let space_person_commitment = committed
@@ -20411,6 +20417,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || land_eye_commitment
                     || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -20440,6 +20447,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || land_eye_commitment
                     || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment

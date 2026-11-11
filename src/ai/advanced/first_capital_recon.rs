@@ -10,7 +10,9 @@
 //! existing recon arm asks for two once the second city exists. Its late claim
 //! follows Campus, housing, industry and other economy reservations.
 //!
-//! This moves one existing claim earlier; it does not add a new scout quota,
+//! This moves one existing claim earlier and keeps it through ordinary
+//! production rescoring; otherwise a fresh Scout can become a Campus in the
+//! same turn. It does not add a new scout quota,
 //! replace a working queue or read an unobserved enemy city. The opening book,
 //! first two cities, defense, war economy and a reachable capital keep priority.
 
@@ -18,30 +20,58 @@ use super::first_capital_before_the_walls::FIRST_CAPITAL_NAMING_DEADLINE;
 use super::*;
 
 impl AdvancedAi {
-    pub(super) fn claim_first_capital_land_recon(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) {
-        if !self.land_recon_before_the_first_capital
-            || !self.first_capital_active()
-            || self.base.book_pos < 4
-            || g.player_city_ids(pid).len() < 2
-            || g.turn > g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE)
-            || plan.threatened_city.is_some()
-            || g.players.iter().any(|rival| {
+    fn first_capital_land_recon_needed(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
+        self.land_recon_before_the_first_capital
+            && self.first_capital_active()
+            && self.base.recon_replacement
+            && self.base.book_pos >= 4
+            && g.player_city_ids(pid).len() >= 2
+            && plan.threatened_city.is_none()
+            && !g.players.iter().any(|rival| {
                 rival.id != pid
                     && rival.alive
                     && !rival.is_minor
                     && !rival.is_barbarian
                     && g.is_at_war(pid, rival.id)
             })
-            || self.first_capital_target(g, pid).is_some()
+            && self.first_capital_target(g, pid).is_none()
+    }
+
+    pub(super) fn claim_first_capital_land_recon(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.first_capital_land_recon_needed(g, pid, plan)
+            || g.turn > g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE)
+            || self.counts(g, pid).scouts >= early_conquest::CONQUEST_SEARCH_SCOUTS
         {
             return;
         }
         self.reserve_idle_land_recon(g, pid, plan);
+    }
+
+    pub(super) fn first_capital_land_recon_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        item: &Item,
+    ) -> bool {
+        if !self.first_capital_land_recon_needed(g, pid, plan)
+            || !matches!(item, Item::Unit { unit } if g.rules.units.get(unit.as_str()).is_some_and(|spec|
+                spec.promotion_class == "recon" && spec.domain == "land"))
+            || !Self::production_commitment_is_legal(g, pid, cid, item)
+            || self.counts_without_city_queue(g, pid, cid).scouts
+                >= early_conquest::CONQUEST_SEARCH_SCOUTS
+            || (g.turn > g.standard_duration(FIRST_CAPITAL_NAMING_DEADLINE)
+                && g.item_invested_production(cid, item) <= 0.0)
+        {
+            return false;
+        }
+        true
     }
 }
 
