@@ -235,6 +235,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-banks-for-the-bands` | off (unmeasured) | `culture-banks-for-the-bands`: see `advanced/culture_band_bank.rs`. | 1 \| 1 |
 | `culture-digs-every-site` | off (unmeasured) | Opt-in gene `culture-digs-every-site`; see `advanced/culture_digs_every_site.rs`. | 1 \| 1 |
 | `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
+| `culture-faith-braves-the-barbarians` | off (unmeasured) | `culture-faith-braves-the-barbarians`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-faith-opens-at-the-theaters` | off (unmeasured) | `culture-faith-opens-at-the-theaters`: see `advanced/culture_faith_sources.rs`. | 1 \| 1 |
 | `culture-faith-site-per-theater` | off (unmeasured) | `culture-faith-site-per-theater`: see `advanced/culture_faith_sources.rs`. | — \| 2 |
 | `culture-faith-site-per-theater-2` | off (unmeasured) | `culture-faith-site-per-theater-2`: see `advanced/culture_faith_sources.rs`. | — \| 2 |

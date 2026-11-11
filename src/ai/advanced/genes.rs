@@ -5564,6 +5564,12 @@ pub const GENES: &[Gene] = &[
     // builds the last Market a near road civic's Inspiration counts. Opt-in;
     // see `advanced/culture_road_triggers.rs`.
     Gene { tag: "culture-road-builds-its-triggers", field: "culture_road_builds_its_triggers", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_builds_its_triggers, disable: AdvancedAi::disable_culture_road_builds_its_triggers },
+    // `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    // six-tile soldier rule skips Barbarian units. Live Kristina 212836Z, at
+    // peace, held Stockholm's and Linköping's Holy Sites t80-t130 for two
+    // Barbarians nearby; Faith stood at 1 a turn. Opt-in; see
+    // `advanced/culture_faith_sources.rs`.
+    Gene { tag: "culture-faith-braves-the-barbarians", field: "culture_faith_braves_the_barbarians", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_braves_the_barbarians, disable: AdvancedAi::disable_culture_faith_braves_the_barbarians },
     // Kristina Deity 11-10: the delegated city loop fired each wall at the
     // first hostile in disk order before the command phase priced anything;
     // a gun stood in reach of a walled city that struck elsewhere on 19 of 26

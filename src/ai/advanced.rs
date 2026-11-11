@@ -6845,6 +6845,10 @@ pub struct AdvancedAi {
     /// Builders standing when it lands. See `advanced/culture_unique_first.rs`.
     /// Off by default.
     culture_road_takes_the_unique_first: bool,
+    /// `culture-faith-braves-the-barbarians`: the Culture Faith claim's
+    /// six-tile soldier rule skips Barbarian units. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_braves_the_barbarians: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
