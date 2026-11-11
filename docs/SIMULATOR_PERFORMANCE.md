@@ -319,9 +319,11 @@ yields under them were kept. Removed from the code.
 
 **`envelopes-across-own-moves` on the majors: does not pass.** This is
 `BasicAi::envelope_cache_across_own_moves`, which the gene screen's world
-rejected in August at 43.8% (below). On the site's world it saves 11.3% and
-8.5% of a 150-turn game's instructions with every seat taking it. Two runs
-of the paired test, different seeds, the bar fixed before both:
+rejected in August at 43.8% (below). On the site's world it read as saving
+11.3% and 8.5% of a 150-turn game's instructions with every seat taking it —
+⚠ two seeds, each a comparison between two *different* games, which the
+correction below shows is not a measurement. Two runs of the paired test,
+different seeds, the bar fixed before both:
 
 | Run | Pairs | Up, level, down | Mean pair difference | 95% interval | Shortcut's seats won |
 | --- | ---: | --- | ---: | --- | --- |
@@ -337,9 +339,10 @@ their seconds), because two thirds of the whole saving is not theirs —
 
 **— it is the city-states' and the barbarians', and giving it only to them
 changes the game.** With the shortcut on for the small seats alone the same
-150 turns cost 252.5 billion instructions against 271.9 (−7.1%), and no major
-decides anything differently. But the world they play in is not the same
-world. Twenty-two seeds played to the end both ways:
+150 turns cost 252.5 billion instructions against 271.9 (−7.1%; ⚠ one seed,
+and wrong — see the correction below), and no major decides anything
+differently. But the world they play in is not the same world. Twenty-two
+seeds played to the end both ways:
 
 | | City-states standing at the end, of 8 | |
 | --- | ---: | --- |
@@ -349,14 +352,111 @@ world. Twenty-two seeds played to the end both ways:
 About one more city-state survives a game. A barbarian that reads an enemy's
 reach against where its own band stood when the pass began walks into more of
 it, and a weaker barbarian is a different opponent for everybody, not a
-faster one. It is a 7% that buys a visible change to the game, so it is the
-operator's to take or leave, and it is off.
+faster one. It was offered to the operator as a 7% that buys a visible change
+to the game. It is off, and the 7% was not real:
 
-What the three readings say together: the cheap staleness that remains is in
-the tactical layer, and the tactical layer is where staleness costs. The
-exact route this file named in August — an enemy's envelope recomputed only
-when a move lands inside the tiles it is sensitive to — is the one that is
-left, and `compute_enemy_attack_envelopes` is still 5.2% of a site game.
+**⚠ Correction, the same evening: the small seats' shortcut saves under half a
+percent, and the "7%" was the noise of comparing two different games.** The
+operator took the offer, and the branch that seated it (#5118, closed) was
+measured before it shipped — five seeds, 150 turns, one binary with and
+without `--plain-seats`:
+
+| Seed | Plain | Small seats take it | Instructions |
+| ---: | ---: | ---: | ---: |
+| 7 | 323.1 B | 325.5 B | +0.7% |
+| 8 | 287.1 B | 269.2 B | −6.2% |
+| 9 | 299.4 B | 321.8 B | +7.5% |
+| 11 | 299.3 B | 315.0 B | +5.2% |
+| 12 | 281.0 B | 289.2 B | +2.9% |
+
+Median +2.9%. Once a game plays differently its total moves by several
+percent in either direction — another city-state alive is another roster of
+units for every seat to plan around — and a single seed's −7.1% was one draw
+from that. What the shortcut does to the seats that take it is the honest
+reading: the small seats' own turns were 1.2%, 5.7% and 4.5% quicker on the
+three seeds the host did not park, and they are a tenth of a game. The same
+goes for the 11.3% and 8.5% above: the majors that took it were 4% quicker
+than the majors beside them, which is the whole of it.
+
+⚠ **A change that alters play cannot be sized from the instruction count of
+one game against another.** Size it from the seats' own seconds inside one
+game (`site-bench` prints them), or over enough seeds for the divergence to
+average out. A same-game change has no such problem: its two runs are one
+game, and each of the three below reads within a point of itself across
+seeds.
+
+What the readings say together: the cheap staleness that remains is in the
+tactical layer, and the tactical layer is where staleness costs.
+⚠ This paragraph first said the exact route — an enemy's envelope recomputed
+only when a move lands inside the tiles it is sensitive to — "is the one that
+is left". It was not left: #2163 built it in August and
+`compute_enemy_attack_envelopes` has run on it since. What its recomputes
+cost today is the price of moves that really do land in an enemy's reach.
+
+### Three passes that did the same work many times (−4.7%, −6.6%, −1.0%)
+
+The profile of the day's `main` (`8732a09d22`, seed 7, turns 40 to 170, the
+city limit off so the majors hold 11 to 18 cities) put a fifth of the
+stepping thread in `city_citizen_plan_weighted` and named three passes. Each
+is fixed the same way — the work is done once instead of many times, and the
+game is the same game. Instructions for 150 turns of the site's world with a
+document every frame, each change alone against the commit it branched from,
+every save and document checkpoint identical:
+
+| | Seed 7 | Seed 8 | Seed 9 | Runner, site, 100 turns | Runner, gene-screen world |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| the Builder backlog, counted once a pass (#5122) | −5.26% | −4.53% | −4.73% | −2.38% | noise |
+| the gold pass prices before it scores (#5123) | −6.48% | −6.90% | −6.59% | −4.35% | −2.29% |
+| a strike reach read off the board (#5126) | −1.03% | −0.84% | −1.10% | noise (−0.31%) | −3.23% |
+
+**The Builder backlog (9.0% of the thread).** `worked_backlog_builder`
+decides whether *one* city trains a Builder by counting the unimproved worked
+tiles of the *empire*, a citizen assignment for every city, and two passes
+ask it once per city: C cities, C × C assignments. `codex-speed` had already
+written the memo for that count (#5093) and closed it for showing no gain.
+It showed none because nothing held a query scope around either pass, so
+each city's call was the outermost scope of its own and the memo never
+answered. #5122 is that memo plus the two scopes.
+⚠ A memo that lives in a query scope does nothing for a caller that holds no
+scope. Before concluding a cache does not pay, count its hits.
+
+**The gold pass (8.6%).** Every turn each major listed every legal purchase,
+valued each one with the whole production scorer, cloned the game and bought
+it on the clone — and then refused it for leaving the treasury under its
+reserve, which is where most of a menu fails for most of a game.
+`gold_purchase_score` now reads `Game::purchase_quote` first, and the loop
+stops before listing anything when the treasury is already under the
+reserve. Separately, `BasicAi::buy_gold_plot` listed that whole menu to keep
+only the plots; `Game::legal_plot_purchases` lists the plots (that alone is
+2.3 of the 6.6 points). `CIVVIS_PURCHASE_AUDIT=1` takes the long way round
+and reports any disagreement; three games to turn 200 reported none.
+
+**The strike reach (4.6%).** `strike_reach_of` needed a board it could write
+to — it wrote the hostile's turn state fresh, flooded, and wrote it back —
+so the movement-risk table copied the whole game the first time it had to
+recompute an enemy, and each enemy's flood opened a query scope of its own
+on the copy. `Game::approach_arrivals_on_a_fresh_turn` asks the flood for
+that turn directly: five fields were being written, and on that path they
+have two readers. The table's floods now run on the board under one scope.
+It is worth three times as much on the gene-screen world, which has six
+majors at war, as on the site's four.
+
+Multiplied together they come to about 12% of a site game; the three were
+measured one at a time, not as one build. What the same profile still shows:
+the citizen plan is computed afresh for every `city_yields` that is not kept
+or memoized (20% of the thread before the backlog fix, which accounts for 5.5
+of it), `pick_item` still takes the backlog census once per city with a
+`Produce` between cities (1.2%), and the full purchase menu is still listed
+up to twice a seat-turn (3.5%).
+
+⚠ **One cargo target directory cannot be shared between worktrees.** Cargo
+decides a crate is fresh by comparing its sources' modification times with
+the last build's, by path *relative to the package*, so a second worktree
+whose files are older than the first one's build is reported `Finished`
+without being compiled and the binary is the first worktree's. That produced
+a "candidate" here that was byte-identical to its base. `touch` a source
+file before each build, and check the binary for a string only the change
+has.
 
 ## 2026-09-09: the flood paid for arrivals it threw away (−4.30%)
 
