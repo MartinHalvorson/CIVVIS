@@ -5461,6 +5461,10 @@ pub const GENES: &[Gene] = &[
     // than the first city that accepts. Opt-in; see
     // `advanced/band_buys_near_the_stage.rs`.
     Gene { tag: "band-buys-near-the-stage", field: "band_buys_near_the_stage", kind: Kind::OptIn, enable: AdvancedAi::enable_band_buys_near_the_stage, disable: AdvancedAi::disable_band_buys_near_the_stage },
+    // A Rock Band trip the host walked nowhere bars its host only on the
+    // second turn running: a turn the host moved nobody bars nobody. Opt-in;
+    // see `advanced/band_stall_bars_no_host.rs`.
+    Gene { tag: "band-stall-bars-no-host", field: "band_stall_bars_no_host", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stall_bars_no_host, disable: AdvancedAi::disable_band_stall_bars_no_host },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5602,6 +5606,11 @@ pub const GENES: &[Gene] = &[
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
     Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
+    // lets the culture claims pass the near-rival deterrent only while our
+    // power is at least half the near neighbour's. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -5723,6 +5732,11 @@ pub const GENES: &[Gene] = &[
     // A Religion-target founder's corps caps stop binding once the bank
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
+    // `peace-waits-for-the-host-minimum`: no peace offer to a major whose war
+    // on us is younger than the host's minimum (8 Online turns), so the
+    // bridge's five-turn retry lands the first ask on the first turn the host
+    // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

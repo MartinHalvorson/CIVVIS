@@ -5143,6 +5143,10 @@ pub struct AdvancedAi {
     battle_solver: bool,
     /// Follow the objective board's own Defend assignment. Off by default.
     anvil_follows_the_defense: bool,
+    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
+    /// a stage it can play, not the first city that accepts. See
+    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
+    band_buys_near_the_stage: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -5625,11 +5629,11 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
-    /// `band-buys-near-the-stage`: a Rock Band is bought in the city nearest
-    /// a stage it can play, not the first city that accepts. See
-    /// `advanced/band_buys_near_the_stage.rs`. Off by default.
-    band_buys_near_the_stage: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
     /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
@@ -9179,6 +9183,11 @@ pub struct AdvancedAi {
     /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
     /// default.
     religion_seat_counts_the_pressure: bool,
+    /// `peace-waits-for-the-host-minimum`: no peace offer goes to a major
+    /// whose war on us is younger than the host's minimum war length, so the
+    /// bridge's retry window is not spent on an offer the host never signs.
+    /// See `advanced/unchosen_war_peace.rs`. Opt-in.
+    peace_waits_for_the_host_minimum: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic
@@ -11346,6 +11355,10 @@ mod band_plays_its_stage;
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
 mod band_plays_what_it_can_reach;
+/// `band-stall-bars-no-host`: a Rock Band trip the host walked nowhere bars
+/// its host only on the second turn running. See
+/// `advanced/band_stall_bars_no_host.rs`.
+mod band_stall_bars_no_host;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
