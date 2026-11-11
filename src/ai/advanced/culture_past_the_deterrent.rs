@@ -31,12 +31,42 @@
 //! anything finishing this turn) is unchanged, and the deterrent still trains
 //! in the cities that are not building culture. Off, or for another victory
 //! target, nothing changes.
+//!
+//! **`culture-pass-keeps-half-the-army`** (2026-11-10, the bound on the
+//! above). The pass holds only while our military power is at least
+//! [`CULTURE_PASS_ARMY_FLOOR`] of the near neighbour the deterrent answers
+//! (`deterrence_threat`); below it the deterrent keeps its old priority.
+//! Between half and parity the culture builds still go first, which covers the
+//! case this gene was written for: 140731Z stood at 0.6-0.8 of Vietnam's power.
+//!
+//! Why: 37 live Deity Online culture games of 11-10 (10 before this gene was
+//! armed at 17:06Z, 27 after). A game collapsed (eliminated by t110, or two
+//! cities or fewer at t100) in 0 of 18 where every rival city stood more than
+//! ten tiles from our capital at t40, and in 9 of 19 where one stood within
+//! ten: those are the only games the deterrent acts in. Among them, 1 of 5
+//! collapsed before the gene and 8 of 13 after. In the same near games the
+//! deterrent's claims fell from 14 to 6 a game (t30-t70), our military at
+//! t60 from a median 238 to 141, and our land soldiers from 9 to 6. Every
+//! loss came from a major's surprise war, and at peace with a major holding a
+//! city within ten tiles of ours the declaration rate per 100 rival-turns was
+//! 1.46 below 0.45 of its power (18 of 1,234), 0.62 at 0.45-0.7 (3 of 480)
+//! and 0.14 at 0.7 or more (1 of 720). The capital was the first city lost in
+//! 14 of the 19 wars that cost one, a median 6 turns after the declaration,
+//! while the host signs no peace before 8 Online turns. Other culture genes
+//! were armed in the same window, so the before/after contrast is not this
+//! gene's alone.
 
 use super::*;
 
+/// `culture-pass-keeps-half-the-army`: our power over the near neighbour's
+/// below which the culture claims no longer pass the deterrent.
+pub(super) const CULTURE_PASS_ARMY_FLOOR: f64 = 0.5;
+
 impl AdvancedAi {
     /// Whether the culture claims pass the deterrent this turn: the gene is
-    /// on, the seat aims at Culture and no major is at war with us.
+    /// on, the seat aims at Culture, no major is at war with us, and (under
+    /// `culture-pass-keeps-half-the-army`) we field at least half the near
+    /// neighbour's power.
     pub(super) fn culture_builds_past_the_deterrent(&self, g: &Game, pid: usize) -> bool {
         self.culture_seat_builds_past_the_deterrent
             && self.active_victory_target(g) == Some(VictoryTarget::Culture)
@@ -47,6 +77,16 @@ impl AdvancedAi {
                     && !other.is_minor
                     && g.is_at_war(pid, other.id)
             })
+            && !self.culture_pass_under_the_army_floor(g, pid)
+    }
+
+    /// `culture-pass-keeps-half-the-army`: a near neighbour the deterrent
+    /// answers fields more than twice our power. False with the gene off.
+    pub(super) fn culture_pass_under_the_army_floor(&self, g: &Game, pid: usize) -> bool {
+        self.culture_pass_keeps_half_the_army
+            && self
+                .deterrence_threat(g, pid)
+                .is_some_and(|(_, theirs)| g.military_power(pid) < CULTURE_PASS_ARMY_FLOOR * theirs)
     }
 
     /// Whether the deterrent unit `item` at a queue head still holds it
@@ -181,6 +221,37 @@ mod tests {
         let mut war = game.clone();
         war.at_war.insert((0, 1));
         assert!(!on.culture_builds_past_the_deterrent(&war, 0));
+    }
+
+    /// `culture-pass-keeps-half-the-army`: at a third of the neighbour's
+    /// power the deterrent's warrior holds the culture claims again; at half
+    /// or more the pass stands. Off, the pass stands at any power.
+    #[test]
+    fn the_pass_keeps_half_the_army() {
+        let Some((mut game, ours)) = out_gunned_culture_board() else {
+            panic!("fixture: our capital beside a neighbour");
+        };
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        std::sync::Arc::make_mut(&mut game.observed_military_power).insert(1, 300.0);
+        let pass = culture_seat(true);
+        assert!(pass.culture_builds_past_the_deterrent(&game, 0));
+        assert!(!pass.culture_pass_under_the_army_floor(&game, 0));
+
+        let mut floor = culture_seat(true);
+        floor.enable_culture_pass_keeps_half_the_army();
+        assert!(floor.deterrence_unit_holds(&game, 0, &warrior));
+        assert!(floor.culture_pass_under_the_army_floor(&game, 0));
+        assert!(!floor.culture_builds_past_the_deterrent(&game, 0));
+        assert!(floor.deterrent_holds_against_culture(&game, 0, &warrior));
+        let plan = floor.assess(&game, 0);
+        assert!(!floor.deterrent_spares_the_culture_build(&game, 0, ours, &plan));
+
+        std::sync::Arc::make_mut(&mut game.observed_military_power).insert(1, 200.0);
+        assert!(!floor.culture_pass_under_the_army_floor(&game, 0));
+        assert!(floor.culture_builds_past_the_deterrent(&game, 0));
+        assert!(!floor.deterrent_holds_against_culture(&game, 0, &warrior));
     }
 
     #[test]

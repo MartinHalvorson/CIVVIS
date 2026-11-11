@@ -109,6 +109,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-at-level-three`; see
         /// `advanced/band_plays_at_level_three.rs`.
         base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-stall-bars-no-host`; see
+        /// `advanced/band_stall_bars_no_host.rs`.
+        base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
@@ -200,6 +203,12 @@ impl AdvancedAi {
         /// `culture-keeps-pingala-home`: see
         /// `advanced/culture_pingala_first.rs`.
         culture_keeps_pingala_home => enable_culture_keeps_pingala_home, disable_culture_keeps_pingala_home;
+        /// `culture-pass-keeps-half-the-army`: see
+        /// `advanced/culture_past_the_deterrent.rs`.
+        culture_pass_keeps_half_the_army => enable_culture_pass_keeps_half_the_army, disable_culture_pass_keeps_half_the_army;
+        /// `cold-war-then-heritage`: see
+        /// `advanced/cold_war_then_heritage.rs`.
+        cold_war_then_heritage => enable_cold_war_then_heritage, disable_cold_war_then_heritage;
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;

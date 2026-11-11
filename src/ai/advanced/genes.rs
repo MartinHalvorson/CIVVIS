@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band trip the host walked nowhere bars its host only on the
+    // second turn running: a turn the host moved nobody bars nobody. Opt-in;
+    // see `advanced/band_stall_bars_no_host.rs`.
+    Gene { tag: "band-stall-bars-no-host", field: "band_stall_bars_no_host", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stall_bars_no_host, disable: AdvancedAi::disable_band_stall_bars_no_host },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
@@ -5589,6 +5593,11 @@ pub const GENES: &[Gene] = &[
     // keeps one with every siege. Opt-in; see
     // `advanced/domination_target_gets_its_breaker.rs`.
     Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `cold-war-then-heritage`: once a Culture target knows Cold War, its
+    // civic slot takes Conservation, then Cultural Heritage, before the
+    // government ladder (Class Struggle, Suffrage) and the culture list.
+    // Opt-in; see `advanced/cold_war_then_heritage.rs`.
+    Gene { tag: "cold-war-then-heritage", field: "cold_war_then_heritage", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_then_heritage, disable: AdvancedAi::disable_cold_war_then_heritage },
     // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
@@ -5600,6 +5609,11 @@ pub const GENES: &[Gene] = &[
     // Industrial Zones in those slots; the Holy Sites came 16-68 turns later.
     // Opt-in; see `advanced/culture_faith_sources.rs`.
     Gene { tag: "culture-faith-site-per-theater-3", field: "culture_faith_site_per_theater_3", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_faith_site_per_theater_3, disable: AdvancedAi::disable_culture_faith_site_per_theater_3 },
+    // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
+    // lets the culture claims pass the near-rival deterrent only while our
+    // power is at least half the near neighbour's. Opt-in; see
+    // `advanced/culture_past_the_deterrent.rs`.
+    Gene { tag: "culture-pass-keeps-half-the-army", field: "culture_pass_keeps_half_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_pass_keeps_half_the_army, disable: AdvancedAi::disable_culture_pass_keeps_half_the_army },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

@@ -5626,6 +5626,10 @@ pub struct AdvancedAi {
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-pass-keeps-half-the-army`: the culture claims pass the
+    /// near-rival deterrent only while our power is at least half the near
+    /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
+    culture_pass_keeps_half_the_army: bool,
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
     /// Cartography sooner. See `advanced/domination_charts_every_capital.rs`.
@@ -6853,6 +6857,11 @@ pub struct AdvancedAi {
     /// six-tile soldier rule skips Barbarian units. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_braves_the_barbarians: bool,
+    /// `cold-war-then-heritage`: once a Culture target knows Cold War, the
+    /// civic slot takes Conservation and then Cultural Heritage before the
+    /// government ladder and the culture list. See
+    /// `advanced/cold_war_then_heritage.rs`. Opt-in.
+    cold_war_then_heritage: bool,
     /// `culture-faith-site-per-theater-3`: versions one and two without their
     /// caps (a Holy Site in every Theater city, sources open to forty Faith a
     /// city), a Theater city's last free specialty district slot kept for its
@@ -10973,6 +10982,9 @@ mod coastal_sites;
 /// `cold-war-before-conservation`: a Culture target takes only the road to
 /// Cold War. See `advanced/cold_war_before_conservation.rs`.
 mod cold_war_before_conservation;
+/// `cold-war-then-heritage`: after Cold War, Conservation and then Cultural
+/// Heritage. See `advanced/cold_war_then_heritage.rs`.
+mod cold_war_then_heritage;
 mod culture_defensive_research;
 /// Two Deity habits: chase eurekas with Builders and with the production
 /// queue. Two opt-in genes; see `advanced/deity_habits.rs`.
@@ -11337,6 +11349,10 @@ mod band_plays_its_stage;
 /// stage it can really reach; a refused trip turns it to another host. See
 /// `advanced/band_plays_what_it_can_reach.rs`.
 mod band_plays_what_it_can_reach;
+/// `band-stall-bars-no-host`: a Rock Band trip the host walked nowhere bars
+/// its host only on the second turn running. See
+/// `advanced/band_stall_bars_no_host.rs`.
+mod band_stall_bars_no_host;
 /// `bands-draw-from-the-bar`: a Rock Band's concert is weighted by how much
 /// of the Culture race it closes. See `advanced/bands_draw_from_the_bar.rs`.
 mod bands_draw_from_the_bar;
