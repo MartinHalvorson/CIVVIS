@@ -3591,6 +3591,48 @@ impl Game {
     }
 
     #[cfg(test)]
+    /// What a purchase would be charged this moment, for a client to print
+    /// beside the offer. It reads the derivations `apply` charges from and
+    /// decides nothing: applying the action always recomputes the price.
+    pub fn purchase_quote(&self, pid: usize, action: &Action) -> Option<f64> {
+        match action {
+            Action::Buy {
+                city,
+                unit,
+                formation,
+                currency,
+            } => self.unit_purchase_cost_for_formation(pid, *city, unit, *formation, currency),
+            Action::BuyBuilding {
+                city,
+                building,
+                currency,
+            } => {
+                if currency.as_str() == "faith" {
+                    self.building_faith_purchase_cost(pid, *city, building)
+                } else {
+                    self.building_gold_purchase_cost(pid, *city, building)
+                }
+            }
+            Action::BuyDistrict {
+                district, currency, ..
+            } => {
+                let discount = if currency.as_str() == "gold" {
+                    self.gov_effects(pid).gold_purchase_discount_pct
+                } else {
+                    0.0
+                };
+                Some(
+                    self.game_speed
+                        .scale(self.district_cost_for_placement(pid, district, true))
+                        * 4.0
+                        * (1.0 - discount / 100.0).max(0.0),
+                )
+            }
+            Action::BuyPlot { cost, .. } => Some(*cost),
+            _ => None,
+        }
+    }
+
     pub(super) fn do_buy(
         &mut self,
         pid: usize,

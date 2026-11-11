@@ -2792,7 +2792,24 @@ impl Session {
         o["mercy_rule"] = json!(self.game.mercy_rule);
         o["required_victory_types"] = json!(self.game.effective_required_victories());
         o["victories_won"] = json!(self.game.victories_won);
-        o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
+        // A purchase is offered with its price, the way a plot already is.
+        // The quote is for the page to print beside the offer; applying the
+        // action recomputes it, and an action posted back with it is read
+        // exactly as one posted without.
+        let legal = self.game.legal_actions(0);
+        let mut offered = serde_json::to_value(&legal).unwrap();
+        if let Some(rows) = offered.as_array_mut() {
+            for (row, action) in rows.iter_mut().zip(&legal) {
+                let purchase = matches!(
+                    action,
+                    Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. }
+                );
+                if let Some(cost) = self.game.purchase_quote(0, action).filter(|_| purchase) {
+                    row["cost"] = json!(cost);
+                }
+            }
+        }
+        o["legal_actions"] = offered;
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());

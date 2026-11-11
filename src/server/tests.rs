@@ -15494,6 +15494,54 @@ fn the_policy_ledger_prices_the_seats_slotted_cards() {
     assert_eq!(answer["net"], cards[0]["worth"]);
 }
 
+/// A purchase used to be offered with no price on it: the page listed what
+/// the treasury could buy and could not say what any of it cost. Every
+/// offered unit and building purchase now carries the price `apply` would
+/// charge, and the action posted back with it reads as the same action.
+#[test]
+fn an_offered_purchase_carries_its_price() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    session.game.players[0].gold = 5_000.0;
+
+    let state = session.state();
+    let offered = state["legal_actions"].as_array().expect("legal actions");
+    let legal = session.game.legal_actions(0);
+    assert_eq!(offered.len(), legal.len());
+    let mut priced = 0;
+    for (row, action) in offered.iter().zip(&legal) {
+        // The price rides beside the action without changing what it is.
+        let read: Action = serde_json::from_value(row.clone()).expect("an offered action");
+        assert_eq!(&read, action, "{row}");
+        if matches!(action, Action::Buy { .. } | Action::BuyBuilding { .. }) {
+            let cost = row["cost"].as_f64().expect("a purchase names its price");
+            assert_eq!(Some(cost), session.game.purchase_quote(0, action), "{row}");
+            assert!(cost > 0.0, "{row}");
+            priced += 1;
+        } else if !matches!(action, Action::BuyDistrict { .. } | Action::BuyPlot { .. }) {
+            assert!(row.get("cost").is_none(), "{row}");
+        }
+    }
+    assert!(
+        priced > 0,
+        "a city with a full treasury is offered something to buy"
+    );
+}
+
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
 /// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
 /// to a live control now leaves one line naming the sender; nothing else does.
