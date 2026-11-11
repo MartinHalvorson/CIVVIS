@@ -1053,3 +1053,49 @@ fn a_covered_bill_buys_the_ram_under_breaker_bought_for_the_siege() {
     assert!(ai.conquest_declaration(&mut game, 0));
     assert!(game.is_at_war(0, 2));
 }
+
+/// The reserved melee bodies follow the city: five against a floor centre,
+/// more against the centre the live city-states show by turn 30, never fewer
+/// again, and never past the ceiling.
+#[test]
+fn the_force_grows_to_what_the_city_asks_for() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 20.0);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(
+        ai.conquest_quota(),
+        (STONE_RANGED, STONE_MELEE),
+        "a floor centre asks for no more than the five"
+    );
+    let opening = ai.conquest_opening.clone().expect("the stone is named");
+    let (bodies, each, needed) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert!((needed - 360.0).abs() < 1e-6, "{needed}");
+    assert!((each - 120.0).abs() < 1e-6, "four blows of 30: {each}");
+    assert_eq!(bodies, 5, "four finish it and one is spare");
+
+    // A centre of 26: a Warrior lands three blows of about 24, so six
+    // finish the 360 and the seventh is the spare.
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 26.0);
+    let (bodies, each, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert!(each > 65.0 && each < 75.0, "{each}");
+    assert_eq!(bodies, 7);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.conquest_quota(), (STONE_RANGED, 7));
+    assert_eq!(ai.conquest_force_size(), STONE_RANGED + 7);
+
+    // It does not shrink when the centre reads lower again.
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 20.0);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert_eq!(ai.conquest_quota(), (STONE_RANGED, 7));
+
+    // A centre no eight Warriors finish asks for more than the ceiling.
+    Arc::make_mut(&mut game.observed_city_strength).insert(near, 40.0);
+    let (bodies, _, _) =
+        AdvancedAi::city_state_stone_bodies_needed(&game, &opening).expect("priced");
+    assert!(bodies > STONE_MELEE_MAX, "{bodies}");
+}

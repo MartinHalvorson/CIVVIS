@@ -133,6 +133,25 @@ pub(crate) const STONE_RANGED: usize = 1;
 /// walls in 10 of 10) opened the walls in 8 strikes and took the city in 1.
 pub(crate) const STONE_MELEE: usize = 5;
 
+/// The most melee bodies the force grows to when the city asks for more than
+/// [`STONE_MELEE`] ([`AdvancedAi::city_state_stone_bodies_needed`]). Over 150
+/// live Deity games of 2026-11-11 the nearest city-state's centre read a
+/// median 24 at turn 30 and 27 at turn 40, behind Ancient walls in every
+/// game by turn 30: a Warrior lands three blows of about 23 on it, so the
+/// 360 of walls, health and healing take six, not five. A centre past about
+/// 32 asks for more Warriors than eight, and the kill-time hold keeps that
+/// war undeclared.
+pub(crate) const STONE_MELEE_MAX: usize = 8;
+
+/// Bodies reserved beyond the ones the kill-time arithmetic asks for: the
+/// preview prices the centre's own blows only, and the city-state's field
+/// units (a median military of 123 at turn 30) and its ranged strike cost
+/// the strike a body it does not count.
+pub(crate) const STONE_SPARE_BODIES: usize = 1;
+
+/// A land unit's full health.
+const STONE_BODY_HEALTH: f64 = 100.0;
+
 /// The most blows the kill-time preview counts for one melee body.
 pub(crate) const STONE_STRIKE_TURNS: u32 = 4;
 
@@ -174,6 +193,9 @@ pub(crate) struct CityStateStone {
     /// being raised or walking, before [`STONE_HOLD_DEADLINE`] and with no
     /// major at war with us.
     pub(crate) held: bool,
+    /// The melee bodies the force reserves: [`STONE_MELEE`] when named, and
+    /// up to [`STONE_MELEE_MAX`] once the city's defence asks for more.
+    pub(crate) melee: usize,
 }
 
 /// What one scan of the board found: the stone to name, or the nearest met
@@ -410,6 +432,7 @@ impl AdvancedAi {
             civ: g.players[minor].civ.clone(),
             seen_at_war: false,
             held: false,
+            melee: STONE_MELEE,
         });
         self.conquest_opening = Some(ConquestOpening {
             target: minor,
@@ -526,6 +549,10 @@ impl AdvancedAi {
             self.conquest_release(g, "its walls rose past Ancient before the war");
             return;
         }
+        self.city_state_stone_sizes_the_force(g, &opening);
+        let Some(opening) = self.conquest_opening.clone() else {
+            return;
+        };
         // The clock holds a force that is still being raised or walking.
         let held = opening.assembled.is_none()
             && g.turn < g.standard_duration(STONE_HOLD_DEADLINE)
@@ -535,6 +562,79 @@ impl AdvancedAi {
             stone.held = held;
         }
         self.city_state_stone_progress_note(g, pid, &opening, held);
+    }
+
+    /// The melee bodies the stone's force reserves now.
+    pub(super) fn city_state_stone_melee(&self) -> usize {
+        self.city_state_stone
+            .as_ref()
+            .map_or(STONE_MELEE, |stone| stone.melee)
+    }
+
+    /// The melee bodies the strike on the stone needs, with what one of them
+    /// lands before it falls and what the centre takes: the kill-time
+    /// arithmetic of [`Self::city_state_stone_kill_time`] for full-health
+    /// bodies of the force's weakest melee kind (a Warrior while it has
+    /// none), against the centre as it reads today behind at least Ancient
+    /// walls (every live city-state had raised them by turn 30), plus
+    /// [`STONE_SPARE_BODIES`]. `None` for a vanished city.
+    pub(crate) fn city_state_stone_bodies_needed(
+        g: &Game,
+        opening: &ConquestOpening,
+    ) -> Option<(usize, f64, f64)> {
+        let city = g.cities.get(&opening.city)?;
+        let defence = g.city_strength(city.id);
+        let fielded = opening
+            .force
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .filter(|unit| Self::conquest_melee_body(&g.rules.units[unit.kind]))
+            .map(|unit| g.unit_strength(unit, false))
+            .min_by(f64::total_cmp);
+        let attack = fielded.or_else(|| g.rules.units.get("warrior").map(|spec| spec.strength))?;
+        let dealt = crate::game::expected_damage(attack, defence);
+        let taken = crate::game::expected_damage(defence, attack);
+        let lands = (STONE_BODY_HEALTH / taken)
+            .ceil()
+            .min(f64::from(STONE_STRIKE_TURNS));
+        let each = dealt * lands;
+        let needed = f64::from(city.hp.max(0))
+            + f64::from(city.wall_hp.max(STONE_WALL_CEILING))
+            + f64::from(STONE_CITY_HEAL * STONE_HEAL_TURNS);
+        let bodies = (needed / each).floor() as usize + 1 + STONE_SPARE_BODIES;
+        Some((bodies, each, needed))
+    }
+
+    /// Grow the reserved melee bodies to what the city asks for, between
+    /// [`STONE_MELEE`] and [`STONE_MELEE_MAX`]. It only grows: a force is
+    /// not stood down for a centre that lost a point. A grown force is no
+    /// longer assembled, so the commit clock holds the stone while the new
+    /// body is trained and walks. Before the declaration only.
+    fn city_state_stone_sizes_the_force(&mut self, g: &Game, opening: &ConquestOpening) {
+        let Some((bodies, each, needed)) = Self::city_state_stone_bodies_needed(g, opening) else {
+            return;
+        };
+        let want = bodies.clamp(STONE_MELEE, STONE_MELEE_MAX);
+        let had = self.city_state_stone_melee();
+        if want <= had {
+            return;
+        }
+        if let Some(stone) = self.city_state_stone.as_mut() {
+            stone.melee = want;
+        }
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            opening.assembled = None;
+        }
+        let name = g
+            .cities
+            .get(&opening.city)
+            .map(|city| city.name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Military, Strategy,
+               "City-state before the first capital: the force for {} grows to {} melee bodies",
+               name, want;
+               "from {had}: one lands about {each:.0} before it falls, against {needed:.0} of \
+                health, walls and healing, and {bodies} would finish it with one to spare");
     }
 
     /// Whether the stone's force is still coming: a reserved body is still
