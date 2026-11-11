@@ -185,7 +185,7 @@ pub fn run(seed: u64, turns: u32, documents: bool) -> Report {
             band.documents_seconds += started.elapsed().as_secs_f64();
             band.document_bytes += document.len() as u64;
         }
-        if turn % CHECKPOINT_EVERY == 0 || session.game.is_finished() {
+        if turn.is_multiple_of(CHECKPOINT_EVERY) || session.game.is_finished() {
             checkpoints.push(checkpoint(&session));
         }
     }
