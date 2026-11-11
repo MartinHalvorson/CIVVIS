@@ -30229,12 +30229,22 @@ function drawSoloHud() {
 // here, so a leader is their civilization's monogram in the two colours its
 // borders and units wear on the map, which is how a player tells them apart
 // anyway. The mark in the corner is the stance, said in full by the tooltip.
+// An alliance is a record (its kind, level, points and end), not a name.
+// Both readers below printed it through `titleCase`, which takes a string:
+// the diplomacy screen threw when opened beside an ally, and the ribbon, which
+// is drawn with every frame, stopped the whole page drawing the turn an
+// alliance was signed.
+function allianceWord(player) {
+  const held = player.alliance;
+  const kind = held && typeof held === "object" ? held.kind : held;
+  return typeof kind === "string" && kind ? `${titleCase(kind)} ally` : "Ally";
+}
 function ribbonStance(player) {
   const relationship = player.their_relationship || player.relationship || "neutral";
   if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
   if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
   if (player.allied)
-    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+    return {tone: "friend", word: allianceWord(player), mark: "★"};
   if (player.friend || relationship === "declared_friend")
     return {tone: "friend", word: "Friend", mark: "♥"};
   if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
@@ -30246,6 +30256,21 @@ function ribbonStance(player) {
 let leaderRibbonHtml = null;
 function drawLeaderRibbon() {
   const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  try { html = leaderRibbonMarkup(); }
+  catch (error) {
+    // The ribbon rides a frame that has the whole turn to draw. A leader it
+    // cannot describe costs the ribbon, never the frame.
+    console.error("leader ribbon", error);
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+function leaderRibbonMarkup() {
   let html = "";
   if (state && playingSolo()) {
     const leaders = state.players.filter(player => player.alive && !player.is_minor &&
@@ -30266,12 +30291,7 @@ function drawLeaderRibbon() {
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
   }
-  // The HUD is redrawn on every observation; the ribbon changes a few times
-  // a game, and rebuilding it under a pointer would drop the hover each time.
-  if (html === leaderRibbonHtml) return;
-  leaderRibbonHtml = html;
-  ribbon.innerHTML = html;
-  ribbon.hidden = !html;
+  return html;
 }
 // The ribbon opens the same diplomacy screen the hook does, on the leader
 // that was pressed.
@@ -30972,7 +30992,7 @@ function drawDiplomacy() {
       const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
-        : player.allied ? `${titleCase(player.alliance || "")} ally`
+        : player.allied ? allianceWord(player)
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
         : relationship === "denounced" ? "Denounced"

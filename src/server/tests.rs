@@ -16030,7 +16030,7 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     assert!(EMBEDDED_INDEX
         .contains("  #leaderribbon { display: none; }\n  body.civ6-frame #leaderribbon {"));
     let ribbon = EMBEDDED_APP_JS
-        .split_once("function drawLeaderRibbon() {")
+        .split_once("function leaderRibbonMarkup() {")
         .expect("the ribbon")
         .1
         .split_once("\n}\n")
@@ -16043,7 +16043,16 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // Each wears the colours their borders do, and opens diplomacy on them.
     assert!(ribbon.contains("--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}"));
     assert!(ribbon.contains("onclick=\"openDiplomacyWith(${player.id})\""));
-    assert!(ribbon.contains("if (html === leaderRibbonHtml) return;"));
+    assert!(EMBEDDED_APP_JS.contains("if (html === leaderRibbonHtml) return;"));
+    // It is drawn with every frame, so it may fail only as a ribbon: a leader
+    // it cannot describe costs the ribbon and never the frame. An alliance is
+    // a record, not a name, and printing it as one stopped the page drawing
+    // the turn an alliance was signed.
+    assert!(EMBEDDED_APP_JS.contains("try { html = leaderRibbonMarkup(); }"));
+    assert!(EMBEDDED_APP_JS
+        .contains("const kind = held && typeof held === \"object\" ? held.kind : held;"));
+    assert_eq!(EMBEDDED_APP_JS.matches("allianceWord(player)").count(), 3);
+    assert!(!EMBEDDED_APP_JS.contains("titleCase(player.alliance"));
     assert!(EMBEDDED_APP_JS.contains("`data-seat=\"${player.id}\">` +"));
     assert_eq!(
         EMBEDDED_APP_JS.matches("  drawLeaderRibbon();\n").count(),
