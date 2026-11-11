@@ -1,0 +1,19 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "culture-faith-braves-the-barbarians",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 8 boards of two live Deity Online Kristina (Sweden) Culture games armed with culture-faith-site-per-theater-2 (212836Z t84-t112, 210516Z t90/t100), turns whose why.log journalled a Theater city 'not safe' with no major war on; each the run's events.jsonl cut at frame 0. Both arms run one frozen civvis_orders --resumed built from the branch at 6e9a131430 with the run's own requested genome; the on arm adds --with culture-faith-braves-the-barbarians. Two boards of 220038Z were also queried but could not run (its summary.json carries no forced list); summary.json in the archive still counts them. Orders differ on 2/8: 212836Z t90 the on arm starts J\u00f6nk\u00f6ping's Holy Site and t96 Stockholm's, where the off arm's claim stopped at a Barbarian Line Infantry or Musketman within six tiles. The other boards show the next limits in the on arm's skip journal (Theater Square, Builder, Amphitheater, Art Museum and Settler heads; no free district slot).",
+ "archive": {
+  "path": "docs/eval/2026-11-10-culture-faith-braves-the-barbarians.native-queries.tar.xz",
+  "sha256": "8a3dd9f418e366ea96c733f466c0f9f875dad006630f70e4f006581afea19359"
+ },
+ "members": [
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0003/result.json"
+ ]
+}

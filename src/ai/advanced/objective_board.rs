@@ -1713,12 +1713,14 @@ impl AdvancedAi {
             }
         }
         // `find-the-capital`: the hunt for an unseen rival capital a
-        // Domination plan needs, once that rival's ground is open to us.
-        if self.find_the_capital && !arena {
+        // Domination plan needs, once that rival's ground is open to us;
+        // `denial-charts-the-racer`: the same hunt in the leading Science
+        // rival's ground for its unseen cities.
+        if (self.find_the_capital || self.denial_charts_the_racer) && !arena {
             if let Some(row) = self.find_capital_row(g, pid) {
                 think!(self.journal(), Military, Detail,
                     "Hunting {}", row.label;
-                    "Domination needs that original capital and it has never been seen; the nearest fog in the middle of their known ground is at {:?}", row.at; row.at);
+                    "Domination needs that original capital, or the Science racer's cities, and they have never been seen; the nearest fog in the middle of their known ground is at {:?}", row.at; row.at);
                 rows.push(row);
             }
         }
