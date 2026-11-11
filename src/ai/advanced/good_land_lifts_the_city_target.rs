@@ -155,6 +155,21 @@ impl AdvancedAi {
         origins: &[Pos],
         rival_cities: &[Pos],
     ) -> Vec<(Pos, f64)> {
+        self.holdable_seats_worth(g, pid, origins, rival_cities, GOOD_LAND_SEAT_WORTH)
+    }
+
+    /// Every seat within reach of `origins` worth `floor` or more that the
+    /// empire can hold, best-first: the good-seat tests of the module at any
+    /// worth bar. `no-city-limit` asks it at the worth a city must have to
+    /// out-earn its Settler.
+    pub(super) fn holdable_seats_worth(
+        &self,
+        g: &Game,
+        pid: usize,
+        origins: &[Pos],
+        rival_cities: &[Pos],
+        floor: f64,
+    ) -> Vec<(Pos, f64)> {
         let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
         // Every origin scans the same board for the same seat, so the site
         // values and the exclusion disks are shared, as `map_settlement_room`
@@ -173,7 +188,7 @@ impl AdvancedAi {
                 false,
                 Some(&mut shared),
             ) {
-                if worth >= GOOD_LAND_SEAT_WORTH {
+                if worth >= floor {
                     let entry = best.entry(site).or_insert(worth);
                     *entry = entry.max(worth);
                 }

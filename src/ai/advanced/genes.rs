@@ -5700,6 +5700,10 @@ pub const GENES: &[Gene] = &[
     // First-slot ranged support. Leaves later recon settings unchanged;
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
+    // Operator 11-11: remove the city limit. The empire settles every seat it
+    // can hold while the city out-earns its Settler, several Settlers at a
+    // time. See `advanced/no_city_limit.rs`.
+    Gene { tag: "no-city-limit", field: "no_city_limit", kind: Kind::OptIn, enable: AdvancedAi::enable_no_city_limit, disable: AdvancedAi::disable_no_city_limit },
     // ---- append: p-r ------------------------------------------------
     Gene { tag: "religion-seat-cuts-the-upkeep", field: "religion_seat_cuts_the_upkeep", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_cuts_the_upkeep, disable: AdvancedAi::disable_religion_seat_cuts_the_upkeep },
     // A Religion-target founder beelines Reformed Church after Theology. Unpriced, off.
