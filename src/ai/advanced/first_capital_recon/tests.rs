@@ -264,6 +264,35 @@ fn the_next_expansion_settler_waits_for_the_missing_second_land_eye() {
 }
 
 #[test]
+fn the_capitals_monument_waits_for_the_missing_second_land_eye() {
+    let (mut base, plan, capital) = campus_competition();
+    let production = base.city_yields(capital).production;
+    std::sync::Arc::make_mut(&mut base.observed_city_yield_adjustments)
+        .get_mut(&capital)
+        .unwrap()
+        .production += 5.0 - production;
+    let scout = Item::Unit {
+        unit: crate::name!("scout"),
+    };
+    for on in [false, true] {
+        let mut g = base.clone();
+        let mut ai = seat(on);
+        ai.enable_capital_monument_after_the_second_city();
+        assert!(ai.capital_monument_item(&g, 0, capital, &plan).is_some());
+        g.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: scout.clone(),
+            },
+        )
+        .unwrap();
+        ai.claim_capital_monument(&mut g, 0, &plan);
+        assert_eq!(g.cities[&capital].queue.first() == Some(&scout), on);
+    }
+}
+
+#[test]
 fn the_naming_deadline_stops_new_claims_but_finishes_an_invested_eye() {
     let (mut g, plan, capital) = campus_competition();
     let scout = Item::Unit {

@@ -150,7 +150,9 @@ impl AdvancedAi {
             return;
         }
         if let Some(item) = &head {
-            if !Self::capital_monument_may_defer(g, pid, cid, item) {
+            if !Self::capital_monument_may_defer(g, pid, cid, item)
+                || self.first_capital_land_recon_holds(g, pid, cid, plan, item)
+            {
                 return;
             }
         }
