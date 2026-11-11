@@ -1830,12 +1830,6 @@ impl Game {
         fold(seat.policies.len() as u64);
         fold(seat.citizen_food_bias.to_bits());
         fold(seat.city_directives.len() as u64);
-        fold(
-            seat.citizen_locks
-                .values()
-                .map(|held| held.len() as u64)
-                .sum(),
-        );
         stamp
     }
 
