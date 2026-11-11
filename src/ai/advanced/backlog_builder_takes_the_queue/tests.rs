@@ -327,3 +327,54 @@ fn the_backlog_builder_spares_science_in_progress() {
     );
     assert_eq!(mixed.cities[&second].queue.first(), Some(&unit("builder")));
 }
+
+/// One pass over the cities takes the empire-wide backlog census once, not
+/// once per city, and both idle-queue passes do.
+///
+/// Every city of the pass reaches `worked_backlog_builder`, which counts the
+/// unimproved worked tiles of the whole empire to decide about one city. With
+/// no query scope around the loop each of those counts was taken afresh: C
+/// cities, C censuses, C x C citizen assignments. The answer was never wrong,
+/// which is why nothing but a profile could see it.
+#[test]
+fn a_pass_over_the_cities_counts_the_backlog_once() {
+    let (game, _capital, _second) = backlogged_empire();
+    let ai = armed();
+    let plan = ai.assess(&game, 0);
+    let unscoped = {
+        let before = Game::worked_backlog_censuses();
+        for cid in game.player_city_ids(0) {
+            assert!(ai.backlog_builder_item(&game, 0, cid, &plan).is_some());
+        }
+        Game::worked_backlog_censuses() - before
+    };
+    assert!(
+        unscoped >= 2,
+        "fixture: both cities reach the census, and unscoped each takes its own ({unscoped})"
+    );
+    let before = Game::worked_backlog_censuses();
+    let candidate = ai.backlog_builder_claim_candidate(&game, 0, &plan, None);
+    assert!(candidate.is_some(), "fixture: the pass names a city");
+    assert_eq!(Game::worked_backlog_censuses() - before, 1);
+
+    // The idle-queue claim's own pass, over two idle queues.
+    let mut idle = game.clone();
+    for cid in idle.player_city_ids(0) {
+        idle.cities.get_mut(&cid).unwrap().queue.clear();
+    }
+    let mut idle_only = AdvancedAi::new();
+    idle_only.enable_builders_cover_the_worked_backlog();
+    let plan = idle_only.assess(&idle, 0);
+    let before = Game::worked_backlog_censuses();
+    idle_only.claim_idle_queue_for_worked_backlog(&mut idle, 0, &plan);
+    assert_eq!(
+        builders_at_head(&idle),
+        1,
+        "fixture: an idle queue is claimed"
+    );
+    assert_eq!(
+        Game::worked_backlog_censuses() - before,
+        1,
+        "two idle cities, one census"
+    );
+}
