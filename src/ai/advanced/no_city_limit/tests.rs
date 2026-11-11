@@ -177,6 +177,16 @@ fn the_settlement_target_is_every_seat_that_pays_and_the_plan_keeps_its_own() {
         (game.turn, ai.settlement_target(&plan))
     );
     assert_eq!(
+        ai.reported_city_target(&plan),
+        plan.desired_cities.max(2 + free),
+        "the published report shows the target the Settlers are trained toward"
+    );
+    assert_eq!(
+        stock.reported_city_target(&stock_plan),
+        stock_plan.desired_cities,
+        "off: the report shows the plan's own target"
+    );
+    assert_eq!(
         ai.no_city_limit_free_seats(&game, 0, &origins, floor, 0).0,
         free,
         "the lazy count agrees with the full scan"
