@@ -11022,14 +11022,35 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Civilization VI shows a city's yields while that city is selected, whether
+// or not the yield icons are on for the whole map: its own land, with the
+// tiles its citizens work ringed, and, while land is being bought, what each
+// priced plot would add. Null when a city has nothing to add to the overlay.
+function cityYieldsShowing() {
+  return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());
+}
+function cityYieldTiles() {
+  if (!state || !cityYieldsShowing()) return null;
+  const buying = sitePick && sitePick.plots;
+  const cityId = buying ? sitePick.cityId : cityScreenId;
+  const city = cityId === null ? null
+    : state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city) return null;
+  const tiles = new Set((city.owned_tiles || []).map(key));
+  if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);
+  return tiles;
+}
+
 // Yield pips are a viewer-selected information overlay, so they deliberately
 // paint after every map object rather than participating in the terrain pass.
 // Fogged-but-explored tiles keep the old subdued treatment without letting the
 // fog wash turn a checked yield overlay into a lower, hidden layer again.
 function drawFlatTileYieldOverlay(tiles, worked, turnVisible) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   for (const t of tiles) {
     if (t.district || t.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(t.pos))) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     cx.save();
     if (!turnVisible.has(key(t.pos))) cx.globalAlpha = .42;
@@ -16289,7 +16310,7 @@ function planetGpuMapDeclines(camera) {
 // one, the ink above the GPU's ground asks for a handful of cells by key.
 function planetGpuMapOverlayWalksCells() {
   return !!((sel && ((sel.reachable || []).length || (state.legal_actions || []).length)) ||
-    SHOW_YIELDS || state.arena_flags?.length || anim.blasts.length ||
+    SHOW_YIELDS || cityYieldsShowing() || state.arena_flags?.length || anim.blasts.length ||
     mapSearchMatches().size || unitIntelLayers().length);
 }
 
@@ -23147,12 +23168,14 @@ function drawPlanetNaturalWonders(cells, visible, spectator) {
 // ground objects. The normal cell wrapper retains the globe's limb clipping
 // and fog alpha while making the ordering explicit.
 function drawPlanetTileYieldOverlay(cells, visible, spectator) {
-  if (!SHOW_YIELDS) return;
+  const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();
+  if (!SHOW_YIELDS && !cityTiles) return;
   const worked = new Set(state.cities.flatMap(city =>
     city.citizens ? city.citizens.worked_tiles.map(key) : []));
   for (const entry of cells) {
     const {tile} = entry;
     if (tile.district || tile.wonder) continue;
+    if (cityTiles && !cityTiles.has(key(tile.pos))) continue;
     withPlanetStrategicCell(entry, visible, spectator, () =>
       drawTileYields(tile, 0, 0, worked.has(key(tile.pos))));
   }
@@ -31179,7 +31202,8 @@ function drawSitePicksPlanet(cellByKey, onSheet) {
     if (!cell || cell.center.z < (onSheet ?? .02)) continue;
     planetPaintPath(cx, cell, .15);
     outlineSitePick();
-    priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);
+    priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,
+      planetCellInradius(cell) * .5);
   }
 }
 function drawSitePicksFlat() {
@@ -31190,7 +31214,7 @@ function drawSitePicksFlat() {
     const [x, y] = hexXY(q, r);
     hexPath(x, y - (tile ? elev(tile) : 0), S - 2);
     outlineSitePick();
-    priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);
+    priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);
   }
 }
 async function sendFromCity(action) {
