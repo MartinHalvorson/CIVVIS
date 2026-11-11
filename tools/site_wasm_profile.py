@@ -11,8 +11,19 @@ inlined into the tree search there and a tree walk is a chain of bounds-checked
 loads with no wide compare to lean on. A lever chosen from the native table
 would have been the wrong one.
 
-By hand only: it needs a module built with function names, and a published
-module has none (`wasm-opt` strips the name section).
+By hand only: use the exact published module and its matching
+`civvis-wasm-symbols` build artifact. The reader verifies the module and map
+checksums before translating V8's function indexes. Use the lane you profiled:
+
+    tools/site_wasm_profile.py /tmp/prof --wasm /tmp/site/civvis.wasm \\
+      --symbols /tmp/wasm-symbols/stable
+
+The module must be the one that produced the profile; V8's profile format
+does not include its SHA256. The build artifact binds the names to that module,
+not to a source revision that might have been built with different options.
+
+Without a sidecar, a named diagnostic module still works. Its different
+optimization settings can change the cost distribution:
 
     # a named module: no LTO and sixteen codegen units build in minutes
     CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \\
@@ -51,6 +62,7 @@ from typing import Counter, Dict, List, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import profile_civvis  # noqa: E402
+import site_wasm_symbols  # noqa: E402
 
 #: A symbol that is part of an ordered map's machinery, whatever it holds.
 ORDERED_MAP = re.compile(r"btree|LeafOrInternal|BTreeMap|BTreeSet")
@@ -110,10 +122,20 @@ def readable(symbol: str) -> str:
     return profile_civvis.shorten(profile_civvis.demangle(symbol), 92)
 
 
-def self_time(profile: dict) -> Counter[str]:
+def self_time(profile: dict, symbols: Dict[int, str] | None = None) -> Counter[str]:
     """Microseconds whose innermost frame is each function."""
+    def named(frame: dict) -> str:
+        name = frame.get("functionName") or "(anonymous)"
+        indexed = re.fullmatch(r"wasm-function\[(\d+)\]", name)
+        if symbols is not None and indexed:
+            index = int(indexed[1])
+            if index not in symbols:
+                raise ValueError(f"profile function index {index} is absent from the map")
+            return symbols[index]
+        return name
+
     names: Dict[int, str] = {
-        node["id"]: node["callFrame"].get("functionName") or "(anonymous)"
+        node["id"]: named(node["callFrame"])
         for node in profile.get("nodes", [])}
     totals: Counter[str] = collections.Counter()
     for node, delta in zip(profile.get("samples", []),
@@ -161,8 +183,9 @@ def report(totals: Counter[str], top: int = 30, out=sys.stdout) -> None:
     print("%.1f s sampled" % (total / 1e6), file=out)
     if share(named) < 50.0:
         print("⚠ only %.0f%% of it lands in a named function. A published "
-              "module has no name section; build one with names (see this "
-              "file's header)." % share(named), file=out)
+              "module has no name section; supply its matching function map "
+              "or build a diagnostic module with names (see this file's "
+              "header)." % share(named), file=out)
 
     print("\n== SELF  (share of sampled time)", file=out)
     for symbol, spent in totals.most_common(top):
@@ -186,10 +209,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("profile", type=Path,
                         help="a .cpuprofile, or the directory node wrote one to")
     parser.add_argument("--top", type=int, default=30)
+    parser.add_argument("--symbols", type=Path,
+                        help="stable/ or test/ directory from civvis-wasm-symbols")
+    parser.add_argument("--wasm", type=Path,
+                        help="the exact module profiled; required with --symbols")
     args = parser.parse_args(argv)
+    if bool(args.symbols) != bool(args.wasm):
+        parser.error("--symbols and --wasm must be supplied together")
     path = newest_profile(args.profile)
     print("profile: %s" % path, file=sys.stderr)
-    report(self_time(json.loads(path.read_text(encoding="utf-8"))), args.top)
+    symbols = None
+    try:
+        if args.symbols:
+            symbols, manifest = site_wasm_symbols.load(args.symbols, args.wasm)
+            print("symbols: %s, engine %s" %
+                  (manifest["source_commit"], manifest["wasm_sha256"]), file=sys.stderr)
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        report(self_time(profile, symbols), args.top, out=sys.stdout)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     return 0
 
 
