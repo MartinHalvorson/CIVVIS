@@ -2881,6 +2881,8 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
             suzerain_count: Some(1),
             nuclear_devices: Some(3),
             thermonuclear_devices: Some(2),
+            unit_count: Some(11),
+            military_unit_count: Some(6),
         },
         rivals: vec![StateRival {
             player: 3,
@@ -2908,6 +2910,8 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
                 suzerain_count: Some(2),
                 nuclear_devices: Some(4),
                 thermonuclear_devices: Some(1),
+                unit_count: Some(23),
+                military_unit_count: Some(17),
             },
             ..StateRival::default()
         }],
@@ -2940,6 +2944,8 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
     assert_eq!(mine["suzerain_count"], serde_json::json!(1));
     assert_eq!(mine["nuclear_devices"], serde_json::json!(3));
     assert_eq!(mine["thermonuclear_devices"], serde_json::json!(2));
+    assert_eq!(mine["unit_count"], serde_json::json!(11));
+    assert_eq!(mine["military_unit_count"], serde_json::json!(6));
 
     assert_eq!(rival["cities"], serde_json::json!(7));
     assert_eq!(rival["population"], serde_json::json!(49));
@@ -2956,6 +2962,10 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
     assert_eq!(rival["age"], serde_json::json!("heroic"));
     assert_eq!(rival["nuclear_devices"], serde_json::json!(4));
     assert_eq!(rival["thermonuclear_devices"], serde_json::json!(1));
+    // The rival has no unit on the board at all: the count is the host's.
+    assert!(mirror.game.units.values().all(|unit| unit.owner != 1));
+    assert_eq!(rival["unit_count"], serde_json::json!(23));
+    assert_eq!(rival["military_unit_count"], serde_json::json!(17));
     assert_eq!(rival["wonder_count"], serde_json::json!(5));
     assert_eq!(rival["suzerain_count"], serde_json::json!(2));
     assert_eq!(rival["score"], serde_json::json!(926));
@@ -2993,6 +3003,10 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
     state.rivals[0].public_stats.population = Some(55);
     state.rivals[0].public_stats.food = Some(80.0);
     state.rivals[0].public_stats.nuclear_devices = Some(0);
+    // A refused read (-1) and an export from before the count existed both
+    // leave the cell empty: the board's own fogged roster is not an answer.
+    state.rivals[0].public_stats.unit_count = Some(-1);
+    state.rivals[0].public_stats.military_unit_count = None;
     state.rivals[0].faith_per_turn = 23.0;
     state.rivals[0].techs = 54.0;
     state.rivals[0].government = Some("GOVERNMENT_DEMOCRACY".to_string());
@@ -3006,6 +3020,9 @@ fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
         refreshed["players"][0]["nuclear_devices"],
         serde_json::json!(0)
     );
+    assert_eq!(refreshed["players"][0]["unit_count"], serde_json::json!(11));
+    assert!(refreshed["players"][1]["unit_count"].is_null());
+    assert!(refreshed["players"][1]["military_unit_count"].is_null());
     assert_eq!(refreshed["players"][1]["population"], serde_json::json!(55));
     assert_eq!(
         refreshed["players"][1]["yields"]["food"],
@@ -3061,17 +3078,21 @@ fn public_empire_hud_fields_are_recognized_on_the_live_wire() {
                 "kind":"state", "turn":40,
                 "public_stats":{"city_count":4,"population":31,"food":48.0,
                   "production":29.0,"wonder_count":2,"suzerain_count":1,
-                  "nuclear_devices":3,"thermonuclear_devices":2},
+                  "nuclear_devices":3,"thermonuclear_devices":2,
+                  "unit_count":11,"military_unit_count":6},
                 "rivals":[{"player":3,"government":"GOVERNMENT_FASCISM",
                   "dark_age":false,"golden_age":false,"heroic_golden_age":true,
                   "public_stats":{"city_count":7,"population":49,
                   "food":76.0,"production":43.0,"wonder_count":5,"suzerain_count":2,
-                  "nuclear_devices":4,"thermonuclear_devices":1}}]
+                  "nuclear_devices":4,"thermonuclear_devices":1,
+                  "unit_count":23,"military_unit_count":17}}]
             }"#,
     )
     .expect("the live public standings wire parses");
     assert_eq!(state.public_stats.city_count, Some(4));
     assert_eq!(state.public_stats.thermonuclear_devices, Some(2));
+    assert_eq!(state.public_stats.unit_count, Some(11));
+    assert_eq!(state.rivals[0].public_stats.military_unit_count, Some(17));
     assert_eq!(state.rivals[0].public_stats.population, Some(49));
     assert_eq!(state.rivals[0].public_stats.wonder_count, Some(5));
     assert_eq!(
