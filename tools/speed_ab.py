@@ -281,6 +281,59 @@ def game_command(binary: Path, seed: int, opts: dict) -> list[str]:
             "--map", opts["map"], "--shape", opts["shape"]]
 
 
+#: The site reading the gate prints beside its verdict, and never judges.
+#:
+#: ⚠ ADVISORY, AND THAT IS A DECISION. The gate's budget is set for the
+#: screen's shape, whose ledger and noise floor took months to learn; a second
+#: blocking number with neither would fail at random, and a check that fails at
+#: random teaches the fleet to ignore both. What was missing is not a second
+#: gate but the *sentence*: a pull request that makes every site frame a fifth
+#: slower used to merge with nothing in its log saying so, because nothing
+#: measured a site frame. Three paired games of a hundred turns is about two
+#: minutes of a runner, and the reading lands in the same log as the verdict.
+SITE_ADVISORY = dict(seeds=7, games=3, turns=100)
+
+
+def knows_site_bench(binary: Path) -> bool:
+    """Whether a binary has `civvis site-bench`.
+
+    A base commit older than the command prints the usage line and exits 0, so
+    the exit code says nothing; a checkpoint line is the proof. Any failure to
+    even run the file is a no.
+    """
+    try:
+        done = subprocess.run([str(binary), "site-bench", "--seed", "1",
+                               "--turns", "1"],
+                              capture_output=True, text=True, check=False,
+                              timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and "\ncheckpoint " in done.stdout
+
+
+def site_advisory(baseline: Path, candidate: Path,
+                  floor: float = NOISE_FLOOR_PCT) -> list[str]:
+    """The same pairing on the site's world, as lines to print. Never raises:
+    an advisory reading that can fail the job is a second gate."""
+    if not (knows_site_bench(baseline) and knows_site_bench(candidate)):
+        return ["site workload (advisory): not read — one of these binaries "
+                "predates `civvis site-bench`"]
+    opts = dict(DEFAULTS, workload="site", turns=SITE_ADVISORY["turns"])
+    first = SITE_ADVISORY["seeds"]
+    seeds = list(range(first, first + SITE_ADVISORY["games"]))
+    try:
+        result = compare(baseline, candidate, seeds, opts, 1)
+    except SystemExit as failed:
+        return [f"site workload (advisory): not read — {failed}"]
+    return [f"site workload (advisory; the world civvis.ai plays, seeds "
+            f"{seeds[0]}..{seeds[-1]}, {opts['turns']}t, a state document "
+            f"every frame):",
+            f"  baseline  {result['per_turn']['baseline']:.6f} s/turn, "
+            f"candidate {result['per_turn']['candidate']:.6f} s/turn",
+            f"  {verdict(result, floor)}",
+            f"  {dispersion(result, None)}"]
+
+
 def report_digest(text: str) -> str:
     """The game report with its timing line removed, hashed.
 
@@ -850,6 +903,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {verdict(result, args.noise_floor)}")
     print(f"  {dispersion(result, args.budget)}")
     print(f"  {secondary(result)}")
+    # Only where a verdict is being handed down: that is the run whose log a
+    # reviewer reads, and a by-hand reading asks for the site by name.
+    if args.budget is not None and args.workload == "screen":
+        for line in site_advisory(args.baseline, args.candidate, args.noise_floor):
+            print(f"  {line}")
 
     if args.ledger_machine:
         ledger = load_ledger(args.ledger)

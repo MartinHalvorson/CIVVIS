@@ -214,10 +214,7 @@ mod tests {
         let stock = stock_opening_params(7);
         assert_eq!(report.session.params.seed, 7);
         assert_eq!(report.session.params.num_players, stock.num_players);
-        assert_eq!(
-            report.session.params.num_city_states,
-            stock.num_city_states
-        );
+        assert_eq!(report.session.params.num_city_states, stock.num_city_states);
         assert_eq!(game.turn, 4, "three rounds were played");
         let frames: u32 = report.bands.iter().map(|band| band.frames).sum();
         assert_eq!(frames, 3);

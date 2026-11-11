@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 import re
 import sys
@@ -958,6 +959,61 @@ class TheSiteWorkloadPlaysTheSitesWorld(unittest.TestCase):
         for text in formats:
             if text not in timed:
                 self.assertTrue(text.startswith("checkpoint "), text)
+
+    def test_a_binary_older_than_the_command_is_recognised(self):
+        """`civvis nonsense` prints the usage line and exits 0, so an old base
+        commit would otherwise be timed playing nothing."""
+        usage = mock.Mock(returncode=0, stdout="usage: civvis <simulate|soak>\n")
+        real = mock.Mock(returncode=0, stdout=SITE_REPORT.format(
+            total="1.000", majors="0.200", save="aa"))
+        with mock.patch.object(speed_ab.subprocess, "run", return_value=usage):
+            self.assertFalse(speed_ab.knows_site_bench(Path("/x/old")))
+        with mock.patch.object(speed_ab.subprocess, "run", return_value=real):
+            self.assertTrue(speed_ab.knows_site_bench(Path("/x/new")))
+        with mock.patch.object(speed_ab.subprocess, "run",
+                               side_effect=OSError("not executable")):
+            self.assertFalse(speed_ab.knows_site_bench(Path("/x/broken")))
+
+    def test_the_gate_prints_a_site_reading_and_never_judges_by_it(self):
+        """Advisory: the reading is a sentence in the log. A site workload
+        that reads three times slower leaves the gate's exit code alone."""
+        asked = []
+
+        def fake_compare(baseline, candidate, seeds, opts, interleaves=1):
+            asked.append(opts.get("workload", "screen"))
+            slow = 3.0 if opts.get("workload") == "site" else 1.0
+            return a_result([a_pair(seed, 1.0, slow, 100) for seed in seeds])
+
+        with tempfile.TemporaryDirectory() as scratch:
+            binaries = [Path(scratch) / name for name in ("base", "cand")]
+            for binary in binaries:
+                binary.write_text("")
+            with mock.patch.object(speed_ab, "compare", fake_compare), \
+                    mock.patch.object(speed_ab, "knows_site_bench",
+                                      lambda binary: True), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+                code = speed_ab.main(["--baseline", str(binaries[0]),
+                                      "--candidate", str(binaries[1]),
+                                      "--budget", "8"])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertEqual(asked, ["screen", "site"])
+        self.assertIn("site workload (advisory", out.getvalue())
+        self.assertIn("+200.00%", out.getvalue())
+
+    def test_a_base_commit_without_the_command_is_said_not_guessed(self):
+        with mock.patch.object(speed_ab, "knows_site_bench", lambda binary: False):
+            lines = speed_ab.site_advisory(Path("/x/a"), Path("/x/b"))
+        self.assertEqual(len(lines), 1)
+        self.assertIn("predates", lines[0])
+
+    def test_a_failed_site_run_is_a_sentence_not_a_failed_job(self):
+        def broken(*args, **kwargs):
+            raise SystemExit("/x/b exited 101 on seed 7")
+
+        with mock.patch.object(speed_ab, "knows_site_bench", lambda binary: True), \
+                mock.patch.object(speed_ab, "compare", broken):
+            lines = speed_ab.site_advisory(Path("/x/a"), Path("/x/b"))
+        self.assertIn("exited 101", lines[0])
 
     def test_a_site_reading_is_not_written_into_the_screens_ledger(self):
         with self.assertRaises(SystemExit) as refused:
