@@ -58,6 +58,42 @@
 //! [`FAITH_WAR_2_MAX_WARS`] counts the war it would open and equals version
 //! 1's limit, so the faith war makes two major wars at most.
 //!
+//! ## `faith-war-on-a-small-world`
+//!
+//! **Why (live Deity Online, 4-player Pangaea, 2026-11-11).** A Religious
+//! Victory needs every living major's majority, so on four majors it needs
+//! three conversions, and it is the top rival clock there: in the ladder's
+//! Tiny Immortal games that reached a victory, a rival won on Religion 80
+//! times (median turn 117, earliest 54), ahead of Culture 76 and Science 68.
+//! The first live Deity Pangaea game, civvis-20261111T040245Z, read "Countering
+//! Netherlands | its religion race reads 50%" from t51, and at t52 "Holding
+//! the faith war on Netherlands | faith-war-before-the-flip-2: 2 spreader(s)
+//! at our cities and 1 of ours lean to its faith, but our 199 power against
+//! their steady 398 (needs 0.7x)". Both our cities followed Protestantism by
+//! t60, the Inca fell at t83 and the Netherlands won on Religion; we were
+//! never at war with them. The power gates were measured on 6-8 major worlds,
+//! where a faith war on a stronger founder cost about two cities a game; on
+//! four majors the alternative to that risk is the game ending, because once
+//! our majority goes the founder needs one more rival.
+//!
+//! **What the gene does.** Riding version 2, on a world of at most
+//! [`SMALL_WORLD_MAJORS`] living majors (counted, not read off the map
+//! size), when the founder's faith already holds the majority of a living
+//! major other than us and the founder, or its race (living majors following
+//! it, as a percentage) reads [`SMALL_WORLD_RACE`] or more
+//! (`faith_war_small_world`), and the shipped trigger is met, the war opens
+//! without the power floor, the edge (`faith-war-needs-the-edge`), the rout
+//! ratio, the treasury reserve and the income gate. The legality of the
+//! target (a declared friend or ally is never declared on; the hold names
+//! it), the threatened-city and falling-city holds, the major-war limit,
+//! version 2's founder hold and its cooldown after a peace all stay, and the
+//! declaration is the shipped `faith_war_opening`. Then the peace desk keeps
+//! the war on record (`faith_war_keeps_the_war`) while that reading holds and
+//! a spreader of the faith stood at our cities within
+//! [`FAITH_WAR_CLEAR_TURNS`] standard turns, so the shipped exit (that many
+//! clear turns and no city converting) still ends it, as does a city of ours
+//! falling. Nothing changes on a world of five or more living majors.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -112,6 +148,26 @@ pub(crate) const FAITH_WAR_CLEAR_TURNS: u32 = 5;
 /// gate.
 const FAITH_WAR_NOTE_TURNS: u32 = 5;
 
+/// `faith-war-on-a-small-world`: a world of at most this many living majors,
+/// where a Religious Victory needs three conversions or fewer.
+pub(crate) const SMALL_WORLD_MAJORS: usize = 4;
+
+/// `faith-war-on-a-small-world`: the founder's race reading (living majors
+/// following its faith, as a percentage) at which the war opens without the
+/// edge: on four majors, the founder and one more.
+pub(crate) const SMALL_WORLD_RACE: usize = 50;
+
+/// `faith-war-on-a-small-world`: a founder's race on a small world.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SmallWorldRace {
+    /// Living majors, us included.
+    pub(crate) majors: usize,
+    /// Living majors following the founder's faith, as a percentage.
+    pub(crate) race: usize,
+    /// Living majors other than us and the founder following its faith.
+    pub(crate) others: usize,
+}
+
 /// The faith war the gene opened: the founder, the turn it opened, and the
 /// last turn a spreader of its faith stood within six tiles of our cities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +199,76 @@ impl AdvancedAi {
         } else {
             "faith-strike-wipes-the-spreaders"
         }
+    }
+
+    /// The journal's name for the gene deciding the faith war on `rival`:
+    /// `faith-war-on-a-small-world` while its reading holds, else
+    /// [`Self::faith_war_tag`].
+    fn faith_war_tag_for(&self, g: &Game, pid: usize, rival: usize) -> &'static str {
+        if self.faith_war_small_world(g, pid, rival).is_some() {
+            "faith-war-on-a-small-world"
+        } else {
+            self.faith_war_tag()
+        }
+    }
+
+    /// `faith-war-on-a-small-world`: `rival`'s race on a world of at most
+    /// [`SMALL_WORLD_MAJORS`] living majors, when its founded faith holds the
+    /// majority of a living major other than us and `rival`, or its race
+    /// reads [`SMALL_WORLD_RACE`] or more. `None` on a larger world, and
+    /// always with the gene or version 2 off.
+    pub(crate) fn faith_war_small_world(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<SmallWorldRace> {
+        if !self.faith_war_on_a_small_world || !self.faith_war_before_the_flip_2 {
+            return None;
+        }
+        let faith = Self::faith_war_faith(g, rival)?;
+        let living: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let majors = living.len();
+        if majors > SMALL_WORLD_MAJORS {
+            return None;
+        }
+        let others = living
+            .iter()
+            .filter(|other| {
+                **other != pid && **other != rival && g.civ_follows_religion(**other, faith)
+            })
+            .count();
+        let (converted, _) = self.religious_conversion_tally(g, rival);
+        let race = 100 * converted / majors.max(1);
+        (others > 0 || race >= SMALL_WORLD_RACE).then_some(SmallWorldRace {
+            majors,
+            race,
+            others,
+        })
+    }
+
+    /// `faith-war-on-a-small-world`: the race reading that keeps the faith war
+    /// on record with `rival`, and the standard turns since a spreader of its
+    /// faith last stood at our cities, while that is under
+    /// [`FAITH_WAR_CLEAR_TURNS`] (the shipped exit's clock). `None` otherwise,
+    /// and always with the gene off.
+    fn faith_war_small_world_keeps(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<(SmallWorldRace, u32)> {
+        let war = self
+            .faith_war_before_the_flip_war
+            .filter(|war| war.rival == rival)?;
+        let reading = self.faith_war_small_world(g, pid, rival)?;
+        let since = g.turn.saturating_sub(war.spreader_seen);
+        (since < g.standard_duration(FAITH_WAR_CLEAR_TURNS).max(1)).then_some((reading, since))
     }
 
     /// `faith-war-before-the-flip-2`: whether our own founded faith holds our
@@ -215,8 +341,20 @@ impl AdvancedAi {
 
     /// The first gate that holds the faith war on `rival`, as a gate key and
     /// its journal reason; `None` when every gate is clear.
+    ///
+    /// `faith-war-on-a-small-world` lifts the power floor, the edge, the
+    /// rout ratio, the treasury reserve and the income gate while its
+    /// reading holds (`faith_war_small_world`), and names a declared
+    /// friendship or alliance as the legality that holds the war.
     fn faith_war_gate(&self, g: &Game, pid: usize, rival: usize) -> Option<(&'static str, String)> {
+        let small_world = self.faith_war_small_world(g, pid, rival).is_some();
         if !self.campaign_target_legal(g, pid, rival) {
+            if small_world && (g.are_friends(pid, rival) || g.alliance_with(pid, rival).is_some()) {
+                return Some((
+                    "legal",
+                    "a declared friend or ally: no war on it while the pact runs".to_string(),
+                ));
+            }
             return Some(("legal", "not a legal target".to_string()));
         }
         let enemies = self.one_war_enemies(g, pid).len();
@@ -237,7 +375,7 @@ impl AdvancedAi {
         }
         let ours = g.military_power(pid);
         let steady = self.steady_rival_power(g, rival).max(1.0);
-        if ours < FAITH_WAR_POWER_FLOOR * steady {
+        if !small_world && ours < FAITH_WAR_POWER_FLOOR * steady {
             return Some((
                 "power",
                 format!(
@@ -246,7 +384,7 @@ impl AdvancedAi {
             ));
         }
         // `faith-war-needs-the-edge`: see `FAITH_WAR_EDGE`.
-        if self.faith_war_needs_the_edge && steady > FAITH_WAR_EDGE * ours {
+        if !small_world && self.faith_war_needs_the_edge && steady > FAITH_WAR_EDGE * ours {
             return Some((
                 "edge",
                 format!(
@@ -255,7 +393,7 @@ impl AdvancedAi {
             ));
         }
         let theirs = g.military_power(rival);
-        if theirs >= FAITH_WAR_ROUT_RATIO * ours {
+        if !small_world && theirs >= FAITH_WAR_ROUT_RATIO * ours {
             return Some((
                 "rout",
                 format!(
@@ -269,7 +407,7 @@ impl AdvancedAi {
         if Self::our_cities_falling(g, pid) {
             return Some(("falling", "a city of ours is falling".to_string()));
         }
-        if !self.war_is_affordable(g, pid) {
+        if !small_world && !self.war_is_affordable(g, pid) {
             let reserve = 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
             return Some((
                 "treasury",
@@ -280,7 +418,7 @@ impl AdvancedAi {
             ));
         }
         let per_turn = g.players[pid].gold_per_turn;
-        if per_turn < 0.0 {
+        if !small_world && per_turn < 0.0 {
             return Some(("income", format!("our income is {per_turn:.1} gold a turn")));
         }
         None
@@ -309,6 +447,7 @@ impl AdvancedAi {
     fn journal_faith_war_held(
         &mut self,
         g: &Game,
+        pid: usize,
         rival: usize,
         gate: &'static str,
         reason: &str,
@@ -327,7 +466,7 @@ impl AdvancedAi {
         }
         self.faith_war_held_noted.insert(rival, (g.turn, gate));
         let (spreaders, on_it) = trigger;
-        let tag = self.faith_war_tag();
+        let tag = self.faith_war_tag_for(g, pid, rival);
         if gate == "founder" || gate == "cooldown" {
             think!(self.journal(), Military, Detail,
                    "Holding the faith war on {}", g.players[rival].civ;
@@ -363,7 +502,7 @@ impl AdvancedAi {
         for (rival, trigger) in candidates {
             if let Some(ago) = self.faith_war_cooldown(g, pid, rival) {
                 let reason = format!("cooldown: peace {ago} turns ago");
-                self.journal_faith_war_held(g, rival, "cooldown", &reason, trigger);
+                self.journal_faith_war_held(g, pid, rival, "cooldown", &reason, trigger);
                 continue;
             }
             if let Some((on_ours, cities)) = self.faith_war_founder_holds(g, pid, rival) {
@@ -371,17 +510,25 @@ impl AdvancedAi {
                 let reason = format!(
                     "founder majority holds ({on_ours} of {cities} ours); {on_it} of ours lean to its faith, {spreaders} spreader(s) at our cities"
                 );
-                self.journal_faith_war_held(g, rival, "founder", &reason, trigger);
+                self.journal_faith_war_held(g, pid, rival, "founder", &reason, trigger);
                 continue;
             }
             if let Some((gate, reason)) = self.faith_war_gate(g, pid, rival) {
-                self.journal_faith_war_held(g, rival, gate, &reason, trigger);
+                self.journal_faith_war_held(g, pid, rival, gate, &reason, trigger);
                 continue;
             }
             let Some(opening) = self.faith_war_opening(g, pid, rival) else {
-                self.journal_faith_war_held(g, rival, "opening", "no legal declaration", trigger);
+                self.journal_faith_war_held(
+                    g,
+                    pid,
+                    rival,
+                    "opening",
+                    "no legal declaration",
+                    trigger,
+                );
                 continue;
             };
+            let small_world = self.faith_war_small_world(g, pid, rival);
             if g.apply(pid, &opening).is_err() {
                 continue;
             }
@@ -391,6 +538,14 @@ impl AdvancedAi {
                 spreader_seen: g.turn,
             });
             let (spreaders, on_it) = trigger;
+            if let Some(reading) = small_world {
+                think!(self.journal(), Military, Strategy,
+                       "Opening the faith war on {}", g.players[rival].civ;
+                       "faith-war-on-a-small-world: {} living majors, its race reads {}% ({} other major(s) on its faith), {spreaders} spreader(s) at our cities and {on_it} of ours lean to its faith; the edge is not asked (ours {:.0} against their steady {:.0}); defensive, no siege: our soldiers condemn its spreaders",
+                       reading.majors, reading.race, reading.others,
+                       g.military_power(pid), self.steady_rival_power(g, rival));
+                return true;
+            }
             let tag = self.faith_war_tag();
             think!(self.journal(), Military, Strategy,
                    "Opening a faith war on {}", g.players[rival].civ;
@@ -479,13 +634,18 @@ impl AdvancedAi {
     /// city of ours is still being converted to the founder's faith, and no
     /// city of ours is falling. `false` with the gene off, and for a heretic
     /// strike's war that `faith-strike-spares-the-stages` ends.
+    ///
+    /// `faith-war-on-a-small-world` also keeps it with no city converting
+    /// while its race reading holds and a spreader of the faith stood at our
+    /// cities within the exit's clear turns (`faith_war_small_world_keeps`).
     pub(crate) fn faith_war_keeps_the_war(&self, g: &Game, pid: usize, rival: usize) -> bool {
         self.faith_war_is_run()
             && self
                 .faith_war_before_the_flip_war
                 .is_some_and(|war| war.rival == rival)
             && g.is_at_war(pid, rival)
-            && Self::faith_war_converting(g, pid, rival) > 0
+            && (Self::faith_war_converting(g, pid, rival) > 0
+                || self.faith_war_small_world_keeps(g, pid, rival).is_some())
             && !Self::our_cities_falling(g, pid)
             && !self.faith_strike_war_spares_the_stages(g, pid, rival)
     }
@@ -536,6 +696,15 @@ impl AdvancedAi {
         } else {
             "Keeping the faith war with"
         };
+        if converting == 0 {
+            if let Some((reading, since)) = self.faith_war_small_world_keeps(g, pid, rival) {
+                think!(self.journal(), Diplomacy, Decision,
+                       "{what} {}", g.players[rival].civ;
+                       "faith-war-on-a-small-world: {} living majors and its race reads {}%; a spreader of its faith stood at our cities {since} turn(s) ago; at war our soldiers condemn its spreaders",
+                       reading.majors, reading.race);
+                return;
+            }
+        }
         think!(self.journal(), Diplomacy, Decision,
                "{what} {}", g.players[rival].civ;
                "{}: {converting} of our cities are still being converted to its faith; at war our soldiers condemn its spreaders",
