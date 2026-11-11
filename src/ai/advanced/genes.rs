@@ -5771,6 +5771,10 @@ pub const GENES: &[Gene] = &[
     // levels higher) in 6 of 28 Spy promotion menus and the Culture list took
     // none. See `advanced/space_denial_rocket_scientist.rs`.
     Gene { tag: "space-denial-promotes-the-rocket-scientist", field: "space_denial_promotes_the_rocket_scientist", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_promotes_the_rocket_scientist, disable: AdvancedAi::disable_space_denial_promotes_the_rocket_scientist },
+    // Deity 11-10, 28 games t2-80: the stall limit counted decision frames (2-3
+    // a live turn), so one held turn, or a Settler that ended its move short,
+    // dropped its site silently. See `advanced/settler_stall_counts_turns.rs`.
+    Gene { tag: "settler-stall-counts-turns", field: "settler_stall_counts_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_stall_counts_turns, disable: AdvancedAi::disable_settler_stall_counts_turns },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

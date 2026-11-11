@@ -9984,6 +9984,14 @@ pub struct AdvancedAi {
     /// the kill plan, the ladder and the city strike. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     siege_at_the_walls_dies_first: bool,
+    /// `settler-stall-counts-turns`: `SETTLER_STALL_LIMIT` counts a Settler's
+    /// stall at most once per game turn, and not on a turn it got closer. See
+    /// `advanced/settler_stall_counts_turns.rs`. Off by default.
+    settler_stall_counts_turns: bool,
+    /// `settler-stall-counts-turns`: the last game turn already spoken for
+    /// (a stall counted, or progress made), keyed by the Settler's stable
+    /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
+    settler_stall_turn: BTreeMap<i64, u32>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11628,6 +11636,9 @@ mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
+/// A Settler's stall limit counts game turns, not decision frames. One
+/// opt-in gene; see `advanced/settler_stall_counts_turns.rs`.
+mod settler_stall_counts_turns;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
@@ -12023,6 +12034,7 @@ impl AdvancedAi {
         self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.settler_stall_turn.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();
