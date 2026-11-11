@@ -105,7 +105,7 @@ fn pangaea_land_only_and_lakes_are_the_one_landmass_maps() {
         .collect();
     assert_eq!(
         one,
-        vec![MapScript::LandOnly, MapScript::Lakes, MapScript::Pangaea]
+        [MapScript::LandOnly, MapScript::Lakes, MapScript::Pangaea]
     );
     for script in [
         MapScript::InlandSea,
