@@ -623,12 +623,20 @@ pub fn route_step(session: &Session, parsed: &Value) -> Value {
 }
 
 /// What a favoured yield adds to a city governor's appetite for it, and what
-/// a disfavoured one takes away. The shipped appetites run from 0.85 to 1.55,
-/// so a favoured yield about doubles and a disfavoured one keeps a sliver.
+/// a disfavoured one takes away.
+///
+/// A favoured yield has to outrank the governor's other appetites or the
+/// focus is a button that does nothing. The shipped appetites start between
+/// 0.85 and 1.55, but a city's own districts and its role lift them: measured
+/// on a played game, Production stood at 3.3 in a city whose player then
+/// favoured Gold at +1.5 and saw no citizen move. Four clears every appetite
+/// the governor arrives at by itself. A disfavoured yield keeps a sliver, so a
+/// tile that pays nothing else is still better than an idle citizen.
+///
 /// Neither can starve a city: covering consumption is the governor's
 /// `food_target`, which is not an appetite and is not touched here.
-const FOCUS_FAVOURED: f64 = 1.5;
-const FOCUS_DISFAVOURED: f64 = -0.8;
+const FOCUS_FAVOURED: f64 = 4.0;
+const FOCUS_DISFAVOURED: f64 = -1.0;
 
 /// `POST /city-focus` — the played seat's yield focus for one of its cities.
 ///
