@@ -297,7 +297,7 @@ for every Builder every turn), `worthwhile_improvements` 5.1%,
 5.3% and `tactical_step` 3.4%. `retreat_step` spends 3.8% of the thread at
 one line, fetching `enemy_attack_envelopes`.
 
-### Shortcuts were tried, against a bar, and none is on
+### Shortcuts were tried, against a bar, and one is on for the small seats
 
 Everything above plays the same game faster. What is left of that kind is
 small and flat, so the operator approved the other kind for the site:
@@ -349,8 +349,15 @@ world. Twenty-two seeds played to the end both ways:
 About one more city-state survives a game. A barbarian that reads an enemy's
 reach against where its own band stood when the pass began walks into more of
 it, and a weaker barbarian is a different opponent for everybody, not a
-faster one. It is a 7% that buys a visible change to the game, so it is the
-operator's to take or leave, and it is off.
+faster one. It is a 7% that buys a visible change to the game, so it was the
+operator's to take or leave.
+
+**The operator took it the same day.** `SMALL_SEAT_SHORTCUTS`
+(`src/server.rs`) is what `Session::ai_fleet` seats every city-state and the
+barbarians with, and the majors are seated with nothing. `civvis site-bench
+--plain-seats` plays the game from before it, which is how the two tables
+above are reproduced now that the default has moved: `--plain-seats` on one
+side and nothing on the other.
 
 What the three readings say together: the cheap staleness that remains is in
 the tactical layer, and the tactical layer is where staleness costs. The

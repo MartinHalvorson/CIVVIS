@@ -15630,7 +15630,9 @@ fn every_site_major_plays_the_site_deployment() {
         .iter()
         .map(|player| -> Box<dyn Ai + Send> {
             if player.is_minor || player.is_barbarian {
-                Box::new(BasicAi::new())
+                let mut ai = BasicAi::new();
+                ai.set_site_shortcuts(crate::server::SMALL_SEAT_SHORTCUTS);
+                Box::new(ai)
             } else {
                 let mut ai = AdvancedAi::new();
                 ai.enable_site_deployment();

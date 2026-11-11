@@ -102,6 +102,10 @@ pub struct Options {
     /// Which seats take `shortcuts`, as a bit per player id. `None` is every
     /// seat, city-states and barbarians included.
     pub shortcut_seats: Option<u64>,
+    /// Take every shortcut away from every seat first, the ones a session
+    /// seats its city-states and barbarians with included: the game the site
+    /// played before it took any. `shortcuts` is applied after this.
+    pub plain_seats: bool,
 }
 
 impl Default for Options {
@@ -113,6 +117,7 @@ impl Default for Options {
             keeps_own_yields: true,
             shortcuts: SiteShortcuts::default(),
             shortcut_seats: None,
+            plain_seats: false,
         }
     }
 }
@@ -193,6 +198,11 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
     let mut session = Session::new(stock_opening_params(seed));
     session.keeps_rival_yields = options.keeps_rival_yields;
     session.keeps_own_yields = options.keeps_own_yields;
+    if options.plain_seats {
+        for seat in 0..session.game.players.len() {
+            session.set_seat_shortcuts(seat, SiteShortcuts::default());
+        }
+    }
     if options.shortcuts != SiteShortcuts::default() {
         for seat in 0..session.game.players.len() {
             let taken = options
@@ -365,6 +375,29 @@ mod tests {
     #[test]
     fn a_shortcut_is_taken_only_by_the_seats_it_is_given_to() {
         let plain = run_with(23, 30, Options::default());
+        // A session's own seating: the small seats take what the site gives
+        // them, the majors nothing, and `plain_seats` takes it all away.
+        let stripped = run_with(
+            23,
+            2,
+            Options {
+                plain_seats: true,
+                ..Options::default()
+            },
+        );
+        for (seat, player) in plain.session.game.players.iter().enumerate() {
+            let seated = if player.is_minor || player.is_barbarian {
+                crate::server::SMALL_SEAT_SHORTCUTS
+            } else {
+                SiteShortcuts::default()
+            };
+            assert_eq!(plain.session.seat_shortcuts(seat), seated, "seat {seat}");
+            assert_eq!(
+                stripped.session.seat_shortcuts(seat),
+                SiteShortcuts::default(),
+                "seat {seat}"
+            );
+        }
         let named_but_nobody = run_with(
             23,
             30,

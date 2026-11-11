@@ -2070,6 +2070,26 @@ impl Shared {
 /// while keeping the browser/server identity round-trip exact.
 const MAX_EXACT_JAVASCRIPT_INTEGER: u64 = (1_u64 << 53) - 1;
 
+/// The [`crate::ai::SiteShortcuts`] a session's city-states and barbarians
+/// take. The majors take none.
+///
+/// ★★★ THIS ONE CHANGES THE GAME, AND THE OPERATOR CHOSE IT (2026-11-11).
+/// A city-state or a barbarian camp reads an enemy's reach against where its
+/// own units stood when its pass began, not after each of its own steps. That
+/// is about 7% of a site game's instructions (252.5 against 271.9 billion
+/// over 150 turns of seed 7), and no major decides anything differently from
+/// the same board. The board is what differs: the barbarians walk into more
+/// of the reach they misread, and about one more city-state of eight is
+/// standing at the end of a game (22 seeds played both ways; the tables are in
+/// `docs/SIMULATOR_PERFORMANCE.md`).
+///
+/// ⚠ Do not extend it to the majors on the strength of that. The same switch
+/// on a major's seat was played against seats without it for 104 pairs and
+/// did not pass: 98 of 208 games.
+pub const SMALL_SEAT_SHORTCUTS: crate::ai::SiteShortcuts = crate::ai::SiteShortcuts {
+    envelopes_across_own_moves: true,
+};
+
 fn automatic_successor_seed(seed: u64) -> u64 {
     seed.wrapping_mul(6364136223846793005)
         .wrapping_add(1442695040888963407)
@@ -2100,7 +2120,9 @@ impl Session {
             .iter()
             .map(|p| -> Box<dyn Ai + Send> {
                 if p.is_minor || p.is_barbarian {
-                    Box::new(BasicAi::new())
+                    let mut ai = BasicAi::new();
+                    ai.set_site_shortcuts(SMALL_SEAT_SHORTCUTS);
+                    Box::new(ai)
                 } else {
                     let mut ai = AdvancedAi::new();
                     ai.enable_site_deployment();
@@ -2802,10 +2824,11 @@ impl Session {
         o
     }
 
-    /// Turn [`crate::ai::SiteShortcuts`] on or off for one seat's agent. No
-    /// session does this by itself, and on 2026-11-11 none should: the one
-    /// shortcut there is did not pass (`docs/SIMULATOR_PERFORMANCE.md`).
-    /// `site-bench --shortcuts` and the paired strength test are the callers.
+    /// Turn [`crate::ai::SiteShortcuts`] on or off for one seat's agent. A
+    /// session seats its city-states and barbarians with
+    /// [`SMALL_SEAT_SHORTCUTS`] and its majors with none; `site-bench
+    /// --shortcuts` and the paired strength test are the callers that change
+    /// a seat afterwards.
     pub fn set_seat_shortcuts(&mut self, seat: usize, shortcuts: crate::ai::SiteShortcuts) {
         if let Some(agent) = self.ais.get_mut(seat) {
             agent.set_site_shortcuts(shortcuts);

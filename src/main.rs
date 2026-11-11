@@ -853,6 +853,7 @@ fn site_bench_command(args: Vec<String>) {
                 eprintln!("{error}");
                 std::process::exit(2);
             }),
+        plain_seats: has("--plain-seats"),
         shortcut_seats: args.iter().any(|a| a == "--shortcut-seats").then(|| {
             arg_text(&args, "--shortcut-seats", "")
                 .split(',')
@@ -2010,7 +2011,8 @@ fn print_usage() {
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
               [--audit-kept-yields (site-bench: re-derive every reused yield and compare)] \
               [--shortcuts envelopes-across-own-moves (site-bench: this changes play)] \
-              [--shortcut-seats 0,1 (site-bench: the player ids that take them; every seat when absent)]"
+              [--shortcut-seats 0,1 (site-bench: the player ids that take them; every seat when absent)] \
+              [--plain-seats (site-bench: first take away the shortcut a session gives its city-states and barbarians)]"
     );
 }
 
