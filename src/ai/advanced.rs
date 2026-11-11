@@ -5638,6 +5638,14 @@ pub struct AdvancedAi {
     /// least three such stages are open; a thinner one is ranked by levels
     /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
     band_stage_needs_three_venues: bool,
+    /// `breaker-walks-under-a-shield`: the early conquest opening's breaker
+    /// rides stacked with a melee body of its force, and the force strikes
+    /// the walls only once it stands beside them. See
+    /// `advanced/breaker_walks_under_a_shield.rs`. Off by default.
+    breaker_walks_under_a_shield: bool,
+    /// `breaker-walks-under-a-shield`: where the breaker and its shield last
+    /// stood, for the journal of its loss. `None` while the gene is off.
+    breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
     // ---- append: c-d ------------------------------------------------
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
@@ -11770,6 +11778,11 @@ mod threatened_lane_lends_the_army;
 /// `advanced/threatened_war_holds_the_claims.rs`.
 mod threatened_war_holds_the_claims;
 
+/// `breaker-walks-under-a-shield`: the early conquest opening's breaker walks
+/// stacked with a melee body of its force, and the force strikes the walls
+/// only from beside it. One opt-in gene; see
+/// `advanced/breaker_walks_under_a_shield.rs`.
+mod breaker_walks_under_a_shield;
 /// `first-capital-before-the-walls`: a Domination seat's early conquest on
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
@@ -24794,6 +24807,11 @@ impl AdvancedAi {
             })
             .collect();
         for with in support {
+            // `breaker-walks-under-a-shield`: the opening's breaker links only
+            // to its shield, in its own step. `false` with the gene off.
+            if self.breaker_waits_for_its_shield(g, pid, with) {
+                continue;
+            }
             let pos = g.units[&with].pos;
             let escort = g
                 .unit_ids_at(pos)

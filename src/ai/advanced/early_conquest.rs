@@ -496,6 +496,9 @@ impl AdvancedAi {
         next: &Game,
         units: &std::collections::BTreeMap<u32, u32>,
     ) {
+        // `breaker-walks-under-a-shield`: its memory of the breaker. No-op
+        // with the gene off.
+        self.remap_breaker_shield_memory(units);
         let Some(opening) = self.conquest_opening.as_mut() else {
             return;
         };
@@ -1256,8 +1259,11 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: the breaker walks with the
         // force. `false` with the gene off.
         let breaker = self.first_capital_breaker_walks(g, pid, uid);
+        // `breaker-walks-under-a-shield`: the body carrying the breaker walks
+        // it to the rally, in the force or not. `false` with the gene off.
+        let shield = self.shield_carries_the_breaker(g, pid, uid);
         if opening.declared.is_some()
-            || !(opening.force.contains(&uid) || breaker)
+            || !(opening.force.contains(&uid) || breaker || shield)
             || (opening.assembled.is_none() && g.turn >= self.conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
@@ -1622,6 +1628,9 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: see that module.
         self.first_capital_read_the_softness(g);
         self.conquest_count_losses(g);
+        // `breaker-walks-under-a-shield`: journal a lost breaker before the
+        // release checks below read the loss. No-op with the gene off.
+        self.breaker_shield_watch(g, pid);
         // `city-state-before-the-first-capital`: re-read the stepping stone
         // from its tile and close it on a capture, a refused war or a
         // suzerain, before the checks below read its seat. No-op without one.

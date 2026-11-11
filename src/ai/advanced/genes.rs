@@ -5474,6 +5474,13 @@ pub const GENES: &[Gene] = &[
     // second turn running: a turn the host moved nobody bars nobody. Opt-in;
     // see `advanced/band_stall_bars_no_host.rs`.
     Gene { tag: "band-stall-bars-no-host", field: "band_stall_bars_no_host", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stall_bars_no_host, disable: AdvancedAi::disable_band_stall_bars_no_host },
+    // Live Deity Macedon (#5058's replay of 040704Z): the opening's Ram walked
+    // alone to 5 tiles from Mikisiw-Wacîhk and died on the first turn of the
+    // war; the city kept 200 health. The early conquest opening's breaker
+    // rides stacked with a melee body of its force, and the force strikes the
+    // walls only once it stands beside them. Opt-in; see
+    // `advanced/breaker_walks_under_a_shield.rs`.
+    Gene { tag: "breaker-walks-under-a-shield", field: "breaker_walks_under_a_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_walks_under_a_shield, disable: AdvancedAi::disable_breaker_walks_under_a_shield },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.

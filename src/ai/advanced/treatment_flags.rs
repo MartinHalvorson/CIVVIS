@@ -121,6 +121,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-stall-bars-no-host`; see
         /// `advanced/band_stall_bars_no_host.rs`.
         base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
+        /// Opt-in gene `breaker-walks-under-a-shield`; see
+        /// `advanced/breaker_walks_under_a_shield.rs`.
+        breaker_walks_under_a_shield => enable_breaker_walks_under_a_shield, disable_breaker_walks_under_a_shield;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.
