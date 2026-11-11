@@ -108,7 +108,7 @@ the action from the UI without a debugger.
 | Turn loop | `end_turn` | yes — blockers, notifications, unit cycling |
 | Unit orders | `move`, `move_to`, `attack`, `ranged`, `fortify`, `promote`, `upgrade`, `improve`, `pillage`, `repair_improvement`, air ops, religious ops | yes — contextual unit bar |
 | Research | `research`, `civic` | yes — cards and both trees |
-| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — the city's panels on the map, with prices on purchases; there is no production *queue* because the engine has none (`do_produce` replaces `city.queue`) |
+| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — the city's panels on the map, with prices on purchases, a production queue the page keeps, and a yield focus (`POST /city-focus`) |
 | Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
 | Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
 | Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, naming the person on offer and why they cannot be claimed |
@@ -124,8 +124,8 @@ the action from the UI without a debugger.
 | Auto-play | `POST /autoplay` | yes — a built-in agent and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
-value to a player. What is left is a production *queue*, which is an engine
-gap rather than a client one: `do_produce` sets `city.queue = vec![item]`.
+value to a player. What is left in the city is placing individual citizens by
+hand, which the engine has no action for.
 
 ## The arrangement
 
@@ -549,10 +549,23 @@ The city is not a modal: the map's keys work under it, Escape or a press on
 open country puts it down, and selecting a unit takes the corner back. A stage
 too narrow to dock against keeps one stacked sheet.
 
-There is no production queue, and that is an engine fact rather than a client
-gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
-work. Citizens cannot be reassigned either: the engine places them and has no
-action for a player to move one.
+**The queue.** Civilization VI lets a city be told what to build after what it
+is building. The engine holds one item per city (`do_produce` replaces the
+queue), so the rest of the list is a standing order the page keeps and
+re-issues, the way a travel order is. With Add to queue on, or Shift held, a
+row goes behind the current build instead of replacing it; a district chosen
+for the queue keeps the tile it was given. At the top of a turn an idle city is
+ordered the next thing on its list that the engine still offers, and an item it
+no longer offers is dropped. The list is kept with the browser's saves for the
+one game it belongs to.
+
+**The focus.** Each yield on the city panel is also its focus: press it to
+favour it, again to disfavour it, again to leave it to the governor. The
+governor is the engine's own (`citizen_strategy`); `POST /city-focus` writes
+the seat's wish into the same per-city directive an agent writes, and the
+citizens are reassigned at once. A focus tilts appetites and cannot starve a
+city. Individual citizens still cannot be placed by hand: the engine has no
+action for that.
 
 ## Endings
 

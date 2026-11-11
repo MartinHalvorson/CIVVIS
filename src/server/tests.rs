@@ -9326,7 +9326,7 @@ fn a_choice_of_tiles_is_made_on_the_map() {
     // coordinates. Both renderers outline the sites, because the default world
     // is a globe and a flat-only pass would reach nobody.
     assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
-    assert!(EMBEDDED_APP_JS.contains("`beginSitePick(${city.id},${itemId})`"));
+    assert!(EMBEDDED_APP_JS.contains("`pickSiteFromCity(event,${city.id},${itemId})`"));
     assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
     assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
     // A click belongs to the picker before anything else reads it, and a turn
@@ -15952,6 +15952,132 @@ fn a_building_is_listed_under_the_district_it_stands_in() {
         2
     );
     assert!(EMBEDDED_INDEX.contains("  .build-sub {\n"));
+}
+
+/// Civilization VI's city panel lets a player favour or disfavour a yield and
+/// the city's governor reassigns its citizens. Citizen assignment was "the one
+/// city-level decision no player, human or AI, can currently express"; agents
+/// got `city_directives`, and the person in the seat got nothing.
+#[test]
+fn a_played_seat_sets_its_citys_yield_focus() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let city = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| city.id)
+        .expect("the city just founded");
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+
+    // Nothing asked is no opinion, and the page is told so.
+    let before = citizens(&session.state());
+    assert_eq!(before["emphasis"]["food"].as_f64(), Some(0.0));
+
+    let ask = |session: &mut Session, name: &str, stance: i64| {
+        crate::routes::city_focus(
+            session,
+            &json!({"city": city, "yield": name, "stance": stance}),
+        )
+    };
+    // Favoured: the governor's appetite for it rises, and the answer is the
+    // state the write produced.
+    let favoured = ask(&mut session, "food", 1);
+    assert!(favoured["error"].is_null(), "{}", favoured["error"]);
+    assert!(session.game.players[0].city_directives[&city].emphasis.food > 0.0);
+    let after = citizens(&favoured);
+    assert!(after["emphasis"]["food"].as_f64() > Some(0.0));
+    assert!(after["weights"]["food"].as_f64() > before["weights"]["food"].as_f64());
+    // One yield at a time: the others keep whatever they had.
+    assert_eq!(after["emphasis"]["production"].as_f64(), Some(0.0));
+
+    // Disfavoured, then no opinion again.
+    let disfavoured = ask(&mut session, "food", -1);
+    assert!(citizens(&disfavoured)["emphasis"]["food"].as_f64() < Some(0.0));
+    let cleared = ask(&mut session, "food", 0);
+    assert_eq!(citizens(&cleared)["emphasis"]["food"].as_f64(), Some(0.0));
+    assert_eq!(
+        citizens(&cleared)["weights"]["food"].as_f64(),
+        before["weights"]["food"].as_f64()
+    );
+
+    // Not a city of the seat's, and not a yield.
+    let stranger = crate::routes::city_focus(
+        &mut session,
+        &json!({"city": 4_000_000, "yield": "food", "stance": 1}),
+    );
+    assert!(stranger["error"].is_string());
+    assert!(ask(&mut session, "happiness", 1)["error"].is_string());
+
+    // Both front ends answer it, and the browser build routes it to the engine.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-focus\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-focus\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/city-focus\""));
+}
+
+/// Civilization VI lets a city be told what to build after what it is
+/// building. The engine holds one item per city, so the rest of the list is a
+/// standing order the page keeps and re-issues, the way a travel order is.
+#[test]
+fn a_city_keeps_a_queue_the_page_reissues() {
+    // A row is an order, or with the queue on or Shift held, an order for
+    // later; a district chosen for the queue keeps the tile it was given.
+    assert!(EMBEDDED_APP_JS.contains(
+        "if (cityQueueMode || (event && event.shiftKey)) queueCityItem(action.city, action);"
+    ));
+    assert!(EMBEDDED_APP_JS.contains("if (sitePick && queueing) sitePick.queue = true;"));
+    assert!(EMBEDDED_APP_JS.contains(": `orderFromCity(event,${JSON.stringify(entry.sites[0])})`,"));
+    // An idle city starts on it at once; anything else waits its turn.
+    assert!(EMBEDDED_APP_JS.contains("if (!(city.queue && city.queue.length)) await send(action);"));
+    // The turn opens: saved lists come back on the first one, and every idle
+    // city takes the next thing the engine still offers.
+    assert!(EMBEDDED_APP_JS.contains(
+        "  if (first) restoreCityQueues();\n  resumeAllTravel();\n  resumeCityQueues();\n"
+    ));
+    let resume = EMBEDDED_APP_JS
+        .split_once("async function resumeCityQueues() {")
+        .expect("the queue's turn")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the queue's turn")
+        .0;
+    assert!(resume.contains("if (city.queue && city.queue.length) continue;"));
+    assert!(resume.contains("action.type === \"produce\""));
+    assert!(resume.contains("if (!order) continue;"));
+    // A new world never inherits another's list.
+    assert!(EMBEDDED_APP_JS.contains("unitOrders.clear(); cityQueues.clear();"));
+    assert!(EMBEDDED_APP_JS.contains("held.seed !== state.seed"));
+
+    // The yields on the city panel are their own focus, when the server says
+    // what the focus is.
+    assert!(EMBEDDED_APP_JS.contains("const emphasis = city.citizens && city.citizens.emphasis;"));
+    assert!(EMBEDDED_APP_JS.contains("onclick='cycleCityFocus(${city.id},\"${kind}\")'>"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})"
+    ));
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15

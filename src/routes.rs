@@ -622,6 +622,63 @@ pub fn route_step(session: &Session, parsed: &Value) -> Value {
     }
 }
 
+/// What a favoured yield adds to a city governor's appetite for it, and what
+/// a disfavoured one takes away. The shipped appetites run from 0.85 to 1.55,
+/// so a favoured yield about doubles and a disfavoured one keeps a sliver.
+/// Neither can starve a city: covering consumption is the governor's
+/// `food_target`, which is not an appetite and is not touched here.
+const FOCUS_FAVOURED: f64 = 1.5;
+const FOCUS_DISFAVOURED: f64 = -0.8;
+
+/// `POST /city-focus` — the played seat's yield focus for one of its cities.
+///
+/// Civilization VI's city panel lets a player favour or disfavour each yield,
+/// and the city's governor reassigns its citizens. The engine already has the
+/// channel: `Player::city_directives`, which an agent writes without an
+/// action. This is the same write made by the person in the seat, one yield
+/// at a time, and it answers with the state the write produced.
+pub fn city_focus(session: &mut Session, parsed: &Value) -> Value {
+    if session.params.spectate {
+        return json!({"error": "a watched game has no seat to set a focus from"});
+    }
+    let owned = parsed["city"]
+        .as_u64()
+        .map(|city| city as u32)
+        .filter(|city| {
+            session
+                .game
+                .cities
+                .get(city)
+                .is_some_and(|held| held.owner == 0)
+        });
+    let Some(city) = owned else {
+        return json!({"error": "not your city"});
+    };
+    let amount = match parsed["stance"].as_i64().unwrap_or(0) {
+        stance if stance > 0 => FOCUS_FAVOURED,
+        stance if stance < 0 => FOCUS_DISFAVOURED,
+        _ => 0.0,
+    };
+    let directive = session.game.players[0]
+        .city_directives
+        .entry(city)
+        .or_default();
+    match parsed["yield"].as_str() {
+        Some("food") => directive.emphasis.food = amount,
+        Some("production") => directive.emphasis.production = amount,
+        Some("gold") => directive.emphasis.gold = amount,
+        Some("science") => directive.emphasis.science = amount,
+        Some("culture") => directive.emphasis.culture = amount,
+        Some("faith") => directive.emphasis.faith = amount,
+        _ => return json!({"error": "a focus names one of the six yields"}),
+    }
+    // A governor setting, written without an action.
+    session.game.board_written();
+    let mut out = session.state();
+    out["error"] = Value::Null;
+    out
+}
+
 /// `POST /forecast` — what a blow would do, before it is struck.
 ///
 /// Read-only, and it answers only for a strike the seat could order right now
