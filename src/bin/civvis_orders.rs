@@ -2243,6 +2243,140 @@ fn append_tribute_order(
     None
 }
 
+/// `tribute-warms-the-neighbour`: the visible opinion a gift aims for. The
+/// host must turn an Unfriendly leader Neutral at +5 and may turn a Neutral
+/// one Unfriendly at +5 or less (`DiplomaticStateTransitions`,
+/// `Base/Assets/Gameplay/Data/DiplomaticActions.xml:239-240`). Live gifts
+/// bought about a point less than their Gold over ten, and the row loses a
+/// point every two turns.
+const NEIGHBOUR_TRIBUTE_TARGET_OPINION: f64 = 7.0;
+/// `tribute-warms-the-neighbour`: the farthest a rival's nearest visible city
+/// may stand from one of ours. The first attackers of 11-10's collapsed Deity
+/// games held a city 4 to 11 tiles from ours.
+const NEIGHBOUR_TRIBUTE_RADIUS: i32 = 12;
+
+/// `tribute-warms-the-neighbour`: one whole Gold gift (`aid_gift` verb
+/// `TRIBUTE`) to the nearest major at peace with us that is stronger, holds a
+/// city within [`NEIGHBOUR_TRIBUTE_RADIUS`] of ours, reads Unfriendly or
+/// Neutral, has no standing favorable-deal row, and whose gap to
+/// [`NEIGHBOUR_TRIBUTE_TARGET_OPINION`] one gift can close
+/// ([`TRIBUTE_ONE_GIFT_POINTS`]). The whole treasury may pay, less Gold another
+/// gift took this frame; a seat losing Gold per turn sends nothing. `None`
+/// when a gift was pushed, else the hold. See
+/// `advanced/tribute_warms_the_neighbour.rs`.
+fn append_neighbour_tribute_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    let ours: Vec<(i32, i32)> = state.cities.iter().map(|city| (city.x, city.y)).collect();
+    let mut near: Vec<(i32, &civvis::mirror::StateRival)> = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war && rival.military > state.military)
+        .filter_map(|rival| {
+            rival
+                .cities
+                .iter()
+                .flat_map(|city| ours.iter().map(move |own| offset_distance(*own, (city.x, city.y))))
+                .min()
+                .filter(|distance| *distance <= NEIGHBOUR_TRIBUTE_RADIUS)
+                .map(|distance| (distance, rival))
+        })
+        .collect();
+    near.sort_by(|(da, a), (db, b)| {
+        da.cmp(db)
+            .then(b.military.total_cmp(&a.military))
+            .then(a.player.cmp(&b.player))
+    });
+    // The nearest stronger neighbour one gift can warm; else why the nearest
+    // one cannot be.
+    let mut first_hold = None;
+    let mut chosen = None;
+    for (_, rival) in near {
+        let hold = neighbour_tribute_points(rival);
+        match hold {
+            Ok(points) => {
+                chosen = Some((rival, points));
+                break;
+            }
+            Err(why) => {
+                first_hold.get_or_insert(why);
+            }
+        }
+    }
+    let Some((rival, points)) = chosen else {
+        return Some(first_hold.unwrap_or("neighbour_tribute_hold:no_neighbour"));
+    };
+    if state.gold_per_turn.is_some_and(|income| income < 0.0) {
+        return Some("neighbour_tribute_hold:deficit");
+    }
+    let amount = ((points.ceil() * TRIBUTE_GOLD_PER_POINT) as i64).max(TRIBUTE_MIN_GOLD);
+    let committed: i64 = orders
+        .iter()
+        .filter(|order| order.kind == "aid_gift")
+        .filter_map(|order| order.pos.map(|(gold, _)| i64::from(gold)))
+        .sum();
+    if amount > state.gold - committed {
+        return Some("neighbour_tribute_hold:treasury");
+    }
+    let subject = rival.player as i64;
+    if orders.iter().any(|order| {
+        order.subject == Some(subject)
+            && matches!(
+                order.kind,
+                "sell"
+                    | "buy"
+                    | "aid_gift"
+                    | "war"
+                    | "peace"
+                    | "delegation"
+                    | "denounce"
+                    | "friendship"
+                    | "alliance"
+            )
+    }) {
+        return Some("neighbour_tribute_hold:deal_in_flight");
+    }
+    orders.push(Order {
+        kind: "aid_gift",
+        subject: Some(subject),
+        verb: Some("TRIBUTE".to_string()),
+        pos: Some((amount as i32, 0)),
+    });
+    None
+}
+
+/// `tribute-warms-the-neighbour`: the opinion points one gift must buy from
+/// `rival`, or why it is not sent one.
+fn neighbour_tribute_points(rival: &civvis::mirror::StateRival) -> Result<f64, &'static str> {
+    let mood = rival.diplomatic_state.as_deref().unwrap_or("");
+    if !matches!(mood, "DIPLO_STATE_UNFRIENDLY" | "DIPLO_STATE_NEUTRAL") {
+        return Err(if mood == "DIPLO_STATE_DENOUNCED" {
+            "neighbour_tribute_hold:denounced"
+        } else {
+            "neighbour_tribute_hold:courted"
+        });
+    }
+    let Some(reasons) = rival.opinion_modifiers.as_ref() else {
+        return Err("neighbour_tribute_hold:opinion_unknown");
+    };
+    if reasons
+        .iter()
+        .any(|reason| reason.score > 0.0 && reason.text.starts_with(TRIBUTE_FAVORABLE_TRADE_ROW))
+    {
+        return Err("neighbour_tribute_hold:already_paid");
+    }
+    let total: f64 = reasons.iter().map(|reason| reason.score).sum();
+    let points = NEIGHBOUR_TRIBUTE_TARGET_OPINION - total;
+    if points <= 0.0 {
+        return Err("neighbour_tribute_hold:no_gap");
+    }
+    if points > TRIBUTE_ONE_GIFT_POINTS {
+        return Err("neighbour_tribute_hold:out_of_reach");
+    }
+    Ok(points)
+}
+
 fn amenity_deficit(state: &civvis::mirror::StateSnapshot) -> f64 {
     state
         .cities
@@ -5266,6 +5400,16 @@ fn decide(
                 note_bits.push(why.to_string())
             }
             Some(_) => {}
+        }
+    }
+    // `tribute-warms-the-neighbour`: Gold to the nearest stronger neighbour
+    // until it can be asked for a friendship. See
+    // `append_neighbour_tribute_order`.
+    if ai.tribute_warms_the_neighbour_enabled() {
+        match append_neighbour_tribute_order(state, &mut orders) {
+            None => note_bits.push("neighbour_tribute=1".to_string()),
+            Some("neighbour_tribute_hold:no_neighbour") => {}
+            Some(why) => note_bits.push(why.to_string()),
         }
     }
     // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better

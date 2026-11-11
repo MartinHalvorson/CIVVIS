@@ -315,6 +315,9 @@ impl AdvancedAi {
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
         theology_fights_count_the_host_edge => enable_theology_fights_count_the_host_edge, disable_theology_fights_count_the_host_edge;
+        /// Opt-in gene `tribute-warms-the-neighbour`; see
+        /// `advanced/tribute_warms_the_neighbour.rs`.
+        tribute_warms_the_neighbour => enable_tribute_warms_the_neighbour, disable_tribute_warms_the_neighbour;
     }
 
     toggles! {

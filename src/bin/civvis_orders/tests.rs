@@ -10905,3 +10905,168 @@ fn tribute_closes_the_opinion_gap_of_the_strongest_cold_neighbour() {
         Some("tribute_hold:opinion_unknown")
     );
 }
+
+/// `tribute-warms-the-neighbour`: the nearest stronger neighbour at peace,
+/// too cold for a friendship, is sent one whole gift that lifts its opinion
+/// to +7, from the whole treasury, on any turn. A neighbour a gift cannot
+/// reach yields to the next nearest; a far, weaker or warmer rival is never
+/// paid; another gift this frame spends its Gold first.
+#[test]
+fn neighbour_tribute_warms_the_nearest_stronger_cold_neighbour() {
+    let reason = |text: &str, score: f64| civvis::mirror::StateOpinionModifier {
+        text: text.to_string(),
+        score,
+    };
+    let city = |x: i32, y: i32| StateCity {
+        x,
+        y,
+        ..StateCity::default()
+    };
+    let rival = |player: usize, military: f64, at: (i32, i32), total: f64| StateRival {
+        player,
+        military,
+        diplomatic_state: Some("DIPLO_STATE_UNFRIENDLY".to_string()),
+        opinion_modifiers: Some(vec![reason("Unknown Reason", total)]),
+        cities: vec![city(at.0, at.1)],
+        ..StateRival::default()
+    };
+    // Our capital at (10, 10). Player 1 is six tiles east and stronger;
+    // player 2 is stronger still but 20 tiles away; player 3 is four tiles
+    // away but weaker than us.
+    let mut state = StateSnapshot {
+        turn: 21,
+        gold: 90,
+        gold_per_turn: Some(6.0),
+        military: 50.0,
+        cities: vec![city(10, 10)],
+        rivals: vec![
+            rival(1, 300.0, (16, 10), -2.0),
+            rival(2, 900.0, (30, 10), -2.0),
+            rival(3, 40.0, (14, 10), -2.0),
+        ],
+        ..StateSnapshot::default()
+    };
+    let mut orders = Vec::new();
+    assert_eq!(append_neighbour_tribute_order(&state, &mut orders), None);
+    assert_eq!(orders.len(), 1);
+    let gift = &orders[0];
+    assert_eq!(gift.kind, "aid_gift");
+    assert_eq!(gift.subject, Some(1), "the nearest stronger neighbour");
+    assert_eq!(gift.verb.as_deref(), Some("TRIBUTE"));
+    assert_eq!(
+        gift.pos,
+        Some((90, 0)),
+        "9 points from -2 to +7, ten Gold a point"
+    );
+    // No reserve: the whole treasury pays, and only the whole gift goes.
+    state.gold = 89;
+    let mut orders = Vec::new();
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut orders),
+        Some("neighbour_tribute_hold:treasury")
+    );
+    assert!(orders.is_empty());
+    state.gold = 90;
+    assert_eq!(append_neighbour_tribute_order(&state, &mut Vec::new()), None);
+
+    // Gold another gift already took this frame is not spent twice.
+    let mut orders = vec![Order {
+        kind: "aid_gift",
+        subject: Some(2),
+        verb: Some("TRIBUTE".to_string()),
+        pos: Some((30, 0)),
+    }];
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut orders),
+        Some("neighbour_tribute_hold:treasury")
+    );
+    assert_eq!(orders.len(), 1);
+
+    // Any other diplomatic order to that rival this frame holds the gift.
+    let mut orders = vec![Order {
+        kind: "delegation",
+        subject: Some(1),
+        verb: None,
+        pos: None,
+    }];
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut orders),
+        Some("neighbour_tribute_hold:deal_in_flight")
+    );
+    assert_eq!(orders.len(), 1);
+
+    // A seat losing Gold each turn sends nothing.
+    state.gold_per_turn = Some(-1.0);
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:deficit")
+    );
+    state.gold_per_turn = Some(6.0);
+
+    // A gap one gift cannot close yields to the next nearest stronger
+    // neighbour within reach; with none, the nearest one's reason is kept.
+    state.rivals[0].opinion_modifiers = Some(vec![reason("Unknown Reason", -4.0)]);
+    state.rivals[1].cities = vec![city(20, 10)];
+    let mut orders = Vec::new();
+    append_neighbour_tribute_order(&state, &mut orders);
+    assert_eq!(orders[0].subject, Some(2));
+    state.rivals[1].cities = vec![city(30, 10)];
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:out_of_reach")
+    );
+
+    // A neighbour already paid, already warm enough, Friendly or denounced
+    // is not paid.
+    state.rivals[0].opinion_modifiers = Some(vec![
+        reason("Unknown Reason", -6.0),
+        reason("Favorable trade deals to them", 3.0),
+    ]);
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:already_paid")
+    );
+    state.rivals[0].opinion_modifiers = Some(vec![reason("Unknown Reason", 7.0)]);
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:no_gap")
+    );
+    state.rivals[0].opinion_modifiers = Some(vec![reason("Unknown Reason", 6.0)]);
+    let mut orders = Vec::new();
+    append_neighbour_tribute_order(&state, &mut orders);
+    assert_eq!(
+        orders[0].pos,
+        Some((TRIBUTE_MIN_GOLD as i32, 0)),
+        "a point short still sends the smallest gift"
+    );
+    state.rivals[0].diplomatic_state = Some("DIPLO_STATE_FRIENDLY".to_string());
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:courted")
+    );
+    state.rivals[0].diplomatic_state = Some("DIPLO_STATE_DENOUNCED".to_string());
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:denounced")
+    );
+
+    // A neighbour at war, weaker than us, or with no city in reach is none.
+    state.rivals[0].diplomatic_state = Some("DIPLO_STATE_UNFRIENDLY".to_string());
+    state.rivals[0].at_war = true;
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:no_neighbour")
+    );
+    state.rivals[0].at_war = false;
+    state.military = 400.0;
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:no_neighbour")
+    );
+    state.military = 50.0;
+    state.rivals[0].cities.clear();
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        Some("neighbour_tribute_hold:no_neighbour")
+    );
+}
