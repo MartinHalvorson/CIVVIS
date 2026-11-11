@@ -5728,6 +5728,10 @@ pub const GENES: &[Gene] = &[
     // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
     // see `advanced/faith_war_before_the_flip.rs`.
     Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
+    // Operator 11-11: push the benefits of going wide. Monumentality, and
+    // Settlers bought with Faith, while seats are still free. See
+    // `advanced/faith_buys_the_settler.rs`.
+    Gene { tag: "faith-buys-the-settler", field: "faith_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_buys_the_settler, disable: AdvancedAi::disable_faith_buys_the_settler },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

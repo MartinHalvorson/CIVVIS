@@ -1567,6 +1567,10 @@ impl AdvancedAi {
         } else {
             self.recovery_since = None;
         }
+        // `faith-buys-the-settler`: Monumentality first while seats are
+        // still free; the ordinary choice fills any slot left. Exact no-op
+        // while the gene is off. See `advanced/faith_buys_the_settler.rs`.
+        self.dedicate_to_monumentality(g, pid, plan);
         if self.golden_dedication_serves_the_conquest {
             let age = g.players[pid].age.clone();
             for dedication in

@@ -6905,6 +6905,10 @@ pub struct AdvancedAi {
     /// The turn the last "none named" note was journalled.
     city_state_stone_noted: Option<u32>,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-buys-the-settler`: in a Golden or Heroic Age an empire with
+    /// seats still to settle dedicates to Monumentality and buys Settlers
+    /// with Faith. See `advanced/faith_buys_the_settler.rs`. Off by default.
+    faith_buys_the_settler: bool,
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
     /// `advanced/faith_strike.rs`. Opt-in.
@@ -11503,6 +11507,9 @@ mod dvp_leader_front;
 /// capped empire when it costs a few turns. See
 /// `advanced/engineering_for_capped_fresh_water.rs`.
 mod engineering_for_capped_fresh_water;
+/// `faith-buys-the-settler`: Monumentality, and Settlers bought with Faith,
+/// while seats are still free. See `advanced/faith_buys_the_settler.rs`.
+mod faith_buys_the_settler;
 mod falling_city_takers;
 mod far_settle_site;
 mod first_capital_recon;
@@ -26364,6 +26371,10 @@ impl AdvancedAi {
             // or Temple, before the general purchase pass. Exact no-op while
             // the gene is off. See `advanced/culture_faith_sources.rs`.
             self.buy_culture_shrine(g, pid, &plan);
+            // `faith-buys-the-settler`: under Monumentality a Settler for a
+            // seat still free, bought with Faith. Exact no-op while the gene
+            // is off. See `advanced/faith_buys_the_settler.rs`.
+            self.claim_faith_settler(g, pid, &plan);
         }
         if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);

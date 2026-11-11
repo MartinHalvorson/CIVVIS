@@ -266,6 +266,9 @@ impl AdvancedAi {
         /// `first-capital-walks-the-one-landmass`: see
         /// `advanced/first_capital_walks_the_one_landmass.rs`.
         first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
+        /// Opt-in gene `faith-buys-the-settler`; see
+        /// `advanced/faith_buys_the_settler.rs`.
+        faith_buys_the_settler => enable_faith_buys_the_settler, disable_faith_buys_the_settler;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

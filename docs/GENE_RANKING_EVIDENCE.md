@@ -298,6 +298,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
 | `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
+| `faith-buys-the-settler` | off (unmeasured) | Opt-in gene `faith-buys-the-settler`; see `advanced/faith_buys_the_settler.rs`. | 1 \| 1 |
 | `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
 | `faith-strike-fears-the-tech-lead` | off (unmeasured) | Opt-in `faith-strike-fears-the-tech-lead`; see `AdvancedAi::faith_strike_fears_the_tech_lead`. | 1 \| 1 |
 | `faith-strike-spares-the-stages` | off (unmeasured) | Opt-in `faith-strike-spares-the-stages`; see `AdvancedAi::faith_strike_spares_the_stages`. | 1 \| 1 |
