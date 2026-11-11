@@ -496,6 +496,9 @@ impl AdvancedAi {
         next: &Game,
         units: &std::collections::BTreeMap<u32, u32>,
     ) {
+        // `breaker-walks-under-a-shield`: its memory of the breaker. No-op
+        // with the gene off.
+        self.remap_breaker_shield_memory(units);
         let Some(opening) = self.conquest_opening.as_mut() else {
             return;
         };
@@ -767,11 +770,19 @@ impl AdvancedAi {
             return None;
         }
         let city = g.cities.get(&opening.city)?;
-        if g.city_max_wall_hp(city) > 0 && Self::conquest_breakers_held(g, pid) == 0 {
+        // `breaker-walks-under-a-shield`: walls the strike has already opened
+        // are not walls it yields to, and a strike that is opening them gets
+        // a second window. Both `false`/unchanged with the gene off. See
+        // `advanced/breaker_walks_under_a_shield.rs`.
+        let walls_open = self.shield_strike_opened_the_walls(g, city);
+        if g.city_max_wall_hp(city) > 0 && !walls_open && Self::conquest_breakers_held(g, pid) == 0
+        {
             return Some("the target walled up before the strike landed and no breaker is held");
         }
         let at_war = g.turn.saturating_sub(declared);
-        (at_war >= g.standard_duration(CONQUEST_ABANDON_TURNS) && city.hp >= CONQUEST_UNDENTED_HP)
+        let window =
+            self.shield_strike_patience(g, city, g.standard_duration(CONQUEST_ABANDON_TURNS));
+        (at_war >= window && city.hp >= CONQUEST_UNDENTED_HP)
             .then_some("the strike has not dented the city in the whole patience window")
     }
 
@@ -1259,8 +1270,11 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: the breaker walks with the
         // force. `false` with the gene off.
         let breaker = self.first_capital_breaker_walks(g, pid, uid);
+        // `breaker-walks-under-a-shield`: the body carrying the breaker walks
+        // it to the rally, in the force or not. `false` with the gene off.
+        let shield = self.shield_carries_the_breaker(g, pid, uid);
         if opening.declared.is_some()
-            || !(opening.force.contains(&uid) || breaker)
+            || !(opening.force.contains(&uid) || breaker || shield)
             || (opening.assembled.is_none() && g.turn >= self.conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
@@ -1625,6 +1639,9 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: see that module.
         self.first_capital_read_the_softness(g, pid);
         self.conquest_count_losses(g);
+        // `breaker-walks-under-a-shield`: journal a lost breaker before the
+        // release checks below read the loss. No-op with the gene off.
+        self.breaker_shield_watch(g, pid);
         // `city-state-before-the-first-capital`: re-read the stepping stone
         // from its tile and close it on a capture, a refused war or a
         // suzerain, before the checks below read its seat. No-op without one.
@@ -2240,6 +2257,12 @@ impl AdvancedAi {
             think!(self.journal(), Military, Detail,
                    "Holding the conquest force at the rally";
                    "first capital before the walls: {why}");
+            return false;
+        }
+        // `breaker-walks-under-a-shield`: not into standing walls before the
+        // breaker stands at the rally with its shield. `false` with the gene
+        // off. See `advanced/breaker_walks_under_a_shield.rs`.
+        if self.breaker_holds_the_declaration(g, pid, &opening) {
             return false;
         }
         if !self.campaign_target_legal(g, pid, opening.target) {

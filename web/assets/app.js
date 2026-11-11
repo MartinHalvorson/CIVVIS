@@ -31489,9 +31489,26 @@ function drawCityScreen() {
       ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
       : itemCost(entry.item);
     group.sort((a, b) => priced(a) - priced(b));
+    // Civilization VI lists a building under the district it stands in, so
+    // the Library is found under Campus and not somewhere in a list of
+    // prices. The City Center's own come first, then each district in the
+    // order of the cheapest thing it offers.
+    const home = entry => category === "Buildings"
+      ? RULES.buildings?.[entry.item.building]?.district || "city_center" : "";
+    if (category === "Buildings") {
+      const cheapest = new Map();
+      for (const entry of group)
+        if (!cheapest.has(home(entry))) cheapest.set(home(entry), priced(entry));
+      const rank = entry => home(entry) === "city_center" ? -1 : cheapest.get(home(entry));
+      group.sort((a, b) => rank(a) - rank(b) || home(a).localeCompare(home(b)) ||
+        priced(a) - priced(b));
+    }
     build += `<div class="city-group"><div class="city-group-head">${category}` +
       `<span>${group.length}</span></div><div class="build-list">` +
-      group.map(entry => {
+      group.map((entry, index) => {
+        const district = home(entry);
+        const lead = district && (!index || home(group[index - 1]) !== district)
+          ? `<div class="build-sub">${escapeAttr(titleCase(district))}</div>` : "";
         const itemId = JSON.stringify(itemKey(entry.item));
         const name = escapeAttr(itemPlainName(entry.item));
         const glyph = entry.item.unit ? "⚔" : prodGlyph(entry.item);
@@ -31503,7 +31520,7 @@ function drawCityScreen() {
           // The engine quotes every purchase it offers. A server that
           // predates the quote still gets a row that says what it is for.
           const price = offers[0].cost;
-          return cityBuildRow({glyph, name, note,
+          return lead + cityBuildRow({glyph, name, note,
             cost: price === undefined ? `<b>Buy</b>`
               : `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,
             onclick: offers.length > 1
@@ -31518,7 +31535,7 @@ function drawCityScreen() {
         // One site: a plain order. Several: the choice is made on the map,
         // because where a district goes decides what it is worth.
         const several = entry.sites.length > 1;
-        return cityBuildRow({glyph, name, current: isCurrent,
+        return lead + cityBuildRow({glyph, name, current: isCurrent,
           note: (several ? `<span class="build-sites">Choose a tile · ${entry.sites.length} sites</span>` : "") +
             (note || ""),
           cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +
