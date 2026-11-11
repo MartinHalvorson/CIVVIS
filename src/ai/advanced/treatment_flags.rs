@@ -218,6 +218,9 @@ impl AdvancedAi {
         /// `first-capital-before-the-walls`: see
         /// `advanced/first_capital_before_the_walls.rs`.
         first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// `friendship-outlasts-the-gated-race`: see
+        /// `advanced/friendship_outlasts_the_gated_race.rs`.
+        friendship_outlasts_the_gated_race => enable_friendship_outlasts_the_gated_race, disable_friendship_outlasts_the_gated_race;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

@@ -7599,6 +7599,11 @@ pub struct AdvancedAi {
     /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
     /// Off by default.
     first_capital_before_the_walls: bool,
+    /// `friendship-outlasts-the-gated-race`: a lapsed friend racing to win is
+    /// renewed while `denial-war-needs-the-lane-edge` would refuse the war on
+    /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
+    /// default.
+    friendship_outlasts_the_gated_race: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -10717,6 +10722,9 @@ mod age_closer;
 mod domination_research_commitment;
 /// `flower-power-in-the-dark`: see `advanced/flower_power_in_the_dark.rs`.
 mod flower_power_in_the_dark;
+/// `friendship-outlasts-the-gated-race`: see
+/// `advanced/friendship_outlasts_the_gated_race.rs`.
+mod friendship_outlasts_the_gated_race;
 /// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
 mod frost_capital;
 mod granary_payback;

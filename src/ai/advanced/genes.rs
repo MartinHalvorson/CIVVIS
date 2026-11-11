@@ -5628,6 +5628,12 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Live Deity Kristina 11-10: `friendship-ends-at-the-race` ended 26
+    // friendships; 202929Z dropped Georgia at 352 power against 383, and
+    // Georgia declared on us 11 turns later. While the denial gate would
+    // refuse the war, the lapsed racer is renewed. Opt-in; see
+    // `advanced/friendship_outlasts_the_gated_race.rs`.
+    Gene { tag: "friendship-outlasts-the-gated-race", field: "friendship_outlasts_the_gated_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_outlasts_the_gated_race, disable: AdvancedAi::disable_friendship_outlasts_the_gated_race },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

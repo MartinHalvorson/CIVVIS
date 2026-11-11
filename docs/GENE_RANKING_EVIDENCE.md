@@ -305,6 +305,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `free-slot-campus-clock` | off (unmeasured) | Scale the free-slot Campus time budget relative to Online costs. | 1 \| 1 |
 | `fresh-water-prices-the-site` | off (unmeasured) | Opt-in gene `fresh-water-prices-the-site`; see `advanced/fresh_water_site.rs`. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
+| `friendship-outlasts-the-gated-race` | off (unmeasured) | `friendship-outlasts-the-gated-race`: see `advanced/friendship_outlasts_the_gated_race.rs`. | 1 \| 1 |
 | `friendship-refuses-the-racer` | off (unmeasured) | Opt-in gene `friendship-refuses-the-racer`; see `Self::friendship_refuses_the_racer`. | 1 \| 1 |
 | `friendship-spares-the-converter` | off (unmeasured) | Offer no friendship to the founder whose faith we must fight. | 1 \| 1 |
 | `garrison-before-the-surprise` | off (unmeasured) | Opt-in gene `garrison-before-the-surprise`; see `BasicAi::garrison_before_the_surprise`. | 1 \| 1 |
