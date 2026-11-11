@@ -269,6 +269,72 @@ Sort by top of stack, same collapsed (when >= 5):
 """
 
 
+#: The same three sites as `sample` prints them for a binary that carries
+#: line tables: one more column, after the address.
+LINES_SAMPLE_WITH_SPOTS = (LINES_SAMPLE
+    .replace("[0x1016e76d8]", "[0x1016e76d8]  advanced.rs:26690")
+    .replace("[0x1016c5b60]", "[0x1016c5b60]  advanced.rs:26439")
+    .replace("[0x101000028]", "[0x101000028]  city.rs:1662")
+    .replace("[0x101000100]", "[0x101000100]  actions.rs:413"))
+
+
+class ALineTableBuildPrintsOneMoreColumn(unittest.TestCase):
+    """`--lines` shipped unable to read the one kind of sample it exists for.
+    With line tables `sample` appends `file.rs:line` to every row; the
+    fixture the feature was written against had none, so it matched nothing
+    on a real profile and every table split each function by call site."""
+
+    def test_the_source_spot_is_not_part_of_the_symbol(self):
+        with_spot = ("_RNvMNtNtCs3wqUwMJoTxo_6civvis4game4cityNtB4_4Game11city_yields"
+                     "  (in civvis) + 40  [0x101000028]  city.rs:1662")
+        without = with_spot.rsplit("  ", 1)[0]
+        self.assertEqual(profiler.clean(with_spot), profiler.clean(without))
+        self.assertNotIn("city.rs", profiler.clean(with_spot))
+
+    def test_a_function_is_one_symbol_however_many_sites_it_has(self):
+        plain = parsed(LINES_SAMPLE).inclusive()
+        spotted = parsed(LINES_SAMPLE_WITH_SPOTS).inclusive()
+        self.assertEqual(dict(plain), dict(spotted))
+        turn = [count for symbol, count in spotted.items()
+                if "take_turn_inner" in symbol]
+        self.assertEqual(turn, [1650], "three rows, one function")
+
+    def test_the_sites_are_found_and_their_printed_lines_kept(self):
+        spots = {}
+        sites = profiler.call_sites(LINES_SAMPLE_WITH_SPOTS, "take_turn_inner",
+                                    spots=spots)
+        self.assertEqual([(address, count) for address, count, _ in sites],
+                         [("0x1016e76d8", 1250), ("0x1016c5b60", 400)])
+        self.assertEqual(spots, {"0x1016e76d8": "advanced.rs:26690",
+                                 "0x1016c5b60": "advanced.rs:26439"})
+        self.assertIn("city_yields", sites[0][2])
+
+    def test_the_report_reads_lines_off_the_sample_with_no_binary_at_all(self):
+        out = io.StringIO()
+        profiler.report_lines(LINES_SAMPLE_WITH_SPOTS, "take_turn_inner", None,
+                              2000, 5, out=out)
+        text = out.getvalue()
+        self.assertIn(" 62.50%  advanced.rs:26690  -> ", text)
+        self.assertIn(" 20.00%  advanced.rs:26439  -> ", text)
+        self.assertNotIn("addresses only", text)
+
+    def test_a_line_zero_from_atos_yields_to_the_line_on_the_row(self):
+        out = io.StringIO()
+        profiler.report_lines(
+            LINES_SAMPLE_WITH_SPOTS, "take_turn_inner", Path(__file__), 2000, 1,
+            out=out,
+            resolve=lambda binary, load, address: [
+                "advanced_units (in civvis) (units.rs:40)",
+                "take_turn_inner (in civvis) (advanced.rs:0)"])
+        self.assertIn(" 62.50%  advanced.rs:26690  -> ", out.getvalue())
+        self.assertIn("inlined: units.rs:40", out.getvalue())
+
+    def test_a_c_symbol_with_a_colon_in_its_arguments_is_not_a_spot(self):
+        """The spot is only ever after the bracketed address."""
+        row = "-[NSThread main:with:]  (in Foundation) + 12  [0x18a000000]"
+        self.assertEqual(profiler.clean(row), "-[NSThread main:with:]")
+
+
 class TheLinesInsideOneFunction(unittest.TestCase):
     """`take_turn_inner` is nine tenths of a site game and most of its passes
     are inlined into it. A symbol cannot say which pass asked; the return
