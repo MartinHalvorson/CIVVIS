@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band trip the host walked nowhere bars its host only on the
+    // second turn running: a turn the host moved nobody bars nobody. Opt-in;
+    // see `advanced/band_stall_bars_no_host.rs`.
+    Gene { tag: "band-stall-bars-no-host", field: "band_stall_bars_no_host", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stall_bars_no_host, disable: AdvancedAi::disable_band_stall_bars_no_host },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
