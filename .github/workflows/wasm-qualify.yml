@@ -1,0 +1,121 @@
+name: wasm-qualify
+
+# Build one exact engine through the normal publisher, without deploying.
+# This file checks itself on a PR. Other engine experiments dispatch it after
+# merge with source_ref=<their exact SHA>; the publisher comes from the
+# workflow revision, just as the production pipeline builds a pinned lane.
+# The PR self-test builds the base revision to exercise that cross-ref path.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/wasm-qualify.yml
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Engine source commit, branch or tag (blank uses this revision)
+        default: ""
+      allow_legacy_full_map:
+        description: Accept an old baseline that predates compact map patches
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Independent of deployments and of other source refs. Never cancel another
+# manual build merely because a new experiment was requested.
+concurrency:
+  group: wasm-qualify-${{ github.ref }}-${{ inputs.source_ref || github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  wasm-qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      QUAL_SOURCE_REF: ${{ inputs.source_ref || github.event.pull_request.base.sha }}
+      QUAL_ALLOW_LEGACY: ${{ inputs.allow_legacy_full_map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - name: Resolve the requested source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          wanted="${QUAL_SOURCE_REF:-HEAD}"
+          if ! [[ "$wanted" =~ ^[[:alnum:]][[:alnum:]./_-]*$ ]]; then
+            echo "::error::source_ref must be a commit, branch or tag"
+            exit 1
+          fi
+          if ! sha="$(git rev-parse --verify --end-of-options "$wanted^{commit}" 2>/dev/null)"; then
+            git fetch --no-tags origin "$wanted"
+            sha="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Name the compiler
+        id: compiler
+        run: echo "version=$(rustc --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-${{ hashFiles('beta/publish.sh') }}-${{ steps.source.outputs.sha }}
+          restore-keys: wasm-qualify-${{ runner.os }}-${{ steps.compiler.outputs.version }}-
+      - name: Install the normal publishing tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binaryen brotli
+          python3 -m pip install --quiet --disable-pip-version-check pillow
+          rustc --version
+          wasm-opt --version
+      - name: Build one lane with its function map
+        run: ./beta/publish.sh --commit "${{ steps.source.outputs.sha }}" --out "$PWD/qualification" --symbols-out "$PWD/wasm-symbols"
+      - name: Read back the source and engine identity
+        env:
+          QUAL_EXPECTED_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, sys
+          sys.path.insert(0, 'tools')
+          import site_wasm_symbols
+          _, manifest = site_wasm_symbols.load(pathlib.Path('wasm-symbols'), pathlib.Path('qualification/civvis.wasm'))
+          build = json.loads(pathlib.Path('qualification/build.json').read_text())
+          assert build['commit'] == manifest['source_commit'] == os.environ['QUAL_EXPECTED_SHA']
+          receipt = {
+              'source_commit': build['commit'],
+              'publisher_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+              'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
+              'binaryen': subprocess.check_output(['wasm-opt', '--version'], text=True).strip(),
+              'engine': manifest,
+          }
+          pathlib.Path('qualification-info.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+      - name: Check routing, boot, play and paint
+        shell: bash
+        run: |
+          args=()
+          if [ "$QUAL_ALLOW_LEGACY" = true ]; then
+            args+=(--allow-legacy-full-map)
+          fi
+          ./beta/verify.py --dist qualification --mount root --seconds 40 "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: civvis-wasm-qualification
+          path: |
+            qualification
+            wasm-symbols
+            qualification-info.json
+            beta/verify-root.png
+          if-no-files-found: error
+          retention-days: 14
