@@ -680,6 +680,57 @@ fn a_larger_world_or_a_lone_founder_is_held_as_today() {
     assert!(g.is_at_war(0, 1), "three majors: opened");
 }
 
+/// The live Byzantium shape: a lone founder (race 25%, no other major on
+/// its faith) at twice our power, with two of our three cities leaning to
+/// it. One leaning city is held as today; two open the war.
+#[test]
+fn a_small_world_opens_the_faith_war_when_our_own_flip_is_next() {
+    let (mut g, mut ai, plan, _, _) = small_world(4, 100.0, 200.0);
+    ai.enable_faith_war_on_a_small_world();
+    Arc::make_mut(&mut g.observed_majority_religion).remove(&2);
+    assert_eq!(
+        ai.faith_war_small_world(&g, 0, 1),
+        None,
+        "one city of three"
+    );
+    let second = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| g.cities[cid].pos == (7, 8))
+        .expect("our second city");
+    // Converting, not converted: the faith leads the city's religions but
+    // the city still follows none.
+    let city = g.cities.get_mut(&second).unwrap();
+    city.atheist_pressure = 1_000.0;
+    city.pressure.insert(FAITH.into(), 100.0);
+    assert!(!g.civ_follows_religion(0, FAITH), "not flipped yet");
+    assert_eq!(
+        ai.faith_war_small_world(&g, 0, 1),
+        Some(SmallWorldRace {
+            majors: 4,
+            race: 25,
+            others: 0
+        })
+    );
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1), "two of three leaning: opened");
+
+    // A larger world is still held as today.
+    let (mut g, mut ai, plan, _, _) = small_world(6, 100.0, 200.0);
+    ai.enable_faith_war_on_a_small_world();
+    let second = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| g.cities[cid].pos == (7, 8))
+        .expect("our second city");
+    let city = g.cities.get_mut(&second).unwrap();
+    city.atheist_pressure = 1_000.0;
+    city.pressure.insert(FAITH.into(), 100.0);
+    assert_eq!(ai.faith_war_small_world(&g, 0, 1), None, "six majors");
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1));
+}
+
 /// A city of ours falling still holds the war; so does a threatened one.
 #[test]
 fn a_small_world_keeps_the_falling_and_threatened_holds() {
