@@ -5166,6 +5166,40 @@
   /* ---- the notification rail (NotificationPanel.xml) ---------------- */
   /* Anchored bottom-right and growing up out of the End Turn button, which is
      where a Civ 6 player's eye already is when the turn will not end. */
+  /* ---- the leaders (DiplomacyRibbon.xml, `Anchor="R,T"`) ------------- */
+  /* Under the hooks and inboard of the notification rail, which keeps the
+     edge. Each leader wears the two colours their borders do on the map. */
+  #leaderribbon { display: none; }
+  body.civ6-frame #leaderribbon {
+    position: absolute; z-index: 8; top: var(--solo-below-bars);
+    right: calc(var(--panel-edge) + 42px + var(--panel-gap));
+    max-width: calc(100% - var(--solo-track-width) - 42px - 5 * var(--panel-edge));
+    display: flex; gap: 7px; padding: 6px 8px; overflow-x: auto; scrollbar-width: none;
+    border-radius: 24px; border: 1px solid #3c554d; background: #0a1512d4;
+    box-shadow: var(--shadow); backdrop-filter: blur(14px);
+  }
+  body.civ6-frame #leaderribbon[hidden] { display: none; }
+  .ribbon-leader {
+    position: relative; flex: none; width: 36px; height: 36px; margin: 0; padding: 0;
+    display: grid; place-items: center; border-radius: 50%;
+    color: var(--civ-trim); background: var(--civ); border: 2px solid var(--civ-trim);
+    box-shadow: 0 0 0 1px #0b0f0e, 0 3px 8px #0008;
+    font: 800 12px/1 Georgia, serif; letter-spacing: .02em; text-transform: none;
+  }
+  .ribbon-leader:hover { color: var(--civ-trim); background: var(--civ); filter: brightness(1.15); }
+  .ribbon-leader.mine { box-shadow: 0 0 0 1px #0b0f0e, 0 0 0 3px var(--gold); }
+  .ribbon-mark {
+    position: absolute; right: -5px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 2px;
+    display: grid; place-items: center; border-radius: 8px;
+    color: #e9efe9; background: #1d2a25; border: 1px solid #4d685f;
+    font: 800 10px/1 system-ui, sans-serif;
+  }
+  .ribbon-leader.war .ribbon-mark { color: #ffd9d6; background: #7a1f1a; border-color: #c2524a; }
+  .ribbon-leader.friend .ribbon-mark { color: #dff7e5; background: #1f5a36; border-color: #4a9a65; }
+  .leader.called { outline: 2px solid var(--gold); outline-offset: 2px; }
+  @container map-stage (max-width: 760px) {
+    body.civ6-frame #leaderribbon { display: none; }
+  }
   /* It climbs from the corner to the foot of the bars and no further: what
      does not fit scrolls, rather than standing over the hooks. */
   body.civ6-frame #notify {
@@ -5909,6 +5943,7 @@
       class="launch-badge" hidden></span></button>
     <div id="hooktabs"></div>
   </div>
+  <div id="leaderribbon" aria-label="Leaders you have met" hidden></div>
   <!-- Civ 6's action panel (ActionPanel.xml, `Anchor="R,B"`): what the turn is
        waiting on, the choices that would settle it, and the button that ends
        it. `#endturn` is the same node the deck used to hold, handlers and
