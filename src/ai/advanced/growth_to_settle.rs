@@ -96,6 +96,8 @@ impl AdvancedAi {
         let want = self.growth_to_settle_bias(g, pid);
         if g.players[pid].citizen_food_bias != want {
             g.players[pid].citizen_food_bias = want;
+            // A governor setting, written without an action.
+            g.board_written();
         }
     }
 }

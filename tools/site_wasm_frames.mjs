@@ -25,6 +25,9 @@
 // * The first turns run on cold code and cost about 2.75x; a second instance
 //   of the same compiled module (`--warm`) shows the steady state.
 //
+// For where the time goes by function, build a module with names and run this
+// under `node --cpu-prof`; `tools/site_wasm_profile.py` reads the result.
+//
 // `--split` also prices the document alone: it pauses the world, asks for the
 // frame it already holds, and reads that as the document's share. The rest of
 // the frame is the agents and the rules.

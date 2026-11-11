@@ -8682,7 +8682,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
-    setOptionalWorldNumber("mapseed", st.seed);
+    // Every other control here adopts the world on screen; the seed must not.
+    // It is the one setting that makes the next game this same game, and a
+    // restart is a new game: the field goes back to blank and the world's own
+    // seed is named under it instead.
+    showWorldSeed(st.seed);
     document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
@@ -17493,6 +17497,12 @@ const SKY_RUNG_ORDER = {chart:0, eye:1, glass:2, space:3};
 // on a body, without creating a yield, stockpile, action, or gameplay hook.
 // That keeps the sky truthful in both Future Era modes while leaving any future
 // off-world economy to the Modified Future Era's own design.
+//
+// `earthTiles` marks a world whose tiling follows the Earth's: see
+// `skyFrequency`. Its catalogue `frequency` is then only the answer for a map
+// with no globe to measure against. `deposits` is what such a world is seeded
+// with each game, as how common each resource is on a piece of its ground
+// against the same piece of the Earth's land: see `skyDepositCounts`.
 const SKY_SYSTEM_SPECS = [
   {id:"sun", name:"The Sun", km:695700, au:0, period:0, rung:"eye", floor:3.4,
    tint:"#fff2c0", dark:"#e07d10", light:true},
@@ -17509,9 +17519,12 @@ const SKY_SYSTEM_SPECS = [
    rung:"eye", floor:2.4, tint:"#5aa0d8", dark:"#123048"},
   {id:"moon",    name:"The Moon", km:1737.4, moonKm:384400, parent:"earth",
    period:0.074803, rung:"eye", floor:2.0, tint:"#c3c6cb", dark:"#31333a",
-   frequency:9, seed:1721},
+   frequency:9, seed:1721, earthTiles:true,
+   deposits:{stone:1, aluminum:1.7, uranium:.6}},
   {id:"mars",    name:"Mars",    km:3389.5, au:1.52371, period:1.88082,
-   rung:"eye", floor:2.2, tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409},
+   rung:"eye", floor:2.2, tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409,
+   earthTiles:true,
+   deposits:{stone:1, aluminum:.6, uranium:.25, copper:5, salt:.2, mercury:.2}},
 
   // Dawn found sodium-carbonate salt crusts left by brine in Occator crater.
   {id:"ceres",   name:"Ceres",   km:473,    au:2.76750, period:4.6011,
@@ -18035,9 +18048,24 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = fal
 // Below this the mesh is mush and the marble already says everything. A star
 // and the Sun have no ground to stand on and never reach it.
 function skyGroundFade(place) {
-  if (!place.frequency) return 0;
-  const start = 3 * place.frequency;
-  return Math.max(0, Math.min(1, (place.r - start) / (3 * place.frequency)));
+  const frequency = skyFrequency(place);
+  if (!frequency) return 0;
+  const start = 3 * frequency;
+  return Math.max(0, Math.min(1, (place.r - start) / (3 * frequency)));
+}
+// How finely a world is tiled. The Moon and Mars are drawn at their true
+// radius beside the Earth, so their tiles have to be true as well or a tile
+// stops meaning anything: at a fixed 9 the Moon carried 812 tiles beside a
+// Standard Earth's 4,412, which is 18% of the Earth on a world with 7.4% of
+// its surface. A tile is about `2 * r / frequency` across, so the frequency
+// that makes one tile the same piece of ground on every such world is the
+// Earth's own scaled by the body's radius. Everything else keeps its catalogue
+// number: Jupiter to scale would be 230 and a quarter of a million tiles.
+function skyFrequency(body) {
+  if (!body?.frequency) return 0;
+  if (!body.earthTiles || !planetMap()) return body.frequency;
+  const earth = planetFrequency();
+  return earth ? Math.max(2, Math.round(earth * body.size)) : body.frequency;
 }
 
 // ------------------------------------------------------- what may be looked at
@@ -18472,21 +18500,132 @@ function skyResourceCells(body, cells) {
   }
   return sites;
 }
+// What the Earth carries on a thousand tiles of its land, which is what an
+// off-world figure in the catalogue is a multiple of. Stone, copper, salt and
+// mercury are a census of the stock generator taken on 2026-11-11: twenty
+// worlds across Continents, Pangaea and the Tennis Ball at three sizes, 29,300
+// land tiles. Aluminum and uranium are not left to that lottery:
+// `place_strategic_quotas` in `src/mapgen.rs` tops every strategic resource up
+// to one deposit per ninety land tiles, and the page tests hold this line to
+// that number.
+const SKY_EARTH_LAND_PER_STRATEGIC_DEPOSIT = 90;
+const SKY_EARTH_DEPOSITS_PER_1000_LAND = {
+  stone:4.03, copper:2.31, salt:1.03, mercury:.48,
+  aluminum:1000 / SKY_EARTH_LAND_PER_STRATEGIC_DEPOSIT,
+  uranium:1000 / SKY_EARTH_LAND_PER_STRATEGIC_DEPOSIT,
+};
+// The game's seed as one integer, whatever the server sent it as. It is read
+// and never drawn from: seeding the sky cannot move a single roll on the Earth.
+function skyWorldSeed(st = state) {
+  const text = String(st?.seed ?? "");
+  let folded = 0;
+  for (let i = 0; i < text.length; i++)
+    folded = (Math.imul(folded, 31) + text.charCodeAt(i)) | 0;
+  return folded;
+}
+// How many deposits of each resource a world is seeded with this game.
+//
+// A catalogue figure says how common a resource is on a piece of that world's
+// ground against the same piece of the Earth's land, so the size is worked out
+// here. The Earth's tile count times the body's share of the Earth's surface,
+// which is its radius squared, is how many Earth-sized tiles of ground the body
+// has, and every one of them is land: 7.4% of the Earth's tiles for the Moon
+// and 28.3% for Mars. A fraction of a deposit is settled by the game's seed, so
+// the average over many games is the figure itself. Anything the catalogue
+// lists is there at least once, which is what keeps one salt flat and one
+// mercury vent on Mars when the arithmetic says a fifth of a deposit.
+function skyDepositCounts(body, worldSeed, tiles) {
+  const earth = planetMap() ? planetFrequency() : 0;
+  const ground = earth ? (10 * earth * earth + 2) * body.size * body.size : tiles;
+  const counts = [];
+  Object.entries(body.deposits || {}).forEach(([resource, share], index) => {
+    const expected = (SKY_EARTH_DEPOSITS_PER_1000_LAND[resource] || 0) / 1000 * share * ground;
+    if (!(expected > 0)) return;
+    const whole = Math.floor(expected);
+    const extra = hash2(worldSeed + 131 * (index + 1), body.seed || 0) < expected - whole ? 1 : 0;
+    counts.push([resource, Math.max(1, whole + extra)]);
+  });
+  return counts;
+}
+// Where on a world each resource belongs, read from the same two ranked fields
+// and the same thresholds `SKY_GROUND` paints that world with, so a deposit
+// sits on ground that looks like where it is found. `anywhere` is ground
+// nothing is seeded on at all; a resource with no rule of its own can be
+// anywhere else.
+const SKY_DEPOSIT_GROUND = {
+  moon:{
+    // The pale highlands are anorthosite, a rock made mostly of an
+    // aluminium-rich feldspar. The dark mare basalts hold less than half as
+    // much.
+    aluminum:(point, broad) => broad >= .34,
+    // Uranium rides with thorium in the material called KREEP, which the
+    // orbital gamma-ray maps found under the near-side maria and very little
+    // of anywhere else.
+    uranium:(point, broad) => broad < .34,
+  },
+  mars:{
+    // The caps are ice, and their dusty rims with them.
+    anywhere:point => Math.abs(point[2]) < .86,
+    // Aluminium clays are in the oldest ground, which is the high ground.
+    aluminum:(point, broad) => broad >= .5,
+    // The orbital gamma-ray maps put thorium and potassium, and uranium with
+    // them, in the low plains.
+    uranium:(point, broad) => broad < .5,
+    // Copper comes with igneous rock and the hot water that moved through it:
+    // the volcanic plains and the rust country, not the drifted dust.
+    copper:(point, broad) => broad <= .72,
+    // The chloride salt flats are hundreds of small dried basins in the
+    // southern highlands, at low and middle latitudes.
+    salt:(point, broad) => point[2] < 0 && point[2] > -.7 && broad >= .26,
+    // Nobody has found a mercury ore on Mars. On the Earth it is a mineral of
+    // volcanic hot springs, so the one deposit goes on the volcanic plain.
+    mercury:(point, broad) => broad < .26,
+  },
+};
+// Seat this game's deposits on a seeded world. Ground that fits a resource is
+// taken first; a world too small to have enough of it puts the rest on any
+// open ground rather than losing them.
+function skyDepositCells(body, cells, broad, fine, worldSeed) {
+  const sites = new Map();
+  const rules = SKY_DEPOSIT_GROUND[body.id] || {};
+  const open = rules.anywhere || (() => true);
+  skyDepositCounts(body, worldSeed, cells.length).forEach(([resource, count], order) => {
+    const fits = rules[resource] || (() => true);
+    const ranked = [];
+    cells.forEach((cell, index) => {
+      if (sites.has(index) || !open(cell.center, broad[index], fine[index])) return;
+      const misfit = fits(cell.center, broad[index], fine[index]) ? 0 : 1;
+      ranked.push({index, rank:misfit + hash2(
+        worldSeed + (body.seed || 0) + 977 * (order + 1), index + 1)});
+    });
+    ranked.sort((left, right) => left.rank - right.rank);
+    for (const {index} of ranked.slice(0, count)) sites.set(index, resource);
+  });
+  return sites;
+}
 function skyGlobe(body) {
   const key = skyGlobeKey(body);
-  let globe = SKY_GLOBES.get(key);
-  if (globe) return globe;
-  const cells = skyGlobeMesh(body.frequency);
+  // A seeded world belongs to the game as well as to the body. It is retiled
+  // when the Earth it is measured against changes size and reseeded when the
+  // game does, and the one before is dropped rather than kept beside it.
+  const frequency = skyFrequency(body);
+  const worldSeed = body.deposits ? skyWorldSeed() : 0;
+  const stamp = `${frequency}:${worldSeed}`;
+  const kept = SKY_GLOBES.get(key);
+  if (kept && kept.stamp === stamp) return kept.globe;
+  const cells = skyGlobeMesh(frequency);
   const shape = skyWaves(body.seed, 9, 1.1, 3.3);
   const weather = skyWaves(body.seed + 101, 11, 5, 15);
   const broad = skyRanks(cells.map(cell => skyNoise(shape, cell.center)));
   const fine = skyRanks(cells.map(cell => skyNoise(weather, cell.center)));
   const paint = skyGroundRule(body);
-  const resources = skyResourceCells(body, cells);
-  globe = cells.map((cell, index) =>
+  const resources = body.deposits
+    ? skyDepositCells(body, cells, broad, fine, worldSeed)
+    : skyResourceCells(body, cells);
+  const globe = cells.map((cell, index) =>
     ({...cell, fill:paint(cell.center, broad[index], fine[index]),
       resource:resources.get(index) || null}));
-  SKY_GLOBES.set(key, globe);
+  SKY_GLOBES.set(key, {stamp, globe});
   return globe;
 }
 
@@ -20421,7 +20560,8 @@ function drawSkyGlobe(place, alpha) {
   // drawing it and only greys the whole world out. Stroked on the path that
   // was just filled — a second pass over two thousand cells rebuilds every
   // polygon to draw its outline.
-  const grid = place.r >= 10 * place.frequency;
+  const frequency = skyFrequency(place);
+  const grid = place.r >= 10 * frequency;
   cx.strokeStyle = "rgba(214,235,231,.042)";
   cx.lineWidth = .6;
   for (const cell of cells) {
@@ -20431,10 +20571,9 @@ function drawSkyGlobe(place, alpha) {
     if (grid) cx.stroke();
   }
   cx.restore();
-  const resourceAlpha = alpha * skyFade(place.r, 7 * place.frequency,
-                                         11 * place.frequency);
+  const resourceAlpha = alpha * skyFade(place.r, 7 * frequency, 11 * frequency);
   if (resourceAlpha <= .01) return;
-  const size = Math.max(4, Math.min(11, place.r / place.frequency * .32));
+  const size = Math.max(4, Math.min(11, place.r / frequency * .32));
   for (const resource of resources)
     drawSkyResourceBadge(resource.resource, resource.x, resource.y, size,
                          resourceAlpha * (.7 + .3 * resource.z));

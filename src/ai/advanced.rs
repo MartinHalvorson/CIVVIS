@@ -7670,6 +7670,14 @@ pub struct AdvancedAi {
     /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
     /// Off by default.
     first_capital_walks_the_one_landmass: bool,
+    /// `faith-war-on-a-small-world`: on a world of four living majors or
+    /// fewer, the faith war on a founder whose faith already holds another
+    /// major (or whose race reads 50%) opens without the power floor, the
+    /// edge, the rout ratio, the treasury reserve and the income gate, and
+    /// peace waits while that race holds and its spreaders keep coming.
+    /// Rides `faith-war-before-the-flip-2`. See
+    /// `advanced/faith_war_before_the_flip.rs`. Opt-in.
+    faith_war_on_a_small_world: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -8660,6 +8668,10 @@ pub struct AdvancedAi {
     /// pickers price Great Nusantara's Coast adjacency. See
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
+    /// Reserve a missing land eye before economy claims while the first
+    /// capital opening still lacks a reachable target. Opt-in; see
+    /// `advanced/first_capital_recon.rs`.
+    land_recon_before_the_first_capital: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11475,6 +11487,7 @@ mod dvp_leader_front;
 mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
+mod first_capital_recon;
 mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
@@ -13559,6 +13572,8 @@ impl AdvancedAi {
             if let Some(seat) = g.players.get_mut(pid) {
                 seat.city_directives.clear();
             }
+            // Governor settings, written without an action.
+            g.board_written();
             return;
         }
         // While the empire is still short of its city target, only the two
@@ -13645,6 +13660,8 @@ impl AdvancedAi {
         if let Some(seat) = g.players.get_mut(pid) {
             seat.city_directives = directives;
         }
+        // Governor settings, written without an action.
+        g.board_written();
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
@@ -20394,6 +20411,12 @@ impl AdvancedAi {
             let naval_eye_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.naval_eye_holds(g, pid, cid, plan, item));
+            // The early land eye must survive its first zero-investment
+            // frame. Siege and economic recovery retain their precedence.
+            let land_eye_commitment = !economic_recovery
+                && committed.as_ref().is_some_and(|(_, item)| {
+                    self.first_capital_land_recon_holds(g, pid, cid, plan, item)
+                });
             // `space-people-call-the-projects`: the called district project
             // finishes while its person stays on offer.
             let space_person_commitment = committed
@@ -20464,6 +20487,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || land_eye_commitment
                     || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -20493,6 +20517,7 @@ impl AdvancedAi {
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
+                    || land_eye_commitment
                     || space_person_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -25815,6 +25840,7 @@ impl AdvancedAi {
             g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
             g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
             g.heist_reads_the_host_menu = proposed.heist_reads_the_host_menu;
+            g.board_written();
             for action in actions {
                 let _ = g.apply(pid, &action);
             }
@@ -25840,6 +25866,9 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // The settings above are written on the board without an action.
+        // See `Game::keep_rival_yields`.
+        g.board_written();
         // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
         self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
@@ -26407,6 +26436,10 @@ impl AdvancedAi {
                 // one-off district cannot hide the Library/University debt.
                 self.reserve_targeted_research_buildings(g, pid, &plan);
             }
+            // The first-capital opening needs a charted road and target before
+            // its naming window closes. Let the existing missing land arm
+            // take an idle queue before optional economy claims bury it.
+            self.claim_first_capital_land_recon(g, pid, &plan);
             // Reserve one reachable diplomatic stage before baseline queues fill.
 
             self.prioritize_envoy_infrastructure(g, pid, &plan);

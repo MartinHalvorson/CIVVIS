@@ -130,15 +130,22 @@ pub(super) fn queue_card_signature(g: &mut Game, pid: usize) -> BTreeSet<Name> {
     let mut signature = BTreeSet::new();
     for card in cards {
         let incumbent = g.players[pid].policies.contains(&card);
+        // `board_written` on both sides of each what-if, as in
+        // `policy_deck::policy_card_score`: nothing read under the rearranged
+        // deck may answer for the real one.
         let (with, without) = if incumbent {
             g.players[pid].policies.remove(&card);
+            g.board_written();
             let without = multipliers(g);
             g.players[pid].policies.insert(card);
+            g.board_written();
             (base.clone(), without)
         } else {
             g.players[pid].policies.insert(card);
+            g.board_written();
             let with = multipliers(g);
             g.players[pid].policies.remove(&card);
+            g.board_written();
             (with, base.clone())
         };
         let mut boost = 0.0;
