@@ -73,12 +73,8 @@ fn the_named_capital_keeps_the_unique_melee_beeline_after_the_stone_ends() {
         let (mut g, ai, plan) = fixture(on);
         ai.advanced_research(&mut g, 0, &plan);
         assert_eq!(
-            g.players[0].research,
-            Some(if on {
-                crate::name!("bronze_working")
-            } else {
-                crate::name!("pottery")
-            })
+            g.players[0].research.as_deref(),
+            Some(if on { "bronze_working" } else { "pottery" })
         );
     }
 }
@@ -88,12 +84,12 @@ fn bronze_working_then_iron_working_then_the_economic_goal() {
     let (mut g, ai, plan) = fixture(true);
     g.players[0].techs.insert(crate::name!("bronze_working"));
     ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research, Some(crate::name!("iron_working")));
+    assert_eq!(g.players[0].research.as_deref(), Some("iron_working"));
     g.players[0].techs.insert(crate::name!("iron_working"));
     g.players[0].research = None;
     assert_eq!(ai.first_capital_army_research_goal(&g, 0), None);
     ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research, Some(crate::name!("pottery")));
+    assert_eq!(g.players[0].research.as_deref(), Some("pottery"));
 }
 
 #[test]
@@ -101,15 +97,15 @@ fn the_breakers_technology_still_precedes_the_melee_line() {
     let (mut g, ai, plan) = fixture(true);
     g.players[0].techs.remove(&crate::name!("masonry"));
     ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research, Some(crate::name!("masonry")));
+    assert_eq!(g.players[0].research.as_deref(), Some("masonry"));
 }
 
 #[test]
 fn a_technology_already_in_flight_finishes() {
     let (mut g, ai, plan) = fixture(true);
-    g.players[0].research = Some(crate::name!("sailing"));
+    g.players[0].research = Some("sailing".to_string());
     ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research, Some(crate::name!("sailing")));
+    assert_eq!(g.players[0].research.as_deref(), Some("sailing"));
 }
 
 #[test]
@@ -165,5 +161,5 @@ fn the_immediate_archery_defender_keeps_its_priority() {
         Some(crate::name!("archery"))
     );
     ai.advanced_research(&mut g, 0, &plan);
-    assert_eq!(g.players[0].research, Some(crate::name!("archery")));
+    assert_eq!(g.players[0].research.as_deref(), Some("archery"));
 }
