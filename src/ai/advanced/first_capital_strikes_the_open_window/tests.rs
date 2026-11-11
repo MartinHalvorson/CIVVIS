@@ -753,6 +753,77 @@ fn the_live_ethiopia_shape_is_never_struck() {
     assert!(!game.is_at_war(0, 1));
 }
 
+/// The live Stirling shape: the whole reserved force at the rally of a
+/// capital of defence 24, its bill short because five of the owner's
+/// Warriors stand four to five tiles behind the city. The strike waits
+/// while a body is missing or the owner out-powers us, and goes once the
+/// force is whole and the owner is no stronger than we are.
+#[test]
+fn the_whole_force_strikes_an_owner_no_stronger_than_us() {
+    let (mut game, mut ai, capital) = opened(true);
+    second_city(&mut game);
+    set_strength(&mut game, capital, 24.0);
+    for pos in [(28, 12), (29, 12), (28, 11), (28, 13), (29, 11)] {
+        game.spawn_test_unit("warrior", 1, pos);
+    }
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "warrior", rally, 1, 4);
+    bodies(&mut game, "archer", rally, 2, 1);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    assert!(
+        ai.first_capital_open_window_go(&game, 0, &opening)
+            .is_none(),
+        "five of six bodies and a short bill"
+    );
+
+    // The sixth body arrives, but two more Warriors far from the city put
+    // the owner's power above ours.
+    bodies(&mut game, "archer", rally, 2, 1);
+    let far: Vec<u32> = [(40, 20), (41, 20)]
+        .into_iter()
+        .map(|pos| game.spawn_test_unit("warrior", 1, pos))
+        .collect();
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(opening.force.len(), ai.conquest_force_size());
+    let at_rally = opening
+        .force
+        .iter()
+        .filter(|uid| game.wdist(game.units[*uid].pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS)
+        .count();
+    assert_eq!(at_rally, ai.conquest_force_size(), "the whole force is up");
+    assert!(
+        game.military_power(1) > game.military_power(0),
+        "{} against {}",
+        game.military_power(1),
+        game.military_power(0)
+    );
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    assert!(ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .is_none());
+
+    // No stronger than us: the go stands on a bill it does not cover.
+    for uid in far {
+        game.remove_unit(uid);
+    }
+    assert!(
+        game.military_power(1) <= game.military_power(0),
+        "{} against {}",
+        game.military_power(1),
+        game.military_power(0)
+    );
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    let go = ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .expect("the whole force goes");
+    assert!(go.strength < go.requirement, "{go:?}");
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+}
+
 /// The Cree window that motivated the gene: three cities, four Warriors and
 /// a Battering Ram at the rally of an Ancient-walled capital of defence 18,
 /// the owner at half our power. The go declares; the shipped share rule

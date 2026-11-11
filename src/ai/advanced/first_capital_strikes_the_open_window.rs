@@ -167,6 +167,19 @@ pub(crate) const FIRST_CAPITAL_STRIKE_MELEE: usize = 3;
 /// 226; 071743Z struck Ethiopia at 113 against our 35.
 pub(crate) const FIRST_CAPITAL_POWER_RATIO: f64 = 1.3;
 
+/// The most the owner's public military power may be, as a multiple of ours,
+/// for the whole reserved force at the rally to strike without the campaign
+/// bill's margin: no more than ours. The bill asks half again the strength
+/// of every defender within six tiles and the centre together; the guards
+/// of [`AdvancedAi::first_capital_outclassed`] have by then weighed the
+/// owner's power, the centre, the army beside it and the kill time. Live
+/// Deity Gran Colombia `civvis-20261111T182847Z`: six Warriors, a Battering
+/// Ram and a Comandante stood whole at the rally of Stirling (defence 26)
+/// from turn 35 to 45 on "the city's bill is not covered yet", at 194-239
+/// power against Scotland's 199-224; Stirling read 40 behind walls at 46
+/// and the opening was released.
+pub(crate) const FIRST_CAPITAL_COMMIT_RATIO: f64 = 1.0;
+
 /// Turns of blows the melee bodies at the rally must need, at most, to take
 /// the city's health, walls and healing (the kill-time check).
 pub(crate) const FIRST_CAPITAL_STRIKE_TURNS: u32 = 3;
@@ -409,9 +422,11 @@ impl AdvancedAi {
 
     /// ⭐ Item 2: the board says go. At least `CAMPAIGN_MIN_BODIES` force
     /// bodies stand within `CONQUEST_ASSEMBLY_RADIUS` of the rally, they
-    /// alone cover the city's bill, and a breaker stands at the rally unless
-    /// no walls stand. `None` with the gene off, once declared, and whenever
-    /// any of those fails.
+    /// alone cover the city's bill (or the whole reserved force stands there
+    /// and the owner's public power is at most
+    /// [`FIRST_CAPITAL_COMMIT_RATIO`] times ours), and a breaker stands at
+    /// the rally unless no walls stand. `None` with the gene off, once
+    /// declared, and whenever any of those fails.
     pub(crate) fn first_capital_open_window_go(
         &self,
         g: &Game,
@@ -457,7 +472,12 @@ impl AdvancedAi {
             return None;
         }
         let (strength, requirement) = self.first_capital_bill(g, pid, opening, &bodies)?;
-        (strength + 1e-9 >= requirement).then_some(OpenWindowGo {
+        // The whole reserved force is here and the owner is no stronger than
+        // we are: see `FIRST_CAPITAL_COMMIT_RATIO`.
+        let committed = bodies.len() >= self.conquest_force_size()
+            && g.military_power(city.owner)
+                <= FIRST_CAPITAL_COMMIT_RATIO * g.military_power(pid) + 1e-9;
+        (strength + 1e-9 >= requirement || committed).then_some(OpenWindowGo {
             bodies: bodies.len(),
             strength,
             requirement,
