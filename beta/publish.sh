@@ -13,6 +13,7 @@
 #
 #   ./beta/publish.sh                  build from the working tree
 #   ./beta/publish.sh --commit <ref>   build from a pinned revision
+#   ./beta/publish.sh --symbols-out <dir>   retain a separate profiling sidecar
 #
 # Nothing in `web/` or `src/` is edited. The viewer is *copied* and the copy is
 # adjusted for living in a lane; if any of those adjustments stops matching,
@@ -23,11 +24,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="$repo_root/beta/dist"
 commit_ref=""
+symbols_out=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --commit) commit_ref="${2:?--commit needs a revision}"; shift 2 ;;
     --out) out="${2:?--out needs a directory}"; shift 2 ;;
+    --symbols-out) symbols_out="${2:?--symbols-out needs a directory}"; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -35,6 +38,11 @@ done
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
 
 command -v cargo >/dev/null || { echo "cargo is not on PATH" >&2; exit 1; }
+if [ -n "$symbols_out" ]; then
+  command -v wasm-opt >/dev/null || { echo "function maps require wasm-opt" >&2; exit 1; }
+  mkdir -p "$symbols_out"
+  symbols_out="$(cd "$symbols_out" && pwd)"
+fi
 rustup target list --installed | grep -qx wasm32-unknown-unknown \
   || rustup target add wasm32-unknown-unknown
 
@@ -80,7 +88,15 @@ if command -v wasm-opt >/dev/null; then
   echo "==> shrinking the module"
   # -O3 keeps the optimiser aimed at speed: this module simulates whole games,
   # and -Oz costs more turn time than it saves bytes over the wire.
-  wasm-opt -O3 "$raw_wasm" -o "$out/civvis.wasm"
+  if [ -n "$symbols_out" ]; then
+    # The printing pass leaves the optimized module byte-for-byte unchanged.
+    # Its indexes name the final functions, after inlining and reordering.
+    wasm-opt -O3 "$raw_wasm" --symbolmap -o "$out/civvis.wasm" > "$symbols_out/functions.map"
+    python3 "$repo_root/tools/site_wasm_symbols.py" \
+      "$out/civvis.wasm" "$symbols_out/functions.map" "$commit"
+  else
+    wasm-opt -O3 "$raw_wasm" -o "$out/civvis.wasm"
+  fi
 else
   echo "==> wasm-opt is not installed; publishing the unshrunk module" >&2
   cp "$raw_wasm" "$out/civvis.wasm"
