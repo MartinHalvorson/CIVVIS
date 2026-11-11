@@ -281,6 +281,10 @@ impl AdvancedAi {
         last_charge_joins_the_army => enable_last_charge_joins_the_army, disable_last_charge_joins_the_army;
         /// Opt-in `modernization-prices-the-path`; see `modernization_prices_the_path`.
         modernization_prices_the_path => enable_modernization_prices_the_path, disable_modernization_prices_the_path;
+        /// `land-recon-before-the-first-capital`: the missing land recon arm
+        /// claims an idle queue before optional economy work on an early
+        /// Domination seat without a reachable capital.
+        land_recon_before_the_first_capital => enable_land_recon_before_the_first_capital, disable_land_recon_before_the_first_capital;
         // ---- append: p-r --------------------------------------------
         /// Opt-in `religion-seat-cuts-the-upkeep`; see `advanced/religion_seat_cuts_the_upkeep.rs`.
         religion_seat_cuts_the_upkeep => enable_religion_seat_cuts_the_upkeep, disable_religion_seat_cuts_the_upkeep;
