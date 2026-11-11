@@ -235,7 +235,11 @@ fn version_two_claims_through_the_war_outside_the_soldiers_reach() {
     let mut v1 = game.clone();
     seat(VictoryTarget::Culture, true).claim_culture_monuments(&mut v1, 0, &plan);
     for cid in &cities {
-        assert_eq!(v1.cities[cid].queue.first(), Some(&unit("scout")), "v1 holds at war");
+        assert_eq!(
+            v1.cities[cid].queue.first(),
+            Some(&unit("scout")),
+            "v1 holds at war"
+        );
     }
 
     let ai = seat_v2();
@@ -252,9 +256,7 @@ fn version_two_claims_through_the_war_outside_the_soldiers_reach() {
         Some(&unit("scout")),
         "the city with the soldier beside it keeps its queue"
     );
-    assert!(ai
-        .culture_monument_item(&v2, 0, cities[1], &plan)
-        .is_none());
+    assert!(ai.culture_monument_item(&v2, 0, cities[1], &plan).is_none());
 }
 
 /// A near-done Monument goes before a Shrine that version one keeps; Walls
@@ -274,7 +276,11 @@ fn a_near_done_monument_goes_before_a_kept_head() {
 
     let mut v1 = busy.clone();
     claim(&seat(VictoryTarget::Culture, true), &mut v1);
-    assert_eq!(v1.cities[&cities[0]].queue.first(), Some(&shrine), "v1 keeps the Shrine");
+    assert_eq!(
+        v1.cities[&cities[0]].queue.first(),
+        Some(&shrine),
+        "v1 keeps the Shrine"
+    );
 
     let ai = seat_v2();
     let plan = ai.assess(&busy, 0);
@@ -309,10 +315,14 @@ fn a_young_monument_keeps_version_ones_holds() {
             .production_progress
             .insert(key.clone(), *banked as f64);
         let plan = ai.assess(&game, 0);
-        ai.culture_monument_item(&game, 0, cities[0], &plan).is_some()
+        ai.culture_monument_item(&game, 0, cities[0], &plan)
+            .is_some()
             && !ai.culture_monument_finishes_first(&game, 0, cities[0], &plan, &monument)
     });
-    assert!(young.is_some(), "fixture: a claimable Monument far from done");
+    assert!(
+        young.is_some(),
+        "fixture: a claimable Monument far from done"
+    );
     let shrine = Item::Building {
         building: crate::name!("shrine"),
     };

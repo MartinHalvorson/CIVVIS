@@ -34,8 +34,9 @@
 //! our cities held one at t60. Of 4,810 city-turns with no Monument, the two
 //! war gates stopped the claim empire-wide on 1,147: `threatened-war-holds-
 //! the-claims` (891) and version one's own return while any major is at war
-//! with us (256). In 524 of those the city had no at-war major's soldier
-//! within six tiles and could finish within the cap. Separately, 1,331
+//! with us (256). In 538 of those the city had no at-war major's soldier
+//! within six tiles and could finish within the cap (14 Online turns; the
+//! cap itself held only 242). Separately, 1,331
 //! city-turns had a Monument half built or three Online turns from done
 //! sitting behind another head: civvis-20261111T000134Z's Pharsalos held one
 //! with 14 of 30 invested from t33 to t77, and the Granary claim took
@@ -48,11 +49,12 @@
 //! - A Monument within [`MONUMENT_FINISH_STANDARD`] standard turns of done,
 //!   or with half its cost invested, goes before any head except a Settler
 //!   under the early floor, Walls, a live Great Person commitment, and
-//!   anything finishing this turn. The claims that run before this one and
-//!   took a Monument's queue on those boards (100 times in 28 games: the bound
-//!   Granary 20, the early Settler floor 14, the idle-route Trader 11, the
-//!   Theater 11, the backlog Builder 11, frontier Walls 8, the sea scout 6,
-//!   the free-slot Campus 5) leave a near-done one at the head
+//!   anything finishing this turn or no later than the Monument. The claims
+//!   that run before this one and took a Monument's queue on those boards
+//!   (100 times in 28 games: the bound Granary 20, the early Settler floor
+//!   14, the idle-route Trader 11, the Theater 11, the backlog Builder 11,
+//!   frontier Walls 8, the sea scout 6, the free-slot Campus 5) leave a
+//!   near-done one at the head
 //!   ([`AdvancedAi::culture_monument_finishes_first`]), as do the first
 //!   Culture buildings, the Faith source and the unique Builders, so no pass
 //!   moves it twice. The Settler floor and the Walls keep their place.
@@ -68,8 +70,9 @@ use super::*;
 pub(crate) const MONUMENT_THREAT_RADIUS: i32 = 6;
 
 /// Version two: a Monument this many standard turns from done (three Online
-/// turns) is finished before the city's other heads.
-pub(crate) const MONUMENT_FINISH_STANDARD: u32 = 6;
+/// turns: Online durations are 66% of Standard, rounded up) is finished
+/// before the city's other heads.
+pub(crate) const MONUMENT_FINISH_STANDARD: u32 = 4;
 
 impl AdvancedAi {
     /// The Monument `cid` would claim and its build turns: a Culture seat's
@@ -140,7 +143,13 @@ impl AdvancedAi {
     /// Version two: whether a Monument this city may claim is near done:
     /// within [`MONUMENT_FINISH_STANDARD`] standard turns, or with half its
     /// cost invested.
-    fn culture_monument_near_done(g: &Game, pid: usize, cid: u32, monument: &Item, turns: f64) -> bool {
+    fn culture_monument_near_done(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        monument: &Item,
+        turns: f64,
+    ) -> bool {
         let invested = g.item_invested_production(cid, monument);
         turns <= g.standard_duration(MONUMENT_FINISH_STANDARD) as f64
             || (invested > 0.0 && invested * 2.0 >= g.item_cost_for_city(pid, cid, monument))
@@ -166,8 +175,10 @@ impl AdvancedAi {
     }
 
     /// Version two: whether the head `item` keeps its place ahead of a
-    /// near-done Monument: a Settler under the early floor, Walls, a live
-    /// Great Person commitment, or anything finishing this turn.
+    /// near-done Monument `monument_turns` from done: a Settler under the
+    /// early floor, Walls, a live Great Person commitment, or anything
+    /// finishing this turn or no later than the Monument (a paused district
+    /// two turns from done is put back by `paused-district-finishes`).
     fn culture_monument_near_done_yields_to(
         &self,
         g: &Game,
@@ -175,13 +186,21 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
         item: &Item,
+        monument_turns: f64,
     ) -> bool {
+        let production = g.city_yields(cid).production;
+        let remaining =
+            g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item);
+        let turns = g
+            .host_production_turns(cid, item)
+            .filter(|turns| turns.is_finite() && *turns > 0.0)
+            .unwrap_or_else(|| remaining.max(0.0) / production.max(0.5));
         self.early_settler_floor_holds(g, pid, cid, plan)
             || matches!(item, Item::Building { building } if matches!(
                 building.as_str(), "walls" | "medieval_walls" | "renaissance_walls"))
             || Self::live_gp_cultural_building_commitment(g, pid, cid, item)
-            || g.item_cost_for_city(pid, cid, item) - g.item_invested_production(cid, item)
-                <= g.city_yields(cid).production
+            || remaining <= production
+            || turns <= monument_turns
     }
 
     /// See the module: every eligible city of a Culture seat claims its
@@ -214,7 +233,7 @@ impl AdvancedAi {
                 && Self::culture_monument_near_done(g, pid, cid, &monument, turns);
             if let Some(item) = &head {
                 if near_done {
-                    if self.culture_monument_near_done_yields_to(g, pid, cid, plan, item) {
+                    if self.culture_monument_near_done_yields_to(g, pid, cid, plan, item, turns) {
                         continue;
                     }
                 } else if self.early_settler_floor_holds(g, pid, cid, plan)
