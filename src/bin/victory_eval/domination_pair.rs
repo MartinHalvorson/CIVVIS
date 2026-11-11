@@ -1,5 +1,5 @@
-//! Same-seed policy probe for one Gran Colombia Domination seat against
-//! three adaptive CIVVIS rivals. This is a simulator probe, not native Civ VI
+//! Same-seed policy probe for one Domination seat against adaptive CIVVIS
+//! rivals. This is a simulator probe, not native Civ VI
 //! verification or a deployment-ledger screen.
 //!
 //! victory_eval --domination-pair siege-is-progress-3 --games 16 \
