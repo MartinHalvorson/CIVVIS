@@ -450,6 +450,37 @@ of it), `pick_item` still takes the backlog census once per city with a
 `Produce` between cities (1.2%), and the full purchase menu is still listed
 up to twice a seat-turn (3.5%).
 
+### What a kept yield is made of is kept with it (−2.1%)
+
+After the three cuts above the citizen plan was still 17% of the stepping
+thread, and the split of an empire's luxuries between its cities 5%.
+`Game::keep_rival_yields` kept each city's *yields* between a seat's passes
+and threw away the two things a yield is made of that other callers ask for
+by themselves: the citizen plan (the Builder census, the worked-tile test and
+the state document ask for the plan and never the yield) and the luxury split
+(every city's amenities ask for the whole empire's, so a caller holding no
+query scope across the cities re-split the empire once per city).
+
+`KeptDerivations` holds all three in the same two maps, filled and read under
+the same conditions and dropped by the same events, so nothing new decides
+when a kept answer is stale. `--audit-kept-yields` re-derives every reused
+plan and split as it does every reused yield. Instructions for 150 turns,
+every checkpoint identical: −2.06%, −2.12%, −1.97% (seeds 7, 8, 9).
+
+**What is left, and why it is not in this change.** A profile of the result
+(seed 7, turns 40 to 170) still has 26% of the thread deriving city yields,
+and 8 points of that is one caller: the culture forecast, which reads every
+*rival* city's culture. Counted over one 150-turn game, the four majors
+issued 35,303 actions, the lane table was rebuilt 1,127 times and the
+forecast ran 1,801 times, three a seat-turn, and each run found the rivals'
+kept yields already dropped: every action but `Produce` drops them, and so
+does any tile write anywhere (27,000 of those actions were a unit moving).
+Almost none of those can change what a rival's city yields, but "almost" is
+not a rule. Keeping rival yields across the acting seat's own unit moves and
+its Builders' improvements needs a write-set argument per action type and a
+finer tile rule, checked by the audit over many seeds; that is the next 5
+points and it is a change to review on its own.
+
 ⚠ **One cargo target directory cannot be shared between worktrees.** Cargo
 decides a crate is fresh by comparing its sources' modification times with
 the last build's, by path *relative to the package*, so a second worktree
