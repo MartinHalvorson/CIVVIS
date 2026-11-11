@@ -189,6 +189,8 @@ impl AdvancedAi {
     /// plus the host's public figure's difference (`observed_yield_adjustments`),
     /// so the sum is the host's figure.
     fn racer_spy_production(g: &Game, seat: usize) -> f64 {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         g.player_city_ids(seat)
             .into_iter()
             .map(|city| g.city_yields(city).production)

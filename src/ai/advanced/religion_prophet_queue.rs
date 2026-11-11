@@ -52,6 +52,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<(u32, Item)> {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         if !self.religion_prophet_race_queue_active(g, pid) {
             return None;
         }

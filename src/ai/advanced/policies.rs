@@ -23,6 +23,8 @@ impl AdvancedAi {
     /// empire with a Holy Site or a Faith wonder reaches the price on its own
     /// and keeps its slot for the plan's cards.
     pub(crate) fn pantheon_faith_card_pays(&self, g: &Game, pid: usize) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let Some(player) = g.players.get(pid) else {
             return false;
         };
@@ -181,6 +183,8 @@ impl AdvancedAi {
     /// to this empire, adds more production than Colonization's +50% adds to
     /// the cities whose queue opens with a Settler.
     fn urban_planning_outearns_colonization(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let planning = Name::new("urban_planning");
         let colonization = Name::new("colonization");
         if !g.available_policies(pid).contains(&planning)
@@ -217,6 +221,8 @@ impl AdvancedAi {
     /// cities whose queue opens with a Builder, while no card adding build
     /// charges (Serfdom, Public Works) is on the menu or slotted.
     fn urban_planning_outearns_builder_cards(g: &Game, pid: usize, city_ids: &[u32]) -> bool {
+        // One memo for the whole sweep; see `Game::query_memo`.
+        let _memo = g.query_memo();
         let planning = Name::new("urban_planning");
         let held_or_offered = |card: &Name| {
             g.players[pid].policies.contains(card) || g.available_policies(pid).contains(card)
