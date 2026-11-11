@@ -7692,6 +7692,10 @@ pub struct AdvancedAi {
     /// Rides `faith-war-before-the-flip-2`. See
     /// `advanced/faith_war_before_the_flip.rs`. Opt-in.
     faith_war_on_a_small_world: bool,
+    /// `each-civ-draws-its-width`: every major draws a city width past the
+    /// shared ten and its target walks two ahead of the cities it holds. See
+    /// `advanced/each_civ_draws_its_width.rs`. Opt-in.
+    each_civ_draws_its_width: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11132,6 +11136,9 @@ mod chop_feeds_the_long_build;
 /// one. See `advanced/chop_for_expansion.rs`.
 mod chop_for_expansion;
 
+/// The player civvis.ai seats: the deployment genome plus the site's own
+/// experiment list. See `advanced/site_deployment.rs`.
+mod site_deployment;
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -11341,6 +11348,9 @@ mod victory_conversion;
 mod victory_lane;
 pub mod victory_portfolio;
 
+/// `each-civ-draws-its-width`: a drawn city width past the shared ten. See
+/// `advanced/each_civ_draws_its_width.rs`.
+mod each_civ_draws_its_width;
 /// `early-settler-floor`: the actuation half of the opening's pace -- a
 /// Settler in the queue while the empire is short of the band floor. One
 /// opt-in gene; see `advanced/early_settler_floor.rs`.

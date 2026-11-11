@@ -2077,10 +2077,11 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 }
 
 impl Session {
-    /// Seat the AIs: every major plays the deployment genome — `AdvancedAi`
-    /// with the gene ledger applied (`enable_native_deployment`) — and minors
-    /// and barbarians keep the cheaper baseline. A seat somebody is playing
-    /// gets an agent too, so the world can be handed to it or watched from it.
+    /// Seat the AIs: every major plays the site player — `AdvancedAi` with
+    /// the gene ledger applied on the authoritative board plus the site's
+    /// experiment list (`enable_site_deployment`) — and minors and barbarians
+    /// keep the cheaper baseline. A seat somebody is playing gets an agent
+    /// too, so the world can be handed to it or watched from it.
     ///
     /// ⚠ This comment said "the deployment genome" while the code seated the
     /// stock `AdvancedAi::new()`, which carries only the production genes:
@@ -2089,6 +2090,11 @@ impl Session {
     /// games and averaged 3.2 cities at turn 100; `server::tests` now pins the
     /// seat to the named constructor. The science drive and the exploration
     /// loop guard it used to add by hand both ship inside the ledger genome.
+    ///
+    /// The same gap one level up: an opt-in the operator asked to watch never
+    /// reached the page, because the site seated the ledger genome alone.
+    /// `SITE_EXPERIMENT_GENES` (`ai/advanced/site_deployment.rs`) is the
+    /// site's own list on top of it.
     fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
         game.players
             .iter()
@@ -2097,7 +2103,7 @@ impl Session {
                     Box::new(BasicAi::new())
                 } else {
                     let mut ai = AdvancedAi::new();
-                    ai.enable_native_deployment();
+                    ai.enable_site_deployment();
                     Box::new(ai)
                 }
             })
