@@ -638,7 +638,7 @@ fn an_unmet_civilization_reaches_the_wire_as_identity_and_nothing_else() {
 /// from it who that somebody was.
 #[test]
 fn the_world_reports_when_nuclear_weapons_have_been_unlocked() {
-    let mut game = Game::new_full(3, 22, 16, 74_118, 25, 1, false);
+    let mut game = Game::new_full(3, 22, 16, 74_117, 25, 1, false);
     assert_eq!(
         observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
         json!(false),
@@ -712,6 +712,68 @@ fn player_standings_report_each_civilizations_nuclear_stockpile() {
         "the column stands from turn one wherever there is an empire to arm"
     );
     assert!(APP.contains("nukes:[\"NUK\", \"Nuclear devices held\"],"));
+}
+
+/// The UNIT column counts a civilization's whole roster, and says apart how
+/// many of those units fight. It is a fact of the empire like its strength,
+/// so a seat reads a met rival's count whole, wherever those units stand.
+#[test]
+fn player_standings_count_each_civilizations_units() {
+    let mut game = Game::new_full(3, 22, 16, 74_117, 25, 1, false);
+    let roster = |game: &Game, seat: usize| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == seat)
+            .count()
+    };
+    let fighting = |game: &Game, seat: usize| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == seat)
+            .filter(|unit| game.rules.units[unit.kind].class == "military")
+            .count()
+    };
+    let (before, fighting_before) = (roster(&game, 1), fighting(&game, 1));
+    let home = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 1)
+        .expect("the rival starts with a unit")
+        .pos;
+    game.spawn_unit("warrior", 1, home);
+    game.spawn_unit("builder", 1, home);
+
+    let observed = observation_spectator(&game, 0);
+    let rival = &observed["players"][1];
+    assert_eq!(rival["unit_count"], json!(before + 2));
+    assert_eq!(
+        rival["military_unit_count"],
+        json!(fighting_before + 1),
+        "a Builder is a unit and not an army"
+    );
+    assert_eq!(
+        observed["players"][0]["unit_count"],
+        json!(roster(&game, 0)),
+        "every civilization is counted off its own roster"
+    );
+
+    // A seat that has met the rival reads the same whole count through its
+    // own fog, however few of those units it can see.
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    let through_fog = observation(&game, 0);
+    assert_eq!(through_fog["players"][1]["unit_count"], json!(before + 2));
+    assert_eq!(
+        through_fog["players"][1]["military_unit_count"],
+        json!(fighting_before + 1)
+    );
+
+    const APP: &str = include_str!("../../web/assets/app.js");
+    assert!(
+        APP.contains("[\"gold\", \"Gold\", worldStandingsInPlay], [\"units\", \"Units\"], [\"military\", \"Military\"],"),
+        "the count stands between Gold and Military, on an arena too"
+    );
+    assert!(APP.contains("units:[\"UNIT\", \"Units fielded\"],"));
 }
 
 /// Ages belong to civilizations rather than to the observing seat. Once a

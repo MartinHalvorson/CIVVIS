@@ -80,6 +80,8 @@ pub(super) fn apply_public_empire_stats(
     observed.suzerain_count = count(source.suzerain_count);
     observed.nuclear_devices = source.nuclear_devices.filter(|value| *value >= 0);
     observed.thermonuclear_devices = source.thermonuclear_devices.filter(|value| *value >= 0);
+    observed.unit_count = count(source.unit_count);
+    observed.military_unit_count = count(source.military_unit_count);
 }
 
 /// Put a rival's tree by name on its seat, and let its border be derived

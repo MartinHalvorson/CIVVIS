@@ -10428,6 +10428,10 @@ pub struct AdvancedAi {
     /// before the era closes. See `advanced/unique_unit_closes_the_age.rs`.
     /// Opt-in.
     unique_unit_closes_the_dark_age: bool,
+    /// `tribute-warms-the-neighbour`: the live bridge gifts Gold to the
+    /// nearest stronger neighbour until it can be asked for a friendship.
+    /// See `advanced/tribute_warms_the_neighbour.rs`. Off by default.
+    tribute_warms_the_neighbour: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11582,6 +11586,9 @@ mod trader_fills_the_idle_route;
 /// `tribute-buys-the-friendship`: see
 /// `advanced/tribute_buys_the_friendship.rs`.
 mod tribute_buys_the_friendship;
+/// `tribute-warms-the-neighbour`: see
+/// `advanced/tribute_warms_the_neighbour.rs`.
+mod tribute_warms_the_neighbour;
 mod universities_before_the_forge;
 pub use science_victory_drive::ScienceDrive;
 

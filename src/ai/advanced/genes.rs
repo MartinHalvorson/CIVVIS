@@ -5827,6 +5827,11 @@ pub const GENES: &[Gene] = &[
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
     // reading leaves out, so 40 of 64 matched fights were losing exchanges.
     Gene { tag: "theology-fights-count-the-host-edge", field: "theology_fights_count_the_host_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_count_the_host_edge, disable: AdvancedAi::disable_theology_fights_count_the_host_edge },
+    // Deity Culture 11-10: the nearest neighbour read Unfriendly from the turn
+    // after contact in 24 of 24 games and the first attacker never reached
+    // Friendly; `tribute-buys-the-friendship` held on its 100-Gold reserve.
+    // See `advanced/tribute_warms_the_neighbour.rs`.
+    Gene { tag: "tribute-warms-the-neighbour", field: "tribute_warms_the_neighbour", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_warms_the_neighbour, disable: AdvancedAi::disable_tribute_warms_the_neighbour },
     // `unique-unit-closes-the-dark-age`: one to four Era Score short of a
     // Normal Age, research the unique unit's unlock and train or buy the
     // first one (+4) before the era closes. Live Deity Online 11-10: 30 of 49
