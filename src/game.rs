@@ -1817,6 +1817,8 @@ pub struct QueryCache {
     // changed hands, was improved or was pillaged moves it, whoever wrote it.
     rival_yields_epoch: std::cell::Cell<u64>,
     keeps_rival_yields: std::cell::Cell<bool>,
+    // The acting seat's own cities as well; see `Game::keep_own_yields`.
+    keeps_own_yields: std::cell::Cell<bool>,
     // `Game::apply` calls in flight. The rules read yields while they are
     // half-way through changing the board, so nothing is kept or reused
     // inside an action.

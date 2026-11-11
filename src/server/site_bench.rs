@@ -88,6 +88,8 @@ pub struct Options {
     /// `Game::audit_rival_yields`: derive every reused yield again and panic
     /// on a difference. Slower than keeping nothing.
     pub audits_rival_yields: bool,
+    /// `Game::keep_own_yields`: the acting seat's own cities as well.
+    pub keeps_own_yields: bool,
 }
 
 impl Default for Options {
@@ -96,6 +98,7 @@ impl Default for Options {
             documents: true,
             keeps_rival_yields: true,
             audits_rival_yields: false,
+            keeps_own_yields: false,
         }
     }
 }
@@ -175,6 +178,7 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
     let documents = options.documents;
     let mut session = Session::new(stock_opening_params(seed));
     session.keeps_rival_yields = options.keeps_rival_yields;
+    session.keeps_own_yields = options.keeps_own_yields;
     session.game.audit_rival_yields(options.audits_rival_yields);
     let mut bands: Vec<Band> = BANDS
         .iter()

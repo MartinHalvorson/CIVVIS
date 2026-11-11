@@ -1731,6 +1731,18 @@ impl Game {
         self.query_memo.rival_yields.borrow_mut().clear();
     }
 
+    /// Keep the acting seat's own city yields as well, on the same terms.
+    ///
+    /// Off unless asked for, and separate from the rivals' on purpose: an
+    /// agent rearranges its own empire in place without an action, so this is
+    /// only as sound as the `board_written` calls at those places. The policy
+    /// what-ifs, the food bias and the city directives make them; the audit
+    /// is what says whether that list is complete.
+    pub fn keep_own_yields(&mut self, on: bool) {
+        self.query_memo.keeps_own_yields.set(on);
+        self.query_memo.rival_yields.borrow_mut().clear();
+    }
+
     /// Something about the board was written without an action and without
     /// touching a tile. Drops what [`Game::keep_rival_yields`] holds.
     pub fn board_written(&mut self) {
@@ -1761,7 +1773,7 @@ impl Game {
             && self
                 .cities
                 .get(&cid)
-                .is_some_and(|city| city.owner != self.current)
+                .is_some_and(|city| city.owner != self.current || memo.keeps_own_yields.get())
     }
 
     fn kept_rival_yields(&self, cid: u32) -> Option<Yields> {

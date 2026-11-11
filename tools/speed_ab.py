@@ -331,7 +331,35 @@ def site_advisory(baseline: Path, candidate: Path,
             f"  baseline  {result['per_turn']['baseline']:.6f} s/turn, "
             f"candidate {result['per_turn']['candidate']:.6f} s/turn",
             f"  {verdict(result, floor)}",
-            f"  {dispersion(result, None)}"]
+            f"  {dispersion(result, None)}"] + wip_site_diagnostic(candidate)
+
+
+def wip_site_diagnostic(candidate: Path) -> list[str]:
+    """WIP, REMOVED BEFORE THIS PULL REQUEST IS READY: this host parks local
+    compiles, so the runner prices the yield carry band by band for one seed."""
+    out = []
+    runs = (("rivals kept", "7", []),
+            ("nothing kept", "7", ["--no-kept-yields"]),
+            ("own kept too", "7", ["--keep-own-yields"]),
+            ("own kept, audited", "7", ["--keep-own-yields", "--audit-kept-yields",
+                                         "--no-documents"]),
+            ("own kept, audited", "8", ["--keep-own-yields", "--audit-kept-yields",
+                                         "--no-documents"]))
+    for label, seed, flags in runs:
+        try:
+            done = subprocess.run([str(candidate), "site-bench", "--seed", seed,
+                                   "--turns", "150", *flags],
+                                  capture_output=True, text=True, check=False,
+                                  timeout=1500)
+        except (OSError, subprocess.SubprocessError) as failed:
+            out.append(f"DIAG {label} seed {seed}: {failed}")
+            continue
+        out.append(f"DIAG {label} seed {seed}: exit {done.returncode}")
+        out += [f"DIAG   {line}" for line in done.stdout.splitlines()
+                if line.startswith("[") or line.startswith("checkpoint")]
+        if done.returncode:
+            out += [f"DIAG   {line}" for line in done.stderr.splitlines()[-14:]]
+    return out
 
 
 def report_digest(text: str) -> str:

@@ -844,6 +844,7 @@ fn site_bench_command(args: Vec<String>) {
         documents: !has("--no-documents"),
         keeps_rival_yields: !has("--no-kept-yields"),
         audits_rival_yields: has("--audit-kept-yields"),
+        keeps_own_yields: has("--keep-own-yields"),
     };
     let started = Instant::now();
     let report = civvis::server::site_bench::run_with(seed, turns, options);

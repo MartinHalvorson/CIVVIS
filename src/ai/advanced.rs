@@ -13533,6 +13533,8 @@ impl AdvancedAi {
             if let Some(seat) = g.players.get_mut(pid) {
                 seat.city_directives.clear();
             }
+            // Governor settings, written without an action.
+            g.board_written();
             return;
         }
         // While the empire is still short of its city target, only the two
@@ -13619,6 +13621,8 @@ impl AdvancedAi {
         if let Some(seat) = g.players.get_mut(pid) {
             seat.city_directives = directives;
         }
+        // Governor settings, written without an action.
+        g.board_written();
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
@@ -25770,6 +25774,7 @@ impl AdvancedAi {
             g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
             g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
             g.heist_reads_the_host_menu = proposed.heist_reads_the_host_menu;
+            g.board_written();
             for action in actions {
                 let _ = g.apply(pid, &action);
             }
