@@ -16160,9 +16160,21 @@ fn a_city_keeps_a_queue_the_page_reissues() {
     // what the focus is.
     assert!(EMBEDDED_APP_JS.contains("const emphasis = city.citizens && city.citizens.emphasis;"));
     assert!(EMBEDDED_APP_JS.contains("onclick='cycleCityFocus(${city.id},\"${kind}\")'>"));
+    assert!(EMBEDDED_APP_JS.contains("body: JSON.stringify({city: cityId, yield: kind, stance})"));
+    // A lean is called a focus only at the size a player's press makes it:
+    // an agent that held the seat leaves small tilts of its own behind.
+    assert!(EMBEDDED_APP_JS
+        .contains("return lean >= 1 ? \"favoured\" : lean <= -.5 ? \"disfavoured\" : \"\";"));
+    // Every press says what it did, including when nobody could be moved.
     assert!(EMBEDDED_APP_JS.contains(
-        "body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})"
+        "if (!moved) return `${said}: no citizen has a better tile to work. It will tell as the city grows.`;"
     ));
+    assert!(EMBEDDED_APP_JS
+        .contains("cityFocusNote.city === city.id && cityFocusNote.turn === state.turn"));
+    // A favoured yield outranks every appetite the governor reaches by itself.
+    let routes = include_str!("../routes.rs");
+    assert!(routes.contains("const FOCUS_FAVOURED: f64 = 4.0;"));
+    assert!(routes.contains("const FOCUS_DISFAVOURED: f64 = -1.0;"));
 }
 
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
