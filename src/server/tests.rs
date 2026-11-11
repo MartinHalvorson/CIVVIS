@@ -15643,6 +15643,21 @@ fn an_offered_purchase_carries_its_price() {
     );
 }
 
+#[test]
+fn a_purchase_row_prints_the_price_it_was_quoted() {
+    // The Buy pages of the production panel said "Buy" and nothing else. Each
+    // row now prints the engine's quote, cheapest first, and a server that
+    // predates the quote still gets a row that says what it is for.
+    assert!(EMBEDDED_APP_JS.contains("const price = offers[0].cost;"));
+    assert!(EMBEDDED_APP_JS.contains("cost: price === undefined ? `<b>Buy</b>`"));
+    assert!(EMBEDDED_APP_JS
+        .contains(": `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,"));
+    assert!(EMBEDDED_APP_JS.contains("group.sort((a, b) => priced(a) - priced(b));"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "`${purchasing ? \"Purchase\" : current ? \"Change production\" : \"Choose production\"}</div>` +"
+    ));
+}
+
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
 /// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
 /// to a live control now leaves one line naming the sender; nothing else does.
