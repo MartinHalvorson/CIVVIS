@@ -393,7 +393,7 @@ is left". It was not left: #2163 built it in August and
 `compute_enemy_attack_envelopes` has run on it since. What its recomputes
 cost today is the price of moves that really do land in an enemy's reach.
 
-### Three passes that did the same work many times (−4.7%, −6.6%, −1.0%)
+### Three passes that did the same work many times (−12.2% together)
 
 The profile of the day's `main` (`8732a09d22`, seed 7, turns 40 to 170, the
 city limit off so the majors hold 11 to 18 cities) put a fifth of the
@@ -441,8 +441,9 @@ have two readers. The table's floods now run on the board under one scope.
 It is worth three times as much on the gene-screen world, which has six
 majors at war, as on the site's four.
 
-Multiplied together they come to about 12% of a site game; the three were
-measured one at a time, not as one build. What the same profile still shows:
+As one build the three are −12.82%, −12.04% and −12.19% of those same three
+games, again with every checkpoint identical. What the same profile still
+shows:
 the citizen plan is computed afresh for every `city_yields` that is not kept
 or memoized (20% of the thread before the backlog fix, which accounts for 5.5
 of it), `pick_item` still takes the backlog census once per city with a
