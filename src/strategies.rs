@@ -42,7 +42,7 @@ pub const CIV6_RUNGS: [(&str, &str); 8] = [
 
 /// The agent that stands in for Firaxis's own AI in the rung tables. At
 /// Prince it plays with nothing added, so its own rating *is* Prince.
-pub const CIV6_REFERENCE: &str = "wheels";
+pub const CIV6_REFERENCE: &str = "stock";
 
 /// Fewer rated tables than this and a rating is shown as provisional.
 pub const PROVISIONAL_TABLES: u32 = 30;
@@ -159,7 +159,7 @@ pub const ROSTER: &[PlayerStrategy] = &[
         id: "stock",
         handle: "ByTheBook",
         tilt: "Balanced · lighter",
-        blurb: "The same planner with none of the promoted extras switched on.",
+        blurb: "The planner with no promoted extras. Our stand-in for Civilization VI's own AI.",
         chassis: Chassis::Stock,
         target: None,
         genes: &[],
@@ -179,7 +179,7 @@ pub const ROSTER: &[PlayerStrategy] = &[
         id: "wheels",
         handle: "TrainingWheels",
         tilt: "Casual",
-        blurb: "A simple scripted opponent. The stand-in for Civilization VI's own AI.",
+        blurb: "A simple scripted opponent for a first game.",
         chassis: Chassis::Basic,
         target: None,
         genes: &[],

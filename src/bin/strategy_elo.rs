@@ -52,6 +52,9 @@ struct Options {
     log: String,
     out: String,
     fit_only: bool,
+    /// The agent seated as every rung's rivals. Anything but the published
+    /// reference is a calibration run and wants its own `--out`.
+    reference: String,
 }
 
 fn text(args: &[String], key: &str) -> Option<String> {
@@ -136,9 +139,9 @@ fn rung_plan(options: &Options, rung_order: usize, rung: &str, index: usize) -> 
     }
 }
 
-fn agent_for(key: &str) -> Box<dyn Ai + Send> {
+fn agent_for(options: &Options, key: &str) -> Box<dyn Ai + Send> {
     let id = if key.starts_with("civ6:") {
-        CIV6_REFERENCE
+        options.reference.as_str()
     } else {
         key
     };
@@ -181,7 +184,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
             if player.is_minor || player.is_barbarian {
                 Box::new(BasicAi::new())
             } else {
-                agent_for(&plan.seats[player.id])
+                agent_for(options, &plan.seats[player.id])
             }
         })
         .collect();
@@ -226,7 +229,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
         "seed": plan.seed,
         "players": options.players,
         "turns": options.turns,
-        "reference": CIV6_REFERENCE,
+        "reference": options.reference,
         "seats": plan.seats,
         "challenger": plan.challenger,
         "winner": winner,
@@ -249,7 +252,8 @@ fn read_log(options: &Options) -> Vec<Value> {
         .filter(|line| {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
-                && (line["kind"] == "pool" || line["reference"].as_str() == Some(CIV6_REFERENCE))
+                && (line["kind"] == "pool"
+                    || line["reference"].as_str() == Some(options.reference.as_str()))
         })
         .collect()
 }
@@ -298,10 +302,9 @@ fn publish(options: &Options) {
             .or_default() += 1;
         tables.push(Table { seats, winner });
     }
-    let Some(&anchor) = index.get(CIV6_REFERENCE) else {
-        eprintln!(
-            "no rated table seats the reference agent {CIV6_REFERENCE} yet; nothing published"
-        );
+    let reference = options.reference.as_str();
+    let Some(&anchor) = index.get(reference) else {
+        eprintln!("no rated table seats the reference agent {reference} yet; nothing published");
         return;
     };
     let elo = strategies::fit(index.len(), &tables);
@@ -332,14 +335,11 @@ fn publish(options: &Options) {
     }
     // Prince's rivals are the reference agent with nothing added: one entrant
     // under two names.
-    ratings.insert(
-        strategies::rung_key(PRINCE),
-        ratings[CIV6_REFERENCE].clone(),
-    );
+    ratings.insert(strategies::rung_key(PRINCE), ratings[reference].clone());
     let file = json!({
         "protocol": 1,
         "prince_elo": PRINCE_ELO,
-        "reference": CIV6_REFERENCE,
+        "reference": reference,
         "players": options.players,
         "turns": options.turns,
         "speed": SPEED,
@@ -387,7 +387,12 @@ fn main() {
         log: text(&args, "--log").unwrap_or_else(|| DEFAULT_LOG.to_string()),
         out: text(&args, "--out").unwrap_or_else(|| DEFAULT_OUT.to_string()),
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
+        reference: text(&args, "--reference").unwrap_or_else(|| CIV6_REFERENCE.to_string()),
     };
+    if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
+        eprintln!("--reference wants a roster id, not {:?}", options.reference);
+        std::process::exit(2);
+    }
 
     if !options.fit_only {
         let logged = read_log(&options);

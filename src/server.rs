@@ -2952,8 +2952,8 @@ impl Session {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
         }
-        let row = crate::strategies::find(name)
-            .ok_or_else(|| format!("no strategy named {name}"))?;
+        let row =
+            crate::strategies::find(name).ok_or_else(|| format!("no strategy named {name}"))?;
         if self.autoplay_strategy.as_deref() == Some(row.id) {
             return Ok(());
         }
@@ -2973,8 +2973,8 @@ impl Session {
         if name.is_empty() {
             return Ok(());
         }
-        let row = crate::strategies::find(name)
-            .ok_or_else(|| format!("no strategy named {name}"))?;
+        let row =
+            crate::strategies::find(name).ok_or_else(|| format!("no strategy named {name}"))?;
         for seat in 0..self.game.players.len() {
             let player = &self.game.players[seat];
             if player.is_minor || player.is_barbarian || self.game.is_human_seat(seat) {
