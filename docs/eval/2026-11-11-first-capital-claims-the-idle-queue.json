@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-11",
+  "task": "first-capital-claims-the-idle-queue",
+  "scope": "Production-policy order changes; no verified native capture or Domination-win improvement established.",
+  "parent_quota_merge": "55226fc01cbdb81c0802fb0352daebb0687cfdd4",
+  "integrated_main": "c9541692780a964aa7ff0706dd1e5070e8f1dfba",
+  "problem": "The first-capital reservation was scored by the utility governor but routine claims could consume an idle capital first. Peacetime Monument and Granary claims could then interrupt its military build, including the queued last body.",
+  "change": "Run the existing reservation in the shared main/hint claim chain, only for an active first-capital reservation after its expansion floor. Protect capital assault bodies and Rams/Towers from the Monument and Granary claims through that window. Existing builds and other city eligibility remain with their original policies; normal global census can change other idle-city choices indirectly.",
+  "native_timing_correction": "Native152706 named Ulundi after its turn27 Monument choice; that already-running build is preserved. The replay changes a later idle choice, including turn34 Granary to Warrior, rather than retrospectively replacing the turn27 Monument.",
+  "regression": {
+    "baseline": "Before production edit, focused claim suite:4pass/1fail; incomplete assault received Monument instead of a body.",
+    "additional_fixture_correction": "The initial Granary OFF control used an idle city that stood aside for a due Settler. Corrected it to an existing routine Warrior, which the Granary really may interrupt; final ON/OFF control passes. Not counted as a policy red proof.",
+    "checks": {
+      "capital_monument": 3,
+      "early_conquest": 79,
+      "first_capital": 82,
+      "granary_claims_the_bound_queue": 5,
+      "hint_runs_the_claims": 6
+    },
+    "local_profile": "cargo test --profile ci --locked --lib FILTER with CARGO_PROFILE_CI_OPT_LEVEL=0 and CARGO_BUILD_JOBS=2; 175 filter executions, overlapping filters, not 175 unique tests. Mac ld emitted nonfatal large-EH-frame warning. Optimized complete suite remains required remote CI gate.",
+    "covered": "Monument competing claim and repeated polls, production hint, off parent, other victory lane, no target, declared/expired window, expansion floor, existing builds, occupied other cities, Granary interruption and last queued body after demand becomes zero."
+  },
+  "build": {
+    "at": 1794416211.358905,
+    "head_before_final_source_commit": "1a3cbe5ce4e3ac87fefb5679ab941fd18e944327",
+    "integrated_main": "c9541692780a964aa7ff0706dd1e5070e8f1dfba",
+    "worker_sha256": "38bee8553fb71edf1b49e704f27fd683cf54cf7423946b24bf8b733101e0fcb0",
+    "source_sha256": {
+      "src/ai/advanced/hint_runs_the_claims.rs": "6ad73ec44fca77ae70365586fcea613d7c51a6cf3fc353f24125f4e6729212f7",
+      "src/ai/advanced/hint_runs_the_claims/tests.rs": "2da4444505b4d553f6021fba0e7c24929a66e49cc57f4c106cc5896afad72b73",
+      "src/ai/advanced/granary_claims_the_bound_queue.rs": "4f049936776816a957a9734fe5058056979bc4437cfc0a9ee64c9cb1dbd85b38"
+    },
+    "build_env": {
+      "CARGO_TARGET_DIR": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-11-11/codex-macedon-build-cache",
+      "CARGO_PROFILE_CI_OPT_LEVEL": "0",
+      "CARGO_BUILD_JOBS": "2"
+    },
+    "scope": "Local diagnostic worker, CI profile opt0; optimized full suite remains remote CI gate.",
+    "origin_main_seen_at_completion": "bf8cf22e6b6f55d94c5e4ef5f8396b4896bfa104"
+  },
+  "replay": {
+    "scope": "Identical recorded-history intentions, not trained units, survival, captures or win-rate proof.",
+    "runs": [
+      {
+        "run": "civvis-20261111T152706Z",
+        "frames": 145,
+        "native_control": {
+          "gate_passed": true,
+          "native_history_gate_passed": true,
+          "request_identity_gate_passed": true,
+          "invalid_request_reply_frames": 0,
+          "gate_kind": "earliest_changed_complete_reply",
+          "frames": 145,
+          "matched_frames": 145,
+          "missing_record_frames": 0,
+          "changed_complete_reply_frames": 62
+        },
+        "changed_order_frames": 21,
+        "changed_native_action_frames": 27,
+        "underlying_worker_sha256": {
+          "baseline": "e4c8d5e91fc48dd91ae0e5e9f87c2af190cbff4807368aa637a5f413ad35f028",
+          "candidate": "38bee8553fb71edf1b49e704f27fd683cf54cf7423946b24bf8b733101e0fcb0"
+        },
+        "equal_requested_genomes": true,
+        "provenance": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-11-11/first-capital-idle-queue/civvis-20261111T152706Z/replay/provenance.json",
+        "incremental_vs_quota_only_changed_order_frames": 22
+      },
+      {
+        "run": "civvis-20261111T161959Z",
+        "frames": 127,
+        "native_control": {
+          "gate_passed": true,
+          "native_history_gate_passed": true,
+          "request_identity_gate_passed": true,
+          "invalid_request_reply_frames": 0,
+          "gate_kind": "earliest_changed_complete_reply",
+          "frames": 127,
+          "matched_frames": 127,
+          "missing_record_frames": 0,
+          "changed_complete_reply_frames": 6
+        },
+        "changed_order_frames": 2,
+        "changed_native_action_frames": 5,
+        "underlying_worker_sha256": {
+          "baseline": "bb3b00aaea8f5085ec6d59422ea4d5a01456b4b987c18ce1416bf435cc4968c7",
+          "candidate": "38bee8553fb71edf1b49e704f27fd683cf54cf7423946b24bf8b733101e0fcb0"
+        },
+        "equal_requested_genomes": true,
+        "provenance": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-11-11/first-capital-idle-queue/civvis-20261111T161959Z/replay/provenance.json"
+      }
+    ]
+  },
+  "incremental_comparison": {
+    "reference": "Saved quota-only worker eb2884eec597ebd12336459500201a959421477b129cbd1853b6caebe865aef5, recorded152706history through60. Public-site worker compatibility separately verified unchanged on145frames.",
+    "changed_order_frames": 22,
+    "example": {
+      "turn": 34,
+      "frame": 0,
+      "city_native_id": 65536,
+      "quota_only": "BUILDING_GRANARY",
+      "candidate": "UNIT_WARRIOR"
+    },
+    "caution": "Orders and allocation metadata on untreated recorded history, not actual training, arrival, survival, capture, or win estimates. Other idle-city orders may differ through the normal empire census."
+  },
+  "current_native_evidence": {
+    "quota_only": "Two closed games so far: defeat47 and censored retirement152; third running. All zero rival original capitals; not evidence of a win-rate gain.",
+    "queue_followup": "Not yet deployed; fresh native worker/setup/genome readback and actual outcomes required after merge."
+  },
+  "soak": "No engine rules or host protocol change; focused regressions plus immutable recorded native replay used for policy validation. Actual post-merge native trial is separate."
+}

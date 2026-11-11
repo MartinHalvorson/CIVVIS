@@ -2796,7 +2796,24 @@ impl Session {
         o["mercy_rule"] = json!(self.game.mercy_rule);
         o["required_victory_types"] = json!(self.game.effective_required_victories());
         o["victories_won"] = json!(self.game.victories_won);
-        o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
+        // A purchase is offered with its price, the way a plot already is.
+        // The quote is for the page to print beside the offer; applying the
+        // action recomputes it, and an action posted back with it is read
+        // exactly as one posted without.
+        let legal = self.game.legal_actions(0);
+        let mut offered = serde_json::to_value(&legal).unwrap();
+        if let Some(rows) = offered.as_array_mut() {
+            for (row, action) in rows.iter_mut().zip(&legal) {
+                let purchase = matches!(
+                    action,
+                    Action::Buy { .. } | Action::BuyBuilding { .. } | Action::BuyDistrict { .. }
+                );
+                if let Some(cost) = self.game.purchase_quote(0, action).filter(|_| purchase) {
+                    row["cost"] = json!(cost);
+                }
+            }
+        }
+        o["legal_actions"] = offered;
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
@@ -2804,6 +2821,24 @@ impl Session {
         o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
         o["server_artifact_kind"] = json!(runtime_artifact_kind());
         o
+    }
+
+    /// Turn [`crate::ai::SiteShortcuts`] on or off for one seat's agent. No
+    /// session does this by itself, and on 2026-11-11 none should: the one
+    /// shortcut there is did not pass (`docs/SIMULATOR_PERFORMANCE.md`).
+    /// `site-bench --shortcuts` and the paired strength test are the callers.
+    pub fn set_seat_shortcuts(&mut self, seat: usize, shortcuts: crate::ai::SiteShortcuts) {
+        if let Some(agent) = self.ais.get_mut(seat) {
+            agent.set_site_shortcuts(shortcuts);
+        }
+    }
+
+    /// What one seat's agent says it is taking: the read-back of the above.
+    pub fn seat_shortcuts(&self, seat: usize) -> crate::ai::SiteShortcuts {
+        self.ais
+            .get(seat)
+            .map(|agent| agent.site_shortcuts())
+            .unwrap_or_default()
     }
 
     /// Spectator mode: play out exactly one player's turn with its AI.

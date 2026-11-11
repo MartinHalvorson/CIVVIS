@@ -845,6 +845,21 @@ fn site_bench_command(args: Vec<String>) {
         keeps_rival_yields: !has("--no-kept-yields"),
         audits_rival_yields: has("--audit-kept-yields"),
         keeps_own_yields: !has("--no-own-kept-yields"),
+        // Unlike the switches above these change what a seat decides, so the
+        // report they produce is a different game; `tools/site_pair.py` is
+        // what reads a verdict out of them.
+        shortcuts: civvis::ai::SiteShortcuts::named(&arg_text(&args, "--shortcuts", ""))
+            .unwrap_or_else(|error| {
+                eprintln!("{error}");
+                std::process::exit(2);
+            }),
+        shortcut_seats: args.iter().any(|a| a == "--shortcut-seats").then(|| {
+            arg_text(&args, "--shortcut-seats", "")
+                .split(',')
+                .filter_map(|seat| seat.trim().parse::<u32>().ok())
+                .filter(|seat| *seat < 64)
+                .fold(0u64, |seats, seat| seats | (1 << seat))
+        }),
     };
     let started = Instant::now();
     let report = civvis::server::site_bench::run_with(seed, turns, options);
@@ -885,6 +900,33 @@ fn site_bench_command(args: Vec<String>) {
     println!(
         "[city yields: {reused} answered from what was kept, {derived} derived for all seats]"
     );
+    // Per seat, for a game in which only some seats take a shortcut. The
+    // brackets keep it out of the report's hash, like every other time.
+    let seats = report
+        .seat_seconds
+        .iter()
+        .enumerate()
+        .filter(|(seat, _)| {
+            let player = &report.session.game.players[*seat];
+            !player.is_minor && !player.is_barbarian
+        })
+        .map(|(seat, seconds)| format!("{seat}={seconds:.3}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    println!("[major seats, player id and seconds: {seats} | minors]");
+    // A fact about the game, so it is in the report's hash: how many of the
+    // city-states are still on the board. The majors are in the standings;
+    // this is what says whether a change was paid for by the small seats.
+    let game = &report.session.game;
+    let city_states = game.players.iter().filter(|player| player.is_minor).count();
+    let standing = game
+        .players
+        .iter()
+        .filter(|player| {
+            player.is_minor && player.alive && !game.player_city_ids(player.id).is_empty()
+        })
+        .count();
+    println!("checkpoint city-states: {standing} of {city_states} standing");
     for checkpoint in &report.checkpoints {
         println!(
             "checkpoint {}: save {:016x}, document {:016x}",
@@ -1966,7 +2008,9 @@ fn print_usage() {
               [--no-documents (site-bench: play the frames, skip the page's state documents)] \
               [--no-kept-yields (site-bench: derive every city yield afresh)] \
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
-              [--audit-kept-yields (site-bench: re-derive every reused yield and compare)]"
+              [--audit-kept-yields (site-bench: re-derive every reused yield and compare)] \
+              [--shortcuts envelopes-across-own-moves (site-bench: this changes play)] \
+              [--shortcut-seats 0,1 (site-bench: the player ids that take them; every seat when absent)]"
     );
 }
 

@@ -14,8 +14,8 @@ simulation play itself.
 
 | Key | Civ 6 action | Here |
 | --- | --- | --- |
-| `1` | EndTurn | Resolve the next blocker, or end the turn |
-| `Shift`+`1` | — | End the turn regardless of blockers |
+| `Enter` or `1` | EndTurn | Resolve the next blocker, or end the turn |
+| `Shift`+`Enter` or `Shift`+`1` | — | End the turn regardless of blockers |
 | `B` | FoundCity | Found a city with the selected Settler |
 | `F` | Fortify | Fortify the selected unit |
 | `H` | FortifyUntilHeal | Fortify and wait out the damage |
@@ -72,6 +72,14 @@ simulation too.
 | `Escape` | — | Close the topmost screen, then unwind map modes and the selection |
 
 A lens key pressed twice puts the lens away, which is what its button does.
+
+## Where this map adds to the settings file
+
+- **`Enter` ends the turn as well as `1`.** The settings file this table was
+  read from carries `1` for EndTurn. Enter is the key a Civilization VI
+  player's hand goes to at the end of every turn, so it is bound to the same
+  action, and `Shift`+`Enter` to ending the turn regardless of blockers. A
+  focused button still takes Enter first, as it does everywhere on the page.
 
 ## Where this map cannot be Civ 6's
 

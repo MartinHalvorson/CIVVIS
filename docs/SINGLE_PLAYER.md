@@ -55,7 +55,7 @@ key — walks them.
 | 6 | A policy slot is empty and a legal card fits | Government panel |
 | 7 | No research is selected | Science card / tech tree |
 | 8 | No civic is selected | Culture card / civics tree |
-| 9 | A city is producing nothing | city screen ▸ Build |
+| 9 | A city is producing nothing | the city on the map ▸ production panel |
 | 10 | A unit has moves and no orders | select the unit; move, fortify, skip or sleep |
 
 Government and policy prompts open the existing Government panel. They use
@@ -108,7 +108,7 @@ the action from the UI without a debugger.
 | Turn loop | `end_turn` | yes — blockers, notifications, unit cycling |
 | Unit orders | `move`, `move_to`, `attack`, `ranged`, `fortify`, `promote`, `upgrade`, `improve`, `pillage`, `repair_improvement`, air ops, religious ops | yes — contextual unit bar |
 | Research | `research`, `civic` | yes — cards and both trees |
-| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — city screen; there is no production *queue* because the engine has none (`do_produce` replaces `city.queue`) |
+| Cities | `produce`, `buy`, `buy_building`, `buy_district` | yes — the city's panels on the map, with prices on purchases; there is no production *queue* because the engine has none (`do_produce` replaces `city.queue`) |
 | Government | `government`, `slot_policy`, `unslot_policy` | yes — Empire ▸ Government |
 | Religion | `choose_pantheon`, `found_religion`, `evangelize_belief` | yes — Empire ▸ Religion |
 | Great People | `recruit_great_person`, `patronize_great_person` | yes — Empire ▸ Great People, naming the person on offer and why they cannot be claimed |
@@ -510,33 +510,49 @@ only for a strike `legal_actions` offers the seat right now, which is what stops
 it reading a unit through the fog, and it answers nothing for an Encampment
 rather than something approximate.
 
-## The city screen
+## The city on the map
 
-The sidebar panel is the glance; the city screen is the desk. Left: what the
-city *is* — six yields, growth, housing, amenities, loyalty, its districts,
-buildings, wonders and citizens. Right: everything it *could* start, grouped
-Districts, Buildings, Units, Wonders, Projects, each with its cost, its turns
-at the current production, and a Produce or Buy button where the engine allows
-one.
+Civilization VI opens a city on the map, not on a screen over it, and so does
+this. Selecting a city docks two panels at the edge of a world that stays in
+view and in play:
 
-Two things it does deliberately:
+- **The production panel** runs down the right edge above End Turn
+  (`ProductionPanel.xml`). Everything the city could start is one column of
+  rows grouped Districts, Buildings, Wonders, Units, Projects, each with its
+  turns at the current production and its cost. The whole row is the button.
+  What the treasury can buy outright is a second page of the same panel, and a
+  third once Faith can buy something here, each purchase with its price.
+- **The city panel** stands where a selected unit's panel does
+  (`CityPanel.xml`): the six yields, growth and production meters, housing,
+  amenities, loyalty and the governor, with what already stands in the city
+  behind a City details fold. The arrows step to the previous and next city.
 
-- **A district names its tiles.** Where a district goes is most of what it is
-  worth, so an item with more than one candidate site shows the sites rather
-  than one arbitrary one.
+While a city is open its own tiles show their yields, with the tiles its
+citizens work ringed, whether or not the yield icons are on for the whole map.
+
+Three things it does deliberately:
+
+- **An order closes the panels; a purchase leaves them up.** Choosing
+  production answers the city and the turn moves on. A treasury is often spent
+  on more than one thing.
+- **Anything chosen by where it goes is chosen on the map.** A district or
+  wonder with more than one possible tile, a district bought outright, and a
+  plot of land: the panels step aside, the candidate tiles are outlined, and a
+  plot carries its price and what it would yield. Buying land stays up for the
+  next tile. Escape goes back to the city.
 - **It describes what it sells.** The ruleset carries no prose for units,
   buildings or districts, so the note is synthesised from the numbers —
   strength and movement, yields and housing, upkeep. A production list without
   that is a list of prices.
 
+The city is not a modal: the map's keys work under it, Escape or a press on
+open country puts it down, and selecting a unit takes the corner back. A stage
+too narrow to dock against keeps one stacked sheet.
+
 There is no production queue, and that is an engine fact rather than a client
 gap: `do_produce` sets `city.queue = vec![item]`. Adding a real queue is engine
-work.
-
-A district or wonder with more than one possible tile is placed on the map. The
-city screen steps aside, the district's lens shows what each tile would give,
-and the sites are outlined. Clicking one starts it, and Escape goes back to the
-city. A list of coordinates could not say any of that.
+work. Citizens cannot be reassigned either: the engine places them and has no
+action for a player to move one.
 
 ## Endings
 

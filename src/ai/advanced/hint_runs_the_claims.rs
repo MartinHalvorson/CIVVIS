@@ -75,11 +75,29 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/holdable_land_keeps_settling.rs`.
         self.claim_holdable_land_settler(g, pid, plan);
+        // `first-capital-before-the-walls`: the utility governor's army
+        // reservation must also reach idle queues consumed by these claims
+        // and by live hints. The helper preserves the first expansion and
+        // existing builds. Keep the Monument from retaking a reserved body
+        // on the next poll, when its queue is no longer idle.
+        let first_capital_reserves = self.first_capital_active()
+            && self.conquest_reservation_open(g)
+            && g.player_city_ids(pid).len() >= self.conquest_first_settler_cities();
+        if first_capital_reserves {
+            self.conquest_opening_production(g, pid, plan);
+        }
+        let first_capital_training = first_capital_reserves
+            && Self::conquest_capital(g, pid).is_some_and(|cid| {
+                g.cities[&cid]
+                    .queue
+                    .first()
+                    .is_some_and(|item| self.first_capital_training_holds(g, pid, cid, item))
+            });
         // `capital-monument-after-the-second-city`: the capital's Monument,
         // once the second city stands, after the floor's Settler and ahead
         // of the routine claims. Exact no-op while the gene is off. See
         // `advanced/capital_monument.rs`.
-        if !war_holds {
+        if !war_holds && !first_capital_training {
             self.claim_capital_monument(g, pid, plan);
         }
         // `granary-claims-the-bound-queue`: a housing-bound city's Granary
@@ -241,6 +259,33 @@ impl AdvancedAi {
             self.claim_pillaged_repairs(g, pid);
         }
         war_holds
+    }
+
+    /// Keep the capital's assault body or breaker through the peacetime
+    /// Monument and Granary claims while its first-capital window is open.
+    /// The queued body can fill the final shortfall itself; asking whether
+    /// another body is missing would let the last one be displaced again.
+    pub(super) fn first_capital_training_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
+        if !self.first_capital_active()
+            || !self.conquest_reservation_open(g)
+            || g.player_city_ids(pid).len() < self.conquest_first_settler_cities()
+            || Self::conquest_capital(g, pid) != Some(cid)
+        {
+            return false;
+        }
+        let Item::Unit { unit } = item else {
+            return false;
+        };
+        let spec = &g.rules.units[unit];
+        Self::conquest_ranged_body(spec)
+            || Self::conquest_melee_body(spec)
+            || matches!(unit.as_str(), "battering_ram" | "siege_tower")
     }
 
     /// The defensive writers that `take_turn_inner` runs after the governors,

@@ -622,12 +622,18 @@ const values = new Map();
 const storage = {getItem:k => values.has(k) ? values.get(k) : null,
                  setItem:(k,v) => values.set(k,v)};
 applyPublishedViewDefaults(storage);
-if (values.get("civvis-world-spin") !== "1" || values.get("civvis-unit-tail-turns") !== "2")
+if (values.get("civvis-world-spin-2") !== "1" || values.get("civvis-unit-tail-turns") !== "2")
   throw Error("fresh public visitor does not get spin and two-turn trails");
-values.set("civvis-world-spin", "0"); values.set("civvis-unit-tail-turns", "0");
+values.set("civvis-world-spin-2", "0"); values.set("civvis-unit-tail-turns", "0");
 applyPublishedViewDefaults(storage);
-if (values.get("civvis-world-spin") !== "0" || values.get("civvis-unit-tail-turns") !== "0")
+if (values.get("civvis-world-spin-2") !== "0" || values.get("civvis-unit-tail-turns") !== "0")
   throw Error("saved off preferences were overwritten");
+// The first spin key was written by every drag of the map, so an "off" left
+// there is not a choice and must not hold a returning visitor's world still.
+values.clear(); values.set("civvis-world-spin", "0");
+applyPublishedViewDefaults(storage);
+if (values.get("civvis-world-spin-2") !== "1")
+  throw Error("an old drag still holds a returning visitor's world still");
 values.set("civvis-unit-tail-turns", "4"); applyPublishedViewDefaults(storage);
 if (values.get("civvis-unit-tail-turns") !== "4") throw Error("saved trail length changed");
 '''
@@ -666,7 +672,8 @@ class SimulationWorldRotation(unittest.TestCase):
         start = source.index("function spinAvailable()")
         block = source[start:source.index("function advanceWorldSpin(dt)", start)]
         scenarios = r'''
-const WORLD_SPIN_STORAGE_KEY = "spin", localStorage = {setItem() {}};
+const WORLD_SPIN_STORAGE_KEY = "spin", saved = new Map([["spin", "1"]]);
+const localStorage = {getItem:k => saved.has(k) ? saved.get(k) : null, setItem:(k,v) => saved.set(k, v)};
 let state = {}, SPEC = false, WORLD_SPIN = true;
 let dragState = null, touchGesture = null, cameraFlight = null, cameraZoom = null;
 let cameraFollowManual = false, wraps = true, worldSpinPeriodMs = 36000;
@@ -699,6 +706,14 @@ state = {view_player:null}; updateSpinButton();
 expect(spinRunning() && !spinButton.disabled, "going back to All did not pick the turn up again");
 stopWorldSpin();
 expect(!WORLD_SPIN, "a hand on the turning world no longer stops it");
+expect(!spinRunning() && attributes["aria-pressed"] === "false", "the button still reads as turning under a hand");
+expect(saved.get("spin") === "1", "a hand on the world was saved as the viewer's choice");
+restoreWorldSpin();
+expect(WORLD_SPIN && spinRunning() && attributes["aria-pressed"] === "true", "the next world did not open turning again");
+stopWorldSpin(); setWorldSpin(true);
+expect(WORLD_SPIN && spinRunning(), "the button does not bring the turn back after a hand");
+setWorldSpin(false); restoreWorldSpin();
+expect(!WORLD_SPIN && saved.get("spin") === "0", "the next world overrode the button's off");
 '''
         done = subprocess.run([NODE, "-e", block + scenarios], capture_output=True, text=True, timeout=15)
         self.assertEqual(done.returncode, 0, done.stderr)

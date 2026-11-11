@@ -597,7 +597,23 @@ pub fn route_step(session: &Session, parsed: &Value) -> Value {
                     .route_step(unit, to, 0)
                     .or_else(|| session.game.pass_through_destination(unit, to, 0));
                 match step {
-                    Some(step) => json!({"step": [step.0, step.1], "error": Value::Null}),
+                    Some(step) => {
+                        let mut answer = json!({"step": [step.0, step.1], "error": Value::Null});
+                        // Asked for a preview, the answer also carries the
+                        // whole walk behind that step and the turn each tile
+                        // is reached on, for the page to draw before the
+                        // order is given. A plain step answers as it always
+                        // has.
+                        if parsed["preview"].as_bool() == Some(true) {
+                            if let Some(walk) = session.game.route_preview(unit, to) {
+                                answer["path"] = walk
+                                    .iter()
+                                    .map(|(pos, turn)| json!([pos.0, pos.1, turn]))
+                                    .collect();
+                            }
+                        }
+                        answer
+                    }
                     None => json!({"step": Value::Null, "error": Value::Null}),
                 }
             }

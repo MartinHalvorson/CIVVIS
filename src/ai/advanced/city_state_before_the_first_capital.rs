@@ -51,8 +51,10 @@
 //!    against the walls, claimed ahead of the bodies once Masonry is known
 //!    ([`AdvancedAi::city_state_stone_breaker_lead`]). The reservation trains
 //!    whatever melee body scores best now (a Warrior, a Spearman, the unique
-//!    line once it is in); the bill preview, not a unit list, decides
-//!    readiness. From turn one, while a stone can still be named, research
+//!    line once it is in); the bill preview and the kill-time preview
+//!    ([`AdvancedAi::city_state_stone_kill_time`]: the blows the melee bodies
+//!    at the rally land before the centre kills them, against its health,
+//!    walls and healing), not a unit list, decide readiness. From turn one, while a stone can still be named, research
 //!    takes Masonry and then the technology of this civilization's own unique
 //!    melee line when it out-fights a Warrior (read from `unique_to`/
 //!    `replaces`: Macedon's Hypaspist, Iron Working) as a forced goal
@@ -87,7 +89,7 @@
 //! lane: every entry point returns before reading the board.
 
 use super::city_campaign::NeighbourAppraisal;
-use super::early_conquest::ConquestOpening;
+use super::early_conquest::{ConquestOpening, CONQUEST_ASSEMBLY_RADIUS};
 use super::first_capital_before_the_walls::FIRST_CAPITAL_WALL_CEILING;
 use super::outclassed_siege::field_outclasses;
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
@@ -115,12 +117,49 @@ pub(crate) const STONE_NAMING_DEADLINE: u32 = 75;
 /// production reserved: the capital's first Settler is never deferred.
 pub(crate) const STONE_CITIES: usize = 2;
 
-/// Shooters in the reserved force.
-pub(crate) const STONE_RANGED: usize = 2;
+/// Shooters in the reserved force. One: a shot at a walled centre lands
+/// little, and the melee bodies are what open and take it.
+pub(crate) const STONE_RANGED: usize = 1;
 
 /// Melee bodies in the reserved force: they strike the walls beside the Ram
-/// and take the centre against about four Warriors.
-pub(crate) const STONE_MELEE: usize = 3;
+/// and take the centre against about four Warriors. Five, not three: over
+/// the 47 live Deity games of 2026-11-11 the seat held a median four melee
+/// bodies at turn 40 and no Hypaspist before turn 50 (first one at a median
+/// turn 60, none by turn 80 in 24), so Warriors carry the strike. A Warrior
+/// (20) against a centre of 25 deals about 25 a blow and takes about 37, so
+/// it lands three blows: three Warriors deal about 220 against 100 of walls,
+/// 200 of health and the centre's healing. The CI replay of the live
+/// Auckland board (#5076: four Warriors, three Archers, the Ram beside the
+/// walls in 10 of 10) opened the walls in 8 strikes and took the city in 1.
+pub(crate) const STONE_MELEE: usize = 5;
+
+/// The most melee bodies the force grows to when the city asks for more than
+/// [`STONE_MELEE`] ([`AdvancedAi::city_state_stone_bodies_needed`]). Over 150
+/// live Deity games of 2026-11-11 the nearest city-state's centre read a
+/// median 24 at turn 30 and 27 at turn 40, behind Ancient walls in every
+/// game by turn 30: a Warrior lands three blows of about 23 on it, so the
+/// 360 of walls, health and healing take six, not five. A centre past about
+/// 32 asks for more Warriors than eight, and the kill-time hold keeps that
+/// war undeclared.
+pub(crate) const STONE_MELEE_MAX: usize = 8;
+
+/// Bodies reserved beyond the ones the kill-time arithmetic asks for: the
+/// preview prices the centre's own blows only, and the city-state's field
+/// units (a median military of 123 at turn 30) and its ranged strike cost
+/// the strike a body it does not count.
+pub(crate) const STONE_SPARE_BODIES: usize = 1;
+
+/// A land unit's full health.
+const STONE_BODY_HEALTH: f64 = 100.0;
+
+/// The most blows the kill-time preview counts for one melee body.
+pub(crate) const STONE_STRIKE_TURNS: u32 = 4;
+
+/// Turns of the centre's healing the kill-time preview charges.
+pub(crate) const STONE_HEAL_TURNS: i32 = 3;
+
+/// What a City Center heals a turn.
+pub(crate) const STONE_CITY_HEAL: i32 = 20;
 
 /// What keeping the captured stone is worth in the disposition ranking: it
 /// outranks razing or liberating it under any strategy.
@@ -154,6 +193,9 @@ pub(crate) struct CityStateStone {
     /// being raised or walking, before [`STONE_HOLD_DEADLINE`] and with no
     /// major at war with us.
     pub(crate) held: bool,
+    /// The melee bodies the force reserves: [`STONE_MELEE`] when named, and
+    /// up to [`STONE_MELEE_MAX`] once the city's defence asks for more.
+    pub(crate) melee: usize,
 }
 
 /// What one scan of the board found: the stone to name, or the nearest met
@@ -390,6 +432,7 @@ impl AdvancedAi {
             civ: g.players[minor].civ.clone(),
             seen_at_war: false,
             held: false,
+            melee: STONE_MELEE,
         });
         self.conquest_opening = Some(ConquestOpening {
             target: minor,
@@ -506,6 +549,10 @@ impl AdvancedAi {
             self.conquest_release(g, "its walls rose past Ancient before the war");
             return;
         }
+        self.city_state_stone_sizes_the_force(g, &opening);
+        let Some(opening) = self.conquest_opening.clone() else {
+            return;
+        };
         // The clock holds a force that is still being raised or walking.
         let held = opening.assembled.is_none()
             && g.turn < g.standard_duration(STONE_HOLD_DEADLINE)
@@ -515,6 +562,79 @@ impl AdvancedAi {
             stone.held = held;
         }
         self.city_state_stone_progress_note(g, pid, &opening, held);
+    }
+
+    /// The melee bodies the stone's force reserves now.
+    pub(super) fn city_state_stone_melee(&self) -> usize {
+        self.city_state_stone
+            .as_ref()
+            .map_or(STONE_MELEE, |stone| stone.melee)
+    }
+
+    /// The melee bodies the strike on the stone needs, with what one of them
+    /// lands before it falls and what the centre takes: the kill-time
+    /// arithmetic of [`Self::city_state_stone_kill_time`] for full-health
+    /// bodies of the force's weakest melee kind (a Warrior while it has
+    /// none), against the centre as it reads today behind at least Ancient
+    /// walls (every live city-state had raised them by turn 30), plus
+    /// [`STONE_SPARE_BODIES`]. `None` for a vanished city.
+    pub(crate) fn city_state_stone_bodies_needed(
+        g: &Game,
+        opening: &ConquestOpening,
+    ) -> Option<(usize, f64, f64)> {
+        let city = g.cities.get(&opening.city)?;
+        let defence = g.city_strength(city.id);
+        let fielded = opening
+            .force
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .filter(|unit| Self::conquest_melee_body(&g.rules.units[unit.kind]))
+            .map(|unit| g.unit_strength(unit, false))
+            .min_by(f64::total_cmp);
+        let attack = fielded.or_else(|| g.rules.units.get("warrior").map(|spec| spec.strength))?;
+        let dealt = crate::game::expected_damage(attack, defence);
+        let taken = crate::game::expected_damage(defence, attack);
+        let lands = (STONE_BODY_HEALTH / taken)
+            .ceil()
+            .min(f64::from(STONE_STRIKE_TURNS));
+        let each = dealt * lands;
+        let needed = f64::from(city.hp.max(0))
+            + f64::from(city.wall_hp.max(STONE_WALL_CEILING))
+            + f64::from(STONE_CITY_HEAL * STONE_HEAL_TURNS);
+        let bodies = (needed / each).floor() as usize + 1 + STONE_SPARE_BODIES;
+        Some((bodies, each, needed))
+    }
+
+    /// Grow the reserved melee bodies to what the city asks for, between
+    /// [`STONE_MELEE`] and [`STONE_MELEE_MAX`]. It only grows: a force is
+    /// not stood down for a centre that lost a point. A grown force is no
+    /// longer assembled, so the commit clock holds the stone while the new
+    /// body is trained and walks. Before the declaration only.
+    fn city_state_stone_sizes_the_force(&mut self, g: &Game, opening: &ConquestOpening) {
+        let Some((bodies, each, needed)) = Self::city_state_stone_bodies_needed(g, opening) else {
+            return;
+        };
+        let want = bodies.clamp(STONE_MELEE, STONE_MELEE_MAX);
+        let had = self.city_state_stone_melee();
+        if want <= had {
+            return;
+        }
+        if let Some(stone) = self.city_state_stone.as_mut() {
+            stone.melee = want;
+        }
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            opening.assembled = None;
+        }
+        let name = g
+            .cities
+            .get(&opening.city)
+            .map(|city| city.name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Military, Strategy,
+               "City-state before the first capital: the force for {} grows to {} melee bodies",
+               name, want;
+               "from {had}: one lands about {each:.0} before it falls, against {needed:.0} of \
+                health, walls and healing, and {bodies} would finish it with one to spare");
     }
 
     /// Whether the stone's force is still coming: a reserved body is still
@@ -899,8 +1019,10 @@ impl AdvancedAi {
     }
 
     /// Why the stone's assembled force holds at the rally, if it does: a
-    /// major is at war with us, a suzerain appeared, or the walls stand and
-    /// no breaker of ours does.
+    /// major is at war with us, a suzerain appeared, the walls stand and no
+    /// breaker of ours does, or the melee bodies at the rally would not
+    /// finish the city before it kills them
+    /// ([`Self::city_state_stone_kill_time`]).
     pub(super) fn city_state_stone_holds(
         &self,
         g: &Game,
@@ -920,8 +1042,57 @@ impl AdvancedAi {
             .cities
             .get(&opening.city)
             .is_some_and(|city| g.city_max_wall_hp(city) > 0);
-        (walled && Self::city_state_stone_breakers_standing(g, pid) == 0)
-            .then_some("waiting for the Battering Ram before the walls")
+        if walled && Self::city_state_stone_breakers_standing(g, pid) == 0 {
+            return Some("waiting for the Battering Ram before the walls");
+        }
+        let (bodies, blows, needed) = Self::city_state_stone_kill_time(g, opening)?;
+        if blows > needed {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+               "City-state before the first capital: the {} melee bodies at the rally would not finish the city",
+               bodies;
+               "about {blows:.0} in blows before they fall, against {needed:.0} of health, walls and healing");
+        Some("the melee bodies at the rally would not finish the city before they fall")
+    }
+
+    /// The kill-time preview of the stone's strike: the melee bodies of the
+    /// force within the assembly radius of the rally, the blows they would
+    /// land on the centre before it kills them (each body's mean blow, the
+    /// engine's `expected_damage`, times the blows it survives to land, at
+    /// most [`STONE_STRIKE_TURNS`]), and what the centre takes to fall: its
+    /// health, its walls and [`STONE_HEAL_TURNS`] turns of healing. `None`
+    /// for a vanished city. The bill preview prices strength against
+    /// strength and read three Warriors as enough (live
+    /// civvis-20261111T072641Z declared at "86 strength"); this prices the
+    /// blows.
+    pub(crate) fn city_state_stone_kill_time(
+        g: &Game,
+        opening: &ConquestOpening,
+    ) -> Option<(usize, f64, f64)> {
+        let city = g.cities.get(&opening.city)?;
+        let defence = g.city_strength(city.id);
+        let mut bodies = 0;
+        let mut blows = 0.0;
+        for unit in opening.force.iter().filter_map(|uid| g.units.get(uid)) {
+            if g.wdist(unit.pos, opening.rally) > CONQUEST_ASSEMBLY_RADIUS
+                || !Self::conquest_melee_body(&g.rules.units[unit.kind])
+            {
+                continue;
+            }
+            let attack = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+            let dealt = crate::game::expected_damage(attack, defence);
+            let taken = crate::game::expected_damage(defence, attack);
+            let lands = (f64::from(unit.hp.max(1)) / taken)
+                .ceil()
+                .min(f64::from(STONE_STRIKE_TURNS));
+            bodies += 1;
+            blows += dealt * lands;
+        }
+        let needed = f64::from(city.hp.max(0))
+            + f64::from(city.wall_hp.max(0))
+            + f64::from(STONE_CITY_HEAL * STONE_HEAL_TURNS);
+        Some((bodies, blows, needed))
     }
 
     /// Record and journal, once, the first turn the assembled force's bill
