@@ -109,6 +109,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-plays-at-level-three`; see
         /// `advanced/band_plays_at_level_three.rs`.
         base.band_plays_at_level_three => enable_band_plays_at_level_three, disable_band_plays_at_level_three;
+        /// Opt-in gene `band-stage-needs-three-venues`; see
+        /// `advanced/band_plays_its_stage.rs`.
+        band_stage_needs_three_venues => enable_band_stage_needs_three_venues, disable_band_stage_needs_three_venues;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `corps-comes-home-alive`; see
         /// `advanced/apostle_army.rs`.

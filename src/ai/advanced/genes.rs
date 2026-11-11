@@ -5457,6 +5457,11 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band's two-level promotion wins its first pick only where three
+    // such stages are open: one Entertainment Complex or Water Park is a
+    // concert or two at level 3 and a career at level 1. Opt-in; see
+    // `advanced/band_plays_its_stage.rs`.
+    Gene { tag: "band-stage-needs-three-venues", field: "band_stage_needs_three_venues", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stage_needs_three_venues, disable: AdvancedAi::disable_band_stage_needs_three_venues },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
