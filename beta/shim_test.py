@@ -237,7 +237,7 @@ def main() -> int:
         )
         assert "Starting a new world" in loading_text, loading_text
         assert "Runs in this browser" in loading_text, loading_text
-        assert dev.evaluate("localStorage.getItem('civvis-world-spin')") == "1"
+        assert dev.evaluate("localStorage.getItem('civvis-world-spin-2')") == "1"
         assert dev.evaluate("localStorage.getItem('civvis-unit-tail-turns')") == "2"
         dev.evaluate("window.releaseRuntime(), true")
         deadline = time.time() + 10

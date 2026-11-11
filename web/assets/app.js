@@ -955,13 +955,22 @@ let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== 
 // while (#1453) and the operator asked for a still world by default
 // (2026-08-15): a moving map is something a viewer chooses, not something they
 // have to catch and stop. It is a preference and not a mood, so the button in
-// the map controls carries it and the answer is remembered either way.
+// the map controls carries it and the answer is remembered either way. The
+// published site answers for a first visit (`beta/shim.js` seeds a turning
+// world, #4721).
+//
+// Only the button and its bar write the answer. The key is the second of its
+// name because under the first, "civvis-world-spin", every drag of the map
+// wrote "0" as well: a stored off could not be told from a hand that only
+// wanted a look, and a visitor who had looked around once never saw the world
+// turn again (operator, 2026-11-11: "the world should still spin as before
+// [...] it should default on"). The first key is left orphaned.
 //
 // The period is the whole feel of the thing, and it is a viewing rate rather
 // than an astronomical one: the ground has to drift slowly enough that a
 // reader following a war can keep their place while it moves. Twelve seconds
 // read as a spin; thirty-six reads as a world going about its business.
-const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
+const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin-2";
 const WORLD_SPIN_PERIOD_MS = 36000;
 let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
 // The bar that opens over the button sets how fast. Its notches run from 1, the
@@ -4770,13 +4779,26 @@ function setWorldSpin(on) {
   updateSpinButton();
 }
 // Taking hold of the world is the plainest way of saying you would rather it
-// held still, so a drag stops it — and stops it for good rather than for the
-// moment, because a map that resumed drifting the instant a viewer let go of
-// it would have to be caught again every time they looked away. The button is
-// how it comes back. A world already held still has nothing to stop, so looking
-// around a watched empire does not cost the turn waiting back at All.
+// held still, so a drag stops it — and it stays stopped rather than starting
+// again the moment the hand lets go, because a map that resumed drifting then
+// would have to be caught again every time a viewer looked away. But a hand is
+// not a choice: it saves nothing, so the hold lasts for this world and no
+// longer. The button brings the turn back at once, and the next world or the
+// next visit opens as the button last left it (`restoreWorldSpin`). A world
+// already held still has nothing to stop, so looking around a watched empire
+// does not cost the turn waiting back at All.
 function stopWorldSpin() {
-  if (WORLD_SPIN && spinAvailable()) setWorldSpin(false);
+  if (!WORLD_SPIN || !spinAvailable()) return;
+  WORLD_SPIN = false;
+  updateSpinButton();
+}
+// A new world opens as the button last left it, whatever a hand did to the
+// world before it.
+function restoreWorldSpin() {
+  const saved = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";
+  if (WORLD_SPIN === saved) return;
+  WORLD_SPIN = saved;
+  updateSpinButton();
 }
 // One tick of the turn. `dt` is milliseconds and a whole turn is the period,
 // so the pace holds however the frames fall — within the fifty-millisecond
@@ -8570,6 +8592,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // coordinates that meant nothing there, until they timed out.
   if (newWorld) resetAnim();
   if (newWorld) SKY_SETTLED_SITES.clear();
+  // A hand that held the last world still does not hold this one.
+  if (newWorld) restoreWorldSpin();
   // Settled before anything is drawn: a new map must not be painted north-up
   // for a frame and then swing away from it.
   if (newWorld) adoptWorldFacing(st);
