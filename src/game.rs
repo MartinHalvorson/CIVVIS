@@ -12,6 +12,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
+use crate::idmap::IdMap;
 use crate::leader_roster;
 use crate::name::{AsName, Name};
 use crate::parallel::WorkPool;
@@ -2856,14 +2857,16 @@ pub struct Unit {
 ///
 /// A branch normally reads many units and writes only the handful named by its
 /// action.  Keeping the roster as an immutable `Arc` snapshot means cloning a
-/// position copies neither the map nor any unit.  The first branch write makes
-/// a shallow map copy (its values are still `Arc`s), then `get_mut` clones only
+/// position copies neither the map nor any unit. The roster keeps ID order
+/// in contiguous storage; its hash index only answers lookups. The first
+/// branch write makes a shallow copy (its values are still `Arc`s), then
+/// `get_mut` clones only
 /// the unit being edited.  Insertions and removals are likewise local to the
 /// branch.  This is the unit equivalent of [`Players`]' copy-on-write seats,
 /// with the extra per-unit indirection making combat lookahead proportional to
 /// the units it actually touches rather than to the whole army.
 #[derive(Default)]
-pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>, u64);
+pub struct Units(Arc<IdMap<Arc<Unit>>>, BTreeSet<u32>, u64);
 
 impl Clone for Units {
     fn clone(&self) -> Self {
@@ -2921,7 +2924,7 @@ impl Units {
     }
 
     #[inline]
-    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, u32, Arc<Unit>> {
+    pub fn keys(&self) -> crate::idmap::Keys<'_, Arc<Unit>> {
         self.0.keys()
     }
 
@@ -3067,7 +3070,7 @@ impl std::ops::IndexMut<&u32> for Units {
 impl<'a> IntoIterator for &'a Units {
     type Item = (&'a u32, &'a Unit);
     type IntoIter = std::iter::Map<
-        std::collections::btree_map::Iter<'a, u32, Arc<Unit>>,
+        crate::idmap::Iter<'a, Arc<Unit>>,
         fn((&'a u32, &'a Arc<Unit>)) -> (&'a u32, &'a Unit),
     >;
 
@@ -3079,7 +3082,7 @@ impl<'a> IntoIterator for &'a Units {
 impl<'a> IntoIterator for &'a mut Units {
     type Item = (&'a u32, &'a mut Unit);
     type IntoIter = std::iter::Map<
-        std::collections::btree_map::IterMut<'a, u32, Arc<Unit>>,
+        crate::idmap::IterMut<'a, Arc<Unit>>,
         fn((&'a u32, &'a mut Arc<Unit>)) -> (&'a u32, &'a mut Unit),
     >;
 
@@ -3140,7 +3143,7 @@ impl From<BTreeMap<u32, Unit>> for Units {
 /// dozen of them; declaring the roster here means no other file in the crate
 /// can reach past the accessors, whatever it is a child of.
 mod city_roster {
-    use super::{vision_key, Arc, BTreeMap, City};
+    use super::{vision_key, Arc, BTreeMap, City, IdMap};
 
     /// Every city fact the visibility derivation reads, folded once per
     /// roster state instead of once per sight ask.
@@ -3198,7 +3201,7 @@ mod city_roster {
                 .unwrap_or_else(|| Self::owner_seed(Self::CENTRE_BASE, owner))
         }
 
-        fn build(map: &BTreeMap<u32, City>) -> Self {
+        fn build(map: &IdMap<City>) -> Self {
             let mut stamps = Self {
                 geometry: vision_key(&[Self::GEOMETRY_BASE, map.len() as u64]),
                 input: 0,
@@ -3278,12 +3281,11 @@ mod city_roster {
     /// The world's cities, wrapped so that every route which can change one is
     /// a method on this type.
     ///
-    /// Reads reach the whole `BTreeMap` API through `Deref`, so borrowing,
-    /// iterating, indexing and looking a city up are unchanged — 589 existing
-    /// `cities.get_mut` call sites and every read compiled against this
-    /// without an edit. **`DerefMut` is deliberately absent, and adding one
+    /// Reads reach the ordered `IdMap` through `Deref`, so borrowing,
+    /// iterating, indexing and looking a city up keep their ID order.
+    /// **`DerefMut` is deliberately absent, and adding one
     /// would undo the whole guarantee.** Without it nothing can obtain
-    /// `&mut BTreeMap<u32, City>`, so the only ways to reach a `&mut City`, or
+    /// `&mut IdMap<City>`, so the only ways to reach a `&mut City`, or
     /// to add, drop or replace one, are the inherent methods below — and each
     /// clears the memo before it hands the caller anything.
     ///
@@ -3314,10 +3316,10 @@ mod city_roster {
     #[derive(Default)]
     pub struct Cities {
         /// Speculative unit branches usually never change a city. Sharing the
-        /// roster across those clones removes a full B-tree walk and all of
+        /// roster across those clones removes a full roster copy and all of
         /// each City's nested allocations; the mutable accessors below detach
         /// it only for a branch that really writes a city.
-        map: Arc<BTreeMap<u32, City>>,
+        map: Arc<IdMap<City>>,
         vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
         /// Bumped alongside every `invalidate()`, so a caller outside this
         /// module can tell "some city was exposed mutably since I last
@@ -3373,7 +3375,7 @@ mod city_roster {
             Arc::make_mut(&mut self.map).get_mut(id)
         }
 
-        pub fn values_mut(&mut self) -> std::collections::btree_map::ValuesMut<'_, u32, City> {
+        pub fn values_mut(&mut self) -> crate::idmap::ValuesMut<'_, City> {
             self.invalidate();
             Arc::make_mut(&mut self.map).values_mut()
         }
@@ -3393,7 +3395,7 @@ mod city_roster {
             Arc::make_mut(&mut self.map).clear();
         }
 
-        pub fn into_values(self) -> std::collections::btree_map::IntoValues<u32, City> {
+        pub fn into_values(self) -> crate::idmap::IntoValues<City> {
             match Arc::try_unwrap(self.map) {
                 Ok(map) => map.into_values(),
                 Err(shared) => shared.as_ref().clone().into_values(),
@@ -3416,7 +3418,7 @@ mod city_roster {
     }
 
     impl std::ops::Deref for Cities {
-        type Target = BTreeMap<u32, City>;
+        type Target = IdMap<City>;
 
         fn deref(&self) -> &Self::Target {
             &self.map
@@ -3425,7 +3427,7 @@ mod city_roster {
 
     impl<'a> IntoIterator for &'a Cities {
         type Item = (&'a u32, &'a City);
-        type IntoIter = std::collections::btree_map::Iter<'a, u32, City>;
+        type IntoIter = crate::idmap::Iter<'a, City>;
 
         fn into_iter(self) -> Self::IntoIter {
             self.map.iter()
@@ -3447,11 +3449,11 @@ pub use city_roster::Cities;
 
 /// An immutable unit roster captured before a speculative branch runs.
 #[derive(Clone)]
-pub struct UnitSnapshot(Arc<BTreeMap<u32, Arc<Unit>>>);
+pub struct UnitSnapshot(Arc<IdMap<Arc<Unit>>>);
 
 impl Default for UnitSnapshot {
     fn default() -> Self {
-        Self(Arc::new(BTreeMap::new()))
+        Self(Arc::new(IdMap::new()))
     }
 }
 
@@ -3808,18 +3810,16 @@ pub struct HostPlotPurchaseEntry {
 /// custom deserializer accepts both that legacy shape and the new
 /// `{ "neighborhood": [[q1, r1], [q2, r2]] }` shape.
 #[derive(Clone, Default)]
-pub struct Districts(BTreeMap<Name, Vec<Pos>>);
+pub struct Districts(Vec<(Name, Vec<Pos>)>);
 
 impl Districts {
     pub fn contains_key(&self, name: impl AsName) -> bool {
-        self.0
-            .get(&name.as_name())
-            .is_some_and(|positions| !positions.is_empty())
+        !self.positions(name).is_empty()
     }
 
     /// Total district instances, rather than the number of distinct types.
     pub fn len(&self) -> usize {
-        self.0.values().map(Vec::len).sum()
+        self.0.iter().map(|(_, positions)| positions.len()).sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -3831,24 +3831,46 @@ impl Districts {
     }
 
     pub fn remove(&mut self, name: impl AsName) -> Option<Vec<Pos>> {
-        self.0.remove(&name.as_name())
+        let index = self
+            .0
+            .binary_search_by_key(&name.as_name(), |(key, _)| *key)
+            .ok()?;
+        Some(self.0.remove(index).1)
+    }
+
+    /// Drop a destroyed district placement, including its kind when empty.
+    pub(crate) fn remove_position(&mut self, name: Name, position: Pos) {
+        let Ok(index) = self.0.binary_search_by_key(&name, |(key, _)| *key) else {
+            return;
+        };
+        self.0[index].1.retain(|candidate| *candidate != position);
+        if self.0[index].1.is_empty() {
+            self.0.remove(index);
+        }
     }
 
     pub fn get(&self, name: impl AsName) -> Option<&Pos> {
-        self.0
-            .get(&name.as_name())
-            .and_then(|positions| positions.first())
+        self.positions(name).first()
     }
 
     pub fn positions(&self, name: impl AsName) -> &[Pos] {
+        // A city holds only a few district kinds. Compare their interned IDs
+        // directly; a tree search orders Names by reading their text slots.
+        let name = name.as_name();
         self.0
-            .get(&name.as_name())
-            .map(Vec::as_slice)
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, positions)| positions.as_slice())
             .unwrap_or(&[])
     }
 
     pub fn insert(&mut self, name: Name, pos: Pos) {
-        self.0.entry(name).or_default().push(pos);
+        // Only mutation needs lexical ordering. Keep the old BTreeMap's
+        // iteration/save order and each repeated district's insertion order.
+        match self.0.binary_search_by_key(&name, |(key, _)| *key) {
+            Ok(index) => self.0[index].1.push(pos),
+            Err(index) => self.0.insert(index, (name, vec![pos])),
+        }
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &Name> {
@@ -3872,6 +3894,9 @@ impl<'a> IntoIterator for &'a Districts {
         self.iter().collect::<Vec<_>>().into_iter()
     }
 }
+
+#[cfg(test)]
+mod district_roster_tests;
 
 impl Serialize for Districts {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
