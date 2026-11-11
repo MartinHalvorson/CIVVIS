@@ -262,6 +262,117 @@ fn the_force_leads_with_melee_and_leaves_each_city_its_guard() {
     );
 }
 
+/// Three guarded cities plus exactly the nominal strike quota. One of those
+/// bodies shadows a Settler, so it is unavailable to the actual strike.
+fn escorted_quota(kind: &str) -> (Game, AdvancedAi, u32, u32) {
+    let mut game = board(&[at(6, 12), at(24, 12)]);
+    meet_and_explore(&mut game, 1);
+    game.found_city_for(0, at(6, 18), None);
+    game.found_city_for(0, at(11, 18), None);
+    for pos in [at(6, 12), at(6, 18), at(11, 18)] {
+        unit(&mut game, "archer", pos);
+    }
+    let mut bodies = Vec::new();
+    for pos in [at(12, 12), at(13, 12), at(14, 12), at(15, 12)] {
+        bodies.push(unit(&mut game, "warrior", pos));
+    }
+    for pos in [at(12, 14), at(13, 14)] {
+        bodies.push(unit(&mut game, "archer", pos));
+    }
+    let escort = bodies
+        .into_iter()
+        .find(|uid| game.units[uid].kind == kind)
+        .unwrap();
+    let settler = unit(&mut game, "settler", at(15, 14));
+    let mut ai = seat(true);
+    ai.settler_guards.insert(settler, escort);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_some(), "fixture: named opening");
+    assert!(
+        !ai.conquest_opening
+            .as_ref()
+            .unwrap()
+            .force
+            .contains(&escort),
+        "the actual strike already excludes its civilian escort"
+    );
+    let capital = capital_of(&game, 0);
+    (game, ai, capital, escort)
+}
+
+#[test]
+fn a_settler_escort_cannot_fill_the_assault_production_quota() {
+    for (kind, expected) in [("warrior", (0, 1)), ("archer", (1, 0))] {
+        let (game, ai, capital, _) = escorted_quota(kind);
+        let counts = ai.counts(&game, 0);
+        assert_eq!(
+            ai.first_capital_shortfall(&game, 0, &counts),
+            expected,
+            "{kind}"
+        );
+        assert!(
+            ai.conquest_reservation(&game, 0, capital, &game.rules.units[kind], &counts, false)
+                > 0.0,
+            "the capital must still train the missing free {kind}"
+        );
+    }
+}
+
+#[test]
+fn queued_replacements_still_count_and_the_off_arm_keeps_its_census() {
+    let (mut game, ai, capital, _) = escorted_quota("warrior");
+    let counts = ai.counts(&game, 0);
+    assert_eq!(
+        seat(false).first_capital_shortfall(&game, 0, &counts),
+        (0, 0)
+    );
+    assert_eq!(ai.first_capital_shortfall(&game, 0, &counts), (0, 1));
+    game.apply(
+        0,
+        &crate::game::Action::Produce {
+            city: capital,
+            item: crate::game::Item::Unit {
+                unit: name!("warrior"),
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        ai.first_capital_shortfall(&game, 0, &ai.counts(&game, 0)),
+        (0, 0),
+        "the queued replacement prevents another city claiming the same slot"
+    );
+}
+
+#[test]
+fn reserved_bodies_use_the_same_classification_as_the_empire_census() {
+    let (mut game, ai, _, escort) = escorted_quota("archer");
+    // The census counts a land siege weapon as ranged. Even though the
+    // opening would not train it as its Archer, its separate civilian
+    // assignment cannot satisfy the free ranged-body quota.
+    game.units.get_mut(&escort).unwrap().kind = name!("catapult");
+    assert_eq!(
+        ai.first_capital_shortfall(&game, 0, &ai.counts(&game, 0)),
+        (1, 0)
+    );
+}
+
+#[test]
+fn stale_foreign_and_recon_escort_bindings_do_not_remove_free_soldiers() {
+    let (mut game, mut ai, _, _) = escorted_quota("warrior");
+    ai.settler_guards.clear();
+    let scout = unit(&mut game, "scout", at(15, 15));
+    let foreign = game.spawn_test_unit("warrior", 1, at(22, 12));
+    ai.settler_guards.insert(900_001, scout);
+    ai.settler_guards.insert(900_002, foreign);
+    ai.settler_guards.insert(900_003, u32::MAX);
+    assert_eq!(
+        ai.first_capital_shortfall(&game, 0, &ai.counts(&game, 0)),
+        (0, 0),
+        "Scouts are already excluded; foreign and missing units never entered our census"
+    );
+}
+
 #[test]
 fn walls_rising_past_ancient_release_the_opening_unless_a_tower_opens_them() {
     let mut game = board(&[at(6, 12), at(24, 12)]);
