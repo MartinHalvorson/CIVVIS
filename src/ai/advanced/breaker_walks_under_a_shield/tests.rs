@@ -434,6 +434,67 @@ fn with_the_walls_down_the_assault_does_not_wait() {
     assert!(game.cities[&capital].hp < hp, "the city takes the blow");
 }
 
+/// The press: a body beside an open city keeps a blow it survives at all
+/// (60 health against a centre of 20 leaves it under the old floor of 25),
+/// a wounded body is the shipped war's while the city is far from falling,
+/// and on the turn the bodies beside the city finish it a wounded body
+/// spends itself and the next blow takes the city.
+#[test]
+fn the_press_keeps_every_survivable_blow_and_spends_a_body_to_finish() {
+    let (mut game, mut ai, capital) = opened(true);
+    set_walls(&mut game, capital, 0);
+    set_strength(&mut game, capital, 20.0);
+    let city = game.cities[&capital].pos;
+    let mut ring: Vec<Pos> = game.nbrs(city).into_iter().collect();
+    ring.sort();
+    let first = unit(&mut game, "warrior", 0, ring[0]);
+    let second = unit(&mut game, "warrior", 0, ring[1]);
+    at_war(&mut game, 0, 1);
+    {
+        let opening = ai.conquest_opening.as_mut().unwrap();
+        opening.declared = Some(game.turn);
+        opening.force = BTreeSet::from([first, second]);
+    }
+
+    game.units.get_mut(&first).unwrap().hp = 60;
+    let hp = game.cities[&capital].hp;
+    assert!(ai.shield_presses(&game, 0, first), "a body of the strike");
+    assert_eq!(
+        ai.shielded_breaker_step(&mut game, 0, first, &plan()),
+        Some(true)
+    );
+    assert!(game.cities[&capital].hp < hp, "the blow lands");
+    assert!(game.units.contains_key(&first), "and the body lives");
+
+    // Wounded, the city far from falling: not the press's.
+    fresh(&mut game, first);
+    game.units.get_mut(&first).unwrap().hp = 14;
+    game.units.get_mut(&second).unwrap().attacks_left = 0;
+    assert!(!ai.shield_presses(&game, 0, first));
+    assert_eq!(ai.shielded_breaker_step(&mut game, 0, first, &plan()), None);
+    assert!(game.units.contains_key(&first));
+
+    // The two bodies beside the city finish it between them: the wounded
+    // one spends itself, and the fresh one takes the city.
+    fresh(&mut game, second);
+    game.cities.get_mut(&capital).unwrap().hp = 30;
+    assert!(
+        ai.shield_presses(&game, 0, first),
+        "the turn the city falls"
+    );
+    assert_eq!(
+        ai.shielded_breaker_step(&mut game, 0, first, &plan()),
+        Some(true)
+    );
+    assert!(!game.units.contains_key(&first), "it fell on the reply");
+    assert!(game.cities[&capital].hp < 30);
+    assert_eq!(
+        ai.shielded_breaker_step(&mut game, 0, second, &plan()),
+        Some(true)
+    );
+    assert_eq!(game.cities[&capital].owner, 0, "the city is taken");
+}
+
 /// Walls stand and the Ram stands alone two tiles from the rally: the
 /// declaration waits for it (and journals why); once it stands with a
 /// Swordsman by the rally, or with no walls standing, or off, nothing waits.

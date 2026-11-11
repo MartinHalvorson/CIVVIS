@@ -92,11 +92,15 @@
 //!    swing at them: they hold beside the city, killing a defender beside
 //!    them when the blow kills it and they keep [`BODY_STRIKE_FLOOR`]. Once
 //!    the breaker stands beside the city every melee body whose blow it opens
-//!    strikes the city each turn while it keeps [`BODY_STRIKE_FLOOR`] (the
-//!    shield [`SHIELD_STRIKE_FLOOR`]) or takes the city; shooters fire at a
+//!    strikes the city each turn while it survives the reply
+//!    ([`BODY_PRESS_FLOOR`]; the shield keeps [`SHIELD_STRIKE_FLOOR`]) or
+//!    takes the city, and on the turn the bodies beside the city finish it
+//!    between them a body spends itself on its blow; shooters fire at a
 //!    soldier beside the shield, else at the city. With the walls down none of
 //!    the waiting applies: a melee body beside the city strikes at once, the
-//!    others close in.
+//!    others close in. The battle plan leaves a pressing body's blow and its
+//!    place to this module (`shield_presses`): its rotation reads the danger
+//!    of the tile beside a city and pulled full-health Warriors out to heal.
 //! 4. **The shipped exits stay.** The release rules are unchanged (the force
 //!    gone, the breaker lost under walls -> `opening-yields-to-walls`, the
 //!    patience window); a home city under threat takes the bodies back (the
@@ -134,6 +138,16 @@ pub(super) const ASSAULT_JOIN_RADIUS: i32 =
 /// Any other body strikes, or kills a defender, only while it keeps this
 /// much health after the reply (`siege_train::ASSAULT_SURVIVOR_HP`).
 pub(super) const BODY_STRIKE_FLOOR: i32 = super::siege_train::ASSAULT_SURVIVOR_HP;
+
+/// A body of the declared strike beside the city keeps its blow while it
+/// survives the reply at all. The strike is priced on bodies that fight
+/// until they fall (`city_state_stone_kill_time`); at
+/// [`BODY_STRIKE_FLOOR`] a Warrior swung once at a centre of 29 and left to
+/// heal. Live Deity Gran Colombia `civvis-20261111T184206Z` declared on
+/// Antananarivo at turn 41 with eight bodies and the Ram, took its walls
+/// from 100 to 5 by about turn 50 with one or two blows a turn, never took
+/// its health under 180, lost the Ram at 65 and made peace at 69.
+pub(super) const BODY_PRESS_FLOOR: i32 = 1;
 
 /// What the gene remembers between turns: where the breaker last stood and
 /// with whom, so its loss can be journalled, and what this turn's assault
@@ -660,7 +674,8 @@ impl AdvancedAi {
         }
         if g.wdist(here, scene.city_pos) <= 1 {
             if super::siege_train::melee_wall_attack_allowed(g, pid, shield, scene.city) {
-                if let Some(acted) = self.shield_strike(g, pid, shield, scene, SHIELD_STRIKE_FLOOR)
+                if let Some(acted) =
+                    self.shield_strike(g, pid, shield, scene, SHIELD_STRIKE_FLOOR, false)
                 {
                     return Some(acted);
                 }
@@ -696,9 +711,72 @@ impl AdvancedAi {
         Some(acted)
     }
 
+    /// Whether our melee bodies beside the city with a blow left this turn
+    /// take its remaining health and walls between them, at the engine's
+    /// mean damage for each as it stands.
+    fn shield_bodies_finish_the_city(g: &Game, pid: usize, scene: &ShieldScene) -> bool {
+        let Some(city) = g.cities.get(&scene.city) else {
+            return false;
+        };
+        let defence = g.city_strength(city.id);
+        let blows: f64 = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .filter(|unit| {
+                unit.attacks_left > 0
+                    && unit.moves_left > 0.0
+                    && !g.is_embarked(unit)
+                    && g.wdist(unit.pos, scene.city_pos) <= 1
+                    && Self::conquest_melee_body(&g.rules.units[unit.kind])
+            })
+            .map(|unit| {
+                let attack = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
+                crate::game::expected_damage(attack, defence)
+            })
+            .sum();
+        blows + 1e-9 >= f64::from(city.hp.max(0) + city.wall_hp.max(0))
+    }
+
+    /// Whether `uid` presses the declared strike this turn, so the battle
+    /// plan leaves its blow and its place to this module: a body of the
+    /// assault (`shield_assault_member`) while the walls are open or a
+    /// breaker of ours is in the scene, at [`battle_planner::ROTATE_HP`] or
+    /// more, or a wounded melee body beside the city on the turn the bodies
+    /// there finish it. `false` with the gene off, before the war, and
+    /// while a home city is threatened.
+    pub(super) fn shield_presses(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(scene) = self.shield_scene(g, pid).filter(|scene| scene.declared) else {
+            return false;
+        };
+        if !self.shield_assault_member(g, pid, uid, &scene) {
+            return false;
+        }
+        let (Some(unit), Some(city)) = (g.units.get(&uid), g.cities.get(&scene.city)) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        let (ranged, melee) = (
+            Self::conquest_ranged_body(spec),
+            Self::conquest_melee_body(spec),
+        );
+        if g.is_embarked(unit) || !(ranged || melee) {
+            return false;
+        }
+        let walls_stand = city.wall_hp > 0 && g.city_max_wall_hp(city) > 0;
+        if walls_stand && self.scene_breaker(g, pid, &scene).is_none() {
+            return false;
+        }
+        unit.hp >= super::battle_planner::ROTATE_HP
+            || (melee
+                && g.wdist(unit.pos, scene.city_pos) <= 1
+                && Self::shield_bodies_finish_the_city(g, pid, &scene))
+    }
+
     /// Item 3: one melee blow at the city, kept only when the attacker keeps
-    /// `floor` health after the reply or the blow takes the city. A city at 0
-    /// health is walked into.
+    /// `floor` health after the reply, the blow takes the city, or (`spend`)
+    /// the bodies beside the city finish it this turn. A city at 0 health is
+    /// walked into.
     fn shield_strike(
         &mut self,
         g: &mut Game,
@@ -706,6 +784,7 @@ impl AdvancedAi {
         uid: u32,
         scene: &ShieldScene,
         floor: i32,
+        spend: bool,
     ) -> Option<bool> {
         let unit = g.units.get(&uid)?.clone();
         if unit.attacks_left <= 0 || unit.moves_left <= 0.0 || g.is_embarked(&unit) {
@@ -737,6 +816,9 @@ impl AdvancedAi {
                 .units
                 .get(&uid)
                 .is_none_or(|survivor| survivor.hp < floor)
+            // A pressing body spends itself only on the turn the bodies
+            // beside the city take it between them.
+            && !(spend && Self::shield_bodies_finish_the_city(g, pid, scene))
         {
             return None;
         }
@@ -788,8 +870,10 @@ impl AdvancedAi {
             Self::conquest_ranged_body(&spec),
             Self::conquest_melee_body(&spec),
         );
-        if g.is_embarked(&unit) || unit.hp < super::battle_planner::ROTATE_HP || !(ranged || melee)
-        {
+        // A wounded body is the shipped war's (it heals), but for the melee
+        // blow beside the city that the press keeps.
+        let wounded = unit.hp < super::battle_planner::ROTATE_HP;
+        if g.is_embarked(&unit) || !(ranged || melee) || (wounded && ranged) {
             return None;
         }
         let city = g.cities.get(&scene.city)?;
@@ -802,10 +886,17 @@ impl AdvancedAi {
                 return self.shielded_shooter_turn(g, pid, uid, shield, scene, true);
             }
             if beside {
-                return Some(
-                    self.shield_strike(g, pid, uid, scene, BODY_STRIKE_FLOOR)
-                        .unwrap_or_else(|| self.base.fortify_or_stop(g, pid, uid)),
-                );
+                if let Some(acted) = self.shield_strike(g, pid, uid, scene, BODY_PRESS_FLOOR, true)
+                {
+                    return Some(acted);
+                }
+                if wounded {
+                    return None;
+                }
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
+            if wounded {
+                return None;
             }
             return self.shield_close_in(g, pid, uid, shield, scene);
         }
@@ -832,13 +923,24 @@ impl AdvancedAi {
         if ram_beside {
             if beside {
                 if super::siege_train::melee_wall_attack_allowed(g, pid, uid, scene.city) {
-                    if let Some(acted) = self.shield_strike(g, pid, uid, scene, BODY_STRIKE_FLOOR) {
+                    if let Some(acted) =
+                        self.shield_strike(g, pid, uid, scene, BODY_PRESS_FLOOR, true)
+                    {
                         return Some(acted);
                     }
                 }
+                if wounded {
+                    return None;
+                }
                 return Some(self.base.fortify_or_stop(g, pid, uid));
             }
+            if wounded {
+                return None;
+            }
             return self.shield_close_in(g, pid, uid, shield, scene);
+        }
+        if wounded {
+            return None;
         }
         self.note_shield_hold(g, uid, eta, scene);
         if !coming {
