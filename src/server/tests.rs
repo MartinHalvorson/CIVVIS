@@ -6141,7 +6141,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // ahead of the advanced drawer, which strands it above the whole form
     // — the way the endgame rules were stranded until they were nested.
     assert!(EMBEDDED_INDEX.contains(
-        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+        "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"leader\", \"difficulty\", \"rivalstrategy\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
     ));
     // Recomposed on every change of mode, from the same one function.
     assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -9326,7 +9326,7 @@ fn a_choice_of_tiles_is_made_on_the_map() {
     // coordinates. Both renderers outline the sites, because the default world
     // is a globe and a flat-only pass would reach nobody.
     assert!(!EMBEDDED_APP_JS.contains("`@ ${action.item.pos.join(\",\")}`"));
-    assert!(EMBEDDED_APP_JS.contains("`beginSitePick(${city.id},${itemId})`"));
+    assert!(EMBEDDED_APP_JS.contains("`pickSiteFromCity(event,${city.id},${itemId})`"));
     assert!(EMBEDDED_APP_JS.contains("drawSitePicksPlanet(cellByKey, onSheet);"));
     assert!(EMBEDDED_APP_JS.contains("  drawSitePicksFlat();\n"));
     // A click belongs to the picker before anything else reads it, and a turn
@@ -13025,6 +13025,52 @@ fn a_human_finale_counts_itself_down_to_the_next_game() {
     assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\");"));
 }
 
+/// A person chooses who they play against. The choice is one of the
+/// registered Civ AI Agents, it survives into the next game at the same
+/// table, and a name nobody registered is refused rather than swapped for
+/// the house fleet.
+#[test]
+fn a_new_game_seats_the_rivals_a_person_asked_for() {
+    let mut session = Session::new(current());
+    assert_eq!(session.rival_strategy_name(), None);
+    session
+        .start_new_game(&json!({
+            "seed": 11, "spectate": false, "force": true, "rival_strategy": "SiegeTheDay",
+        }))
+        .expect("a registered agent can be seated");
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+    assert_eq!(session.seated_strategy_name(0), Some("player"));
+    let rules = crate::routes::rules(&session, false);
+    assert_eq!(rules["rival_strategy"], json!("siege"));
+    let ladder = rules["civ6_ladder"].as_array().expect("a ladder");
+    assert_eq!(ladder.len(), 8);
+    assert_eq!(ladder[3]["id"], json!("prince"));
+    assert_eq!(ladder[7]["name"], json!("Deity"));
+    // It plays: the rivals take their turns as the agent that was seated.
+    session.autoplay(2);
+    // And the lobby can ask for it: the control exists, sits under the
+    // difficulty it complements, and its value travels with a played game.
+    assert!(EMBEDDED_INDEX.contains("<select id=\"rivalstrategy\""));
+    assert!(EMBEDDED_INDEX.contains("\"difficulty\", \"rivalstrategy\","));
+    assert!(EMBEDDED_INDEX.contains("{rival_strategy: rivalStrategy}"));
+    assert!(EMBEDDED_INDEX.contains("fillRivalStrategies(rules, roster);"));
+
+    assert!(session.start_automatic_next_game(None));
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+
+    assert_eq!(
+        session.start_new_game(&json!({
+            "seed": 12, "spectate": false, "force": true, "rival_strategy": "nobody",
+        })),
+        Err("no strategy named nobody".to_string())
+    );
+    assert_eq!(session.rival_strategy_name(), Some("siege"));
+    session
+        .start_new_game(&json!({"seed": 13, "spectate": false, "force": true}))
+        .expect("the house fleet needs no name");
+    assert_eq!(session.rival_strategy_name(), None);
+}
+
 /// Auto-play used to be one button that ran whichever agent the fleet
 /// happened to build for the seat, for one turn or ten. Both of those are
 /// decisions a person should make: *which* of our strategies plays, and
@@ -13041,10 +13087,7 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
         .iter()
         .filter_map(|entry| entry["name"].as_str())
         .collect();
-    assert!(
-        names.contains(&"advanced"),
-        "the default agent is offerable"
-    );
+    assert!(names.contains(&"jack"), "the flagship agent is offerable");
     assert!(
         !names.contains(&"strategic"),
         "the score-only search is not a live auto-play offer"
@@ -13076,16 +13119,17 @@ fn a_player_can_hand_their_seat_to_a_named_strategy() {
         Err("no strategy named strategic".to_string()),
         "a direct request must not bypass the live-eligibility boundary"
     );
+    // An id remembered from before the registry still finds its agent.
     session
         .seat_strategy_at(0, "basic")
         .expect("a built-in agent is always available");
-    assert_eq!(session.seated_strategy_name(0), Some("basic"));
+    assert_eq!(session.seated_strategy_name(0), Some("wheels"));
     assert_eq!(
         session.seat_strategy_at(0, "no-such-strategy"),
         Err("no strategy named no-such-strategy".to_string()),
         "a player who picked a strategy must not silently get another one"
     );
-    assert_eq!(session.seated_strategy_name(0), Some("basic"));
+    assert_eq!(session.seated_strategy_name(0), Some("wheels"));
 
     // And it plays: turns pass, and the seat is still the player's after.
     let before = session.game.turn;
@@ -15910,6 +15954,132 @@ fn a_building_is_listed_under_the_district_it_stands_in() {
     assert!(EMBEDDED_INDEX.contains("  .build-sub {\n"));
 }
 
+/// Civilization VI's city panel lets a player favour or disfavour a yield and
+/// the city's governor reassigns its citizens. Citizen assignment was "the one
+/// city-level decision no player, human or AI, can currently express"; agents
+/// got `city_directives`, and the person in the seat got nothing.
+#[test]
+fn a_played_seat_sets_its_citys_yield_focus() {
+    let mut params = current();
+    params.spectate = false;
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    let city = session
+        .game
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .map(|city| city.id)
+        .expect("the city just founded");
+    let citizens = |state: &Value| {
+        state["cities"]
+            .as_array()
+            .expect("cities")
+            .iter()
+            .find(|seen| seen["id"] == json!(city))
+            .expect("the seat's own city")["citizens"]
+            .clone()
+    };
+
+    // Nothing asked is no opinion, and the page is told so.
+    let before = citizens(&session.state());
+    assert_eq!(before["emphasis"]["food"].as_f64(), Some(0.0));
+
+    let ask = |session: &mut Session, name: &str, stance: i64| {
+        crate::routes::city_focus(
+            session,
+            &json!({"city": city, "yield": name, "stance": stance}),
+        )
+    };
+    // Favoured: the governor's appetite for it rises, and the answer is the
+    // state the write produced.
+    let favoured = ask(&mut session, "food", 1);
+    assert!(favoured["error"].is_null(), "{}", favoured["error"]);
+    assert!(session.game.players[0].city_directives[&city].emphasis.food > 0.0);
+    let after = citizens(&favoured);
+    assert!(after["emphasis"]["food"].as_f64() > Some(0.0));
+    assert!(after["weights"]["food"].as_f64() > before["weights"]["food"].as_f64());
+    // One yield at a time: the others keep whatever they had.
+    assert_eq!(after["emphasis"]["production"].as_f64(), Some(0.0));
+
+    // Disfavoured, then no opinion again.
+    let disfavoured = ask(&mut session, "food", -1);
+    assert!(citizens(&disfavoured)["emphasis"]["food"].as_f64() < Some(0.0));
+    let cleared = ask(&mut session, "food", 0);
+    assert_eq!(citizens(&cleared)["emphasis"]["food"].as_f64(), Some(0.0));
+    assert_eq!(
+        citizens(&cleared)["weights"]["food"].as_f64(),
+        before["weights"]["food"].as_f64()
+    );
+
+    // Not a city of the seat's, and not a yield.
+    let stranger = crate::routes::city_focus(
+        &mut session,
+        &json!({"city": 4_000_000, "yield": "food", "stance": 1}),
+    );
+    assert!(stranger["error"].is_string());
+    assert!(ask(&mut session, "happiness", 1)["error"].is_string());
+
+    // Both front ends answer it, and the browser build routes it to the engine.
+    assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/city-focus\")"));
+    assert!(include_str!("../server.rs").contains("(\"POST\", \"/city-focus\")"));
+    assert!(include_str!("../../beta/shim.js").contains("\"/city-focus\""));
+}
+
+/// Civilization VI lets a city be told what to build after what it is
+/// building. The engine holds one item per city, so the rest of the list is a
+/// standing order the page keeps and re-issues, the way a travel order is.
+#[test]
+fn a_city_keeps_a_queue_the_page_reissues() {
+    // A row is an order, or with the queue on or Shift held, an order for
+    // later; a district chosen for the queue keeps the tile it was given.
+    assert!(EMBEDDED_APP_JS.contains(
+        "if (cityQueueMode || (event && event.shiftKey)) queueCityItem(action.city, action);"
+    ));
+    assert!(EMBEDDED_APP_JS.contains("if (sitePick && queueing) sitePick.queue = true;"));
+    assert!(EMBEDDED_APP_JS.contains(": `orderFromCity(event,${JSON.stringify(entry.sites[0])})`,"));
+    // An idle city starts on it at once; anything else waits its turn.
+    assert!(EMBEDDED_APP_JS.contains("if (!(city.queue && city.queue.length)) await send(action);"));
+    // The turn opens: saved lists come back on the first one, and every idle
+    // city takes the next thing the engine still offers.
+    assert!(EMBEDDED_APP_JS.contains(
+        "  if (first) restoreCityQueues();\n  resumeAllTravel();\n  resumeCityQueues();\n"
+    ));
+    let resume = EMBEDDED_APP_JS
+        .split_once("async function resumeCityQueues() {")
+        .expect("the queue's turn")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the queue's turn")
+        .0;
+    assert!(resume.contains("if (city.queue && city.queue.length) continue;"));
+    assert!(resume.contains("action.type === \"produce\""));
+    assert!(resume.contains("if (!order) continue;"));
+    // A new world never inherits another's list.
+    assert!(EMBEDDED_APP_JS.contains("unitOrders.clear(); cityQueues.clear();"));
+    assert!(EMBEDDED_APP_JS.contains("held.seed !== state.seed"));
+
+    // The yields on the city panel are their own focus, when the server says
+    // what the focus is.
+    assert!(EMBEDDED_APP_JS.contains("const emphasis = city.citizens && city.citizens.emphasis;"));
+    assert!(EMBEDDED_APP_JS.contains("onclick='cycleCityFocus(${city.id},\"${kind}\")'>"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})"
+    ));
+}
+
 /// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
 /// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
 /// to a live control now leaves one line naming the sender; nothing else does.
@@ -16030,7 +16200,7 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     assert!(EMBEDDED_INDEX
         .contains("  #leaderribbon { display: none; }\n  body.civ6-frame #leaderribbon {"));
     let ribbon = EMBEDDED_APP_JS
-        .split_once("function drawLeaderRibbon() {")
+        .split_once("function leaderRibbonMarkup() {")
         .expect("the ribbon")
         .1
         .split_once("\n}\n")
@@ -16043,7 +16213,16 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // Each wears the colours their borders do, and opens diplomacy on them.
     assert!(ribbon.contains("--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}"));
     assert!(ribbon.contains("onclick=\"openDiplomacyWith(${player.id})\""));
-    assert!(ribbon.contains("if (html === leaderRibbonHtml) return;"));
+    assert!(EMBEDDED_APP_JS.contains("if (html === leaderRibbonHtml) return;"));
+    // It is drawn with every frame, so it may fail only as a ribbon: a leader
+    // it cannot describe costs the ribbon and never the frame. An alliance is
+    // a record, not a name, and printing it as one stopped the page drawing
+    // the turn an alliance was signed.
+    assert!(EMBEDDED_APP_JS.contains("try { html = leaderRibbonMarkup(); }"));
+    assert!(EMBEDDED_APP_JS
+        .contains("const kind = held && typeof held === \"object\" ? held.kind : held;"));
+    assert_eq!(EMBEDDED_APP_JS.matches("allianceWord(player)").count(), 3);
+    assert!(!EMBEDDED_APP_JS.contains("titleCase(player.alliance"));
     assert!(EMBEDDED_APP_JS.contains("`data-seat=\"${player.id}\">` +"));
     assert_eq!(
         EMBEDDED_APP_JS.matches("  drawLeaderRibbon();\n").count(),

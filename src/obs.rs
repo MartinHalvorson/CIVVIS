@@ -2027,6 +2027,15 @@ fn live_city_json(
             "focus": citizens.strategy.focus,
             "weights": yields_json(&citizens.strategy.weights),
             "food_target": round1(citizens.strategy.food_target),
+            // What the seat's own focus adds to those appetites, yield by
+            // yield: zero is no opinion, above it favoured, below disfavoured.
+            "emphasis": yields_json(
+                &g.players[city.owner]
+                    .city_directives
+                    .get(&city.id)
+                    .map(|directive| directive.emphasis)
+                    .unwrap_or_default(),
+            ),
             "worked_tiles": citizens.worked_tiles.iter()
                 .map(|tile| json!([tile.0, tile.1])).collect::<Vec<_>>(),
             "specialists": citizens.specialists,

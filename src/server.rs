@@ -512,16 +512,6 @@ const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
 const EMBEDDED_CIV6_CITY_BANNER_SHIELDS: &[u8] =
     include_bytes!("../web/assets/civ6-city-banner-shields.png");
 
-/// The agents that exist in every build, with a friendly handle each.
-/// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
-/// offers this list.
-const BUILTIN_STRATEGIES: [(&str, &str); 4] = [
-    ("advanced", "JackOfAllTrades"),
-    ("advanced_evolved", "Evolved"),
-    ("advanced_v1", "OldGuard"),
-    ("basic", "TrainingWheels"),
-];
-
 #[derive(Clone)]
 pub struct Params {
     pub num_players: usize,
@@ -599,6 +589,9 @@ pub struct Session {
     resumed_next_game_params: Option<Params>,
     /// The built-in agent a player handed their own seat to, by name.
     autoplay_strategy: Option<String>,
+    /// The Civ AI Agent every rival major was seated with at setup, by
+    /// registry id. `None` is the house fleet, `ai_fleet`.
+    rival_strategy: Option<String>,
     /// The last browser batch that borrowed the human seat, and how many
     /// turns it played. A client retries the same id after a dropped socket;
     /// remembering one completed batch makes that retry an acknowledgement,
@@ -2232,6 +2225,7 @@ impl Session {
             chronicle,
             resumed_next_game_params: None,
             autoplay_strategy: None,
+            rival_strategy: None,
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
@@ -2329,6 +2323,7 @@ impl Session {
             chronicle,
             resumed_next_game_params: next_game_params,
             autoplay_strategy: None,
+            rival_strategy: None,
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
@@ -2401,6 +2396,9 @@ impl Session {
         let previous_view = self.view_player;
         let params = new_game_params(&self.params, request);
         let mut next = Session::new(params);
+        if let Some(name) = request["rival_strategy"].as_str() {
+            next.seat_rivals(name)?;
+        }
         // Observation perspective is a display setting, not part of the
         // simulated world. Keep it when rolling into another spectator game
         // as long as that major-player seat still exists in the new setup.
@@ -2444,7 +2442,13 @@ impl Session {
         let next_seed = automatic_successor_seed(self.params.seed);
         let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
+        // The successor is the same table: whoever the rivals were, they
+        // still are.
+        let rivals = self.rival_strategy.take();
         *self = Session::new(params);
+        if let Some(name) = rivals {
+            let _ = self.seat_rivals(&name);
+        }
         true
     }
 
@@ -3015,18 +3019,44 @@ impl Session {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
         }
-        let seed = self.game.seed.wrapping_add(seat as u64);
-        let id = BUILTIN_STRATEGIES
-            .iter()
-            .find(|(id, username)| *id == name || *username == name)
-            .map(|(id, _)| *id)
-            .ok_or_else(|| format!("no strategy named {name}"))?;
-        self.ais[seat] = crate::elo::builtin_send_ai(id, seed);
+        let row =
+            crate::strategies::find(name).ok_or_else(|| format!("no strategy named {name}"))?;
+        if self.autoplay_strategy.as_deref() == Some(row.id) {
+            return Ok(());
+        }
+        self.ais[seat] = row.build();
         // A newly seated agent joins the same record as the rest of the table;
         // without this the seat a player just handed over goes quiet.
         self.ais[seat].attach_journal(self.journal.handle());
-        self.autoplay_strategy = Some(id.to_string());
+        self.autoplay_strategy = Some(row.id.to_string());
         Ok(())
+    }
+
+    /// Seat every major nobody is sitting in with one named Civ AI Agent, so
+    /// a person can choose who they play against (or watch a whole table of
+    /// one agent). An empty name keeps the house fleet. An unknown one is an
+    /// error for the reason `seat_strategy_at` gives.
+    pub fn seat_rivals(&mut self, name: &str) -> Result<(), String> {
+        if name.is_empty() {
+            return Ok(());
+        }
+        let row =
+            crate::strategies::find(name).ok_or_else(|| format!("no strategy named {name}"))?;
+        for seat in 0..self.game.players.len() {
+            let player = &self.game.players[seat];
+            if player.is_minor || player.is_barbarian || self.game.is_human_seat(seat) {
+                continue;
+            }
+            self.ais[seat] = row.build();
+            self.ais[seat].attach_journal(self.journal.handle());
+        }
+        self.rival_strategy = Some(row.id.to_string());
+        Ok(())
+    }
+
+    /// The Civ AI Agent the rivals were seated with, when one was chosen.
+    pub fn rival_strategy_name(&self) -> Option<&str> {
+        self.rival_strategy.as_deref()
     }
 
     /// The strategy currently playing `seat`, by roster name: the one a player
@@ -3758,20 +3788,11 @@ pub(crate) fn simulation_settings(params: &Params) -> Value {
     })
 }
 
-/// The agents a person can hand their seat to: the built-in agents, named by
-/// id and by handle. Nothing rates them, so every row is provisional.
+/// The Civ AI Agents a person can hand their seat to or play against: the
+/// registry in `crate::strategies`, each with its handle, tilt and measured
+/// Elo. A row `strategy_elo` has not rated enough is marked provisional.
 pub(crate) fn strategy_roster(_session: &Session) -> Value {
-    json!(BUILTIN_STRATEGIES
-        .iter()
-        .map(|(name, username)| {
-            json!({
-                "name": name,
-                "username": username,
-                "label": name,
-                "provisional": true,
-            })
-        })
-        .collect::<Vec<_>>())
+    crate::strategies::roster_json()
 }
 
 /// An explicit turn cap is a real configuration value, not a cast through an
@@ -4859,6 +4880,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/route") => {
             let session = lock_or_recover(&sh.session);
             let answer = crate::routes::route_step(&session, &parsed);
+            drop(session);
+            respond_json(stream, &answer);
+        }
+        // The played seat's yield focus for one of its cities.
+        ("POST", "/city-focus") => {
+            let mut session = lock_or_recover(&sh.session);
+            let answer = crate::routes::city_focus(&mut session, &parsed);
             drop(session);
             respond_json(stream, &answer);
         }

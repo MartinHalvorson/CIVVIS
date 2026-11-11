@@ -2288,6 +2288,20 @@
     border-radius: 10px; background: #0c1815; border: 1px solid #26372f;
   }
   .city-yield b { color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+  /* A yield that can be favoured is a button wearing the same plate. */
+  button.city-yield {
+    position: relative; margin: 0; color: inherit; font: inherit; letter-spacing: 0;
+    text-transform: none; box-shadow: none; cursor: pointer;
+  }
+  button.city-yield:hover { transform: none; border-color: var(--gold); background: #17261f; }
+  .city-yield.favoured { border-color: var(--gold); background: #1b241b; }
+  .city-yield.disfavoured { border-color: #6b3f3c; }
+  .city-yield.disfavoured .city-yield-icon, .city-yield.disfavoured b { opacity: .5; }
+  .city-focus-mark {
+    position: absolute; top: 2px; right: 4px; font: 800 11px/1 system-ui, sans-serif;
+    font-style: normal; color: var(--gold-bright);
+  }
+  .city-yield.disfavoured .city-focus-mark { color: #f08b82; }
   .city-yield span { color: var(--muted); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
   .city-group { margin-top: 14px; }
   .city-group-head {
@@ -2326,6 +2340,15 @@
   }
   button.build-item { cursor: pointer; }
   button.build-item:hover { transform: none; border-color: var(--gold); background: #17261f; }
+  .build-item.queued { cursor: default; }
+  .build-unqueue { margin: 0; padding: 3px 7px; font-size: var(--type-small); }
+  .build-queue-mode {
+    width: 100%; margin: 6px 0 0; padding: 6px 9px; text-align: left; text-transform: none;
+    letter-spacing: 0; font-size: var(--type-secondary); color: var(--muted);
+    border: 1px dashed #2c4239; background: none; box-shadow: none;
+  }
+  .build-queue-mode small { margin-left: 8px; font-weight: 600; opacity: .8; }
+  .build-queue-mode[aria-pressed="true"] { color: var(--gold-bright); border: 1px solid var(--gold); background: #1b241b; }
   .build-sub {
     margin: 5px 2px 0; color: var(--muted); font-size: var(--type-label); font-weight: 850;
     letter-spacing: .07em; text-transform: uppercase;
@@ -6105,8 +6128,8 @@
       <div class="footer-actions" id="humanfooter">
         <div class="autoplay-bar" id="autoplaybar">
           <div class="autoplay-fields">
-            <label class="autoplay-field"><span>Agent</span>
-              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
+            <label class="autoplay-field"><span>Civ AI</span>
+              <select id="autoplaystrategy" title="Which Civ AI Agent plays your seat"></select></label>
             <label class="autoplay-field"><span>Turns</span>
               <select id="autoplayturns" title="How many turns it plays before handing the seat back">
                 <option value="1" selected>1</option>
@@ -6598,6 +6621,10 @@
           <option value="">Random</option>
         </select></label>
         <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
+        <!-- Who the rivals are. Difficulty is what the rules hand them; this
+             is how well they play, on an Elo scale pinned to Civilization
+             VI's own levels (docs/ELO.md). -->
+        <label class="small human-setting civ6-hidden">Rival Civ AI Agent<select id="rivalstrategy" style="margin-top:4px" title="Which of our Civ AI Agents plays every rival seat"><option value="">House mix</option></select><small id="rivalstrategy-note" style="display:block;margin-top:3px;opacity:.75"></small></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
           <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate, wraparound &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>

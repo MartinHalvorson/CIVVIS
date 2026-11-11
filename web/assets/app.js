@@ -221,7 +221,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "leader", "difficulty", "rivalstrategy", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -8948,7 +8948,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
-    unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
+    unitOrders.clear(); cityQueues.clear(); noticeLog = []; noticeDismissed.clear();
     loopTurn = null; noticeSeenTurn = 0;
   }
   openTurnIfNew();
@@ -30229,12 +30229,22 @@ function drawSoloHud() {
 // here, so a leader is their civilization's monogram in the two colours its
 // borders and units wear on the map, which is how a player tells them apart
 // anyway. The mark in the corner is the stance, said in full by the tooltip.
+// An alliance is a record (its kind, level, points and end), not a name.
+// Both readers below printed it through `titleCase`, which takes a string:
+// the diplomacy screen threw when opened beside an ally, and the ribbon, which
+// is drawn with every frame, stopped the whole page drawing the turn an
+// alliance was signed.
+function allianceWord(player) {
+  const held = player.alliance;
+  const kind = held && typeof held === "object" ? held.kind : held;
+  return typeof kind === "string" && kind ? `${titleCase(kind)} ally` : "Ally";
+}
 function ribbonStance(player) {
   const relationship = player.their_relationship || player.relationship || "neutral";
   if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
   if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
   if (player.allied)
-    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+    return {tone: "friend", word: allianceWord(player), mark: "★"};
   if (player.friend || relationship === "declared_friend")
     return {tone: "friend", word: "Friend", mark: "♥"};
   if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
@@ -30246,6 +30256,21 @@ function ribbonStance(player) {
 let leaderRibbonHtml = null;
 function drawLeaderRibbon() {
   const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  try { html = leaderRibbonMarkup(); }
+  catch (error) {
+    // The ribbon rides a frame that has the whole turn to draw. A leader it
+    // cannot describe costs the ribbon, never the frame.
+    console.error("leader ribbon", error);
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+function leaderRibbonMarkup() {
   let html = "";
   if (state && playingSolo()) {
     const leaders = state.players.filter(player => player.alive && !player.is_minor &&
@@ -30266,12 +30291,7 @@ function drawLeaderRibbon() {
         (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
     }).join("");
   }
-  // The HUD is redrawn on every observation; the ribbon changes a few times
-  // a game, and rebuilding it under a pointer would drop the hover each time.
-  if (html === leaderRibbonHtml) return;
-  leaderRibbonHtml = html;
-  ribbon.innerHTML = html;
-  ribbon.hidden = !html;
+  return html;
 }
 // The ribbon opens the same diplomacy screen the hook does, on the leader
 // that was pressed.
@@ -30972,7 +30992,7 @@ function drawDiplomacy() {
       const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
-        : player.allied ? `${titleCase(player.alliance || "")} ally`
+        : player.allied ? allianceWord(player)
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
         : relationship === "denounced" ? "Denounced"
@@ -31149,6 +31169,14 @@ function cancelSitePick() {
 function chooseSite(pos) {
   const action = sitePick.sites.get(key(pos));
   if (!action) return;
+  if (sitePick.queue) {
+    // Chosen for the queue: the order keeps its tile and waits its turn, and
+    // the city comes back up to be given the next thing.
+    const cityId = sitePick.cityId;
+    endSitePick();
+    queueCityItem(cityId, action).then(() => openCityScreen(cityId));
+    return;
+  }
   if (!sitePick.plots) { endSitePick(); send(action); return; }
   // A border is usually pushed more than one tile, so buying land stays up
   // and re-prices what the treasury can still afford, as Civ 6's mode does.
@@ -31299,6 +31327,119 @@ function turnsFor(cost, perTurn, banked = 0) {
   if (left <= 0) return 1;
   return perTurn > 0 ? Math.ceil(left / perTurn) : Infinity;
 }
+// ------------------------------------------------------ the production queue
+// Civilization VI lets a city be told what to build after what it is
+// building. The engine holds one item per city (`do_produce` replaces the
+// queue), so the rest of the list is a standing order the client keeps,
+// exactly as a travel order is: when a city comes up idle at the top of a
+// turn, the next thing on its list that the engine still offers is ordered
+// for it. Nothing here decides what is legal; a queued item the engine no
+// longer offers is dropped and the one after it is tried.
+const cityQueues = new Map(); // city id -> [{key, name, action}]
+const CITY_QUEUES_KEY = "civvis-city-queues-v1";
+let cityQueueMode = false;
+function cityQueueFor(cityId) { return cityQueues.get(cityId) || []; }
+function toggleCityQueueMode() { cityQueueMode = !cityQueueMode; drawCityScreen(); }
+// The list belongs to one game. It is kept beside the browser's saves so a
+// reload does not forget it, and a different world never inherits it.
+function saveCityQueues() {
+  try {
+    localStorage.setItem(CITY_QUEUES_KEY, JSON.stringify(
+      {seed: state ? state.seed : null, queues: [...cityQueues.entries()]}));
+  } catch (_) {}
+}
+function restoreCityQueues() {
+  cityQueues.clear();
+  try {
+    const held = JSON.parse(localStorage.getItem(CITY_QUEUES_KEY) || "null");
+    if (!held || !state || held.seed !== state.seed || !Array.isArray(held.queues)) return;
+    for (const [cityId, items] of held.queues)
+      if (Array.isArray(items) && items.length) cityQueues.set(Number(cityId), items);
+  } catch (_) {}
+}
+// An idle city starts on it at once: the head of a queue is what is being
+// built. Anything else waits behind what the city already has.
+async function queueCityItem(cityId, action) {
+  const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+  if (!city) return;
+  if (!(city.queue && city.queue.length)) await send(action);
+  else {
+    cityQueues.set(cityId, cityQueueFor(cityId).concat(
+      [{key: itemKey(action.item), name: itemPlainName(action.item), action}]));
+    saveCityQueues();
+  }
+  if (cityScreenOpen()) drawCityScreen();
+}
+function unqueueCityItem(cityId, index) {
+  const held = cityQueueFor(cityId).slice();
+  held.splice(index, 1);
+  if (held.length) cityQueues.set(cityId, held); else cityQueues.delete(cityId);
+  saveCityQueues();
+  drawCityScreen();
+}
+// A row is an order, or with the queue on (or Shift held) an order for later.
+function orderFromCity(event, action) {
+  if (cityQueueMode || (event && event.shiftKey)) queueCityItem(action.city, action);
+  else sendFromCity(action);
+}
+function pickSiteFromCity(event, cityId, itemId) {
+  const queueing = cityQueueMode || Boolean(event && event.shiftKey);
+  beginSitePick(cityId, itemId);
+  if (sitePick && queueing) sitePick.queue = true;
+}
+// At the top of a turn every idle city takes the next thing on its list. The
+// exact order is used when the engine still offers it, so a district keeps
+// the tile it was given; an item with one remaining site takes that one.
+async function resumeCityQueues() {
+  if (!state || SPEC) return;
+  let changed = false;
+  for (const cityId of [...cityQueues.keys()].sort((first, second) => first - second)) {
+    const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
+    if (!city) { cityQueues.delete(cityId); changed = true; continue; }
+    if (city.queue && city.queue.length) continue;
+    const held = cityQueueFor(cityId).slice();
+    while (held.length) {
+      const next = held.shift();
+      changed = true;
+      const offered = state.legal_actions.filter(action => action.type === "produce" &&
+        action.city === cityId && itemKey(action.item) === next.key);
+      const order = offered.find(action =>
+        JSON.stringify(action.item) === JSON.stringify(next.action.item)) ||
+        (offered.length === 1 ? offered[0] : null);
+      if (!order) continue;
+      try {
+        render(await fetchJSON("/action", {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({action: order})}));
+      } catch (error) { held.unshift(next); }
+      break;
+    }
+    if (held.length) cityQueues.set(cityId, held); else cityQueues.delete(cityId);
+  }
+  if (!changed) return;
+  saveCityQueues();
+  if (cityScreenOpen()) drawCityScreen();
+  drawTurnLoop();
+}
+// Civilization VI's city panel: press a yield to favour it, again to
+// disfavour it, again to leave it to the governor. The governor is the
+// engine's; this only tells it what the city is for.
+let cityFocusPending = false;
+async function cycleCityFocus(cityId, kind) {
+  if (SPEC || turnAdvancePending || cityFocusPending) return;
+  const city = state.cities.find(candidate => candidate.id === cityId);
+  const lean = Number(city?.citizens?.emphasis?.[kind]) || 0;
+  cityFocusPending = true;
+  try {
+    const next = await fetchJSON("/city-focus", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({city: cityId, yield: kind, stance: lean > 0 ? -1 : lean < 0 ? 0 : 1})});
+    if (next && !next.error && Array.isArray(next.cities)) render(next);
+  } catch (error) {
+    // A server without the route leaves the focus where it was.
+  } finally { cityFocusPending = false; }
+}
+
 // Which page of the production panel is showing. Civilization VI keeps what a
 // city can build and what the treasury can buy outright as tabs on one panel
 // (ProductionPanel.xml), so a purchase is never mistaken for an order.
@@ -31341,10 +31482,26 @@ function drawCityScreen() {
 
   // The six yields wear Civilization VI's own signs, off the sheet the map
   // draws, over the coloured disc that survives a sheet that did not load.
-  const yieldChip = kind =>
-    `<div class="city-yield" title="${titleCase(kind)} per turn">` +
-    `<i class="city-yield-icon" style="--cell:${CIV6_YIELD_ICON_INDEX.get(kind)};--fill:${YPIP[kind]}"></i>` +
-    `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span></div>`;
+  // Each yield is also its focus, as on Civilization VI's city panel: press
+  // to favour it, again to disfavour it, again to leave it to the governor.
+  // A server that does not say what the focus is has none to set, and the
+  // yields stay plain figures.
+  const emphasis = city.citizens && city.citizens.emphasis;
+  const yieldChip = kind => {
+    const body =
+      `<i class="city-yield-icon" style="--cell:${CIV6_YIELD_ICON_INDEX.get(kind)};--fill:${YPIP[kind]}"></i>` +
+      `<b>${Math.round((yields[kind] || 0) * 10) / 10}</b><span>${titleCase(kind)}</span>`;
+    if (!emphasis)
+      return `<div class="city-yield" title="${titleCase(kind)} per turn">${body}</div>`;
+    const lean = Number(emphasis[kind]) || 0;
+    const stance = lean > 0 ? "favoured" : lean < 0 ? "disfavoured" : "";
+    return `<button type="button" class="city-yield ${stance}" aria-pressed="${stance ? "true" : "false"}" ` +
+      `title="${titleCase(kind)} per turn. ${stance
+        ? `${titleCase(stance)}: citizens ${lean > 0 ? "work for it first" : "avoid working for it"}. `
+        : ""}Press to ${lean > 0 ? "disfavour it" : lean < 0 ? "leave it to the governor" : "favour it"}." ` +
+      `onclick='cycleCityFocus(${city.id},"${kind}")'>${body}` +
+      (stance ? `<em class="city-focus-mark">${lean > 0 ? "✓" : "✕"}</em>` : "") + `</button>`;
+  };
   const meter = (label, note, bar) =>
     `<div class="city-meter"><div class="row"><span class="small">${label}</span>` +
     `<b>${note}</b></div>${bar}</div>`;
@@ -31478,6 +31635,21 @@ function drawCityScreen() {
     build += `<div class="city-group"><div class="city-group-head">Producing<span>nothing</span></div>` +
       `<div class="empty-state">${Math.round(banked)} ⚙ banked and waiting for an order.</div></div>`;
   }
+  if (!purchasing) {
+    const queued = cityQueueFor(city.id);
+    build += `<div class="city-group"><div class="city-group-head">Queue` +
+      `<span>${queued.length ? `${queued.length} to follow` : "empty"}</span></div>` +
+      (queued.length ? `<div class="build-list">` + queued.map((held, index) =>
+        `<div class="build-item queued"><span class="build-glyph">${index + 1}</span>` +
+        `<span class="build-text"><span class="build-name">${escapeAttr(held.name)}</span></span>` +
+        `<button type="button" class="build-unqueue" title="Take it off the queue" ` +
+        `aria-label="Take ${escapeAttr(held.name)} off the queue" ` +
+        `onclick="unqueueCityItem(${city.id},${index})">✕</button></div>`).join("") + `</div>` : "") +
+      `<button type="button" class="build-queue-mode" aria-pressed="${cityQueueMode}" ` +
+      `title="While this is on, a row is added after what the city is building instead of replacing it. Shift-click does the same for one row." ` +
+      `onclick="toggleCityQueueMode()">☰ ${cityQueueMode
+        ? "Adding to the queue" : "Add to queue"}<small>or Shift-click a row</small></button></div>`;
+  }
   let listed = 0;
   for (const category of order) {
     const group = [...entries.values()].filter(entry => entry.category === category &&
@@ -31540,10 +31712,11 @@ function drawCityScreen() {
             (note || ""),
           cost: `<b>${turns === Infinity ? "—" : turnsWord(turns)}</b>` +
             `<small>${Math.round(cost)} ⚙</small>`,
-          onclick: several ? `beginSitePick(${city.id},${itemId})`
-            : `sendFromCity(${JSON.stringify(entry.sites[0])})`,
+          onclick: several ? `pickSiteFromCity(event,${city.id},${itemId})`
+            : `orderFromCity(event,${JSON.stringify(entry.sites[0])})`,
           title: several ? "See where it could go and what each tile would give"
-            : isCurrent ? "Already in production" : `Produce ${name}`});
+            : isCurrent ? "Already in production"
+            : cityQueueMode ? `Add ${name} to the queue` : `Produce ${name}`});
       }).join("") + `</div></div>`;
   }
   if (!listed) {
@@ -38573,7 +38746,9 @@ function openTurnIfNew() {
   if (!first && !autoplaying) playSound("newTurn");
   captureTurnNotices();
   drawTurnLoop();
+  if (first) restoreCityQueues();
   resumeAllTravel();
+  resumeCityQueues();
   if (!sel && !selCity) advanceToNextActionUnit(true);
   // After this tick: a turn opens inside the End Turn request, and `send`
   // refuses anything else until that request has finished.
@@ -39088,13 +39263,48 @@ function fillStrategies(rules) {
   if (!select || !roster.length) return;
   select.innerHTML = roster.map(entry =>
     `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}">` +
-      `${escapeAttr(entry.username || entry.name)}</option>`).join("");
+      `${escapeAttr(entry.username || entry.name)}${strategyEloSuffix(entry)}</option>`).join("");
+  fillRivalStrategies(rules, roster);
   let remembered = null;
   try { remembered = localStorage.getItem(AUTOPLAY_STRATEGY_KEY); } catch (e) {}
   const wanted = [remembered, rules.seat_strategy]
     .find(name => name && roster.some(entry => entry.name === name));
   select.value = wanted || roster[0].name;
   syncAutoplayLabel();
+}
+// A rating is shown only once something measured it, and a thin one says so.
+function strategyEloSuffix(entry) {
+  if (entry.elo === null || entry.elo === undefined) return "";
+  // An agent that has never won a table is rated "at most"; one that has
+  // never lost, "at least". Either outranks the provisional mark.
+  const lead = entry.bound === "upper" ? "≤" : entry.provisional && entry.bound !== "lower" ? "~" : "";
+  return ` · ${lead}${Math.round(entry.elo)}${entry.bound === "lower" ? "+" : ""}`;
+}
+// Who a person plays against. Each Civ AI Agent carries its measured Elo and
+// the Civilization VI level whose rivals rate nearest it, so somebody who
+// knows what they beat in that game can find the same fight here. The note
+// under the control is the whole ladder on the same scale.
+function fillRivalStrategies(rules, roster) {
+  const select = document.getElementById("rivalstrategy");
+  if (!select) return;
+  select.innerHTML = `<option value="">House mix</option>` + roster.map(entry => {
+    // Rating before tilt: the sidebar is narrow, and a closed select shows
+    // only the start of its option.
+    const rated = entry.elo === null || entry.elo === undefined ? ""
+      : `${strategyEloSuffix(entry)}${entry.civ6_level ? ` ≈ ${entry.civ6_level}` : ""}`;
+    return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.blurb || entry.label || "")}">` +
+      `${escapeAttr(entry.username || entry.name)}${escapeAttr(rated)} — ${escapeAttr(entry.tilt || "")}</option>`;
+  }).join("");
+  const wanted = rules.rival_strategy;
+  select.value = wanted && roster.some(entry => entry.name === wanted) ? wanted : "";
+  const note = document.getElementById("rivalstrategy-note");
+  if (!note) return;
+  const rungs = (Array.isArray(rules.civ6_ladder) ? rules.civ6_ladder : [])
+    .filter(rung => rung.elo !== null && rung.elo !== undefined);
+  note.textContent = rungs.length
+    ? "Civ VI levels in Elo: " + rungs.map(rung =>
+        `${rung.name} ${Math.round(rung.elo)}${rung.bound === "lower" ? "+" : ""}`).join(" · ")
+    : "";
 }
 // "All" is the turns this game has left. A continued game deliberately has no
 // cap, so use a stop-button-sized horizon: a next-victory run will finish when
