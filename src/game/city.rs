@@ -1261,32 +1261,11 @@ impl Game {
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
-                yields.science += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_science_percent")
-                    .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.culture += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_culture_percent")
-                    .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.gold += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_gold")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.faith += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_faith")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
+                let bonuses = self.improvement_appeal_bonuses(pos, improvement);
+                yields.science += bonuses[0];
+                yields.culture += bonuses[1];
+                yields.gold += bonuses[2];
+                yields.faith += bonuses[3];
             }
         }
 
@@ -1539,6 +1518,33 @@ impl Game {
             yields.production += city_wonder_effect("city_mine_quarry_production");
         }
         yields
+    }
+
+    // Keep coefficient temporaries out of the large tile-yield function.
+    #[inline(never)]
+    fn improvement_appeal_bonuses(&self, pos: Pos, improvement: &str) -> [f64; 4] {
+        let effects = &self.rules.improvements[improvement].effects;
+        let science = effects
+            .get("appeal_science_percent")
+            .copied()
+            .unwrap_or(0.0);
+        let culture = effects
+            .get("appeal_culture_percent")
+            .copied()
+            .unwrap_or(0.0);
+        let gold = effects.get("appeal_gold").copied().unwrap_or(0.0);
+        let faith = effects.get("appeal_faith").copied().unwrap_or(0.0);
+        let appeal = if science != 0.0 || culture != 0.0 || gold != 0.0 || faith != 0.0 {
+            self.tile_appeal(pos).max(0) as f64
+        } else {
+            0.0
+        };
+        [
+            science / 100.0 * appeal,
+            culture / 100.0 * appeal,
+            gold * appeal,
+            faith * appeal,
+        ]
     }
 
     /// What a citizen working this plot actually collects: CIVVIS's own tile
@@ -3528,3 +3534,6 @@ mod builder_ownership_tests;
 
 #[cfg(test)]
 mod pantheon_appeal_query_tests;
+
+#[cfg(test)]
+mod tile_appeal_yield_tests;

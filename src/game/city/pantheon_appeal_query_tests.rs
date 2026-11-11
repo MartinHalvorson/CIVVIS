@@ -87,3 +87,24 @@ fn only_positive_zero_bypasses_the_appeal_branch() {
         assert_eq!(queried, amount.to_bits() != 0);
     }
 }
+
+#[test]
+fn ordinary_improvements_skip_appeal_but_appeal_bonuses_still_query_it() {
+    let (mut game, pos) = owned_plain();
+    for improvement in ["farm", "mine", "alcazar"] {
+        game.map.tiles.get_mut(&pos).unwrap().improvement = Some(Name::new(improvement));
+        for pantheon in [None, Some("religious_settlements")] {
+            game.players[0].pantheon = pantheon.map(str::to_owned);
+            let _scope = game.query_memo();
+            game.player_tile_yields(0, pos, &game.map.tiles[&pos]);
+            let queried = game
+                .query_memo
+                .appeal
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .contains_key(&pos);
+            assert_eq!(queried, improvement == "alcazar");
+        }
+    }
+}
