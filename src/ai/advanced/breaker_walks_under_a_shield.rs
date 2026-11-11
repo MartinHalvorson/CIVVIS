@@ -93,7 +93,8 @@
 //!    others close in.
 //! 4. **The shipped exits stay.** The release rules are unchanged (the force
 //!    gone, the breaker lost under walls -> `opening-yields-to-walls`, the
-//!    patience window); a home city under threat takes the turn back; a
+//!    patience window); a home city under threat takes the bodies back (the
+//!    breaker still rides with its shield or waits under a soldier); a
 //!    wounded body heals on the shipped path. The breaker's loss is
 //!    journalled first, with where and to what (`breaker_shield_watch`).
 //! 5. **Journal** (grep `Breaker under a shield:`): `the <ram> follows the
@@ -402,14 +403,16 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
-        // A home city under threat keeps its shipped first claim.
-        if plan.threatened_city.is_some() {
-            return None;
-        }
         let scene = self.shield_scene(g, pid)?;
         let breaker = Self::scene_breaker(g, pid, &scene);
         if breaker == Some(uid) {
+            // The breaker never walks alone, a home city threatened or not.
             return self.shielded_breaker_turn(g, pid, uid, &scene);
+        }
+        // A home city under threat keeps its shipped first claim on the
+        // bodies.
+        if plan.threatened_city.is_some() {
+            return None;
         }
         let shield = breaker.and_then(|breaker| self.breaker_shield(g, pid, breaker));
         if let (Some(breaker), Some(shield)) = (breaker, shield) {

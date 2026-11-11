@@ -12,11 +12,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 const TAG: &str = "breaker-walks-under-a-shield";
-/// Armed live since these boards were recorded, so in both arms.
-const ARMED_SINCE: &[&str] = &[
-    "first-capital-strikes-the-open-window",
-    "city-state-before-the-first-capital",
-];
 const NEEDLES: &[&str] = &[
     "breaker under a shield",
     "siege of",
@@ -52,19 +47,16 @@ fn unpacked(name: &str) -> PathBuf {
     out
 }
 
+/// The board's own recorded genome: the round with the genes armed since
+/// (`first-capital-strikes-the-open-window`, and on 040704Z
+/// `city-state-before-the-first-capital`) opened almost no wars.
 fn genome(board: &str) -> Vec<String> {
-    let mut tags: Vec<String> = std::fs::read_to_string(scaffold(&format!("genome-{board}.txt")))
+    std::fs::read_to_string(scaffold(&format!("genome-{board}.txt")))
         .unwrap()
         .split(',')
         .map(|tag| tag.trim().to_string())
         .filter(|tag| !tag.is_empty() && tag != TAG)
-        .collect();
-    for tag in ARMED_SINCE {
-        if !tags.iter().any(|have| have == tag) {
-            tags.push(tag.to_string());
-        }
-    }
-    tags
+        .collect()
 }
 
 fn base(name: &str, turn: u32) -> Game {

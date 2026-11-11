@@ -393,9 +393,10 @@ fn melee_holds_until_the_ram_stands_beside_the_walls_then_strikes() {
     );
     assert!(game.units.contains_key(&body));
     ai.breaker_shield_note(&game, 0);
+    // The shield may have struck from its tile as well.
     assert!(headlines(&ai).iter().any(|(head, _)| head
         .starts_with("Breaker under a shield: the ram stands beside")
-        && head.ends_with("1 bodies strike the walls")));
+        && head.ends_with("bodies strike the walls")));
 
     // Off, the same body is not this gene's to hold or strike.
     let (mut game, mut off, _) = opened(false);
