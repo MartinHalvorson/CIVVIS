@@ -5457,6 +5457,11 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A Rock Band's two-level promotion wins its first pick only where three
+    // such stages are open: one Entertainment Complex or Water Park is a
+    // concert or two at level 3 and a career at level 1. Opt-in; see
+    // `advanced/band_plays_its_stage.rs`.
+    Gene { tag: "band-stage-needs-three-venues", field: "band_stage_needs_three_venues", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stage_needs_three_venues, disable: AdvancedAi::disable_band_stage_needs_three_venues },
     // A Rock Band trip the host walked nowhere bars its host only on the
     // second turn running: a turn the host moved nobody bars nobody. Opt-in;
     // see `advanced/band_stall_bars_no_host.rs`.
@@ -5643,6 +5648,11 @@ pub const GENES: &[Gene] = &[
     // once Cold War is known or its band bank is open, and ends a strike war
     // then as soon as the host signs. Opt-in; see `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-spares-the-stages", field: "faith_strike_spares_the_stages", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_spares_the_stages, disable: AdvancedAi::disable_faith_strike_spares_the_stages },
+    // Pericles Deity 11-10 (234227Z): Field Cannons took Athens (82% of its
+    // last eight turns' damage) while the city struck others 27 times; they
+    // were 59 of 383 gun-turns before t130 and no siege-class gun. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

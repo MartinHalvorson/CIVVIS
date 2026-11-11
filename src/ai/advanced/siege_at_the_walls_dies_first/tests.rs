@@ -1,7 +1,7 @@
 use super::super::{AdvancedAi, VictoryTarget};
 use super::{
-    threatens_our_walls, OPEN_CITY_HP, WALL_GUN_MARGIN, WALL_THREAT_DAMAGE_PREMIUM,
-    WALL_THREAT_KILL_PREMIUM,
+    shooter_wall_damage, threatens_our_walls, MIN_WALL_DAMAGE, OPEN_CITY_HP, WALL_GUN_MARGIN,
+    WALL_THREAT_DAMAGE_PREMIUM, WALL_THREAT_KILL_PREMIUM,
 };
 use crate::game::{Action, Game};
 
@@ -205,5 +205,35 @@ fn the_old_pass_stands_aside_and_the_command_phase_takes_the_gun() {
     assert!(
         board.units.get(&gun).is_none_or(|unit| unit.hp < hp),
         "and takes the gun"
+    );
+}
+
+/// `every-shooter-at-the-walls`: a Field Cannon in reach of our walls is a
+/// wall threat priced by the damage its blow would do; off it is none.
+#[test]
+fn every_shooter_is_priced_by_its_city_damage() {
+    let (mut game, capital) = walls();
+    let cannon = game.spawn_test_unit("field_cannon", 1, free_at(&game, capital, 2));
+    let gun = game.spawn_test_unit("catapult", 1, free_at(&game, capital, 2));
+    let far = game.spawn_test_unit("field_cannon", 1, free_at(&game, capital, 4));
+    let off = AdvancedAi::new();
+    assert_eq!(off.wall_threat_scale(&game, 0, cannon), 0.0, "off: no gun");
+    assert_eq!(off.wall_threat_scale(&game, 0, gun), 1.0);
+    let mut on = AdvancedAi::new();
+    on.enable_every_shooter_at_the_walls();
+    let walled = shooter_wall_damage(&game, 0, cannon);
+    assert!(walled >= MIN_WALL_DAMAGE, "{walled}");
+    assert!(on.wall_threat_scale(&game, 0, cannon) > 0.0);
+    assert!(on.wall_threat_scale(&game, 0, gun) > 0.0);
+    assert_eq!(on.wall_threat_scale(&game, 0, far), 0.0, "beyond a move");
+    let cid = game.player_city_ids(0)[0];
+    game.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    assert!(
+        shooter_wall_damage(&game, 0, cannon) > walled,
+        "standing walls halve a shooter's blow"
+    );
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "every-shooter-at-the-walls",
+        |ai| ai.every_shooter_at_the_walls,
     );
 }

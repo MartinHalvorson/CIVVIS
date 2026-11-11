@@ -6,8 +6,37 @@
 //! adds to every later concert. Live: 86% of 355 concerts played at levels 1
 //! or 2, 80 of 168 bands played once, and only 3 concerts used a two-level
 //! stage. The shipped chooser priced Goes To 11 above the two-level stages.
+//!
+//! ## `band-stage-needs-three-venues`
+//!
+//! **Why (live Deity Kristina and Pericles, 2026-11-10, 116 first promotions
+//! read from the host's offers).** `band-plays-at-level-three` takes any
+//! offered promotion that lifts one open stage to level 3, the most levels
+//! first, so a +2 promotion wins with a single stage. Entertainment Complexes
+//! and Water Parks are rare venues: our bands' own host highlights listed 1.5
+//! Entertainment Complexes and 1.1 Water Parks per band (0.61 and 0.44 of the
+//! district tiles of those types this chooser counts, since a district without
+//! its Arena or Ferris Wheel is no venue), against 10.6 wonders, 7.4 Campuses
+//! and 7.0 Theater Squares. Arena Rock or Reggae Rock was taken over Album
+//! Cover Art, Space Rock, Surf Rock or Glam Rock ten times (Reggae Rock over
+//! Glam Rock in 20261110T192354Z). An exact expected-career count of the
+//! Firaxis tables (`Unit_RockbandResults_XP2`, performance odds by level, a
+//! band never replaying a tile) over five concerts: one +2 stage then wonders
+//! 6.2k Tourism, two 8.0k, Album Cover Art over ten wonders 7.7k, seven Theater
+//! Squares 11.2k, no stage 5.2k.
+//!
+//! **What the gene does.** Under `band-plays-at-level-three`, a two-level
+//! promotion counts as reaching level 3 only where at least three of its
+//! stages are counted; a thinner one competes on levels times stages with
+//! the rest, so Album Cover Art over ten wonders (10) beats Arena Rock over
+//! one Entertainment Complex (2). Bands only; inert unless armed with
+//! `band-plays-at-level-three`.
 
 use super::*;
+
+/// `band-stage-needs-three-venues`: the counted stages a two-level promotion
+/// needs before it counts as reaching level 3.
+const THREE_VENUES: usize = 3;
 
 /// Seen stages by family, foreign and unpillaged, that a band might play.
 #[derive(Default)]
@@ -93,7 +122,16 @@ fn stage_counts(g: &Game, pid: usize, reach: Option<u32>) -> StageCounts {
 /// level at the most of them (levels times stages); `None` when no
 /// offered promotion raises the level anywhere the band can play, which
 /// leaves the career chooser to decide. See `advanced/band_plays_at_level_three.rs`.
-fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Option<Name> {
+///
+/// `two_level_floor`: the fewest stages at which a two-level promotion counts
+/// as reaching level 3 (1 as shipped; 3 under `band-stage-needs-three-venues`).
+fn level_three_promotion(
+    g: &Game,
+    pid: usize,
+    uid: u32,
+    offered: &[Name],
+    two_level_floor: usize,
+) -> Option<Name> {
     let unit = g.units.get(&uid)?;
     let counts = stage_counts(g, pid, Some(uid));
     let base = g.rock_band_performance_level(unit, 0);
@@ -121,7 +159,8 @@ fn level_three_promotion(g: &Game, pid: usize, uid: u32, offered: &[Name]) -> Op
         let Some((bonus, stages)) = lift.filter(|(bonus, stages)| *bonus > 0 && *stages > 0) else {
             continue;
         };
-        let reaches = base + bonus as i32 >= super::band_plays_at_level_three::LEVEL_THREE;
+        let reaches = base + bonus as i32 >= super::band_plays_at_level_three::LEVEL_THREE
+            && (bonus < 2 || stages >= two_level_floor);
         let key = (
             reaches,
             if reaches { bonus } else { bonus * stages },
@@ -156,7 +195,13 @@ impl AdvancedAi {
             return None;
         }
         if self.base.band_plays_at_level_three {
-            if let Some(promotion) = level_three_promotion(g, pid, uid, offered) {
+            // `band-stage-needs-three-venues`: see the module notes.
+            let floor = if self.band_stage_needs_three_venues {
+                THREE_VENUES
+            } else {
+                1
+            };
+            if let Some(promotion) = level_three_promotion(g, pid, uid, offered, floor) {
                 return Some(promotion);
             }
         }
@@ -363,6 +408,42 @@ mod tests {
         assert_eq!(
             BasicAi::rock_band_stage_destination(&game, 0, band),
             Some((8, 6))
+        );
+    }
+
+    #[test]
+    fn a_two_level_stage_needs_three_venues_to_win_the_first_promotion() {
+        let (mut game, band) = world_with_theaters();
+        let host = game.map.get((8, 6)).unwrap().owner_city.unwrap();
+        // One Theater Square left of the six, and ten wonders.
+        for pos in [(9, 6), (10, 6), (11, 6), (8, 7), (9, 7)] {
+            game.map.tiles.get_mut(&pos).unwrap().district = None;
+        }
+        for q in 8..=17 {
+            let tile = game.map.tiles.get_mut(&(q, 10)).unwrap();
+            tile.owner_city = Some(host);
+            tile.wonder = Some(name!("colosseum"));
+        }
+        let offered = [name!("glam_rock"), name!("album_cover_art")];
+        let mut ai = AdvancedAi::new();
+        ai.base.band_plays_at_level_three = true;
+        assert_eq!(
+            ai.band_stage_promotion(&game, 0, band, &offered),
+            Some(name!("glam_rock")),
+            "level three alone takes the +2 for one stage"
+        );
+        ai.band_stage_needs_three_venues = true;
+        assert_eq!(
+            ai.band_stage_promotion(&game, 0, band, &offered),
+            Some(name!("album_cover_art"))
+        );
+        // Three Theater Squares are enough.
+        for pos in [(9, 6), (10, 6)] {
+            game.map.tiles.get_mut(&pos).unwrap().district = Some(name!("theater_square"));
+        }
+        assert_eq!(
+            ai.band_stage_promotion(&game, 0, band, &offered),
+            Some(name!("glam_rock"))
         );
     }
 }
