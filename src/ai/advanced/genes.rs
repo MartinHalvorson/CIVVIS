@@ -5710,6 +5710,14 @@ pub const GENES: &[Gene] = &[
     // as land, and the nearest free scout charts that fog. Opt-in; see
     // `advanced/first_capital_walks_the_one_landmass.rs`.
     Gene { tag: "first-capital-walks-the-one-landmass", field: "first_capital_walks_the_one_landmass", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_walks_the_one_landmass, disable: AdvancedAi::disable_first_capital_walks_the_one_landmass },
+    // Live Deity 4-player Pangaea civvis-20261111T040245Z: the Netherlands'
+    // Protestantism held a second major from t51 ("religion race reads 50%")
+    // and won at t83; the faith war on it was held at t52 on power alone (199
+    // against a steady 398). On four living majors or fewer the war opens on
+    // such a founder without the power, edge, rout and solvency gates, and is
+    // kept while the race holds. Rides `faith-war-before-the-flip-2`. Opt-in;
+    // see `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-on-a-small-world", field: "faith_war_on_a_small_world", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_on_a_small_world, disable: AdvancedAi::disable_faith_war_on_a_small_world },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

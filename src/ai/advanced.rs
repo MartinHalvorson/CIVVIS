@@ -7670,6 +7670,14 @@ pub struct AdvancedAi {
     /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
     /// Off by default.
     first_capital_walks_the_one_landmass: bool,
+    /// `faith-war-on-a-small-world`: on a world of four living majors or
+    /// fewer, the faith war on a founder whose faith already holds another
+    /// major (or whose race reads 50%) opens without the power floor, the
+    /// edge, the rout ratio, the treasury reserve and the income gate, and
+    /// peace waits while that race holds and its spreaders keep coming.
+    /// Rides `faith-war-before-the-flip-2`. See
+    /// `advanced/faith_war_before_the_flip.rs`. Opt-in.
+    faith_war_on_a_small_world: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
