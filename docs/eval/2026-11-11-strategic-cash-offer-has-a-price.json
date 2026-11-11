@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "scope": "Bounded next experiment for actual native level-8 Macedon Domination. Offline candidate lifecycle evidence does not prove native acceptance, resource receipt, upgrades, captures or win-rate gain.",
+  "baseline_native": {
+    "run": "civvis-20261111T124038Z",
+    "source_revision": "e46501941aaf616a78a0ef05cf84d9fb94159291",
+    "state": {
+      "turn": 65,
+      "frame": 0,
+      "gold": 129,
+      "gold_per_turn": 8.70312,
+      "strategic_resources": {
+        "RESOURCE_ALUMINUM": 0,
+        "RESOURCE_COAL": 0,
+        "RESOURCE_HORSES": 0,
+        "RESOURCE_IRON": 0,
+        "RESOURCE_NITER": 0,
+        "RESOURCE_OIL": 0,
+        "RESOURCE_URANIUM": 0
+      },
+      "strategic_resource_income": {
+        "RESOURCE_ALUMINUM": 0,
+        "RESOURCE_COAL": 0,
+        "RESOURCE_HORSES": 0,
+        "RESOURCE_IRON": 0,
+        "RESOURCE_NITER": 0,
+        "RESOURCE_OIL": 0,
+        "RESOURCE_URANIUM": 0
+      }
+    },
+    "selected_events": [
+      {
+        "ceiling": 34,
+        "ctx": "agent",
+        "direction": "buy",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261111T124038Z",
+        "submitted": true,
+        "t": 1794401035,
+        "target": 2,
+        "threw": false,
+        "turn": 65,
+        "utc": "2026-11-11T12:43:55.337Z",
+        "verb": "RESOURCE_IRON=2",
+        "want": "RESOURCE_IRON=2"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 65,
+        "ceiling": 34,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T124038Z",
+        "session": 2,
+        "t": 1794401035,
+        "theirs": "RESOURCES:43=2x0",
+        "turn": 65,
+        "utc": "2026-11-11T12:43:55.515Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": "PROPOSED",
+        "ceiling": 34,
+        "ctx": "agent",
+        "direction": "buy",
+        "from": 2,
+        "kind": "deal_reproposed",
+        "pay": 0,
+        "run": "civvis-20261111T124038Z",
+        "sent": true,
+        "strategic": true,
+        "t": 1794401035,
+        "threw": false,
+        "turn": 65,
+        "utc": "2026-11-11T12:43:55.515Z",
+        "verb": "RESOURCE_IRON=2",
+        "want": "RESOURCES:43"
+      },
+      {
+        "action": 2,
+        "asked": true,
+        "asked_turn": 65,
+        "ceiling": 34,
+        "closable": false,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "gold": 0,
+        "gold_per_turn": 0,
+        "kind": "deal_response",
+        "matches": true,
+        "ours": "",
+        "pay": 0,
+        "pay_gold": 0,
+        "pay_gpt": 0,
+        "run": "civvis-20261111T124038Z",
+        "session": 2,
+        "t": 1794401035,
+        "theirs": "RESOURCES:43=2x0",
+        "turn": 65,
+        "utc": "2026-11-11T12:43:55.515Z",
+        "want": "RESOURCES:43",
+        "within_budget": true,
+        "worth": 0
+      },
+      {
+        "action": 2,
+        "ceiling": 34,
+        "ctx": "agent",
+        "direction": "buy",
+        "foreign": 0,
+        "from": 2,
+        "kind": "deal_declined",
+        "matches": true,
+        "pay": 0,
+        "run": "civvis-20261111T124038Z",
+        "t": 1794401035,
+        "turn": 65,
+        "utc": "2026-11-11T12:43:55.515Z",
+        "want": "RESOURCES:43",
+        "worth": 0
+      }
+    ],
+    "result": "Empty-payment two-Iron quote at ceiling34 was REJECTED; unmodified PROPOSED was REJECTED again. No cash purchase. This game retired152 without a rival original capital.",
+    "later_barter": "Old path enacted5Iron for5Niter at89, plus1Gold/2GPT fromrival; not attributable to new cash protocol."
+  },
+  "candidate_policy": {
+    "arm": "Only native Domination explicitly forced land-army-asks-the-host-price and not withheld",
+    "behavior": "After an exact affordable unpriced strategic cash quote, submit one one-time Gold offer up to the original ceiling, reduced for current cash/headroom/native item maximum. Preserve ask-time cash minus ceiling as a reserve. Retain existing host acceptance/equality/item checks; after an explicit bid refuse larger cash or future-income payment counters.",
+    "paid_quote": "Preserve an already-priced host quote rather than increasing it to the ceiling.",
+    "stale_callbacks": "An old rejected zero-payment callback cannot settle a priced offer; existing bounded closer can end the wait.",
+    "tradeoff": "A single ceiling bid prioritizes acquiring the material over finding the cheapest acceptable price. The AI-supplied cap and protected remaining cash are unchanged.",
+    "actual_followup": [
+      "loaded.strategic_quote_proposals=2 and strategic_cash_ceiling_bid=true",
+      "configured installed Lua matches merged source",
+      "actual cash_bid, cash_reserve, engine verdict, enacted deal and resource stock",
+      "executed upgrades, rival original-capital ownership and native Domination outcome"
+    ],
+    "force_changes": "None; reuses existing L tag."
+  },
+  "host_contract": {
+    "asset": "DLC/Expansion2/UI/Replacements/DiplomacyDealView.lua",
+    "sha256": "8454457c359c7dacae7698cb7073a8c883ccd408d7e0a2b88da97b1f092c33e9",
+    "cash_item_lines": [
+      870,
+      887
+    ],
+    "call": "pDeal:AddItemOfType(DealItemTypes.GOLD, player:GetID())",
+    "ordering": "OnClickAvailableOneTimeGold sets duration0 before reading GetMaxAmount, clips the amount, then calls SetAmount.",
+    "proposal_lines": [
+      149,
+      156
+    ],
+    "acceptance_lines": [
+      530,
+      544
+    ]
+  },
+  "validation": {
+    "lua_runtime": "Lua 5.1 via lupa.lua51",
+    "syntax_files": 153,
+    "discovered_mod_suites": 146,
+    "all_passed": true,
+    "candidate_agent_sha256": "480e149fdf327b1d940d6b9b6dafc66aba3b77e1abae1856f2e2701c11781c11",
+    "old_adapter_new_regressions_exit": 1,
+    "fixture_cases": [
+      "native129Gold/cap34 preserves95",
+      "real accepted priced offer closes; old zero callback waits",
+      "other spending clips bid/preserves reserve; later spending blocks acceptance",
+      "native one-time maximum, missing/nonfinite balance or maximum, invalid Gold/deal, missing reserve",
+      "rejected priced bid closes once; no second bid",
+      "oversized cash and introducedGPT counter refused",
+      "already-priced host quote remains unchanged",
+      "actual buy arm captures protected balance and bounded closer clears it"
+    ],
+    "python": "330 civ6_play tests;143 installer tests;6 experiment-config tests;7 CI-wiring tests passed",
+    "rust": "Not applicable; no Rust source changes."
+  }
+}

@@ -1740,6 +1740,13 @@ def build_config(args: argparse.Namespace) -> dict:
         # instead of only denying a rival's (`CivvisDiploRacer`). Absent when
         # the built-ins decide.
         "VictoryLane": args.civvis_victory if args.civvis_decides else None,
+        # The opted-in land-material desk already reserves upgrade cash and
+        # supplies a maximum price. If EQUALIZE leaves no payment, let the
+        # host evaluate one explicit cash offer within that existing budget.
+        "StrategicCashCeilingBid": bool(
+            args.civvis_decides and args.civvis_victory == "domination"
+            and "land-army-asks-the-host-price" in (getattr(args, "civvis_with", []) or [])
+            and "land-army-asks-the-host-price" not in (getattr(args, "civvis_without", []) or [])),
         # `culture-seat-allies` (src/ai/advanced/culture_seat_allies.rs): a
         # Culture seat's alliance orders reach the host. The live binary keeps
         # them only while the tag is armed; the agent's `CivvisAllianceStep`
