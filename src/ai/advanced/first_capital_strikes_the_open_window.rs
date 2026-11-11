@@ -359,9 +359,29 @@ impl AdvancedAi {
         !enemies.is_empty() && enemies.iter().all(|enemy| fronts.contains(enemy))
     }
 
+    /// Whether the opening on `target` reserves and walks a breaker although
+    /// no walls stand there yet: under the gene, on a major's city. Live
+    /// Deity Gran Colombia `civvis-20261111T185132Z` declared on an unwalled
+    /// Niani (defence 26) at turn 45 with six bodies and no Ram; Niani's
+    /// walls stood at 47, the opening was released ("the target walled up
+    /// before the strike landed and no breaker is held"), Maya and Mali
+    /// declared on us at 54 and 69 and we held one city of three at 90.
+    pub(super) fn first_capital_brings_a_breaker(
+        &self,
+        g: &Game,
+        target: &crate::game::City,
+    ) -> bool {
+        self.first_capital_strikes_active()
+            && g.players
+                .get(target.owner)
+                .is_some_and(|owner| !owner.is_minor)
+    }
+
     /// The breaker the opening walks with its force: our Battering Ram or
     /// Siege Tower nearest the rally (only a Siege Tower past Ancient Walls),
-    /// while the target has walls. `None` with no walls or no breaker.
+    /// while the target has walls or is a major's city under the gene
+    /// ([`Self::first_capital_brings_a_breaker`]). `None` otherwise or with
+    /// no breaker.
     pub(super) fn first_capital_breaker(
         &self,
         g: &Game,
@@ -370,7 +390,7 @@ impl AdvancedAi {
     ) -> Option<u32> {
         let city = g.cities.get(&opening.city)?;
         let walls = g.city_max_wall_hp(city);
-        if walls <= 0 {
+        if walls <= 0 && !self.first_capital_brings_a_breaker(g, city) {
             return None;
         }
         let tower_only = walls > FIRST_CAPITAL_WALL_CEILING;
@@ -505,6 +525,8 @@ impl AdvancedAi {
     /// - we hold fewer than [`FIRST_CAPITAL_STRIKE_CITIES`] cities;
     /// - fewer than [`FIRST_CAPITAL_STRIKE_MELEE`] melee soldiers (not
     ///   Scouts) stand within the assembly radius of the rally;
+    /// - no walls stand, we hold or have queued a breaker, and it is not
+    ///   within the assembly radius of the rally yet;
     /// - the owner's public military power is more than
     ///   [`FIRST_CAPITAL_POWER_RATIO`] times ours;
     /// - the city's strength (as last seen) is more than
@@ -528,7 +550,7 @@ impl AdvancedAi {
         }
         let city = g.cities.get(&opening.city)?;
         let cities = g.player_city_ids(pid).len();
-        let before = if self.first_capital_bare == Some(opening.city) {
+        let before = if self.first_capital_bare == Some(city.pos) {
             FIRST_CAPITAL_BARE_CITIES
         } else {
             FIRST_CAPITAL_STRIKE_CITIES
@@ -553,6 +575,24 @@ impl AdvancedAi {
                 city.name,
                 FIRST_CAPITAL_STRIKE_MELEE
             ));
+        }
+        // No walls stand, but they rise behind a declaration: a breaker we
+        // hold or have queued stands at the rally first. With none held or
+        // queued (no Masonry yet) the strike goes as before.
+        if city.wall_hp <= 0 && Self::conquest_breakers_held(g, pid) > 0 {
+            let at_the_rally = self
+                .first_capital_breaker(g, pid, opening)
+                .and_then(|uid| g.units.get(&uid))
+                .is_some_and(|breaker| {
+                    g.wdist(breaker.pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS
+                });
+            if !at_the_rally {
+                return Some(format!(
+                    "our breaker is not at the rally yet, and {} would wall up behind the \
+                     declaration",
+                    city.name
+                ));
+            }
         }
         let (ours, theirs_public) = (g.military_power(pid), g.military_power(city.owner));
         if theirs_public > FIRST_CAPITAL_POWER_RATIO * ours {
@@ -717,15 +757,24 @@ impl AdvancedAi {
     /// the capital stays soft, so a garrison that walks in does not hand the
     /// half-trained force's queue back to the Settler.
     fn first_capital_read_the_bareness(&mut self, g: &Game, pid: usize, soft: bool) {
+        // The latch is the city's tile: a live rebuild renumbers cities, and
+        // an id latch dropped on most turns (live 185132Z journalled "is
+        // bare" 14 times from turn 9 to 27 and the capital took up its
+        // Settler again at 29, once Niani read 21).
         let named = self
             .conquest_opening
             .as_ref()
             .filter(|opening| soft && opening.declared.is_none())
-            .map(|opening| opening.city);
-        let kept = self.first_capital_bare.filter(|city| named == Some(*city));
-        let bare = kept.or_else(|| named.filter(|city| Self::first_capital_is_bare(g, pid, *city)));
+            .and_then(|opening| g.cities.get(&opening.city));
+        let tile = named.map(|city| city.pos);
+        let kept = self.first_capital_bare.filter(|pos| tile == Some(*pos));
+        let bare = kept.or_else(|| {
+            named
+                .filter(|city| Self::first_capital_is_bare(g, pid, city.id))
+                .map(|city| city.pos)
+        });
         if bare.is_some() && self.first_capital_bare != bare {
-            if let Some(city) = bare.and_then(|cid| g.cities.get(&cid)) {
+            if let Some(city) = named {
                 think!(self.journal(), Military, Strategy,
                        "First capital before the walls: {} is bare", city.name;
                        "defence {:.0}, no walls, {} tiles from our capital: the reservation opens \

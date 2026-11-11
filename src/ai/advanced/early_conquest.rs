@@ -735,15 +735,22 @@ impl AdvancedAi {
     /// The opening's target while the reservation is open and the city
     /// stands behind walls, so a Battering Ram is worth building before the
     /// war it is for. `None` with the gene off, outside the window, and for
-    /// an unwalled or vanished city.
+    /// an unwalled or vanished city (but for a major's city under
+    /// `first-capital-strikes-the-open-window`, which walls up behind the
+    /// declaration).
     pub(super) fn conquest_breach_target(&self, g: &Game) -> Option<u32> {
         if !self.conquest_reservation_open(g) {
             return None;
         }
         let city = self.conquest_opening.as_ref()?.city;
+        // `first-capital-strikes-the-open-window`: a major's capital walls up
+        // behind a declaration, so its strike reserves the Ram with no walls
+        // standing yet. `false` with the gene off.
         g.cities
             .get(&city)
-            .is_some_and(|target| g.city_max_wall_hp(target) > 0)
+            .is_some_and(|target| {
+                g.city_max_wall_hp(target) > 0 || self.first_capital_brings_a_breaker(g, target)
+            })
             .then_some(city)
     }
 
