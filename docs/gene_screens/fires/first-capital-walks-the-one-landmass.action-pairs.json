@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "first-capital-walks-the-one-landmass",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Five boards of live Deity Macedon civvis-20261111T040245Z (Tiny Pangaea, Online, Domination lane), the run's events.jsonl cut at the first state frame of turns 15, 25, 35, 45 and 55, inside the window in which the live seat refused Washington (charted at t11, 12 tiles, walls 0) at every note from t12 to t62 as 'no charted land walk reaches their capital'. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch at 4642014c54 with the run's own requested genome (summary.json forced, which carries first-capital-before-the-walls, early-conquest-opening and find-the-capital); the on arm adds --with first-capital-walks-the-one-landmass. Every off arm journals the live refusal; every on arm opens on Washington ('Opening a conquest against America'), journals 'Washington over uncharted ground | ... the walk crosses 2-3 uncharted tiles; a Pangaea map has one landmass', and sends the nearest free scout to the first uncharted tile of the walk. Orders differ on 3 of 5 boards (t15, t35, t55), each the scout's MOVE_TO; on t25 and t45 the scout's step comes out the same.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-first-capital-walks-the-one-landmass.native-queries.tar.xz",
+    "sha256": "bb4621d10a1bfd2d99cca59a66377b36f0eeb053325ff6bffbf39125a0b004f5"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json"
+  ]
+}

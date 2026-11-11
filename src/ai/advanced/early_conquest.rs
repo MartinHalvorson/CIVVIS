@@ -2084,6 +2084,8 @@ impl AdvancedAi {
                     prepares for {} turns",
                    g.city_max_wall_hp(&g.cities[&city]), FIRST_CAPITAL_WALL_CEILING,
                    self.conquest_naming_deadline(g), self.conquest_preparation(g));
+            // `first-capital-walks-the-one-landmass`: see that module.
+            self.first_capital_note_the_landmass_walk(g, pid, target, city);
         }
         self.conquest_opening = Some(ConquestOpening {
             target,

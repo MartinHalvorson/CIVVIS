@@ -257,6 +257,9 @@ impl AdvancedAi {
         /// Opt-in `faith-strike-fears-the-tech-lead`; see
         /// `AdvancedAi::faith_strike_fears_the_tech_lead`.
         faith_strike_fears_the_tech_lead => enable_faith_strike_fears_the_tech_lead, disable_faith_strike_fears_the_tech_lead;
+        /// `first-capital-walks-the-one-landmass`: see
+        /// `advanced/first_capital_walks_the_one_landmass.rs`.
+        first_capital_walks_the_one_landmass => enable_first_capital_walks_the_one_landmass, disable_first_capital_walks_the_one_landmass;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

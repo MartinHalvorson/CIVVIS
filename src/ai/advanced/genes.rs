@@ -5702,6 +5702,14 @@ pub const GENES: &[Gene] = &[
     // Culture seat strikes no rival 10 or more techs ahead. Opt-in; see
     // `advanced/faith_strike.rs`.
     Gene { tag: "faith-strike-fears-the-tech-lead", field: "faith_strike_fears_the_tech_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_fears_the_tech_lead, disable: AdvancedAi::disable_faith_strike_fears_the_tech_lead },
+    // Live Deity Macedon, Tiny Pangaea, Online (040245Z): Washington was
+    // charted at t11, 12 tiles out behind no walls, and refused at every
+    // note from t12 to t62 as "no charted land walk reaches their capital":
+    // the capital exchange charts the capital, not the ground between. On a
+    // map with one landmass the first capital's walk counts uncharted ground
+    // as land, and the nearest free scout charts that fog. Opt-in; see
+    // `advanced/first_capital_walks_the_one_landmass.rs`.
+    Gene { tag: "first-capital-walks-the-one-landmass", field: "first_capital_walks_the_one_landmass", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_walks_the_one_landmass, disable: AdvancedAi::disable_first_capital_walks_the_one_landmass },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

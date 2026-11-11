@@ -7664,6 +7664,12 @@ pub struct AdvancedAi {
     /// it. See `advanced/friendship_outlasts_the_gated_race.rs`. Off by
     /// default.
     friendship_outlasts_the_gated_race: bool,
+    /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
+    /// `first-capital-before-the-walls` counts uncharted ground as land in
+    /// its walk to the target capital, and the nearest free scout charts the
+    /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
+    /// Off by default.
+    first_capital_walks_the_one_landmass: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11734,6 +11740,10 @@ mod threatened_war_holds_the_claims;
 /// the nearest walkable rival capital before its walls pass Ancient. One
 /// opt-in gene; see `advanced/first_capital_before_the_walls.rs`.
 mod first_capital_before_the_walls;
+/// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
+/// with one landmass, for the first capital's walk. One opt-in gene; see
+/// `advanced/first_capital_walks_the_one_landmass.rs`.
+mod first_capital_walks_the_one_landmass;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.

@@ -22,6 +22,10 @@ impl AdvancedAi {
         if let Some(goal) = self.assigned_capital_scout_goal(g, pid, uid) {
             return Some(goal);
         }
+        // `first-capital-walks-the-one-landmass`: see that module.
+        if let Some(goal) = self.first_capital_corridor_goal(g, pid, uid) {
+            return Some(goal);
+        }
         if g.unseen_major_borders.is_empty() {
             return None;
         }
