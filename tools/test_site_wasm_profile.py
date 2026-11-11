@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -118,6 +119,74 @@ class TheNewestProfileInADirectoryIsRead(unittest.TestCase):
             written.write_text(json.dumps(PROFILE), encoding="utf-8")
             self.assertEqual(reader.newest_profile(where), written)
             self.assertEqual(reader.newest_profile(written), written)
+
+
+class PublishedFunctionMapsNameTheExactModule(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.directory = Path(self.scratch.name)
+        self.module = self.directory / "engine.wasm"
+        # One empty function, index zero. The name is supplied by Binaryen.
+        self.module.write_bytes(bytes.fromhex(
+            "0061736d01000000010401600000030201000a040102000b"))
+        self.mapping = self.directory / "functions.map"
+        self.mapping.write_text("0:" + SEARCH_NAME + "\n", encoding="utf-8")
+        reader.site_wasm_symbols.record(self.module, self.mapping, "test-revision")
+
+    def test_indexes_are_translated_and_other_frames_keep_their_time(self):
+        symbols, manifest = reader.site_wasm_symbols.load(self.directory, self.module)
+        profile = a_profile({"wasm-function[0]": 300, PLAIN: 90, "paint": 10})
+        before = json.dumps(profile)
+        self.assertEqual(reader.self_time(profile, symbols),
+                         {SEARCH_NAME: 300, PLAIN: 90, "paint": 10})
+        self.assertEqual(json.dumps(profile), before)
+        self.assertEqual(manifest["wasm_bytes"], self.module.stat().st_size)
+
+    def test_same_length_different_engine_is_rejected(self):
+        changed = bytearray(self.module.read_bytes())
+        changed[-1] ^= 1
+        self.module.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "different WebAssembly module"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_changed_map_is_rejected(self):
+        self.mapping.write_text("0:" + SEARCH_STRING + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "checksum"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_unknown_manifest_format_is_rejected(self):
+        path = self.directory / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["format"] = 2
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "manifest format"):
+            reader.site_wasm_symbols.load(self.directory, self.module)
+
+    def test_missing_function_is_an_error_instead_of_a_partial_attribution(self):
+        with self.assertRaisesRegex(ValueError, "index 17 is absent"):
+            reader.self_time(a_profile({"wasm-function[17]": 300}), {0: SEARCH_NAME})
+
+    def test_malformed_empty_and_duplicate_maps_are_rejected(self):
+        for text in ["", "\n", "x:name", "-1:name", "0:", "0:first\n0:second"]:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                reader.site_wasm_symbols.parse_function_map(text)
+
+    def test_cli_prints_named_costs_from_the_bound_sidecar(self):
+        profile = self.directory / "CPU.1.cpuprofile"
+        profile.write_text(json.dumps(a_profile({"wasm-function[0]": 300, PLAIN: 100})))
+        output, diagnostics = io.StringIO(), io.StringIO()
+        with redirect_stdout(output), redirect_stderr(diagnostics):
+            self.assertEqual(reader.main([str(profile), "--symbols", str(self.directory),
+                                          "--wasm", str(self.module)]), 0)
+        self.assertIn("search   Name", output.getvalue())
+        self.assertNotIn("wasm-function[0]", output.getvalue())
+        self.assertIn("test-revision", diagnostics.getvalue())
+
+    def test_cli_requires_module_and_sidecar_together(self):
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as missing:
+            reader.main(["unused.cpuprofile", "--symbols", str(self.directory)])
+        self.assertEqual(missing.exception.code, 2)
 
 
 if __name__ == "__main__":
