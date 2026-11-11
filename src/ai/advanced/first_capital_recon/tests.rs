@@ -49,7 +49,7 @@ fn board_with_enemy(enemy: Pos) -> (Game, StrategicPlan) {
 }
 
 fn board() -> (Game, StrategicPlan) {
-    board_with_enemy((40, 20))
+    board_with_enemy((30, 20))
 }
 
 fn seat(on: bool) -> AdvancedAi {
@@ -161,7 +161,7 @@ fn a_reachable_capital_keeps_the_opening_army_ahead_of_an_extra_eye() {
 fn the_real_turn_claims_a_land_eye_before_economy_fills_its_queue() {
     let (mut g, _) = board();
     let mut ai = seat(true);
-    ai.step(&mut g, 0);
+    ai.take_turn(&mut g, 0);
     assert!(g.log.iter().any(|(pid, action)| *pid == 0 && matches!(action,
         Action::Produce { item: Item::Unit { unit }, .. } if g.rules.units[unit].promotion_class == "recon"
     )), "the real production pipeline must reach the early claim");
