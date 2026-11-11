@@ -11835,6 +11835,10 @@ mod kristina_fills_to_theme;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
+/// `first-capital-strikes-the-open-window`, beyond the first capital: a
+/// neighbour's unwalled city within reach of our soldiers opens the war.
+/// See `advanced/soft_city_window.rs`.
+mod soft_city_window;
 
 /// `growth-prices-the-farm`: the Builder prices the Housing and Food a small
 /// city cannot grow without. One opt-in gene; see `advanced/growth_farm.rs`.
