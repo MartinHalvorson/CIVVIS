@@ -5733,6 +5733,11 @@ pub const GENES: &[Gene] = &[
     // A Religion-target founder's corps caps stop binding once the bank
     // holds two Apostles. See `advanced/religion_seat_spends_the_bank.rs`.
     Gene { tag: "religion-seat-spends-the-bank", field: "religion_seat_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_spends_the_bank, disable: AdvancedAi::disable_religion_seat_spends_the_bank },
+    // `peace-waits-for-the-host-minimum`: no peace offer to a major whose war
+    // on us is younger than the host's minimum (8 Online turns), so the
+    // bridge's five-turn retry lands the first ask on the first turn the host
+    // signs. Opt-in; see `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "peace-waits-for-the-host-minimum", field: "peace_waits_for_the_host_minimum", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_host_minimum, disable: AdvancedAi::disable_peace_waits_for_the_host_minimum },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

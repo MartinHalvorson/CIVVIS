@@ -1979,6 +1979,19 @@ impl AdvancedAi {
                     || science_defensive_peace
                     || unchosen_peace.is_some())
             {
+                // `peace-waits-for-the-host-minimum`: no offer to a war
+                // declared on us before the host signs any; the bridge's
+                // retry window would spend it. `None` with the gene off. See
+                // `advanced/unchosen_war_peace.rs`.
+                if let Some(age) = self.young_war_peace_waits(g, pid, *other) {
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        think!(self.journal(), Diplomacy, Decision,
+                               "Holding the peace offer to {}", g.players[*other].civ;
+                               "peace-waits-for-the-host-minimum: their war on us is {age} turn(s) old and the host signs none before {}; an ask now would hold the next one five turns",
+                               g.standard_duration(super::unchosen_war_peace::PEACE_HOST_MINIMUM_STANDARD));
+                    }
+                    continue;
+                }
                 // `no-peace-with-a-launcher`: no peace with a rival past its
                 // Mars base while a pad of its stands, unless our cities are
                 // falling. `false` with the gene off. See
