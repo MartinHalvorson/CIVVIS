@@ -4978,6 +4978,15 @@ pub struct ObservedPublicEmpireStats {
     /// The host's total Science Victory Points required for its game speed.
     #[serde(default)]
     pub science_victory_points_needed: Option<f64>,
+    /// Every unit the host says this seat fields, and how many of them are
+    /// military, counted off its whole roster. The board itself holds only
+    /// the rival units the seat can see, so the standings' UNIT column reads
+    /// these rather than counting the board. `None` on an export from before
+    /// the host sent them.
+    #[serde(default)]
+    pub unit_count: Option<usize>,
+    #[serde(default)]
+    pub military_unit_count: Option<usize>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
