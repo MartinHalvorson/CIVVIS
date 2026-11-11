@@ -39113,10 +39113,12 @@ function fillRivalStrategies(rules, roster) {
   const select = document.getElementById("rivalstrategy");
   if (!select) return;
   select.innerHTML = `<option value="">House mix</option>` + roster.map(entry => {
+    // Rating before tilt: the sidebar is narrow, and a closed select shows
+    // only the start of its option.
     const rated = entry.elo === null || entry.elo === undefined ? ""
-      : `${strategyEloSuffix(entry)} Elo${entry.civ6_level ? ` ≈ ${entry.civ6_level}` : ""}`;
+      : `${strategyEloSuffix(entry)}${entry.civ6_level ? ` ≈ ${entry.civ6_level}` : ""}`;
     return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.blurb || entry.label || "")}">` +
-      `${escapeAttr(entry.username || entry.name)} — ${escapeAttr(entry.tilt || "")}${escapeAttr(rated)}</option>`;
+      `${escapeAttr(entry.username || entry.name)}${escapeAttr(rated)} — ${escapeAttr(entry.tilt || "")}</option>`;
   }).join("");
   const wanted = rules.rival_strategy;
   select.value = wanted && roster.some(entry => entry.name === wanted) ? wanted : "";
