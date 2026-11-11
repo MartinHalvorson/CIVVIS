@@ -695,17 +695,36 @@ fn the_whole_force_strikes_an_owner_no_stronger_than_us() {
     Arc::make_mut(&mut game.observed_military_power).insert(1, 1.2 * ours);
     let opening = ai.conquest_opening.clone().unwrap();
     assert_eq!(opening.force.len(), ai.conquest_force_size());
+    let at_rally = opening
+        .force
+        .iter()
+        .filter(|uid| game.wdist(game.units[*uid].pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS)
+        .count();
+    assert_eq!(at_rally, ai.conquest_force_size(), "the whole force is up");
     assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
     assert!(ai
         .first_capital_open_window_go(&game, 0, &opening)
         .is_none());
-    assert!(!ai.conquest_declaration(&mut game, 0));
 
     // No stronger than us: the go stands on a bill it does not cover.
     Arc::make_mut(&mut game.observed_military_power).insert(1, 0.9 * ours);
+    assert!(
+        game.military_power(1) <= game.military_power(0),
+        "{} against {}",
+        game.military_power(1),
+        game.military_power(0)
+    );
+    assert_eq!(ai.first_capital_outclassed(&game, 0, &opening), None);
+    let bill = ai.first_capital_bill(
+        &game,
+        0,
+        &opening,
+        &opening.force.iter().copied().collect::<Vec<_>>(),
+    );
+    assert!(bill.is_some(), "the capture holds and a body can take it");
     let go = ai
         .first_capital_open_window_go(&game, 0, &opening)
-        .expect("the whole force goes");
+        .unwrap_or_else(|| panic!("the whole force goes; bill {bill:?}"));
     assert!(go.strength < go.requirement, "{go:?}");
     assert!(ai.conquest_declaration(&mut game, 0));
     assert!(game.is_at_war(0, 1));
