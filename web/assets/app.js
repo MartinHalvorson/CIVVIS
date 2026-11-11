@@ -31259,7 +31259,8 @@ function drawCityScreen() {
     fact("Amenities", `${city.amenities} of ${city.amenities_required} needed`) +
     fact("Loyalty", `${Math.round(city.loyalty)} · ${titleCase(city.loyalty_state || "")}` +
       ` (${city.loyalty_per_turn >= 0 ? "+" : ""}${Math.round(city.loyalty_per_turn)})`) +
-    (governor ? fact("Governor", `${governor.name} · ${governorStatus(governor)}`) : "") +
+    (governor ? `<div class="city-fact wide"><span class="small">Governor</span>` +
+      `<b>${governor.name} · ${governor.title} · ${governorStatus(governor)}</b></div>` : "") +
     `</div>`;
 
   const plotBuys = state.legal_actions.filter(a =>
