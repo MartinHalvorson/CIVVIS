@@ -3,6 +3,8 @@ local here = arg[0]:match("(.*)/[^/]*$") or "."
 local f = assert(io.open(here .. "/CivvisControlAutoClose.lua"))
 local source = f:read("*a"); f:close()
 local closer = assert(source:match('(local function endScreen%(attempt%).-)\nend\n')) .. '\nend\n'
+-- The first-meet event names the answered statement and line (first_meet_privacy_test).
+local responseString = assert(source:match('(local function responseString%(value%).-\nend\n)'))
 local responses, closes, hidden = 0, 0, false
 local pendingChoice = "CHOICE_EXIT"
 local nextStatement = nil
@@ -22,6 +24,7 @@ local close, reset = assert(loadstring(
     'local NAME="DiplomacyActionView"; local firstMeetChoice="CHOICE_EXIT"; '
     .. 'local firstMeetAnswered=false; local report=function() end; '
     .. 'local closeStaleDiplomacyContext=function() return false end;\n'
+    .. 'local dialogueContext=""; local firstMeetText=nil;\n' .. responseString
     .. closer .. '\nreturn endScreen, function(choice) firstMeetChoice=choice; firstMeetAnswered=false end'))()
 assert(close(1))
 assert(responses == 1 and closes == 0 and not hidden)
