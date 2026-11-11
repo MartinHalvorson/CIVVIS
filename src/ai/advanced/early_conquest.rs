@@ -945,7 +945,9 @@ impl AdvancedAi {
         if !self.conquest_reservation_open(g) {
             return 0.0;
         }
-        if Self::conquest_capital(g, pid) != Some(cid) {
+        // `city-state-before-the-first-capital`: a city of ours near the
+        // stone's rally trains its bodies too. `false` with the gene off.
+        if Self::conquest_capital(g, pid) != Some(cid) && !self.city_state_stone_trains_in(g, cid) {
             return 0.0;
         }
         // The first Settler is never deferred, and a bonus that outranks it is
