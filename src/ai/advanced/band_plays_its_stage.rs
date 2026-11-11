@@ -194,7 +194,8 @@ impl AdvancedAi {
         if offered.is_empty() {
             return None;
         }
-        if self.base.band_plays_at_level_three {
+        // Version 2 of the family promotes as version 1 does.
+        if self.base.band_plays_at_level_three || self.base.band_plays_at_level_three_2 {
             // `band-stage-needs-three-venues`: see the module notes.
             let floor = if self.band_stage_needs_three_venues {
                 THREE_VENUES

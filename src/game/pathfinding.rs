@@ -335,6 +335,41 @@ impl Game {
             })
     }
 
+    /// Whether the deterministic route [`Self::route_distance`] measures to
+    /// `to` crosses water: an embarked leg. `None` when there is no route.
+    pub(crate) fn route_crosses_water(&self, uid: u32, to: Pos) -> Option<bool> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        if start == to {
+            return Some(false);
+        }
+        self.route_step(uid, to, 0)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        self.routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == 0
+                    && route.access_key == access_key
+            })
+            .map(|route| {
+                let from = route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .unwrap_or(0);
+                route.path[from..].iter().any(|position| {
+                    self.map
+                        .get(*position)
+                        .is_some_and(|tile| self.rules.is_water(tile))
+                })
+            })
+    }
+
     /// Everything which can change whether this unit may cross a border
     /// without changing the map itself. Player access is already the complete
     /// shared predicate; city owners distinguish a same-turn city transfer

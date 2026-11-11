@@ -4641,6 +4641,15 @@
           "amphibious-siege-train-2": null
         }
       },
+      "band-plays-at-level-three": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "band-plays-at-level-three": null,
+          "band-plays-at-level-three-2": null
+        }
+      },
       "bankruptcy-exits-the-drain": {
         "rule_on": [],
         "head": null,

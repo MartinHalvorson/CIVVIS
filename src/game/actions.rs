@@ -2251,6 +2251,32 @@ impl Game {
         level.saturating_add(venue_levels).clamp(1, 6)
     }
 
+    /// `band-plays-at-level-three-2`: what one concert here is worth to the
+    /// band's tour, before travel: the odds the band survives it times the
+    /// concert's expected Tourism, read as venue x (1 + result %) + 10 x
+    /// album sales (the fit to 45 of 49 live wonder concerts, 2026-11-10),
+    /// times the Goes To 11 audience. `None` where the band has no concert.
+    pub(crate) fn rock_concert_turn_value(&self, pid: usize, uid: u32, position: Pos) -> Option<f64> {
+        let unit = self.units.get(&uid)?;
+        if unit.owner != pid || unit.kind != "rock_band" || unit.promotions.is_empty() {
+            return None;
+        }
+        let read = self.rock_concert_read(pid, unit, position)?;
+        let album = unit.album_sales as f64 / 100.0;
+        let result_multiplier = read.expected_multiplier - album;
+        Some(
+            read.survival
+                * (read.base * result_multiplier * read.nearby_factor
+                    + 10.0 * unit.album_sales as f64),
+        )
+    }
+
+    /// The host of the land a concert at `position` would play for.
+    pub(crate) fn rock_concert_host(&self, pid: usize, uid: u32, position: Pos) -> Option<usize> {
+        let unit = self.units.get(&uid)?;
+        self.rock_concert_read(pid, unit, position).map(|read| read.host)
+    }
+
     /// The performance level this band would play `position` at (its Rock
     /// Band level plus the venue's matching-promotion levels), or `None` where
     /// it has no concert. `band-plays-at-level-three` reads it.

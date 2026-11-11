@@ -39,6 +39,29 @@
 //!   the twelve are drawn), so the first promotion is a real choice about
 //!   half the time.
 
+//!
+//! **Version 2 (`band-plays-at-level-three-2`).** Version 1 moved every
+//! level-3 stage within the tour's fifteen turns ahead of everything else and
+//! vetoed a lower-level show while one was listed, on top of a scorer that
+//! priced travel at a tenth of the stage per turn. Live 20261111T023321Z
+//! (16 bands, 299 band-turns, 19 concerts, 0.067 a band-turn): on 249
+//! band-turns without a concert the nearest listed stage was within 2 tiles
+//! on 60 and within 4 on 125, and on 52 of those 125 the band was farther
+//! from it the next turn; an Arena Rock band sailed an ocean for two concerts
+//! in 45 turns. Version 2 ranks a stage by what it is worth per turn of
+//! travel: P(survive) x (venue x (1 + result %) + 10 x album sales) x the bar
+//! factor (2 for the bar holder) / (turns to reach + 1), where a stage the
+//! band can walk to and play this turn is 0 turns away. The level enters only
+//! through the survival odds and the result table, never as a veto. On top:
+//! a level-3 stage it can reach and play this turn is always played; a band
+//! below level 3 travels at most three turns while any stage is that near;
+//! and no stage across water while one is reachable over land. Break-even:
+//! at equal venue value a level-1 show now (55% survival, expected result
+//! x1.47) beats a level-3 stage (75%, x1.65) more than half a turn away, so a
+//! level-3 stage wins only when it is in this turn's reach or its venue is
+//! worth more. An expelled band re-plans from where the host put it (the
+//! tour keeps no target between turns).
+
 use crate::ai::BasicAi;
 use crate::game::Game;
 use crate::Pos;
@@ -49,7 +72,82 @@ pub(crate) const LEVEL_THREE: i32 = 3;
 /// level-3 stage before it settles for the scorer's choice.
 const LEVEL_THREE_TRIP_TURNS: f64 = 4.0;
 
+/// `band-plays-at-level-three-2`: turns of travel a band below level 3 takes
+/// while any stage is within them.
+const NEAR_TRIP_TURNS: usize = 3;
+
+/// One stage the version-2 tour weighs.
+struct PerTurnStage {
+    pos: Pos,
+    turns: usize,
+    distance: usize,
+    level: i32,
+    value: f64,
+    water: bool,
+}
+
 impl BasicAi {
+    /// `band-plays-at-level-three-2`: every stage the band can play, best
+    /// value per turn of travel first. See the module notes.
+    pub(crate) fn rock_band_per_turn_ranking(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        let Some(unit) = g.units.get(&uid) else {
+            return Vec::new();
+        };
+        let below_three = g.rock_band_performance_level(unit, 0) < LEVEL_THREE;
+        let moves = g.unit_max_moves(uid).max(1.0);
+        let mut stages: Vec<PerTurnStage> = Vec::new();
+        for pos in g.map.tiles.keys().copied() {
+            let Some(value) = g.rock_concert_turn_value(pid, uid, pos) else {
+                continue;
+            };
+            let Some(distance) = g.route_distance(uid, pos, 0) else {
+                continue;
+            };
+            // A band walks onto a stage and plays it the same turn.
+            let turns = if distance == 0 {
+                0
+            } else {
+                ((distance as f64 / moves).ceil() as usize).saturating_sub(1)
+            };
+            if turns as f64 > crate::ai::ROCK_BAND_TOUR_MAX_TURNS {
+                continue;
+            }
+            let bar = if self.bands_draw_from_the_bar {
+                g.rock_concert_host(pid, uid, pos)
+                    .map_or(1.0, |host| g.rock_concert_bar_factor(pid, host))
+            } else {
+                1.0
+            };
+            stages.push(PerTurnStage {
+                pos,
+                turns,
+                distance,
+                level: g.rock_concert_performance_level(pid, uid, pos).unwrap_or(1),
+                value: value * bar / (turns as f64 + 1.0),
+                water: g.route_crosses_water(uid, pos).unwrap_or(true),
+            });
+        }
+        if stages.iter().any(|stage| !stage.water) {
+            stages.retain(|stage| !stage.water);
+        }
+        if stages
+            .iter()
+            .any(|stage| stage.turns == 0 && stage.level >= LEVEL_THREE)
+        {
+            stages.retain(|stage| stage.turns == 0 && stage.level >= LEVEL_THREE);
+        } else if below_three && stages.iter().any(|stage| stage.turns <= NEAR_TRIP_TURNS) {
+            stages.retain(|stage| stage.turns <= NEAR_TRIP_TURNS);
+        }
+        stages.sort_by(|left, right| {
+            right
+                .value
+                .total_cmp(&left.value)
+                .then(left.distance.cmp(&right.distance))
+                .then(left.pos.cmp(&right.pos))
+        });
+        stages.into_iter().map(|stage| stage.pos).collect()
+    }
+
     /// The level class a stage gives this band: 3 for level 3 or more,
     /// otherwise its performance level; 0 where it has no concert.
     fn rock_band_level_class(g: &Game, pid: usize, uid: u32, pos: Pos) -> i32 {
@@ -230,6 +328,86 @@ mod tests {
         assert_eq!(
             ai.band_stage_promotion(&game, 0, band, &offered),
             Some(name!("album_cover_art"))
+        );
+    }
+
+    fn version_two() -> BasicAi {
+        let mut ai = BasicAi::new();
+        ai.band_plays_at_level_three_2 = true;
+        ai
+    }
+
+    fn glam(game: &mut Game, band: u32) {
+        game.units
+            .get_mut(&band)
+            .unwrap()
+            .promotions
+            .insert(name!("glam_rock"));
+    }
+
+    #[test]
+    fn version_two_plays_the_near_wonder_instead_of_walking_off_to_its_stage() {
+        // Live 20261111T023321Z: version 1 walked a level-1 band away from a
+        // stage two tiles off toward a level-3 stage further away.
+        let (mut game, band, wonder, theater) = stages();
+        glam(&mut game, band);
+        let mut first = BasicAi::new();
+        first.band_plays_at_level_three = true;
+        assert_eq!(first.rock_band_ranked_venues(&game, 0, band)[0], theater);
+        let ai = version_two();
+        assert_eq!(ai.rock_band_ranked_venues(&game, 0, band)[0], wonder);
+        let mut played = false;
+        for _ in 0..4 {
+            if !game.units.contains_key(&band) || !ai.rock_band_step(&mut game, 0, band) {
+                break;
+            }
+            played |= game.players[0]
+                .counters
+                .keys()
+                .any(|key| key.starts_with("rock_concert:"));
+        }
+        assert!(played || !game.units.contains_key(&band));
+    }
+
+    #[test]
+    fn version_two_always_plays_a_level_three_stage_in_reach_this_turn() {
+        let (mut game, band, wonder, theater) = stages();
+        glam(&mut game, band);
+        game.relocate(band, (12, 6));
+        // The wonder is worth more for this one concert, but the Theater is
+        // a level-3 show the band can walk to and play this turn.
+        assert!(
+            game.rock_concert_turn_value(0, band, wonder).unwrap()
+                > game.rock_concert_turn_value(0, band, theater).unwrap()
+        );
+        assert_eq!(
+            version_two().rock_band_ranked_venues(&game, 0, band),
+            vec![theater]
+        );
+    }
+
+    #[test]
+    fn version_two_does_not_sail_while_a_stage_is_reachable_over_land() {
+        let (mut game, band, wonder, theater) = stages();
+        glam(&mut game, band);
+        game.players[0].techs.insert(name!("shipbuilding"));
+        // A channel between the wonder and the Theater.
+        let channel: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| (12..=13).contains(&pos.0))
+            .collect();
+        for pos in channel {
+            game.map.tiles.get_mut(&pos).unwrap().terrain = name!("coast");
+        }
+        game.relocate(band, (10, 6));
+        assert_eq!(game.route_crosses_water(band, wonder), Some(false));
+        assert_eq!(game.route_crosses_water(band, theater), Some(true));
+        assert_eq!(
+            version_two().rock_band_ranked_venues(&game, 0, band),
+            vec![wonder]
         );
     }
 }

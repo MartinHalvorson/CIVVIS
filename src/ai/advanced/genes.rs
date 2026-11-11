@@ -5457,6 +5457,11 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // Version 2: a Rock Band picks the stage worth most per turn of travel,
+    // with no level veto, never sails past a stage reachable over land, and
+    // always plays a level-3 stage it can reach this turn. Opt-in; see
+    // `advanced/band_plays_at_level_three.rs`.
+    Gene { tag: "band-plays-at-level-three-2", field: "band_plays_at_level_three_2", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three_2, disable: AdvancedAi::disable_band_plays_at_level_three_2 },
     // A city under fire opens the Rock Band bank to the defence only: the
     // Great Person pass still leaves it. Opt-in; see
     // `advanced/culture_band_bank.rs`.

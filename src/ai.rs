@@ -2142,6 +2142,16 @@ pub struct BasicAi {
     /// at level 3; today's live concerts died 51% at level 1 and 8% at 3.
     /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
     pub(crate) band_plays_at_level_three: bool,
+    /// `band-plays-at-level-three-2`: version 2 of the family. The tour picks
+    /// the stage worth most per turn of travel (survival x expected concert
+    /// x the bar factor / (turns to reach + 1)) with no level veto, plays a
+    /// level-3 stage it can reach this turn whenever it has one, keeps a
+    /// band below level 3 within three turns when anything is in reach,
+    /// and does not sail while a stage is reachable over land. Promotions as
+    /// version 1. Live 20261111T023321Z under version 1: 0.067 concerts a
+    /// band-turn, half the idle band-turns within four tiles of a stage.
+    /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
+    pub(crate) band_plays_at_level_three_2: bool,
     /// `band-stall-bars-no-host`: a trip the host walked nowhere bars its
     /// host only when the same band was walked nowhere the turn before as
     /// well; one stalled turn bars nothing. Off by default; opt-in gene. See
@@ -3939,6 +3949,7 @@ impl BasicAi {
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
+            band_plays_at_level_three_2: false,
             band_stall_bars_no_host: false,
             band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
@@ -4392,6 +4403,7 @@ impl BasicAi {
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
+            band_plays_at_level_three_2: false,
             band_stall_bars_no_host: false,
             band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
@@ -7667,7 +7679,8 @@ impl BasicAi {
             return false;
         };
         let mut can_perform_here = g.rock_concert_tourism(pid, uid).is_some();
-        if can_perform_here && self.band_plays_at_level_three {
+        // Version 2 drops the veto: the per-turn value decides.
+        if can_perform_here && self.band_plays_at_level_three && !self.band_plays_at_level_three_2 {
             // `band-plays-at-level-three`: no lower-level show while a
             // higher-level stage is on the tour.
             let ranked = self.rock_band_ranked_venues(g, pid, uid);
@@ -7712,6 +7725,9 @@ impl BasicAi {
     /// the seat plays (`bands-draw-from-the-bar`, `band-plays-its-stage`, or
     /// the stock tour).
     fn rock_band_ranked_venues(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        if self.band_plays_at_level_three_2 {
+            return self.rock_band_per_turn_ranking(g, pid, uid);
+        }
         let ranked = self.rock_band_scored_venues(g, pid, uid);
         if self.band_plays_at_level_three {
             Self::rock_band_level_three_first(g, pid, uid, ranked)
