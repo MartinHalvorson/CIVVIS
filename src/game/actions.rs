@@ -3487,11 +3487,11 @@ impl Game {
             purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
         }
         // Flower Power: every unit costs +100% to buy (ADJUST_UNITS_PURCHASE_COST
-        // -100 with IncludeCivilian) except a Rock Band, which is free.
-        purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
-        if unit == "rock_band" {
-            purchase_discount += self.policy_effect(pid, "unit_purchase_cost_pct")
-                + self.policy_effect(pid, "rock_band_purchase_discount_pct");
+        // -100 with IncludeCivilian) except a Rock Band, which keeps its
+        // normal price: live civvis-20261110T192354Z held the card t171-185
+        // and the band's Faith quote kept its +50 step (450 to 650).
+        if unit != "rock_band" {
+            purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
         }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(city) {

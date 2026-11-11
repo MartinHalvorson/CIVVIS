@@ -5589,6 +5589,11 @@ pub const GENES: &[Gene] = &[
     // keeps one with every siege. Opt-in; see
     // `advanced/domination_target_gets_its_breaker.rs`.
     Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `cold-war-then-heritage`: once a Culture target knows Cold War, its
+    // civic slot takes Conservation, then Cultural Heritage, before the
+    // government ladder (Class Struggle, Suffrage) and the culture list.
+    // Opt-in; see `advanced/cold_war_then_heritage.rs`.
+    Gene { tag: "cold-war-then-heritage", field: "cold_war_then_heritage", kind: Kind::OptIn, enable: AdvancedAi::enable_cold_war_then_heritage, disable: AdvancedAi::disable_cold_war_then_heritage },
     // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
