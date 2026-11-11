@@ -550,3 +550,62 @@ fn the_contact_hull_may_be_laid_down_at_buttress() {
     game.players[0].religion = None;
     assert!(!on.religion_seat_hull_before_cartography(&game, 0));
 }
+
+/// ★ The 125333Z shape: the ground beside the one city we know is walked,
+/// the rival still holds four cities we have never seen, and they are over
+/// the water. Before the seat can embark there is nowhere to go; once it
+/// can, the charting spreader takes the sea's fog; with the rival charted it
+/// stays ashore.
+#[test]
+fn a_charting_spreader_with_no_dry_ground_left_takes_the_sea() {
+    let (mut game, missionary, site) = charted_out();
+    let walked = game.wdisk(site, 3);
+    game.players[0].explored.extend(walked);
+    let water: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| game.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .collect();
+    assert!(!water.is_empty(), "fixture: the map has a sea");
+    for pos in &water {
+        game.players[0].explored.remove(pos);
+    }
+    let on = seat(VictoryTarget::Religion, true);
+    assert_eq!(
+        on.religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true),
+        None,
+        "no embarkation yet"
+    );
+
+    for tech in [
+        "sailing",
+        "shipbuilding",
+        "celestial_navigation",
+        "cartography",
+    ] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
+    let goal = on
+        .religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true)
+        .expect("the sea's fog is a goal once the seat can embark");
+    assert!(!game.players[0].explored.contains(&goal));
+    assert!(game.route_step(missionary, goal, 0).is_some());
+    let off = seat(VictoryTarget::Religion, false);
+    assert_eq!(
+        off.religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true),
+        None
+    );
+
+    // Every rival met and charted: nobody sails.
+    std::sync::Arc::make_mut(&mut game.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(1);
+    assert_eq!(
+        seat(VictoryTarget::Religion, true)
+            .religion_seat_charting_goal(&game, 0, missionary, "Buddhism", true),
+        None
+    );
+}

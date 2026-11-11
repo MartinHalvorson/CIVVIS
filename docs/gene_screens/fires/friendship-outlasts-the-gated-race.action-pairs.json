@@ -1,0 +1,40 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "friendship-outlasts-the-gated-race",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 29 boards: every first 'Not renewing the friendship with X | friendship-keeps-the-peace: friendship-ends-at-the-race' turn in 16 live Deity Online Culture games of 2026-11-10/11 (Kristina and Pericles seats; civvis-20261111T010629Z Phoenicia t165, Russia t156 and Norway t159 first). Each arm runs one frozen civvis_orders built from the branch at 49f4da940b the way the live bridge does (--serve --fresh-board --explain, one persistent agent, so the friendship expiry the live mirror drops is remembered) on the run's events.jsonl cut after that turn's first state frame, fed the three turns before it and the turn; the payload is the reply for the turn. The run's own requested genome (first why.log line) is passed as --with; the on arm adds --with friendship-outlasts-the-gated-race. The off arm reproduces the live race line on 29/29. The on arm renews the friendship (a DECLARE_FRIEND order to that rival) and journals 'Keeping the friendship with X | friendship-outlasts-the-gated-race: ...' on 25/29, all at 0.05-1.16 times the rival's steady power (Phoenicia t165: 809 against 865); on the other 4 our power was 1.23-3.75 times the rival's and the race rule stands.",
+ "archive": {
+  "path": "docs/eval/2026-11-11-friendship-outlasts-the-gated-race.native-queries.tar.xz",
+  "sha256": "3aa819e6e637c24a39a494696d42121bfd0739f72adef8dbea404628f2dfe9ec"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json",
+  "native-queries-01/0016/result.json",
+  "native-queries-01/0017/result.json",
+  "native-queries-01/0018/result.json",
+  "native-queries-01/0019/result.json",
+  "native-queries-01/0020/result.json",
+  "native-queries-01/0021/result.json",
+  "native-queries-01/0022/result.json",
+  "native-queries-01/0023/result.json",
+  "native-queries-01/0024/result.json",
+  "native-queries-01/0025/result.json",
+  "native-queries-01/0026/result.json",
+  "native-queries-01/0027/result.json",
+  "native-queries-01/0028/result.json"
+ ]
+}

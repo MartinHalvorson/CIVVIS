@@ -247,6 +247,93 @@ GATE_INTERLEAVES = 1
 DEFAULTS = dict(GATE_SHAPE)
 
 
+#: `--workload site`: the world civvis.ai plays, through `civvis site-bench`.
+#:
+#: ⚠ The gate shape above is the gene screen's, because the screen is where the
+#: fleet's compute goes — and it is not what a visitor's browser runs. `civvis
+#: simulate` seats the stock agent at every chair, city-states included, and
+#: writes no state document; the site seats the deployment genome at the
+#: majors, `BasicAi` at the minors, and spends a fifth of a whole game (and
+#: most of every frame in the first twenty-five turns) writing the document
+#: the page reads. A change to the document, or to anything only the genome
+#: turns on, moves the site and reads as noise here. This workload is the
+#: site's own frame loop on a native build. Everything else in this file is
+#: unchanged by it: the arms still alternate, the report is still hashed with
+#: its timing lines stripped (`site-bench` prints state checkpoints, so equal
+#: digests mean equal saves and equal documents every 25 turns), and the
+#: primary metric is still CPU per completed turn.
+#:
+#: It is opt-in and by hand. The CI gate keeps the screen's shape, and the
+#: ledger refuses a site reading: one file of absolutes for one workload.
+WORKLOADS = ("screen", "site")
+
+
+def game_command(binary: Path, seed: int, opts: dict) -> list[str]:
+    """The one game an arm plays, for the workload asked for."""
+    if opts.get("workload", "screen") == "site":
+        return [str(binary), "site-bench",
+                "--seed", str(seed), "--turns", str(opts["turns"])]
+    return [str(binary), "simulate",
+            "--seed", str(seed), "--jobs", "1",
+            "--players", str(opts["players"]), "--turns", str(opts["turns"]),
+            "--width", str(opts["width"]), "--height", str(opts["height"]),
+            "--city-states", str(opts["city_states"]), "--speed", opts["speed"],
+            "--map", opts["map"], "--shape", opts["shape"]]
+
+
+#: The site reading the gate prints beside its verdict, and never judges.
+#:
+#: ⚠ ADVISORY, AND THAT IS A DECISION. The gate's budget is set for the
+#: screen's shape, whose ledger and noise floor took months to learn; a second
+#: blocking number with neither would fail at random, and a check that fails at
+#: random teaches the fleet to ignore both. What was missing is not a second
+#: gate but the *sentence*: a pull request that makes every site frame a fifth
+#: slower used to merge with nothing in its log saying so, because nothing
+#: measured a site frame. Three paired games of a hundred turns is about two
+#: minutes of a runner, and the reading lands in the same log as the verdict.
+SITE_ADVISORY = dict(seeds=7, games=3, turns=100)
+
+
+def knows_site_bench(binary: Path) -> bool:
+    """Whether a binary has `civvis site-bench`.
+
+    A base commit older than the command prints the usage line and exits 0, so
+    the exit code says nothing; a checkpoint line is the proof. Any failure to
+    even run the file is a no.
+    """
+    try:
+        done = subprocess.run([str(binary), "site-bench", "--seed", "1",
+                               "--turns", "1"],
+                              capture_output=True, text=True, check=False,
+                              timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and "\ncheckpoint " in done.stdout
+
+
+def site_advisory(baseline: Path, candidate: Path,
+                  floor: float = NOISE_FLOOR_PCT) -> list[str]:
+    """The same pairing on the site's world, as lines to print. Never raises:
+    an advisory reading that can fail the job is a second gate."""
+    if not (knows_site_bench(baseline) and knows_site_bench(candidate)):
+        return ["site workload (advisory): not read — one of these binaries "
+                "predates `civvis site-bench`"]
+    opts = dict(DEFAULTS, workload="site", turns=SITE_ADVISORY["turns"])
+    first = SITE_ADVISORY["seeds"]
+    seeds = list(range(first, first + SITE_ADVISORY["games"]))
+    try:
+        result = compare(baseline, candidate, seeds, opts, 1)
+    except SystemExit as failed:
+        return [f"site workload (advisory): not read — {failed}"]
+    return [f"site workload (advisory; the world civvis.ai plays, seeds "
+            f"{seeds[0]}..{seeds[-1]}, {opts['turns']}t, a state document "
+            f"every frame):",
+            f"  baseline  {result['per_turn']['baseline']:.6f} s/turn, "
+            f"candidate {result['per_turn']['candidate']:.6f} s/turn",
+            f"  {verdict(result, floor)}",
+            f"  {dispersion(result, None)}"]
+
+
 def report_digest(text: str) -> str:
     """The game report with its timing line removed, hashed.
 
@@ -283,7 +370,8 @@ def civvis_processes() -> int:
     out = subprocess.run(["ps", "-Ao", "args="], capture_output=True,
                          text=True, check=False).stdout
     return sum(1 for line in out.splitlines()
-               if re.search(r"civvis\s+(simulate|soak|tournament)|ai_eval", line))
+               if re.search(r"civvis\s+(simulate|soak|tournament|site-bench)|ai_eval",
+                            line))
 
 
 def load_average() -> float:
@@ -303,14 +391,8 @@ def run_once(binary: Path, seed: int, opts: dict) -> tuple[float, str, int]:
     scheduling experiment.
     """
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
-    done = subprocess.run(
-        [str(binary), "simulate",
-         "--seed", str(seed), "--jobs", "1",
-         "--players", str(opts["players"]), "--turns", str(opts["turns"]),
-         "--width", str(opts["width"]), "--height", str(opts["height"]),
-         "--city-states", str(opts["city_states"]), "--speed", opts["speed"],
-         "--map", opts["map"], "--shape", opts["shape"]],
-        capture_output=True, text=True, check=False)
+    done = subprocess.run(game_command(binary, seed, opts),
+                          capture_output=True, text=True, check=False)
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     if done.returncode != 0:
         raise SystemExit(f"{binary} exited {done.returncode} on seed {seed}:\n"
@@ -730,6 +812,11 @@ def build_parser() -> argparse.ArgumentParser:
     for name, value in DEFAULTS.items():
         parser.add_argument(f"--{name.replace('_', '-')}",
                             type=type(value), default=value)
+    parser.add_argument("--workload", choices=WORKLOADS, default="screen",
+                        help="'site' plays the stock opening world the way "
+                             "civvis.ai does (`civvis site-bench`): only "
+                             "--turns is read from the shape, and the ledger "
+                             "is not written")
     return parser
 
 
@@ -763,6 +850,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     opts = {name: getattr(args, name) for name in DEFAULTS}
     shape = ledger_shape(args.seeds, args.games, args.interleaves, opts)
+    # After the ledger's shape is taken, so a screen reading's row is the row
+    # it always was.
+    opts["workload"] = args.workload
+    if args.workload == "site" and (args.record_ledger
+                                    or args.ledger_cpu is not None
+                                    or args.ledger_turns is not None):
+        raise SystemExit("the ledger holds the screen's shape; a --workload "
+                         "site reading is printed, not recorded")
 
     if args.ledger_cpu is not None or args.ledger_turns is not None:
         return transcribe(args, shape)
@@ -788,11 +883,15 @@ def main(argv: list[str] | None = None) -> int:
     result = compare(args.baseline, args.candidate, seeds, opts, args.interleaves)
 
     busy_after = civvis_processes()
+    world = (f"the site's stock opening world, {opts['turns']}t, a state "
+             f"document every frame"
+             if args.workload == "site" else
+             f"{opts['players']}p {opts['width']}x{opts['height']} "
+             f"{opts['city_states']}CS {opts['turns']}t {opts['speed']} "
+             f"{opts['map']}, --jobs 1")
     print(f"seeds {seeds[0]}..{seeds[-1]} ({len(seeds)} games x "
           f"{result['interleaves']} interleave(s) = {len(result['deltas'])} "
-          f"pairs), {opts['players']}p {opts['width']}x{opts['height']} "
-          f"{opts['city_states']}CS {opts['turns']}t {opts['speed']} "
-          f"{opts['map']}, --jobs 1")
+          f"pairs), {world}")
     print(f"  load average {result['load']['start']:.2f} at start, "
           f"{result['load']['peak']:.2f} peak, {result['load']['end']:.2f} at end"
           + (f"; {busy_before}/{busy_after} other CIVVIS process(es) before/after"
@@ -804,6 +903,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {verdict(result, args.noise_floor)}")
     print(f"  {dispersion(result, args.budget)}")
     print(f"  {secondary(result)}")
+    # Only where a verdict is being handed down: that is the run whose log a
+    # reviewer reads, and a by-hand reading asks for the site by name.
+    if args.budget is not None and args.workload == "screen":
+        for line in site_advisory(args.baseline, args.candidate, args.noise_floor):
+            print(f"  {line}")
 
     if args.ledger_machine:
         ledger = load_ledger(args.ledger)

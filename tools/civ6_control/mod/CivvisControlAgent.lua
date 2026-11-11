@@ -7716,6 +7716,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			wonder_count = -1,
 			suzerain_count = suzerainCounts ~= nil and (suzerainCounts[subjectId] or 0) or -1,
 			nuclear_devices = -1, thermonuclear_devices = -1,
+			unit_count = -1, military_unit_count = -1,
 		};
 		local totals = try(function()
 			local subjectsCities = subject:GetCities();
@@ -7764,6 +7765,34 @@ local function exportState(player, pid, turn, frame, eventKind)
 		end, nil);
 		if type(nuclear) == "number" then stats.nuclear_devices = nuclear; end
 		if type(thermonuclear) == "number" then stats.thermonuclear_devices = thermonuclear; end
+		-- Every unit on the subject's roster, and how many of them are an
+		-- army: the standings' UNIT column. `GetUnits():Members()` walks a
+		-- rival's whole roster whether or not this seat can see the unit
+		-- (which is why `rivals[].units` below has to gate each one on
+		-- visibility), so the count is true through fog while placing nothing
+		-- on the board. A unit is counted before anything is asked of it, and
+		-- its type is read under its own guard, so one that will not answer
+		-- is still a unit and costs only its own classification.
+		local roster = try(function()
+			local tally = { unit_count = 0, military_unit_count = 0 };
+			for _, unit in subject:GetUnits():Members() do
+				tally.unit_count = tally.unit_count + 1;
+				local formation = try(function()
+					local row = GameInfo.Units[unit:GetUnitType()];
+					return row ~= nil and row.FormationClass or nil;
+				end, nil);
+				if formation == "FORMATION_CLASS_LAND_COMBAT"
+						or formation == "FORMATION_CLASS_NAVAL"
+						or formation == "FORMATION_CLASS_AIR" then
+					tally.military_unit_count = tally.military_unit_count + 1;
+				end
+			end
+			return tally;
+		end, nil);
+		if roster ~= nil then
+			stats.unit_count = roster.unit_count;
+			stats.military_unit_count = roster.military_unit_count;
+		end
 		return stats;
 	end
 
