@@ -539,7 +539,7 @@ impl AdvancedAi {
     // ------------------------------------------------------------------
 
     /// Our capital, or `None` before it is founded.
-    fn conquest_capital(g: &Game, pid: usize) -> Option<u32> {
+    pub(super) fn conquest_capital(g: &Game, pid: usize) -> Option<u32> {
         g.player_city_ids(pid)
             .into_iter()
             .find(|cid| g.cities[cid].is_capital)
@@ -570,7 +570,12 @@ impl AdvancedAi {
     /// Not the city's own strength and not a remembered garrison: the
     /// question this ranks is which of two known cities looks lighter from
     /// where we stand, and a defender in the fog is not an observation.
-    fn conquest_visible_garrison(g: &Game, pid: usize, city: u32, visible: &TileBits) -> f64 {
+    pub(super) fn conquest_visible_garrison(
+        g: &Game,
+        pid: usize,
+        city: u32,
+        visible: &TileBits,
+    ) -> f64 {
         let Some(city) = g.cities.get(&city) else {
             return 0.0;
         };
@@ -687,7 +692,7 @@ impl AdvancedAi {
     /// 2026-10-03T052455Z held four of six bodies inside the assembly radius
     /// and a fifth at eight tiles at the turn-40 deadline, with the second
     /// melee body garrisoning thirteen tiles away, and released the opening.
-    fn conquest_force_approaching(g: &Game, opening: &ConquestOpening) -> bool {
+    fn conquest_force_approaching(g: &Game, opening: &ConquestOpening, reserved: usize) -> bool {
         let far = opening
             .force
             .iter()
@@ -697,8 +702,8 @@ impl AdvancedAi {
                 })
             })
             .count();
-        opening.force.len() == CONQUEST_RANGED + CONQUEST_MELEE
-            && Self::conquest_assembled_share(g, opening) >= CONQUEST_APPROACHING_SHARE
+        opening.force.len() == reserved
+            && Self::conquest_assembled_share_of(g, opening, reserved) >= CONQUEST_APPROACHING_SHARE
             && far <= CONQUEST_APPROACHING_STRAGGLERS
     }
 
@@ -885,10 +890,11 @@ impl AdvancedAi {
     }
 
     /// [`Self::conquest_reservation_shortfall`], or under
-    /// `first-capital-before-the-walls` its melee-led force on top of the
-    /// city guards.
+    /// `first-capital-before-the-walls` (and for the stepping stone of
+    /// `city-state-before-the-first-capital`) its melee-led force on top of
+    /// the city guards.
     fn conquest_shortfall(&self, g: &Game, pid: usize, counts: &EmpireCounts) -> (usize, usize) {
-        if self.first_capital_active() {
+        if self.first_capital_active() || self.city_state_stone_stands() {
             self.first_capital_shortfall(g, pid, counts)
         } else {
             Self::conquest_reservation_shortfall(counts)
@@ -1124,7 +1130,18 @@ impl AdvancedAi {
     /// `early-conquest-opening`: what `tech` is worth in `tech_value` for
     /// leading to the strike force's shooter. Zero with the gene off,
     /// outside the reservation window, and once the node is held.
+    ///
+    /// `city-state-before-the-first-capital` credits the breaker's and the
+    /// unique melee line's technologies from turn one at the same weight,
+    /// never on top of the opening's own credit. Exactly the shipped value
+    /// with that gene off.
     pub(crate) fn conquest_research_value(&self, g: &Game, pid: usize, tech: &str) -> f64 {
+        self.conquest_opening_research_value(g, pid, tech)
+            .max(self.city_state_stone_research_value(g, pid, tech))
+    }
+
+    /// The shipped [`Self::conquest_research_value`].
+    fn conquest_opening_research_value(&self, g: &Game, pid: usize, tech: &str) -> f64 {
         // A walled target asks for the Ram's tech as well.
         let masonry = crate::name!("masonry");
         let breach = if self.conquest_breach_target(g).is_some()
@@ -1191,7 +1208,7 @@ impl AdvancedAi {
             .filter(|uid| !guards.contains(uid) && !home.contains(uid))
             .collect();
         army.sort_by_key(|uid| (g.wdist(g.units[uid].pos, rally), *uid));
-        army.truncate(CONQUEST_RANGED + CONQUEST_MELEE);
+        army.truncate(self.conquest_force_size());
         army.into_iter().collect()
     }
 
@@ -1242,7 +1259,20 @@ impl AdvancedAi {
 
     /// The share of the force standing within [`CONQUEST_ASSEMBLY_RADIUS`]
     /// of the rally. Zero for an empty force: nothing is assembled.
+    #[cfg(test)]
     pub(crate) fn conquest_assembled_share(g: &Game, opening: &ConquestOpening) -> f64 {
+        Self::conquest_assembled_share_of(g, opening, CONQUEST_RANGED + CONQUEST_MELEE)
+    }
+
+    /// [`Self::conquest_assembled_share`] of this opening's own reserved
+    /// force (`conquest_force_size`): the shipped six, or the five of
+    /// `city-state-before-the-first-capital`'s stepping stone.
+    pub(super) fn conquest_share(&self, g: &Game, opening: &ConquestOpening) -> f64 {
+        Self::conquest_assembled_share_of(g, opening, self.conquest_force_size())
+    }
+
+    /// [`Self::conquest_assembled_share`] against `reserved` bodies.
+    fn conquest_assembled_share_of(g: &Game, opening: &ConquestOpening, reserved: usize) -> f64 {
         if opening.force.is_empty() {
             return 0.0;
         }
@@ -1258,7 +1288,7 @@ impl AdvancedAi {
         // patience window opened that turn and released the opening on turn 30
         // -- this game's one attempt -- before the reserved four shooters were
         // ever built.
-        let reserved = (CONQUEST_RANGED + CONQUEST_MELEE).max(opening.force.len());
+        let reserved = reserved.max(opening.force.len());
         up as f64 / reserved as f64
     }
 
@@ -1280,7 +1310,12 @@ impl AdvancedAi {
         pid: usize,
         opening: &ConquestOpening,
     ) -> bool {
-        let Some(appraisal) = self.appraise_neighbour(g, pid, opening.target) else {
+        // `city-state-before-the-first-capital`: the stepping stone's
+        // city-state, which `appraise_neighbour` (majors only) never gives.
+        let Some(appraisal) = self
+            .appraise_neighbour(g, pid, opening.target)
+            .or_else(|| self.city_state_stone_appraisal(g, pid, opening.target))
+        else {
             return false;
         };
         if !g
@@ -1506,11 +1541,15 @@ impl AdvancedAi {
     /// the door behind it so the next turn cannot name the same city again,
     /// re-open the reservation, and hold the Settler until the deadline.
     /// One released earlier leaves the door open for another target.
-    fn conquest_release(&mut self, g: &Game, why: &str) {
+    ///
+    /// `city-state-before-the-first-capital`: the stepping stone never closes
+    /// the door; the game's one attempt on a rival capital is still to come.
+    pub(super) fn conquest_release(&mut self, g: &Game, why: &str) {
         let Some(opening) = self.conquest_opening.take() else {
             return;
         };
-        if opening.assembled.is_some() || opening.declared.is_some() {
+        let stone = self.city_state_stone.take().is_some();
+        if !stone && (opening.assembled.is_some() || opening.declared.is_some()) {
             self.conquest_closed = true;
         }
         think!(self.journal(), Military, Strategy,
@@ -1559,6 +1598,7 @@ impl AdvancedAi {
         if !self.early_conquest_opening {
             self.conquest_opening = None;
             self.conquest_closed = false;
+            self.city_state_stone = None;
             return;
         }
         if self.conquest_first_turn.is_none() {
@@ -1567,6 +1607,10 @@ impl AdvancedAi {
         // `first-capital-strikes-the-open-window`: see that module.
         self.first_capital_read_the_softness(g);
         self.conquest_count_losses(g);
+        // `city-state-before-the-first-capital`: re-read the stepping stone
+        // from its tile and close it on a capture, a refused war or a
+        // suzerain, before the checks below read its seat. No-op without one.
+        self.city_state_stone_maintain(g, pid);
         if g.player_city_ids(pid).len() >= self.conquest_first_settler_cities() {
             if let Some(opening) = self.conquest_opening.as_mut() {
                 if opening.preparing_since.is_none() {
@@ -1576,12 +1620,13 @@ impl AdvancedAi {
         }
         self.conquest_revalidate_rally(g, pid);
         let preparation = self.conquest_preparation(g);
+        let reserved = self.conquest_force_size();
         if let Some(opening) = self.conquest_opening.as_mut() {
             let base = Self::conquest_commit_base(g, opening, preparation);
             if opening.grace_until.is_none()
                 && opening.assembled.is_none()
                 && g.turn >= base
-                && Self::conquest_force_approaching(g, opening)
+                && Self::conquest_force_approaching(g, opening, reserved)
             {
                 opening.grace_until = Some(
                     base.saturating_add(g.standard_duration(CONQUEST_APPROACHING_GRACE_TURNS)),
@@ -1613,9 +1658,10 @@ impl AdvancedAi {
             // and the army's fire, and by turn 51 "the whole strike force is
             // gone". An unassembled force is released to the ordinary war,
             // which defends first and sieges on its own bill.
-            let assembled = self.conquest_opening.as_ref().is_some_and(|opening| {
-                Self::conquest_assembled_share(g, opening) >= CONQUEST_ASSEMBLY_SHARE
-            });
+            let assembled = self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| self.conquest_share(g, opening) >= CONQUEST_ASSEMBLY_SHARE);
             if assembled {
                 self.conquest_adopt_war(g, pid);
             } else {
@@ -1723,6 +1769,11 @@ impl AdvancedAi {
         }
         if self.conquest_opening.is_none() {
             self.conquest_open(g, pid);
+        }
+        // `city-state-before-the-first-capital`: a city-state when no rival
+        // capital was named. No-op with the gene off.
+        if self.conquest_opening.is_none() {
+            self.city_state_stone_open(g, pid);
         }
         self.conquest_refresh_force(g, pid);
         if self.conquest_owns_the_campaign() {
@@ -2051,6 +2102,8 @@ impl AdvancedAi {
                     prepares for {} turns",
                    g.city_max_wall_hp(&g.cities[&city]), FIRST_CAPITAL_WALL_CEILING,
                    self.conquest_naming_deadline(g), self.conquest_preparation(g));
+            // `first-capital-walks-the-one-landmass`: see that module.
+            self.first_capital_note_the_landmass_walk(g, pid, target, city);
         }
         self.conquest_opening = Some(ConquestOpening {
             target,
@@ -2081,12 +2134,13 @@ impl AdvancedAi {
         }
         let rally = opening.rally;
         let force = self.conquest_force(g, pid, rally);
+        let reserved = self.conquest_force_size();
         let Some(opening) = self.conquest_opening.as_mut() else {
             return;
         };
         opening.force = force;
         if opening.assembled.is_none()
-            && Self::conquest_assembled_share(g, opening) >= CONQUEST_ASSEMBLY_SHARE
+            && Self::conquest_assembled_share_of(g, opening, reserved) >= CONQUEST_ASSEMBLY_SHARE
             && !opening.force.is_empty()
         {
             opening.assembled = Some(g.turn);
@@ -2135,7 +2189,7 @@ impl AdvancedAi {
         if opening.assembled.is_none() && go.is_none() {
             return false;
         }
-        let share = Self::conquest_assembled_share(g, &opening);
+        let share = self.conquest_share(g, &opening);
         if share < CONQUEST_ASSEMBLY_SHARE && go.is_none() {
             return false;
         }
@@ -2144,6 +2198,15 @@ impl AdvancedAi {
                    "Holding the conquest force at the rally";
                    "{:.0}% of the force is up, but the city's bill is not covered yet",
                    share * 100.0);
+            return false;
+        }
+        // `city-state-before-the-first-capital`: the stepping stone's bill
+        // is covered; its own holds come after. No-op with the gene off.
+        self.city_state_stone_bill_covered(g, pid, share);
+        if let Some(why) = self.city_state_stone_holds(g, pid, &opening) {
+            think!(self.journal(), Military, Detail,
+                   "Holding the conquest force at the rally";
+                   "city-state before the first capital: the bill is covered; {why}");
             return false;
         }
         if !self.campaign_target_legal(g, pid, opening.target) {
@@ -2165,8 +2228,12 @@ impl AdvancedAi {
         // `first-capital-before-the-walls`, whose question is the local bill:
         // a Deity neighbour out-produces us about four to one at t50.
         let objective = g.cities.get(&opening.city).map(|city| city.pos);
-        let first_capital = self.first_capital_active();
+        // Nor for `city-state-before-the-first-capital`'s stepping stone: a
+        // city-state has no handicap economy to match.
+        let stone = self.city_state_stone_stands();
+        let first_capital = self.first_capital_active() && !stone;
         if !first_capital
+            && !stone
             && !self.declaration_has_production_parity(g, pid, opening.target, objective)
         {
             return false;
@@ -2198,6 +2265,9 @@ impl AdvancedAi {
         }
         if let Some(go) = go.as_ref() {
             self.first_capital_journal_the_go(g, pid, &opening, go);
+        }
+        if stone {
+            self.city_state_stone_declared(g, pid);
         }
         self.conquest_pin_the_campaign(g);
         true
@@ -2301,6 +2371,11 @@ impl AdvancedAi {
     /// The peace desk this gene shares with the shipped campaign: one offer
     /// per rival, never repeated while one is pending.
     fn conquest_sue_for_peace(&mut self, g: &mut Game, pid: usize, target: usize) {
+        // `city-state-before-the-first-capital`: a city-state war ends with a
+        // direct peace, not a deal. `false` with the gene off.
+        if self.city_state_stone_sues_for_peace(g, pid, target) {
+            return;
+        }
         if !g.is_at_war(pid, target) || self.peace_offers.contains(&target) {
             return;
         }

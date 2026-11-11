@@ -2990,6 +2990,9 @@ impl AdvancedAi {
                 .players
                 .iter()
                 .filter(|minor| g.can_send_envoy(pid, minor.id))
+                // `city-state-before-the-first-capital`: no envoy to the city
+                // the opening is taking. `false` with the gene off.
+                .filter(|minor| !self.city_state_stone_spares_envoys(minor.id))
                 .map(|minor| {
                     let mine = g.envoys_at(pid, minor.id);
                     let rival = g

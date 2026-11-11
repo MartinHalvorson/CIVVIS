@@ -6891,6 +6891,19 @@ pub struct AdvancedAi {
     /// cities that finish one soonest. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot: bool,
+    /// `city-state-before-the-first-capital`: a Domination seat's early
+    /// conquest opening takes one nearby, unsuzerained city-state behind at
+    /// most Ancient Walls before, and without spending, the opening on a
+    /// rival capital. See `advanced/city_state_before_the_first_capital.rs`.
+    /// Opt-in.
+    city_state_before_the_first_capital: bool,
+    /// The stepping stone the opening stands on, by tile and civilization.
+    /// Written only while `city_state_before_the_first_capital` plays.
+    city_state_stone: Option<city_state_before_the_first_capital::CityStateStone>,
+    /// Whether this game has named its one stepping stone.
+    city_state_stone_named: bool,
+    /// The turn the last "none named" note was journalled.
+    city_state_stone_noted: Option<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7661,6 +7674,12 @@ pub struct AdvancedAi {
     /// `first-capital-strikes-the-open-window`: whether the named capital
     /// read soft at the start of this turn. Always `false` with the gene off.
     first_capital_soft_now: bool,
+    /// `first-capital-walks-the-one-landmass`: on a map with one landmass,
+    /// `first-capital-before-the-walls` counts uncharted ground as land in
+    /// its walk to the target capital, and the nearest free scout charts the
+    /// fog on that walk. See `advanced/first_capital_walks_the_one_landmass.rs`.
+    /// Off by default.
+    first_capital_walks_the_one_landmass: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11270,6 +11289,9 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
+/// `city-state-before-the-first-capital`: see
+/// `advanced/city_state_before_the_first_capital.rs`.
+mod city_state_before_the_first_capital;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
@@ -11732,6 +11754,10 @@ mod first_capital_before_the_walls;
 /// its window and strikes through it. One opt-in gene; see
 /// `advanced/first_capital_strikes_the_open_window.rs`.
 mod first_capital_strikes_the_open_window;
+/// `first-capital-walks-the-one-landmass`: uncharted ground is land on a map
+/// with one landmass, for the first capital's walk. One opt-in gene; see
+/// `advanced/first_capital_walks_the_one_landmass.rs`.
+mod first_capital_walks_the_one_landmass;
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
@@ -25533,6 +25559,11 @@ impl AdvancedAi {
                     -100_000.0
                 };
             }
+            // `city-state-before-the-first-capital`: the stepping stone is
+            // kept. `false` with the gene off.
+            if matches!(action, Action::KeepCity { .. }) && self.city_state_stone_keeps(city.pos) {
+                value += city_state_before_the_first_capital::STONE_KEEP_VALUE;
+            }
             let nearest_core = before
                 .cities
                 .values()
@@ -26026,11 +26057,14 @@ impl AdvancedAi {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
+            // `city-state-before-the-first-capital`: no-op with the gene off.
+            self.apply_city_state_stone_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
             self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
+            self.apply_city_state_stone_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }

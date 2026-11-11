@@ -152,7 +152,11 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) -> u64 {
     for _ in 0..STEP_CAP {
         let turn_before = session.game.turn;
         let finished_before = session.game.is_finished();
-        let (pid, _) = session.step();
+        // `step` collects the seat's actions for a caller that explains
+        // them; a frame is answered with the state document and nothing
+        // reads the copy, so the turn is advanced the way the unattended
+        // pacer advances it.
+        let pid = session.step_quietly();
         // The socket stepper's own accounting: a seat owes its share of the
         // whole-turn budget, only the living divide it, and a simultaneous
         // step is the whole round so it spends the whole budget at once.
