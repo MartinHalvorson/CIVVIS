@@ -638,12 +638,64 @@ pub struct PlanReport {
     pub war: Option<WarPlanReport>,
 }
 
+/// Work one seat may skip because the answer it would get is close to settled.
+///
+/// Every field changes what a seat decides, a little, to save time. That is
+/// what separates these from the caches in `Game`: a cache is checked by
+/// comparing saves, and a shortcut cannot be, so each one is tried the only
+/// way that says anything — seats that take it against seats that do not, on
+/// the same maps with the chairs swapped (`tools/site_pair.py`), against a bar
+/// written down before a game is played. All of them are off unless a driver
+/// turns one on for a seat. `docs/SIMULATOR_PERFORMANCE.md` records what each
+/// was measured to cost and to save.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SiteShortcuts {
+    /// `BasicAi::envelope_cache_across_own_moves`: an enemy's reach is read
+    /// against where this seat's units stood when its pass began.
+    pub envelopes_across_own_moves: bool,
+    /// The lane table is read once per phase of a seat's turn instead of
+    /// after every change to the board (`AdvancedAi::lane_progress_table`).
+    pub race_read_once_a_turn: bool,
+}
+
+impl SiteShortcuts {
+    /// The names `civvis site-bench --shortcuts` and `tools/site_pair.py`
+    /// take, in the order of the fields.
+    pub const NAMES: [&'static str; 2] = ["envelopes-across-own-moves", "race-read-once-a-turn"];
+
+    /// Parse a comma-separated list of [`Self::NAMES`].
+    pub fn named(list: &str) -> Result<SiteShortcuts, String> {
+        let mut shortcuts = SiteShortcuts::default();
+        for name in list
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            match name {
+                "envelopes-across-own-moves" => shortcuts.envelopes_across_own_moves = true,
+                "race-read-once-a-turn" => shortcuts.race_read_once_a_turn = true,
+                other => {
+                    return Err(format!(
+                        "unknown shortcut `{other}`; the shortcuts are {}",
+                        Self::NAMES.join(", ")
+                    ))
+                }
+            }
+        }
+        Ok(shortcuts)
+    }
+}
+
 pub trait Ai {
     /// Whether this controller needs last-seen world memory for deliberation.
     fn uses_player_observation(&self) -> bool {
         false
     }
     fn take_turn(&mut self, g: &mut Game, pid: usize);
+
+    /// Turn [`SiteShortcuts`] on or off for this seat. An agent with nothing
+    /// to skip ignores it, which is what the default does.
+    fn set_site_shortcuts(&mut self, _shortcuts: SiteShortcuts) {}
 
     fn strategy_label(&self) -> Option<&'static str> {
         None
@@ -2461,6 +2513,9 @@ pub struct BasicAi {
     /// route (see docs/SIMULATOR_PERFORMANCE.md, 2026-08-19) can be measured
     /// against it.
     envelope_cache_across_own_moves: bool,
+    /// `SiteShortcuts::race_read_once_a_turn`, read by
+    /// `AdvancedAi::lane_progress_table`.
+    pub(crate) race_read_once_a_turn: bool,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
@@ -3981,6 +4036,7 @@ impl BasicAi {
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
+            race_read_once_a_turn: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4434,6 +4490,7 @@ impl BasicAi {
             covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             safe_healing_targets_cache: FreshOnClone::default(),
             envelope_cache_across_own_moves: false,
+            race_read_once_a_turn: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
@@ -4553,6 +4610,11 @@ impl Ai for BasicAi {
 
     fn attach_journal(&mut self, journal: Journal) {
         self.journal = journal;
+    }
+
+    fn set_site_shortcuts(&mut self, shortcuts: SiteShortcuts) {
+        self.envelope_cache_across_own_moves = shortcuts.envelopes_across_own_moves;
+        self.race_read_once_a_turn = shortcuts.race_read_once_a_turn;
     }
 }
 

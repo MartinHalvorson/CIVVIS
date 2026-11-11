@@ -950,7 +950,7 @@ class TheSiteWorkloadPlaysTheSitesWorld(unittest.TestCase):
         body = source[source.index("fn site_bench_command"):]
         body = body[:body.index("\n}\n")]
         formats = [re.sub(r"\\\n\s*", "", literal) for literal in
-                   re.findall(r'println!\(\s*"((?:[^"\\]|\\[\s\S])*)"', body)]
+                   re.findall(r'(?<![a-z])println!\(\s*"((?:[^"\\]|\\[\s\S])*)"', body)]
         self.assertGreaterEqual(len(formats), 4, formats)
         timed = [text for text in formats if "s" in text and "{:.3}" in text]
         self.assertGreaterEqual(len(timed), 3, formats)

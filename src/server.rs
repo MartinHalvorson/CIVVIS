@@ -2802,6 +2802,15 @@ impl Session {
         o
     }
 
+    /// Turn [`crate::ai::SiteShortcuts`] on or off for one seat's agent. No
+    /// session does this by itself: `site-bench --shortcuts` and the paired
+    /// strength test are the callers.
+    pub fn set_seat_shortcuts(&mut self, seat: usize, shortcuts: crate::ai::SiteShortcuts) {
+        if let Some(agent) = self.ais.get_mut(seat) {
+            agent.set_site_shortcuts(shortcuts);
+        }
+    }
+
     /// Spectator mode: play out exactly one player's turn with its AI.
     /// Returns the pid and successful actions so the observer UI can explain
     /// the AI's decisions instead of showing only their eventual outcomes.
