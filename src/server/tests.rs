@@ -13918,13 +13918,51 @@ fn a_city_opens_on_the_map_rather_than_over_it() {
     // for the next tile.
     assert!(EMBEDDED_APP_JS.contains("function beginPlotPick(cityId) {"));
     assert!(EMBEDDED_APP_JS.contains("onclick=\"beginPlotPick(${city.id})\">"));
+    assert!(EMBEDDED_APP_JS.contains(
+        "priceSitePick(site, cell.center.x, cell.center.y - planetCellInradius(cell) * .52,"
+    ));
     assert!(EMBEDDED_APP_JS
-        .contains("priceSitePick(site, cell.center.x, cell.center.y, cell.inradius * .58);"));
-    assert!(
-        EMBEDDED_APP_JS.contains("priceSitePick(site, x, y - (tile ? elev(tile) : 0), S * .5);")
-    );
+        .contains("priceSitePick(site, x, y - (tile ? elev(tile) : 0) - S * .45, S * .43);"));
     assert!(EMBEDDED_APP_JS
         .contains("if (sitePick && sitePick.plots && !beginPlotPick(cityId)) cancelSitePick();"));
+}
+
+/// Civilization VI shows a city's yields while that city is selected, whether
+/// or not the yield icons are on for the whole map.
+#[test]
+fn a_selected_city_shows_what_its_land_yields() {
+    // Its own land while its panels are up, and the priced plots as well
+    // while land is being bought; never over a watched world.
+    let tiles = EMBEDDED_APP_JS
+        .split_once("function cityYieldTiles() {")
+        .expect("the city's yield tiles")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the city's yield tiles")
+        .0;
+    assert!(tiles.contains("if (!state || !cityYieldsShowing()) return null;"));
+    assert!(tiles.contains("const tiles = new Set((city.owned_tiles || []).map(key));"));
+    assert!(
+        tiles.contains("if (buying) for (const site of sitePick.sites.keys()) tiles.add(site);")
+    );
+    assert!(EMBEDDED_APP_JS
+        .contains("return !SPEC && Boolean((sitePick && sitePick.plots) || cityScreenOpen());"));
+    // Both maps read it, and the yield icons being on still shows everything.
+    assert_eq!(
+        EMBEDDED_APP_JS
+            .matches("const cityTiles = SHOW_YIELDS ? null : cityYieldTiles();\n  if (!SHOW_YIELDS && !cityTiles) return;")
+            .count(),
+        2
+    );
+    // Over the GPU globe the Canvas above only walks every cell when some
+    // overlay asks it to. Without this the city's own tiles were never
+    // offered to the overlay, and nothing drew.
+    assert!(
+        EMBEDDED_APP_JS.contains("SHOW_YIELDS || cityYieldsShowing() || state.arena_flags?.length")
+    );
+    // A globe cell found by key carries no `inradius` of its own; the price
+    // was sized by one and drew at whatever size the last painter left.
+    assert!(!EMBEDDED_APP_JS.contains("cell.inradius * .58"));
 }
 
 /// A watched simulation wears the laboratory, not Civilization VI's
