@@ -27,6 +27,12 @@ SEARCH_STRING = ("_RINvMs3_NtNtNtNtCsX_5alloc11collections5btree4node"
                  "dNtB1i_14LeafOrInternalE11search_treeeECsY_6civvis")
 MALLOC = "_RNvMs0_NtCsQ_8dlmalloc8dlmallocINtB5_8DlmallocNtNtB7_3sys6SystemE6malloc"
 PLAIN = "_RNvMNtNtCsY_6civvis4game10visibilityNtB4_4Game16tile_has_line_to"
+# Exact counterexample from the optimized public-toolchain module: BTreeMap
+# is the rules entry type here, not the machinery doing this lookup.
+SPEC_WITH_MAP_VALUE = (
+    "_RNvMs_NtCsgd7u1lQsIfn_6civvis7specmapINtB4_7SpecMapINtNtNtNt"
+    "Cs5JHfeWeQK0x_5alloc11collections5btree3map8BTreeMapNtNtBW_6string"
+    "6StringNtNtB6_5rules15GoodyRewardSpecEE8positionB6_")
 
 
 def a_profile(spent: dict) -> dict:
@@ -62,6 +68,18 @@ class ASymbolIsReadByItsLengths(unittest.TestCase):
 
 
 class TheOrderedMapsAreNamedByWhatTheyHold(unittest.TestCase):
+    def test_a_rules_lookup_does_not_execute_its_ordered_map_value(self):
+        self.assertFalse(reader.is_ordered_map(SPEC_WITH_MAP_VALUE))
+        self.assertEqual(reader.ordered_maps({SPEC_WITH_MAP_VALUE: 400}), {})
+
+    def test_readable_rules_lookup_names_follow_the_same_rule(self):
+        self.assertFalse(reader.is_ordered_map(
+            "civvis::specmap::SpecMap<BTreeMap<String, GoodyRewardSpec>>::position"))
+
+    def test_a_real_tree_with_a_rules_table_value_still_counts(self):
+        self.assertTrue(reader.is_ordered_map(
+            "alloc::collections::btree::map::BTreeMap<civvis::specmap::SpecMap<i32>>::get"))
+
     def test_a_search_and_a_walk_are_told_apart(self):
         self.assertEqual(reader.held_and_asked(SEARCH_NAME).split(), ["search", "Name"])
         self.assertEqual(reader.held_and_asked(ITERATE_UNIT).split(), ["iterate", "Unit"])
@@ -94,6 +112,15 @@ class TheReportAddsUpWhatATableHides(unittest.TestCase):
         self.assertIn("  30.00%  search   Name", text)
         self.assertIn("  20.00%  iterate  Unit", text)
         self.assertIn("tile_has_line_to", text)
+
+    def test_both_tree_totals_exclude_rules_lookup_time_without_losing_samples(self):
+        profile = a_profile({SPEC_WITH_MAP_VALUE: 400, SEARCH_NAME: 100})
+        totals = reader.self_time(profile)
+        text = self.text(profile)
+        self.assertEqual(sum(totals.values()), 500)
+        self.assertIn("  20.00%  ordered maps (BTreeMap, BTreeSet)", text)
+        self.assertIn("  20.00%  search   Name", text)
+        self.assertIn("  80.00%  specmap::SpecMap", text)
 
     def test_a_module_without_names_is_said_to_be_one(self):
         """A published module has no name section, so its profile is a list of
