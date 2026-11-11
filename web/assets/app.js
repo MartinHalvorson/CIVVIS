@@ -30187,6 +30187,7 @@ function drawSoloHud() {
     if (rankingsReportOpen) toggleRankingsReport(false);
     drawCivTop();
     drawWorldTracker();
+    drawLeaderRibbon();
     return;
   }
   settleSoloRankings();
@@ -30194,6 +30195,69 @@ function drawSoloHud() {
   settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
+  drawLeaderRibbon();
+}
+
+// ------------------------------------------------------ the diplomacy ribbon
+//
+// Civilization VI keeps every leader you have met along the top of the map
+// (DiplomacyRibbon.xml, `Anchor="R,T"`): who is out there, how each stands
+// with you, and one press from talking to them. There is no portrait art
+// here, so a leader is their civilization's monogram in the two colours its
+// borders and units wear on the map, which is how a player tells them apart
+// anyway. The mark in the corner is the stance, said in full by the tooltip.
+function ribbonStance(player) {
+  const relationship = player.their_relationship || player.relationship || "neutral";
+  if (player.at_war_with_me) return {tone: "war", word: "At war", mark: "⚔"};
+  if (player.teammate) return {tone: "friend", word: "Teammate", mark: "★"};
+  if (player.allied)
+    return {tone: "friend", word: `${titleCase(player.alliance || "")} ally`.trim(), mark: "★"};
+  if (player.friend || relationship === "declared_friend")
+    return {tone: "friend", word: "Friend", mark: "♥"};
+  if (relationship === "denounced") return {tone: "war", word: "Denounced", mark: "!"};
+  if (relationship === "friendly") return {tone: "", word: "Friendly", mark: ""};
+  if (relationship === "unfriendly") return {tone: "", word: "Unfriendly", mark: ""};
+  return {tone: "", mark: "", word: opinionWord(
+    Math.round(player.relationship_opinion_of_me ?? player.opinion_of_me ?? 0))};
+}
+let leaderRibbonHtml = null;
+function drawLeaderRibbon() {
+  const ribbon = document.getElementById("leaderribbon");
+  let html = "";
+  if (state && playingSolo()) {
+    const leaders = state.players.filter(player => player.alive && !player.is_minor &&
+      !player.is_barbarian && !player.is_free_city && (player.id === 0 || player.met));
+    // Before anyone is met there is nobody to show, and a ribbon of one is
+    // only the player looking at themselves.
+    if (leaders.length > 1) html = leaders.map(player => {
+      const mine = player.id === 0;
+      const stance = mine ? {tone: "", mark: "", word: "you"} : ribbonStance(player);
+      const title = `${player.leader || player.civ} of ${player.civ} — ${stance.word}` +
+        (mine ? "" : " · open diplomacy");
+      return `<button type="button" class="ribbon-leader${mine ? " mine" : ""}` +
+        `${stance.tone ? ` ${stance.tone}` : ""}" ` +
+        `style="--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}" ` +
+        `title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}" ` +
+        `onclick="openDiplomacyWith(${player.id})">` +
+        `<span class="ribbon-crest">${escapeAttr(fdMonogram(player.civ))}</span>` +
+        (stance.mark ? `<span class="ribbon-mark">${stance.mark}</span>` : "") + `</button>`;
+    }).join("");
+  }
+  // The HUD is redrawn on every observation; the ribbon changes a few times
+  // a game, and rebuilding it under a pointer would drop the hover each time.
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
+  ribbon.innerHTML = html;
+  ribbon.hidden = !html;
+}
+// The ribbon opens the same diplomacy screen the hook does, on the leader
+// that was pressed.
+function openDiplomacyWith(seat) {
+  openDiplomacy();
+  const card = document.querySelector(`#diplomacy-body [data-seat="${seat}"]`);
+  if (!card) return;
+  card.scrollIntoView({block: "nearest"});
+  card.classList.add("called");
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -30955,7 +31019,8 @@ function drawDiplomacy() {
             (player.my_open_borders_to_them ? " · open to them" : "")) +
           meter("Cities", player.cities) +
           meter("Military", Math.round(player.military));
-      return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}">` +
+      return `<div class="leader ${atWar ? "at-war" : ""} ${player.allied ? "allied" : ""}" ` +
+        `data-seat="${player.id}">` +
         `<div class="leader-head">${player.is_minor ? "" : fdCrest(player.civ, "fd-crest-small")}` +
         `<span class="leader-name">${player.leader || player.civ}</span>` +
         `<span class="leader-civ">${player.is_minor

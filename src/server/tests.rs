@@ -15790,6 +15790,41 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
     assert!(EMBEDDED_INDEX.contains(".fd-crest-small {"));
 }
 
+/// Civilization VI keeps the leaders a player has met along the top of the
+/// map (`DiplomacyRibbon.xml`). The played frame had hooks to the diplomacy
+/// screen and nobody's face on the map: who was out there, and how they
+/// stood, was a screen away.
+#[test]
+fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
+    assert!(EMBEDDED_INDEX
+        .contains("<div id=\"leaderribbon\" aria-label=\"Leaders you have met\" hidden></div>"));
+    // It belongs to the played frame: a watched world never shows it. The
+    // watcher's own ribbon of #2382 stays gone, name and all
+    // (`a_watched_simulation_keeps_the_laboratory`).
+    assert!(EMBEDDED_INDEX
+        .contains("  #leaderribbon { display: none; }\n  body.civ6-frame #leaderribbon {"));
+    let ribbon = EMBEDDED_APP_JS
+        .split_once("function drawLeaderRibbon() {")
+        .expect("the ribbon")
+        .1
+        .split_once("\n}\n")
+        .expect("end of the ribbon")
+        .0;
+    assert!(ribbon.contains("if (state && playingSolo()) {"));
+    // Only leaders who are alive and met, and never a ribbon of one.
+    assert!(ribbon.contains("(player.id === 0 || player.met)"));
+    assert!(ribbon.contains("if (leaders.length > 1)"));
+    // Each wears the colours their borders do, and opens diplomacy on them.
+    assert!(ribbon.contains("--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}"));
+    assert!(ribbon.contains("onclick=\"openDiplomacyWith(${player.id})\""));
+    assert!(ribbon.contains("if (html === leaderRibbonHtml) return;"));
+    assert!(EMBEDDED_APP_JS.contains("`data-seat=\"${player.id}\">` +"));
+    assert_eq!(
+        EMBEDDED_APP_JS.matches("  drawLeaderRibbon();\n").count(),
+        2
+    );
+}
+
 #[test]
 fn continue_goes_back_to_the_game_on_the_table() {
     // From a game, the main menu's Continue used to load a save, which at best
