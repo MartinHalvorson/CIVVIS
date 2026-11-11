@@ -13049,10 +13049,13 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	-- A strategic quote can legitimately have no payment: let the engine
 	-- evaluate that proposal once. Only its later ACCEPTED/ADJUSTED verdict
 	-- may reach the unchanged item, budget and working-deal checks below.
+	-- Cash quotes only. Native 131031Z and two continuations re-proposed a
+	-- declined Aluminum/Ivory/Coal barter, received EQUALIZE_FAILED, then
+	-- stalled with a NONE statement pending. Keep barter's original lifecycle.
 	local activeSession = trade.sessions[fromPlayer];
 	local proposalQuote = buying and type(pending.want) == "string"
 		and ((string.find(pending.want, "^GREATWORK:") ~= nil)
-			or pending.strategic == true);
+			or (pending.strategic == true and pending.gave == nil));
 	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
 		local enginePending = try(function()
@@ -26800,7 +26803,7 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
-		strategic_quote_proposals = cfg.StrategicCashCeilingBid == true and 2 or 1,
+		strategic_quote_proposals = 3,
 		strategic_cash_ceiling_bid = cfg.StrategicCashCeilingBid == true });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
