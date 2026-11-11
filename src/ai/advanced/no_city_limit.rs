@@ -103,6 +103,17 @@
 //!    stands near. A Settler trained beside the front would only shelter in
 //!    its city (`settler-shelters-from-the-war`): in the first paired games
 //!    two front-line cities held sheltering Settlers for 891 unit-turns.
+//!    Recovery is treated as a war like any other. At Deity the plan reads
+//!    Recovery whenever a rival at war with us is a quarter stronger, which
+//!    is most wars: in 69 live games it stopped every Settler in 584 of
+//!    1,823 mid-game checks, most of them with no city threatened.
+//! 5b. **Seats past the young cities.** A city with no seat left inside the
+//!    ordinary radius trains for one within
+//!    [`NO_CITY_LIMIT_FAR_SEAT_RADIUS`]; the site list already prices the
+//!    longer walk. In those live games the cities able to train a Settler
+//!    were the old ones, the free seats lay beside the young ones, and "no
+//!    holdable seat" passed a city over 565 times; a Settler was in
+//!    production on 8% of city-turns from turn 61 to 100.
 //!
 //! 6. **The Ancestral Hall.** While seats that pay are free, the Government
 //!    Plaza and the Ancestral Hall are priced as `expansion-hall` and
@@ -182,6 +193,11 @@ pub(crate) const NO_CITY_LIMIT_GARRISON_TILES: i32 = 1;
 /// The site-list radius, the one `settler_site_gate` and
 /// `holdable-land-keeps-settling` read.
 const NO_CITY_LIMIT_SITE_RADIUS: i32 = 11;
+
+/// How far from itself a city with no seat inside the ordinary radius still
+/// trains a Settler for: the empire's capable cities are its old ones, and
+/// the free seats lie past its young ones.
+pub(crate) const NO_CITY_LIMIT_FAR_SEAT_RADIUS: i32 = 18;
 
 /// The most free seats counted: the scan stops there.
 const NO_CITY_LIMIT_SEATS_COUNTED: usize = 24;

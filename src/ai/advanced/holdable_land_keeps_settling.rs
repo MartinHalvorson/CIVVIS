@@ -323,7 +323,22 @@ impl AdvancedAi {
         walkers: usize,
         threats: &HoldableLandThreats,
     ) -> Result<(Pos, f64), String> {
-        let mut sites = self.settle_sites(g, pid, from, HOLDABLE_LAND_SITE_RADIUS);
+        self.holdable_land_seat_within(g, pid, from, walkers, threats, HOLDABLE_LAND_SITE_RADIUS)
+    }
+
+    /// [`Self::holdable_land_seat`] over the city's site list at `radius`.
+    /// `no-city-limit` asks it a second time, farther out, for a city with
+    /// no seat of its own left.
+    pub(super) fn holdable_land_seat_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        walkers: usize,
+        threats: &HoldableLandThreats,
+        radius: i32,
+    ) -> Result<(Pos, f64), String> {
+        let mut sites = self.settle_sites(g, pid, from, radius);
         let found = sites.len();
         sites.retain(|(site, _)| {
             self.exhaustion_site_unpriceable(g, pid, *site).is_none()
@@ -422,8 +437,11 @@ impl AdvancedAi {
         if n_cities == 0 || full {
             return;
         }
-        if plan.strategy == GrandStrategy::Recovery
-            || (plan.threatened_city.is_some() && wide.is_none())
+        // `no-city-limit`: Recovery is a war like any other. The soldier for
+        // every city, the threatened city's neighbourhood and the enemy
+        // soldiers near a city or a seat answer it below.
+        if (plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some())
+            && wide.is_none()
         {
             self.journal_holdable_land_decline(
                 g,
@@ -438,9 +456,10 @@ impl AdvancedAi {
                 && !other.is_barbarian
                 && g.is_at_war(pid, other.id)
         });
-        // `no-city-limit`: a war stops the Settlers only while the army is
-        // short of a soldier for every city.
-        if at_major_war && (wide.is_none() || self.counts(g, pid).military < n_cities) {
+        // `no-city-limit`: a war or a Recovery stops the Settlers only while
+        // the army is short of a soldier for every city.
+        let fighting = at_major_war || plan.strategy == GrandStrategy::Recovery;
+        if fighting && (wide.is_none() || self.counts(g, pid).military < n_cities) {
             self.journal_holdable_land_decline(
                 g,
                 &format!("{n_cities} cities against {target}, but we are at war with a major"),
@@ -536,7 +555,23 @@ impl AdvancedAi {
             }) {
                 continue;
             }
-            match self.holdable_land_seat(g, pid, city.pos, seated, &threats) {
+            let seat = self.holdable_land_seat(g, pid, city.pos, seated, &threats);
+            // `no-city-limit`: a city with no seat of its own left trains for
+            // one farther out; the site list prices the longer walk.
+            let seat = match (seat, wide) {
+                (Err(near), Some(_)) => self
+                    .holdable_land_seat_within(
+                        g,
+                        pid,
+                        city.pos,
+                        seated,
+                        &threats,
+                        super::no_city_limit::NO_CITY_LIMIT_FAR_SEAT_RADIUS,
+                    )
+                    .map_err(|_| near),
+                (seat, _) => seat,
+            };
+            match seat {
                 // `good-land-lifts-the-city-target`: past the shared target
                 // only a good seat is worth a Settler. Zero with it off.
                 Ok((_, worth)) if worth < good_seat_floor => {
