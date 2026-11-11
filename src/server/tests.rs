@@ -273,7 +273,7 @@ fn a_repair_or_a_product_is_an_order_the_page_can_show() {
             pos,
         },
     };
-    let quoted = offered_cost(&session.game, &repair).expect("a repair is quoted");
+    let quoted = super::offered_cost(&session.game, &repair).expect("a repair is quoted");
     assert!(quoted > 0.0);
     let monument = session
         .game
@@ -289,7 +289,7 @@ fn a_repair_or_a_product_is_an_order_the_page_can_show() {
             product: crate::name::Name::new("silk"),
         },
     };
-    assert!(offered_cost(&session.game, &product).is_some_and(|cost| cost > 0.0));
+    assert!(super::offered_cost(&session.game, &product).is_some_and(|cost| cost > 0.0));
     // An order the ruleset lists is left to the page, as before.
     let warrior = Action::Produce {
         city,
@@ -297,7 +297,7 @@ fn a_repair_or_a_product_is_an_order_the_page_can_show() {
             unit: crate::name::Name::new("warrior"),
         },
     };
-    assert!(offered_cost(&session.game, &warrior).is_none());
+    assert!(super::offered_cost(&session.game, &warrior).is_none());
 
     // The page names, files, prices and describes both without the ruleset.
     for taught in [
