@@ -614,8 +614,12 @@ fn a_war_the_host_refused_releases_the_stone() {
     let (mut game, _, _) = fixture();
     let mut ai = seat(true);
     ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    ai.maintain_conquest_opening(&mut game, 0);
     // Live, the model holds the declaration for the frame; the host refused.
     if let Some(opening) = ai.conquest_opening.as_mut() {
+        assert!(!opening.force.is_empty());
         opening.declared = Some(game.turn);
     }
     ai.maintain_conquest_opening(&mut game, 0);
