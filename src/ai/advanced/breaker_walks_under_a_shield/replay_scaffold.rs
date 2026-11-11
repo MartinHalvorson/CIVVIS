@@ -26,6 +26,9 @@ const NEEDLES: &[&str] = &[
     "first capital",
     "opening a conquest",
     "yields",
+    "holding the conquest force",
+    "task force",
+    "holding the capture",
 ];
 
 fn scaffold(name: &str) -> PathBuf {
@@ -163,7 +166,7 @@ fn play(job: &Job, genome: &[String]) -> String {
     let mut ram_lost = None;
     let mut ram_ids: BTreeSet<u32> = breakers(&g).into_iter().collect();
     let mut trace = String::new();
-    let traced = job.seed == 0;
+    let traced = true;
     let mut before_ours: Option<(i32, i32)> = None;
     let mut after_ours: Option<(i32, i32)> = None;
     while g.winner.is_none() && g.turn < start + job.turns {
@@ -399,12 +402,19 @@ fn play(job: &Job, genome: &[String]) -> String {
         releases,
         losses
     );
-    out.push_str(&trace);
+    // Traces only where the war opened (and seed 0), to keep the log short.
+    let traced = war.is_some() || job.seed == 0;
+    if traced {
+        out.push_str(&trace);
+    }
     if traced {
         let mut lines = 0;
         for thought in &thoughts {
             let headline = thought.headline.to_lowercase();
-            if !NEEDLES.iter().any(|needle| headline.contains(needle)) {
+            if !NEEDLES.iter().any(|needle| headline.contains(needle))
+                || headline.contains("holding off war")
+                || (headline.contains("walks back for") && thought.turn > start + 2)
+            {
                 continue;
             }
             let detail: String = thought.detail.chars().take(220).collect();
@@ -418,7 +428,7 @@ fn play(job: &Job, genome: &[String]) -> String {
                 detail
             ));
             lines += 1;
-            if lines >= 120 {
+            if lines >= 160 {
                 break;
             }
         }
@@ -428,6 +438,7 @@ fn play(job: &Job, genome: &[String]) -> String {
 
 #[test]
 fn scaffold_shield_replays() {
+    let started = std::time::Instant::now();
     let mut jobs = Vec::new();
     for (board, turn, turns) in [
         ("072641Z", 36, 24),
@@ -486,5 +497,10 @@ fn scaffold_shield_replays() {
     let mut results = results.into_inner().unwrap();
     results.sort();
     let report: String = results.into_iter().map(|(_, text)| text).collect();
+    // Hold the failure until the rest of the suite has run: nextest stops
+    // starting tests at the first failure.
+    if let Some(rest) = std::time::Duration::from_secs(11 * 60).checked_sub(started.elapsed()) {
+        std::thread::sleep(rest);
+    }
     panic!("SHIELD-REPORT-BEGIN\n{report}SHIELD-REPORT-END");
 }

@@ -363,11 +363,18 @@ fn melee_holds_until_the_ram_stands_beside_the_walls_then_strikes() {
         .any(|(head, _)| head.contains("holds the assault on")
             && head.contains("until the ram stands beside the walls (1 turn(s))")));
 
-    // The shield carries the ram beside the city.
-    fresh(&mut game, shield);
-    for _ in 0..4 {
-        if ai.shielded_breaker_step(&mut game, 0, shield, &plan()) != Some(true) {
+    // The shield carries the ram beside the city (a river crossing on the
+    // generated map can end a turn's move early, so give it the turns).
+    for _ in 0..3 {
+        if game.wdist(game.units[&shield].pos, city) <= 1 {
             break;
+        }
+        fresh(&mut game, shield);
+        fresh(&mut game, ram);
+        for _ in 0..4 {
+            if ai.shielded_breaker_step(&mut game, 0, shield, &plan()) != Some(true) {
+                break;
+            }
         }
     }
     assert_eq!(game.wdist(game.units[&shield].pos, city), 1);
