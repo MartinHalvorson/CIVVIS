@@ -5461,6 +5461,11 @@ pub const GENES: &[Gene] = &[
     // Great Person pass still leaves it. Opt-in; see
     // `advanced/culture_band_bank.rs`.
     Gene { tag: "band-bank-bars-people-under-fire", field: "band_bank_bars_people_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_band_bank_bars_people_under_fire, disable: AdvancedAi::disable_band_bank_bars_people_under_fire },
+    // A Rock Band's two-level promotion wins its first pick only where three
+    // such stages are open: one Entertainment Complex or Water Park is a
+    // concert or two at level 3 and a career at level 1. Opt-in; see
+    // `advanced/band_plays_its_stage.rs`.
+    Gene { tag: "band-stage-needs-three-venues", field: "band_stage_needs_three_venues", kind: Kind::OptIn, enable: AdvancedAi::enable_band_stage_needs_three_venues, disable: AdvancedAi::disable_band_stage_needs_three_venues },
     // A Rock Band trip the host walked nowhere bars its host only on the
     // second turn running: a turn the host moved nobody bars nobody. Opt-in;
     // see `advanced/band_stall_bars_no_host.rs`.
@@ -5641,6 +5646,11 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Pericles Deity 11-10 (234227Z): Field Cannons took Athens (82% of its
+    // last eight turns' damage) while the city struck others 27 times; they
+    // were 59 of 383 gun-turns before t130 and no siege-class gun. See
+    // `advanced/siege_at_the_walls_dies_first.rs`.
+    Gene { tag: "every-shooter-at-the-walls", field: "every_shooter_at_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_every_shooter_at_the_walls, disable: AdvancedAi::disable_every_shooter_at_the_walls },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

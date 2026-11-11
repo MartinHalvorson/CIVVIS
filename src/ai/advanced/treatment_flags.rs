@@ -112,6 +112,9 @@ impl AdvancedAi {
         /// Opt-in gene `band-bank-bars-people-under-fire`; see
         /// `advanced/culture_band_bank.rs`.
         band_bank_bars_people_under_fire => enable_band_bank_bars_people_under_fire, disable_band_bank_bars_people_under_fire;
+        /// Opt-in gene `band-stage-needs-three-venues`; see
+        /// `advanced/band_plays_its_stage.rs`.
+        band_stage_needs_three_venues => enable_band_stage_needs_three_venues, disable_band_stage_needs_three_venues;
         /// Opt-in gene `band-stall-bars-no-host`; see
         /// `advanced/band_stall_bars_no_host.rs`.
         base.band_stall_bars_no_host => enable_band_stall_bars_no_host, disable_band_stall_bars_no_host;
@@ -227,6 +230,9 @@ impl AdvancedAi {
         /// `first-capital-before-the-walls`: see
         /// `advanced/first_capital_before_the_walls.rs`.
         first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// Opt-in gene `every-shooter-at-the-walls`; see
+        /// `advanced/siege_at_the_walls_dies_first.rs`.
+        every_shooter_at_the_walls => enable_every_shooter_at_the_walls, disable_every_shooter_at_the_walls;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
