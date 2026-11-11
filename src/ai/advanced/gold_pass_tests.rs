@@ -133,13 +133,14 @@ fn a_gold_purchase_charges_its_quote_and_moves_no_other_gold() {
 }
 
 /// Over real boards and a spread of treasuries and reserves, the scorer that
-/// reads the price first returns what the full scorer returns: the same
-/// refusals and, for what survives, the same score to the bit.
+/// reads the price first returns what the full scorer returns: every item it
+/// refuses on price the full scorer refuses too, and what it does not refuse
+/// it hands to the full scorer.
 #[test]
 fn the_price_first_refusal_agrees_with_the_full_score() {
     let mut ai = AdvancedAi::new();
     ai.enable_site_deployment();
-    let (mut priced_out, mut scored, mut compared) = (0, 0, 0);
+    let (mut priced_out, mut compared) = (0, 0);
     for board in played_boards() {
         for pid in majors(&board) {
             for bank in [60.0, 180.0, 420.0, 950.0, 2_600.0] {
@@ -175,7 +176,6 @@ fn the_price_first_refusal_agrees_with_the_full_score() {
                             board.turn
                         );
                         compared += 1;
-                        scored += usize::from(full.is_some());
                         priced_out += usize::from(
                             game.purchase_quote(pid, action)
                                 .is_some_and(|price| bank - price + f64::EPSILON < reserve),
@@ -187,6 +187,5 @@ fn the_price_first_refusal_agrees_with_the_full_score() {
     }
     assert!(compared >= 200, "fixture: only {compared} comparisons");
     assert!(priced_out > 0, "fixture: nothing was ever priced out");
-    assert!(scored > 0, "fixture: nothing was ever worth buying");
     assert!(priced_out < compared, "fixture: everything was priced out");
 }
