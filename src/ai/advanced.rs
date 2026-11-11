@@ -5625,6 +5625,10 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-bank-bars-people-under-fire`: a city under fire opens the Rock
+    /// Band bank to the defence only, not to Great People. See
+    /// `advanced/culture_band_bank.rs`. Off by default.
+    band_bank_bars_people_under_fire: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-charts-every-capital`: a Domination seat keeps charting
     /// until every rival's original capital is on its map, and takes
@@ -16833,8 +16837,9 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
-            // See `advanced/culture_band_bank.rs`.
-            + self.culture_band_bank(g, pid)
+            // See `advanced/culture_band_bank.rs` (and
+            // `band-bank-bars-people-under-fire` there).
+            + self.culture_band_bank_for_people(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).

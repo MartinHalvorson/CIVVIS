@@ -37,6 +37,26 @@
 //! Musician (the slot check in `advanced_great_people` still applies), and
 //! none at all while the plan is Recovery. The under-fire release and the
 //! army's own Faith are unchanged. Gold buyouts are unchanged.
+//!
+//! ## `band-bank-bars-people-under-fire`
+//!
+//! **Why (live Deity Pericles 20261110T232642Z, the strongest culture economy
+//! we have had).** The bank stands aside for every pass while a city has
+//! been attacked in the last four turns. At t122 Mycenae was under fire; the
+//! seat held 2,111 Faith with Cold War one turn away, and at t123 the Great
+//! Person pass bought out the Writer race for 1,990 Faith ("worth 35 to the
+//! culture plan": its reserve read 100, not 1,600). Cold War landed at t124
+//! with 62 Faith, so the first band came at t124 and the fourth at t134
+//! instead of four on the unlock turn. 1,990 Faith is the first five Online
+//! bands (300 + 350 + 400 + 450 + 500), and a band bought on the unlock turn
+//! has the longest career; a Writer's two Great Works return a few Tourism a
+//! turn. The release exists so the defence can spend; the Great Person pass
+//! buys no defence.
+//!
+//! **What the gene does.** While a city is under fire, the Great Person pass
+//! still leaves the bank (`culture_band_bank_for_people`). Every other pass
+//! and the army's Faith keep the release; Cold War spends the bank on bands
+//! as before.
 
 use super::*;
 
@@ -56,6 +76,18 @@ impl AdvancedAi {
     /// The Faith the Great Person, worship-building and religious-unit passes
     /// must leave untouched. Zero with the gene off.
     pub(super) fn culture_band_bank(&self, g: &Game, pid: usize) -> f64 {
+        self.culture_band_bank_held(g, pid, false)
+    }
+
+    /// `band-bank-bars-people-under-fire`: the bank the Great Person pass
+    /// leaves untouched. With the gene on, a city under fire does not open it:
+    /// that release exists for the defence, and the Great Person pass buys
+    /// none. Equal to [`culture_band_bank`](Self::culture_band_bank) off.
+    pub(super) fn culture_band_bank_for_people(&self, g: &Game, pid: usize) -> f64 {
+        self.culture_band_bank_held(g, pid, self.band_bank_bars_people_under_fire)
+    }
+
+    fn culture_band_bank_held(&self, g: &Game, pid: usize, through_fire: bool) -> f64 {
         if !(self.culture_banks_for_the_bands || self.culture_bank_opens_at_nationalism)
             || self.lane_lost
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
@@ -76,7 +108,7 @@ impl AdvancedAi {
             city.last_attacked > 0
                 && g.turn.saturating_sub(city.last_attacked) <= BAND_BANK_UNDER_FIRE_TURNS
         });
-        if !nearing || under_fire {
+        if !nearing || (under_fire && !through_fire) {
             return 0.0;
         }
         g.game_speed.scale(BAND_BANK_STANDARD)
@@ -281,6 +313,24 @@ mod tests {
         assert_eq!(seat().culture_band_bank(&g, 0), 0.0);
         g.cities.get_mut(&city).unwrap().last_attacked = g.turn - 5;
         assert!(seat().culture_band_bank(&g, 0) > 0.0);
+    }
+
+    #[test]
+    fn under_fire_the_bank_stays_shut_to_great_people_only_with_the_gene() {
+        let mut g = board();
+        known(&mut g, "ideology");
+        let city = g.player_city_ids(0)[0];
+        g.cities.get_mut(&city).unwrap().last_attacked = g.turn - 1;
+        let mut ai = seat();
+        assert_eq!(ai.culture_band_bank_for_people(&g, 0), 0.0);
+        ai.enable_band_bank_bars_people_under_fire();
+        let held = g.game_speed.scale(BAND_BANK_STANDARD);
+        assert_eq!(ai.culture_band_bank_for_people(&g, 0), held);
+        // The defence's release is unchanged.
+        assert_eq!(ai.culture_band_bank(&g, 0), 0.0);
+        // Cold War spends the bank on the bands as before.
+        known(&mut g, "cold_war");
+        assert_eq!(ai.culture_band_bank_for_people(&g, 0), 0.0);
     }
 
     #[test]

@@ -5457,6 +5457,10 @@ pub const GENES: &[Gene] = &[
     // reaches 3, and takes the promotion that lifts the most open stages
     // there. Opt-in; see `advanced/band_plays_at_level_three.rs`.
     Gene { tag: "band-plays-at-level-three", field: "band_plays_at_level_three", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_at_level_three, disable: AdvancedAi::disable_band_plays_at_level_three },
+    // A city under fire opens the Rock Band bank to the defence only: the
+    // Great Person pass still leaves it. Opt-in; see
+    // `advanced/culture_band_bank.rs`.
+    Gene { tag: "band-bank-bars-people-under-fire", field: "band_bank_bars_people_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_band_bank_bars_people_under_fire, disable: AdvancedAi::disable_band_bank_bars_people_under_fire },
     // ---- append: c-d ------------------------------------------------
     // Live 11-09/10: 68 of 74 religious units rival Apostles killed were at
     // 60 hit points or less. See `advanced/apostle_army.rs`.
