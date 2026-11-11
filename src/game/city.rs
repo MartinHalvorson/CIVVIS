@@ -1344,7 +1344,14 @@ impl Game {
         // shipped text moves from "Charming or better" to "Breathtaking" with
         // it. Modelling the cache's requirement set alone would have paid this
         // on twice the map.
-        yields.faith += pantheon_plot("breathtaking_appeal_faith", self.tile_appeal(pos) >= 4);
+        let breathtaking_faith = self.pantheon_effect(pid, "breathtaking_appeal_faith");
+        // A positive-zero bonus pays nothing at any appeal. Keep -0.0 on
+        // the original conditional path so its floating-point sign is retained.
+        yields.faith += if breathtaking_faith.to_bits() != 0 && self.tile_appeal(pos) >= 4 {
+            breathtaking_faith
+        } else {
+            0.0
+        };
 
         let building_effect = |effect: &str| self.city_building_effect(city, effect);
         let is_coast_or_lake = matches!(tile.terrain.as_str(), "coast" | "lake");
@@ -3518,3 +3525,6 @@ mod hidden_resource_wonder_tests;
 
 #[cfg(test)]
 mod builder_ownership_tests;
+
+#[cfg(test)]
+mod pantheon_appeal_query_tests;
