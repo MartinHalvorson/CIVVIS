@@ -458,6 +458,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `trade-quotes-pay-the-lump` | off (unmeasured) | Turn on `trade-quotes-pay-the-lump`. | 1 \| 1 |
 | `tribute-buys-the-friendship` | off (unmeasured) | Opt-in gene `tribute-buys-the-friendship`; see `advanced/tribute_buys_the_friendship.rs`. | 1 \| 1 |
 | `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
+| `unique-unit-closes-the-dark-age` | off (unmeasured) | `unique-unit-closes-the-dark-age`: see `advanced/unique_unit_closes_the_age.rs`. | 1 \| 1 |
 | `universities-before-the-forge` | off (unmeasured) | Opt-in Science University priority before industrial claims. | 1 \| 1 |
 | `upkeep-waits-for-the-income` | off (unmeasured) | Opt-in gene `upkeep-waits-for-the-income`; see `Self::upkeep_waits_for_the_income`. | 1 \| 1 |
 | `walls-release-the-one-blow` | off (unmeasured) | Opt-in gene `walls-release-the-one-blow`; see `Self::walls_release_the_one_blow`. | 1 \| 1 |
