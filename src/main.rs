@@ -844,7 +844,7 @@ fn site_bench_command(args: Vec<String>) {
         documents: !has("--no-documents"),
         keeps_rival_yields: !has("--no-kept-yields"),
         audits_rival_yields: has("--audit-kept-yields"),
-        keeps_own_yields: has("--keep-own-yields"),
+        keeps_own_yields: !has("--no-own-kept-yields"),
     };
     let started = Instant::now();
     let report = civvis::server::site_bench::run_with(seed, turns, options);
@@ -878,11 +878,13 @@ fn site_bench_command(args: Vec<String>) {
         total(|band| band.minors_seconds),
         total(|band| band.documents_seconds),
     );
-    // How often a seat's planning was answered from the rival yields it had
+    // How often a seat's planning was answered from the city yields it had
     // already derived (`Game::keep_rival_yields`). Bracketed like a timing so
     // the report hashes the same with the carry on, off or absent.
     let (reused, derived) = report.session.game.rival_yields_reused();
-    println!("[rival city yields: {reused} answered from what was kept, {derived} derived for all seats]");
+    println!(
+        "[city yields: {reused} answered from what was kept, {derived} derived for all seats]"
+    );
     for checkpoint in &report.checkpoints {
         println!(
             "checkpoint {}: save {:016x}, document {:016x}",
@@ -1962,7 +1964,8 @@ fn print_usage() {
               [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
               [--generations N] [--pop N] \
               [--no-documents (site-bench: play the frames, skip the page's state documents)] \
-              [--no-kept-yields (site-bench: derive every rival city yield afresh)] \
+              [--no-kept-yields (site-bench: derive every city yield afresh)] \
+              [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
               [--audit-kept-yields (site-bench: re-derive every reused yield and compare)]"
     );
 }

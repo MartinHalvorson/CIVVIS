@@ -88,7 +88,8 @@ pub struct Options {
     /// `Game::audit_rival_yields`: derive every reused yield again and panic
     /// on a difference. Slower than keeping nothing.
     pub audits_rival_yields: bool,
-    /// `Game::keep_own_yields`: the acting seat's own cities as well.
+    /// `Game::keep_own_yields`: the acting seat's own cities as well, as
+    /// every session does. Off with the rivals' on prices the two apart.
     pub keeps_own_yields: bool,
 }
 
@@ -98,7 +99,7 @@ impl Default for Options {
             documents: true,
             keeps_rival_yields: true,
             audits_rival_yields: false,
-            keeps_own_yields: false,
+            keeps_own_yields: true,
         }
     }
 }
@@ -295,11 +296,14 @@ mod tests {
     /// every rival's cities start to run.
     const YIELD_TURNS: u32 = 45;
 
-    /// Keeping rival yields between passes is an optimization, so the game it
-    /// plays and the documents it writes must be the ones the slow way gives.
+    /// Keeping yields between passes is an optimization, so the game it plays
+    /// and the documents it writes must be the ones the slow way gives. This
+    /// is the test that sees what the audit cannot: a caller that depends on
+    /// a derivation having *run* (the policy scorer's read trace did, and
+    /// the first build of this kept the acting seat's cities straight
+    /// through it; every card read as inert and the saves parted by turn 26).
     #[test]
-    fn keeping_rival_yields_plays_the_same_game() {
-        let kept = run_with(17, YIELD_TURNS, Options::default());
+    fn keeping_yields_plays_the_same_game() {
         let derived = run_with(
             17,
             YIELD_TURNS,
@@ -308,10 +312,23 @@ mod tests {
                 ..Options::default()
             },
         );
-        assert_eq!(kept.checkpoints, derived.checkpoints);
-        let (reused, _) = kept.session.game.rival_yields_reused();
-        assert!(reused > 0, "the run this compares must actually reuse");
         assert_eq!(derived.session.game.rival_yields_reused(), (0, 0));
+        for keeps_own_yields in [true, false] {
+            let kept = run_with(
+                17,
+                YIELD_TURNS,
+                Options {
+                    keeps_own_yields,
+                    ..Options::default()
+                },
+            );
+            assert_eq!(
+                kept.checkpoints, derived.checkpoints,
+                "own cities kept: {keeps_own_yields}"
+            );
+            let (reused, _) = kept.session.game.rival_yields_reused();
+            assert!(reused > 0, "the run this compares must actually reuse");
+        }
     }
 
     /// The stronger form: every single reused yield is derived again on the

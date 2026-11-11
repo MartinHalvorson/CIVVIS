@@ -1813,6 +1813,12 @@ pub struct QueryCache {
     // [`Game::keep_rival_yields`], which is the whole contract; like
     // `producible` this intentionally outlives `QueryMemo`.
     rival_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    // The acting seat's own cities, when `Game::keep_own_yields` asks. A
+    // separate map because more drops it: see `ActionReach`.
+    own_yields: std::cell::RefCell<BTreeMap<u32, Yields>>,
+    // What the acting seat's governor settings were when `own_yields` was
+    // derived: see `Game::own_settings_stamp`.
+    own_yields_stamp: std::cell::Cell<u64>,
     // The tile-grid epoch `rival_yields` was derived under. A tile that
     // changed hands, was improved or was pillaged moves it, whoever wrote it.
     rival_yields_epoch: std::cell::Cell<u64>,
@@ -1910,21 +1916,36 @@ impl Drop for PolicyReadTrace<'_> {
     }
 }
 
+/// How far an action reaches into the yields `Game::keep_rival_yields` holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ActionReach {
+    /// Only the acting seat's own cities can read differently afterwards.
+    OwnCities,
+    /// Anything can.
+    Board,
+}
+
 impl QueryCache {
     /// An action is about to change the board. Nothing kept before it may
     /// answer for the board after it.
-    fn action_begins(&self) {
+    fn action_begins(&self, reach: ActionReach) {
         self.acting.set(self.acting.get() + 1);
-        if self.keeps_rival_yields.get() {
-            self.rival_yields.borrow_mut().clear();
-        }
+        self.drop_kept_yields(reach);
     }
 
     /// The action is over, successful or not. Whatever the rules derived
     /// while it was half-applied goes too.
-    fn action_ends(&self) {
+    fn action_ends(&self, reach: ActionReach) {
         self.acting.set(self.acting.get().saturating_sub(1));
-        if self.keeps_rival_yields.get() {
+        self.drop_kept_yields(reach);
+    }
+
+    fn drop_kept_yields(&self, reach: ActionReach) {
+        if !self.keeps_rival_yields.get() {
+            return;
+        }
+        self.own_yields.borrow_mut().clear();
+        if reach == ActionReach::Board {
             self.rival_yields.borrow_mut().clear();
         }
     }

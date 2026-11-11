@@ -338,13 +338,12 @@ def wip_site_diagnostic(candidate: Path) -> list[str]:
     """WIP, REMOVED BEFORE THIS PULL REQUEST IS READY: this host parks local
     compiles, so the runner prices the yield carry band by band for one seed."""
     out = []
-    runs = (("rivals kept", "7", []),
-            ("nothing kept", "7", ["--no-kept-yields"]),
-            ("own kept too", "7", ["--keep-own-yields"]),
-            ("own kept, audited", "7", ["--keep-own-yields", "--audit-kept-yields",
-                                         "--no-documents"]),
-            ("own kept, audited", "8", ["--keep-own-yields", "--audit-kept-yields",
-                                         "--no-documents"]))
+    runs = tuple((label, str(seed), flags)
+                 for seed in (7, 8, 9, 10, 11)
+                 for label, flags in (("all kept", []),
+                                      ("nothing kept", ["--no-kept-yields"]))) + (
+        ("rivals only", "7", ["--no-own-kept-yields"]),
+        ("all kept, audited", "12", ["--audit-kept-yields", "--no-documents"]))
     for label, seed, flags in runs:
         try:
             done = subprocess.run([str(candidate), "site-bench", "--seed", seed,
@@ -356,7 +355,9 @@ def wip_site_diagnostic(candidate: Path) -> list[str]:
             continue
         out.append(f"DIAG {label} seed {seed}: exit {done.returncode}")
         out += [f"DIAG   {line}" for line in done.stdout.splitlines()
-                if line.startswith("[") or line.startswith("checkpoint")]
+                if line.startswith(("[all", "[city", "[1", "[2", "[3", "[4", "[5",
+                                    "[6", "[7", "[8", "[9", "[turns 101",
+                                    "checkpoint 101", "checkpoint 151"))]
         if done.returncode:
             out += [f"DIAG   {line}" for line in done.stderr.splitlines()[-14:]]
     return out

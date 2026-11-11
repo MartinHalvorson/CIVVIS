@@ -1665,9 +1665,9 @@ impl Game {
                 return *yields;
             }
         }
-        let kept = self.keeps_yields_of(cid);
-        if kept {
-            if let Some(yields) = self.kept_rival_yields(cid) {
+        let kept = self.kept_yields_for(cid);
+        if let Some(kept) = kept {
+            if let Some(yields) = self.kept_city_yields(kept, cid) {
                 return yields;
             }
         }
@@ -1680,11 +1680,8 @@ impl Game {
         if let Some(memo) = self.query_memo.yields.borrow_mut().as_mut() {
             memo.insert(cid, yields);
         }
-        if kept {
-            self.query_memo
-                .rival_yields
-                .borrow_mut()
-                .insert(cid, yields);
+        if let Some(kept) = kept {
+            kept.borrow_mut().insert(cid, yields);
         }
         yields
     }
@@ -1703,50 +1700,64 @@ impl Game {
     /// queued is not given more, so the board the tenth pass reads is the
     /// board the first one read.
     ///
-    /// What is kept, and exactly when it is dropped:
+    /// What is kept is dropped:
     ///
-    /// * **Only cities the acting seat does not own.** An agent weighs its own
-    ///   empire by rearranging it in place — the policy scorer seats a card,
-    ///   reads the empire and unseats it; the governor passes write the food
-    ///   bias and the city directives — and none of that goes through
-    ///   [`Game::apply`]. Its own cities are therefore derived exactly as
-    ///   before, so every what-if about its own empire reads the board as it
-    ///   stands.
-    /// * **Dropped by every action,** at both ends of `apply`, successful or
-    ///   refused, and never read or filled while one is in flight: the rules
-    ///   read yields half-way through changing the board.
-    /// * **Dropped by every tile write,** through the tile grid's epoch, which
-    ///   every `get_mut` moves whoever calls it.
-    /// * **Dropped by [`Game::board_written`],** which is what a caller that
-    ///   writes anything else about another seat directly must call.
-    /// * **Never kept in a clone,** which starts with no memo at all, and off
-    ///   unless a driver turns it on. The spectator session turns it on for
-    ///   the length of one seat's turn; the live Civilization VI seat and
-    ///   the gene screen do not, and play exactly as they did.
+    /// * **By every action,** at both ends of `apply`, successful or refused,
+    ///   and it is never read or filled while one is in flight: the rules
+    ///   read yields half-way through changing the board. The one exception
+    ///   is `Action::Produce`, which names what one of the acting seat's own
+    ///   cities builds next and reaches nothing of another seat's; `apply`
+    ///   carries the argument.
+    /// * **By every tile write,** through the tile grid's epoch, which every
+    ///   `get_mut` moves whoever calls it.
+    /// * **By [`Game::board_written`],** which is what a caller that writes
+    ///   anything else about the board without an action must call.
     ///
-    /// [`Game::audit_rival_yields`] is the check on all of the above: with it
-    /// on, every reused answer is derived again and compared.
+    /// And it never answers while `trace_policy_reads` is recording, because
+    /// that caller reads which questions a derivation asked, and a kept
+    /// answer asks none.
+    ///
+    /// A clone keeps nothing, and it is off unless a driver turns it on. The
+    /// spectator session does, for the length of one seat's turn; the live
+    /// Civilization VI seat, the gene screen and `simulate` do not, and play
+    /// exactly as they did.
+    ///
+    /// [`Game::audit_rival_yields`] checks the answers: with it on, every
+    /// reused yield is derived again and compared. It cannot check for a
+    /// caller like the policy trace, which is why `site_bench`'s tests also
+    /// play the same seed with and without and compare the saves.
     pub fn keep_rival_yields(&mut self, on: bool) {
         self.query_memo.keeps_rival_yields.set(on);
-        self.query_memo.rival_yields.borrow_mut().clear();
+        self.board_written();
     }
 
-    /// Keep the acting seat's own city yields as well, on the same terms.
+    /// Keep the acting seat's own city yields as well.
     ///
-    /// Off unless asked for, and separate from the rivals' on purpose: an
-    /// agent rearranges its own empire in place without an action, so this is
-    /// only as sound as the `board_written` calls at those places. The policy
-    /// what-ifs, the food bias and the city directives make them; the audit
-    /// is what says whether that list is complete.
+    /// Separate from the rivals' because more can change them without an
+    /// action. An agent weighs its own empire by rearranging it in place: the
+    /// policy scorer seats a card, reads the empire and unseats it, and the
+    /// governor passes write the food bias and the city directives. So its
+    /// own cities are kept on stricter terms:
+    ///
+    /// * every action drops them, `Produce` included — a city's yields read
+    ///   its own queue (the citizen plan, a running project, the envoy bonus);
+    /// * the seat's policy deck, food bias and directive count are folded
+    ///   into a stamp that is read back on every lookup
+    ///   (`own_settings_stamp`), so a what-if against the deck is noticed
+    ///   whether or not anybody reported it;
+    /// * and the writers report anyway, through [`Game::board_written`].
+    ///
+    /// Has no effect unless [`Game::keep_rival_yields`] is on.
     pub fn keep_own_yields(&mut self, on: bool) {
         self.query_memo.keeps_own_yields.set(on);
-        self.query_memo.rival_yields.borrow_mut().clear();
+        self.board_written();
     }
 
     /// Something about the board was written without an action and without
     /// touching a tile. Drops what [`Game::keep_rival_yields`] holds.
     pub fn board_written(&mut self) {
         self.query_memo.rival_yields.borrow_mut().clear();
+        self.query_memo.own_yields.borrow_mut().clear();
     }
 
     /// Derive every reused yield again and panic if the two differ. An
@@ -1765,25 +1776,75 @@ impl Game {
         )
     }
 
-    fn keeps_yields_of(&self, cid: u32) -> bool {
+    /// Which kept map answers for this city right now, if either does.
+    fn kept_yields_for(&self, cid: u32) -> Option<&std::cell::RefCell<BTreeMap<u32, Yields>>> {
         let memo = &self.query_memo;
-        memo.keeps_rival_yields.get()
-            && memo.acting.get() == 0
-            && !memo.auditing_rival_yields.get()
-            && self
-                .cities
-                .get(&cid)
-                .is_some_and(|city| city.owner != self.current || memo.keeps_own_yields.get())
+        if !memo.keeps_rival_yields.get()
+            || memo.acting.get() != 0
+            || memo.auditing_rival_yields.get()
+            // ⚠ A kept answer skips the derivation, and one caller reads the
+            // derivation's *questions*, not its answer: `trace_policy_reads`
+            // records every policy effect a sweep asks so the policy scorer
+            // can call a card inert. A sweep answered from what was kept asks
+            // nothing, every card reads as inert, and the seat stops changing
+            // its deck. Nothing is reused while a trace is recording.
+            || memo.policy_reads_on.get()
+        {
+            return None;
+        }
+        if self.cities.get(&cid)?.owner != self.current {
+            Some(&memo.rival_yields)
+        } else if memo.keeps_own_yields.get() {
+            // The two settings an agent writes on its own seat most, read
+            // back rather than trusted to be reported.
+            let stamp = self.own_settings_stamp();
+            if memo.own_yields_stamp.get() != stamp {
+                memo.own_yields.borrow_mut().clear();
+                memo.own_yields_stamp.set(stamp);
+            }
+            Some(&memo.own_yields)
+        } else {
+            None
+        }
     }
 
-    fn kept_rival_yields(&self, cid: u32) -> Option<Yields> {
+    /// The acting seat's policy deck and food bias, folded to one number.
+    ///
+    /// These are what an agent rearranges in place to ask what-if: the policy
+    /// scorer seats a card, reads the empire and unseats it. Both writers
+    /// call `board_written`; this is the second lock, so a what-if written
+    /// tomorrow against the deck cannot read today's kept yields because
+    /// somebody forgot to. FNV-1a over the interned card ids and the bias.
+    fn own_settings_stamp(&self) -> u64 {
+        let Some(seat) = self.players.get(self.current) else {
+            return 0;
+        };
+        let mut stamp = 0xcbf2_9ce4_8422_2325_u64;
+        let mut fold = |value: u64| {
+            stamp = (stamp ^ value).wrapping_mul(0x0000_0100_0000_01b3);
+        };
+        for card in &seat.policies {
+            fold(u64::from(card.id()));
+        }
+        fold(seat.policies.len() as u64);
+        fold(seat.citizen_food_bias.to_bits());
+        fold(seat.city_directives.len() as u64);
+        stamp
+    }
+
+    fn kept_city_yields(
+        &self,
+        held: &std::cell::RefCell<BTreeMap<u32, Yields>>,
+        cid: u32,
+    ) -> Option<Yields> {
         let memo = &self.query_memo;
         let epoch = self.map.tiles.epoch();
         if memo.rival_yields_epoch.get() != epoch {
             memo.rival_yields.borrow_mut().clear();
+            memo.own_yields.borrow_mut().clear();
             memo.rival_yields_epoch.set(epoch);
         }
-        let kept = memo.rival_yields.borrow().get(&cid).copied();
+        let kept = held.borrow().get(&cid).copied();
         let Some(kept) = kept else {
             memo.rival_yields_derived
                 .set(memo.rival_yields_derived.get() + 1);
