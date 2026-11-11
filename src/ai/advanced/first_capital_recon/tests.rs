@@ -4,6 +4,7 @@ use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 
 fn board_with_enemy(enemy: Pos) -> (Game, StrategicPlan) {
     let mut g = Game::new_full(2, 48, 30, 50_541, 250, 0, false);
+    g.players[0].civ = "Macedon".to_string();
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
