@@ -290,6 +290,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `early-route-feeds-production` | off (unmeasured) | Opt-in gene `early-route-feeds-production`; see `Self::early_route_feeds_production`. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `embassy-finds-the-capital-2` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital-2`; see `advanced/embassy_capital.rs`. | 1 \| 2 |
+| `every-shooter-at-the-walls` | off (unmeasured) | Opt-in gene `every-shooter-at-the-walls`; see `advanced/siege_at_the_walls_dies_first.rs`. | 1 \| 1 |
 | `exalted-goddess-buys-the-coastal-guard` | off (unmeasured) | Opt-in gene `exalted-goddess-buys-the-coastal-guard`; see `Self::exalted_goddess_buys_the_coastal_guard`. | 1 \| 1 |
 | `faith-strike-at-a-quiet-parity` | off (unmeasured) | Opt-in `faith-strike-at-a-quiet-parity`; see `AdvancedAi::faith_strike_at_a_quiet_parity`. | 1 \| 1 |
 | `faith-strike-wipes-the-spreaders` | off (unmeasured) | Opt-in `faith-strike-wipes-the-spreaders`; see `AdvancedAi::faith_strike_wipes_the_spreaders`. | 1 \| 1 |
