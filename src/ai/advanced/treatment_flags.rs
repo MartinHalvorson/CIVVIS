@@ -203,6 +203,9 @@ impl AdvancedAi {
         /// `culture-faith-braves-the-barbarians`: see
         /// `advanced/culture_faith_sources.rs`.
         culture_faith_braves_the_barbarians => enable_culture_faith_braves_the_barbarians, disable_culture_faith_braves_the_barbarians;
+        /// `culture-seat-monuments-2`: see
+        /// `advanced/culture_monuments.rs`.
+        culture_seat_monuments_2 => enable_culture_seat_monuments_2, disable_culture_seat_monuments_2;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.

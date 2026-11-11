@@ -5593,6 +5593,14 @@ pub const GENES: &[Gene] = &[
     // that unlocks its own largest Culture source first, with its Builders
     // ready. Opt-in; see `advanced/culture_unique_first.rs`.
     Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
+    // `culture-seat-monuments-2`: version one, and the war holds the
+    // Monument claim only in a threatened city, while a Monument three Online
+    // turns from done (or half built) goes first. Live Deity Culture seats
+    // 11-10: a non-capital city waited a median 48 turns for its Monument;
+    // the war gates held 1,147 Monument-less city-turns empire-wide, and
+    // 1,331 sat with a near-done Monument behind another head. Opt-in; see
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments-2", field: "culture_seat_monuments_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments_2, disable: AdvancedAi::disable_culture_seat_monuments_2 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

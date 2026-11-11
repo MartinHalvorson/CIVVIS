@@ -6853,6 +6853,11 @@ pub struct AdvancedAi {
     /// six-tile soldier rule skips Barbarian units. See
     /// `advanced/culture_faith_sources.rs`. Opt-in.
     culture_faith_braves_the_barbarians: bool,
+    /// `culture-seat-monuments-2`: version one, and a war holds the Monument
+    /// claim only for a city that is itself threatened, while a near-done
+    /// Monument goes before the city's other heads. See
+    /// `advanced/culture_monuments.rs`. Opt-in.
+    culture_seat_monuments_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
