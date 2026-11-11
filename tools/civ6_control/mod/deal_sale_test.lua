@@ -1456,8 +1456,8 @@ check("the buy arm sits with the deal lanes", buyAt > sellAt and buyAt < envoyAt
 local buyArm = src:sub(buyAt, envoyAt - 1)
 check("the buy arm reads the RIVAL's table for a luxury",
 	buyArm:find("DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);", 1, true) ~= nil, true)
-check("the buy arm asks the luxury with EQUALIZE",
-	buyArm:find('CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);', 1, true) ~= nil, true)
+-- Luxury EQUALIZE behavior is exercised above; strategic cash offers can
+-- now use PROPOSED through this same helper (deal_session_test.lua).
 check("the buy arm never proposes blind",
 	buyArm:find("DealProposalAction.PROPOSED", 1, true) == nil, true)
 check("the export carries the received-borders fact",

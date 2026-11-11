@@ -137,11 +137,14 @@ local function fixture(opts)
 		function item:SetSubType(v) self.subType = v end
 		function item:GetSubType() return self.subType end
 		function item:SetDuration(v) self.duration = v end
-		function item:SetAmount(v) self.amount = v end
+		function item:SetAmount(v)
+			self.amount = (kind == DealItemTypes.GOLD and opts.goldReadbackMismatch) and v + 1 or v
+		end
 		function item:SetLocked(v) self.locked = v end
 		function item:GetAmount() return self.amount end
 		function item:GetMaxAmount()
 			if kind == DealItemTypes.GOLD then
+				assert(self.duration == 0, "one-time Gold maximum requires duration first")
 				if opts.goldMaxMissing then return nil end
 				return opts.goldMax or 999
 			end
@@ -153,6 +156,7 @@ local function fixture(opts)
 	end
 	local outgoing = {}
 	function outgoing:AddItemOfType(kind, owner)
+		if kind == DealItemTypes.GOLD and opts.noGoldItem then return nil end
 		local item = newItem(kind); item.owner = owner
 		state.items[#state.items + 1] = item
 		return item
@@ -395,8 +399,9 @@ end
 end)()
 
 
--- Native 115023Z t57/71/74: resource43=2, empty payment, REJECTED,
--- within a 45/30/52-Gold ceiling. A quote is proposed before accepting it.
+-- Native 135842Z t146: re-entering EQUALIZE with a paid PROPOSED led to
+-- a late EQUALIZE_FAILED and a core-idle stall. Build one funded offer BEFORE
+-- opening the session, wait for the verdict, and own any following counter.
 ;(function()
     local function resetResource()
         trade.pending, trade.asked, trade.sessions = {}, {}, {};
@@ -413,6 +418,9 @@ end)()
     local function answer(action)
         onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 901, DealAction = action });
     end
+    local function open()
+        onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
+    end
     local function resourceSession(opts)
         resetResource(); opts = opts or {};
         opts.incoming = opts.incoming or quote();
@@ -420,152 +428,158 @@ end)()
         trade.pending[3] = { direction = "buy", want = "RESOURCES:43", want_amount = 2,
             strategic = true, verb = "RESOURCE_IRON=2", ceiling = 45, turn = TURN };
         trade.ask(7, 3, "EQUALIZE", "buy", TURN);
-        onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
+        open();
         return state;
     end
     local bare = resourceSession();
     answer(DealProposalAction.REJECTED);
-    check("an exact bare strategic quote is proposed", bare.sends[2] and bare.sends[2][1], "proposed");
-    check("a rejected resource quote is never directly accepted", #bare.sends, 2);
-    check("the resource proposal retains the session", #sessions.closed, 0);
-    check("the resource proposal retains its pending want", trade.pending[3] ~= nil, true);
-    bare.pending = true;
-    answer(DealProposalAction.REJECTED);
-    check("an old rejection waits for the resource proposal", #bare.sends, 2);
-    bare.pending = false;
-    answer(DealProposalAction.ACCEPTED);
-    check("the engine's accepted resource proposal can close", bare.sends[3] and bare.sends[3][1], "accepted");
-    check("accepted resource proposal settles the request", trade.pending[3], nil);
-    check("accepted resource proposal closes its session", #sessions.closed, 1);
-
-    local priced = resourceSession({ incoming = quote(2, 40) });
-    answer(DealProposalAction.REJECTED);
-    check("a priced strategic quote also needs PROPOSED", priced.sends[2] and priced.sends[2][1], "proposed");
-    answer(DealProposalAction.ADJUSTED);
-    check("a confirmed affordable resource quote can be accepted", priced.sends[3] and priced.sends[3][1], "accepted");
-
-    local refused = resourceSession();
-    answer(DealProposalAction.REJECTED);
-    answer(DealProposalAction.REJECTED);
-    check("a refused proposal cannot loop", #refused.sends, 2);
-    check("a refused resource proposal settles the ask", trade.pending[3], nil);
-    check("a refused resource proposal closes once", #sessions.closed, 1);
-
-    for name, incoming in pairs({
-        over_budget = quote(2, 46), short_quantity = quote(1), wrong_resource = quote(2, nil, 42),
-        collateral = { { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 2 },
-            { kind = DealItemTypes.FAVOR, from = 7, amount = 10 } },
-    }) do
-        local blocked = resourceSession({ incoming = incoming });
-        answer(DealProposalAction.REJECTED);
-        check(name .. " resource quote is not proposed", #blocked.sends, 1);
-        check(name .. " resource quote settles", trade.pending[3], nil);
+    check("legacy resource refusal never re-enters the core with PROPOSED", #bare.sends, 1);
+    check("legacy refusal settles its pending want", trade.pending[3], nil);
+    check("legacy refusal closes once", #sessions.closed, 1);
+    answer(DealProposalAction.EQUALIZE_FAILED);
+    check("late failed equalization cannot revive a resource quote", #bare.sends, 1);
+    check("late failed equalization cannot close twice", #sessions.closed, 1);
+    for _, verdict in ipairs({ DealProposalAction.ACCEPTED, DealProposalAction.ADJUSTED }) do
+        local legacy = resourceSession({ incoming = quote(2, 40) });
+        answer(verdict);
+        check("legacy confirmed resource quote still closes " .. verdict,
+            legacy.sends[2] and legacy.sends[2][1], "accepted");
     end
-    -- Actual 124038Z t65 offered no payment for two Iron and was rejected
-    -- again after PROPOSED. The opted-in desk can bid its existing cash cap.
-    local function cashSession(opts)
-        opts = opts or {};
-        local state = resourceSession(opts);
-        trade.pending[3].cash_bid_requested = true;
-        trade.pending[3].cash_reserve = opts.reserve or 355;
-        return state;
-    end
-    local payable = quote();
-    local paid = cashSession({ incoming = payable });
-    answer(DealProposalAction.REJECTED);
-    check("a cash offer submits one PROPOSED", paid.sends[2] and paid.sends[2][1], "proposed");
-    check("the cash offer adds our one-time Gold", paid.items[1] and paid.items[1].owner, 7);
-    check("the cash offer uses no future income", paid.items[1] and paid.items[1].duration, 0);
-    check("the cash offer stays within the supplied ceiling", paid.items[1] and paid.items[1].amount, 45);
-    check("the cash offer reserves all other ask-time cash", trade.pending[3].cash_reserve, 355);
-    answer(DealProposalAction.REJECTED);
-    check("the old empty-payment callback cannot settle the paid offer", trade.pending[3] ~= nil, true);
-    check("the old callback does not duplicate the cash proposal", #paid.sends, 2);
-    payable[2] = { kind = DealItemTypes.GOLD, from = 7, amount = 45 };
-    answer(DealProposalAction.ACCEPTED);
-    check("the engine can accept the priced resource offer", paid.sends[3] and paid.sends[3][1], "accepted");
-    check("the priced resource request settles", trade.pending[3], nil);
-    check("the priced resource session closes", #sessions.closed, 1);
 
-    local spent = cashSession({ gold = 390 });
-    answer(DealProposalAction.REJECTED);
-    check("other spending reduces the cash bid, not the reserve", spent.items[1] and spent.items[1].amount, 35);
-    local limited = cashSession({ goldMax = 20 });
-    answer(DealProposalAction.REJECTED);
-    check("the native one-time maximum clips the cash bid", limited.items[1] and limited.items[1].amount, 20);
-    for name, opts in pairs({
-        no_headroom = { gold = 355 }, missing_balance = { goldMissing = true },
-        unknown_maximum = { goldMaxMissing = true }, invalid_gold = { goldInvalid = true },
-        nonfinite_maximum = { goldMax = 0/0 }, no_native_cash = { goldMax = 0 },
-        invalid_deal = { dealInvalid = true },
-    }) do
-        local blocked = cashSession(opts);
-        answer(DealProposalAction.REJECTED);
-        check(name .. " cannot submit a cash bid", #blocked.sends, 1);
-        check(name .. " settles the cash request", trade.pending[3], nil);
-    end
-    local noReserve = cashSession(); trade.pending[3].cash_reserve = nil;
-    answer(DealProposalAction.REJECTED);
-    check("an unknown reserve cannot submit cash", #noReserve.sends, 1);
-    for name, counter in pairs({
-        too_much = { kind = DealItemTypes.GOLD, from = 7, amount = 46 },
-        future_income = { kind = DealItemTypes.GOLD, from = 7, amount = 1, duration = 30 },
-    }) do
-        local items = quote(); local refusedCash = cashSession({ incoming = items });
-        answer(DealProposalAction.REJECTED); items[2] = counter;
-        answer(DealProposalAction.ADJUSTED);
-        check(name .. " cannot exceed the explicit cash offer", #refusedCash.sends, 2);
-        check(name .. " settles without buying", trade.pending[3], nil);
-    end
-    local refusedItems = quote(); local refusedCash = cashSession({ incoming = refusedItems });
-    answer(DealProposalAction.REJECTED);
-    refusedItems[2] = { kind = DealItemTypes.GOLD, from = 7, amount = 45 };
-    answer(DealProposalAction.REJECTED);
-    check("a rejected priced proposal cannot bid again", #refusedCash.sends, 2);
-    check("a rejected priced proposal closes once", #sessions.closed, 1);
-
-    local delayedItems = quote(); local delayed = cashSession({ incoming = delayedItems });
-    answer(DealProposalAction.REJECTED);
-    delayed.gold = 390;
-    delayedItems[2] = { kind = DealItemTypes.GOLD, from = 7, amount = 45 };
-    answer(DealProposalAction.ACCEPTED);
-    check("cash spent while awaiting a verdict cannot consume the reserve", #delayed.sends, 2);
-
-    local alreadyPriced = cashSession({ incoming = quote(2, 40) });
-    answer(DealProposalAction.REJECTED);
-    check("an existing host price is proposed without adding a ceiling bid", #alreadyPriced.items, 0);
-    answer(DealProposalAction.ACCEPTED);
-    check("an existing affordable host quote still closes", #alreadyPriced.sends, 3);
-
-    -- The actual order arm captures the protected balance before asking.
-    resetResource();
     CivvisControlConfig.StrategicCashCeilingBid = true;
     CivvisControlConfig.VictoryLane = "domination";
     resourceRows.RESOURCE_IRON = { ResourceType = "RESOURCE_IRON", Index = 43,
         ResourceClassType = "RESOURCECLASS_STRATEGIC" };
     GameInfo.Resource_Consumption.RESOURCE_IRON = { Accumulate = true };
-    local actual, actualPlayer = fixture({ incoming = quote(), gold = 129,
-        possibleResources = { { ForType = 43, MaxAmount = 10, IsValid = true } } });
-    local ordered = applyOrder(actualPlayer, 7,
-        { kind = "buy", subject = "3", verb = "RESOURCE_IRON=2", x = 34 }, TURN);
-    check("the cash experiment reaches the real buy arm", ordered, true);
-    check("the order arm captures the ask-time reserve", trade.pending[3] and trade.pending[3].cash_reserve, 95);
-    onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 901 });
-    answer(DealProposalAction.REJECTED);
-    check("the real buy arm produces a bounded cash bid", actual.items[2] and actual.items[2].amount, 34);
-    onClosed(901);
-    check("the existing bounded closer can release a stale cash bid", trade.pending[3], nil);
-    CivvisControlConfig.StrategicCashCeilingBid = nil;
-    CivvisControlConfig.VictoryLane = nil;
-    resourceRows.RESOURCE_IRON = nil;
-    GameInfo.Resource_Consumption.RESOURCE_IRON = nil;
+    local function cashSession(opts, deferOpen)
+        resetResource(); opts = opts or {};
+        opts.incoming = opts.incoming or quote(2, 34);
+        if opts.gold == nil then opts.gold = 129 end
+        opts.possibleResources = { { ForType = 43, MaxAmount = 10, IsValid = true } };
+        local state, player = fixture(opts);
+        state.ordered = applyOrder(player, 7,
+            { kind = "buy", subject = "3", verb = "RESOURCE_IRON=2", x = 34 }, TURN);
+        if not deferOpen then open(); end
+        return state;
+    end
+    local paid = cashSession(nil, true);
+    check("the real buy arm prepares the cash offer", paid.ordered, true);
+    check("the offer waits for a session", #paid.sends, 0);
+    check("the request opens MAKE_DEAL", sessions.requested[1] and sessions.requested[1].kind, "MAKE_DEAL");
+    check("the pending offer protects ask-time cash", trade.pending[3] and trade.pending[3].cash_reserve, 95);
+    check("the pending offer records its bid", trade.pending[3] and trade.pending[3].cash_offer_bid, 34);
+    check("the initial resource is requested from the rival", paid.items[1] and paid.items[1].owner, 3);
+    check("the initial resource quantity is exact", paid.items[1] and paid.items[1].amount, 2);
+    check("payment exists before the opening statement", paid.items[2] and paid.items[2].amount, 34);
+    check("payment belongs to us", paid.items[2] and paid.items[2].owner, 7);
+    check("payment uses no future income", paid.items[2] and paid.items[2].duration, 0);
+    open();
+    check("the first and only question is PROPOSED", paid.sends[1] and paid.sends[1][1], "proposed");
+    check("there is no initial EQUALIZE", #paid.sends, 1);
+    check("the ledger identifies a funded initial offer", eventField(lastEvent("deal_offer"), "cash_bid"), "34");
+    answer(DealProposalAction.ACCEPTED);
+    check("a real engine acceptance can be accepted", paid.sends[2] and paid.sends[2][1], "accepted");
+    check("acceptance settles the request", trade.pending[3], nil);
+    check("acceptance closes once", #sessions.closed, 1);
 
-    -- Native131031Z t143 / cont1+cont2 t140: this is a valid barter quote,
-    -- not a cash request. Re-proposing it preceded EQUALIZE_FAILED and a
-    -- core-idle AI-phase stall. Preserve the original barter lifecycle even
-    -- when the cash-ceiling experiment is enabled.
+    local adjusted = cashSession({ incoming = quote(2, 30) });
+    answer(DealProposalAction.ADJUSTED);
+    check("a cheaper valid host adjustment can close", adjusted.sends[2] and adjusted.sends[2][1], "accepted");
+    local sync = cashSession({ onSend = function(action)
+        if action == DealProposalAction.PROPOSED then answer(DealProposalAction.ACCEPTED); end
+    end });
+    check("a synchronous verdict accepts once", sync.sends[2] and sync.sends[2][1], "accepted");
+    check("a synchronous verdict closes once", #sessions.closed, 1);
+    check("a synchronous verdict leaves no pending offer", trade.pending[3], nil);
+    local limited = cashSession({ goldMax = 20, incoming = quote(2, 20) });
+    check("the native maximum clips the initial bid", limited.items[2] and limited.items[2].amount, 20);
+    check("native clipping preserves the original reserve", trade.pending[3] and trade.pending[3].cash_reserve, 95);
+    answer(DealProposalAction.ACCEPTED);
+    check("the clipped valid bid can close", limited.sends[2] and limited.sends[2][1], "accepted");
+
+    for name, opts in pairs({
+        insufficient_cash = { gold = 33 }, missing_balance = { goldMissing = true },
+        nonfinite_balance = { gold = math.huge }, nan_balance = { gold = 0/0 },
+        unknown_maximum = { goldMaxMissing = true }, invalid_gold = { goldInvalid = true },
+        nonfinite_maximum = { goldMax = 0/0 }, infinite_maximum = { goldMax = math.huge },
+        no_native_cash = { goldMax = 0 }, invalid_deal = { dealInvalid = true },
+        missing_gold_item = { noGoldItem = true }, wrong_readback = { goldReadbackMismatch = true },
+    }) do
+        local blocked = cashSession(opts, true);
+        check(name .. " cannot prepare a cash offer", blocked.ordered, false);
+        check(name .. " cannot open a session", #sessions.requested, 0);
+        check(name .. " cannot send a deal", #blocked.sends, 0);
+        check(name .. " leaves no pending ask", trade.pending[3], nil);
+    end
+    local preSpent = cashSession(nil, true); preSpent.gold = 120;
+    open();
+    check("spending before session acknowledgement prevents submission", #preSpent.sends, 0);
+    check("a stale cash budget clears its pending ask", trade.pending[3], nil);
+    check("a stale cash budget closes its session", #sessions.closed, 1);
+    local thrown = cashSession({ onSend = function(action)
+        if action == DealProposalAction.PROPOSED then error("fixture send failure"); end
+    end });
+    check("a throwing initial send is not retried", #thrown.sends, 1);
+    check("a throwing initial send clears its pending ask", trade.pending[3], nil);
+    check("a throwing initial send closes once", #sessions.closed, 1);
+
+    for name, items in pairs({
+        over_budget = quote(2, 35), short_quantity = quote(1, 34), wrong_resource = quote(2, 34, 42),
+        future_income = { { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 2 },
+            { kind = DealItemTypes.GOLD, from = 7, amount = 1, duration = 30 } },
+        collateral = { { kind = DealItemTypes.RESOURCES, from = 3, valueType = 43, amount = 2 },
+            { kind = DealItemTypes.FAVOR, from = 7, amount = 10 } },
+    }) do
+        local blocked = cashSession({ incoming = items });
+        answer(DealProposalAction.ADJUSTED);
+        check(name .. " cannot be accepted", #blocked.sends, 1);
+        check(name .. " settles without buying", trade.pending[3], nil);
+    end
+    local unequal = cashSession({ dealsEqual = false });
+    answer(DealProposalAction.ACCEPTED);
+    check("unequal working deals cannot be accepted", #unequal.sends, 1);
+    local delayed = cashSession(); delayed.gold = 120;
+    answer(DealProposalAction.ACCEPTED);
+    check("cash spent awaiting a verdict cannot consume the reserve", #delayed.sends, 1);
+    check("cash spent awaiting a verdict settles without buying", trade.pending[3], nil);
+
+    local refused = cashSession();
+    answer(DealProposalAction.REJECTED);
+    check("a refusal cannot submit another resource offer", #refused.sends, 1);
+    check("a refusal settles the pending want", trade.pending[3], nil);
+    check("a refusal keeps ownership for the following counter", #sessions.closed, 0);
+    check("the following counter has a bounded hold", holds[#holds] and holds[#holds].seconds, 4);
+    answer(DealProposalAction.REJECTED);
+    answer(DealProposalAction.EQUALIZE_FAILED);
+    check("duplicate refusal callbacks do not submit or close", #refused.sends + #sessions.closed, 1);
+    answer(DealProposalAction.PROPOSED);
+    check("a following counter is refused using the shipped action", refused.sends[2] and refused.sends[2][1], "rejected");
+    check("a following counter closes once", #sessions.closed, 1);
+    local syncCounter = cashSession({ onSend = function(action)
+        if action == DealProposalAction.REJECTED then answer(DealProposalAction.PROPOSED); end
+    end });
+    answer(DealProposalAction.REJECTED);
+    answer(DealProposalAction.PROPOSED);
+    check("a synchronous counter callback cannot re-enter its refusal", #syncCounter.sends, 2);
+    check("a synchronous counter callback closes once", #sessions.closed, 1);
+    local timed = cashSession(); answer(DealProposalAction.REJECTED);
+    onClosed(901);
+    check("the bounded closer releases a missing counter", trade.sessions[3], nil);
+    check("a refused offer is not an unanswered session", trade.unanswered, 0);
+    check("a missing counter submits no further offer", #timed.sends, 1);
+
+    CivvisControlConfig.StrategicCashCeilingBid = nil;
+    local off = cashSession();
+    check("default cash-off behavior keeps EQUALIZE", off.sends[1] and off.sends[1][1], "equalize");
+    check("cash-off behavior adds no payment", #off.items, 1);
     CivvisControlConfig.StrategicCashCeilingBid = true;
+    CivvisControlConfig.VictoryLane = "science";
+    local offLane = cashSession();
+    check("non-Domination behavior keeps EQUALIZE", offLane.sends[1] and offLane.sends[1][1], "equalize");
+    check("non-Domination behavior adds no payment", #offLane.items, 1);
     CivvisControlConfig.VictoryLane = "domination";
+
+    -- Native131031Z t143 / cont1+cont2 t140: preserve the barter regression.
     local barter = resourceSession({ incoming = {
         { kind = DealItemTypes.RESOURCES, from = 3, valueType = 40, amount = 6 },
         { kind = DealItemTypes.RESOURCES, from = 7, valueType = 19, amount = 1, duration = 30 },
@@ -578,33 +592,15 @@ end)()
     answer(DealProposalAction.REJECTED);
     check("the captured Aluminum barter matches its authorized items", eventField(lastEvent("deal_response"), "matches"), "true");
     check("the captured Aluminum barter is within budget", eventField(lastEvent("deal_response"), "within_budget"), "true");
-    check("a rejected resource barter sends no new proposal", #barter.sends, 1);
+    check("a rejected barter sends no new proposal", #barter.sends, 1);
     check("a rejected barter settles its pending request", trade.pending[3], nil);
     check("a rejected barter closes its session once", #sessions.closed, 1);
     answer(DealProposalAction.EQUALIZE_FAILED);
-    check("late failed equalization cannot revive the barter", #barter.sends, 1);
-    check("late failed equalization cannot close twice", #sessions.closed, 1);
-    local emptyBarter = resourceSession(); trade.pending[3].gave = {};
-    answer(DealProposalAction.REJECTED);
-    check("an empty gave table is still a barter protocol", #emptyBarter.sends, 1);
+    check("late failed equalization cannot revive barter", #barter.sends, 1);
     CivvisControlConfig.StrategicCashCeilingBid = nil;
     CivvisControlConfig.VictoryLane = nil;
-
-    local changed = quote(2, 40);
-    local repriced = resourceSession({ incoming = changed });
-    answer(DealProposalAction.REJECTED);
-    changed[2].amount = 46;
-    answer(DealProposalAction.ADJUSTED);
-    check("a later resource adjustment cannot exceed the budget", #repriced.sends, 2);
-    check("an over-budget resource adjustment settles", trade.pending[3], nil);
-
-    local unequal = resourceSession({ dealsEqual = false });
-    answer(DealProposalAction.REJECTED);
-    check("unequal copied resource quotes are not proposed", #unequal.sends, 1);
-    local unknown = resourceSession();
-    DealManager.HasPendingDeal = function() return nil; end;
-    answer(DealProposalAction.REJECTED);
-    check("unknown pending state cannot propose resource quotes", #unknown.sends, 1);
+    resourceRows.RESOURCE_IRON = nil;
+    GameInfo.Resource_Consumption.RESOURCE_IRON = nil;
     resetResource();
 end)()
 
