@@ -518,10 +518,17 @@ fn a_bare_capital_next_door_opens_the_reservation_at_one_city() {
     assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 1, false));
     assert!(!ai.conquest_defers_the_settler(&game, 0, home, &counts, 2, false));
 
-    // The edges: 21 is not bare, nor is any wall, nor fifteen tiles.
+    // The edges: 21 is not bare, nor is any wall, nor fifteen tiles, nor an
+    // owner whose army the reserved force would not bring within reach.
     let mut game = board(&[(6, 12), (18, 12), (21, 20)]);
     let near = capital_of(&game, 1);
     set_strength(&mut game, near, 20.0);
+    assert!(AdvancedAi::first_capital_is_bare(&game, 0, near));
+    let reach = FIRST_CAPITAL_POWER_RATIO * (game.military_power(0) + FIRST_CAPITAL_BARE_FORCE);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, reach + 1.0);
+    assert!(game.military_power(1) > reach, "{}", game.military_power(1));
+    assert!(!AdvancedAi::first_capital_is_bare(&game, 0, near));
+    Arc::make_mut(&mut game.observed_military_power).insert(1, reach - 1.0);
     assert!(AdvancedAi::first_capital_is_bare(&game, 0, near));
     set_strength(&mut game, near, 21.0);
     assert!(!AdvancedAi::first_capital_is_bare(&game, 0, near));
