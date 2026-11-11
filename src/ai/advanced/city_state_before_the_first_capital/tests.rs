@@ -1144,3 +1144,44 @@ fn gold_buys_a_missing_melee_body_for_the_stone() {
     assert!(!ai.city_state_stone_body_purchase(&mut game, 0));
     assert_eq!(warriors(&game), held);
 }
+
+/// While the stone stands, a city of ours near the rally trains the
+/// reserved bodies as the capital does; a far one does not, and off the
+/// stone the reservation is the capital's alone.
+#[test]
+fn a_city_near_the_rally_trains_the_stones_force() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    let far_city = game.found_city_for(0, at(45, 20), None);
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.city_state_stone_stands());
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    let capital = game.city_at(at(6, 12)).expect("our capital");
+    let second = game.city_at(at(6, 18)).expect("our second city");
+    assert!(game.wdist(at(6, 18), rally) <= STONE_BREAKER_PURCHASE_REACH);
+    assert!(game.wdist(at(45, 20), rally) > STONE_BREAKER_PURCHASE_REACH);
+    let warrior = game.rules.units.get("warrior").unwrap().clone();
+    let counts = ai.counts(&game, 0);
+    assert!(ai.conquest_reservation(&game, 0, capital, &warrior, &counts, false) > 0.0);
+    assert!(
+        ai.conquest_reservation(&game, 0, second, &warrior, &counts, false) > 0.0,
+        "the second city trains the force too"
+    );
+    assert!(ai.city_state_stone_trains_in(&game, second));
+    assert!(!ai.city_state_stone_trains_in(&game, far_city));
+    assert_eq!(
+        ai.conquest_reservation(&game, 0, far_city, &warrior, &counts, false),
+        0.0,
+        "a city past the reach does not"
+    );
+
+    // Off the stone no other city is asked.
+    let mut plain = seat(false);
+    plain.maintain_conquest_opening(&mut game, 0);
+    assert!(!plain.city_state_stone_trains_in(&game, second));
+    assert_eq!(
+        plain.conquest_reservation(&game, 0, second, &warrior, &counts, false),
+        0.0
+    );
+}
