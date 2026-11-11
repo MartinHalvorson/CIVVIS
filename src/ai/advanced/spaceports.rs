@@ -553,7 +553,18 @@ impl AdvancedAi {
         // Choosing the pad is a read: one memo for the whole sweep, dropped
         // before the claim below writes. See `Game::query_memo`.
         let memo = g.query_memo();
-        let races_science = self.space_race_lane(g, pid);
+        // ★★★ THE RACE WAS READ EVERY TURN TO DECIDE ABOUT A PAD NO CITY COULD
+        // BUILD. `space_race_lane` is `victory_focus`, which derives the whole
+        // lane table — every major's culture, tourism and science — and it
+        // was the first line of this pass: 2.8% of a site game's thread
+        // (`docs/SIMULATOR_PERFORMANCE.md`, 2026-11-11), most of it on the
+        // hundred-odd turns before Rocketry, when the loop below admits no
+        // city and returns having asked for nothing. It is only read to
+        // decide whether a city with work queued may still take the pad, so
+        // it is asked there, once, the first time a city gets that far, and
+        // after the two cheaper halves of the same test. A read of the same
+        // board, so the answer is the one the first line would have had.
+        let mut races_science: Option<bool> = None;
         let city_ids = g.player_city_ids(pid);
         if Self::science_spaceport_commitments(g, pid) >= self.science_spaceport_target(g, pid) {
             return;
@@ -566,9 +577,9 @@ impl AdvancedAi {
             if !self.science_spaceport_city_is_admitted(g, pid, cid) {
                 continue;
             }
-            if !races_science
-                && self.raced_target() != Some(VictoryTarget::Science)
+            if self.raced_target() != Some(VictoryTarget::Science)
                 && !g.cities[&cid].queue.is_empty()
+                && !*races_science.get_or_insert_with(|| self.space_race_lane(g, pid))
             {
                 continue;
             }
