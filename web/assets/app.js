@@ -30164,7 +30164,7 @@ function drawSoloHud() {
     if (rankingsReportOpen) toggleRankingsReport(false);
     drawCivTop();
     drawWorldTracker();
-    drawDiploRibbon();
+    drawLeaderRibbon();
     return;
   }
   settleSoloRankings();
@@ -30172,7 +30172,7 @@ function drawSoloHud() {
   settleSoloNotice();
   drawCivTop();
   drawWorldTracker();
-  drawDiploRibbon();
+  drawLeaderRibbon();
 }
 
 // ------------------------------------------------------ the diplomacy ribbon
@@ -30197,9 +30197,9 @@ function ribbonStance(player) {
   return {tone: "", mark: "", word: opinionWord(
     Math.round(player.relationship_opinion_of_me ?? player.opinion_of_me ?? 0))};
 }
-let diploRibbonHtml = null;
-function drawDiploRibbon() {
-  const ribbon = document.getElementById("diploribbon");
+let leaderRibbonHtml = null;
+function drawLeaderRibbon() {
+  const ribbon = document.getElementById("leaderribbon");
   let html = "";
   if (state && playingSolo()) {
     const leaders = state.players.filter(player => player.alive && !player.is_minor &&
@@ -30222,8 +30222,8 @@ function drawDiploRibbon() {
   }
   // The HUD is redrawn on every observation; the ribbon changes a few times
   // a game, and rebuilding it under a pointer would drop the hover each time.
-  if (html === diploRibbonHtml) return;
-  diploRibbonHtml = html;
+  if (html === leaderRibbonHtml) return;
+  leaderRibbonHtml = html;
   ribbon.innerHTML = html;
   ribbon.hidden = !html;
 }

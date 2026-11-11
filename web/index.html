@@ -5097,8 +5097,8 @@
   /* ---- the leaders (DiplomacyRibbon.xml, `Anchor="R,T"`) ------------- */
   /* Under the hooks and inboard of the notification rail, which keeps the
      edge. Each leader wears the two colours their borders do on the map. */
-  #diploribbon { display: none; }
-  body.civ6-frame #diploribbon {
+  #leaderribbon { display: none; }
+  body.civ6-frame #leaderribbon {
     position: absolute; z-index: 8; top: var(--solo-below-bars);
     right: calc(var(--panel-edge) + 42px + var(--panel-gap));
     max-width: calc(100% - var(--solo-track-width) - 42px - 5 * var(--panel-edge));
@@ -5106,7 +5106,7 @@
     border-radius: 24px; border: 1px solid #3c554d; background: #0a1512d4;
     box-shadow: var(--shadow); backdrop-filter: blur(14px);
   }
-  body.civ6-frame #diploribbon[hidden] { display: none; }
+  body.civ6-frame #leaderribbon[hidden] { display: none; }
   .ribbon-leader {
     position: relative; flex: none; width: 36px; height: 36px; margin: 0; padding: 0;
     display: grid; place-items: center; border-radius: 50%;
@@ -5126,7 +5126,7 @@
   .ribbon-leader.friend .ribbon-mark { color: #dff7e5; background: #1f5a36; border-color: #4a9a65; }
   .leader.called { outline: 2px solid var(--gold); outline-offset: 2px; }
   @container map-stage (max-width: 760px) {
-    body.civ6-frame #diploribbon { display: none; }
+    body.civ6-frame #leaderribbon { display: none; }
   }
   /* It climbs from the corner to the foot of the bars and no further: what
      does not fit scrolls, rather than standing over the hooks. */
@@ -5871,7 +5871,7 @@
       class="launch-badge" hidden></span></button>
     <div id="hooktabs"></div>
   </div>
-  <div id="diploribbon" aria-label="Leaders you have met" hidden></div>
+  <div id="leaderribbon" aria-label="Leaders you have met" hidden></div>
   <!-- Civ 6's action panel (ActionPanel.xml, `Anchor="R,B"`): what the turn is
        waiting on, the choices that would settle it, and the button that ends
        it. `#endturn` is the same node the deck used to hold, handlers and

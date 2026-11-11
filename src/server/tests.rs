@@ -15607,12 +15607,14 @@ fn a_rival_in_diplomacy_wears_the_crest_it_had_on_create_game() {
 #[test]
 fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     assert!(EMBEDDED_INDEX
-        .contains("<div id=\"diploribbon\" aria-label=\"Leaders you have met\" hidden></div>"));
-    // It belongs to the played frame: a watched world never shows it.
+        .contains("<div id=\"leaderribbon\" aria-label=\"Leaders you have met\" hidden></div>"));
+    // It belongs to the played frame: a watched world never shows it. The
+    // watcher's own ribbon of #2382 stays gone, name and all
+    // (`a_watched_simulation_keeps_the_laboratory`).
     assert!(EMBEDDED_INDEX
-        .contains("  #diploribbon { display: none; }\n  body.civ6-frame #diploribbon {"));
+        .contains("  #leaderribbon { display: none; }\n  body.civ6-frame #leaderribbon {"));
     let ribbon = EMBEDDED_APP_JS
-        .split_once("function drawDiploRibbon() {")
+        .split_once("function drawLeaderRibbon() {")
         .expect("the ribbon")
         .1
         .split_once("\n}\n")
@@ -15625,9 +15627,9 @@ fn the_leaders_a_player_has_met_ride_the_top_of_the_map() {
     // Each wears the colours their borders do, and opens diplomacy on them.
     assert!(ribbon.contains("--civ:${pcol(player.id)};--civ-trim:${pcol2(player.id)}"));
     assert!(ribbon.contains("onclick=\"openDiplomacyWith(${player.id})\""));
-    assert!(ribbon.contains("if (html === diploRibbonHtml) return;"));
+    assert!(ribbon.contains("if (html === leaderRibbonHtml) return;"));
     assert!(EMBEDDED_APP_JS.contains("`data-seat=\"${player.id}\">` +"));
-    assert_eq!(EMBEDDED_APP_JS.matches("  drawDiploRibbon();\n").count(), 2);
+    assert_eq!(EMBEDDED_APP_JS.matches("  drawLeaderRibbon();\n").count(), 2);
 }
 
 #[test]
