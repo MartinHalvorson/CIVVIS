@@ -360,6 +360,8 @@ impl AdvancedAi {
         if !city.owned_tiles.contains(&pad) {
             city.owned_tiles.push(pad);
         }
+        // Another seat's districts and tiles, rewritten without an action.
+        g.board_written();
         disrupt(g)
     }
 

@@ -113,7 +113,9 @@ impl Game {
         let unit = self.units.get(&uid)?;
         let start = unit.pos;
         let range = stop_range.max(0);
-        if self.formation_movement_locked_by_zoc(uid) || self.wdist(start, to) <= range {
+        if self.formation_movement_locked_by_zoc(uid)
+            || self.wdist_capped(start, to, range) <= range
+        {
             return None;
         }
         if range == 0 {
@@ -198,13 +200,19 @@ impl Game {
 
         let mut goal = None;
         let map_tiles = self.map.tiles.values().as_slice();
-        while let Some(Reverse((_, Reverse(traveled), cur, cur_index))) =
+        while let Some(Reverse((estimate, Reverse(traveled), cur, cur_index))) =
             scratch.astar_frontier.pop()
         {
             if traveled != scratch.distance[cur_index] {
                 continue;
             }
-            if self.wdist(cur, to) <= range {
+            // The queued estimate is traveled + max(distance - range, 0).
+            // It equals traveled exactly at a goal, so do not measure this
+            // globe distance a second time when the node leaves the queue.
+            // The initial node has a positive estimate and is already known
+            // to be outside the goal range by the guard above.
+            debug_assert_eq!(estimate == traveled, self.wdist(cur, to) <= range);
+            if estimate == traveled {
                 goal = Some(cur_index);
                 break;
             }
@@ -310,7 +318,7 @@ impl Game {
         let unit = self.units.get(&uid)?;
         let start = unit.pos;
         let range = stop_range.max(0);
-        if self.wdist(start, to) <= range {
+        if self.wdist_capped(start, to, range) <= range {
             return Some(0);
         }
         self.route_step(uid, to, range)?;
@@ -812,7 +820,7 @@ impl Game {
         // MoveTo is also the protocol used for an AI route's already chosen
         // adjacent step. Do not flood the unit's whole remaining movement
         // area merely to rediscover that one-edge path.
-        if self.wdist(start, to) == 1 {
+        if self.wdist_capped(start, to, 1) == 1 {
             return self.can_move(uid, to).then_some(vec![to]);
         }
         if self.formation_movement_locked_by_zoc(uid) {

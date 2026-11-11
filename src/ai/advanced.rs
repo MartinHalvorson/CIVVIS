@@ -13567,6 +13567,8 @@ impl AdvancedAi {
             if let Some(seat) = g.players.get_mut(pid) {
                 seat.city_directives.clear();
             }
+            // Governor settings, written without an action.
+            g.board_written();
             return;
         }
         // While the empire is still short of its city target, only the two
@@ -13653,6 +13655,8 @@ impl AdvancedAi {
         if let Some(seat) = g.players.get_mut(pid) {
             seat.city_directives = directives;
         }
+        // Governor settings, written without an action.
+        g.board_written();
     }
 
     fn threatened_city(&self, g: &Game, pid: usize) -> Option<u32> {
@@ -25823,6 +25827,7 @@ impl AdvancedAi {
             g.players[pid].citizen_food_bias = proposed.players[pid].citizen_food_bias;
             g.players[pid].city_directives = proposed.players[pid].city_directives.clone();
             g.heist_reads_the_host_menu = proposed.heist_reads_the_host_menu;
+            g.board_written();
             for action in actions {
                 let _ = g.apply(pid, &action);
             }
@@ -25848,6 +25853,9 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // The settings above are written on the board without an action.
+        // See `Game::keep_rival_yields`.
+        g.board_written();
         // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
         self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
