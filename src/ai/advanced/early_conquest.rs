@@ -1103,7 +1103,7 @@ impl AdvancedAi {
                 && value > -1_000.0
                 && best
                     .as_ref()
-                    .is_none_or(|(old, _)| key.0 > old.0 || (key.0 == old.0 && key.1 > old.1))
+                    .is_none_or(|(old, _)| (key.0 && !old.0) || (key.0 == old.0 && key.1 > old.1))
             {
                 best = Some((key, item));
             }
