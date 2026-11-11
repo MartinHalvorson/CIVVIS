@@ -32,12 +32,14 @@ fn scaffold(name: &str) -> PathBuf {
 fn unpacked(name: &str) -> PathBuf {
     let out = std::env::temp_dir().join(format!("open-window-{}-{name}.jsonl", std::process::id()));
     if !out.exists() {
+        let partial = out.with_extension("partial");
         let data = std::process::Command::new("gzip")
             .arg("-dc")
             .arg(scaffold(&format!("{name}.jsonl.gz")))
             .output()
             .expect("gzip");
-        std::fs::write(&out, data.stdout).unwrap();
+        std::fs::write(&partial, data.stdout).unwrap();
+        std::fs::rename(&partial, &out).unwrap();
     }
     out
 }
@@ -123,9 +125,7 @@ fn play(job: &Job, genome: &[String]) -> String {
             ai.apply_gene_ledger_with_forced_live(&forced);
             assert_eq!(ai.first_capital_strikes_the_open_window, job.on);
             assert!(ai.first_capital_before_the_walls && ai.early_conquest_opening);
-            if job.seed == 0 {
-                ai.attach_journal(journal.handle());
-            }
+            ai.attach_journal(journal.handle());
             ais.push(Box::new(ai));
         } else {
             ais.push(Box::new(AdvancedAi::new()));
@@ -186,8 +186,59 @@ fn play(job: &Job, genome: &[String]) -> String {
         })
         .collect();
     let fmt = |turn: Option<u32>| turn.map_or("-".to_string(), |t| format!("t{t}"));
+    let thoughts: Vec<_> = journal
+        .since(0)
+        .thoughts
+        .into_iter()
+        .filter(|thought| thought.player == 0)
+        .collect();
+    let first = |needle: &str| {
+        thoughts
+            .iter()
+            .find(|thought| thought.headline.contains(needle))
+            .map(|thought| format!("t{}", thought.turn))
+            .unwrap_or_else(|| "-".to_string())
+    };
+    let count = |needle: &str| {
+        thoughts
+            .iter()
+            .filter(|thought| thought.headline.contains(needle))
+            .count()
+    };
+    let releases: Vec<String> = thoughts
+        .iter()
+        .filter(|thought| {
+            thought
+                .headline
+                .starts_with("Releasing the conquest opening")
+        })
+        .map(|thought| {
+            format!(
+                "t{} {}",
+                thought.turn,
+                thought.detail.chars().take(70).collect::<String>()
+            )
+        })
+        .collect();
+    let declared_by: Vec<String> = thoughts
+        .iter()
+        .filter(|thought| {
+            thought.headline.starts_with("Declaring war on")
+                || thought
+                    .headline
+                    .starts_with("Opening a religious interception")
+        })
+        .map(|thought| {
+            format!(
+                "t{} {} | {}",
+                thought.turn,
+                thought.headline,
+                thought.detail.chars().take(60).collect::<String>()
+            )
+        })
+        .collect();
     let mut out = format!(
-        "ROW|{}|t{}|{}|seed {}|war {}|taken {}|walls down {}|min hp {}|owner cities taken {}|units lost {}|our cities lost {}|other wars at end {:?}|end t{}\n",
+        "ROW|{}|t{}|{}|seed {}|war {}|taken {}|walls down {}|min hp {}|owner cities taken {}|units lost {}|our cities lost {}|other wars at end {:?}|end t{}|named {}|go {}|keeps {}|faith-no-front {}|held wars {}|soft {}|grace {}|releases {:?}|declarations {:?}\n",
         job.board,
         job.turn,
         if job.on { "on" } else { "off" },
@@ -200,14 +251,23 @@ fn play(job: &Job, genome: &[String]) -> String {
         units_at_start.saturating_sub(military(&g, 0)),
         lost,
         other_wars,
-        g.turn
+        g.turn,
+        first("Opening a conquest against"),
+        first("the open window"),
+        count("the opening keeps the campaign"),
+        count("the faith war is no front"),
+        count("holding off war"),
+        first(" is soft"),
+        first("the window holds"),
+        releases,
+        declared_by
     );
     if job.seed == 0 {
         out.push_str(&format!("HEAD|{head}\n"));
         let mut lines = 0;
-        for thought in journal.since(0).thoughts {
+        for thought in &thoughts {
             let headline = thought.headline.to_lowercase();
-            if thought.player != 0 || !NEEDLES.iter().any(|needle| headline.contains(needle)) {
+            if !NEEDLES.iter().any(|needle| headline.contains(needle)) {
                 continue;
             }
             if headline.starts_with("policy portfolio") || headline.starts_with("adopting") {
@@ -243,7 +303,7 @@ fn scaffold_open_window_replays() {
     let mut jobs = Vec::new();
     for turn in [30, 34, 38, 42] {
         for on in [false, true] {
-            for seed in 0..6 {
+            for seed in 0..10 {
                 jobs.push(Job {
                     board: "040704Z",
                     target: "Mikisiw-Wacîhk",
@@ -256,7 +316,7 @@ fn scaffold_open_window_replays() {
         }
     }
     for on in [false, true] {
-        for seed in 0..4 {
+        for seed in 0..6 {
             jobs.push(Job {
                 board: "040245Z",
                 target: "Washington",
@@ -267,6 +327,9 @@ fn scaffold_open_window_replays() {
             });
         }
     }
+    // Unpack each board once, before any worker reads it.
+    unpacked("040704Z");
+    unpacked("040245Z");
     let next = AtomicUsize::new(0);
     let results: Mutex<Vec<(usize, String)>> = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
