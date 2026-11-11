@@ -1261,32 +1261,28 @@ impl Game {
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
-                yields.science += self.rules.improvements[improvement]
-                    .effects
+                let effects = &self.rules.improvements[improvement].effects;
+                let science = effects
                     .get("appeal_science_percent")
                     .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.culture += self.rules.improvements[improvement]
-                    .effects
+                    .unwrap_or(0.0);
+                let culture = effects
                     .get("appeal_culture_percent")
                     .copied()
-                    .unwrap_or(0.0)
-                    / 100.0
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.gold += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_gold")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
-                yields.faith += self.rules.improvements[improvement]
-                    .effects
-                    .get("appeal_faith")
-                    .copied()
-                    .unwrap_or(0.0)
-                    * self.tile_appeal(pos).max(0) as f64;
+                    .unwrap_or(0.0);
+                let gold = effects.get("appeal_gold").copied().unwrap_or(0.0);
+                let faith = effects.get("appeal_faith").copied().unwrap_or(0.0);
+                // Most improvements have no appeal-based yield. Otherwise
+                // all four bonuses use the same appeal of this unchanged tile.
+                let appeal = if science != 0.0 || culture != 0.0 || gold != 0.0 || faith != 0.0 {
+                    self.tile_appeal(pos).max(0) as f64
+                } else {
+                    0.0
+                };
+                yields.science += science / 100.0 * appeal;
+                yields.culture += culture / 100.0 * appeal;
+                yields.gold += gold * appeal;
+                yields.faith += faith * appeal;
             }
         }
 
@@ -3517,3 +3513,6 @@ mod hidden_resource_wonder_tests;
 
 #[cfg(test)]
 mod builder_ownership_tests;
+
+#[cfg(test)]
+mod tile_appeal_yield_tests;
