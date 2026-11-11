@@ -13032,20 +13032,24 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		closable = closable,
 	});
 	if pending == nil then return; end
-	-- The shipped UI proposes a rejected working quote before it can accept
-	-- it (DiplomacyDealView.lua:149-156, 530-544). EQUALIZE alone can return
-	-- an exact Great Work and an affordable Gold/GPT price as REJECTED:
-	-- native 233736Z t141 quoted 175 against our ceiling 184. Submit that
-	-- package once as PROPOSED, never as ACCEPTED; only the next accepted or
-	-- adjusted verdict may reach the existing closer below.
+	-- The shipped UI submits a working quote as PROPOSED after REJECTED,
+	-- before it can accept it (Expansion2 DiplomacyDealView.lua:149-156,
+	-- 530-544). This is already required for Great Works. Native Macedon
+	-- 115023Z t57/71/74 returned exact, affordable Iron quotes as REJECTED
+	-- too, with no payment item; discarding them never submits a deal.
+	-- A strategic quote can legitimately have no payment: let the engine
+	-- evaluate that proposal once. Only its later ACCEPTED/ADJUSTED verdict
+	-- may reach the unchanged item, budget and working-deal checks below.
 	local activeSession = trade.sessions[fromPlayer];
-	if buying and type(pending.want) == "string"
-			and string.find(pending.want, "^GREATWORK:") ~= nil
+	local proposalQuote = buying and type(pending.want) == "string"
+		and ((string.find(pending.want, "^GREATWORK:") ~= nil)
+			or pending.strategic == true);
+	if proposalQuote
 			and activeSession ~= nil and activeSession.kind == "buy" and activeSession.sent then
 		local enginePending = try(function()
 			return DealManager.HasPendingDeal(pid, fromPlayer);
 		end, nil);
-		if pending.work_quote_proposed and action == DealProposalAction.REJECTED
+		if pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
 				and enginePending == true then
 			-- Incoming-deal and statement callbacks may describe the old
 			-- rejection while the core is still evaluating our new proposal.
@@ -13053,11 +13057,12 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 				want = pending.want, reason = "engine_pending" });
 			return true;
 		end
-		if not pending.work_quote_proposed and action == DealProposalAction.REJECTED
-				and matches and foreign == 0 and pay > 0
+		if not pending.purchase_quote_proposed and action == DealProposalAction.REJECTED
+				and matches and foreign == 0
+				and (pay > 0 or pending.strategic == true)
 				and withinBudget and enginePending == false then
 			-- Mark and hold before sending: the engine may answer inside it.
-			pending.work_quote_proposed = true;
+			pending.purchase_quote_proposed = true;
 			pending.turn = turn;
 			activeSession.reply_at = try(function() return CivvisClock.now(); end, nil);
 			activeSession.end_turn_hold_expired = nil;
@@ -13072,7 +13077,8 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 				return true;
 			end);
 			emit("deal_reproposed", { turn = turn, from = fromPlayer, direction = "buy", action = "PROPOSED",
-				want = pending.want, pay = pay, ceiling = pending.ceiling,
+				want = pending.want, verb = pending.verb, strategic = pending.strategic,
+				pay = pay, ceiling = pending.ceiling,
 				sent = (ok and sent) and true or false, threw = not ok });
 			if ok and sent then return true; end
 		end
@@ -26747,7 +26753,7 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 end;
 
 function Initialize()
-	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	emit("loaded", { version = 2, play = cfg.Play ~= false, strategic_quote_proposals = 1 });
 	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
 	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
 	-- Over 30 live runs the asked answers split action 1 (closable when under

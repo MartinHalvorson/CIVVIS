@@ -857,12 +857,8 @@ impl Game {
                         .cloned()
                         .collect();
                     let city = self.cities.get_mut(&city_id).unwrap();
-                    if let Some(placements) = city.districts.0.get_mut(&Name::new(district)) {
-                        placements.retain(|candidate| *candidate != position);
-                        if placements.is_empty() {
-                            city.districts.0.remove(&Name::new(district));
-                        }
-                    }
+                    city.districts
+                        .remove_position(Name::new(district), position);
                     city.buildings
                         .retain(|building| !removed_buildings.contains(building));
                     city.pillaged_buildings

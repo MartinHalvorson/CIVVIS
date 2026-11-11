@@ -3815,18 +3815,16 @@ pub struct HostPlotPurchaseEntry {
 /// custom deserializer accepts both that legacy shape and the new
 /// `{ "neighborhood": [[q1, r1], [q2, r2]] }` shape.
 #[derive(Clone, Default)]
-pub struct Districts(BTreeMap<Name, Vec<Pos>>);
+pub struct Districts(Vec<(Name, Vec<Pos>)>);
 
 impl Districts {
     pub fn contains_key(&self, name: impl AsName) -> bool {
-        self.0
-            .get(&name.as_name())
-            .is_some_and(|positions| !positions.is_empty())
+        !self.positions(name).is_empty()
     }
 
     /// Total district instances, rather than the number of distinct types.
     pub fn len(&self) -> usize {
-        self.0.values().map(Vec::len).sum()
+        self.0.iter().map(|(_, positions)| positions.len()).sum()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -3838,24 +3836,46 @@ impl Districts {
     }
 
     pub fn remove(&mut self, name: impl AsName) -> Option<Vec<Pos>> {
-        self.0.remove(&name.as_name())
+        let index = self
+            .0
+            .binary_search_by_key(&name.as_name(), |(key, _)| *key)
+            .ok()?;
+        Some(self.0.remove(index).1)
+    }
+
+    /// Drop a destroyed district placement, including its kind when empty.
+    pub(crate) fn remove_position(&mut self, name: Name, position: Pos) {
+        let Ok(index) = self.0.binary_search_by_key(&name, |(key, _)| *key) else {
+            return;
+        };
+        self.0[index].1.retain(|candidate| *candidate != position);
+        if self.0[index].1.is_empty() {
+            self.0.remove(index);
+        }
     }
 
     pub fn get(&self, name: impl AsName) -> Option<&Pos> {
-        self.0
-            .get(&name.as_name())
-            .and_then(|positions| positions.first())
+        self.positions(name).first()
     }
 
     pub fn positions(&self, name: impl AsName) -> &[Pos] {
+        // A city holds only a few district kinds. Compare their interned IDs
+        // directly; a tree search orders Names by reading their text slots.
+        let name = name.as_name();
         self.0
-            .get(&name.as_name())
-            .map(Vec::as_slice)
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, positions)| positions.as_slice())
             .unwrap_or(&[])
     }
 
     pub fn insert(&mut self, name: Name, pos: Pos) {
-        self.0.entry(name).or_default().push(pos);
+        // Only mutation needs lexical ordering. Keep the old BTreeMap's
+        // iteration/save order and each repeated district's insertion order.
+        match self.0.binary_search_by_key(&name, |(key, _)| *key) {
+            Ok(index) => self.0[index].1.push(pos),
+            Err(index) => self.0.insert(index, (name, vec![pos])),
+        }
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &Name> {
@@ -3879,6 +3899,9 @@ impl<'a> IntoIterator for &'a Districts {
         self.iter().collect::<Vec<_>>().into_iter()
     }
 }
+
+#[cfg(test)]
+mod district_roster_tests;
 
 impl Serialize for Districts {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

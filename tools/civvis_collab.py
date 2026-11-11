@@ -118,6 +118,12 @@ ADVISORY_CHECKS = {
         "when there is evidence it can be, not on the strength of its name.",
     "control-mod":
         "Same workflow and same reasoning as `published-build`.",
+    "wasm-qualify":
+        "A manual build of an explicitly requested snapshot, which may be "
+        "historical or broken independently of the workflow revision. Its PR "
+        "self-test runs only when its workflow file changes, so it cannot be "
+        "required on every PR. Source CI remains required; workflow edits "
+        "must record a successful qualification self-test before shipping.",
 }
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or
