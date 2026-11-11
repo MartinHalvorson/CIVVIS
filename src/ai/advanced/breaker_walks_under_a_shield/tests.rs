@@ -434,51 +434,63 @@ fn with_the_walls_down_the_assault_does_not_wait() {
     assert!(game.cities[&capital].hp < hp, "the city takes the blow");
 }
 
-/// Walls stand, four Swordsmen at the rally cover the bill, and the Ram
-/// stands alone two tiles from the rally. Off, the open window declares (a
-/// breaker is at the rally); on, the declaration waits for the Ram to stand
-/// with a body, and goes once it does.
+/// Walls stand and the Ram stands alone two tiles from the rally: the
+/// declaration waits for it (and journals why); once it stands with a
+/// Swordsman by the rally, or with no walls standing, or off, nothing waits.
 #[test]
 fn the_declaration_waits_for_the_ram_at_the_rally() {
-    for gene in [false, true] {
-        let (mut game, mut ai, _) = opened(gene);
-        let rally = ai.conquest_opening.as_ref().unwrap().rally;
-        let ring: Vec<Pos> = game
-            .wring(rally, 1)
-            .into_iter()
-            .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
-            .take(4)
-            .collect();
-        let bodies: Vec<u32> = ring
-            .iter()
-            .map(|pos| unit(&mut game, "swordsman", 0, *pos))
-            .collect();
-        let spot = game
-            .wring(rally, 2)
-            .into_iter()
-            .find(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
-            .unwrap();
-        let ram = unit(&mut game, "battering_ram", 0, spot);
-        ai.maintain_conquest_opening(&mut game, 0);
-        let declared = ai.conquest_declaration(&mut game, 0);
-        assert_eq!(declared, !gene, "gene {gene}");
-        if !gene {
-            continue;
-        }
-        assert!(headlines(&ai).iter().any(|(head, detail)| head
-            .starts_with("Breaker under a shield: the declaration on")
-            && head.ends_with("waits for the ram")
-            && detail.contains("with no shield yet")));
-        // The Ram steps onto a Swordsman: the war opens.
-        let with = game.units[&bodies[0]].pos;
-        game.remove_unit(ram);
-        unit(&mut game, "battering_ram", 0, with);
-        ai.maintain_conquest_opening(&mut game, 0);
-        assert!(
-            ai.conquest_declaration(&mut game, 0),
-            "the Ram is with its shield"
-        );
-    }
+    let (mut game, mut ai, capital) = opened(true);
+    let opening = ai.conquest_opening.clone().unwrap();
+    let rally = opening.rally;
+    let ring: Vec<Pos> = game
+        .wring(rally, 1)
+        .into_iter()
+        .filter(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
+        .take(4)
+        .collect();
+    let bodies: Vec<u32> = ring
+        .iter()
+        .map(|pos| unit(&mut game, "swordsman", 0, *pos))
+        .collect();
+    let spot = game
+        .wring(rally, 2)
+        .into_iter()
+        .find(|pos| game.city_at(*pos).is_none() && game.unit_ids_at(*pos).is_empty())
+        .unwrap();
+    let ram = unit(&mut game, "battering_ram", 0, spot);
+    ai.breaker_shield_watch(&game, 0);
+    assert!(ai.breaker_holds_the_declaration(&game, 0, &opening));
+    assert!(ai.breaker_holds_the_declaration(&game, 0, &opening));
+    let waits: Vec<(String, String)> = headlines(&ai)
+        .into_iter()
+        .filter(|(head, _)| {
+            head.starts_with("Breaker under a shield: the declaration on")
+                && head.ends_with("waits for the ram")
+        })
+        .collect();
+    assert_eq!(waits.len(), 1, "journalled once a turn");
+    assert!(waits[0].1.contains("with no shield yet"), "{}", waits[0].1);
+    // The war waits too: the full declaration path holds.
+    let mut held = ai.clone();
+    let mut board = game.clone();
+    assert!(!held.conquest_declaration(&mut board, 0));
+    assert!(!board.is_at_war(0, 1));
+
+    // Off, nothing waits.
+    let (game_off, mut off, _) = opened(false);
+    let opening_off = off.conquest_opening.clone().unwrap();
+    assert!(!off.breaker_holds_the_declaration(&game_off, 0, &opening_off));
+
+    // No walls standing: nothing to wait for.
+    let mut bare = game.clone();
+    set_walls(&mut bare, capital, 0);
+    assert!(!ai.breaker_holds_the_declaration(&bare, 0, &opening));
+
+    // The Ram steps onto a Swordsman by the rally: the hold lifts.
+    let with = game.units[&bodies[0]].pos;
+    game.remove_unit(ram);
+    unit(&mut game, "battering_ram", 0, with);
+    assert!(!ai.breaker_holds_the_declaration(&game, 0, &opening));
 }
 
 // --------------------------------------------------- 4. the breaker is lost

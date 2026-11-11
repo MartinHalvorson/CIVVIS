@@ -53,9 +53,10 @@
 //!
 //! Only for the early conquest opening (`early-conquest-opening`: the first
 //! capital, or `city-state-before-the-first-capital`'s stone) while its city
-//! stands with the target, and for one breaker: our Battering Ram or Siege
-//! Tower whose effect works on that city's walls, nearest it. Mid- and
-//! late-game siege trains are untouched.
+//! stands with the target, and for its breakers: our Battering Rams and Siege
+//! Towers whose effect works on that city's walls. One is the breaker (the
+//! one a shield carries, else the nearest the city); any other is a spare
+//! that waits under cover. Mid- and late-game siege trains are untouched.
 //!
 //! 1. **March** ([`AdvancedAi::shielded_breaker_step`] for the breaker). The
 //!    breaker never ends a move on a tile without a land soldier of ours, and
@@ -67,13 +68,18 @@
 //!    a soldier while the shield walks back for it, and the shield moves first
 //!    in the unit order. `advanced_formations` does not link the breaker to
 //!    anything but its shield; one already riding with another soldier (a
-//!    garrison, a guard) leaves it for the shield.
+//!    garrison, a guard, an archer) leaves it before the war so the shield's
+//!    walk back converges. After the unit loop a breaker a later mover left
+//!    alone steps back under cover with what movement it has
+//!    (`breaker_shield_note`). The opening does not declare into standing
+//!    walls before its breaker stands with its shield within
+//!    `CONQUEST_ASSEMBLY_RADIUS` of the rally
+//!    ([`AdvancedAi::breaker_holds_the_declaration`]).
 //! 2. **Arrival.** Once the opening has declared, its force and breaker are
 //!    the siege, with any other field-army body within
-//!    [`ASSAULT_JOIN_RADIUS`] of the city: the strike is a commitment, and
-//!    no stage, muster line,
-//!    danger limit or ring-seal hold of the siege train applies to its
-//!    bodies ([`AdvancedAi::shielded_breaker_step`] runs ahead of the siege
+//!    [`ASSAULT_JOIN_RADIUS`] of the city: the strike is a commitment, and no
+//!    stage, muster line, danger limit or ring-seal hold of the siege train
+//!    applies to its bodies ([`AdvancedAi::shielded_breaker_step`] runs ahead of the siege
 //!    train in the military step). The shield walks to a tile beside
 //!    the City Center (fewest visible enemy soldiers beside it, then not
 //!    across a river from the city, then not open flat ground), carrying the
@@ -98,11 +104,13 @@
 //!    wounded body heals on the shipped path. The breaker's loss is
 //!    journalled first, with where and to what (`breaker_shield_watch`).
 //! 5. **Journal** (grep `Breaker under a shield:`): `the <ram> follows the
-//!    <unit> to <city>`, `the <ram> waits ... for its shield`, `the <unit>
-//!    holds the assault on <city> until the ram stands beside the walls (N
-//!    turn(s))`, `the ram stands beside <city>; N bodies strike the walls`,
-//!    `the <unit> strikes <city> beside the ram`, `the <ram> is lost before
-//!    <city>`.
+//!    <unit> to <city>`, `the <unit> walks back for the <ram>`, `the <ram>
+//!    waits at (x, y) for its shield`, `the <ram> leaves the <unit> for its
+//!    shield`, `the <ram> steps back under cover`, `the declaration on <city>
+//!    waits for the ram`, `the <unit> holds the assault on <city> until the
+//!    ram stands beside the walls (N turn(s))`, `the <unit> strikes <city>
+//!    beside the ram`, `the ram stands beside <city>; N bodies strike the
+//!    walls`, `the <ram> is lost before <city>`.
 //!
 //! Off, every entry point returns before it reads the board, so the
 //! controller is byte-identical.
@@ -1166,7 +1174,7 @@ impl AdvancedAi {
                 if self.breaker_to_cover(g, pid, uid, toward) {
                     think!(self.journal(), Military, Detail,
                         "Breaker under a shield: the {kind} steps back under cover";
-                        "the soldier it stood with at {from:?} moved on; it ends the turn beside a soldier or in a city of ours";
+                        "the soldier it stood with at {from:?} moved on; it ends the turn with a soldier or in a city of ours";
                         from);
                 }
             }
@@ -1296,7 +1304,3 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
-
-// TEMPORARY CI scaffold; removed before ship.
-#[cfg(test)]
-mod replay_scaffold;
