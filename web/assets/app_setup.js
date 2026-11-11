@@ -321,6 +321,7 @@ function selectedSimulationSettings() {
   const requiredVictories = Number(readSetting("requiredvictories")) || 1;
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
+  const rivalStrategy = readSetting("rivalstrategy");
   const leaderSelection = readSetting("leaderselection") || "automatic";
   const customLeaders = leaderSelection === "custom" ? customLeaderRowsFromDom() : [];
   const customCivs = customLeaders.map(row => row.civ).filter(Boolean);
@@ -379,7 +380,9 @@ function selectedSimulationSettings() {
           // what makes the ladder climbable from one.
           ...(humanPlayers === "ai_sim"
             ? (leaderSelection === "custom" ? {civs: customCivs} : {})
-            : {civs: civ6 || !leader ? [] : [leader], difficulty})};
+            : {civs: civ6 || !leader ? [] : [leader], difficulty}),
+          // The other game seats its own AI; ours seats the agent asked for.
+          ...(humanPlayers === "ai_sim" || civ6 || !rivalStrategy ? {} : {rival_strategy: rivalStrategy})};
 }
 // The handoff screen describes the world being built, so it reports the values
 // the payload actually carries rather than re-reading the panel behind it.
