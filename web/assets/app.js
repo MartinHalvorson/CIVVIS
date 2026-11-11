@@ -31434,7 +31434,7 @@ function drawCityScreen() {
   const currentKey = current ? itemKey(current) : null;
   let build = "";
   build += `<div class="build-head"><div class="build-title">` +
-    `${current ? "Change production" : "Choose production"}</div>` +
+    `${purchasing ? "Purchase" : current ? "Change production" : "Choose production"}</div>` +
     `<div class="build-tabs" role="tablist">` + tabs.map(([tab, label]) =>
       `<button type="button" role="tab" aria-selected="${tab === cityBuildTab}" ` +
       `onclick='setCityBuildTab("${tab}")'>${label}</button>`).join("") +
@@ -31461,7 +31461,10 @@ function drawCityScreen() {
         : entry.sites.length));
     if (!group.length) continue;
     listed += group.length;
-    group.sort((a, b) => itemCost(a.item) - itemCost(b.item));
+    const priced = entry => purchasing
+      ? entry.buys.find(action => paidIn(action) === cityBuildTab)?.cost ?? itemCost(entry.item)
+      : itemCost(entry.item);
+    group.sort((a, b) => priced(a) - priced(b));
     build += `<div class="city-group"><div class="city-group-head">${category}` +
       `<span>${group.length}</span></div><div class="build-list">` +
       group.map(entry => {
@@ -31473,11 +31476,17 @@ function drawCityScreen() {
           const offers = entry.buys.filter(action => paidIn(action) === cityBuildTab);
           // A district is bought onto a tile, and which tile is chosen where
           // tiles are: on the map.
-          return cityBuildRow({glyph, name, note, cost: `<b>Buy</b>`,
+          // The engine quotes every purchase it offers. A server that
+          // predates the quote still gets a row that says what it is for.
+          const price = offers[0].cost;
+          return cityBuildRow({glyph, name, note,
+            cost: price === undefined ? `<b>Buy</b>`
+              : `<b>${Math.round(price)}</b><small>${titleCase(cityBuildTab)}</small>`,
             onclick: offers.length > 1
               ? `beginSitePick(${city.id},${itemId},"${cityBuildTab}")`
               : `sendFromCity(${JSON.stringify(offers[0])})`,
-            title: `Pay ${titleCase(cityBuildTab)} for it outright`});
+            title: price === undefined ? `Pay ${titleCase(cityBuildTab)} for it outright`
+              : `Pay ${Math.round(price)} ${titleCase(cityBuildTab)} for it outright`});
         }
         const cost = itemCost(entry.item);
         const isCurrent = itemKey(entry.item) === currentKey;
