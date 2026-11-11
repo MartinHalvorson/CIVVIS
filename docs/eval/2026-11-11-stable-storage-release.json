@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "qualification pending; not deployed",
+  "status": "All qualification gates passed; public promotion in progress",
   "baseline_source": "ef9ddb192ea0f244dfa8742df9331594179f8bd6",
   "candidate_source": "cc6647d8394336360dc6bf7857c43deba9e98352",
   "candidate_tree": "007682b9e7583220f4bab1d31f042e6d5a5fec77",
@@ -27,8 +27,69 @@
   "ai_rules_and_toolchain_blobs_unchanged": true,
   "web_qualification_run": 43019908623,
   "native_qualification_run": 43019913478,
-  "full_game_results": null,
-  "promotion_run": null,
+  "full_game_results": {
+    "pairs": [
+      {
+        "roster": "default",
+        "seed": 7,
+        "same_every_frame": true,
+        "terminal_turn": 178,
+        "cpu_pct": -20.323315402915064,
+        "wall_pct": -19.234013626058164
+      },
+      {
+        "roster": "six",
+        "seed": 7311001,
+        "same_every_frame": true,
+        "terminal_turn": 213,
+        "cpu_pct": -7.476673097085474,
+        "wall_pct": -7.176565562935567
+      },
+      {
+        "roster": "default",
+        "seed": 8,
+        "same_every_frame": true,
+        "terminal_turn": 207,
+        "cpu_pct": -8.440928212356136,
+        "wall_pct": -10.06731418042105
+      },
+      {
+        "roster": "six",
+        "seed": 7311002,
+        "same_every_frame": true,
+        "terminal_turn": 187,
+        "cpu_pct": -8.678857646595596,
+        "wall_pct": -11.114909011516538
+      },
+      {
+        "roster": "default",
+        "seed": 9,
+        "same_every_frame": true,
+        "terminal_turn": 181,
+        "cpu_pct": -11.778165468669698,
+        "wall_pct": -11.38448063897133
+      },
+      {
+        "roster": "six",
+        "seed": 7311003,
+        "same_every_frame": true,
+        "terminal_turn": 198,
+        "cpu_pct": -8.81171213589278,
+        "wall_pct": -8.011145352689553
+      }
+    ],
+    "by_roster": {
+      "six": {
+        "median_cpu_pct": -8.678857646595596,
+        "median_wall_pct": -8.011145352689553
+      },
+      "default": {
+        "median_cpu_pct": -11.778165468669698,
+        "median_wall_pct": -11.38448063897133
+      }
+    }
+  },
+  "promotion_run": 43030233049,
   "notes": "Source snapshot contains only already-merged performance patches. Main keeps its newer AI changes. Promotion requires exact public-baseline gameplay/save parity and measured full-game gains.",
   "quality_qualification_run": 43019917896,
   "native_requested_tests": {
@@ -38,5 +99,41 @@
       "name"
     ]
   },
-  "native_requested_toolchain": "1.99.1"
+  "native_requested_toolchain": "1.99.1",
+  "web_receipt": {
+    "source_commit": "cc6647d8394336360dc6bf7857c43deba9e98352",
+    "publisher_commit": "9bb5430c809b8c853477b120f67311e1a67d9cc0",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "binaryen": "wasm-opt version 120",
+    "engine": {
+      "format": 1,
+      "source_commit": "cc6647d8394336360dc6bf7857c43deba9e98352",
+      "wasm_bytes": 16889097,
+      "wasm_sha256": "a29374f998b70c5e31c4137099788b738438f32b3e928e213d105a9c8cc6d795",
+      "function_map_sha256": "a7f2a32aacdb851666b4570a17bfc6bf611b48b90feb0595103b1a81dcba39a6"
+    }
+  },
+  "native_test_selections": [
+    {
+      "target": "lib",
+      "filter": "game",
+      "passed": 1213
+    },
+    {
+      "target": "lib",
+      "filter": "idmap",
+      "passed": 7
+    },
+    {
+      "target": "lib",
+      "filter": "name",
+      "passed": 160
+    }
+  ],
+  "native_binaries": {
+    "civvis": "fa0be720a2e9b81206aeb042b95bd04cdc79a35487a45dcee1a39a7336d17396",
+    "civvis_orders": "1e640c0442d9ca0e16771922215b1c36751ba9b52086abcaf89a5d43a5b4441e"
+  },
+  "quality_status": "success",
+  "measurement_scope": "12 full Online/Prince engine/state games, four majors/six city-states and six majors/nine city-states; excludes module download/compilation and UI rendering. All normalized observation/reasoning frames and final full saves match current public ef9 exactly."
 }
