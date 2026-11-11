@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "land-army-asks-the-host-price",
+  "scope": "Final combined-source native query activation:145 original planning/order/protocol controls,145 identical consumed-read sequences. At50/frame0 OFF asks2Iron for2Horses+49Gold; ON requests host cash price for2Iron capped135Gold, preserving95Gold. Low-cash regression:both finalOFF/ON preserve all159 original complete replies, including Ironbarter59 that the initial candidate removed. Full warmup/read/reply/command traces archived. No counterfactual acceptance, material receipt, upgrades, captures or win-rate claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-land-army-asks-the-host-price.native-queries.tar.xz",
+    "sha256": "89a9570ba1e45028a403b9131b5603c6db5d55130beacdfd2d2753035f0411fa"
+  },
+  "members": [
+    "persistent-t50-pair.json"
+  ]
+}
