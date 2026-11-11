@@ -25,7 +25,11 @@
 //! frame the bridge picks posts, one per front, at our land soldiers that lead
 //! the most other land soldiers within two tiles, weighted toward visible
 //! enemies within four tiles, and walks the nearest General to each post. A
-//! General past the number of posts is retired as before. A General cannot be
+//! General past the number of posts is retired as before, except that the
+//! first two Comandantes wait with our largest group of soldiers when no post
+//! is worth one (a scattered army gathers again, and that aura never
+//! expires; live `civvis-20261111T172329Z` retired all six, the first on the
+//! frame its escort dispersed). A General cannot be
 //! captured (`CanRetreatWhenCaptured`) and shares a tile with a soldier, so
 //! standing with the army risks nothing. `Kind::OptIn`; with the gene off the
 //! bridge retires every General exactly as before.
