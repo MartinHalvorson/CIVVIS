@@ -4,6 +4,7 @@ name: wasm-qualify
 # This file checks itself on a PR. Other engine experiments dispatch it after
 # merge with source_ref=<their exact SHA>; the publisher comes from the
 # workflow revision, just as the production pipeline builds a pinned lane.
+# The PR self-test builds the base revision to exercise that cross-ref path.
 on:
   pull_request:
     paths:
@@ -28,12 +29,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  qualify:
+  wasm-qualify:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      QUAL_SOURCE_REF: ${{ inputs.source_ref }}
+      QUAL_SOURCE_REF: ${{ inputs.source_ref || github.event.pull_request.base.sha }}
       QUAL_ALLOW_LEGACY: ${{ inputs.allow_legacy_full_map }}
     steps:
       - uses: actions/checkout@v4
