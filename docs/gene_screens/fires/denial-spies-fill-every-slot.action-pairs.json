@@ -1,0 +1,25 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "denial-spies-fill-every-slot",
+  "scope": "One frozen ci-profile civvis_orders built from this branch (b95d5ce879), run on seven live Deity Online Pericles culture-lane runs of 2026-11-10/11 (six lost to a rival Science Victory t174-189), each events.jsonl cut before the second state frame of a turn on which our Spy capacity stood above the Spies held and in training (14 turns t90-125: before the first rival Rocketry, and after it with one Spy already in training), with the run's own forced tags, --victory culture and --resumed; the on arm adds only this tag. In 11 of 14 the on arm's claim fires (the stand-in racer before Rocketry, or a second queue beside the Spy in training): 8 propose a Spy the off arm does not, 3 keep a near-done or paused head one more turn ahead of the claimed Spy; the 3 unchanged frames already train a Spy in both arms. Proposed orders only; no host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-11-denial-spies-fill-every-slot.native-queries.tar.xz",
+    "sha256": "e5d0b3f5b0089538b771f9a28230f604ef8b518799ce341e86211b07c61e57b0"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json",
+    "native-queries/0002/result.json",
+    "native-queries/0003/result.json",
+    "native-queries/0004/result.json",
+    "native-queries/0005/result.json",
+    "native-queries/0006/result.json",
+    "native-queries/0007/result.json",
+    "native-queries/0008/result.json",
+    "native-queries/0009/result.json",
+    "native-queries/0010/result.json",
+    "native-queries/0011/result.json",
+    "native-queries/0012/result.json",
+    "native-queries/0013/result.json"
+  ]
+}
