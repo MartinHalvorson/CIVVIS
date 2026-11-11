@@ -411,6 +411,17 @@ impl Game {
     }
 
     pub fn apply(&mut self, pid: usize, action: &Action) -> Result<(), String> {
+        // Bracketed rather than cleared on success: a refused action has
+        // usually changed nothing, but "usually" is the word every stale
+        // cache in this file's history was built on. See
+        // `Game::keep_rival_yields`.
+        self.query_memo.action_begins();
+        let result = self.apply_unbracketed(pid, action);
+        self.query_memo.action_ends();
+        result
+    }
+
+    fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
         if self.is_finished() {
             return Err("game over".into());
         }

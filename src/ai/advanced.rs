@@ -25795,6 +25795,9 @@ impl AdvancedAi {
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
         g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
+        // The settings above are written on the board without an action.
+        // See `Game::keep_rival_yields`.
+        g.board_written();
         // `nusantara-reads-the-coast`: see `Game::nusantara_site_planner`.
         self.seat_nusantara_site_planner(g, pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before

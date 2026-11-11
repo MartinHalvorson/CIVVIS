@@ -1665,6 +1665,12 @@ impl Game {
                 return *yields;
             }
         }
+        let kept = self.keeps_yields_of(cid);
+        if kept {
+            if let Some(yields) = self.kept_rival_yields(cid) {
+                return yields;
+            }
+        }
         // One derivation prices every owned plot to plan the citizens and
         // the worked plots again to sum them, and asks the city's amenities
         // more than once. A caller with no memo open still shares those
@@ -1674,7 +1680,125 @@ impl Game {
         if let Some(memo) = self.query_memo.yields.borrow_mut().as_mut() {
             memo.insert(cid, yields);
         }
+        if kept {
+            self.query_memo
+                .rival_yields
+                .borrow_mut()
+                .insert(cid, yields);
+        }
         yields
+    }
+
+    /// Keep the city yields of every seat but the acting one from one
+    /// read-only pass to the next, until the board changes.
+    ///
+    /// ★★★★ TEN PASSES A TURN EACH PRICED EVERY CITY IN THE WORLD. A seat's
+    /// turn asks what its rivals' cities yield over and over — the culture
+    /// forecast, the lane table, the culture-defence floor, the catch-up
+    /// investments, the spaceport race — and each pass derives all of them
+    /// again, because a `QueryMemo` lasts one pass and a mutable borrow
+    /// separates one pass from the next. On the world civvis.ai plays that
+    /// was 38% of the stepping thread (`docs/SIMULATOR_PERFORMANCE.md`,
+    /// 2026-11-11). Most of those passes change nothing: a city with work
+    /// queued is not given more, so the board the tenth pass reads is the
+    /// board the first one read.
+    ///
+    /// What is kept, and exactly when it is dropped:
+    ///
+    /// * **Only cities the acting seat does not own.** An agent weighs its own
+    ///   empire by rearranging it in place — the policy scorer seats a card,
+    ///   reads the empire and unseats it; the governor passes write the food
+    ///   bias and the city directives — and none of that goes through
+    ///   [`Game::apply`]. Its own cities are therefore derived exactly as
+    ///   before, so every what-if about its own empire reads the board as it
+    ///   stands.
+    /// * **Dropped by every action,** at both ends of `apply`, successful or
+    ///   refused, and never read or filled while one is in flight: the rules
+    ///   read yields half-way through changing the board.
+    /// * **Dropped by every tile write,** through the tile grid's epoch, which
+    ///   every `get_mut` moves whoever calls it.
+    /// * **Dropped by [`Game::board_written`],** which is what a caller that
+    ///   writes anything else about another seat directly must call.
+    /// * **Never kept in a clone,** which starts with no memo at all, and off
+    ///   unless a driver turns it on. The spectator session turns it on for
+    ///   the length of one seat's turn; the live Civilization VI seat and
+    ///   the gene screen do not, and play exactly as they did.
+    ///
+    /// [`Game::audit_rival_yields`] is the check on all of the above: with it
+    /// on, every reused answer is derived again and compared.
+    pub fn keep_rival_yields(&mut self, on: bool) {
+        self.query_memo.keeps_rival_yields.set(on);
+        self.query_memo.rival_yields.borrow_mut().clear();
+    }
+
+    /// Something about the board was written without an action and without
+    /// touching a tile. Drops what [`Game::keep_rival_yields`] holds.
+    pub fn board_written(&mut self) {
+        self.query_memo.rival_yields.borrow_mut().clear();
+    }
+
+    /// Derive every reused yield again and panic if the two differ. An
+    /// instrument for tests and `civvis site-bench --audit-kept-yields`: it
+    /// costs more than keeping nothing would.
+    pub fn audit_rival_yields(&mut self, on: bool) {
+        self.query_memo.audits_rival_yields.set(on);
+    }
+
+    /// How many rival city yields were answered from what was kept, and how
+    /// many were derived while keeping was on.
+    pub fn rival_yields_reused(&self) -> (u64, u64) {
+        (
+            self.query_memo.rival_yields_reused.get(),
+            self.query_memo.rival_yields_derived.get(),
+        )
+    }
+
+    fn keeps_yields_of(&self, cid: u32) -> bool {
+        let memo = &self.query_memo;
+        memo.keeps_rival_yields.get()
+            && memo.acting.get() == 0
+            && !memo.auditing_rival_yields.get()
+            && self
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner != self.current)
+    }
+
+    fn kept_rival_yields(&self, cid: u32) -> Option<Yields> {
+        let memo = &self.query_memo;
+        let epoch = self.map.tiles.epoch();
+        if memo.rival_yields_epoch.get() != epoch {
+            memo.rival_yields.borrow_mut().clear();
+            memo.rival_yields_epoch.set(epoch);
+        }
+        let kept = memo.rival_yields.borrow().get(&cid).copied();
+        let Some(kept) = kept else {
+            memo.rival_yields_derived
+                .set(memo.rival_yields_derived.get() + 1);
+            return None;
+        };
+        memo.rival_yields_reused
+            .set(memo.rival_yields_reused.get() + 1);
+        if memo.audits_rival_yields.get() {
+            // Nothing kept may answer inside the comparison, or a stale
+            // neighbour would vouch for a stale city.
+            memo.auditing_rival_yields.set(true);
+            let fresh = {
+                let _memo = self.query_memo();
+                self.city_yields_uncached(cid)
+            };
+            memo.auditing_rival_yields.set(false);
+            assert!(
+                fresh == kept,
+                "a kept city yield went stale: city {cid} of seat {} on turn {} while seat {} \
+                 acts. Kept {kept:?}, the board now gives {fresh:?}. Something wrote the board \
+                 without an action, a tile write or `Game::board_written`.",
+                self.cities[&cid].owner,
+                self.turn,
+                self.current,
+            );
+        }
+        Some(kept)
     }
 
     /// Yields this city would produce if its citizens were assigned under
