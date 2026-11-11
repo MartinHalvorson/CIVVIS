@@ -5613,6 +5613,12 @@ pub const GENES: &[Gene] = &[
     // Ram or Siege Tower. Opt-in;
     // see `advanced/first_capital_before_the_walls.rs`.
     Gene { tag: "first-capital-before-the-walls", field: "first_capital_before_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_walls, disable: AdvancedAi::disable_first_capital_before_the_walls },
+    // Live Deity Pericles 11-10: heretic strikes at t127 (232642Z), t130
+    // (204138Z) and t133 (220038Z) opened 29-32-turn wars on the neighbours
+    // whose land held our Rock Bands' stages. A Culture seat holds the strike
+    // once Cold War is known or its band bank is open, and ends a strike war
+    // then as soon as the host signs. Opt-in; see `advanced/faith_strike.rs`.
+    Gene { tag: "faith-strike-spares-the-stages", field: "faith_strike_spares_the_stages", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_strike_spares_the_stages, disable: AdvancedAi::disable_faith_strike_spares_the_stages },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

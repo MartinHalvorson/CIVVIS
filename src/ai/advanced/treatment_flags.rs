@@ -209,6 +209,9 @@ impl AdvancedAi {
         /// `first-capital-before-the-walls`: see
         /// `advanced/first_capital_before_the_walls.rs`.
         first_capital_before_the_walls => enable_first_capital_before_the_walls, disable_first_capital_before_the_walls;
+        /// Opt-in `faith-strike-spares-the-stages`; see
+        /// `AdvancedAi::faith_strike_spares_the_stages`.
+        faith_strike_spares_the_stages => enable_faith_strike_spares_the_stages, disable_faith_strike_spares_the_stages;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
