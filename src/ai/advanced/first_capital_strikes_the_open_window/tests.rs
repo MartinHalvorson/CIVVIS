@@ -332,13 +332,15 @@ fn scouts_do_not_fill_the_conquest_force_or_open_its_window() {
             opening.force,
             [warrior, archer, catapult].into_iter().collect()
         );
+        // Scouts nearer the rally must not displace real soldiers when
+        // the six-body reservation fills. Declaration has separate guards.
+        let mut expected = vec![warrior, archer, catapult];
+        expected.extend(bodies(&mut game, "swordsman", rally, 3, 3));
+        ai.maintain_conquest_opening(&mut game, 0);
         assert_eq!(
-            ai.first_capital_open_window_go(&game, 0, &opening)
-                .is_some(),
-            gene
+            ai.conquest_opening.as_ref().unwrap().force,
+            expected.into_iter().collect()
         );
-        assert_eq!(ai.conquest_declaration(&mut game, 0), gene);
-        assert_eq!(game.is_at_war(0, 1), gene);
     }
 }
 
