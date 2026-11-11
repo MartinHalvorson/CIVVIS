@@ -8631,6 +8631,10 @@ pub struct AdvancedAi {
     /// pickers price Great Nusantara's Coast adjacency. See
     /// `advanced/nusantara_reads_the_coast.rs`. Off by default.
     nusantara_reads_the_coast: bool,
+    /// Reserve a missing land eye before economy claims while the first
+    /// capital opening still lacks a reachable target. Opt-in; see
+    /// `advanced/first_capital_recon.rs`.
+    land_recon_before_the_first_capital: bool,
     // ---- append: p-r ------------------------------------------------
     /// A drained Religion founder uses upkeep relief before losing its army.
     /// Opt-in; see `religion_seat_cuts_the_upkeep`.
@@ -11572,6 +11576,7 @@ mod denial_charts_the_racer;
 /// `domination-charts-every-capital`: see
 /// `advanced/domination_charts_every_capital.rs`.
 mod domination_charts_every_capital;
+mod first_capital_recon;
 mod domination_research;
 /// `domination-target-gets-its-breaker`: the Domination lane's breaker for
 /// its target. See `advanced/domination_target_gets_its_breaker.rs`.
@@ -26336,6 +26341,10 @@ impl AdvancedAi {
                 // one-off district cannot hide the Library/University debt.
                 self.reserve_targeted_research_buildings(g, pid, &plan);
             }
+            // The first-capital opening needs a charted road and target before
+            // its naming window closes. Let the existing missing land arm
+            // take an idle queue before optional economy claims bury it.
+            self.claim_first_capital_land_recon(g, pid, &plan);
             // Reserve one reachable diplomatic stage before baseline queues fill.
 
             self.prioritize_envoy_infrastructure(g, pid, &plan);
