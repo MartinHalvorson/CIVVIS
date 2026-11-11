@@ -14487,16 +14487,15 @@ fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         "a drag of the map must not be saved as the viewer's choice"
     );
     assert_eq!(
-        js.matches("localStorage.setItem(WORLD_SPIN_STORAGE_KEY").count(),
+        js.matches("localStorage.setItem(WORLD_SPIN_STORAGE_KEY")
+            .count(),
         1,
         "the preference has one writer"
     );
     assert!(js.contains(r#"const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin-2";"#));
     // The next world opens as the button last left it.
     assert!(js.contains("if (newWorld) restoreWorldSpin();"));
-    assert!(js.contains(
-        r#"const saved = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";"#
-    ));
+    assert!(js.contains(r#"const saved = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";"#));
     // The button is the instrument: a globe whose meridian keeps the
     // world's own period, lit only while there is a world turning — and
     // it opens unlit, because the world opens still.
