@@ -5750,6 +5750,10 @@ pub const GENES: &[Gene] = &[
     // First-slot ranged support. Leaves later recon settings unchanged;
     // the opening Scout is displaced. No Native strength claim.
     Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
+    // Operator 11-11: remove the city limit. The empire settles every seat it
+    // can hold while the city out-earns its Settler, several Settlers at a
+    // time. See `advanced/no_city_limit.rs`.
+    Gene { tag: "no-city-limit", field: "no_city_limit", kind: Kind::OptIn, enable: AdvancedAi::enable_no_city_limit, disable: AdvancedAi::disable_no_city_limit },
     // A missing land eye precedes economy claims until an early Domination target is charted.
     Gene { tag: "land-recon-before-the-first-capital", field: "land_recon_before_the_first_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_land_recon_before_the_first_capital, disable: AdvancedAi::disable_land_recon_before_the_first_capital },
     // ---- append: p-r ------------------------------------------------

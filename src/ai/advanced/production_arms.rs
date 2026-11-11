@@ -273,7 +273,9 @@ impl AdvancedAi {
         // scale here is the building arm's own, so this credit and
         // that one reach zero on the same turn. See
         // `expansion_hall_district`.
-        let expansion_path = if self.expansion_hall_district {
+        // `no-city-limit` prices the Plaza the same way while seats that
+        // pay are still free.
+        let expansion_path = if self.expansion_hall_district || self.no_city_limit {
             let seats_short = self
                 .settlement_target(plan)
                 .saturating_sub(city_count + counts.settlers) as f64;

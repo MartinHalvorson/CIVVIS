@@ -484,6 +484,11 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // `no-city-limit`: count the free seats that pay and note the lifted
+        // settlement target the Settler paths read. The plan keeps its own
+        // number, so the strategy below leaves its expansion half when it
+        // did before. See `advanced/no_city_limit.rs`.
+        self.note_no_city_limit_target(g, pid, desired_cities, &cities);
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"

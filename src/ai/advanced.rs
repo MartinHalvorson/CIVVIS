@@ -8040,6 +8040,14 @@ pub struct AdvancedAi {
     /// See `advanced/great_works_never_wait.rs`. Off by default.
     great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `no-city-limit`: no city target of its own. The empire settles every
+    /// seat it can hold while the city founded there out-earns its Settler,
+    /// several Settlers at a time. See `advanced/no_city_limit.rs`. Off by
+    /// default.
+    no_city_limit: bool,
+    /// `no-city-limit`: the lifted settlement target `assess` counted, with
+    /// its turn. See `advanced/no_city_limit.rs`.
+    no_city_limit_target: std::cell::Cell<no_city_limit::NoCityLimitTarget>,
     /// `last-charge-joins-the-army`: on a Religion seat an Apostle keeps its
     /// last charge and hunts rival religious units, and a Missionary keeps
     /// its last charge and scouts. See `advanced/apostle_army.rs`. Off by
@@ -11539,6 +11547,9 @@ mod launcher_war;
 /// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
 mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
+/// `no-city-limit`: the empire settles every seat that pays, several
+/// Settlers at a time. See `advanced/no_city_limit.rs`.
+mod no_city_limit;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
 /// `nusantara-reads-the-coast`: Indonesia's district site pickers price the
@@ -15179,7 +15190,13 @@ impl AdvancedAi {
         let restore_target = self.base.w.city_target;
         let restore_stop = self.base.w.settler_stop_turn;
         let restore_builders = self.base.w.builder_per_city;
-        self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
+        // `settlement_target` is `plan.desired_cities` unless `no-city-limit`
+        // has counted paying seats past it this turn.
+        self.base.w.city_target = restore_target.max(if self.no_city_limit {
+            self.settlement_target(plan)
+        } else {
+            plan.desired_cities
+        } as f64);
         // The last production-only override this audit had not priced. Whether
         // it binds at all depends on the speed: the gene is 150 and the
         // deadline is `min(300 standard, max_turns - 50 standard)`, which at
@@ -21943,11 +21960,20 @@ impl AdvancedAi {
     /// Off by default; evaluator arm `advanced_settlement_gap_target`,
     /// reserved matrix seed 31000000.
     fn settlement_target(&self, plan: &StrategicPlan) -> usize {
-        if self.settlement_gap_reads_city_target {
+        let target = if self.settlement_gap_reads_city_target {
             plan.desired_cities
                 .max(self.base.w.city_target.max(0.0) as usize)
         } else {
             plan.desired_cities
+        };
+        // `no-city-limit`: every free seat that pays, counted by `assess` on
+        // the plan's own turn. Zero with the gene off. See
+        // `advanced/no_city_limit.rs`.
+        let noted = self.no_city_limit_target.get();
+        if self.no_city_limit && noted.turn == plan.assessed_turn {
+            target.max(noted.cities)
+        } else {
+            target
         }
     }
 
@@ -21974,6 +22000,15 @@ impl AdvancedAi {
             return 0;
         }
         let width = self.settler_in_flight_allowed(g, desired_cities, city_count, settlers);
+        // `no-city-limit`: several Settlers at once, never more than the
+        // seats still short. `None` with the gene off. See
+        // `advanced/no_city_limit.rs`.
+        let width = match self.no_city_limit_width(g, pid) {
+            Some(wide) if city_count + settlers < desired_cities => {
+                width.max(wide.min(desired_cities - city_count))
+            }
+            _ => width,
+        };
         if self.settler_backlog_brake_2
             && city_count >= BasicAi::SETTLER_BACKLOG_V2_MIN_CITIES
             && self
@@ -23268,8 +23303,12 @@ impl AdvancedAi {
                     // has to be funded with. The `scale` below already fades
                     // the whole term to zero once the empire is no longer
                     // short, so neither gate needs its own shortfall test.
+                    // `no-city-limit` is the third gate: the seats short are
+                    // the free seats that still pay, and the Hall is what
+                    // makes their Settlers cheap and their cities quick.
                     let expansion_hall = if ((self.expansion_hall && self.land_grab)
-                        || self.expansion_scales_with_difficulty)
+                        || self.expansion_scales_with_difficulty
+                        || self.no_city_limit)
                         && !spec.wonder
                     {
                         let seats_short = self
