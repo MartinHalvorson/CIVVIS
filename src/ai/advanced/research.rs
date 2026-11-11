@@ -378,6 +378,7 @@ impl AdvancedAi {
             // melee line, while a stepping stone can still be named or stands.
             // `None` with the gene off.
             let stone_research_goal = self.city_state_stone_research_goal(g, pid);
+            let stone_breaker_goal = self.city_state_stone_breaker_research_goal(g, pid);
             let defensive_walls_goal = self
                 .frontier_walls_research_goal(g, pid)
                 .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
@@ -462,6 +463,11 @@ impl AdvancedAi {
             // above it passes. See the arm below.
             let old_techs = std::cell::OnceCell::new();
             let forced_goal = match objective {
+                // `city-state-before-the-first-capital`: Mining, then Masonry
+                // for the stepping stone's Battering Ram, ahead of every other
+                // goal (a tech in progress still finishes). `None` with the
+                // gene off and once Masonry is known.
+                _ if stone_breaker_goal.is_some() => stone_breaker_goal.as_deref(),
                 // `capital-walls-before-the-surprise`: Masonry for the capital
                 // goes ahead of the opening Archery too. 040735Z's slot opened
                 // at turn 11 to eight turns of Archery, which left the walls
@@ -962,8 +968,9 @@ impl AdvancedAi {
                                 format!("science-foundation-before-backlog: the {step} step toward {}, opening usable labs and the first Spaceport before advanced backlog", plain(goal))
                             } else if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
-                            } else if defensive_walls_goal.as_deref() != Some(goal)
-                                && stone_research_goal.as_deref() == Some(goal)
+                            } else if stone_breaker_goal.as_deref() == Some(goal)
+                                || (defensive_walls_goal.as_deref() != Some(goal)
+                                    && stone_research_goal.as_deref() == Some(goal))
                             {
                                 format!("city-state before the first capital: the {step} step toward {}, which the stepping stone's force needs (the Battering Ram, then the unique melee line)", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {

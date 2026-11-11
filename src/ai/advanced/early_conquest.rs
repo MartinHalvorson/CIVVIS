@@ -1746,14 +1746,18 @@ impl AdvancedAi {
                     return;
                 }
                 if let Some(assembled) = opening.assembled {
+                    // `city-state-before-the-first-capital`: not while the
+                    // stone's bill is covered and only a breaker that is
+                    // coming is missing. `false` with the gene off.
                     if g.turn.saturating_sub(assembled)
                         >= g.standard_duration(CONQUEST_ABANDON_TURNS)
+                        && !self.city_state_stone_waits_for_its_breaker(g, pid, opening)
                     {
-                        self.conquest_release(
-                            g,
+                        let why = self.city_state_stone_patience_reason(g, pid).unwrap_or(
                             "the force has stood at the rally for the whole patience window \
                              without covering the city's bill",
                         );
+                        self.conquest_release(g, why);
                         return;
                     }
                 }

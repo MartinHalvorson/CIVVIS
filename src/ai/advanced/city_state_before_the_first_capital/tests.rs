@@ -721,6 +721,14 @@ fn the_opening_is_dropped_the_moment_the_gene_is_switched_off() {
 
 // ------------------------------------------------------- the stone's clock
 
+/// Ancient Walls standing on `cid` (the fixture's walls are the observed
+/// maximum alone), as a live city-state's are.
+fn stand_walls(game: &mut Game, cid: u32) {
+    let city = game.cities.get_mut(&cid).unwrap();
+    city.buildings.push(name!("walls"));
+    city.wall_hp = 100;
+}
+
 /// An ordinary early plan for the production and research pickers.
 fn expansion_plan(game: &Game) -> StrategicPlan {
     StrategicPlan {
@@ -784,10 +792,13 @@ fn the_clock_holds_a_stone_whose_force_is_still_coming_until_turn_60() {
 
 #[test]
 fn the_ram_is_claimed_ahead_of_the_bodies_once_masonry_is_known() {
-    let (mut game, _, _) = fixture();
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
     game.players[0].techs.insert(name!("masonry"));
     game.players[0].gold = 50.0;
     game.players[0].gold_per_turn = 5.0;
+    // A melee body to swing beside the Ram.
+    unit(&mut game, "warrior", at(9, 12));
     let mut ai = seat(true);
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.city_state_stone_stands());
@@ -815,12 +826,34 @@ fn the_ram_is_claimed_ahead_of_the_bodies_once_masonry_is_known() {
 
 #[test]
 fn research_takes_masonry_then_the_unique_melee_line_from_turn_one() {
+    // Turn one, nothing known: Mining, the step toward Masonry.
     let (mut game, _, _) = fixture();
-    game.turn = 6;
+    game.turn = 1;
     game.players[0].civ = "Macedon".to_string();
-    game.players[0].techs.insert(name!("mining"));
+    game.players[0].techs.clear();
     game.players[0].research = None;
     let ai = seat(true);
+    assert_eq!(
+        ai.city_state_stone_breaker_research_goal(&game, 0),
+        Some(name!("masonry"))
+    );
+    assert_eq!(
+        seat(false).city_state_stone_breaker_research_goal(&game, 0),
+        None
+    );
+    let plan = expansion_plan(&game);
+    let mut on = game.clone();
+    ai.advanced_research(&mut on, 0, &plan);
+    assert_eq!(on.players[0].research.as_deref(), Some("mining"));
+
+    // A tech already in progress finishes first.
+    let mut busy = game.clone();
+    busy.players[0].research = Some("pottery".to_string());
+    ai.advanced_research(&mut busy, 0, &plan);
+    assert_eq!(busy.players[0].research.as_deref(), Some("pottery"));
+
+    game.turn = 6;
+    game.players[0].techs.insert(name!("mining"));
     assert!(ai.conquest_opening.is_none(), "nothing is named yet");
     assert_eq!(
         ai.city_state_stone_research_goal(&game, 0),
@@ -876,4 +909,81 @@ fn the_force_is_journalled_every_few_turns_before_the_war() {
         "{}",
         line.detail
     );
+}
+
+#[test]
+fn the_patience_window_waits_for_a_coming_breaker_while_the_bill_is_covered() {
+    let (mut game, _, _) = fixture();
+    game.turn = 15;
+    let mut ai = seat(true);
+    ai.base.journal = crate::reasoning::Journal::recording();
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    game.turn = 16;
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert_eq!(opening.assembled, Some(16), "five of five at the rally");
+    assert!(ai.conquest_preview_takes_the_city(&game, 0, &opening));
+    // The declaration holds for the Ram and records the covered bill.
+    assert!(!ai.conquest_declaration(&mut game, 0));
+    assert!(ai.city_state_stone_waits_for_its_breaker(&game, 0, &opening));
+    // Past the shipped patience window (13 Online turns), Masonry still to
+    // research: the stone stands.
+    for turn in [29, 40, 59] {
+        game.turn = turn;
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.city_state_stone_stands(), "turn {turn}");
+    }
+    game.turn = 60;
+    ai.maintain_conquest_opening(&mut game, 0);
+    assert!(ai.conquest_opening.is_none(), "turn 60: the hold is over");
+    assert!(!ai.conquest_closed);
+    let thoughts = ai.journal().since(0).thoughts;
+    assert!(
+        thoughts.iter().any(|thought| thought
+            .detail
+            .contains("with the bill covered, but no breaker reached it")),
+        "the release names the missing breaker, not the bill"
+    );
+
+    // Off the stone, the shipped window runs: a first-capital seat with no
+    // stone is unchanged (this gene's helpers answer `false`).
+    assert!(!seat(false).city_state_stone_waits_for_its_breaker(&game, 0, &opening));
+}
+
+#[test]
+fn a_covered_bill_buys_the_ram_under_breaker_bought_for_the_siege() {
+    let (mut game, near, _) = fixture();
+    stand_walls(&mut game, near);
+    game.players[0].techs.insert(name!("masonry"));
+    game.players[0].gold = 2_000.0;
+    game.players[0].gold_per_turn = 10.0;
+    let mut ai = seat(true);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    force_at(&mut game, rally);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let rams = |game: &Game| {
+        game.units
+            .values()
+            .filter(|unit| unit.owner == 0 && unit.kind.as_str() == "battering_ram")
+            .count()
+    };
+
+    // The armed purchase rule off: nothing is bought.
+    let mut off = game.clone();
+    assert!(!ai.city_state_stone_breaker_purchase(&mut off, 0));
+    assert_eq!(rams(&off), 0);
+
+    ai.enable_breaker_bought_for_the_siege();
+    assert!(ai.city_state_stone_breaker_purchase(&mut game, 0));
+    assert_eq!(rams(&game), 1, "a Ram stands");
+    assert!(
+        !ai.city_state_stone_breaker_purchase(&mut game, 0),
+        "one is enough"
+    );
+    // And with the Ram standing the declaration goes.
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 2));
 }

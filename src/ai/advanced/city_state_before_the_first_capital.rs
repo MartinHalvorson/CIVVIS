@@ -136,6 +136,10 @@ pub(crate) const STONE_KEEP_VALUE: f64 = 100_000.0;
 /// barbarian camp and the second city's defence; no suzerain ever came.
 pub(crate) const STONE_HOLD_DEADLINE: u32 = 90;
 
+/// The farthest a city buying the stone's Ram may stand from its rally: the
+/// reach `breaker-bought-for-the-siege` buys within (`BREAKER_PURCHASE_REACH`).
+pub(crate) const STONE_BREAKER_PURCHASE_REACH: i32 = 12;
+
 /// The city-state city the opening stands on, keyed the way a live frame can
 /// re-read it: its tile and its civilization.
 #[derive(Clone, Debug, PartialEq)]
@@ -689,6 +693,133 @@ impl AdvancedAi {
                opening.rally);
     }
 
+    /// Whether the assembled stone waits for its breaker rather than running
+    /// down the shipped patience window: its bill is covered, the walls stand,
+    /// no breaker of ours does yet but one is coming (queued, trainable, or
+    /// its technology still to research), no major is at war with us, and it
+    /// is before standard turn [`STONE_HOLD_DEADLINE`] (60 on Online). Live
+    /// civvis-20261111T063232Z held Auckland's covered bill t25-t38 "waiting
+    /// for the Battering Ram" and released it at t39 on the patience window.
+    pub(super) fn city_state_stone_waits_for_its_breaker(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+    ) -> bool {
+        if !self.city_state_stone_stands()
+            || g.turn >= g.standard_duration(STONE_HOLD_DEADLINE)
+            || Self::city_state_stone_major_war(g, pid)
+            || Self::city_state_stone_breakers_standing(g, pid) > 0
+            || !g
+                .cities
+                .get(&opening.city)
+                .is_some_and(|city| g.city_max_wall_hp(city) > 0)
+        {
+            return false;
+        }
+        let covered = self
+            .city_state_stone_bill(g, pid, opening)
+            .is_some_and(|(strength, need)| strength + 1e-9 >= need);
+        let ram = crate::game::Item::Unit {
+            unit: crate::name!("battering_ram"),
+        };
+        let coming = Self::conquest_breakers_held(g, pid) > 0
+            || self
+                .city_state_stone_breaker_research_goal(g, pid)
+                .is_some()
+            || g.player_city_ids(pid)
+                .into_iter()
+                .any(|cid| g.can_produce(pid, cid, &ram));
+        covered && coming
+    }
+
+    /// The patience-window release reason for a stone whose bill was covered
+    /// and only the breaker never came; `None` otherwise.
+    pub(super) fn city_state_stone_patience_reason(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<&'static str> {
+        (self.city_state_stone_stands()
+            && Self::city_state_stone_breakers_standing(g, pid) == 0
+            && g.players[pid]
+                .counters
+                .contains_key("city_state_stone:bill_covered_turn"))
+        .then_some("the force stood at the rally with the bill covered, but no breaker reached it")
+    }
+
+    /// `city-state-before-the-first-capital` under the armed
+    /// `breaker-bought-for-the-siege` rule: before the war, once the stone's
+    /// bill is covered and the walls stand with no breaker of ours on the
+    /// board, buy a Battering Ram for Gold above the purchase upkeep floor in
+    /// the city of ours nearest the rally that can train it (within the
+    /// purchase reach). True when one was bought. `false` with either gene
+    /// off.
+    pub(super) fn city_state_stone_breaker_purchase(&mut self, g: &mut Game, pid: usize) -> bool {
+        if !self.breaker_bought_for_the_siege || !self.city_state_stone_stands() {
+            return false;
+        }
+        let Some(opening) = self.conquest_opening.clone() else {
+            return false;
+        };
+        if opening.declared.is_some()
+            || Self::city_state_stone_breakers_standing(g, pid) > 0
+            || !g
+                .cities
+                .get(&opening.city)
+                .is_some_and(|city| g.city_max_wall_hp(city) > 0)
+            || !self
+                .city_state_stone_bill(g, pid, &opening)
+                .is_some_and(|(strength, need)| strength + 1e-9 >= need)
+        {
+            return false;
+        }
+        let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0);
+        if budget <= 0.0 {
+            return false;
+        }
+        let ram = crate::name!("battering_ram");
+        let item = crate::game::Item::Unit { unit: ram };
+        let offer = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| g.wdist(g.cities[cid].pos, opening.rally) <= STONE_BREAKER_PURCHASE_REACH)
+            .filter(|cid| g.can_produce(pid, *cid, &item) && !g.purchase_is_blocked(*cid, &item))
+            .filter_map(|cid| {
+                let price = g.unit_purchase_cost(pid, cid, ram.as_str(), "gold")?;
+                (price <= budget + 1e-9).then_some((
+                    g.wdist(g.cities[&cid].pos, opening.rally),
+                    cid,
+                    price,
+                ))
+            })
+            .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        let Some((_, cid, price)) = offer else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Buy {
+                city: cid,
+                unit: ram,
+                formation: 0,
+                currency: "gold".into(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        Self::city_state_stone_count(g, pid, "breaker_bought");
+        if let Some(target) = g.cities.get(&opening.city) {
+            think!(self.journal(), Military, Decision,
+                   "{} buys a battering ram for {}", g.cities[&cid].name, target.name;
+                   "city-state before the first capital: the bill is covered and the walls \
+                    wait on a breaker; {:.0} Gold", price);
+        }
+        true
+    }
+
     /// The stone's commit clock floor: its own naming deadline (50 on
     /// Online), under the shipped approach grace. Zero with no stone.
     pub(super) fn city_state_stone_commit_floor(&self, g: &Game) -> u32 {
@@ -726,14 +857,38 @@ impl AdvancedAi {
         }
     }
 
-    /// `city-state-before-the-first-capital`: the forced research goal while
-    /// a stone can still be named or stands: Masonry (the Ram) first, then
-    /// this civilization's own unique melee line when it out-fights a
-    /// Warrior. A `tech_value` credit is divided by the square root of the
-    /// node's cost, so the opening's +90 moved Masonry about ten points:
-    /// live civvis-20261111T061116Z researched Animal Husbandry (52) and
-    /// Bronze Working (34) ahead of it and started Masonry at turn 26 for the
-    /// capital's walls. `None` with the gene off.
+    /// `city-state-before-the-first-capital`: the breaker's technology
+    /// (Masonry) as the research picker's first forced goal, ahead of every
+    /// other goal, from turn one while a stepping stone can still be named or
+    /// stands. A tech already in progress finishes first. A `tech_value`
+    /// credit is divided by the square root of the node's cost, so the
+    /// opening's +90 moved Masonry about ten points: live
+    /// civvis-20261111T061116Z researched Animal Husbandry (52) and Bronze
+    /// Working (34) ahead of it, and 063232Z took six other techs first and
+    /// fielded its first Ram at turn 58 while Auckland's bill stood covered
+    /// from turn 25. `None` with the gene off and once the breaker's
+    /// technology is known.
+    pub(super) fn city_state_stone_breaker_research_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<Name> {
+        if !self.city_state_stone_window_open(g) {
+            return None;
+        }
+        g.rules
+            .units
+            .get("battering_ram")
+            .and_then(|ram| ram.tech)
+            .filter(|tech| !g.players[pid].techs.contains(tech))
+    }
+
+    /// `city-state-before-the-first-capital`: the next forced research goal
+    /// for the stone's force: Masonry while unknown (the arm above already
+    /// takes it), then this civilization's own unique melee line when it
+    /// out-fights a Warrior (Macedon's Hypaspist: Iron Working), behind the
+    /// capital-walls and opening-Archery emergencies. `None` with the gene
+    /// off.
     pub(super) fn city_state_stone_research_goal(&self, g: &Game, pid: usize) -> Option<Name> {
         if !self.city_state_stone_window_open(g) {
             return None;
