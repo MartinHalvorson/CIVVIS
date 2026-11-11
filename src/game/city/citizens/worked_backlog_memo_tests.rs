@@ -5,7 +5,7 @@ use super::*;
 fn cities() -> (Game, [u32; 2]) {
     let mut game = Game::new_full(2, 32, 20, 92_201, 120, 0, false);
     let mut cities = [0; 2];
-    for pid in 0..2 {
+    for (pid, city_slot) in cities.iter_mut().enumerate() {
         let settler = game
             .player_unit_ids(pid)
             .into_iter()
@@ -31,7 +31,7 @@ fn cities() -> (Game, [u32; 2]) {
             tile.wonder = None;
             tile.pillaged = false;
         }
-        cities[pid] = cid;
+        *city_slot = cid;
     }
     (game, cities)
 }
@@ -79,10 +79,10 @@ fn nested_scopes_reuse_separate_player_counts_and_zero() {
         let _outer = game.query_memo();
         for _ in 0..3 {
             let _inner = game.query_memo();
-            for pid in 0..2 {
+            for (pid, expected_count) in expected.iter().copied().enumerate() {
                 assert_eq!(
                     crate::ai::BasicAi::unimproved_worked_tiles(&game, pid),
-                    expected[pid]
+                    expected_count
                 );
             }
             assert_eq!(game.unimproved_worked_tiles(99), 0);
