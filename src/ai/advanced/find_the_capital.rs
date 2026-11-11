@@ -99,8 +99,22 @@ impl AdvancedAi {
     /// needed capital we have never seen, `None` otherwise (the lane keeps
     /// the engine's own book).
     pub fn find_the_capital_passage_gold(&self, g: &Game, pid: usize, seat: usize) -> Option<f64> {
-        (!g.is_at_war(pid, seat) && self.unfound_capital_rivals(g, pid).contains(&seat))
+        (!g.is_at_war(pid, seat) && self.hunted_rivals(g, pid).contains(&seat))
             .then_some(FIND_CAPITAL_PASSAGE_GOLD)
+    }
+
+    /// The rivals the hunt aims at: those [`Self::unfound_capital_rivals`]
+    /// names, then, under `denial-charts-the-racer`, the leading Science
+    /// rival whose cities we have not all seen
+    /// (`advanced/denial_charts_the_racer.rs`).
+    pub(super) fn hunted_rivals(&self, g: &Game, pid: usize) -> Vec<usize> {
+        let mut rivals = self.unfound_capital_rivals(g, pid);
+        if let Some(racer) = self.denial_racer(g, pid) {
+            if !rivals.contains(&racer) {
+                rivals.push(racer);
+            }
+        }
+        rivals
     }
 
     /// Whether our land units may walk into `rival`'s ground now: we are at
@@ -188,7 +202,8 @@ impl AdvancedAi {
             .into_iter()
             .map(|cid| g.cities[&cid].pos)
             .collect();
-        self.unfound_capital_rivals(g, pid)
+        let unfound = self.unfound_capital_rivals(g, pid);
+        self.hunted_rivals(g, pid)
             .into_iter()
             .filter(|rival| Self::rival_ground_open(g, pid, *rival))
             .filter_map(|rival| {
@@ -218,7 +233,11 @@ impl AdvancedAi {
                 depends_on: None,
                 land: true,
                 sea: false,
-                label: format!("{}'s capital", g.players[rival].civ),
+                label: if unfound.contains(&rival) {
+                    format!("{}'s capital", g.players[rival].civ)
+                } else {
+                    format!("{}'s cities", g.players[rival].civ)
+                },
                 urgent: false,
             })
     }
