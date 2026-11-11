@@ -5138,6 +5138,10 @@ pub struct AdvancedAi {
     apostle_evangelizes_unspent: bool,
     /// Research parity compares wounded land units against field targets.
     barbarian_research_prices_the_field: bool,
+    /// `band-bank-bars-people-under-fire`: a city under fire opens the Rock
+    /// Band bank to the defence only, not to Great People. See
+    /// `advanced/culture_band_bank.rs`. Off by default.
+    band_bank_bars_people_under_fire: bool,
     /// `battle-solver`: play every local fight forward and choose the turn
     /// by how the battle ends. See `advanced/battle_solver.rs`.
     battle_solver: bool,
@@ -5629,6 +5633,11 @@ pub struct AdvancedAi {
     /// `acropolis-before-the-deterrent`: a quick first Theater Square passes a
     /// deterrent unit at peace. See `advanced/acropolis_before_the_deterrent.rs`.
     acropolis_before_the_deterrent: bool,
+    /// `band-stage-needs-three-venues`: under `band-plays-at-level-three`, a
+    /// promotion's two-level stage counts as reaching level 3 only where at
+    /// least three such stages are open; a thinner one is ranked by levels
+    /// times stages. See `advanced/band_plays_its_stage.rs`. Off by default.
+    band_stage_needs_three_venues: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
@@ -6866,6 +6875,12 @@ pub struct AdvancedAi {
     /// government ladder and the culture list. See
     /// `advanced/cold_war_then_heritage.rs`. Opt-in.
     cold_war_then_heritage: bool,
+    /// `culture-faith-site-per-theater-3`: versions one and two without their
+    /// caps (a Holy Site in every Theater city, sources open to forty Faith a
+    /// city), a Theater city's last free specialty district slot kept for its
+    /// Holy Site, and Astrology ahead of the production technologies. See
+    /// `advanced/culture_faith_sources.rs`. Opt-in.
+    culture_faith_site_per_theater_3: bool,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -7607,6 +7622,16 @@ pub struct AdvancedAi {
     /// are Ancient or none. See `advanced/first_capital_before_the_walls.rs`.
     /// Off by default.
     first_capital_before_the_walls: bool,
+    /// `every-shooter-at-the-walls`: every hostile land shooter in reach of our
+    /// walls is a wall threat priced by the city damage its next blow would do,
+    /// and an escort may shoot one. See
+    /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
+    every_shooter_at_the_walls: bool,
+    /// `faith-strike-spares-the-stages`: a Culture seat holds the heretic
+    /// strike once Cold War is known or its band bank is open, and ends a
+    /// strike war then as soon as the host signs. See
+    /// `advanced/faith_strike.rs`. Opt-in.
+    faith_strike_spares_the_stages: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9969,6 +9994,14 @@ pub struct AdvancedAi {
     /// the kill plan, the ladder and the city strike. See
     /// `advanced/siege_at_the_walls_dies_first.rs`. Off by default.
     siege_at_the_walls_dies_first: bool,
+    /// `settler-stall-counts-turns`: `SETTLER_STALL_LIMIT` counts a Settler's
+    /// stall at most once per game turn, and not on a turn it got closer. See
+    /// `advanced/settler_stall_counts_turns.rs`. Off by default.
+    settler_stall_counts_turns: bool,
+    /// `settler-stall-counts-turns`: the last game turn already spoken for
+    /// (a stall counted, or progress made), keyed by the Settler's stable
+    /// Civ VI id so the live mirror's per-frame board ids cannot reset it.
+    settler_stall_turn: BTreeMap<i64, u32>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11616,6 +11649,9 @@ mod settler_shelters_from_the_war;
 /// A Settler is started only while an acceptable, unclaimed site exists for
 /// it. One opt-in gene; see `advanced/settler_site_gate.rs`.
 mod settler_site_gate;
+/// A Settler's stall limit counts game turns, not decision frames. One
+/// opt-in gene; see `advanced/settler_stall_counts_turns.rs`.
+mod settler_stall_counts_turns;
 /// A Settler is never sent to a site not worth the walk. One opt-in gene;
 /// see `advanced/settler_target_floor.rs`.
 mod settler_target_floor;
@@ -12011,6 +12047,7 @@ impl AdvancedAi {
         self.idle_production_streak.clear();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.settler_stall_turn.clear();
         self.escort_march.clear();
         self.settler_guards.clear();
         self.settler_sea_guards.clear();
@@ -16871,8 +16908,9 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let faith_reserve = self.conversion_faith_reserve(g, pid, faith_reserve)
-            // See `advanced/culture_band_bank.rs`.
-            + self.culture_band_bank(g, pid)
+            // See `advanced/culture_band_bank.rs` (and
+            // `band-bank-bars-people-under-fire` there).
+            + self.culture_band_bank_for_people(g, pid)
             // See `counterweight_faith_reserve` (`counterweight-spends-the-bank`).
             + self.counterweight_faith_reserve(g, pid)
             // See `inquisition_faith_reserve` (`founder-funds-the-inquisition`).
@@ -21207,6 +21245,9 @@ impl AdvancedAi {
         // this board before anything is placed. Nothing happens while the gene
         // is off. See `advanced/district_planning.rs`.
         preview.snapshot_bulldoze_sites(&board, pid);
+        // `culture-faith-site-per-theater-3`: the hint keeps the same slot for
+        // the Holy Site as the main path; the board is thrown away after.
+        let _ = preview.culture_faith_hold_the_slots(&mut board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -26199,6 +26240,11 @@ impl AdvancedAi {
         // slot from every production writer below, released before the
         // defence handoff. Nothing is held with the gene off.
         let held_field_slot = self.surge_hold_field_slot(g, pid);
+        // `culture-faith-site-per-theater-3`: a Theater city's last free
+        // district slot waits for its Holy Site through the same pass,
+        // released just before the field slot. Nothing is held with the gene
+        // off. See `advanced/culture_faith_sources.rs`.
+        let held_faith_slots = self.culture_faith_hold_the_slots(g, pid);
 
         // Physical Firaxis Great People with no legal activation plot are
         // mirror-owned assets the ordinary immediate-retirement model cannot
@@ -26512,6 +26558,7 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
+        Self::culture_faith_release_the_slots(g, held_faith_slots);
         Self::surge_release_field_slot(g, held_field_slot);
         // `religion-seat-first-shrine`: the founder's first Shrine, after every
         // ordinary writer so none of them takes the head back, and before the

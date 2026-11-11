@@ -2093,6 +2093,12 @@ impl AdvancedAi {
                         "the religion plan cannot spread into a war".to_string()
                     } else if interception_handoff {
                         "the religious interception is over and another city is ready for a conquest campaign".to_string()
+                    } else if faith_war_exit
+                        && self.faith_strike_war_spares_the_stages(g, pid, *other)
+                    {
+                        // `faith-strike-spares-the-stages`: see
+                        // `advanced/faith_strike.rs`.
+                        "faith-strike-spares-the-stages: the heretic strike's war closes the stages our Rock Bands play, so it ends as soon as the host signs".to_string()
                     } else if faith_war_exit {
                         "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
                     } else {
