@@ -8054,6 +8054,9 @@ pub struct AdvancedAi {
     /// See `advanced/great_works_never_wait.rs`. Off by default.
     great_works_never_wait: bool,
     // ---- append: l-o ------------------------------------------------
+    /// Ask the host for a cash price for a native land upgrade material bill.
+    /// Opt-in; see `advanced/army_upgrade_materials.rs`.
+    land_army_asks_the_host_price: bool,
     /// `no-city-limit`: no city target of its own. The empire settles every
     /// seat it can hold while the city founded there out-earns its Settler,
     /// several Settlers at a time. See `advanced/no_city_limit.rs`. Off by
