@@ -234,6 +234,19 @@ fn a_players_own_city_plates_count_the_turns() {
 }
 
 #[test]
+fn a_unit_is_offered_only_the_orders_it_can_carry_out() {
+    // A Builder was offered Alert, Heal and Explore, and a unit at full
+    // health was offered Heal. Civilization VI's unit panel shows a unit its
+    // own orders, so a new player is not handed buttons that mean nothing.
+    assert!(EMBEDDED_APP_JS.contains("const soldier = unitHasHealth(u);"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && standing !== \"alert\")"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && u.hp < 100 && standing !== \"heal\")"));
+    assert!(EMBEDDED_APP_JS.contains("if (soldier && standing !== \"explore\")"));
+    // A journey is described, not located by coordinates.
+    assert!(!EMBEDDED_APP_JS.contains("`Travelling to ${travel.to.join(\",\")}`"));
+}
+
+#[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
     for symbol in [
