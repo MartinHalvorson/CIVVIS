@@ -203,3 +203,60 @@ fn the_gene_ships_off_and_is_registered() {
     ai.observe_unchosen_wars(&g, 0);
     assert!(ai.unchosen_war_since.is_empty(), "off, nothing is recorded");
 }
+
+/// `peace-waits-for-the-host-minimum`: a war declared on us holds every
+/// offer until the host's minimum war length, then releases it; a war we
+/// declared, one already running when the record began, and the gene off
+/// never hold. It records on its own, without the first-peace gene.
+#[test]
+fn peace_waits_for_the_host_minimum() {
+    use super::PEACE_HOST_MINIMUM_STANDARD;
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "peace-waits-for-the-host-minimum",
+        |ai| ai.peace_waits_for_the_host_minimum,
+    );
+    let (mut g, _) = two_majors();
+    let minimum = g.standard_duration(PEACE_HOST_MINIMUM_STANDARD);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_peace_waits_for_the_host_minimum();
+    let off = AdvancedAi::targeting(VictoryTarget::Culture);
+    assert_eq!(ai.young_war_peace_waits(&g, 0, 1), None, "at peace");
+    ai.observe_unchosen_wars(&g, 0);
+    g.turn += 1;
+    g.at_war.insert((0, 1));
+    for age in 0..minimum {
+        ai.observe_unchosen_wars(&g, 0);
+        assert_eq!(ai.young_war_peace_waits(&g, 0, 1), Some(age));
+        assert_eq!(off.young_war_peace_waits(&g, 0, 1), None, "off");
+        g.turn += 1;
+    }
+    ai.observe_unchosen_wars(&g, 0);
+    assert_eq!(
+        ai.young_war_peace_waits(&g, 0, 1),
+        None,
+        "the host signs from here"
+    );
+
+    let (mut ours, _) = two_majors();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_peace_waits_for_the_host_minimum();
+    ai.observe_unchosen_wars(&ours, 0);
+    let start = ours.log.len();
+    ours.log.push(0, Action::DeclareWar { player: 1 });
+    ours.at_war.insert((0, 1));
+    ai.note_frame_declarations(&ours, 0, start);
+    ours.turn += 1;
+    ai.observe_unchosen_wars(&ours, 0);
+    assert_eq!(ai.young_war_peace_waits(&ours, 0, 1), None, "our own war");
+
+    let (mut running, _) = two_majors();
+    running.at_war.insert((0, 1));
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_peace_waits_for_the_host_minimum();
+    ai.observe_unchosen_wars(&running, 0);
+    assert_eq!(
+        ai.young_war_peace_waits(&running, 0, 1),
+        None,
+        "already running"
+    );
+}

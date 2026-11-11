@@ -2142,6 +2142,14 @@ pub struct BasicAi {
     /// at level 3; today's live concerts died 51% at level 1 and 8% at 3.
     /// Off by default; opt-in gene. See `advanced/band_plays_at_level_three.rs`.
     pub(crate) band_plays_at_level_three: bool,
+    /// `band-stall-bars-no-host`: a trip the host walked nowhere bars its
+    /// host only when the same band was walked nowhere the turn before as
+    /// well; one stalled turn bars nothing. Off by default; opt-in gene. See
+    /// `advanced/band_stall_bars_no_host.rs`.
+    pub(crate) band_stall_bars_no_host: bool,
+    /// `band-stall-bars-no-host`: by [`BasicAi::band_memory_key`], the turn a
+    /// band was last walked nowhere and the civilization it was walking to.
+    band_stall_strikes: RefCell<HashMap<i64, (u32, String)>>,
     /// `band-plays-what-it-can-reach`: each band's trip this turn, keyed by
     /// [`BasicAi::band_memory_key`]: the turn, the tile it stood on when it
     /// first moved that turn, and the venue it set out for.
@@ -3931,6 +3939,8 @@ impl BasicAi {
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
+            band_stall_bars_no_host: false,
+            band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -4382,6 +4392,8 @@ impl BasicAi {
             band_plays_what_it_can_reach: false,
             bands_wait_at_the_door: false,
             band_plays_at_level_three: false,
+            band_stall_bars_no_host: false,
+            band_stall_strikes: RefCell::new(HashMap::new()),
             band_trips: RefCell::new(HashMap::new()),
             band_refused_hosts: RefCell::new(HashMap::new()),
             bank_envoys: false,
@@ -4894,6 +4906,7 @@ impl BasicAi {
         self.unit_motion.clear();
         self.move_refusal_watch.get_mut().clear();
         self.band_trips.get_mut().clear();
+        self.band_stall_strikes.get_mut().clear();
         self.move_refusal_strikes.clear();
         self.move_refusal_blocks.clear();
         self.host_move_feedback.clear();
@@ -7810,12 +7823,19 @@ impl BasicAi {
         }
         self.band_trips.borrow_mut().remove(&key);
         if turn + 1 != g.turn || here != from {
+            if self.band_stall_bars_no_host {
+                self.band_stall_strikes.borrow_mut().remove(&key);
+            }
             return;
         }
         let Some(host) = Self::band_venue_host(g, target) else {
             return;
         };
         let civ = g.players[host].civ.clone();
+        // `band-stall-bars-no-host`: see `advanced/band_stall_bars_no_host.rs`.
+        if self.band_stall_bars_no_host && !self.band_stall_second_strike(g, key, &civ, here) {
+            return;
+        }
         let until = g.turn + g.standard_duration(BAND_REFUSAL_BAR_TURNS);
         think!(self.journal, Military, Detail,
                "Rock Band skips {civ}'s venues; the host walked it nowhere";
