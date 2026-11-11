@@ -761,6 +761,22 @@ def _city_id(city: object) -> int | None:
     return ident
 
 
+def _capital_founder(cities) -> int | None:
+    """Our player id: the founder of the city that is our capital and an original one.
+
+    An agent `state` record lists only our cities and names no player, so this
+    is how the record says who we are. None until such a city is in the list.
+    """
+    for city in cities:
+        if (isinstance(city, dict) and city.get("original_capital")
+                and city.get("capital")):
+            owner = city.get("original_owner")
+            if isinstance(owner, bool) or not isinstance(owner, int):
+                return None
+            return owner
+    return None
+
+
 def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
     """Fold one record into the early-city guard; a verdict once a loss holds.
 
@@ -783,11 +799,8 @@ def early_city_reading(state: dict, event: dict, count: int) -> dict | None:
         return None
     owner = state.get("early_city_owner")
     if owner is None:
-        for city in held.values():
-            if city.get("original_capital") and city.get("capital"):
-                owner = city.get("original_owner")
-                break
-        if isinstance(owner, bool) or not isinstance(owner, int):
+        owner = _capital_founder(held.values())
+        if owner is None:
             return None
         state["early_city_owner"] = owner
     guard = state.setdefault("early_cities", [])
@@ -976,6 +989,134 @@ def city_deficit_reading(event: dict, deficit: int) -> dict | None:
         "leader": leader.get("civ"),
         "leader_cities": most,
         "deficit": most - ours,
+        "fires": True,
+    }
+
+
+# ★ OPERATOR 2026-11-10: "restart when we know we are not going to win; play
+# games out until then", on the Domination-only Deity seat.
+#
+# A Domination win takes every rival major's ORIGINAL capital, and a rival's
+# Science victory lands around Online turn 175-195. A game that holds none of
+# those capitals by Online turn ~100 has not started the conquest it must finish
+# by then, yet it played on to about turn 185. The agent `state` record lists
+# only our cities; one with `original_capital` (`IsOriginalCapital`) founded by
+# another player (`original_owner`, `GetOriginalOwner`) is a capital we took. We
+# are the founder of our own capital (`_capital_founder`, as in
+# `early_city_reading`), and a founder seen in `minors` is a city-state, whose
+# capital does not count toward Domination (as in `civ6_ladder.conquest_marks`).
+# From the policy's turn -- an Online turn, scaled to the game's speed by
+# `online_turns` -- three readable game turns running with none held retire the
+# game. A record without the city fields is not evidence either way, and holding
+# a rival capital again clears the count. Applies to a seat whose target is the
+# domination victory. On with CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN=100
+# in the verification policy; 0 or absent is off.
+#
+# ⚠ The turn is the operator's Deity call, not a law of the game. In the ledger
+# on 2026-11-10, 8 of the 9 Conquest wins (King and Emperor, Online, won at
+# t181-t255) took their first rival capital after turn 100 (t104-t177; the
+# other at t87). The 11 Deity Domination-lane games that reached turn 100 held
+# none by then and won none.
+DOMINATION_NO_CAPITAL_POLICY_KEY = "CIVVIS_RESTART_DOMINATION_NO_CAPITAL_FROM_TURN"
+DOMINATION_NO_CAPITAL_TURNS = 3
+
+
+def parse_domination_no_capital_from_turn(value: str | None) -> int:
+    """The Online turn the no-capital rule reads from, from `100`; 0 = off."""
+    if value is None or value == "":
+        return 0
+    try:
+        turn = int(value)
+    except ValueError:
+        turn = -1
+    if turn < 0:
+        print(f"[policy] ignoring {DOMINATION_NO_CAPITAL_POLICY_KEY}={value!r}: "
+              "not a turn number such as 100", flush=True)
+        return 0
+    return turn
+
+
+def domination_no_capital_policy(path: Path | None = None) -> int:
+    """The policy's first Online turn for the no-capital rule; 0 (off) when unset."""
+    return parse_domination_no_capital_from_turn(
+        read_policy_value(DOMINATION_NO_CAPITAL_POLICY_KEY, path))
+
+
+def domination_no_capital_turn(args: argparse.Namespace) -> int:
+    """The turn at this game's speed the no-capital rule reads from; 0 = off.
+
+    Off unless the seat targets the domination victory. The resolved policy
+    value is an Online turn, scaled here when `_play` starts, not where `play`
+    stores it, so a second `_play` on the same args cannot scale it twice.
+    """
+    from_turn = getattr(args, "restart_domination_no_capital_from_turn", None) or 0
+    if (not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or getattr(args, "civvis_victory", None) != "domination"):
+        return 0
+    return online_turns(from_turn, getattr(args, "speed", None))
+
+
+def domination_no_capital_reading(state: dict, event: dict,
+                                  from_turn: int) -> dict | None:
+    """Fold one record into the no-capital watch; a verdict once the run holds.
+
+    `from_turn` is already at the game's speed (see `online_turns`); 0 is off.
+    `state` carries our player (`domination_owner`), the city-states seen
+    (`domination_minors`) and the run of game turns with no rival capital held
+    (`domination_no_capital`). Returns None for anything that is not a readable
+    agent `state` record or calls nothing, else
+    `{"rule": "domination_no_capital", "fires": True, ...}`.
+    """
+    if (not isinstance(from_turn, int) or isinstance(from_turn, bool) or from_turn <= 0
+            or event.get("kind") != "state" or event.get("ctx") != "agent"):
+        return None
+    turn = event.get("turn")
+    cities = event.get("cities")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or not isinstance(cities, list) or not cities):
+        return None
+    minors = state.setdefault("domination_minors", [])
+    for minor in event.get("minors") or []:
+        player = minor.get("player") if isinstance(minor, dict) else None
+        if isinstance(player, int) and not isinstance(player, bool) and player not in minors:
+            minors.append(player)
+    founders = []
+    for city in cities:
+        if not isinstance(city, dict) or not isinstance(city.get("original_capital"), bool):
+            return None
+        if city["original_capital"]:
+            founder = city.get("original_owner")
+            if isinstance(founder, bool) or not isinstance(founder, int):
+                return None
+            founders.append(founder)
+    owner = state.get("domination_owner")
+    if owner is None:
+        owner = _capital_founder(cities)
+        if owner is not None:
+            state["domination_owner"] = owner
+    if owner is None and founders:
+        return None  # our own capital cannot be told from one we took
+    held = [founder for founder in founders if founder != owner and founder not in minors]
+    if held:
+        state.pop("domination_no_capital", None)
+        return None
+    if turn < from_turn:
+        return None
+    run = state.get("domination_no_capital")
+    if run is None:
+        run = state["domination_no_capital"] = {"since": turn, "last": turn, "turns": 1}
+    elif turn > run["last"]:
+        run["last"] = turn
+        run["turns"] += 1
+    if run["turns"] < DOMINATION_NO_CAPITAL_TURNS:
+        return None
+    return {
+        "rule": "domination_no_capital",
+        "turn": turn,
+        "since": run["since"],
+        "from_turn": from_turn,
+        "turns": run["turns"],
+        "cities": len(cities),
         "fires": True,
     }
 
@@ -5176,6 +5317,17 @@ def play(args: argparse.Namespace) -> int:
         print(f"[policy] a religious-victory game that cannot found a religion, or "
               f"whose religion has no followers, for {RELIGION_LOST_TURNS} turns "
               "running is retired (operator 2026-11-09)", flush=True)
+    # Operator 2026-11-10: see `domination_no_capital_reading`.
+    no_capital_from = getattr(args, "restart_domination_no_capital_from_turn", None)
+    no_capital_from = (domination_no_capital_policy() if no_capital_from is None
+                       else parse_domination_no_capital_from_turn(str(no_capital_from)))
+    args.restart_domination_no_capital_from_turn = no_capital_from
+    if no_capital_from > 0 and getattr(args, "civvis_victory", None) == "domination":
+        speed = getattr(args, "speed", None)
+        print(f"[policy] a domination game holding no rival original capital for "
+              f"{DOMINATION_NO_CAPITAL_TURNS} turns running from turn "
+              f"{online_turns(no_capital_from, speed)} is retired (operator 2026-11-10; "
+              f"from turn {no_capital_from} at Online, scaled to {speed})", flush=True)
     if production_share > 0:
         speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
@@ -5894,6 +6046,7 @@ def _play(args: argparse.Namespace) -> int:
     city_deficit = getattr(args, "restart_on_city_deficit", None) or 0
     religion_lost_rule = (bool(getattr(args, "restart_on_religion_lost", None))
                           and getattr(args, "civvis_victory", None) == "religious")
+    no_capital_from = domination_no_capital_turn(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -6653,6 +6806,16 @@ def _play(args: argparse.Namespace) -> int:
                       f"{reading['leader_cities']} for {reading['leader']}, "
                       f"{reading['deficit']} behind — retiring so the next game starts "
                       "(operator 2026-11-09)", flush=True)
+                return abandon_with_retire(reading)
+        # ★ OPERATOR 2026-11-10: a Domination game with no rival original
+        # capital by the policy's turn. See `domination_no_capital_reading`.
+        if no_capital_from > 0:
+            reading = domination_no_capital_reading(state, event, no_capital_from)
+            if reading is not None and reading.get("fires"):
+                print(f"[abandon] turn {reading['turn']}: no rival original capital held "
+                      f"since turn {reading['since']} ({reading['turns']} turns running "
+                      f"from turn {reading['from_turn']}) — retiring so the next game "
+                      "starts (operator 2026-11-10)", flush=True)
                 return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
@@ -7586,6 +7749,12 @@ def main(argv: list[str] | None = None) -> int:
                          "(1 = on, 0 = off); unset reads "
                          f"{RELIGION_LOST_POLICY_KEY} from the host's verification "
                          "policy file (operator 2026-11-09)")
+    ap.add_argument("--restart-domination-no-capital-from-turn", type=int, default=None,
+                    help="retire a domination-victory game that holds no rival "
+                         f"original capital for {DOMINATION_NO_CAPITAL_TURNS} turns "
+                         "running from this Online turn, scaled to --speed (0 = off); "
+                         f"unset reads {DOMINATION_NO_CAPITAL_POLICY_KEY} from the "
+                         "host's verification policy file (operator 2026-11-10)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")
