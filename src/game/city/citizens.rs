@@ -16,6 +16,53 @@
 use super::*;
 
 impl Game {
+    /// Worked plots that need a Builder, taken once per immutable query scope.
+    /// The complete citizen assignment and legal improvement tests remain the
+    /// original calculation. A policy trace repeats them to retain its reads.
+    pub(crate) fn unimproved_worked_tiles(&self, pid: usize) -> usize {
+        let _memo = self.query_memo();
+        let reuse = !self.query_memo.policy_reads_on.get();
+        if reuse {
+            if let Some(count) = self
+                .query_memo
+                .worked_backlog
+                .borrow()
+                .as_ref()
+                .and_then(|memo| memo.get(&pid))
+                .copied()
+            {
+                return count;
+            }
+        }
+        let count = self
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| self.city_unimproved_worked_tiles(pid, cid))
+            .sum();
+        if reuse {
+            if let Some(memo) = self.query_memo.worked_backlog.borrow_mut().as_mut() {
+                memo.insert(pid, count);
+            }
+        }
+        count
+    }
+
+    /// One city's contribution, including authoritative host assignments.
+    pub(crate) fn city_unimproved_worked_tiles(&self, pid: usize, cid: u32) -> usize {
+        self.city_citizen_plan(cid)
+            .worked_tiles
+            .into_iter()
+            .filter(|pos| {
+                self.map.get(*pos).is_some_and(|tile| {
+                    tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
+                }) && self
+                    .valid_improvements(pid, *pos)
+                    .iter()
+                    .any(|improvement| self.rules.improvements[improvement].builder_buildable)
+            })
+            .count()
+    }
+
     /// Build the automatic citizen governor's priorities from three layers:
     /// survival/growth, this city's current role and production, and the
     /// civilization's strengths.  Re-evaluating it from current state means a
@@ -643,3 +690,6 @@ impl Game {
         }
     }
 }
+
+#[cfg(test)]
+mod worked_backlog_memo_tests;

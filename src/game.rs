@@ -1730,6 +1730,10 @@ pub struct QueryCache {
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
     unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    /// Per-player Builder work count within one immutable decision. Several
+    /// production gates ask for the same empire census; keep the integer
+    /// rather than copying citizen plans. Policy tracing bypasses it.
+    worked_backlog: std::cell::RefCell<Option<BTreeMap<usize, usize>>>,
     // Territory access is a unit-level route predicate. Cache it by unit id
     // while a route call runs, because the same access gates both local and
     // cached planning steps.
@@ -2060,6 +2064,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.purchase_price.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
+            *self.game.query_memo.worked_backlog.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
