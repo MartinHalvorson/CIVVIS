@@ -13515,10 +13515,31 @@ function drawCityNameplate(c, x, y, S) {
   // time and crowded the health/wall bars, which are the only strips left.
   // Keyed off data presence, not seat 0 — spectate frames rotate the
   // observed seat, and an owner gate makes it blink with them.
+  // Civilization VI's banner counts the turns: to the next citizen under the
+  // population, and to the finished build under what is being built. Only on
+  // a player's own cities, where both are theirs to know and to plan around;
+  // a watched world's banners stay the uncluttered public ones.
+  const counted = !SPEC && c.owner === 0 && Boolean(c.yields);
+  const bannerTurns = (turns, tx, ty, ink) => {
+    cx.font = "800 10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    cx.strokeStyle = "#10151d"; cx.lineWidth = 2.8;
+    cx.strokeText(turns, tx, ty);
+    cx.fillStyle = ink; cx.fillText(turns, tx, ty);
+  };
+  if (counted && c.growth_need) {
+    const surplus = c.yields.food || 0;
+    bannerTurns(surplus > 0
+      ? String(Math.max(1, Math.ceil((c.growth_need - c.food) / surplus))) : "–",
+      bx + 2 + popWidth / 2, statusY + 5.5, surplus > 0 ? "#9be38f" : "#f08b82");
+  }
   if (c.queue && c.queue.length && c.queue_cost) {
     const it = c.queue[0];
     const mx = bx + tw + (minorPlate ? 8 : 10.5);
     const my = by + bannerHeight / 2, mr = minorPlate ? 8.5 : 11;
+    if (counted) {
+      const turns = turnsFor(c.queue_cost, c.yields.production || 0, c.production || 0);
+      bannerTurns(turns === Infinity ? "–" : String(turns), mx, my + mr + 7, "#f0b070");
+    }
     cx.fillStyle = "#1c2418f2";
     cx.beginPath(); cx.arc(mx, my, mr, 0, 7); cx.fill();
     cx.strokeStyle = "#0d1117"; cx.lineWidth = 2.6;   // unfilled track
