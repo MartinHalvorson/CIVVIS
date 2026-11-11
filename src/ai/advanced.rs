@@ -9179,6 +9179,11 @@ pub struct AdvancedAi {
     /// cheapest. See `advanced/religion_seat_counts_the_pressure.rs`. Off by
     /// default.
     religion_seat_counts_the_pressure: bool,
+    /// `peace-waits-for-the-host-minimum`: no peace offer goes to a major
+    /// whose war on us is younger than the host's minimum war length, so the
+    /// bridge's retry window is not spent on an offer the host never signs.
+    /// See `advanced/unchosen_war_peace.rs`. Opt-in.
+    peace_waits_for_the_host_minimum: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-seat-builds-the-statue`: a seat aiming at Science builds a
     /// Harbor from t120 and the Statue of Liberty for its four Diplomatic

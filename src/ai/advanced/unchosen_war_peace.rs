@@ -51,6 +51,22 @@
 //! minimum has passed.
 //!
 //! Off, nothing changes.
+//!
+//! **`peace-waits-for-the-host-minimum`** (2026-11-10). No peace offer of
+//! any kind goes to a major whose war on us (as recorded here) is younger
+//! than the host's minimum war length, [`PEACE_HOST_MINIMUM_STANDARD`]
+//! standard turns (8 at Online). The live bridge sends one peace ask per
+//! rival per five turns (`PeaceRetryTurns` in `CivvisControlAgent.lua`), so
+//! an "outmatched" offer at war age 3-5, which the host rarely signs, holds
+//! the next ask until age 8-10. Live Deity Online culture games of 11-10,
+//! 57 wars a major declared on us that drew an ask: the host signed 5 of 56
+//! asks at war ages 0-7, 10 of 13 at age 8 and 3 of 19 at ages 9-10, and the
+//! seat's first ask came at a median age of 4. In
+//! civvis-20261110T224752Z the asks went out at 5, 10 and 15 while Bolivar
+//! took Örebro at 11 and Linköping at 14; in 141854Z at 5, 10 and 15 while
+//! Shaka took Stockholm at 9 and Helsingborg at 14. With the
+//! gene the first ask lands at 8. The record runs under either gene.
+//! Off, nothing changes.
 
 use super::*;
 
@@ -62,11 +78,15 @@ pub(super) const UNCHOSEN_WAR_PEACE_AGE: u32 = 8;
 /// ours: the host can take a frame or a turn to report a declaration.
 pub(super) const UNCHOSEN_WAR_OURS_TURNS: u32 = 2;
 
+/// `peace-waits-for-the-host-minimum`: the host's minimum war length in
+/// standard turns (`DIPLOMACY_WAR_MIN_TURNS`), 8 at Online.
+pub(super) const PEACE_HOST_MINIMUM_STANDARD: u32 = 10;
+
 impl AdvancedAi {
     /// Record which majors began a war on us since the last frame. Read
     /// before the frame plans; see the module. A no-op with the gene off.
     pub(super) fn observe_unchosen_wars(&mut self, g: &Game, pid: usize) {
-        if !self.unchosen_war_takes_the_first_peace {
+        if !self.unchosen_war_takes_the_first_peace && !self.peace_waits_for_the_host_minimum {
             return;
         }
         let turn = g.turn;
@@ -90,7 +110,7 @@ impl AdvancedAi {
     /// Remember the majors this frame declared war on, from the frame's own
     /// action log after `start`. A no-op with the gene off.
     pub(super) fn note_frame_declarations(&mut self, g: &Game, pid: usize, start: usize) {
-        if !self.unchosen_war_takes_the_first_peace {
+        if !self.unchosen_war_takes_the_first_peace && !self.peace_waits_for_the_host_minimum {
             return;
         }
         let declared: Vec<usize> =
@@ -159,6 +179,18 @@ impl AdvancedAi {
         } else {
             None
         }
+    }
+
+    /// `peace-waits-for-the-host-minimum`: the observed age of the war
+    /// `rival` declared on us while it is younger than the host's minimum, so
+    /// no offer goes out this turn. `None` with the gene off, at peace, for a
+    /// war we declared, and for one already running when the record began.
+    pub(super) fn young_war_peace_waits(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
+        if !self.peace_waits_for_the_host_minimum || !g.is_at_war(pid, rival) {
+            return None;
+        }
+        let age = g.turn.saturating_sub(*self.unchosen_war_since.get(&rival)?);
+        (age < g.standard_duration(PEACE_HOST_MINIMUM_STANDARD)).then_some(age)
     }
 }
 
