@@ -51,9 +51,10 @@
 //! city within ten tiles of ours the declaration rate per 100 rival-turns was
 //! 1.46 below 0.45 of its power (18 of 1,234), 0.62 at 0.45-0.7 (3 of 480)
 //! and 0.14 at 0.7 or more (1 of 720). The capital was the first city lost in
-//! 10 of 13 such wars, 2-7 turns after the declaration, before the host signs
-//! any peace (8 Online turns). Other culture genes were armed in the same
-//! window, so the before/after contrast is not this gene's alone.
+//! 14 of the 19 wars that cost one, a median 6 turns after the declaration,
+//! while the host signs no peace before 8 Online turns. Other culture genes
+//! were armed in the same window, so the before/after contrast is not this
+//! gene's alone.
 
 use super::*;
 

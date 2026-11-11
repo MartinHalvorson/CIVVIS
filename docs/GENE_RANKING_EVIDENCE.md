@@ -243,6 +243,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-keeps-its-aesthetics` | off (unmeasured) | `culture-keeps-its-aesthetics`: see `advanced/culture_aesthetics.rs`. | 1 \| 1 |
 | `culture-keeps-pingala-home` | off (unmeasured) | `culture-keeps-pingala-home`: see `advanced/culture_pingala_first.rs`. | 1 \| 1 |
+| `culture-pass-keeps-half-the-army` | off (unmeasured) | `culture-pass-keeps-half-the-army`: see `advanced/culture_past_the_deterrent.rs`. | 1 \| 1 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-road-builds-its-triggers` | off (unmeasured) | `culture-road-builds-its-triggers`: see `advanced/culture_road_triggers.rs`. | 1 \| 1 |
 | `culture-road-earns-its-inspirations` | off (unmeasured) | `culture-road-earns-its-inspirations`: see `advanced/culture_road_inspirations.rs`. | 1 \| 1 |
