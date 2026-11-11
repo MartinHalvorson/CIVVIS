@@ -22,6 +22,26 @@ mod diplomacy;
 /// quotes enumeration needs. See `game/actions/legal.rs`.
 mod legal;
 
+/// The global side effects a military step's reveal/refresh can produce.
+/// A changed exploration/contact ledger or Envoy placement takes the full
+/// invalidation path, even if the step itself touched no tile.
+struct QuietMoveYields {
+    epoch: u64,
+    turn: u32,
+    current: usize,
+    world_era: usize,
+    seats: Vec<QuietMoveSeat>,
+}
+
+struct QuietMoveSeat {
+    alive: bool,
+    explored: usize,
+    contacts: usize,
+    technologies: usize,
+    civics: usize,
+    envoys: Vec<(usize, i64)>,
+}
+
 /// One band's concert at one venue, as a plan reads it before performing.
 struct RockConcertRead {
     host: usize,
@@ -423,16 +443,89 @@ impl Game {
         // the tile grid's epoch reports by itself. A city's own yields do read
         // its queue (the citizen plan, a running project, the envoy bonus),
         // so the acting seat's own cities are dropped as for any action.
-        // Everything else drops everything: nothing here reasons about what a
-        // purchase, a move, an envoy or a deal can touch.
+        // An uncontested military step can also leave every rival city as it
+        // was. Keep that possibility through the action, while `acting`
+        // prevents either reading or filling any kept answer. Its reveal can
+        // make contact and award an Envoy, so the read-back below decides
+        // whether it really was local. Every other action remains Board.
+        let quiet_move = self.quiet_move_yields(pid, action);
         let reach = match action {
             Action::Produce { .. } => ActionReach::OwnCities,
+            _ if quiet_move.is_some() => ActionReach::OwnCities,
             _ => ActionReach::Board,
         };
         self.query_memo.action_begins(reach);
         let result = self.apply_unbracketed(pid, action);
+        let reach = match quiet_move {
+            Some(before) if result.is_err() || !self.quiet_move_yields_unchanged(&before) => {
+                ActionReach::Board
+            }
+            _ => reach,
+        };
         self.query_memo.action_ends(reach);
         result
+    }
+
+    /// `do_move_step` changes the mover, any carried aircraft, occupancy and
+    /// sight, then handles entered units, camps and villages. This fast path
+    /// excludes entered units, linked formations, city/district destinations
+    /// and non-adjacent airlifts. A camp/village or other tile write is caught
+    /// by the epoch; reveal/refresh side effects are read back for every seat.
+    /// A military garrison can change this seat's amenities, so its own cities
+    /// still go at both ends, exactly as for Produce.
+    fn quiet_move_yields(&self, pid: usize, action: &Action) -> Option<QuietMoveYields> {
+        if !self.query_memo.keeps_rival_yields.get() || self.current != pid || self.is_arena() {
+            return None;
+        }
+        let Action::Move { unit, to } = action else {
+            return None;
+        };
+        let destination = self.map.get(*to)?;
+        let mover = self.units.get(unit)?;
+        if mover.owner != pid
+            || mover.linked_to.is_some()
+            || self.rules.units[mover.kind].class != "military"
+            || self.wdist(mover.pos, *to) != 1
+            || !self.unit_ids_at(*to).is_empty()
+            || self.city_at(*to).is_some()
+            || destination.district.is_some()
+        {
+            return None;
+        }
+        Some(QuietMoveYields {
+            epoch: self.map.tiles.epoch(),
+            turn: self.turn,
+            current: self.current,
+            world_era: self.world_era,
+            seats: self
+                .players
+                .iter()
+                .map(|seat| QuietMoveSeat {
+                    alive: seat.alive,
+                    explored: seat.explored.len(),
+                    contacts: seat.met.len(),
+                    technologies: seat.techs.len(),
+                    civics: seat.civics.len(),
+                    envoys: seat.envoys.clone(),
+                })
+                .collect(),
+        })
+    }
+
+    fn quiet_move_yields_unchanged(&self, before: &QuietMoveYields) -> bool {
+        before.epoch == self.map.tiles.epoch()
+            && before.turn == self.turn
+            && before.current == self.current
+            && before.world_era == self.world_era
+            && before.seats.len() == self.players.len()
+            && self.players.iter().zip(&before.seats).all(|(now, old)| {
+                now.alive == old.alive
+                    && now.explored.len() == old.explored
+                    && now.met.len() == old.contacts
+                    && now.techs.len() == old.technologies
+                    && now.civics.len() == old.civics
+                    && now.envoys == old.envoys
+            })
     }
 
     fn apply_unbracketed(&mut self, pid: usize, action: &Action) -> Result<(), String> {
@@ -6966,3 +7059,6 @@ mod ranged_visibility_tests;
 #[cfg(test)]
 #[path = "builder_operation_refusal_tests.rs"]
 mod builder_operation_refusal_tests;
+
+#[cfg(test)]
+mod quiet_move_yield_tests;
