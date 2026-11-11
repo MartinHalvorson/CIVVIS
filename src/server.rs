@@ -1346,6 +1346,22 @@ pub struct Shared {
     /// This counter advances only when a frame is actually published, so the
     /// unpaced Lightning loop can still play a whole round into one frame.
     frame_sequence: AtomicU64,
+    /// Which world the session holds: counted up every time one replaces
+    /// another, whether a request did it (`/new`, `/load`) or the stepper's
+    /// own between-games roll.
+    ///
+    /// The stepper holds each finished frame until every attached page has
+    /// painted it, and a request that replaces the world needs only the
+    /// session lock, so it can land in the middle of that wait. The frame
+    /// being waited on then belongs to a world no page will ever acknowledge
+    /// again: the page paints the new world and says so, which is not the
+    /// frame the stepper asked about, and by asking every second it stays
+    /// attached. Pressing Restart at Lightning did exactly that, and the new
+    /// world sat on turn 1 for as long as the tab stayed open.
+    ///
+    /// So the stepper reads this with the frame, under the session lock, and
+    /// `wait_for_turn_frame` stops waiting the moment it has moved on.
+    world_epoch: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
     frame_painted: Condvar,
     /// Serializes a displayed-state handoff with the start of an automatic AI
@@ -2029,8 +2045,15 @@ impl Shared {
 
     /// Adopt the settings a freshly started world runs under, so the next
     /// new-game request can be normalized against them without the lock.
+    ///
+    /// Every caller has just replaced the session's world and still holds the
+    /// session lock, which is what makes this the place the world is counted:
+    /// see `world_epoch`. The bell is for a stepper already parked on a frame
+    /// of the world that was replaced.
     fn adopt_live_params(&self, params: &Params) {
         *lock_or_recover(&self.live_params) = params.clone();
+        self.world_epoch.fetch_add(1, Ordering::Relaxed);
+        self.frame_painted.notify_all();
     }
 
     /// Whether any viewer still present is owed `frame`.
@@ -2044,9 +2067,18 @@ impl Shared {
             .is_some()
     }
 
-    fn wait_for_turn_frame(&self, frame: SpectatorFrame) {
+    /// Hold the stepper until every attached page has painted `frame`.
+    ///
+    /// `epoch` is the `world_epoch` read with that frame under the session
+    /// lock. Once the two differ the frame's world has been replaced and
+    /// nobody is left to paint it, so the wait ends rather than outlasting
+    /// the world it was for.
+    fn wait_for_turn_frame(&self, frame: SpectatorFrame, epoch: u64) {
         let mut delivery = lock_or_recover(&self.frame_delivery);
         loop {
+            if self.world_epoch.load(Ordering::Relaxed) != epoch {
+                return;
+            }
             let Some(remaining) = delivery.wait_remaining(frame, Instant::now()) else {
                 return;
             };
@@ -4130,11 +4162,17 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // A re-check under the gate is as atomic as waiting inside it was,
         // because seating happens under the gate too.
         let simulation_frame_gate = loop {
-            let current_frame = {
+            let (current_frame, epoch) = {
                 let s = lock_or_recover(&sh.session);
-                spectator_frame(&s.game, sh.frame_sequence.load(Ordering::Relaxed))
+                (
+                    spectator_frame(&s.game, sh.frame_sequence.load(Ordering::Relaxed)),
+                    sh.world_epoch.load(Ordering::Relaxed),
+                )
             };
-            sh.wait_for_turn_frame(current_frame);
+            // A world replaced during this wait ends it with the old frame
+            // still outstanding, so the check below sends the loop round to
+            // read the frame of the world that is there now.
+            sh.wait_for_turn_frame(current_frame, epoch);
             let gate = lock_or_recover(&sh.simulation_frame_gate);
             if !sh.frame_outstanding(current_frame) {
                 break gate;
@@ -4155,6 +4193,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
         let mut completed_frame = None;
+        // The world that frame belongs to, read before the session lock is
+        // let go: a restart may replace it during the wait further down.
+        let completed_epoch;
         {
             let mut s = lock_or_recover(&sh.session);
             if !s.params.spectate {
@@ -4259,6 +4300,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     turn_compute_us = 0;
                 }
             }
+            completed_epoch = sh.world_epoch.load(Ordering::Relaxed);
         }
         // An active browser paints exactly one complete, same-snapshot frame
         // before simulation continues. Lightning publishes at the end of the
@@ -4275,7 +4317,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             // before waiting on them to take it, or the two would deadlock on
             // each other for the length of the poll cap, every single turn.
             sh.note_turn_ready(frame);
-            sh.wait_for_turn_frame(frame);
+            sh.wait_for_turn_frame(frame, completed_epoch);
         }
         drop(simulation_frame_gate);
         if pace == 0 && !waiting {
@@ -5297,6 +5339,7 @@ pub fn serve_with_game(
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
         frame_sequence: AtomicU64::new(0),
+        world_epoch: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_painted: Condvar::new(),
         simulation_frame_gate: Mutex::new(()),
