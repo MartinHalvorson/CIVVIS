@@ -727,9 +727,14 @@ fn city_state_war_is_derived(
 /// planning may spend the pool.  The caller retains that exact cost only on an
 /// accepted peace frame.  Picking the lowest threshold puts a limited pool
 /// behind the soonest available Suzerain bonus.
+///
+/// `spared` is the city-state the early conquest opening is taking
+/// (`city-state-before-the-first-capital`): its war was chosen on purpose and
+/// is never traded back for Envoys while the opening stands.
 fn queue_city_state_envoy_reclaim(
     orders: &mut Vec<Order>,
     state: &civvis::mirror::StateSnapshot,
+    spared: Option<i64>,
 ) -> Option<(i64, i64)> {
     let held = state.envoys_free.filter(|held| *held > 0)?;
     let (needed, target) = state
@@ -737,6 +742,7 @@ fn queue_city_state_envoy_reclaim(
         .iter()
         .filter(|minor| minor.is_city_state() && minor.at_war)
         .filter(|minor| !city_state_war_is_derived(state, minor))
+        .filter(|minor| spared != Some(minor.player as i64))
         .map(|minor| (envoys_to_take_suzerainty(minor), minor.player as i64))
         .filter(|(needed, _)| held >= *needed)
         .filter(|(_, target)| {
@@ -752,6 +758,24 @@ fn queue_city_state_envoy_reclaim(
         pos: None,
     });
     Some((target, needed))
+}
+
+/// `city-state-before-the-first-capital`: the host player id of the
+/// city-state whose city stands on the opening's tile (`pos`, the mirror's
+/// axial coordinates). Keyed by the plot, as `host_city_target` resolves a
+/// city: mirrored minor seats are not the host's numbering.
+fn city_state_opening_host_minor(
+    state: &civvis::mirror::StateSnapshot,
+    pos: (i32, i32),
+) -> Option<i64> {
+    let (x, y) = civvis::hex::axial_to_offset(pos.0, pos.1);
+    state
+        .minors
+        .iter()
+        .find(|minor| {
+            minor.is_city_state() && minor.cities.iter().any(|city| (city.x, city.y) == (x, y))
+        })
+        .map(|minor| minor.player as i64)
 }
 
 /// Pair an already-planned major peace with the city-state suzerainty it frees.
@@ -5873,7 +5897,17 @@ fn decide(
         Some(_) => {}
     }
 
-    let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state);
+    // `city-state-before-the-first-capital`: the opening's own city-state war
+    // is not traded back for Envoys, and no Envoy goes to the city it is
+    // taking. `None` with the gene off.
+    let opening_minor = ai
+        .city_state_opening_tile()
+        .and_then(|pos| city_state_opening_host_minor(state, pos));
+    if let Some(minor) = opening_minor {
+        orders.retain(|order| !(order.kind == "envoy" && order.subject == Some(minor)));
+        note_bits.push(format!("city_state_opening_spared={minor}"));
+    }
+    let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state, opening_minor);
     // A direct city-state peace remains the preferred reclaim: it cannot cost
     // a major-war concession.  If none is available, turn a peace the planner
     // already chose against the hostile Suzerain into an Envoy reservation.
