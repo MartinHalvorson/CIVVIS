@@ -1107,6 +1107,12 @@ impl AdvancedAi {
                 _ if self.diplo_match_point_civic(g, pid).is_some() => {
                     self.diplo_match_point_civic(g, pid)
                 }
+                // `culture-road-takes-the-unique-first`: the civic that unlocks
+                // the seat's own largest Culture source (Sweden's Open-Air
+                // Museum at Nationalism) ahead of the museum unlock and the
+                // Cold War goal. See `advanced/culture_unique_first.rs`.
+                // No-op with the gene off.
+                _ if self.unique_first_goal(g, pid).is_some() => self.unique_first_goal(g, pid),
                 // Put an already-built museum to work before buying more
                 // government capacity. Recovery keeps the normal ladder.
                 GrandStrategy::Culture
