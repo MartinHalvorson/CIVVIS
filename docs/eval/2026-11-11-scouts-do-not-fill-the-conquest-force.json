@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "finding": "Recon units executed exploration while conquest_force counted them toward assembly and the city bill. Filter recon before sorting and truncating that force.",
+  "native_observation": {
+    "run": "civvis-20261111T071743Z",
+    "observed_at": 1794381971.481935,
+    "native_states_at_declaration": [
+      {
+        "turn": 7,
+        "frame": 0,
+        "units": [
+          {
+            "id": 196608,
+            "kind": "UNIT_SCOUT",
+            "hp": 100,
+            "x": 23,
+            "y": 25
+          },
+          {
+            "id": 131073,
+            "kind": "UNIT_WARRIOR",
+            "hp": 100,
+            "x": 20,
+            "y": 21
+          }
+        ]
+      },
+      {
+        "turn": 7,
+        "frame": 1,
+        "units": [
+          {
+            "id": 196608,
+            "kind": "UNIT_SCOUT",
+            "hp": 100,
+            "x": 23,
+            "y": 23
+          },
+          {
+            "id": 131073,
+            "kind": "UNIT_WARRIOR",
+            "hp": 100,
+            "x": 20,
+            "y": 21
+          },
+          {
+            "id": 262146,
+            "kind": "UNIT_SCOUT",
+            "hp": 100,
+            "x": 22,
+            "y": 27
+          }
+        ]
+      },
+      {
+        "turn": 7,
+        "frame": 2,
+        "units": [
+          {
+            "id": 196608,
+            "kind": "UNIT_SCOUT",
+            "hp": 100,
+            "x": 23,
+            "y": 23
+          },
+          {
+            "id": 131073,
+            "kind": "UNIT_WARRIOR",
+            "hp": 100,
+            "x": 20,
+            "y": 21
+          },
+          {
+            "id": 262146,
+            "kind": "UNIT_SCOUT",
+            "hp": 100,
+            "x": 23,
+            "y": 25
+          }
+        ]
+      }
+    ],
+    "journal": [
+      "[why] t7 Military/Decision Declaring war on Ethiopia | 50% of the strike force stands at the rally and the preview covers Addis Ababa's bill",
+      "[why] t7 Military/Detail First capital before the walls: declaring on Addis Ababa | walls 0, 3 bodies in the force, production parity not asked",
+      "[why] t7 Military/Decision First capital before the walls: the open window | Addis Ababa defence 13, walls 0, their power 113 against our 40; 3 bodies at the rally (46 strength against a bill of 20) cover the bill \u2014 declaring now  [civ6 (22,17) = axial (14,17)]",
+      "[why] t7 Military/Decision Siege of Addis Ababa: stage | ring 0/6 sealed, walls 0/0, city 200/200, 1 of 1 units staged, 26 strength (26 near) against a bill of 16; damage ready false with 7.6 turns / 4.5 endurance; breakers: 0 gun(s) fit, 0 healing, 0 ram/tower, shooters 0 wall a turn; muster holds  [civ6 (22,17) = axial (14,17)]",
+      "[why] t21 Military/Strategy The conquest opening yields at Addis Ababa | the strike has not dented the city in the whole patience window; asking Ethiopia for terms  [civ6 (22,17) = axial (14,17)]"
+    ],
+    "finding": "Opening force counted two Scouts plus one Warrior as three bodies. Scout units instead execute recon routing; siege planner stages only one unit. No damage before standdown21. Narrow force-membership correction warranted, not an army-queue fix.",
+    "scope": "One native failed opening; no win-rate claim.",
+    "source_hashes": {
+      "events.jsonl": {
+        "sha256": "48b1941ba6d553c598e6d630883f3358fea23c308503867ac70f60f4e1329d3f",
+        "bytes": 22774136
+      },
+      "decisions.jsonl": {
+        "sha256": "8decb7e90ca4ca47e1ef984648cfcf2ffd037941e2a967c197319ae91b67f58c",
+        "bytes": 1177093
+      },
+      "why.log": {
+        "sha256": "6a5ddcb2f8292b79abfb56967d219131779643015827d679c593ff1df9b86822",
+        "bytes": 1063122
+      },
+      "summary.json": {
+        "sha256": "1b80f5ea1a7d1bc5b3520fae1f60dd6f3e1436adbfbb115b3f308347ac07f8fe",
+        "bytes": 66509
+      }
+    },
+    "native_force_file_sha256": "ce49e0040916badc1a84e5ddf99b9558c68ce7919472c54f30a50bcf13e546de",
+    "native_forced_tags": 504,
+    "native_binary_revision": "460a2219a3be62ff9b803bc86b17db7cad1286de",
+    "native_binary_sha256": "44b74a7db50e8f4c0590d49cb29621b6fd727a583a344a2963621ae75dea655b",
+    "outcome": "Natural defeat at139,0 cities gained,0originalcapitals; no win-rate inference."
+  },
+  "validation": {
+    "source_commit": "c87a525f067e082d14773c0c787555e2ce0f4512",
+    "candidate_binary_sha256": "fd52b30c662c57634feb1481bed1037bf5fe4027b6a52e4349d5320dcaacc5e7",
+    "native_control": {
+      "gate_passed": true,
+      "native_history_gate_passed": true,
+      "request_identity_gate_passed": true,
+      "frames": 43,
+      "matched_frames": 43,
+      "changed_complete_reply_frames": 27
+    },
+    "first_changed_frame": {
+      "turn": 7,
+      "frame": 2
+    },
+    "replay": {
+      "frames": 43,
+      "changed_order_frames": 8,
+      "changed_native_action_frames": 6,
+      "validation_passed": true,
+      "inputs_unchanged": {
+        "events": true,
+        "recorded_decisions": true,
+        "force_file": true,
+        "baseline": true,
+        "candidate": true
+      }
+    },
+    "declared_war_actions": {
+      "baseline": [
+        {
+          "turn": 7,
+          "frame": 2,
+          "action": {
+            "player": 3,
+            "type": "declare_war"
+          }
+        }
+      ],
+      "candidate": []
+    },
+    "scope": "Recorded-history query evidence. Later observations retain the real game war; this is not a counterfactual game or an outcome estimate."
+  },
+  "actual_binary_sha256_after_replay": {
+    "baseline": "44b74a7db50e8f4c0590d49cb29621b6fd727a583a344a2963621ae75dea655b",
+    "candidate": "fd52b30c662c57634feb1481bed1037bf5fe4027b6a52e4349d5320dcaacc5e7"
+  },
+  "regression_before_fix": "Failed: actual force {Warrior, Scout, Scout}, expected {Warrior}.",
+  "focused_after_fix": {
+    "first_capital_tests": 45,
+    "early_conquest_tests": 79,
+    "failures": 0,
+    "profile": "ci, opt-level0, 16codegen, debug assertions on",
+    "source_commit": "c87a525f067e082d14773c0c787555e2ce0f4512"
+  },
+  "archive": {
+    "path": "docs/eval/2026-11-11-scouts-do-not-fill-the-conquest-force.native-queries.tar.xz",
+    "bytes": 70360,
+    "sha256": "f3ca077199687fc1ebf183de3bab8d622348aefcebfa5217bc6caa03f021a891"
+  },
+  "strength_scope": "Development correctness evidence. Native Domination win-rate improvement remains unverified."
+}
