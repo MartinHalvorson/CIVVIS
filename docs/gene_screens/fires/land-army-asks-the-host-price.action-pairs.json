@@ -1,10 +1,10 @@
 {
   "kind": "captured_native_action_pairs_v1",
   "tag": "land-army-asks-the-host-price",
-  "scope": "Native query proposal activation only:145 original planning/order/protocol controls and145 identical actual consumer-read sequences. At50/frame0 OFF asks2Iron for2Horses+49Gold; ON asks host cash price for2Iron capped135Gold, preserving95Gold for upgrade/emergency. Complete persistent warmup/read/reply/command traces archived. No counterfactual acceptance, resource receipt, executed upgrade, capture or win-rate claim.",
+  "scope": "Final combined-source native query activation:145 original planning/order/protocol controls,145 identical consumed-read sequences. At50/frame0 OFF asks2Iron for2Horses+49Gold; ON requests host cash price for2Iron capped135Gold, preserving95Gold. Low-cash regression:both finalOFF/ON preserve all159 original complete replies, including Ironbarter59 that the initial candidate removed. Full warmup/read/reply/command traces archived. No counterfactual acceptance, material receipt, upgrades, captures or win-rate claim.",
   "archive": {
     "path": "docs/eval/2026-11-11-land-army-asks-the-host-price.native-queries.tar.xz",
-    "sha256": "36e19bf7445c202af506699842eb43f96f93ff928e06a8d1011451a75d8d04d4"
+    "sha256": "89a9570ba1e45028a403b9131b5603c6db5d55130beacdfd2d2753035f0411fa"
   },
   "members": [
     "persistent-t50-pair.json"
