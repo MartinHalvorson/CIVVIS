@@ -45,7 +45,7 @@
 //! ten tiles from our capital at t40, and in 9 of 19 where one stood within
 //! ten: those are the only games the deterrent acts in. Among them, 1 of 5
 //! collapsed before the gene and 8 of 13 after. In the same near games the
-//! deterrent's claims fell from 15 to 6 a game (t30-t70), our military at
+//! deterrent's claims fell from 14 to 6 a game (t30-t70), our military at
 //! t60 from a median 238 to 141, and our land soldiers from 9 to 6. Every
 //! loss came from a major's surprise war, and at peace with a major holding a
 //! city within ten tiles of ours the declaration rate per 100 rival-turns was
