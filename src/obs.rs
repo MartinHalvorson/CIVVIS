@@ -1990,7 +1990,7 @@ fn live_city_json(
     }
 
     let citizens = g.city_citizen_plan(city.id);
-    let yields = g.city_yields(city.id);
+    let yields = g.city_yields_from_plan(city.id, &citizens);
     let private = json!({
         "food": round1(city.food),
         "production": round1(city.production),

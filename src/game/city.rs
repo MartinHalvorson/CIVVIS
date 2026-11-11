@@ -1660,6 +1660,18 @@ impl Game {
     }
 
     pub fn city_yields(&self, cid: u32) -> Yields {
+        self.city_yields_with_plan(cid, None)
+    }
+
+    /// Reuse the unweighted assignment the observer just derived for this
+    /// city while the same immutable game is borrowed. Policy tracing still
+    /// runs the original derivation so it records all of its questions.
+    pub(crate) fn city_yields_from_plan(&self, cid: u32, plan: &CitizenPlan) -> Yields {
+        let plan = (!self.query_memo.policy_reads_on.get()).then_some(plan);
+        self.city_yields_with_plan(cid, plan)
+    }
+
+    fn city_yields_with_plan(&self, cid: u32, plan: Option<&CitizenPlan>) -> Yields {
         if let Some(memo) = self.query_memo.yields.borrow().as_ref() {
             if let Some(yields) = memo.get(&cid) {
                 return *yields;
@@ -1676,7 +1688,10 @@ impl Game {
         // more than once. A caller with no memo open still shares those
         // answers within this one derivation; a caller with one open nests.
         let _memo = self.query_memo();
-        let yields = self.city_yields_uncached(cid);
+        let yields = match plan {
+            Some(plan) => self.city_yields_inner_with_plan(cid, None, true, Some(plan)),
+            None => self.city_yields_uncached(cid),
+        };
         if let Some(memo) = self.query_memo.yields.borrow_mut().as_mut() {
             memo.insert(cid, yields);
         }
@@ -1968,6 +1983,17 @@ impl Game {
         weights: Option<Yields>,
         apply_observation: bool,
     ) -> Yields {
+        self.city_yields_inner_with_plan(cid, weights, apply_observation, None)
+    }
+
+    fn city_yields_inner_with_plan(
+        &self,
+        cid: u32,
+        weights: Option<Yields>,
+        apply_observation: bool,
+        plan: Option<&CitizenPlan>,
+    ) -> Yields {
+        debug_assert!(plan.is_none() || weights.is_none());
         // An arena's city is a unit tap, not a settlement. It collects the
         // one flat Production figure both sides are granted and nothing else:
         // no Food, so it never grows and the two sides cannot drift apart in
@@ -1993,12 +2019,19 @@ impl Game {
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
         ys.add(center);
-        let citizen_plan = self.city_citizen_plan_weighted(cid, weights);
+        let computed_plan;
+        let citizen_plan = match plan {
+            Some(plan) => plan,
+            None => {
+                computed_plan = self.city_citizen_plan_weighted(cid, weights);
+                &computed_plan
+            }
+        };
         let employed = citizen_plan.worked_tiles.len() + citizen_plan.specialists.len();
         // Collectivism's COLLECTIVISM_FARM_FOOD_MODIFIER is a plot yield on
         // Farm plots, so it is paid where a citizen works one.
         let farm_food = self.policy_effect(city.owner, "farm_food");
-        for pos in citizen_plan.worked_tiles {
+        for &pos in &citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
             if farm_food != 0.0 {
                 let tile = &self.map.tiles[&pos];
@@ -2008,10 +2041,10 @@ impl Game {
             }
         }
         let specialist_jobs = self.city_specialist_jobs(city);
-        for family in citizen_plan.specialists {
+        for family in &citizen_plan.specialists {
             if let Some((_, specialist_yields)) = specialist_jobs
                 .iter()
-                .find(|(district, _)| district == &family)
+                .find(|(district, _)| district == family)
             {
                 ys.add(*specialist_yields);
             }
@@ -3517,3 +3550,6 @@ mod hidden_resource_wonder_tests;
 
 #[cfg(test)]
 mod builder_ownership_tests;
+
+#[cfg(test)]
+mod yield_plan_tests;
