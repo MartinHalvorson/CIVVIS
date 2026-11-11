@@ -238,6 +238,12 @@ impl AdvancedAi {
         if !g.has_met(pid, rival) || !self.campaign_target_legal(g, pid, rival) {
             return Err("not met or not a legal target");
         }
+        // `first-capital-strikes-the-open-window`: a capital whose owner we
+        // already fight belongs to the ordinary war; naming it only to release
+        // it the same frame looped nine times in live 063232Z (t53-58).
+        if self.first_capital_strikes_active() && g.is_at_war(pid, rival) {
+            return Err("we are already at war with them; the ordinary war owns their capital");
+        }
         let Some(city) = Self::first_capital_of(g, rival) else {
             return Err("they no longer hold their original capital");
         };

@@ -593,7 +593,11 @@ impl AdvancedAi {
                 || (my_power * 1.25 < recovery_opponent_power
                     && !recovery_is_stale
                     && !raid_only_war
-                    && !science_targeted))
+                    && !science_targeted
+                    // `first-capital-strikes-the-open-window`: the strike's
+                    // own war is not pulled home by the power gap; a
+                    // threatened city still is. `false` with the gene off.
+                    && !self.first_capital_strike_running(g, pid)))
         {
             (GrandStrategy::Recovery, "at war and losing ground at home")
         } else if impossible_denial {
@@ -1447,6 +1451,18 @@ impl AdvancedAi {
             &wartime_rivals,
             emergency_objective.is_some(),
             actionable_denial.map(|(rival, _)| rival),
+        ) {
+            Some((rival, city)) => (Some(rival), Some(city)),
+            None => (target_player, target_city),
+        };
+        // `first-capital-strikes-the-open-window`: once the opening has
+        // declared, its city stays the campaign's over a siege committed
+        // elsewhere. `None` with the gene off.
+        let (target_player, target_city) = match self.first_capital_strike_objective(
+            g,
+            pid,
+            target_city,
+            emergency_objective.is_some(),
         ) {
             Some((rival, city)) => (Some(rival), Some(city)),
             None => (target_player, target_city),

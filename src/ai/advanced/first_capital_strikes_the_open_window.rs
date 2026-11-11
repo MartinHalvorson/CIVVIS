@@ -47,7 +47,10 @@
 //!    ([`AdvancedAi::first_capital_faith_fronts`]): it does not own the
 //!    campaign, `one-war-at-a-time` does not hold the opening's declaration
 //!    for it, the opening's staging does not stop for it, and a force body
-//!    walks on to the rally through it.
+//!    walks on to the rally through it. A capital whose owner we already
+//!    fight is not named at all (`first_capital_check`): live
+//!    `civvis-20261111T063232Z` named Wak Kab'nal and released it in the same
+//!    frame nine times over t53-58.
 //! 2. **Go when the board says go**
 //!    ([`AdvancedAi::first_capital_open_window_go`]). Once at least
 //!    `CAMPAIGN_MIN_BODIES` force bodies stand within the assembly radius of
@@ -55,7 +58,12 @@
 //!    (`campaign_city_requirement`, as `conquest_preview_takes_the_city`
 //!    prices it), with a breaker at the rally or no walls standing, the
 //!    opening counts as assembled and declares that turn. The shipped 80%
-//!    share rule stays the fallback.
+//!    share rule stays the fallback. Under either rule no declaration passes
+//!    [`AdvancedAi::first_capital_outclassed`]: a melee body at the rally
+//!    within [`FIRST_CAPITAL_MELEE_MARGIN`] of the city's strength, and the
+//!    owner's visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] no stronger
+//!    than the bodies at the rally (live 063232Z struck a defence-56 capital
+//!    with Hypaspists of 38 at t80; the city took no damage in six turns).
 //! 3. **A soft capital starts sooner**
 //!    ([`AdvancedAi::first_capital_read_the_softness`]). While the named
 //!    capital is walled to Ancient or less and its strength reads
@@ -73,6 +81,13 @@
 //!    (`CONQUEST_APPROACHING_GRACE_TURNS`) once. The wall stand-down
 //!    (`first_capital_walled_out`) is unchanged.
 //! 5. Each decision is journalled under "First capital before the walls".
+//! 6. **The declared strike keeps its city and its posture**
+//!    ([`AdvancedAi::first_capital_strike_objective`],
+//!    [`AdvancedAi::first_capital_strike_running`]): `assess` keeps the
+//!    opening's city as the campaign's over a siege committed elsewhere (live
+//!    063232Z: "Campaign remains aimed at Palenque"), and the power-gap
+//!    Recovery posture stays off while the strike's war runs; a home
+//!    emergency and a threatened city still take them.
 //!
 //! Threatened-city and Recovery holds on the march, the tactics, the wall
 //! ceilings, the reach and the naming deadline are the shipped ones. Inert
@@ -98,6 +113,17 @@ pub(crate) const FIRST_CAPITAL_SOFT_STRENGTH: f64 = 30.0;
 /// capital: two, so the capital still trains the first Settler and the
 /// force is trained while the window is open.
 pub(crate) const FIRST_CAPITAL_SOFT_SETTLER_CITIES: usize = 2;
+
+/// How much stronger than our best melee body at the rally the city may read
+/// and still be struck. Live civvis-20261111T063232Z declared at t80 on Wak
+/// Kab'nal, defence 47-56, with Warriors, Heavy Chariots and one or two
+/// Hypaspists (38): in six turns the city took no damage and the army fell
+/// from 504 to 347 power.
+pub(crate) const FIRST_CAPITAL_MELEE_MARGIN: f64 = 10.0;
+
+/// How far from the city the owner's visible army counts as its defence when
+/// the strike is weighed against the bodies at the rally.
+pub(crate) const FIRST_CAPITAL_DEFENDER_REACH: i32 = 3;
 
 /// What the bodies at the rally make of the city's bill.
 #[derive(Clone, Debug, PartialEq)]
@@ -378,12 +404,139 @@ impl AdvancedAi {
         {
             return None;
         }
+        if self.first_capital_outclassed(g, pid, opening).is_some() {
+            return None;
+        }
         let (strength, requirement) = self.first_capital_bill(g, pid, opening, &bodies)?;
         (strength + 1e-9 >= requirement).then_some(OpenWindowGo {
             bodies: bodies.len(),
             strength,
             requirement,
         })
+    }
+
+    /// The force bodies within the assembly radius of the rally.
+    fn first_capital_bodies_at_the_rally(g: &Game, opening: &ConquestOpening) -> Vec<u32> {
+        opening
+            .force
+            .iter()
+            .copied()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    g.wdist(unit.pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS
+                })
+            })
+            .collect()
+    }
+
+    /// ⭐ Why the city outclasses the bodies at the rally, or `None`: no melee
+    /// body stands there, the city's strength (as last seen) is more than
+    /// [`FIRST_CAPITAL_MELEE_MARGIN`] above our best melee body's, or the
+    /// owner's visible army within [`FIRST_CAPITAL_DEFENDER_REACH`] of the
+    /// city is stronger than the bodies at the rally. Under the gene no
+    /// declaration passes it, whichever rule assembled the force. `None` with
+    /// the gene off.
+    pub(super) fn first_capital_outclassed(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+    ) -> Option<String> {
+        if !self.first_capital_strikes_active() || opening.declared.is_some() {
+            return None;
+        }
+        let city = g.cities.get(&opening.city)?;
+        let bodies = Self::first_capital_bodies_at_the_rally(g, opening);
+        let best_melee = bodies
+            .iter()
+            .filter_map(|uid| g.units.get(uid))
+            .filter(|unit| Self::conquest_melee_body(&g.rules.units[unit.kind]))
+            .map(|unit| g.unit_strength(unit, false))
+            .fold(None, |best: Option<f64>, strength| {
+                Some(best.map_or(strength, |best| best.max(strength)))
+            });
+        let Some(best_melee) = best_melee else {
+            return Some(format!(
+                "no melee body stands at the rally for {}",
+                city.name
+            ));
+        };
+        let defence = g.city_strength(city.id);
+        if defence > best_melee + FIRST_CAPITAL_MELEE_MARGIN {
+            return Some(format!(
+                "{} reads strength {defence:.0}, more than {FIRST_CAPITAL_MELEE_MARGIN:.0} above our \
+                 best melee body at the rally ({best_melee:.0})",
+                city.name
+            ));
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        let theirs: f64 = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == city.owner)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| g.wdist(unit.pos, city.pos) <= FIRST_CAPITAL_DEFENDER_REACH)
+            .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
+            .sum();
+        let ours = Self::campaign_strength_of(g, &bodies);
+        (theirs > ours).then(|| {
+            format!(
+                "{}'s visible army within {FIRST_CAPITAL_DEFENDER_REACH} tiles ({theirs:.0}) \
+                 outweighs the {} bodies at the rally ({ours:.0})",
+                city.name,
+                bodies.len()
+            )
+        })
+    }
+
+    /// ⭐ Once the opening has declared: its rival and city, which `assess`
+    /// keeps as the campaign's target over a siege committed elsewhere (live
+    /// 063232Z: "Campaign remains aimed at Palenque" while the strike stood
+    /// on Wak Kab'nal). `None` with the gene off, before the declaration,
+    /// after a capture or the city's loss, and on a home emergency.
+    pub(super) fn first_capital_strike_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        shipped_city: Option<u32>,
+        emergency: bool,
+    ) -> Option<(usize, u32)> {
+        if emergency || !self.first_capital_strike_running(g, pid) {
+            return None;
+        }
+        let opening = self.conquest_opening.as_ref()?;
+        if let Some(other) = shipped_city
+            .filter(|other| *other != opening.city)
+            .and_then(|other| g.cities.get(&other))
+        {
+            think!(self.journal(), Strategy, Strategy,
+                   "First capital before the walls: the strike keeps the campaign";
+                   "{} does not take the force while the strike on {} runs", other.name,
+                   g.cities[&opening.city].name;
+                   g.cities[&opening.city].pos);
+        }
+        Some((opening.target, opening.city))
+    }
+
+    /// Whether the opening's own war is running: declared, nothing taken yet,
+    /// the city still the rival's, the war open. Holds the power-gap Recovery
+    /// posture off (a threatened home city still takes it). `false` with the
+    /// gene off.
+    pub(super) fn first_capital_strike_running(&self, g: &Game, pid: usize) -> bool {
+        self.first_capital_strikes_active()
+            && self.conquest_opening.as_ref().is_some_and(|opening| {
+                opening.declared.is_some()
+                    && opening.taken == 0
+                    && !opening.force.is_empty()
+                    && g.players
+                        .get(opening.target)
+                        .is_some_and(|rival| rival.alive && !rival.is_minor)
+                    && g.is_at_war(pid, opening.target)
+                    && g.cities
+                        .get(&opening.city)
+                        .is_some_and(|city| city.owner == opening.target)
+            })
     }
 
     /// Item 5: the journal line of a declaration the board's go opened.

@@ -471,3 +471,87 @@ fn the_constants_are_the_ones_the_design_states() {
     assert_eq!(FIRST_CAPITAL_SOFT_SETTLER_CITIES, 2);
     assert_eq!(CAMPAIGN_MIN_BODIES, 3);
 }
+
+// --------------------------------------- live 063232Z: loop, rout, objective
+
+/// Live 063232Z t53-58: at war with Maya already, the opening named Wak
+/// Kab'nal and released it the same frame nine times. Off, the shipped scan
+/// still names it; on, a capital whose owner we already fight is not named.
+#[test]
+fn a_capital_whose_owner_we_already_fight_is_not_named() {
+    for gene in [false, true] {
+        let mut game = board(&[(6, 12), (24, 12)]);
+        meet_and_explore(&mut game, 1);
+        at_war(&mut game, 0, 1);
+        let mut ai = seat(gene);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert_eq!(ai.conquest_opening.is_some(), !gene, "gene {gene}");
+    }
+}
+
+/// Live 063232Z t80: 83% of the force at the rally, the preview covered,
+/// and a capital of defence 47-56 against Hypaspists of 38. Under the gene a
+/// city more than ten above our best melee body at the rally is not struck,
+/// whichever rule assembled the force.
+#[test]
+fn a_city_that_outclasses_the_rally_is_not_struck() {
+    let (mut game, mut ai, capital) = opened(true);
+    set_strength(&mut game, capital, 60.0);
+    let rally = ai.conquest_opening.as_ref().unwrap().rally;
+    bodies(&mut game, "swordsman", rally, 1, 6);
+    ai.maintain_conquest_opening(&mut game, 0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert!(ai.first_capital_outclassed(&game, 0, &opening).is_some());
+    assert!(ai
+        .first_capital_open_window_go(&game, 0, &opening)
+        .is_none());
+    assert!(!ai.conquest_declaration(&mut game, 0));
+    assert!(!game.is_at_war(0, 1), "no strike into an outclassing city");
+
+    // Within the margin the same force declares.
+    set_strength(&mut game, capital, 40.0);
+    let opening = ai.conquest_opening.clone().unwrap();
+    assert!(ai.first_capital_outclassed(&game, 0, &opening).is_none());
+    assert!(ai.conquest_declaration(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+
+    // Off: no such veto.
+    let (mut game, off, capital) = opened(false);
+    set_strength(&mut game, capital, 60.0);
+    let opening = off.conquest_opening.clone().unwrap();
+    assert!(off.first_capital_outclassed(&game, 0, &opening).is_none());
+}
+
+/// Live 063232Z t80-86: "Campaign remains aimed at Palenque" while the
+/// strike stood on Wak Kab'nal, and the power gap put the plan in Recovery.
+/// Under the gene the declared strike keeps its city and holds the
+/// power-gap posture off; a home emergency still outranks it.
+#[test]
+fn the_declared_strike_keeps_its_city_and_its_posture() {
+    for gene in [false, true] {
+        let (mut game, mut ai, capital) = opened(gene);
+        set_strength(&mut game, capital, 15.0);
+        let rally = ai.conquest_opening.as_ref().unwrap().rally;
+        bodies(&mut game, "swordsman", rally, 1, 6);
+        ai.maintain_conquest_opening(&mut game, 0);
+        assert!(ai.conquest_declaration(&mut game, 0), "gene {gene}");
+        let elsewhere = capital_of(&game, 2);
+        assert_eq!(ai.first_capital_strike_running(&game, 0), gene);
+        assert_eq!(
+            ai.first_capital_strike_objective(&game, 0, Some(elsewhere), false),
+            gene.then_some((1, capital))
+        );
+        assert_eq!(
+            ai.first_capital_strike_objective(&game, 0, Some(elsewhere), true),
+            None,
+            "a home emergency outranks the strike"
+        );
+        if gene {
+            let plan = ai.assess(&game, 0);
+            assert_eq!(
+                (plan.target_player, plan.target_city),
+                (Some(1), Some(capital))
+            );
+        }
+    }
+}

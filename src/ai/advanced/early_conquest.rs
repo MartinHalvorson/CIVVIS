@@ -2209,6 +2209,15 @@ impl AdvancedAi {
                    "city-state before the first capital: the bill is covered; {why}");
             return false;
         }
+        // `first-capital-strikes-the-open-window`: no strike into a city that
+        // outclasses the bodies at the rally, whichever rule assembled them.
+        // `None` with the gene off.
+        if let Some(why) = self.first_capital_outclassed(g, pid, &opening) {
+            think!(self.journal(), Military, Detail,
+                   "Holding the conquest force at the rally";
+                   "first capital before the walls: {why}");
+            return false;
+        }
         if !self.campaign_target_legal(g, pid, opening.target) {
             return false;
         }
