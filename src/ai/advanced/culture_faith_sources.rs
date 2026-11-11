@@ -207,7 +207,27 @@ impl AdvancedAi {
             })
     }
 
-    fn culture_faith_city_safe(g: &Game, pid: usize, cid: u32, plan: &StrategicPlan) -> bool {
+    /// `culture-faith-braves-the-barbarians`: whether the six-tile soldier
+    /// rule skips Barbarian units. Live Deity Kristina 20261110T212836Z, at
+    /// peace, had a Barbarian Line Infantry and Musketman 1-5 tiles from
+    /// Stockholm and Linköping for 50+ turns; the claim journalled "is not
+    /// safe" for both cities from t80 to t130 and Faith stood at 1 a turn
+    /// with 4-5 Theater Squares. Over the seven games armed with version two,
+    /// "is not safe" was the most common reason a Theater city took no
+    /// source (264 city-turns). A city attacked in the last four turns, the
+    /// plan's threatened city and a major rival's soldier within six tiles
+    /// still hold the claim.
+    fn culture_faith_braves_the_barbarians_on(&self) -> bool {
+        self.culture_faith_braves_the_barbarians
+    }
+
+    fn culture_faith_city_safe(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        braves_barbarians: bool,
+    ) -> bool {
         let city = &g.cities[&cid];
         city.owner == pid
             && plan.threatened_city != Some(cid)
@@ -215,6 +235,10 @@ impl AdvancedAi {
             && !g.units.values().any(|unit| {
                 unit.owner != pid
                     && g.is_at_war(pid, unit.owner)
+                    && !(braves_barbarians
+                        && g.players
+                            .get(unit.owner)
+                            .is_some_and(|owner| owner.is_barbarian))
                     && g.rules.units[&unit.kind].class == "military"
                     && g.wdist(city.pos, unit.pos) <= 6
             })
@@ -234,8 +258,13 @@ impl AdvancedAi {
         let Some(limit) = self.culture_faith_source_budget(g, pid) else {
             return false;
         };
-        if !Self::culture_faith_city_safe(g, pid, cid, plan)
-            || g.cities[&cid].queue.first() != Some(item)
+        if !Self::culture_faith_city_safe(
+            g,
+            pid,
+            cid,
+            plan,
+            self.culture_faith_braves_the_barbarians_on(),
+        ) || g.cities[&cid].queue.first() != Some(item)
             || !Self::production_commitment_is_legal(g, pid, cid, item)
         {
             return false;
@@ -311,7 +340,13 @@ impl AdvancedAi {
             if !g.city_has_district_family(city, crate::name!("theater_square")) {
                 continue;
             }
-            if !Self::culture_faith_city_safe(g, pid, cid, plan) {
+            if !Self::culture_faith_city_safe(
+                g,
+                pid,
+                cid,
+                plan,
+                self.culture_faith_braves_the_barbarians_on(),
+            ) {
                 skip(cid, "is not safe".into());
                 continue;
             }
@@ -457,7 +492,9 @@ impl AdvancedAi {
         let floor = self.purchase_upkeep_floor(g, pid, 0.0) + CULTURE_SHRINE_GOLD_RESERVE;
         let gold = g.players[pid].gold;
         let mut best: Option<(u32, Name, f64)> = None;
-        for (cid, building) in Self::culture_shrine_wants(g, pid, plan) {
+        for (cid, building) in
+            Self::culture_shrine_wants(g, pid, plan, self.culture_faith_braves_the_barbarians_on())
+        {
             let Some(price) = g.building_gold_purchase_cost(pid, cid, &building) else {
                 continue;
             };
@@ -476,12 +513,17 @@ impl AdvancedAi {
     /// `culture-gold-buys-the-shrines`: each safe city of ours with a standing
     /// Holy Site and its next Faith building, the Shrine or, once the Shrine
     /// stands, the Temple.
-    fn culture_shrine_wants(g: &Game, pid: usize, plan: &StrategicPlan) -> Vec<(u32, Name)> {
+    fn culture_shrine_wants(
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        braves_barbarians: bool,
+    ) -> Vec<(u32, Name)> {
         g.player_city_ids(pid)
             .into_iter()
             .filter(|cid| {
                 g.city_has_district_family(&g.cities[cid], crate::name!("holy_site"))
-                    && Self::culture_faith_city_safe(g, pid, *cid, plan)
+                    && Self::culture_faith_city_safe(g, pid, *cid, plan, braves_barbarians)
             })
             .filter_map(|cid| {
                 match BasicAi::civ_building(g, pid, cid, "shrine")
@@ -519,17 +561,18 @@ impl AdvancedAi {
         {
             return 0.0;
         }
-        let cheapest = Self::culture_shrine_wants(g, pid, plan)
-            .into_iter()
-            .filter_map(|(cid, building)| {
-                g.building_gold_purchase_cost(pid, cid, &building)
-                    .or_else(|| {
-                        let item = Item::Building { building };
-                        Some(4.0 * g.item_cost_for_city(pid, cid, &item))
-                    })
-                    .filter(|price| price.is_finite() && *price > 0.0)
-            })
-            .min_by(f64::total_cmp);
+        let cheapest =
+            Self::culture_shrine_wants(g, pid, plan, self.culture_faith_braves_the_barbarians_on())
+                .into_iter()
+                .filter_map(|(cid, building)| {
+                    g.building_gold_purchase_cost(pid, cid, &building)
+                        .or_else(|| {
+                            let item = Item::Building { building };
+                            Some(4.0 * g.item_cost_for_city(pid, cid, &item))
+                        })
+                        .filter(|price| price.is_finite() && *price > 0.0)
+                })
+                .min_by(f64::total_cmp);
         let Some(price) = cheapest else {
             return 0.0;
         };

@@ -14,9 +14,9 @@
 //! (`ROCK_BAND_TOURISM_BOMB_VALUE_PEACE`, toward civilizations not at war
 //! with us; the in-game text says +100%), -100% Production toward units, unit
 //! purchases +100% (civilians included) and a 100% Rock Band purchase
-//! discount. `data/policies.json` nets the last two to a free Rock Band; the
-//! host may instead net them to the normal price, so the native model can
-//! overstate the card.
+//! discount. The host nets the last two to the band's normal price (live
+//! 20261110T192354Z: Faith quotes 450-650 kept their +50 step under the
+//! card), and so does `data/policies.json`.
 //!
 //! **The gene.** On a Culture target, with the card held or offered, Cold
 //! War known (Rock Bands purchasable) and a Rock Band in the field or one

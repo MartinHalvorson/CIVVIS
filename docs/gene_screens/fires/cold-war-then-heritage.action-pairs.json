@@ -1,0 +1,18 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "cold-war-then-heritage",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Kristina (Sweden) Culture runs, each cut at its turn's first state export (civic slot empty) and queried with --resumed on a ci-profile civvis_orders built from this branch. civvis-20261110T192354Z t151 (Cold War just learned: off Class Struggle as live, on Conservation) and t158 (off Professional Sports as live, on Conservation); civvis-20261110T173750Z t128 (off Class Struggle as live, on Conservation) and t136 (Conservation known: off Professional Sports as live, on Cultural Heritage); civvis-20261110T223338Z t142 (off Class Struggle as live, on Conservation). Controls where both arms agree: 192354Z t143 (Cold War not yet known: both Cold War) and 173750Z t141 (both civics known: both Space Race). Both arms carry the run's requested genome; the on arm adds the gene; the off arm reproduces each live civic.",
+  "archive": {
+    "path": "docs/eval/2026-11-10-cold-war-then-heritage.native-queries.tar.xz",
+    "sha256": "9a525a24e6fece77620c8816b8b894bea37dd41db68ad8df2c898394da7c2265"
+  },
+  "members": [
+    "nq-cwth/0000/result.json",
+    "nq-cwth/0001/result.json",
+    "nq-cwth/0002/result.json",
+    "nq-cwth/0003/result.json",
+    "nq-cwth/0004/result.json",
+    "nq-cwth/0005/result.json",
+    "nq-cwth/0006/result.json"
+  ]
+}

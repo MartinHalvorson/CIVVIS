@@ -1156,6 +1156,14 @@ impl AdvancedAi {
                 _ if self.domination_upgrade_civic_goal(g, pid).is_some() => {
                     self.domination_upgrade_civic_goal(g, pid)
                 }
+                // `cold-war-then-heritage`: after Cold War, Conservation and
+                // then Cultural Heritage, below the emergency and window goals
+                // above and ahead of the government ladder and the culture
+                // list. See `advanced/cold_war_then_heritage.rs`. No-op with
+                // the gene off.
+                _ if self.cold_war_then_heritage_goal(g, pid).is_some() => {
+                    self.cold_war_then_heritage_pick(g, pid)
+                }
                 // Filled museums can use this tourism card now; eight slots
                 // already provide room for it. Keep emergency and unit-window
                 // goals above this, and return to the ladder after the unlock.

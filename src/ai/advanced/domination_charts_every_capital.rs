@@ -93,18 +93,21 @@ impl AdvancedAi {
     }
 
     /// Whether a lane's charting gene acts for this seat this turn and keeps
-    /// the contact gap open (`BasicAi::lane_charting_gap`): this gene's seat.
+    /// the contact gap open (`BasicAi::lane_charting_gap`): this gene's seat,
+    /// or `denial-charts-the-racer`'s (`advanced/denial_charts_the_racer.rs`).
     pub(super) fn lane_charts_the_water(&self, g: &Game, pid: usize) -> bool {
-        self.domination_charts_every_capital_active(g, pid)
+        self.domination_charts_every_capital_active(g, pid) || self.denial_racer(g, pid).is_some()
     }
 
     /// What a lane charting gene adds to a technology on the way to
     /// Cartography (the caller checks the road, the coast and Cartography
     /// itself): `CARTOGRAPHY_VALUE` while this gene acts and turn
-    /// [`CHARTING_RESEARCH_FROM_STANDARD`] has come, else zero.
+    /// [`CHARTING_RESEARCH_FROM_STANDARD`] has come, or while
+    /// `denial-charts-the-racer` charts a racer, else zero.
     pub(super) fn lane_cartography_value(&self, g: &Game, pid: usize) -> f64 {
-        if self.domination_charts_every_capital_active(g, pid)
-            && g.turn >= g.standard_duration(CHARTING_RESEARCH_FROM_STANDARD)
+        if (self.domination_charts_every_capital_active(g, pid)
+            && g.turn >= g.standard_duration(CHARTING_RESEARCH_FROM_STANDARD))
+            || self.denial_racer(g, pid).is_some()
         {
             super::religion_seat_charts_the_rivals::CARTOGRAPHY_VALUE
         } else {
