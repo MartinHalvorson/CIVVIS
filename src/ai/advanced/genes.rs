@@ -5579,6 +5579,10 @@ pub const GENES: &[Gene] = &[
     // keeps one with every siege. Opt-in; see
     // `advanced/domination_target_gets_its_breaker.rs`.
     Gene { tag: "domination-target-gets-its-breaker", field: "domination_target_gets_its_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_target_gets_its_breaker, disable: AdvancedAi::disable_domination_target_gets_its_breaker },
+    // `culture-road-takes-the-unique-first`: a Culture seat takes the civic
+    // that unlocks its own largest Culture source first, with its Builders
+    // ready. Opt-in; see `advanced/culture_unique_first.rs`.
+    Gene { tag: "culture-road-takes-the-unique-first", field: "culture_road_takes_the_unique_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_road_takes_the_unique_first, disable: AdvancedAi::disable_culture_road_takes_the_unique_first },
     // `culture-pass-keeps-half-the-army`: `culture-seat-builds-past-the-deterrent`
     // lets the culture claims pass the near-rival deterrent only while our
     // power is at least half the near neighbour's. Opt-in; see

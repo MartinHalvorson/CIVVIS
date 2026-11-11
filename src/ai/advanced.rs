@@ -6840,6 +6840,11 @@ pub struct AdvancedAi {
     /// premium there. See `advanced/siege_at_the_walls_dies_first.rs`. Off by
     /// default.
     city_strike_takes_the_gun: bool,
+    /// `culture-road-takes-the-unique-first`: a Culture seat takes the civic
+    /// that unlocks its own largest Culture source first and has its
+    /// Builders standing when it lands. See `advanced/culture_unique_first.rs`.
+    /// Off by default.
+    culture_road_takes_the_unique_first: bool,
     /// `culture-pass-keeps-half-the-army`: the culture claims pass the
     /// near-rival deterrent only while our power is at least half the near
     /// neighbour's. See `advanced/culture_past_the_deterrent.rs`. Opt-in.
@@ -10894,6 +10899,8 @@ mod culture_drama_first;
 mod culture_faith_sources;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
+/// `culture-road-takes-the-unique-first`: see `advanced/culture_unique_first.rs`.
+mod culture_unique_first;
 /// `diplo-match-point-beelines-the-points`; see
 /// `advanced/diplo_match_point_research.rs`.
 mod diplo_match_point_research;
