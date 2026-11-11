@@ -10967,7 +10967,10 @@ fn neighbour_tribute_warms_the_nearest_stronger_cold_neighbour() {
     );
     assert!(orders.is_empty());
     state.gold = 90;
-    assert_eq!(append_neighbour_tribute_order(&state, &mut Vec::new()), None);
+    assert_eq!(
+        append_neighbour_tribute_order(&state, &mut Vec::new()),
+        None
+    );
 
     // Gold another gift already took this frame is not spent twice.
     let mut orders = vec![Order {

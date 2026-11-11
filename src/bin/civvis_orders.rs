@@ -2277,7 +2277,10 @@ fn append_neighbour_tribute_order(
             rival
                 .cities
                 .iter()
-                .flat_map(|city| ours.iter().map(move |own| offset_distance(*own, (city.x, city.y))))
+                .flat_map(|city| {
+                    ours.iter()
+                        .map(move |own| offset_distance(*own, (city.x, city.y)))
+                })
                 .min()
                 .filter(|distance| *distance <= NEIGHBOUR_TRIBUTE_RADIUS)
                 .map(|distance| (distance, rival))
