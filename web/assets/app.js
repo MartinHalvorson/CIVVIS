@@ -18089,7 +18089,24 @@ function skyLaunchLabelRest(launch, x, y, half, stage, pixel) {
 // Gran Colombia would otherwise lose its ends whenever a rocket flies near the
 // side of the picture, and a rocket leaving through the top or the bottom would
 // take the whole label with it first.
-function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false) {
+// A name rides just above its rocket. Leaving a world that is a dot among dots,
+// that is where home's own name is, or the Sun, and `crowd` holds the boxes of
+// both: the launch's name goes over the top of whichever it would be written
+// across. It slides there rather than jumping, since a rocket can fly out from
+// under one of them.
+const SKY_LABEL_SLIDE = .15;
+function skyLaunchLabelOver(launch, x, y, half, crowd) {
+  let over = y;
+  for (const box of [...crowd].sort((a, b) => b.bottom - a.bottom))
+    if (x + half > box.left && x - half < box.right && over > box.top - 2 && over - 13 < box.bottom)
+      over = box.top - 2;
+  const now = performance.now(), rise = y - over, had = launch.labelRise ?? rise;
+  const most = SKY_LABEL_SLIDE * Math.max(0, now - (launch.labelRiseAt ?? now));
+  launch.labelRise = had + Math.max(-most, Math.min(most, rise - had));
+  launch.labelRiseAt = now;
+  return y - launch.labelRise;
+}
+function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = false, crowd = null) {
   const label = skyLaunchLabel(launch);
   cx.save();
   cx.globalAlpha = alpha;
@@ -18103,6 +18120,8 @@ function drawSkyLaunchLabel(launch, x, y, alpha, stage, pixel = 1, waiting = fal
   if (waiting) {
     const rest = skyLaunchLabelRest(launch, placed, high, half, stage, pixel);
     placed = stage.left + rest.x * pixel; high = stage.top + rest.y * pixel;
+  } else if (crowd?.length) {
+    high = skyLaunchLabelOver(launch, placed, high, half, crowd);
   }
   cx.strokeText(label, placed, high);
   cx.fillStyle = "#e9f4f5"; cx.fillText(label, placed, high);
@@ -21687,18 +21706,53 @@ function skyBestAscent(launch, pad, camera, radius, centerX, centerY, stage, mar
 }
 
 // From far enough out the Earth is a dot and the Moon is on the stage with it,
-// and the whole trip is in the picture. A body closer than the rocket is long
-// gets a short departure instead, since there is no distance to fly: at Solar
-// System zoom the Moon is two pixels from the Earth.
+// and the whole trip is in the picture. So the rocket flies the whole trip, from
+// home to where it is going and no further, however short that is: at Solar
+// System zoom Mars is a dozen pixels from the Earth. A fixed hop of forty-four
+// took a Mars rocket four times too far, out through the asteroid belt, and a
+// hull drawn at its close-up size was longer than the nine pixels between the
+// Earth and the Sun, so it set off looking as though it had left the Sun.
+//
+// Out here the hull is fitted to the trip instead: never more than this share of
+// it, and never so short it stops being a rocket.
+const SKY_HULL_SHARE = .5, SKY_HULL_LEAST = 4.5;
+// Nearer home than this a destination is not a second place on the screen, which
+// is the Moon from anywhere past Mars. There is no trip to draw to it.
+const SKY_TRIP_APART = 5;
+// The shortest a departure is ever drawn, and the furthest one goes when the
+// picture gives it nothing to be in scale with.
+const SKY_HOP_LEAST = 7, SKY_HOP_MOST = 44;
+// Leaving a world that is a dot for somewhere too near it to be drawn apart from
+// it: a short departure, because there is no distance to fly. How short is the
+// picture's business. Home's room in a picture of the system is its distance
+// from the Sun, so the hop is three quarters of that and never more than `most`;
+// with the whole system a speck there is nothing left to be in scale with, and
+// it flies all of `most`. A bearing that would carry it over the Sun is turned
+// straight away from the Sun, because which of the two it left is the one thing
+// a viewer has to be able to read.
+function skyDotDeparture(start, dx, dy, most, radius, centerX, centerY) {
+  const span = Math.hypot(dx, dy);
+  let ux = span > 1 ? dx / span : 0, uy = span > 1 ? dy / span : -1;
+  const sun = skyPlacement(SKY_SUN, radius, centerX, centerY);
+  const sunX = sun.x - start.x, sunY = sun.y - start.y, sunAway = Math.hypot(sunX, sunY);
+  const reach = most + (Math.max(SKY_HOP_LEAST, Math.min(most, sunAway * .75)) - most) *
+    skyFade(sunAway, 2.5, 7);
+  const along = Math.max(0, Math.min(reach, sunX * ux + sunY * uy));
+  if (sunAway > 2.5 && Math.hypot(sunX - ux * along, sunY - uy * along) < sun.r + 4) {
+    ux = -sunX / sunAway; uy = -sunY / sunAway;
+  }
+  return {end:{x:start.x + ux * reach, y:start.y + uy * reach},
+          hull:Math.max(SKY_HULL_LEAST, reach * SKY_HULL_SHARE)};
+}
 function skyTransferRoute(launch, player, place, crews, view, radius, centerX, centerY) {
   const start = planetProject(skyLaunchPad(launch, player), view, radius, centerX, centerY);
   const goal = skyLaunchEnd(launch, player, place, crews, radius, centerX, centerY);
   const dx = goal.x - start.x, dy = goal.y - start.y, span = Math.hypot(dx, dy);
-  const hop = span < 30;
-  const end = hop
-    ? {x:start.x + (span > 1 ? dx / span : 0) * 44, y:start.y + (span > 1 ? dy / span : -1) * 44}
-    : goal;
-  return {start, end, entering:false, leaving:hop, law:hop ? skyThrustLaw() : skyTransferLaw,
+  const hop = span < SKY_TRIP_APART
+    ? skyDotDeparture(start, dx, dy, SKY_HOP_MOST, radius, centerX, centerY) : null;
+  const end = hop ? hop.end : goal;
+  return {start, end, entering:false, leaving:!!hop, law:hop ? skyThrustLaw() : skyTransferLaw,
+          hull:hop ? hop.hull : Math.max(SKY_HULL_LEAST, span * SKY_HULL_SHARE),
           pointAt:progress => ({...skyLaunchPoint(start, end, progress, .5, ease => ease),
                                 z:start.z * (1 - progress)})};
 }
@@ -21860,11 +21914,13 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
     skySatellitePlan(launch, player, index, pad, camera, radius, centerX, centerY);
   // From far enough out the world is a dot and low orbit has no size at all;
   // all there is to see is something leaving it.
-  if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) return {
-    start:{x:centerX, y:centerY}, end:{x:centerX + 14, y:centerY - 30},
-    entering:false, leaving:true, law:skyThrustLaw(),
-    pointAt:progress => ({x:centerX + 14 * progress * progress, y:centerY - 30 * progress}),
-  };
+  if (!place && radius <= 10 && skyHomeInPicture(radius, centerX, centerY, stage)) {
+    const start = {x:centerX, y:centerY};
+    const {end, hull} = skyDotDeparture(start, 14, -30, Math.hypot(14, 30),
+                                        radius, centerX, centerY);
+    return {start, end, entering:false, leaving:true, law:skyThrustLaw(), hull,
+            pointAt:progress => skyLaunchPoint(start, end, progress, -.5, ease => ease)};
+  }
   if (!launch.route) {
     launch.route = place
       ? skyPlanMission(launch, player, place, crews, camera, radius, centerX, centerY, stage, margin)
@@ -21904,16 +21960,19 @@ function skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, c
   return route.crossing;
 }
 
-function drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now) {
+function drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd = null) {
   const stage = {left:0, top:0, right:MAPW, bottom:MAPH};
   const size = Math.max(3, Math.min(7, radius * .065));
   for (const {launch, player, flight} of skyLaunchesToPaint(now)) {
     const place = flight.body && placements.get(flight.body);
     if (flight.body && !place) continue;
+    const length = skyRocketGeometry(flight.rocket, size).length;
     const film = skyGlobeFlight(launch, player, place, crews, camera, radius, centerX, centerY,
-                                stage, Math.max(36, skyRocketGeometry(flight.rocket, size).length));
-    if (film) drawLaunchFlight(launch, player, flight, film, size, now, 1, stage,
-                               {x:centerX, y:centerY, r:radius});
+                                stage, Math.max(36, length));
+    // A film flown between dots says how long a hull it has room for.
+    if (film) drawLaunchFlight(launch, player, flight, film,
+                               size * Math.min(1, (film.hull ?? length) / length), now, 1, stage,
+                               {x:centerX, y:centerY, r:radius, crowd});
   }
 }
 
@@ -22006,6 +22065,8 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   // a fixed grid of moments so its corners do not crawl as the rocket climbs.
   // Whatever is behind the world is not drawn, so a trail comes round the limb
   // with its rocket instead of being laid across the planet's face.
+  // A hull fitted to a short trip leaves a trail no wider than itself.
+  const slim = film.hull ? Math.max(.4, Math.min(1, size / (3 * pixel))) : 1;
   let last = pointAt(film.law(0));
   for (let step = 1, steps = Math.ceil(clock * 64); step <= steps; step++) {
     const when = Math.min(clock, step / 64);
@@ -22014,9 +22075,9 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
       const thin = Math.max(.16, 1 - (clock - when) / .6) * trailFade;
       cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(point.x, point.y);
       cx.globalAlpha = thin * .3; cx.strokeStyle = "#e8e6dc";
-      cx.lineWidth = 3.4 * pixel; cx.stroke();
+      cx.lineWidth = 3.4 * pixel * slim; cx.stroke();
       cx.globalAlpha = thin * .8; cx.strokeStyle = colour;
-      cx.lineWidth = 1.3 * pixel; cx.stroke();
+      cx.lineWidth = 1.3 * pixel * slim; cx.stroke();
     }
     last = point;
   }
@@ -22060,7 +22121,8 @@ function drawLaunchFlight(launch, player, flight, film, size, now, pixel, stage,
   cx.restore();
 
   if (!unseen(at))
-    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel);
+    drawSkyLaunchLabel(launch, at.x, at.y - lift, launch.labelPause ? .88 : .88 * fade, stage, pixel,
+                       false, limb?.crowd);
 }
 
 // A body nobody could name is just a light. The caption carries the name and,
@@ -22210,11 +22272,51 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   // a dot among dots and needs saying so; the names out here are the engine's
   // own — its four projects are the Earth satellite, the Moon landing, the Mars
   // colony and the exoplanet expedition — so the globe under all of it is Earth.
+  //
+  // Home is also the one world the roster above leaves out, because its ground
+  // is the map and the map draws it. In a picture of the whole system that
+  // ground is a thousandth of a pixel across: every other planet was a dot at
+  // its floor and the one the game is played on was a name with nothing over
+  // it, so a launch seemed to come from the nearest thing there was to see,
+  // which is the Sun. It gets the marble the others get, at the same floor and
+  // faded in by the same rule, once the map's own disc is smaller than that.
+  const crowd = [];
+  const marble = {...SKY_EARTH, x:centerX, y:centerY, r:SKY_EARTH.floor};
+  const marbleShown = skyFade(SKY_EARTH.separation * radius, 2.5, 7) *
+    (1 - skyFade(radius, marble.r * .6, marble.r));
+  if (marbleShown > .01)
+    drawSkyBall(marble, marbleShown, skySunDirection(marble, radius, centerX, centerY));
   if (radius < 22 && radius * AU > 6) {
     const home = {x:centerX, y:centerY, r:Math.max(radius, 3), name:"Earth"};
-    if (skyLabelClaim(home.x, home.y + home.r + 9, 34, 11))
-      drawSkyCaption(home, crews.satellite, Math.min(1, (22 - radius) / 7), "");
+    // A name hangs under its world, and from out here that can be exactly where
+    // the Sun is: the Earth's name lay across the Sun, the Sun went without one,
+    // and the picture was of a star called Earth. The name goes above when that
+    // side has less under it, and the Sun counts for more than a planet does.
+    const stack = crews.satellite.length ? 14 : 0;
+    const captionTop = above => above ? home.y - home.r - 9 - stack : home.y + home.r + 7;
+    const covers = above => {
+      const top = captionTop(above);
+      let cost = 0;
+      for (const place of placements.values()) {
+        if (place.kind !== "body" || place.parent) continue;
+        if (Math.abs(place.x - home.x) < 22 + place.r &&
+            place.y + place.r > top && place.y - place.r < top + 11 + stack)
+          cost += place.id === "sun" ? 3 : 1;
+      }
+      return cost;
+    };
+    const above = covers(true) < covers(false);
+    if (skyLabelClaim(home.x, home.y + (above ? -1 : 1) * (home.r + 9), 34, 11)) {
+      drawSkyCaption(home, crews.satellite, Math.min(1, (22 - radius) / 7), "", above);
+      const top = captionTop(above);
+      crowd.push({left:home.x - 22, right:home.x + 22, top, bottom:top + 11 + stack});
+    }
   }
+  // The Sun as a dot beside home is the other thing a launch's name must not be
+  // written across: a name over the Sun says the launch is the Sun's.
+  const sun = placements.get("sun");
+  if (sun && sun.r < 8 && skyOnCanvas(sun))
+    crowd.push({left:sun.x - sun.r, right:sun.x + sun.r, top:sun.y - sun.r, bottom:sun.y + sun.r});
   // Then everything else, in the order the labels are worth having: the
   // destination, home, the Sun, and after those simply whatever is biggest.
   // A name that will not fit is dropped rather than moved, because the place it
@@ -22259,7 +22361,7 @@ function drawPlanetSky(camera, radius, centerX, centerY) {
   }
   if (exo) drawSkyExpeditions(crews.expedition, exo, radius, centerX, centerY, 1, now);
   drawSkySatellites(crews.satellite, camera, radius, centerX, centerY, 1, now);
-  drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now);
+  drawSkyLaunches(crews, placements, camera, radius, centerX, centerY, now, crowd);
   drawSkyScale(radius, skyDepth(radius));
 }
 
