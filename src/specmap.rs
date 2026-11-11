@@ -21,6 +21,33 @@ use crate::name::Name;
 
 const EMPTY: u32 = u32::MAX;
 
+/// A rules-table key. Borrowed text uses the hash table; an existing [`Name`]
+/// keeps its identity and uses the direct index instead of being coerced to
+/// text and hashed again. Looking up text never interns a new name.
+pub trait SpecKey: AsRef<str> {
+    #[doc(hidden)]
+    fn interned_name(&self) -> Option<Name> {
+        None
+    }
+}
+
+impl SpecKey for str {}
+impl SpecKey for String {}
+
+impl SpecKey for Name {
+    #[inline]
+    fn interned_name(&self) -> Option<Name> {
+        Some(*self)
+    }
+}
+
+impl<K: SpecKey + ?Sized> SpecKey for &K {
+    #[inline]
+    fn interned_name(&self) -> Option<Name> {
+        (*self).interned_name()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SpecMap<T> {
     keys: Vec<Name>,
@@ -129,7 +156,11 @@ impl<T> SpecMap<T> {
     }
 
     #[inline]
-    fn position(&self, key: &str) -> Option<usize> {
+    fn position<K: SpecKey + ?Sized>(&self, key: &K) -> Option<usize> {
+        if let Some(name) = key.interned_name() {
+            return self.position_of(name);
+        }
+        let key = key.as_ref();
         if self.table.is_empty() {
             return None;
         }
@@ -148,24 +179,24 @@ impl<T> SpecMap<T> {
     }
 
     #[inline]
-    pub fn get(&self, key: &str) -> Option<&T> {
+    pub fn get<K: SpecKey + ?Sized>(&self, key: &K) -> Option<&T> {
         self.position(key).map(|index| &self.values[index])
     }
 
     /// Return the existing interned key alongside its value without interning again.
     #[inline]
-    pub fn get_key_value(&self, key: &str) -> Option<(&Name, &T)> {
+    pub fn get_key_value<K: SpecKey + ?Sized>(&self, key: &K) -> Option<(&Name, &T)> {
         self.position(key)
             .map(|index| (&self.keys[index], &self.values[index]))
     }
 
     #[inline]
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut T> {
+    pub fn get_mut<K: SpecKey + ?Sized>(&mut self, key: &K) -> Option<&mut T> {
         self.position(key).map(|index| &mut self.values[index])
     }
 
     #[inline]
-    pub fn contains_key(&self, key: &str) -> bool {
+    pub fn contains_key<K: SpecKey + ?Sized>(&self, key: &K) -> bool {
         self.position(key).is_some()
     }
 
@@ -410,5 +441,45 @@ mod tests {
         assert_eq!(map.get("bb"), None);
         assert_eq!(map.get_key_value("bb"), None);
         assert_eq!(map.len(), 5);
+    }
+
+    #[test]
+    fn text_and_interned_keys_agree_across_table_changes() {
+        let absent = Name::new("absent_specmap_entry");
+        let archer = Name::new("archer");
+        let warrior = Name::new("warrior");
+        let mut map = SpecMap::new();
+        map.insert("warrior".to_string(), 1);
+        map.insert("archer".to_string(), 2);
+
+        assert_eq!(map.get(&archer), map.get("archer"));
+        assert_eq!(map.get(&&warrior), map.get(&"warrior".to_string()));
+        assert_eq!(map.get_key_value(&archer), Some((&archer, &2)));
+        assert!(!map.contains_key(&absent));
+        assert_eq!(map.get(&Name::new("later_absent_specmap_entry")), None);
+        *map.get_mut(&archer).unwrap() = 3;
+        assert_eq!(map["archer"], 3);
+
+        // Removing a sorted entry shifts every later entry's position.
+        assert_eq!(map.remove("archer"), Some(3));
+        assert!(!map.contains_key(&archer));
+        assert_eq!(map.get(&warrior), Some(&1));
+        map.insert("archer".to_string(), 4);
+        assert_eq!(map.insert("warrior".to_string(), 5), Some(1));
+        assert_eq!(map.get(&warrior), Some(&5));
+        let cloned = map.clone();
+        assert_eq!(cloned.get(&archer), Some(&4));
+        assert_eq!(
+            serde_json::to_string(&cloned).unwrap(),
+            r#"{"archer":4,"warrior":5}"#
+        );
+        let restored: SpecMap<i32> =
+            serde_json::from_str(&serde_json::to_string(&cloned).unwrap()).unwrap();
+        assert_eq!(restored.get(&warrior), Some(&5));
+        map.retain(|key, _| key == "warrior");
+        assert!(!map.contains_key(&archer));
+        assert_eq!(map.get(&warrior), Some(&5));
+        map.clear();
+        assert_eq!(map.get(&warrior), None);
     }
 }
