@@ -253,6 +253,10 @@ impl AdvancedAi {
             }
             let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
                 g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
+                    // `no-city-limit`: the city's Settler modifiers count, so
+                    // the Ancestral Hall's city and a Colonization empire
+                    // train where the Settler is really cheapest.
+                    / wide.map_or(1.0, |_| g.item_prod_mult(pid, cid, Some(&item)).max(0.1))
             });
             if turns > max_turns {
                 continue;
