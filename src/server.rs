@@ -41,6 +41,12 @@ use crate::Pos;
 #[path = "wasm.rs"]
 pub mod wasm;
 
+/// The site's world timed on a native build, for `civvis site-bench` and the
+/// speed tools. A child module for the same reason as `wasm` above: it plays
+/// the frame that module serves, through the same private helpers.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod site_bench;
+
 /// Which runtime is answering, so a long-lived page can notice it is talking
 /// to a different one than it booted against and reload.
 ///
